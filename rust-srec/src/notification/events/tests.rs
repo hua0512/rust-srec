@@ -1,6 +1,5 @@
-use super::render::format_duration;
 use super::*;
-use crate::utils::text::format_bytes;
+use crate::utils::text::{format_bytes, format_duration};
 
 #[test]
 fn test_notification_priority_ordering() {

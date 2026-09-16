@@ -16,6 +16,7 @@ use super::dag_scheduler::{
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
 use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput};
+use super::progress::JobProgressSnapshot;
 
 /// How long a job already in `Processor::process` may keep running after the pool's
 /// cancellation token fires before its own token is cancelled too.
@@ -33,8 +34,100 @@ const LOG_CHANNEL_CAPACITY: usize = 1024;
 /// Error recorded when no registered processor accepts a job's type.
 const NO_PROCESSOR_ERROR: &str = "No processor found";
 
-/// Error recorded when a job outlives `WorkerPoolConfig::job_timeout_secs`.
+/// Opening words of the error recorded when a job outlives
+/// `WorkerPoolConfig::job_timeout_secs`. `timeout_error` appends the job's context.
 const TIMED_OUT_ERROR: &str = "Job timed out";
+
+/// Longest input file name carried in a timeout error, in characters. The message is stored on
+/// the job row and delivered verbatim as a notification body, so one pathological name must not
+/// crowd out the rest of the context.
+const TIMEOUT_ERROR_FILE_NAME_LIMIT: usize = 80;
+
+/// Describe a timed-out job well enough to act on the notification it produces: how long it was
+/// given, which step and processor hung, what it was working on, and how far its last reported
+/// progress got. The progress clause is what separates a stalled transfer from a slow one, so it
+/// carries the age of that reading rather than only its position.
+///
+/// `progress` is the job's last snapshot, absent for a processor that reports none.
+fn timeout_error(
+    job_timeout: std::time::Duration,
+    facts: &JobFacts,
+    input: &ProcessorInput,
+    progress: Option<&JobProgressSnapshot>,
+) -> String {
+    let mut context = match (facts.current_step, facts.total_steps) {
+        (Some(current), Some(total)) => format!("{} step {}/{}", facts.job_type, current, total),
+        _ => facts.job_type.clone(),
+    };
+    context.push_str(&format!(", processor '{}'", facts.processor_name));
+
+    if let Some(first) = input.inputs.first() {
+        let name = std::path::Path::new(first)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| first.clone());
+        context.push_str(&format!(
+            ", input \"{}\"",
+            crate::utils::text::truncate_chars(&name, TIMEOUT_ERROR_FILE_NAME_LIMIT)
+        ));
+        let rest = input.inputs.len() - 1;
+        if rest > 0 {
+            context.push_str(&format!(" and {} more", rest));
+        }
+    }
+
+    if let Some(snapshot) = progress {
+        context.push_str(&progress_clause(snapshot));
+    }
+
+    format!(
+        "{} after {} ({})",
+        TIMED_OUT_ERROR,
+        crate::utils::text::format_duration(job_timeout.as_secs_f64()),
+        context
+    )
+}
+
+/// Render how far a timed-out job's last progress reading got and how old it is. Every position
+/// field is optional, so the clause keeps only what the processor actually reported; the age is
+/// always known, since it comes from the snapshot's own timestamp.
+fn progress_clause(snapshot: &JobProgressSnapshot) -> String {
+    let mut parts = Vec::new();
+
+    if let Some(percent) = snapshot.percent {
+        parts.push(format!("{:.0}%", percent));
+    }
+    match (snapshot.bytes_done, snapshot.bytes_total) {
+        (Some(done), Some(total)) => parts.push(format!(
+            "{} of {}",
+            crate::utils::text::format_bytes(done),
+            crate::utils::text::format_bytes(total)
+        )),
+        (Some(done), None) => parts.push(crate::utils::text::format_bytes(done)),
+        _ => {}
+    }
+    if let Some(speed) = snapshot.speed_bytes_per_sec
+        && speed.is_finite()
+        && speed > 0.0
+    {
+        parts.push(format!(
+            "at {}/s",
+            crate::utils::text::format_bytes(speed as u64)
+        ));
+    }
+
+    // A reading from the future means the clock moved; report it as current rather than
+    // as a negative age.
+    let age = (chrono::Utc::now() - snapshot.updated_at)
+        .to_std()
+        .unwrap_or_default();
+    parts.push(format!(
+        "last updated {} ago",
+        crate::utils::text::format_duration(age.as_secs_f64())
+    ));
+
+    format!(", progress {}", parts.join(", "))
+}
 
 /// Broadcast a job lifecycle event, if the pool was started with a sender.
 ///
@@ -911,7 +1004,19 @@ impl JobRunner {
                 );
             }
             JobOutcome::TimedOut => {
-                self.finish_failed(&facts, TIMED_OUT_ERROR, DagFailureKind::Timeout)
+                let progress = match self.job_queue.get_job_progress(&facts.id).await {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        warn!(
+                            job_id = %facts.id,
+                            %error,
+                            "Failed to read last progress for timed-out job"
+                        );
+                        None
+                    }
+                };
+                let reason = timeout_error(self.job_timeout, &facts, &input, progress.as_ref());
+                self.finish_failed(&facts, &reason, DagFailureKind::Timeout)
                     .await;
             }
         }
@@ -1812,7 +1917,14 @@ mod tests {
             }
         );
         if !cancel_during_drain {
-            assert_eq!(stored.error.as_deref(), Some(TIMED_OUT_ERROR));
+            assert!(
+                stored
+                    .error
+                    .as_deref()
+                    .is_some_and(|error| error.starts_with(TIMED_OUT_ERROR)),
+                "unexpected stored error: {:?}",
+                stored.error
+            );
         }
         assert!(matches!(
             event_rx.try_recv(),
@@ -1820,7 +1932,7 @@ mod tests {
         ));
         if !cancel_during_drain {
             assert!(
-                matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error == TIMED_OUT_ERROR)
+                matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error.starts_with(TIMED_OUT_ERROR))
             );
         }
         assert!(event_rx.try_recv().is_err());

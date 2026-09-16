@@ -31,6 +31,22 @@ pub(crate) fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Format a duration in seconds into a human-readable string.
+pub(crate) fn format_duration(secs: f64) -> String {
+    let total_secs = secs as u64;
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+
+    if hours > 0 {
+        format!("{}h {}m {}s", hours, minutes, seconds)
+    } else if minutes > 0 {
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        format!("{}s", seconds)
+    }
+}
+
 /// Truncate `s` to at most `max` characters. Appends `…` when clipped.
 /// Returns `s.to_string()` when it already fits, or an empty string when
 /// `max == 0`. Single-pass over `s.chars()` so cost is `O(min(len, max))`
