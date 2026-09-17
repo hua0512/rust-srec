@@ -483,14 +483,46 @@ impl Processor for CopyMoveProcessor {
             {
                 // A destination that resolves to the input itself (the destination
                 // template names the recording's own directory) is "in place": a
-                // move must not remove the only copy.
-                let in_place = tokio::task::spawn_blocking({
+                // move must not remove the only copy. The identity check opens both
+                // files, so an error leaves the input untouched for a later retry
+                // rather than being read as "distinct" and deleting it.
+                let identity = tokio::task::spawn_blocking({
                     let source = source.to_path_buf();
                     let dest = dest.clone();
-                    move || same_file::is_same_file(&source, &dest).unwrap_or(false)
+                    move || same_file::is_same_file(&source, &dest)
                 })
-                .await
-                .unwrap_or(false);
+                .await;
+                let in_place = match identity {
+                    Ok(Ok(in_place)) => in_place,
+                    Ok(Err(e)) => {
+                        let error_msg = format!(
+                            "Could not tell whether destination {} is the input itself: {}",
+                            dest.display(),
+                            e
+                        );
+                        error!("{}", error_msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Error,
+                            &error_msg,
+                        ));
+                        failed_inputs.push((source_path.clone(), error_msg));
+                        continue;
+                    }
+                    Err(e) => {
+                        let error_msg = format!(
+                            "Could not tell whether destination {} is the input itself: {}",
+                            dest.display(),
+                            e
+                        );
+                        error!("{}", error_msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Error,
+                            &error_msg,
+                        ));
+                        failed_inputs.push((source_path.clone(), error_msg));
+                        continue;
+                    }
+                };
                 if config.operation == CopyMoveOperation::Move
                     && !in_place
                     && let Err(e) = fs::remove_file(source).await
@@ -1460,10 +1492,11 @@ mod tests {
 
         let first_attempt = processor
             .process(&input, &ProcessorContext::noop("test"))
-            .await;
+            .await
+            .unwrap_err();
         assert!(
-            first_attempt.is_err(),
-            "the first attempt rejects the collision"
+            first_attempt.to_string().contains("failed to copy/move"),
+            "the first attempt rejects the collision: {first_attempt}"
         );
         assert_eq!(fs::read_to_string(&source_path).await.unwrap(), "content");
 
