@@ -471,6 +471,50 @@ impl Processor for CopyMoveProcessor {
                 }
             };
 
+            // A retry may find this input's transfer already complete: a copy whose
+            // job failed on another input, or a cross-device move interrupted after
+            // the copy but before the source was removed. Same-size destination
+            // files are adopted so the retry resumes instead of rejecting them as
+            // collisions; a first attempt never adopts, for the reason above.
+            if ctx.is_retry
+                && let Ok(dest_meta) = fs::metadata(&dest).await
+                && dest_meta.is_file()
+                && dest_meta.len() == source_size
+            {
+                if config.operation == CopyMoveOperation::Move
+                    && let Err(e) = fs::remove_file(source).await
+                {
+                    let error_msg = format!(
+                        "Destination {} already holds this file but the source could not be removed: {}",
+                        dest.display(),
+                        e
+                    );
+                    error!("{}", error_msg);
+                    logs.push(create_log_entry(
+                        crate::pipeline::job_queue::LogLevel::Error,
+                        &error_msg,
+                    ));
+                    failed_inputs.push((source_path.clone(), error_msg));
+                    continue;
+                }
+                let msg = format!(
+                    "Destination {} already holds this file from an earlier attempt; treating as completed",
+                    dest.display()
+                );
+                info!("{}", msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Info,
+                    msg,
+                ));
+                let dest_path = dest.to_string_lossy().into_owned();
+                total_input_size += source_size;
+                total_output_size += dest_meta.len();
+                outputs.push(dest_path.clone());
+                items_produced.push(dest_path);
+                succeeded_inputs.push(source_path.clone());
+                continue;
+            }
+
             // Check if destination exists and handle overwrite
             if !config.overwrite {
                 match fs::try_exists(&dest).await {
@@ -1296,6 +1340,84 @@ mod tests {
             output.outputs,
             vec![dest_dir.join("moved.txt").to_string_lossy().to_string()]
         );
+    }
+
+    /// A retried copy or move whose destination already holds a same-size file
+    /// resumes past it instead of failing on the overwrite check; a move also
+    /// finishes by removing the source it left behind. A first attempt keeps
+    /// rejecting the collision.
+    #[tokio::test]
+    async fn test_retry_adopts_a_complete_destination_for_copy_and_move() {
+        for operation in ["copy", "move"] {
+            let temp_dir = TempDir::new().unwrap();
+            let source_path = temp_dir.path().join("done.txt");
+            let pending_path = temp_dir.path().join("pending.txt");
+            let dest_dir = temp_dir.path().join("output");
+            fs::create_dir_all(&dest_dir).await.unwrap();
+            fs::write(&source_path, "content").await.unwrap();
+            fs::write(&pending_path, "later").await.unwrap();
+            fs::write(dest_dir.join("done.txt"), "content")
+                .await
+                .unwrap();
+            let input = ProcessorInput {
+                inputs: vec![
+                    source_path.to_string_lossy().to_string(),
+                    pending_path.to_string_lossy().to_string(),
+                ],
+                config: Some(
+                    serde_json::json!({
+                        "operation": operation,
+                        "destination": dest_dir.to_string_lossy()
+                    })
+                    .to_string(),
+                ),
+                ..Default::default()
+            };
+            let processor = CopyMoveProcessor::new();
+
+            let first_attempt = processor
+                .process(&input, &ProcessorContext::noop("test"))
+                .await
+                .unwrap();
+            assert_eq!(first_attempt.failed_inputs.len(), 1, "{operation}");
+            assert!(
+                first_attempt.failed_inputs[0]
+                    .1
+                    .contains("overwrite is disabled")
+            );
+            assert_eq!(
+                first_attempt.succeeded_inputs,
+                vec![pending_path.to_string_lossy().to_string()]
+            );
+
+            fs::write(&pending_path, "later").await.unwrap();
+            let retry = processor
+                .process(&input, &ProcessorContext::noop("test").with_retry(true))
+                .await
+                .unwrap();
+            assert!(
+                retry.failed_inputs.is_empty(),
+                "{operation}: {:?}",
+                retry.failed_inputs
+            );
+            assert_eq!(retry.succeeded_inputs, input.inputs, "{operation}");
+            assert_eq!(
+                retry.outputs,
+                vec![
+                    dest_dir.join("done.txt").to_string_lossy().to_string(),
+                    dest_dir.join("pending.txt").to_string_lossy().to_string(),
+                ]
+            );
+            assert_eq!(
+                fs::read_to_string(dest_dir.join("done.txt")).await.unwrap(),
+                "content"
+            );
+            assert_eq!(
+                source_path.exists(),
+                operation == "copy",
+                "{operation}: a move removes the source it left behind"
+            );
+        }
     }
 
     /// Without an earlier attempt to resume, a same-named file at the

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::database::models::job::DagPipelineDefinition;
 use crate::pipeline::manifest::ManifestSegment;
@@ -1307,7 +1307,19 @@ impl SessionPipelineState {
     }
 
     fn decrement_segment_pending(&mut self, source: SourceType, segment_index: u32, reason: &str) {
-        self.started_segment_dags.remove(&(source, segment_index));
+        // The counter was raised by the start that inserted this key. A completion
+        // without one, such as a retried DAG whose failed run already settled the
+        // segment, changes the artifacts but owes no decrement.
+        if !self.started_segment_dags.remove(&(source, segment_index)) {
+            debug!(
+                session_id = %self.session_id,
+                segment_index = %segment_index,
+                source = ?source,
+                reason = %reason,
+                "Segment DAG finished without a pending start"
+            );
+            return;
+        }
         match source {
             SourceType::Video => {
                 if self.pending_video_dags == 0 {

@@ -305,7 +305,9 @@ pub struct ProcessorOutput {
     /// A non-empty list makes the worker pool fail the job, with an error that
     /// names every failed input, after it has recorded `items_produced` and
     /// `logs`; a DAG step then fails fast. Report the successful inputs'
-    /// outputs anyway so a retry can resume past them.
+    /// outputs anyway so a retry can resume past them. Upload processors do not
+    /// use this list: they carry per-file results in `uploads` and return `Err`,
+    /// whose failure path persists those records.
     pub failed_inputs: Vec<(String, String)>,
     /// Input files that were successfully processed.
     /// Used for partial failure reporting in multi-input jobs.

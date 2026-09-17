@@ -965,7 +965,8 @@ impl JobQueue {
     /// Persist the logs a processor returned with its result and fold them into
     /// the job's execution summary. Entries the streaming collector already wrote
     /// are not duplicated. Used for a result the pool turns into a failure, where
-    /// `complete_if_processing` never runs.
+    /// `complete_if_processing` never runs. A repository-less queue keeps no
+    /// execution history for failed jobs, so this is a no-op there.
     pub(crate) async fn record_result_logs(
         &self,
         job_id: &str,

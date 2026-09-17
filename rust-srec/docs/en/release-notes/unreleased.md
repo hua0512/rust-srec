@@ -176,7 +176,7 @@
 
 - **Retrying a workflow now delivers its results, and half-done steps no longer count as success**
 
-  A recording workflow that failed, was retried and then succeeded within the hour had its success ignored, so the following workflows kept working with the raw recording instead of the retried result. Retried workflows now hand over their results. A step that could only process some of its files (for example a move where one file could not be transferred) used to complete as if everything had worked, letting a later delete step remove sources that were never handled. Such a step now fails with a message naming each file that failed, keeps what it did produce, and can be retried. Batch remux jobs write all their outputs to temporary files and publish them together, so a failure or cancellation part-way through no longer leaves some outputs published, and one output can no longer overwrite another input of the same job.
+  A recording workflow that failed, was retried and then succeeded within the hour had its success ignored, so the following workflows kept working with the raw recording instead of the retried result. Retried workflows now hand over their results. A step that could only process some of its files (for example a move where one file could not be transferred) used to complete as if everything had worked, so the failure went unnoticed and later steps, including the end-of-recording workflow, only ever saw the files that were handled. Such a step now fails with a message naming each file that failed and keeps what it did produce. Retrying a copy or move step picks up where it left off: files already present at the destination are not transferred again. Batch remux jobs write all their outputs to temporary files and publish them together, so a failure or cancellation part-way through no longer leaves some outputs published, and one output can no longer overwrite another input of the same job.
 
 - **Execute editors support programs with literal arguments**
 
@@ -431,7 +431,7 @@
 
 - **Shared processor drivers preserve publication policies**
 
-  Output planning, four media drivers, nine single-file skip results and path-resolution mechanisms now share implementations with explicit naming, mapping, publication and identity policies. Staged rollback and incremental remux cleanup remain distinct; see [processor contracts](../concepts/pipeline.md#processor-result-contracts).
+  Output planning, four media drivers, nine single-file skip results and path-resolution mechanisms now share implementations with explicit naming, mapping, publication and identity policies. All media drivers share the same staged publication; see [processor contracts](../concepts/pipeline.md#processor-result-contracts).
 
 - **Pipeline completion and recovery share artifact handling with fewer reads**
 

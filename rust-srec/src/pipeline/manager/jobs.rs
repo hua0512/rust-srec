@@ -171,11 +171,6 @@ where
             ));
         }
 
-        // The DAG will reach a terminal state again; the entry recorded for its
-        // earlier completion must not make `handle_dag_completion` discard the
-        // retried run's outcome as a duplicate.
-        self.handled_dag_completions.remove(dag_id);
-
         // Get all steps
         let steps = dag_scheduler.get_dag_steps(dag_id).await?;
 
@@ -194,6 +189,12 @@ where
 
         // Prepare DAG for retry so downstream steps can be scheduled again.
         dag_scheduler.reset_dag_for_retry(dag_id).await?;
+
+        // The DAG will reach a terminal state again; the entry recorded for its
+        // earlier completion must not make `handle_dag_completion` discard the
+        // retried run's outcome as a duplicate. Removed only once the reset took
+        // effect, so a rejected retry keeps swallowing late replays of the old one.
+        self.handled_dag_completions.remove(dag_id);
 
         let mut job_ids = Vec::new();
         let mut reconciled_steps = 0usize;
