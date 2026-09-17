@@ -174,6 +174,10 @@ Processor outputs are also significant:
 - `baidupcs` passes its local input paths through, unless **Delete local files after upload** is enabled, in which case the consumed files are dropped from its outputs.
 - `delete` produces no outputs.
 
+A step whose dependencies produced no outputs, such as a `delete` after an
+`rclone` move, completes without running and passes on no outputs, so the
+steps after it complete the same way.
+
 Therefore, a linear `remux -> thumbnail -> rclone` graph sends only the thumbnail to `rclone`. To upload both the remuxed video and its thumbnail, route both producers directly to `rclone`:
 
 ```mermaid
@@ -336,7 +340,12 @@ publication waits for its commit or rollback. Subtitle and font paths support
 apostrophes and filtergraph delimiters without extra user escaping.
 
 - **Fail-fast**: When a step fails, pending downstream steps are cancelled
-- **Retry**: Failed steps can be retried manually or automatically
+- **Retry**: Failed steps can be retried manually or automatically. A retry
+  checks every job it will restart before changing anything; if restarting
+  breaks down part-way, the workflow is failed again with the retry error and
+  stays retryable. A workflow whose cancelled step never received a job can be
+  retried too. At startup, a running step whose job had already failed or been
+  cancelled fails its workflow so it can be retried.
 - **Logs**: Each step maintains execution logs for debugging
 
 Retries and restart recovery retain the job's earlier step timings, log counters,

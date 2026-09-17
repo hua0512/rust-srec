@@ -174,11 +174,12 @@ where
         // Get all steps
         let steps = dag_scheduler.get_dag_steps(dag_id).await?;
 
-        // Find retryable steps (failed steps + cancelled steps with an existing job).
-        // Cancelled steps with a job_id typically represent fail-fast cancelled in-flight work.
+        // Every FAILED or CANCELLED step is retried. One with a job has that job
+        // restarted; one without (its job creation failed) is materialized again
+        // once the reset unblocks it.
         let retryable_steps: Vec<_> = steps
             .iter()
-            .filter(|s| matches!(s.status.as_str(), "FAILED" | "CANCELLED") && s.job_id.is_some())
+            .filter(|s| matches!(s.status.as_str(), "FAILED" | "CANCELLED"))
             .collect();
 
         if retryable_steps.is_empty() {
@@ -187,43 +188,67 @@ where
             ));
         }
 
-        // Prepare DAG for retry so downstream steps can be scheduled again.
-        dag_scheduler.reset_dag_for_retry(dag_id).await?;
+        // Load and check every job before any row changes, so a missing or still
+        // active job is reported while the DAG is untouched and still retryable.
+        let mut attached_jobs = Vec::with_capacity(retryable_steps.len());
+        for step in &retryable_steps {
+            let Some(job_id) = step.job_id.as_deref() else {
+                continue;
+            };
+            let job = self.get_job(job_id).await?.ok_or_else(|| {
+                Error::Validation(format!(
+                    "Job {} of step '{}' no longer exists; the workflow cannot be retried",
+                    job_id, step.step_id
+                ))
+            })?;
+            if !matches!(
+                job.status,
+                JobStatus::Failed | JobStatus::Cancelled | JobStatus::Completed
+            ) {
+                return Err(Error::Validation(format!(
+                    "Job {} of step '{}' is {} and cannot be retried",
+                    job_id,
+                    step.step_id,
+                    job.status.as_str()
+                )));
+            }
+            attached_jobs.push((*step, job));
+        }
+
+        // From here on every failure re-fails the DAG with the retry error, so a
+        // partially restarted DAG never sits in PROCESSING with nothing to advance it.
+        let mut completions = Vec::new();
+        let update = match dag_scheduler.reset_dag_for_retry(dag_id).await {
+            Ok(update) => update,
+            Err(error) => return Err(self.fail_retried_dag(dag_scheduler, dag_id, error).await),
+        };
 
         // The DAG will reach a terminal state again; the entry recorded for its
         // earlier completion must not make `handle_dag_completion` discard the
         // retried run's outcome as a duplicate. Removed only once the reset took
         // effect, so a rejected retry keeps swallowing late replays of the old one.
         self.handled_dag_completions.remove(dag_id);
+        let materialized_steps = update.new_job_ids.len();
+        let mut job_ids = update.new_job_ids;
+        completions.extend(update.completion);
 
-        let mut job_ids = Vec::new();
+        let mut restarted_steps = 0usize;
         let mut reconciled_steps = 0usize;
-        for step in &retryable_steps {
-            let Some(job_id) = &step.job_id else {
-                continue;
-            };
-
-            let job = match self.get_job(job_id).await {
-                Ok(Some(job)) => job,
-                Ok(None) => {
-                    tracing::warn!("Failed to retry job {}: job not found", job_id);
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to load job {} for DAG retry: {}", job_id, e);
-                    continue;
-                }
-            };
-
+        for (step, job) in attached_jobs {
             match job.status {
                 JobStatus::Failed | JobStatus::Cancelled => {
-                    match self.retry_queued_job(job_id).await {
-                        Ok(job) => job_ids.push(job.id),
-                        Err(e) => tracing::warn!("Failed to retry job {}: {}", job_id, e),
+                    match self.retry_queued_job(&job.id).await {
+                        Ok(job) => {
+                            restarted_steps += 1;
+                            job_ids.push(job.id);
+                        }
+                        Err(error) => {
+                            return Err(self.fail_retried_dag(dag_scheduler, dag_id, error).await);
+                        }
                     }
                 }
                 JobStatus::Completed => {
-                    if let Err(e) = dag_scheduler
+                    match dag_scheduler
                         .on_job_completed(
                             &step.id,
                             &job.outputs,
@@ -234,27 +259,33 @@ where
                         )
                         .await
                     {
-                        tracing::warn!(
-                            "Failed to reconcile completed job {} for DAG step {}: {}",
-                            job_id,
-                            step.id,
-                            e
-                        );
-                    } else {
-                        reconciled_steps += 1;
+                        Ok(update) => {
+                            reconciled_steps += 1;
+                            job_ids.extend(update.new_job_ids);
+                            completions.extend(update.completion);
+                        }
+                        Err(error) => {
+                            return Err(self.fail_retried_dag(dag_scheduler, dag_id, error).await);
+                        }
                     }
                 }
                 _ => {
                     tracing::debug!(
                         "Skipping DAG retry for job {} in status {:?}",
-                        job_id,
+                        job.id,
                         job.status
                     );
                 }
             }
         }
 
-        let retried_steps = job_ids.len();
+        // No-op steps or reconciled results can settle the whole DAG during the
+        // retry itself; the coordinator learns about it the same way as from a worker.
+        for completion in completions {
+            self.handle_dag_completion(completion).await;
+        }
+
+        let retried_steps = restarted_steps + materialized_steps;
         let message = if retried_steps == retryable_steps.len() {
             format!("Successfully retried {} steps", retried_steps)
         } else {
@@ -272,6 +303,27 @@ where
             job_ids,
             message,
         })
+    }
+
+    /// Fail a DAG whose retry broke down after its rows were reset, so it is
+    /// terminal (and retryable) again instead of stranded in PROCESSING.
+    async fn fail_retried_dag(
+        &self,
+        dag_scheduler: &DagScheduler,
+        dag_id: &str,
+        error: Error,
+    ) -> Error {
+        let message = format!("Retry failed: {error}");
+        match dag_scheduler.fail_dag(dag_id, &message).await {
+            Ok(Some(completion)) => self.handle_dag_completion(completion).await,
+            Ok(None) => {}
+            Err(fail_error) => tracing::warn!(
+                dag_id = %dag_id,
+                error = %fail_error,
+                "Failed to re-fail DAG after an unsuccessful retry"
+            ),
+        }
+        error
     }
 
     /// Cancel a job.

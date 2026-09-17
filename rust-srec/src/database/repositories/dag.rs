@@ -170,6 +170,34 @@ pub trait DagRepository: Send + Sync {
 
     /// List non-terminal DAGs containing a step whose job has not been materialized.
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>>;
+
+    /// List PROCESSING steps of non-terminal DAGs whose attached job is FAILED or
+    /// CANCELLED: the worker's failure report never reached the scheduler, so nothing
+    /// will advance or fail the DAG unless startup reconciliation does.
+    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>>;
+
+    /// Complete a ready step that has no job, recording `outputs`, and settle its
+    /// dependents and DAG exactly like [`Self::complete_step_and_check_dependents`].
+    ///
+    /// Used for a step whose dependencies produced no outputs, which runs as a no-op
+    /// instead of a job. The transition applies only while the step is BLOCKED or
+    /// PENDING with no job and the DAG is not terminal; otherwise the current rows are
+    /// returned with no ready steps, as for a duplicate completion.
+    async fn complete_ready_step_without_job(
+        &self,
+        step_id: &str,
+        outputs: &[String],
+    ) -> Result<StepCompletion>;
+}
+
+/// Which row state a step completion may transition from.
+#[derive(Clone, Copy)]
+enum CompletionGuard {
+    /// A step whose job finished: PENDING or PROCESSING.
+    AttachedJob,
+    /// A ready step completed without a job: BLOCKED or PENDING with `job_id` NULL
+    /// in a non-terminal DAG.
+    NoJob,
 }
 
 /// SQLx implementation of DagRepository.
@@ -181,6 +209,212 @@ pub struct SqlxDagRepository {
 impl SqlxDagRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         Self { pool, write_pool }
+    }
+
+    async fn complete_step_with_guard(
+        &self,
+        step_id: &str,
+        outputs: &[String],
+        guard: CompletionGuard,
+    ) -> Result<StepCompletion> {
+        retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            let now = crate::database::time::now_ms();
+            let outputs_json = serde_json::to_string(outputs)?;
+
+            fn output_dedup_key(output: &str) -> String {
+                if cfg!(windows) {
+                    output.to_lowercase()
+                } else {
+                    output.to_string()
+                }
+            }
+
+            fn merge_dependency_outputs(
+                depends_on_step_ids: &[String],
+                completed_outputs_by_step_id: &HashMap<String, Vec<String>>,
+            ) -> Vec<String> {
+                let mut merged = Vec::new();
+                let mut seen = HashSet::<String>::new();
+
+                for dep in depends_on_step_ids {
+                    let Some(dep_outputs) = completed_outputs_by_step_id.get(dep) else {
+                        continue;
+                    };
+                    for out in dep_outputs {
+                        if seen.insert(output_dedup_key(out)) {
+                            merged.push(out.clone());
+                        }
+                    }
+                }
+
+                merged
+            }
+
+            // The conditional transition fences duplicate notifications and cancelled steps.
+            let transition = match guard {
+                CompletionGuard::AttachedJob => {
+                    r#"
+                    UPDATE dag_step_execution
+                    SET status = 'COMPLETED', outputs = ?, updated_at = ?
+                    WHERE id = ?
+                      AND status IN ('PENDING', 'PROCESSING')
+                    RETURNING *
+                    "#
+                }
+                CompletionGuard::NoJob => {
+                    r#"
+                    UPDATE dag_step_execution
+                    SET status = 'COMPLETED', outputs = ?, updated_at = ?
+                    WHERE id = ?
+                      AND status IN ('BLOCKED', 'PENDING')
+                      AND job_id IS NULL
+                      AND (
+                        SELECT status
+                        FROM dag_execution
+                        WHERE id = dag_step_execution.dag_id
+                      ) NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                    RETURNING *
+                    "#
+                }
+            };
+            let completed = sqlx::query_as::<_, DagStepExecutionDbModel>(transition)
+                .bind(&outputs_json)
+                .bind(now)
+                .bind(step_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+            let Some(completed_step) = completed else {
+                // A duplicate still supplies terminal state for notification replay,
+                // without incrementing counters or scheduling dependents again.
+                let step = sqlx::query_as::<_, DagStepExecutionDbModel>("SELECT * FROM dag_step_execution WHERE id = ?")
+                    .bind(step_id).fetch_optional(&mut *tx).await?
+                    .ok_or_else(|| Error::not_found("DAG step execution", step_id))?;
+                let dag = sqlx::query_as::<_, DagExecutionDbModel>("SELECT * FROM dag_execution WHERE id = ?")
+                    .bind(&step.dag_id).fetch_one(&mut *tx).await?;
+                tx.commit().await?;
+                return Ok(StepCompletion { step, dag, ready_steps: Vec::new() });
+            };
+
+            // Keep the DAG snapshot from its counter update within this transaction.
+            let mut dag = sqlx::query_as::<_, DagExecutionDbModel>(
+                "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ? RETURNING *",
+            )
+            .bind(now)
+            .bind(&completed_step.dag_id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            // Dependency IDs are JSON arrays; inspect only blocked direct dependents.
+            let blocked_dependents = sqlx::query_as::<_, DagStepExecutionDbModel>(
+                r#"
+                SELECT dse.* FROM dag_step_execution dse
+                WHERE dse.dag_id = ?
+                  AND dse.status = 'BLOCKED'
+                  AND EXISTS (
+                      SELECT 1 FROM json_each(dse.depends_on_step_ids)
+                      WHERE json_each.value = ?
+                  )
+                "#,
+            )
+            .bind(&completed_step.dag_id)
+            .bind(&completed_step.step_id)
+                .fetch_all(&mut *tx)
+                .await?;
+
+            // Read statuses and outputs once for all fan-in readiness decisions,
+            // under the same write transaction as the completed-step transition.
+            let step_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+                r#"
+                SELECT step_id, status, outputs
+                FROM dag_step_execution
+                WHERE dag_id = ?
+                "#,
+            )
+            .bind(&completed_step.dag_id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            let mut status_by_step_id: HashMap<String, String> =
+                HashMap::with_capacity(step_rows.len());
+            let mut completed_outputs_by_step_id: HashMap<String, Vec<String>> =
+                HashMap::with_capacity(step_rows.len());
+
+            for (step_id, status, outputs) in step_rows {
+                status_by_step_id.insert(step_id.clone(), status.clone());
+                if status == "COMPLETED" {
+                    let parsed = outputs
+                        .as_deref()
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+                        .unwrap_or_default();
+                    completed_outputs_by_step_id.insert(step_id, parsed);
+                }
+            }
+
+            let mut ready_steps = Vec::new();
+
+            for dependent in blocked_dependents {
+                let depends_on: Vec<String> =
+                    serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
+
+                let all_deps_complete = depends_on.iter().all(|dep| {
+                    status_by_step_id
+                        .get(dep)
+                        .map(|s| s == "COMPLETED")
+                        .unwrap_or(false)
+                });
+
+                if all_deps_complete {
+                    // All dependencies complete - mark as PENDING
+                    sqlx::query(
+                        "UPDATE dag_step_execution SET status = 'PENDING', updated_at = ? WHERE id = ?",
+                    )
+                    .bind(now)
+                    .bind(&dependent.id)
+                    .execute(&mut *tx)
+                    .await?;
+
+                    // Collect merged inputs from all dependencies (fan-in), respecting dependency order.
+                    let merged_inputs = merge_dependency_outputs(
+                        &depends_on,
+                        &completed_outputs_by_step_id,
+                    );
+
+                    // Update the step record with PENDING status
+                    let mut updated_step = dependent.clone();
+                    updated_step.status = DagStepStatus::Pending.as_str().to_string();
+
+                    ready_steps.push(ReadyStep {
+                        step: updated_step,
+                        merged_inputs,
+                    });
+                }
+            }
+
+            // Settle the last step and parent DAG together before releasing the transaction.
+            if dag.completed_steps + dag.failed_steps >= dag.total_steps {
+                // DAG is complete
+                let final_status = if dag.failed_steps > 0 {
+                    "FAILED"
+                } else {
+                    "COMPLETED"
+                };
+                dag = sqlx::query_as::<_, DagExecutionDbModel>(
+                    "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? RETURNING *",
+                )
+                .bind(final_status)
+                .bind(now)
+                .bind(now)
+                .bind(&completed_step.dag_id)
+                .fetch_one(&mut *tx)
+                .await?;
+            }
+
+            tx.commit().await?;
+            Ok(StepCompletion { step: completed_step, dag, ready_steps })
+        })
+        .await
     }
 }
 
@@ -622,186 +856,17 @@ impl DagRepository for SqlxDagRepository {
         step_id: &str,
         outputs: &[String],
     ) -> Result<StepCompletion> {
-        retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
-            let mut tx = begin_immediate(&self.write_pool).await?;
-            let now = crate::database::time::now_ms();
-            let outputs_json = serde_json::to_string(outputs)?;
+        self.complete_step_with_guard(step_id, outputs, CompletionGuard::AttachedJob)
+            .await
+    }
 
-            fn output_dedup_key(output: &str) -> String {
-                if cfg!(windows) {
-                    output.to_lowercase()
-                } else {
-                    output.to_string()
-                }
-            }
-
-            fn merge_dependency_outputs(
-                depends_on_step_ids: &[String],
-                completed_outputs_by_step_id: &HashMap<String, Vec<String>>,
-            ) -> Vec<String> {
-                let mut merged = Vec::new();
-                let mut seen = HashSet::<String>::new();
-
-                for dep in depends_on_step_ids {
-                    let Some(dep_outputs) = completed_outputs_by_step_id.get(dep) else {
-                        continue;
-                    };
-                    for out in dep_outputs {
-                        if seen.insert(output_dedup_key(out)) {
-                            merged.push(out.clone());
-                        }
-                    }
-                }
-
-                merged
-            }
-
-            // The conditional transition fences duplicate notifications and cancelled steps.
-            let completed = sqlx::query_as::<_, DagStepExecutionDbModel>(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'COMPLETED', outputs = ?, updated_at = ?
-                WHERE id = ?
-                  AND status IN ('PENDING', 'PROCESSING')
-                RETURNING *
-                "#,
-            )
-            .bind(&outputs_json)
-            .bind(now)
-            .bind(step_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            let Some(completed_step) = completed else {
-                // A duplicate still supplies terminal state for notification replay,
-                // without incrementing counters or scheduling dependents again.
-                let step = sqlx::query_as::<_, DagStepExecutionDbModel>("SELECT * FROM dag_step_execution WHERE id = ?")
-                    .bind(step_id).fetch_optional(&mut *tx).await?
-                    .ok_or_else(|| Error::not_found("DAG step execution", step_id))?;
-                let dag = sqlx::query_as::<_, DagExecutionDbModel>("SELECT * FROM dag_execution WHERE id = ?")
-                    .bind(&step.dag_id).fetch_one(&mut *tx).await?;
-                tx.commit().await?;
-                return Ok(StepCompletion { step, dag, ready_steps: Vec::new() });
-            };
-
-            // Keep the DAG snapshot from its counter update within this transaction.
-            let mut dag = sqlx::query_as::<_, DagExecutionDbModel>(
-                "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ? RETURNING *",
-            )
-            .bind(now)
-            .bind(&completed_step.dag_id)
-            .fetch_one(&mut *tx)
-            .await?;
-
-            // Dependency IDs are JSON arrays; inspect only blocked direct dependents.
-            let blocked_dependents = sqlx::query_as::<_, DagStepExecutionDbModel>(
-                r#"
-                SELECT dse.* FROM dag_step_execution dse
-                WHERE dse.dag_id = ?
-                  AND dse.status = 'BLOCKED'
-                  AND EXISTS (
-                      SELECT 1 FROM json_each(dse.depends_on_step_ids)
-                      WHERE json_each.value = ?
-                  )
-                "#,
-            )
-            .bind(&completed_step.dag_id)
-            .bind(&completed_step.step_id)
-                .fetch_all(&mut *tx)
-                .await?;
-
-            // Read statuses and outputs once for all fan-in readiness decisions,
-            // under the same write transaction as the completed-step transition.
-            let step_rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-                r#"
-                SELECT step_id, status, outputs
-                FROM dag_step_execution
-                WHERE dag_id = ?
-                "#,
-            )
-            .bind(&completed_step.dag_id)
-            .fetch_all(&mut *tx)
-            .await?;
-
-            let mut status_by_step_id: HashMap<String, String> =
-                HashMap::with_capacity(step_rows.len());
-            let mut completed_outputs_by_step_id: HashMap<String, Vec<String>> =
-                HashMap::with_capacity(step_rows.len());
-
-            for (step_id, status, outputs) in step_rows {
-                status_by_step_id.insert(step_id.clone(), status.clone());
-                if status == "COMPLETED" {
-                    let parsed = outputs
-                        .as_deref()
-                        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
-                        .unwrap_or_default();
-                    completed_outputs_by_step_id.insert(step_id, parsed);
-                }
-            }
-
-            let mut ready_steps = Vec::new();
-
-            for dependent in blocked_dependents {
-                let depends_on: Vec<String> =
-                    serde_json::from_str(&dependent.depends_on_step_ids).unwrap_or_default();
-
-                let all_deps_complete = depends_on.iter().all(|dep| {
-                    status_by_step_id
-                        .get(dep)
-                        .map(|s| s == "COMPLETED")
-                        .unwrap_or(false)
-                });
-
-                if all_deps_complete {
-                    // All dependencies complete - mark as PENDING
-                    sqlx::query(
-                        "UPDATE dag_step_execution SET status = 'PENDING', updated_at = ? WHERE id = ?",
-                    )
-                    .bind(now)
-                    .bind(&dependent.id)
-                    .execute(&mut *tx)
-                    .await?;
-
-                    // Collect merged inputs from all dependencies (fan-in), respecting dependency order.
-                    let merged_inputs = merge_dependency_outputs(
-                        &depends_on,
-                        &completed_outputs_by_step_id,
-                    );
-
-                    // Update the step record with PENDING status
-                    let mut updated_step = dependent.clone();
-                    updated_step.status = DagStepStatus::Pending.as_str().to_string();
-
-                    ready_steps.push(ReadyStep {
-                        step: updated_step,
-                        merged_inputs,
-                    });
-                }
-            }
-
-            // Settle the last step and parent DAG together before releasing the transaction.
-            if dag.completed_steps + dag.failed_steps >= dag.total_steps {
-                // DAG is complete
-                let final_status = if dag.failed_steps > 0 {
-                    "FAILED"
-                } else {
-                    "COMPLETED"
-                };
-                dag = sqlx::query_as::<_, DagExecutionDbModel>(
-                    "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? RETURNING *",
-                )
-                .bind(final_status)
-                .bind(now)
-                .bind(now)
-                .bind(&completed_step.dag_id)
-                .fetch_one(&mut *tx)
-                .await?;
-            }
-
-            tx.commit().await?;
-            Ok(StepCompletion { step: completed_step, dag, ready_steps })
-        })
-        .await
+    async fn complete_ready_step_without_job(
+        &self,
+        step_id: &str,
+        outputs: &[String],
+    ) -> Result<StepCompletion> {
+        self.complete_step_with_guard(step_id, outputs, CompletionGuard::NoJob)
+            .await
     }
 
     async fn fail_step_and_cancel_dag(
@@ -1266,6 +1331,24 @@ impl DagRepository for SqlxDagRepository {
         Ok(steps)
     }
 
+    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>> {
+        let steps = sqlx::query_as::<_, DagStepExecutionDbModel>(
+            r#"
+            SELECT step.*
+            FROM dag_step_execution AS step
+            JOIN dag_execution AS dag ON dag.id = step.dag_id
+            JOIN job ON job.id = step.job_id
+            WHERE step.status = 'PROCESSING'
+              AND job.status IN ('FAILED', 'CANCELLED')
+              AND dag.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+            ORDER BY step.created_at, step.id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(steps)
+    }
+
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
         let dag_ids = sqlx::query_scalar(
             r#"
@@ -1375,6 +1458,64 @@ mod tests {
         plain.status = DagExecutionStatus::Processing.as_str().to_string();
         repo.create_dag(&plain).await.unwrap();
         assert_eq!(repo.get_dag(&plain.id).await.unwrap().input_manifest, None);
+    }
+
+    /// The no-job completion transitions only a ready step that has no job in a
+    /// non-terminal DAG; anything else is reported like a duplicate completion.
+    #[tokio::test]
+    async fn complete_ready_step_without_job_guards_its_transition() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "no-op",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("delete"),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+        let mut dag = DagExecutionDbModel::new(&dag_def, None, None);
+        dag.status = DagExecutionStatus::Processing.as_str().to_string();
+        repo.create_dag(&dag).await.unwrap();
+        let step_a = DagStepExecutionDbModel::new(&dag.id, "A", &[]);
+        let step_b = DagStepExecutionDbModel::new(&dag.id, "B", &["A".to_string()]);
+        repo.create_steps(&[step_a.clone(), step_b.clone()])
+            .await
+            .unwrap();
+        let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+        job.dag_step_execution_id = Some(step_a.id.clone());
+        repo.create_job_for_step(&step_a.id, &job).await.unwrap();
+
+        // A step with a job keeps its status.
+        let untouched = repo
+            .complete_ready_step_without_job(&step_a.id, &[])
+            .await
+            .unwrap();
+        assert_eq!(untouched.step.status, "PROCESSING");
+        assert!(untouched.ready_steps.is_empty());
+        assert_eq!(untouched.dag.completed_steps, 0);
+
+        repo.complete_step_and_check_dependents(&step_a.id, &[])
+            .await
+            .unwrap();
+        let completed = repo
+            .complete_ready_step_without_job(&step_b.id, &[])
+            .await
+            .unwrap();
+        assert_eq!(completed.step.status, "COMPLETED");
+        assert_eq!(completed.step.get_outputs(), Vec::<String>::new());
+        assert_eq!(completed.dag.completed_steps, 2);
+        assert_eq!(completed.dag.status, "COMPLETED");
+
+        let replay = repo
+            .complete_ready_step_without_job(&step_b.id, &["late.mp4".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(replay.step.get_outputs(), Vec::<String>::new());
+        assert_eq!(replay.dag.completed_steps, 2);
     }
 
     #[tokio::test]

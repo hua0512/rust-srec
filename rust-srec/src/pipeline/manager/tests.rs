@@ -924,6 +924,18 @@ impl DagRepository for TestDagRepositoryForRetry {
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
+
+    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>> {
+        Ok(Vec::new())
+    }
+
+    async fn complete_ready_step_without_job(
+        &self,
+        _step_id: &str,
+        _outputs: &[String],
+    ) -> Result<crate::database::repositories::StepCompletion> {
+        unimplemented!("not needed for these tests")
+    }
 }
 
 #[async_trait]
@@ -1182,6 +1194,18 @@ impl DagRepository for TestDagRepository {
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>> {
         Ok(Vec::new())
     }
+
+    async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>> {
+        Ok(Vec::new())
+    }
+
+    async fn complete_ready_step_without_job(
+        &self,
+        _step_id: &str,
+        _outputs: &[String],
+    ) -> Result<crate::database::repositories::StepCompletion> {
+        unimplemented!("not needed for these tests")
+    }
 }
 
 #[test]
@@ -1395,6 +1419,194 @@ async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
         serde_json::from_str::<Vec<String>>(root[0].input.as_deref().unwrap()).unwrap(),
         vec!["/rec/0.mp4".to_string()],
         "the retried output, not the failed run's fallback, reaches session-complete"
+    );
+}
+
+async fn sqlx_manager() -> (
+    PipelineManager,
+    Arc<crate::database::repositories::SqlxJobRepository>,
+    Arc<crate::database::repositories::SqlxDagRepository>,
+    sqlx::SqlitePool,
+) {
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
+            .with_dag_repository(dags.clone());
+    (manager, jobs, dags, pool)
+}
+
+fn remux_chain(name: &str, ids: &[&str]) -> DagPipelineDefinition {
+    DagPipelineDefinition::new(
+        name,
+        ids.iter()
+            .enumerate()
+            .map(|(index, id)| {
+                let step = PipelineStep::Inline {
+                    processor: "remux".to_string(),
+                    config: serde_json::json!({}),
+                };
+                if index == 0 {
+                    crate::database::models::DagStep::new(*id, step)
+                } else {
+                    crate::database::models::DagStep::with_dependencies(
+                        *id,
+                        step,
+                        vec![ids[index - 1].to_string()],
+                    )
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Retry checks every job it would restart before changing a row: a job that
+/// is gone is reported while the DAG is still terminal and retryable.
+#[tokio::test]
+async fn retry_dag_rejects_a_missing_job_before_touching_rows() {
+    let (manager, jobs, dags, _pool) = sqlx_manager().await;
+    let created = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("missing job", &["A"]),
+        )
+        .await
+        .unwrap();
+    let scheduler = manager.dag_scheduler().unwrap().clone();
+    let step = dags
+        .get_steps_by_dag(&created.dag_id)
+        .await
+        .unwrap()
+        .remove(0);
+    jobs.mark_job_failed(&created.root_job_ids[0], "boom")
+        .await
+        .unwrap();
+    scheduler.on_job_failed(&step.id, "boom").await.unwrap();
+    jobs.delete_job(&created.root_job_ids[0]).await.unwrap();
+
+    let error = manager.retry_dag(&created.dag_id).await.unwrap_err();
+    assert!(matches!(error, Error::Validation(_)));
+    assert!(error.to_string().contains("no longer exists"), "{error}");
+    let dag = dags.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(dag.status, "FAILED");
+    assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
+    assert_eq!(
+        dags.get_step(&step.id).await.unwrap().status,
+        "FAILED",
+        "rows are untouched by a rejected retry"
+    );
+}
+
+/// When restarting breaks down after the rows were reset, the DAG is failed
+/// again with the retry error instead of sitting in PROCESSING forever.
+#[tokio::test]
+async fn retry_dag_refails_the_dag_when_it_cannot_be_advanced() {
+    let (manager, jobs, dags, pool) = sqlx_manager().await;
+    let created = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("broken retry", &["A", "B"]),
+        )
+        .await
+        .unwrap();
+    let scheduler = manager.dag_scheduler().unwrap().clone();
+    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
+    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
+    jobs.mark_job_failed(&created.root_job_ids[0], "boom")
+        .await
+        .unwrap();
+    scheduler.on_job_failed(&step_a.id, "boom").await.unwrap();
+    // Fan-out after the reset needs the definition; make it unreadable.
+    sqlx::query("UPDATE dag_execution SET dag_definition = '{' WHERE id = ?")
+        .bind(&created.dag_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = manager.retry_dag(&created.dag_id).await.unwrap_err();
+    assert!(error.to_string().contains("DAG definition"), "{error}");
+    let dag = dags.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(dag.status, "FAILED");
+    assert!(
+        dag.error.as_deref().unwrap().starts_with("Retry failed:"),
+        "{:?}",
+        dag.error
+    );
+    assert!(
+        dags.get_steps_by_dag(&created.dag_id)
+            .await
+            .unwrap()
+            .iter()
+            .all(|step| step.status == "CANCELLED"),
+        "no step is left PROCESSING"
+    );
+}
+
+/// A DAG whose only cancelled step never received a job (its creation failed)
+/// is retryable: the reset unblocks the step and materializes it.
+#[tokio::test]
+async fn retry_dag_materializes_a_cancelled_step_without_a_job() {
+    let (manager, jobs, dags, pool) = sqlx_manager().await;
+    let created = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("jobless cancel", &["A", "B"]),
+        )
+        .await
+        .unwrap();
+    let scheduler = manager.dag_scheduler().unwrap().clone();
+    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
+    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
+    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
+    let update = scheduler
+        .on_job_completed(&step_a.id, &["/a.mp4".to_string()], None, None, None, None)
+        .await
+        .unwrap();
+    // The shape a failed downstream job creation leaves behind.
+    jobs.delete_job(&update.new_job_ids[0]).await.unwrap();
+    sqlx::query("UPDATE dag_step_execution SET status = 'CANCELLED', job_id = NULL WHERE id = ?")
+        .bind(&step_b.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE dag_execution SET status = 'FAILED', error = 'creation failed' WHERE id = ?",
+    )
+    .bind(&created.dag_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let result = manager.retry_dag(&created.dag_id).await.unwrap();
+    assert_eq!(result.retried_steps, 1);
+    assert_eq!(result.job_ids.len(), 1);
+    let dag = dags.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(dag.status, "PROCESSING");
+    let step_b = dags.get_step(&step_b.id).await.unwrap();
+    assert_eq!(step_b.status, "PROCESSING");
+    assert_eq!(step_b.job_id.as_deref(), Some(result.job_ids[0].as_str()));
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(
+            jobs.get_job(&result.job_ids[0])
+                .await
+                .unwrap()
+                .input
+                .as_deref()
+                .unwrap()
+        )
+        .unwrap(),
+        vec!["/a.mp4".to_string()]
     );
 }
 
