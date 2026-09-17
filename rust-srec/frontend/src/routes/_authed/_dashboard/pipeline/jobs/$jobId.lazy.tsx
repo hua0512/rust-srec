@@ -12,6 +12,7 @@ import {
   getPipelineJobProgress,
   getPipelineJobUploads,
   retryPipelineJob,
+  retryDagSteps,
   cancelActivePipelineJob,
   deletePipelineJob,
 } from '@/server/functions/pipeline';
@@ -228,6 +229,22 @@ function JobDetailsPage() {
     onError: () => toast.error(i18n._(msg`Failed to retry job`)),
   });
 
+  // A workflow step cannot be retried on its own: the backend restarts it together
+  // with the branches that were cancelled alongside it.
+  const retryWorkflowMutation = useMutation({
+    mutationFn: (pipelineId: string) => retryDagSteps({ data: pipelineId }),
+    onSuccess: (result) => {
+      toast.success(i18n._(msg`Workflow retry initiated`));
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'executions', result.dag_id],
+      });
+    },
+    onError: () => toast.error(i18n._(msg`Failed to retry workflow`)),
+  });
+
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelActivePipelineJob({ data: id }),
     onSuccess: () => {
@@ -295,6 +312,9 @@ function JobDetailsPage() {
 
   const statusConfig = getStatusConfig(job.status);
   const StatusIcon = statusConfig.icon;
+  // Workflow steps are retried through their workflow, so the job's own retry
+  // endpoint is only offered for standalone jobs.
+  const workflowRetryId = job.belongs_to_workflow ? job.pipeline_id : null;
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
@@ -384,21 +404,41 @@ function JobDetailsPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-3"
             >
-              {['FAILED', 'CANCELLED'].includes(job.status) && (
-                <Button
-                  className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all font-medium"
-                  onClick={() => retryMutation.mutate(job.id)}
-                  disabled={retryMutation.isPending}
-                >
-                  <RotateCcw
-                    className={cn(
-                      'mr-2 h-4 w-4',
-                      retryMutation.isPending && 'animate-spin',
+              {['FAILED', 'CANCELLED'].includes(job.status) &&
+                (workflowRetryId ? (
+                  <Button
+                    className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all font-medium"
+                    onClick={() =>
+                      retryWorkflowMutation.mutate(workflowRetryId)
+                    }
+                    disabled={retryWorkflowMutation.isPending}
+                    title={i18n._(
+                      msg`This job is a workflow step, so it restarts together with the rest of the workflow.`,
                     )}
-                  />
-                  <Trans>Retry Job</Trans>
-                </Button>
-              )}
+                  >
+                    <RotateCcw
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        retryWorkflowMutation.isPending && 'animate-spin',
+                      )}
+                    />
+                    <Trans>Retry Workflow</Trans>
+                  </Button>
+                ) : (
+                  <Button
+                    className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all font-medium"
+                    onClick={() => retryMutation.mutate(job.id)}
+                    disabled={retryMutation.isPending}
+                  >
+                    <RotateCcw
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        retryMutation.isPending && 'animate-spin',
+                      )}
+                    />
+                    <Trans>Retry Job</Trans>
+                  </Button>
+                ))}
               {['PENDING', 'PROCESSING'].includes(job.status) && (
                 <Button
                   variant="destructive"

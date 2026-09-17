@@ -79,6 +79,8 @@ export const JobSchema = z.object({
   streamer_id: z.string(),
   streamer_name: z.string().nullable().optional(),
   pipeline_id: z.string().nullable().optional(),
+  // Older backends omit this; treat a missing value as a standalone job.
+  belongs_to_workflow: z.boolean().default(false),
   status: JobStatusSchema,
   processor_type: z.string(),
   input_path: z.array(z.string()),

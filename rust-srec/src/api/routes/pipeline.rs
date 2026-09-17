@@ -947,6 +947,35 @@ mod tests {
         assert_eq!(response.0.status, ApiJobStatus::Cancelled);
     }
 
+    // The job detail UI offers "retry workflow" instead of "retry job" based on this
+    // flag, because PipelineManager::retry_job refuses a job that is a workflow step.
+    #[tokio::test]
+    async fn test_get_job_reports_workflow_membership() {
+        let (state, standalone_id) = enqueue_job_with_status(JobStatus::Failed).await;
+        let manager = state.pipeline_manager.clone();
+
+        let mut step_job = Job::new(
+            "rclone",
+            vec!["input.mp4".to_string()],
+            Vec::new(),
+            "streamer-1",
+            "session-1",
+        );
+        step_job.status = JobStatus::Failed;
+        step_job.pipeline_id = Some("dag-1".to_string());
+        step_job.dag_step_execution_id = Some("step-1".to_string());
+        let step_job_id = manager.enqueue(step_job).await.unwrap();
+
+        let standalone = get_job(State(state.clone()), Path(standalone_id))
+            .await
+            .unwrap();
+        assert!(!standalone.0.belongs_to_workflow);
+
+        let step = get_job(State(state), Path(step_job_id)).await.unwrap();
+        assert!(step.0.belongs_to_workflow);
+        assert_eq!(step.0.pipeline_id.as_deref(), Some("dag-1"));
+    }
+
     #[tokio::test]
     async fn test_list_jobs_filters_cancelled_status() {
         let state = build_test_state();

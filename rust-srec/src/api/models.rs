@@ -614,6 +614,10 @@ pub struct JobResponse {
     /// Streamer display name
     pub streamer_name: Option<String>,
     pub pipeline_id: Option<String>,
+    /// True when this job is one step of a workflow. Such a job cannot be retried on
+    /// its own; retrying the workflow (`pipeline_id`) restarts it together with the
+    /// branches that were cancelled alongside it.
+    pub belongs_to_workflow: bool,
     pub status: JobStatus,
     pub processor_type: String,
     pub input_path: Vec<String>,
