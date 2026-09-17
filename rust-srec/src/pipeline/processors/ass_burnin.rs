@@ -40,9 +40,10 @@ fn default_preset() -> String {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AssMatchStrategy {
-    /// Session pairing: use the danmu recorded for the video's own segment and
-    /// expect its `.ass` next to it. Falls back to stem matching when the job
-    /// carries no pairing. The wire value stays `manifest` for saved presets.
+    /// Session pairing: the subtitle recorded for the video's own segment when
+    /// it is among the job's inputs, then any input with the video's stem, then
+    /// the recorded subtitle on disk. Without a pairing only the stem index
+    /// applies. The wire value stays `manifest` for saved presets.
     #[default]
     Manifest,
     /// Match by file stem: `video_stem.ass` (or `video_stem_danmaku.ass`).

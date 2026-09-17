@@ -312,6 +312,7 @@ impl Processor for DanmakuFactoryProcessor {
         let mut batch = OutputBatch::new(&input.inputs);
         let mut produced = Vec::new();
         let mut converted_xml = Vec::new();
+        let mut skipped_inputs = Vec::new();
 
         for (xml_path, ass_path) in xml_inputs.iter().zip(ass_outputs.iter()) {
             let xml = PathBuf::from(xml_path);
@@ -375,6 +376,7 @@ impl Processor for DanmakuFactoryProcessor {
                     msg,
                 ));
                 batch.discard(&temp_path);
+                skipped_inputs.push((xml_path.clone(), "produced no output".to_string()));
                 continue;
             }
 
@@ -444,7 +446,7 @@ impl Processor for DanmakuFactoryProcessor {
             output_size_bytes: None,
             failed_inputs: vec![],
             succeeded_inputs: converted_xml,
-            skipped_inputs: vec![],
+            skipped_inputs,
             uploads: vec![],
             logs,
         })
@@ -520,8 +522,9 @@ mod tests {
         }
     }
 
-    /// A stand-in DanmakuFactory that writes its `-o` argument, failing on the
-    /// second XML so the first staged subtitle must be discarded with the batch.
+    /// A stand-in DanmakuFactory that writes its `-o` argument; an input named
+    /// `fail*` writes and then exits non-zero, one named `nothing*` exits zero
+    /// without writing anything.
     fn fake_danmaku_factory(dir: &Path) -> String {
         #[cfg(windows)]
         let (name, script) = (
@@ -531,6 +534,7 @@ mod tests {
                 "if \"%~1\"==\"-o\" set \"output=%~2\"\r\n",
                 "if \"%~1\"==\"-i\" set \"input=%~2\"\r\n",
                 "shift\r\ngoto args\r\n:run\r\n",
+                "if not \"%input:nothing=%\"==\"%input%\" exit /b 0\r\n",
                 "echo [Script Info]> \"%output%\"\r\n",
                 "if not \"%input:fail=%\"==\"%input%\" exit /b 3\r\nexit /b 0\r\n",
             ),
@@ -543,6 +547,7 @@ mod tests {
                 "    -o) output=\"$2\"; shift;;\n",
                 "    -i) input=\"$2\"; shift;;\n",
                 "  esac\n  shift\ndone\n",
+                "case \"$input\" in *nothing*) exit 0;; esac\n",
                 "printf '[Script Info]' > \"$output\"\n",
                 "case \"$input\" in *fail*) exit 3;; esac\nexit 0\n",
             ),
@@ -604,6 +609,54 @@ mod tests {
             .filter(|name| name.contains(".tmp-"))
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    /// With output verification off, an XML whose conversion wrote nothing is
+    /// reported as skipped and passed through; only converted XMLs are deleted.
+    #[tokio::test]
+    async fn source_xml_is_deleted_only_when_its_subtitle_was_published() {
+        let temp = TempDir::new().unwrap();
+        let binary = fake_danmaku_factory(temp.path());
+        let good = temp.path().join("good.xml");
+        let nothing = temp.path().join("nothing.xml");
+        tokio::fs::write(&good, "<i></i>").await.unwrap();
+        tokio::fs::write(&nothing, "<i></i>").await.unwrap();
+        let input = ProcessorInput {
+            inputs: strings(&[&good.to_string_lossy(), &nothing.to_string_lossy()]),
+            config: Some(
+                serde_json::json!({
+                    "binary_path": binary,
+                    "verify_output_exists": false,
+                    "delete_source_xml_on_success": true,
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = DanmakuFactoryProcessor::new()
+            .process(&input, &ProcessorContext::noop("test"))
+            .await
+            .unwrap();
+        let ass = good.with_extension("ass");
+        assert!(!good.exists(), "a converted XML is deleted");
+        assert!(nothing.exists(), "an XML that produced nothing is kept");
+        assert!(!nothing.with_extension("ass").exists());
+        assert_eq!(output.succeeded_inputs, vec![good.to_string_lossy()]);
+        assert_eq!(
+            output.skipped_inputs,
+            vec![(
+                nothing.to_string_lossy().into_owned(),
+                "produced no output".to_string()
+            )]
+        );
+        assert_eq!(
+            output.outputs,
+            vec![
+                nothing.to_string_lossy().into_owned(),
+                ass.to_string_lossy().into_owned()
+            ]
+        );
     }
 
     #[tokio::test]
