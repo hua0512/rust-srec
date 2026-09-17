@@ -358,13 +358,19 @@ output override; their batch jobs require one override per input or none. ASS an
 DanmakuFactory instead map strictly against selected video/XML inputs. Naming and
 empty-string policies remain processor-specific.
 
-Audio, metadata and thumbnail use staged publication through the shared driver.
-ASS retains its artifact-matching loop and the same staged publication. Remux's
-adapter publishes each successful item immediately: a later explicit error removes
-earlier outputs best-effort, while cancellation retains already-published outputs.
-Source deletion remains after successful publication, and skipped sources remain.
+Audio, metadata, thumbnail and remux use staged publication through the shared
+driver: every output of a job is written to a temporary file and the whole batch
+is published together, so a failure or cancellation part-way through a batch
+publishes nothing, and one item's output can never overwrite another item's input.
+ASS retains its artifact-matching loop and the same staged publication. Source
+deletion remains after successful publication, and skipped sources remain.
 Outputs, succeeded/skipped inputs and logs retain their input order and existing
 metadata shapes.
+
+A processor that reports some of its inputs as failed fails the job, and a workflow
+step with it, even when the remaining inputs were processed. The error names each
+failed input. What was published stays on disk and in the job's produced-file
+history, so a retry resumes past it.
 
 Path mechanisms share filesystem resolution while preserving separate policies:
 ASS command spelling remains lexical; remux resolves existing relative command

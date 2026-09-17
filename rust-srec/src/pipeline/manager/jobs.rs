@@ -171,6 +171,11 @@ where
             ));
         }
 
+        // The DAG will reach a terminal state again; the entry recorded for its
+        // earlier completion must not make `handle_dag_completion` discard the
+        // retried run's outcome as a duplicate.
+        self.handled_dag_completions.remove(dag_id);
+
         // Get all steps
         let steps = dag_scheduler.get_dag_steps(dag_id).await?;
 

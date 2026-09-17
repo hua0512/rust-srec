@@ -1103,6 +1103,35 @@ impl JobRunner {
             );
         }
 
+        // A processor that could not handle every input has not succeeded, even
+        // when it published the rest: a downstream `delete` or `move` would act on
+        // an incomplete set. The outputs it did publish stay on disk and in the
+        // produced-item history so a retry can resume past them.
+        if !output.failed_inputs.is_empty() {
+            let details = output
+                .failed_inputs
+                .iter()
+                .map(|(path, reason)| format!("{path}: {reason}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let error = format!(
+                "{} of {} inputs failed: {details}",
+                output.failed_inputs.len(),
+                input.inputs.len()
+            );
+            if !output.logs.is_empty()
+                && let Err(e) = self
+                    .job_queue
+                    .record_result_logs(&facts.id, &output.logs)
+                    .await
+            {
+                warn!(job_id = %facts.id, error = %e, "Failed to record logs of a partially failed job");
+            }
+            self.finish_failed(facts, &error, DagFailureKind::ProcessorError)
+                .await;
+            return;
+        }
+
         let completed_outputs = output.outputs.clone();
         let completed_duration = output.duration_secs;
         let persisted = self
@@ -1757,6 +1786,164 @@ mod tests {
         fn name(&self) -> &'static str {
             "noop"
         }
+    }
+
+    /// Publishes one output, reports the other input as failed, and returns `Ok`.
+    struct PartialFailureProcessor;
+
+    #[async_trait]
+    impl Processor for PartialFailureProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["partial"]
+        }
+
+        fn name(&self) -> &'static str {
+            "partial"
+        }
+
+        fn supports_batch_input(&self) -> bool {
+            true
+        }
+
+        async fn process(
+            &self,
+            input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            let published = format!("{}.out", input.inputs[0]);
+            Ok(ProcessorOutput {
+                outputs: vec![published.clone()],
+                duration_secs: 0.5,
+                items_produced: vec![published],
+                succeeded_inputs: vec![input.inputs[0].clone()],
+                failed_inputs: vec![(input.inputs[1].clone(), "disk full".to_string())],
+                logs: vec![JobLogEntry::warn("second input could not be written")],
+                ..Default::default()
+            })
+        }
+    }
+
+    /// `ProcessorOutput::failed_inputs` is a failure contract, not metadata: the
+    /// pool fails the job naming the inputs, the DAG fails fast, and what the
+    /// processor did publish stays recorded for a retry.
+    #[tokio::test]
+    async fn partial_failure_fails_the_job_and_its_dag_but_keeps_produced_items() {
+        use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+        use crate::database::repositories::{
+            DagRepository, JobRepository, SqlxDagRepository, SqlxJobRepository,
+        };
+        use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
+        use crate::pipeline::job_queue::JobExecutionInfo;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let dag_repo = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
+        let scheduler = Arc::new(DagScheduler::new(
+            queue.clone(),
+            dag_repo.clone(),
+            job_repo.clone(),
+        ));
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "partial failure",
+                    vec![
+                        DagStep::new("A", PipelineStep::inline("partial", serde_json::json!({}))),
+                        DagStep::with_dependencies(
+                            "B",
+                            PipelineStep::inline("partial", serde_json::json!({})),
+                            vec!["A".to_string()],
+                        ),
+                    ],
+                ),
+                &["/rec/a.mp4".to_string(), "/rec/b.mp4".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (dag_tx, mut dag_rx) = tokio::sync::mpsc::channel(4);
+        let worker_pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+        worker_pool.start_with_dag_scheduler(
+            queue.clone(),
+            vec![Arc::new(PartialFailureProcessor)],
+            Some(scheduler),
+            Some(dag_tx),
+            Some(event_tx),
+        );
+
+        let failure = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let PipelineEvent::JobFailed { job_id, error, .. } =
+                    event_rx.recv().await.unwrap()
+                {
+                    break (job_id, error);
+                }
+            }
+        })
+        .await
+        .expect("the worker reports the partial failure as a job failure");
+        assert_eq!(failure.0, created.root_job_ids[0]);
+        assert_eq!(failure.1, "1 of 2 inputs failed: /rec/b.mp4: disk full");
+        let completion = tokio::time::timeout(Duration::from_secs(5), dag_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!completion.succeeded);
+        worker_pool.stop().await;
+
+        let job = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+        assert_eq!(job.status, JobStatus::Failed.as_str());
+        assert_eq!(
+            job.error.as_deref(),
+            Some("1 of 2 inputs failed: /rec/b.mp4: disk full")
+        );
+        let info: JobExecutionInfo =
+            serde_json::from_str(job.execution_info.as_deref().unwrap()).unwrap();
+        assert_eq!(info.items_produced, vec!["/rec/a.mp4.out".to_string()]);
+        assert!(
+            info.logs
+                .iter()
+                .any(|entry| entry.message == "second input could not be written")
+        );
+        let logs = job_repo.get_execution_logs(&job.id).await.unwrap();
+        assert_eq!(
+            logs.iter()
+                .filter(|row| row.message.as_deref() == Some("second input could not be written"))
+                .count(),
+            1
+        );
+
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.status, "FAILED");
+        assert!(
+            dag.error
+                .as_deref()
+                .unwrap()
+                .contains("1 of 2 inputs failed")
+        );
+        let steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
+        assert_eq!(
+            steps
+                .iter()
+                .find(|step| step.step_id == "B")
+                .unwrap()
+                .status,
+            "CANCELLED"
+        );
+        pool.close().await;
     }
 
     struct FailingProcessor;

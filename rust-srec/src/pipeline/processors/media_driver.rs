@@ -1,7 +1,6 @@
 //! Sequential media execution with explicit publication ownership.
 
 use async_trait::async_trait;
-use tracing::warn;
 
 use super::ProcessorOutput;
 use super::outputs::{OutputBatch, accumulate_media_output};
@@ -24,24 +23,6 @@ impl Publication for StagedPublication {
     async fn rollback(&mut self, _produced: &[String]) {
         // OutputBatch's guards clean staged files on drop. Published outputs
         // exist only inside its cancellation-independent commit/rollback task.
-    }
-}
-
-pub(super) struct IncrementalPublication;
-
-#[async_trait]
-impl Publication for IncrementalPublication {
-    async fn commit(self) -> Result<()> {
-        Ok(())
-    }
-    async fn rollback(&mut self, produced: &[String]) {
-        // Remux publishes each item immediately. Preserve its explicit-error
-        // cleanup; dropping the driver does not roll back published outputs.
-        for path in produced {
-            if let Err(error) = tokio::fs::remove_file(path).await {
-                warn!(path = %path, error = %error, "Failed to remove remux output after batch failure");
-            }
-        }
     }
 }
 
