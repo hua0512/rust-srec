@@ -1064,6 +1064,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
         streamer_id: job.streamer_id,
         streamer_name,
         pipeline_id: job.pipeline_id,
+        belongs_to_workflow: job.dag_step_execution_id.is_some(),
         status: job_status_to_api_status(job.status),
         processor_type: job.job_type,
         input_path: job.inputs,
