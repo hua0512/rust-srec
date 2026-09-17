@@ -1640,6 +1640,7 @@ mod tests {
             session_start: None,
             config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            manifest: None,
         };
 
         let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
@@ -1664,6 +1665,7 @@ mod tests {
             session_start: None,
             config: Some(r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/"}"#.to_string()),
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+            manifest: None,
         };
 
         let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
@@ -1690,6 +1692,7 @@ mod tests {
                     .to_string(),
             ),
             created_at,
+            manifest: None,
         };
 
         let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
@@ -1715,6 +1718,7 @@ mod tests {
                     .to_string(),
             ),
             created_at,
+            manifest: None,
         };
 
         let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
@@ -1739,6 +1743,7 @@ mod tests {
             session_start: Some(session_start),
             config: None,
             created_at: first_created_at,
+            manifest: None,
         };
         let session_config: RcloneConfig = serde_json::from_str(
             r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::pipeline::manifest::ManifestScope;
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
@@ -377,15 +378,12 @@ where
             return complete;
         }
 
-        let (input_paths, manifest_complete) = super::inputs::prepare_pipeline_inputs(
+        let (input_paths, manifest) = super::inputs::build_pipeline_inputs(
             &outputs.session_id,
             &outputs.streamer_id,
-            None,
-            outputs.get_sorted_video_outputs(),
-            outputs.get_sorted_danmu_outputs(),
-        )
-        .await;
-        complete &= manifest_complete;
+            ManifestScope::Session,
+            outputs.manifest_segments(),
+        );
 
         info!(
             session_id = %outputs.session_id,
@@ -404,6 +402,7 @@ where
                 Some(DagExecutionMetadata {
                     segment_index: None,
                     segment_source: Some("session_complete".to_string()),
+                    manifest: Some(manifest),
                 }),
             )
             .await
@@ -467,15 +466,14 @@ where
             return (Vec::new(), true);
         }
 
-        let (input_paths, manifest_complete) = super::inputs::prepare_pipeline_inputs(
+        let (input_paths, manifest) = super::inputs::build_pipeline_inputs(
             &outputs.session_id,
             &outputs.streamer_id,
-            Some(outputs.segment_index),
-            outputs.video_outputs,
-            outputs.danmu_outputs,
-        )
-        .await;
-        complete &= manifest_complete;
+            ManifestScope::Segment {
+                index: outputs.segment_index,
+            },
+            vec![outputs.manifest_segment()],
+        );
 
         info!(
             session_id = %outputs.session_id,
@@ -535,6 +533,7 @@ where
                 Some(DagExecutionMetadata {
                     segment_index: Some(outputs.segment_index),
                     segment_source: Some("paired".to_string()),
+                    manifest: Some(manifest),
                 }),
             )
             .await
@@ -837,6 +836,7 @@ where
                 Some(DagExecutionMetadata {
                     segment_index: Some(segment_index),
                     segment_source: Some(source.as_segment_source().to_string()),
+                    manifest: None,
                 }),
             )
             .await
@@ -863,6 +863,8 @@ where
         (Vec::new(), start_commands.is_empty())
     }
 
+    /// A manifest in `metadata` is stored on the DAG row and reaches every step
+    /// job; only the paired-segment and session-complete runners supply one.
     pub(super) async fn create_dag_pipeline_internal(
         &self,
         session_id: &str,
@@ -905,6 +907,7 @@ where
                     session_title: session_title.clone(),
                     platform: platform.clone(),
                     session_start,
+                    manifest: None,
                 },
                 metadata,
                 before_root_jobs,

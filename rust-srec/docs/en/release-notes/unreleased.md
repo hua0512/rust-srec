@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Subtitles follow their own segment, and no more `_inputs.json` files**
+
+  Paired-segment and session-complete pipelines no longer create a `session_…_inputs.json` or `segment_…_inputs.json` file next to the recordings, so nothing extra gets uploaded, archived, moved or deleted with them. Files left by earlier versions are unused and safe to remove. Which danmaku file belongs to which video is now remembered per segment with the pipeline itself: a segment that recorded no danmaku leaves its own video without subtitles instead of shifting every later video onto the wrong subtitles, and subtitle conversion keeps working after an earlier step moved the files. Converted subtitles are written to a temporary file first, so a failed or timed-out conversion no longer leaves a truncated `.ass` in place. The first input of these pipelines is now the first recording, and scripts in an execute step can read the pairing through `{manifest_json}`. See [pipeline error handling](../concepts/pipeline.md#error-handling).
+
 - **Execute editors support programs with literal arguments**
 
   Preset and inline workflow editors now offer shell-command or program/arguments mode. Each argument has its own field and preserves empty values, spaces, quotes and line breaks. Existing command configurations remain editable; changing modes clears the previous mode's fields while retaining output-scanning settings. Server-specific shell restrictions are explained beside the command field. See [Execute](../concepts/pipeline.md#execute-execute).

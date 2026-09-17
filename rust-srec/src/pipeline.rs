@@ -13,6 +13,7 @@ mod coordination;
 mod dag_scheduler;
 mod job_queue;
 mod manager;
+mod manifest;
 mod processors;
 mod progress;
 mod throttle;
@@ -34,6 +35,7 @@ pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
     SessionDrain, SessionPipelineOutstanding, StreamerDrain,
 };
+pub use manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
 pub use processors::{
     AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy, BaiduPcsConfig, BaiduPcsPolicy,
     BaiduPcsProcessor, CopyMoveConfig, CopyMoveOperation, CopyMoveProcessor, DanmakuFactoryConfig,

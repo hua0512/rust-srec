@@ -77,6 +77,11 @@ fn fake_ffmpeg(dir: &Path, behavior: Behavior) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// A stand-in ffmpeg that writes a nonempty file to its last argument and exits 0.
+pub(super) fn fake_success_ffmpeg(dir: &Path) -> String {
+    fake_ffmpeg(dir, Behavior::Success)
+}
+
 struct Fixture {
     dir: tempfile::TempDir,
     processor: Box<dyn Processor>,

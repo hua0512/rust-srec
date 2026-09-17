@@ -9,8 +9,8 @@ const INSERT_DAG: &str = r#"
     INSERT INTO dag_execution (
         id, dag_definition, status, streamer_id, session_id,
         segment_index, segment_source, created_at, updated_at, completed_at, error,
-        total_steps, completed_steps, failed_steps
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_steps, completed_steps, failed_steps, input_manifest
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#;
 
 const INSERT: &str = r#"
@@ -44,6 +44,7 @@ pub(super) async fn insert_dag(
         .bind(dag.total_steps)
         .bind(dag.completed_steps)
         .bind(dag.failed_steps)
+        .bind(&dag.input_manifest)
         .execute(connection)
         .await?;
     Ok(())

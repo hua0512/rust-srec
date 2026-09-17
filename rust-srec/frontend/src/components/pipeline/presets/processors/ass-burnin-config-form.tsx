@@ -187,7 +187,7 @@ export function AssBurninConfigForm({
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="manifest">
-                        <Trans>Manifest (Pair by Order)</Trans>
+                        <Trans>Session pairing (same segment)</Trans>
                       </SelectItem>
                       <SelectItem value="stem">
                         <Trans>Stem (Filename Match)</Trans>

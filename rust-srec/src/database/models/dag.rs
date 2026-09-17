@@ -46,6 +46,9 @@ pub struct DagExecutionDbModel {
     pub completed_steps: i32,
     /// Number of steps that have failed.
     pub failed_steps: i32,
+    /// JSON `PipelineInputManifest` pairing video and danmu inputs per segment.
+    /// Set for paired-segment and session-complete DAGs; NULL otherwise.
+    pub input_manifest: Option<String>,
 }
 
 impl DagExecutionDbModel {
@@ -82,6 +85,7 @@ impl DagExecutionDbModel {
             total_steps,
             completed_steps: 0,
             failed_steps: 0,
+            input_manifest: None,
         }
     }
 

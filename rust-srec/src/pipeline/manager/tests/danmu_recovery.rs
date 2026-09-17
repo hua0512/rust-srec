@@ -159,18 +159,25 @@ async fn danmu_recovery_pairs_original_paths_at_the_stored_segment_index() {
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].segment_source.as_deref(), Some("paired"));
     assert_eq!(recovered[0].segment_index, Some(7));
-    let manifest = tokio::fs::read(dir.path().join(format!("segment_{SESSION}_7_inputs.json")))
-        .await
-        .unwrap();
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest).unwrap();
-    assert_eq!(manifest["segment_index"], 7);
+    let manifest: crate::pipeline::PipelineInputManifest =
+        serde_json::from_str(recovered[0].input_manifest.as_deref().unwrap()).unwrap();
     assert_eq!(
-        manifest["video_inputs"],
-        serde_json::json!([video.to_string_lossy()])
+        manifest.scope,
+        crate::pipeline::ManifestScope::Segment { index: 7 }
     );
     assert_eq!(
-        manifest["danmu_inputs"],
-        serde_json::json!([video.with_extension("xml").to_string_lossy()])
+        manifest.video_inputs().collect::<Vec<_>>(),
+        vec![video.to_string_lossy()]
+    );
+    assert_eq!(
+        manifest.danmu_inputs().collect::<Vec<_>>(),
+        vec![video.with_extension("xml").to_string_lossy()]
+    );
+    assert!(
+        !dir.path()
+            .join(format!("segment_{SESSION}_7_inputs.json"))
+            .exists(),
+        "pairing is stored on the DAG row, not next to the recording"
     );
 }
 

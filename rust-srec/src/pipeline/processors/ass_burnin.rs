@@ -1,24 +1,24 @@
 //! ASS burn-in processor (renders `.ass` subtitles into video frames).
 //!
-//! Intended for paired/session DAG pipelines where `inputs[]` may include:
-//! - a JSON manifest (`*_inputs.json`)
-//! - video files
-//! - danmu XML files
-//! - generated `.ass` subtitle files
-//!
-//! This processor is manifest-aware (prefers `video_inputs` + `danmu_inputs`) and batch-safe.
+//! Intended for paired/session DAG pipelines where `inputs[]` may include
+//! video files, danmu XML files and generated `.ass` subtitle files. Videos
+//! are paired with subtitles through the job's session pairing
+//! (`ProcessorInput::manifest`) when present, otherwise by file stem. The
+//! processor is batch-safe.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, info};
 
 use super::outputs::{OutputBatch, output_size};
+use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_video, parse_config_or_default};
 use crate::Result;
+use crate::pipeline::manifest::PipelineInputManifest;
 
 fn default_true() -> bool {
     true
@@ -40,7 +40,9 @@ fn default_preset() -> String {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AssMatchStrategy {
-    /// Prefer the manifest: map `video_inputs[i]` to `danmu_inputs[i]` (xml) and then expect `*.ass`.
+    /// Session pairing: use the danmu recorded for the video's own segment and
+    /// expect its `.ass` next to it. Falls back to stem matching when the job
+    /// carries no pairing. The wire value stays `manifest` for saved presets.
     #[default]
     Manifest,
     /// Match by file stem: `video_stem.ass` (or `video_stem_danmaku.ass`).
@@ -226,23 +228,62 @@ impl AssBurnInProcessor {
         Ok(candidate)
     }
 
-    async fn parse_manifest_pairs(inputs: &[String]) -> Option<(Vec<String>, Vec<String>)> {
-        let manifest_path = inputs
-            .iter()
-            .find(|p| p.to_lowercase().ends_with(".json"))?;
-        let text = tokio::fs::read_to_string(manifest_path).await.ok()?;
-        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let videos = value.get("video_inputs")?.as_array()?;
-        let danmus = value.get("danmu_inputs")?.as_array()?;
-        let video_inputs: Vec<String> = videos
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-        let danmu_inputs: Vec<String> = danmus
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-        Some((video_inputs, danmu_inputs))
+    /// Subtitle recorded for `video_path` by the session pairing: each danmu
+    /// path of the video's segment with an `.ass` extension. A candidate counts
+    /// only when it is spelled like one of the job's inputs, which resolves a
+    /// subtitle an upstream step relocated, or when it exists on disk.
+    async fn manifest_ass_for_video(
+        video_path: &str,
+        manifest: &PipelineInputManifest,
+        inputs: &[String],
+    ) -> Result<Option<String>> {
+        for danmu in manifest.danmu_for_video(video_path) {
+            let candidate = Path::new(danmu).with_extension("ass");
+            let candidate = candidate.to_string_lossy();
+            let candidate_abs = lexical_absolute(&candidate);
+            if let Some(input) = inputs.iter().find(|input| {
+                spelling_equal(
+                    &lexical_absolute(input),
+                    &candidate_abs,
+                    CasePolicy::Windows,
+                )
+            }) {
+                return Ok(Some(input.clone()));
+            }
+            if super::utils::try_exists(Path::new(candidate.as_ref())).await? {
+                return Ok(Some(candidate.into_owned()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolve the subtitle for one video: session pairing first when the
+    /// strategy asks for it and the job carries one, then the stem index.
+    async fn resolve_ass_for_video(
+        video_path: &str,
+        strategy: AssMatchStrategy,
+        manifest: Option<&PipelineInputManifest>,
+        inputs: &[String],
+        ass_by_stem: &HashMap<String, String>,
+    ) -> Result<Option<String>> {
+        if strategy == AssMatchStrategy::Manifest
+            && let Some(manifest) = manifest
+            && let Some(ass) = Self::manifest_ass_for_video(video_path, manifest, inputs).await?
+        {
+            return Ok(Some(ass));
+        }
+        Ok(Self::match_ass_by_stem(video_path, ass_by_stem))
+    }
+
+    /// Key under which a subtitle is consumed once per job, so two videos with
+    /// the same stem from different branches cannot both burn it.
+    fn consumed_key(path: &str) -> String {
+        let absolute = lexical_absolute(path);
+        if cfg!(windows) {
+            absolute.to_lowercase()
+        } else {
+            absolute
+        }
     }
 
     fn build_ass_index(inputs: &[String]) -> HashMap<String, String> {
@@ -260,35 +301,19 @@ impl AssBurnInProcessor {
         map
     }
 
-    fn match_ass_for_video(
+    fn match_ass_by_stem(
         video_path: &str,
-        strategy: AssMatchStrategy,
-        manifest_map: Option<&HashMap<String, String>>,
         ass_by_stem: &HashMap<String, String>,
     ) -> Option<String> {
-        match strategy {
-            AssMatchStrategy::Manifest => {
-                if let Some(map) = manifest_map {
-                    let video_abs = super::paths::lexical_absolute(video_path);
-                    if let Some(ass) = map.get(&video_abs.to_lowercase()) {
-                        return Some(ass.clone());
-                    }
-                }
-                // fallback to stem matching if manifest mapping not available
-                Self::match_ass_for_video(video_path, AssMatchStrategy::Stem, None, ass_by_stem)
-            }
-            AssMatchStrategy::Stem => {
-                let stem = Path::new(video_path)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())?;
-                let stem_key = stem.to_lowercase();
-                if let Some(ass) = ass_by_stem.get(&stem_key) {
-                    return Some(ass.clone());
-                }
-                let alt = format!("{}_danmaku", stem_key);
-                ass_by_stem.get(&alt).cloned()
-            }
+        let stem = Path::new(video_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())?;
+        let stem_key = stem.to_lowercase();
+        if let Some(ass) = ass_by_stem.get(&stem_key) {
+            return Some(ass.clone());
         }
+        let alt = format!("{}_danmaku", stem_key);
+        ass_by_stem.get(&alt).cloned()
     }
 
     fn build_passthrough_outputs(
@@ -356,27 +381,6 @@ impl Processor for AssBurnInProcessor {
 
         let ffmpeg = Self::resolve_ffmpeg_path(&config);
 
-        // Build candidate video list: prefer manifest.video_inputs when available and strategy=Manifest.
-        let mut manifest_video_to_ass: Option<HashMap<String, String>> = None;
-        if config.match_strategy == AssMatchStrategy::Manifest
-            && let Some((video_inputs, danmu_inputs)) =
-                Self::parse_manifest_pairs(&input.inputs).await
-        {
-            let mut map = HashMap::new();
-            for (video, danmu) in video_inputs.iter().zip(danmu_inputs.iter()) {
-                let video_abs = super::paths::lexical_absolute(video);
-                // Assume danmu is xml and ass is alongside with same stem by default.
-                let ass_candidate = PathBuf::from(danmu)
-                    .with_extension("ass")
-                    .to_string_lossy()
-                    .to_string();
-                map.insert(video_abs.to_lowercase(), ass_candidate);
-            }
-            if !map.is_empty() {
-                manifest_video_to_ass = Some(map);
-            }
-        }
-
         let ass_by_stem = Self::build_ass_index(&input.inputs);
 
         // Determine which inputs are videos.
@@ -432,6 +436,7 @@ impl Processor for AssBurnInProcessor {
         let mut succeeded_inputs = Vec::new();
         let mut skipped_inputs = Vec::new();
         let mut matched_ass_for_succeeded = Vec::new();
+        let mut consumed_ass = HashSet::<String>::new();
         let mut total_duration = 0.0;
 
         for (idx, video_path) in video_inputs.iter().enumerate() {
@@ -444,12 +449,14 @@ impl Processor for AssBurnInProcessor {
                 )));
             }
 
-            let ass_path = Self::match_ass_for_video(
+            let ass_path = Self::resolve_ass_for_video(
                 video_path,
                 config.match_strategy,
-                manifest_video_to_ass.as_ref(),
+                input.manifest.as_deref(),
+                &input.inputs,
                 &ass_by_stem,
-            );
+            )
+            .await?;
 
             let Some(ass_path) = ass_path else {
                 if config.require_ass {
@@ -461,6 +468,17 @@ impl Processor for AssBurnInProcessor {
                 skipped_inputs.push((video_path.clone(), "no matching .ass subtitle".to_string()));
                 continue;
             };
+
+            if !consumed_ass.insert(Self::consumed_key(&ass_path)) {
+                let reason =
+                    format!("subtitle {ass_path} was already burned into an earlier video");
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Warn,
+                    format!("Skipping {video_path}: {reason}"),
+                ));
+                skipped_inputs.push((video_path.clone(), reason));
+                continue;
+            }
 
             if !super::utils::try_exists(Path::new(&ass_path)).await? {
                 if config.require_ass {
@@ -711,34 +729,161 @@ mod tests {
         assert!(output.status.success(), "{:?}", output.logs);
     }
 
+    fn manifest(segments: &[(u32, &[&str], &[&str])]) -> PipelineInputManifest {
+        use crate::pipeline::manifest::{ManifestScope, ManifestSegment};
+        PipelineInputManifest::new(
+            "session",
+            "streamer",
+            ManifestScope::Session,
+            segments
+                .iter()
+                .map(|(index, video, danmu)| ManifestSegment {
+                    segment_index: *index,
+                    video: video.iter().map(|path| path.to_string()).collect(),
+                    danmu: danmu.iter().map(|path| path.to_string()).collect(),
+                })
+                .collect(),
+        )
+    }
+
+    fn strings(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|path| path.to_string()).collect()
+    }
+
+    /// A segment without danmu leaves its own video unpaired and does not shift
+    /// the pairs of later segments.
     #[tokio::test]
-    async fn test_manifest_pair_mapping_builds_video_map() {
+    async fn session_pairing_survives_a_missing_middle_danmu() {
         let temp = TempDir::new().unwrap();
-        let manifest = temp.path().join("segment_inputs.json");
-        let video = temp.path().join("seg.mp4");
-        let xml = temp.path().join("seg.xml");
-        tokio::fs::write(
-            &manifest,
-            serde_json::json!({
-                "video_inputs": [video.to_string_lossy().to_string()],
-                "danmu_inputs": [xml.to_string_lossy().to_string()]
-            })
-            .to_string(),
+        let path = |name: &str| temp.path().join(name).to_string_lossy().into_owned();
+        let manifest = manifest(&[
+            (0, &[&path("0.mp4")], &[&path("0.xml")]),
+            (1, &[&path("1.mp4")], &[]),
+            (2, &[&path("2.mp4")], &[&path("2.xml")]),
+        ]);
+        let inputs = strings(&[
+            &path("0.mp4"),
+            &path("1.mp4"),
+            &path("2.mp4"),
+            &path("0.ass"),
+            &path("2.ass"),
+        ]);
+        let ass_by_stem = AssBurnInProcessor::build_ass_index(&inputs);
+        for (video, expected) in [
+            ("0.mp4", Some(path("0.ass"))),
+            ("1.mp4", None),
+            ("2.mp4", Some(path("2.ass"))),
+        ] {
+            let resolved = AssBurnInProcessor::resolve_ass_for_video(
+                &path(video),
+                AssMatchStrategy::Manifest,
+                Some(&manifest),
+                &inputs,
+                &ass_by_stem,
+            )
+            .await
+            .unwrap();
+            assert_eq!(resolved, expected, "{video}");
+        }
+    }
+
+    /// The `.ass` derived from the recorded danmu path may be absent when an
+    /// upstream step wrote it elsewhere; a subtitle with the video's stem among
+    /// the inputs is used instead, and a real file next to the danmu is found
+    /// even when no input lists it.
+    #[tokio::test]
+    async fn derived_ass_falls_back_to_inputs_then_disk() {
+        let temp = TempDir::new().unwrap();
+        let path = |name: &str| temp.path().join(name).to_string_lossy().into_owned();
+        let manifest = manifest(&[(0, &[&path("rec.mp4")], &[&path("orig/rec.xml")])]);
+        let inputs = strings(&[&path("rec.mp4"), &path("out/rec.ass")]);
+        let ass_by_stem = AssBurnInProcessor::build_ass_index(&inputs);
+        let resolved = AssBurnInProcessor::resolve_ass_for_video(
+            &path("rec.mp4"),
+            AssMatchStrategy::Manifest,
+            Some(&manifest),
+            &inputs,
+            &ass_by_stem,
         )
         .await
         .unwrap();
+        assert_eq!(resolved, Some(path("out/rec.ass")));
 
-        let inputs = vec![
-            manifest.to_string_lossy().to_string(),
-            video.to_string_lossy().to_string(),
-            xml.to_string_lossy().to_string(),
-        ];
-
-        let (videos, danmus) = AssBurnInProcessor::parse_manifest_pairs(&inputs)
+        tokio::fs::create_dir(temp.path().join("orig"))
             .await
             .unwrap();
-        assert_eq!(videos.len(), 1);
-        assert_eq!(danmus.len(), 1);
+        tokio::fs::write(temp.path().join("orig/rec.ass"), b"[Script Info]")
+            .await
+            .unwrap();
+        let resolved = AssBurnInProcessor::resolve_ass_for_video(
+            &path("rec.mp4"),
+            AssMatchStrategy::Manifest,
+            Some(&manifest),
+            &inputs,
+            &ass_by_stem,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved, Some(path("orig/rec.ass")));
+
+        let stem_only = AssBurnInProcessor::resolve_ass_for_video(
+            &path("rec.mp4"),
+            AssMatchStrategy::Manifest,
+            None,
+            &inputs,
+            &ass_by_stem,
+        )
+        .await
+        .unwrap();
+        assert_eq!(stem_only, Some(path("out/rec.ass")));
+    }
+
+    /// Two videos from different branches that share a stem resolve to the same
+    /// subtitle; only the first is burned and the second is skipped with a reason.
+    #[tokio::test]
+    async fn duplicate_video_stems_consume_a_subtitle_once() {
+        let temp = TempDir::new().unwrap();
+        let ffmpeg = super::super::output_tests::fake_success_ffmpeg(temp.path());
+        let first = temp.path().join("a/rec.mp4");
+        let second = temp.path().join("b/rec.mp4");
+        let ass = temp.path().join("rec.ass");
+        for video in [&first, &second] {
+            tokio::fs::create_dir_all(video.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(video, b"video").await.unwrap();
+        }
+        tokio::fs::write(&ass, b"[Script Info]").await.unwrap();
+        let input = ProcessorInput {
+            inputs: strings(&[
+                &first.to_string_lossy(),
+                &second.to_string_lossy(),
+                &ass.to_string_lossy(),
+            ]),
+            config: Some(
+                serde_json::json!({
+                    "ffmpeg_path": ffmpeg,
+                    "match_strategy": "stem",
+                    "passthrough_inputs": false,
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = AssBurnInProcessor::new()
+            .process(&input, &ProcessorContext::noop("test"))
+            .await
+            .unwrap();
+        assert_eq!(output.succeeded_inputs, vec![first.to_string_lossy()]);
+        assert_eq!(
+            output.outputs,
+            vec![temp.path().join("a/rec_burnin.mp4").to_string_lossy()]
+        );
+        assert_eq!(output.skipped_inputs.len(), 1);
+        assert_eq!(output.skipped_inputs[0].0, second.to_string_lossy());
+        assert!(output.skipped_inputs[0].1.contains("already burned"));
+        assert!(!temp.path().join("b/rec_burnin.mp4").exists());
     }
 
     #[tokio::test]
@@ -765,7 +910,7 @@ mod tests {
     #[test]
     fn test_passthrough_filters_deleted_paths_and_ass() {
         let inputs = vec![
-            "manifest.json".to_string(),
+            "video.xml".to_string(),
             "video.mp4".to_string(),
             "subtitle.ass".to_string(),
         ];
@@ -773,6 +918,6 @@ mod tests {
         exclude.insert("video.mp4".to_string());
 
         let outputs = AssBurnInProcessor::build_passthrough_outputs(&inputs, true, &exclude);
-        assert_eq!(outputs, vec!["manifest.json"]);
+        assert_eq!(outputs, vec!["video.xml"]);
     }
 }

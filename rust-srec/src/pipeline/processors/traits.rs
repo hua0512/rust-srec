@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
+use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::progress::ProgressReporter;
 
 /// Type of processor (determines which worker pool handles it).
@@ -75,6 +76,10 @@ pub struct ProcessorInput {
     /// When the job was originally created.
     /// Used for time-based placeholder expansion to ensure consistency across retries.
     pub created_at: DateTime<Utc>,
+    /// Per-segment video/danmu pairing of a paired-segment or session-complete
+    /// pipeline. `None` for segment, thumbnail and API-created DAGs and for
+    /// standalone jobs.
+    pub manifest: Option<Arc<PipelineInputManifest>>,
 }
 
 impl Default for ProcessorInput {
@@ -90,6 +95,7 @@ impl Default for ProcessorInput {
             platform: None,
             session_start: None,
             created_at: Utc::now(),
+            manifest: None,
         }
     }
 }
@@ -113,6 +119,7 @@ impl ProcessorInput {
             platform: None,
             session_start: None,
             created_at: Utc::now(),
+            manifest: None,
         }
     }
 
@@ -400,6 +407,7 @@ mod tests {
             platform: None,
             session_start: None,
             created_at: Utc::now(),
+            manifest: None,
         };
 
         assert_eq!(input.inputs[0], "/input.flv");

@@ -1183,6 +1183,7 @@ mod tests {
             total_steps: 1,
             completed_steps: i32::from(status == DagExecutionStatus::Completed),
             failed_steps: i32::from(status == DagExecutionStatus::Failed),
+            input_manifest: None,
         };
         database.dag_repository.create_dag(&dag).await.expect("DAG");
     }
@@ -1671,6 +1672,7 @@ mod tests {
                 total_steps: 1,
                 completed_steps: 0,
                 failed_steps: 0,
+                input_manifest: None,
             })
             .await
             .expect("active session DAG");
