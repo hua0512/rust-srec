@@ -369,8 +369,14 @@ impl DagScheduler {
     }
 
     /// Fail a DAG that is not terminal, cancelling its remaining steps and jobs.
-    /// Returns the completion to forward when the DAG became terminal.
+    /// Returns the completion to forward when the DAG became terminal through
+    /// this call; a DAG that was already terminal is left as it is and yields
+    /// no completion, so its earlier outcome is not replayed.
     pub async fn fail_dag(&self, dag_id: &str, error: &str) -> Result<Option<DagCompletionInfo>> {
+        let dag = self.dag_repository.get_dag(dag_id).await?;
+        if dag.get_status().is_some_and(|status| status.is_terminal()) {
+            return Ok(None);
+        }
         self.fail_dag_internal(dag_id, error).await
     }
 
@@ -659,7 +665,7 @@ impl DagScheduler {
                     ))
                 })?;
 
-                if merged_inputs.is_empty() {
+                if merged_inputs.is_empty() && !Self::runs_without_inputs(&dag_step.step) {
                     // Processors such as `delete` reject an empty input list, and a
                     // dependency that produced nothing (an `rclone` move, a `delete`)
                     // is a normal outcome, not a failure of this step.
@@ -703,6 +709,18 @@ impl DagScheduler {
             }
         }
         Ok((new_job_ids, dag))
+    }
+
+    /// Whether the step's processor runs a job even with no inputs. An `execute`
+    /// step after an upload or delete is a common way to run a notification or
+    /// clean-up script, and its command does not need `{input}`.
+    fn runs_without_inputs(step: &PipelineStep) -> bool {
+        let processor = match step {
+            PipelineStep::Inline { processor, .. } => processor.as_str(),
+            PipelineStep::Preset { name } => name.as_str(),
+            PipelineStep::Workflow { .. } => return false,
+        };
+        matches!(processor, "execute" | "command")
     }
 
     /// Create a job for a DAG step.
@@ -921,30 +939,30 @@ impl DagScheduler {
             .list_processing_steps_with_failed_jobs()
             .await?
         {
-            let Some(job_id) = step.job_id.as_deref() else {
-                continue;
-            };
-            let reason = match self.job_repository.get_job(job_id).await {
-                Ok(job) => format!(
-                    "job {} is {}{}",
-                    job_id,
-                    job.status,
-                    job.error
-                        .as_deref()
-                        .map(|error| format!(": {error}"))
-                        .unwrap_or_default()
-                ),
-                Err(e) => {
-                    complete = false;
-                    warn!(
-                        dag_id = %step.dag_id,
-                        step_id = %step.step_id,
-                        job_id = %job_id,
-                        error = %e,
-                        "Skipping stranded DAG step reconciliation for unreadable job"
-                    );
-                    continue;
-                }
+            let reason = match step.job_id.as_deref() {
+                None => "the step's job row no longer exists".to_string(),
+                Some(job_id) => match self.job_repository.get_job(job_id).await {
+                    Ok(job) => format!(
+                        "job {} is {}{}",
+                        job_id,
+                        job.status,
+                        job.error
+                            .as_deref()
+                            .map(|error| format!(": {error}"))
+                            .unwrap_or_default()
+                    ),
+                    Err(e) => {
+                        complete = false;
+                        warn!(
+                            dag_id = %step.dag_id,
+                            step_id = %step.step_id,
+                            job_id = %job_id,
+                            error = %e,
+                            "Skipping stranded DAG step reconciliation for unreadable job"
+                        );
+                        continue;
+                    }
+                },
             };
             if let Err(e) = self.on_job_failed(&step.id, &reason).await {
                 complete = false;
@@ -2105,6 +2123,153 @@ mod tests {
         );
     }
 
+    /// An `execute` step runs its command even when the step before it produced
+    /// nothing, so a script after an upload or delete is not silently skipped.
+    #[tokio::test]
+    async fn execute_steps_still_run_after_a_step_without_outputs() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "notify after move",
+                    vec![
+                        DagStep::new(
+                            "move",
+                            PipelineStep::inline("rclone", serde_json::json!({})),
+                        ),
+                        DagStep::with_dependencies(
+                            "notify",
+                            PipelineStep::inline(
+                                "execute",
+                                serde_json::json!({ "command": "notify-send done" }),
+                            ),
+                            vec!["move".to_string()],
+                        ),
+                    ],
+                ),
+                &["/rec/a.mp4".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let root = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+
+        let update = scheduler
+            .on_job_completed(
+                root.dag_step_execution_id.as_deref().unwrap(),
+                &[],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(update.new_job_ids.len(), 1, "the execute step got a job");
+        assert!(update.completion.is_none());
+        let notify = job_repo.get_job(&update.new_job_ids[0]).await.unwrap();
+        assert_eq!(notify.job_type, "execute");
+        assert_eq!(notify.input.as_deref(), Some("[]"));
+    }
+
+    /// Failing a DAG that is already terminal changes nothing and yields no
+    /// completion, so a retry that could not even reset the rows does not replay
+    /// the earlier outcome to the coordinator.
+    #[tokio::test]
+    async fn fail_dag_leaves_a_terminal_dag_alone() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo.clone(), job_repo);
+        let created = scheduler
+            .create_dag_pipeline(
+                two_step_pipeline("terminal fail"),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let first = scheduler
+            .fail_dag(&created.dag_id, "first failure")
+            .await
+            .unwrap();
+        assert!(first.is_some_and(|completion| !completion.succeeded));
+
+        let second = scheduler
+            .fail_dag(&created.dag_id, "retry failed")
+            .await
+            .unwrap();
+        assert!(second.is_none());
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert_eq!(dag.error.as_deref(), Some("first failure"));
+    }
+
+    /// A PROCESSING step whose job row is gone can never be reported on; startup
+    /// reconciliation fails it like a step whose job failed.
+    #[tokio::test]
+    async fn startup_reconciliation_fails_a_processing_step_without_a_job_row() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                two_step_pipeline("jobless processing step"),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        // Deleting the job row nulls the step's job_id through the foreign key.
+        job_repo.delete_job(&created.root_job_ids[0]).await.unwrap();
+        let steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
+        let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
+        assert_eq!(step_a.get_status(), Some(DagStepStatus::Processing));
+        assert!(step_a.job_id.is_none());
+
+        assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert!(
+            dag.error
+                .as_deref()
+                .unwrap()
+                .contains("job row no longer exists"),
+            "{:?}",
+            dag.error
+        );
+    }
+
     /// Retry fan-out and startup recovery decide readiness from rows a live
     /// completion may have advanced in between; a step that already has a job
     /// is skipped instead of failing the whole DAG.
@@ -2137,7 +2302,12 @@ mod tests {
         let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
         // Another materialization attached a job to B before this completion
         // got to it.
-        sqlx::query("UPDATE dag_step_execution SET job_id = 'attached-elsewhere' WHERE id = ?")
+        let mut elsewhere = JobDbModel::new_pipeline_step("noop", "[]", "[]", 0, None, None);
+        elsewhere.pipeline_id = Some(created.dag_id.clone());
+        elsewhere.dag_step_execution_id = Some(step_b.id.clone());
+        job_repo.create_job(&elsewhere).await.unwrap();
+        sqlx::query("UPDATE dag_step_execution SET job_id = ? WHERE id = ?")
+            .bind(&elsewhere.id)
             .bind(&step_b.id)
             .execute(&pool)
             .await
@@ -2153,13 +2323,8 @@ mod tests {
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Processing));
         assert_eq!(dag.error, None);
         assert_eq!(
-            dag_repo
-                .get_step(&step_b.id)
-                .await
-                .unwrap()
-                .job_id
-                .as_deref(),
-            Some("attached-elsewhere")
+            dag_repo.get_step(&step_b.id).await.unwrap().job_id,
+            Some(elsewhere.id)
         );
     }
 
@@ -2202,7 +2367,8 @@ mod tests {
             "{:?}",
             dag.error
         );
-        let steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
+        let mut steps = dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap();
+        steps.sort_by(|left, right| left.step_id.cmp(&right.step_id));
         assert_eq!(
             steps
                 .iter()

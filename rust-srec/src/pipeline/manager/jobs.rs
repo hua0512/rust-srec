@@ -228,18 +228,25 @@ where
         // retried run's outcome as a duplicate. Removed only once the reset took
         // effect, so a rejected retry keeps swallowing late replays of the old one.
         self.handled_dag_completions.remove(dag_id);
-        let materialized_steps = update.new_job_ids.len();
         let mut job_ids = update.new_job_ids;
         completions.extend(update.completion);
 
-        let mut restarted_steps = 0usize;
         let mut reconciled_steps = 0usize;
         for (step, job) in attached_jobs {
             match job.status {
                 JobStatus::Failed | JobStatus::Cancelled => {
                     match self.retry_queued_job(&job.id).await {
-                        Ok(job) => {
-                            restarted_steps += 1;
+                        Ok(job) => job_ids.push(job.id),
+                        // Two retries of the same DAG can pass the terminal check
+                        // before either reset commits; a job the other one already
+                        // restarted needs nothing more from this call.
+                        Err(error) if self.job_already_restarted(&job.id).await => {
+                            tracing::debug!(
+                                dag_id = %dag_id,
+                                job_id = %job.id,
+                                error = %error,
+                                "Job was restarted by a concurrent retry"
+                            );
                             job_ids.push(job.id);
                         }
                         Err(error) => {
@@ -285,7 +292,21 @@ where
             self.handle_dag_completion(completion).await;
         }
 
-        let retried_steps = restarted_steps + materialized_steps;
+        // Steps settled by the retry itself (restarted, materialized, or
+        // completed as no-ops) are those that are no longer FAILED or CANCELLED.
+        let retryable_ids: std::collections::HashSet<&str> = retryable_steps
+            .iter()
+            .map(|step| step.id.as_str())
+            .collect();
+        let retried_steps = dag_scheduler
+            .get_dag_steps(dag_id)
+            .await?
+            .iter()
+            .filter(|step| {
+                retryable_ids.contains(step.id.as_str())
+                    && !matches!(step.status.as_str(), "FAILED" | "CANCELLED")
+            })
+            .count();
         let message = if retried_steps == retryable_steps.len() {
             format!("Successfully retried {} steps", retried_steps)
         } else {
@@ -303,6 +324,14 @@ where
             job_ids,
             message,
         })
+    }
+
+    /// Whether `job_id` is already queued or running, as after a concurrent retry.
+    async fn job_already_restarted(&self, job_id: &str) -> bool {
+        matches!(
+            self.get_job(job_id).await,
+            Ok(Some(job)) if matches!(job.status, JobStatus::Pending | JobStatus::Processing)
+        )
     }
 
     /// Fail a DAG whose retry broke down after its rows were reset, so it is

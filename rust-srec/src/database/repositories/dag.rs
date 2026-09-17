@@ -172,8 +172,9 @@ pub trait DagRepository: Send + Sync {
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>>;
 
     /// List PROCESSING steps of non-terminal DAGs whose attached job is FAILED or
-    /// CANCELLED: the worker's failure report never reached the scheduler, so nothing
-    /// will advance or fail the DAG unless startup reconciliation does.
+    /// CANCELLED, or whose job row is gone (`job_id` NULL): the worker's failure
+    /// report never reached the scheduler, so nothing will advance or fail the DAG
+    /// unless startup reconciliation does.
     async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>>;
 
     /// Complete a ready step that has no job, recording `outputs`, and settle its
@@ -217,7 +218,11 @@ impl SqlxDagRepository {
         outputs: &[String],
         guard: CompletionGuard,
     ) -> Result<StepCompletion> {
-        retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
+        let label = match guard {
+            CompletionGuard::AttachedJob => "complete_step_and_check_dependents",
+            CompletionGuard::NoJob => "complete_ready_step_without_job",
+        };
+        retry_on_sqlite_busy(label, || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
             let outputs_json = serde_json::to_string(outputs)?;
@@ -1337,9 +1342,9 @@ impl DagRepository for SqlxDagRepository {
             SELECT step.*
             FROM dag_step_execution AS step
             JOIN dag_execution AS dag ON dag.id = step.dag_id
-            JOIN job ON job.id = step.job_id
+            LEFT JOIN job ON job.id = step.job_id
             WHERE step.status = 'PROCESSING'
-              AND job.status IN ('FAILED', 'CANCELLED')
+              AND (step.job_id IS NULL OR job.status IN ('FAILED', 'CANCELLED'))
               AND dag.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
             ORDER BY step.created_at, step.id
             "#,

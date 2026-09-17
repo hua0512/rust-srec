@@ -176,7 +176,7 @@
 
 - **Retrying a workflow can no longer leave it stuck**
 
-  A retry now checks every step it is about to restart before changing anything, and if restarting still breaks down part-way the workflow is marked failed again with the reason, so it can be retried instead of showing as running forever. A workflow whose cancelled step never got a job, and a workflow whose step's job failed while the app was down, can now be retried as well. A step that receives no files from the step before it, for example a delete after an upload that moved everything away, now completes on its own instead of failing the workflow, and a step that was already scheduled by a parallel recovery no longer fails the workflow either.
+  A retry now checks every step it is about to restart before changing anything, and if restarting still breaks down part-way the workflow is marked failed again with the reason, so it can be retried instead of showing as running forever. A workflow whose cancelled step never got a job, and a workflow whose step's job failed while the app was down, can now be retried as well. A step that receives no files from the step before it, for example a delete after an upload that moved everything away, now completes on its own instead of failing the workflow (an execute step still runs its command), and a step that was already scheduled by a parallel recovery no longer fails the workflow either.
 
 - **Retrying a workflow now delivers its results, and half-done steps no longer count as success**
 

@@ -176,7 +176,9 @@ Processor outputs are also significant:
 
 A step whose dependencies produced no outputs, such as a `delete` after an
 `rclone` move, completes without running and passes on no outputs, so the
-steps after it complete the same way.
+steps after it complete the same way. An `execute` step is the exception: it
+still runs its command, with `{input}` empty and `{inputs_json}` equal to `[]`,
+so a script after an upload or delete keeps running.
 
 Therefore, a linear `remux -> thumbnail -> rclone` graph sends only the thumbnail to `rclone`. To upload both the remuxed video and its thumbnail, route both producers directly to `rclone`:
 

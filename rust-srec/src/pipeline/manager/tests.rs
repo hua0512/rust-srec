@@ -1466,10 +1466,11 @@ fn remux_chain(name: &str, ids: &[&str]) -> DagPipelineDefinition {
 }
 
 /// Retry checks every job it would restart before changing a row: a job that
-/// is gone is reported while the DAG is still terminal and retryable.
+/// cannot be restarted is reported while the DAG is still terminal and
+/// retryable.
 #[tokio::test]
-async fn retry_dag_rejects_a_missing_job_before_touching_rows() {
-    let (manager, jobs, dags, _pool) = sqlx_manager().await;
+async fn retry_dag_rejects_an_unrestartable_job_before_touching_rows() {
+    let (manager, jobs, dags, pool) = sqlx_manager().await;
     let created = manager
         .create_dag_pipeline(
             "session",
@@ -1489,11 +1490,22 @@ async fn retry_dag_rejects_a_missing_job_before_touching_rows() {
         .await
         .unwrap();
     scheduler.on_job_failed(&step.id, "boom").await.unwrap();
-    jobs.delete_job(&created.root_job_ids[0]).await.unwrap();
+    // A worker still owns the job: the row reads PROCESSING although the step
+    // already failed (the failure report raced a crash-recovery reset).
+    sqlx::query("UPDATE job SET status = 'PROCESSING' WHERE id = ?")
+        .bind(&created.root_job_ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let error = manager.retry_dag(&created.dag_id).await.unwrap_err();
     assert!(matches!(error, Error::Validation(_)));
-    assert!(error.to_string().contains("no longer exists"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("is PROCESSING and cannot be retried"),
+        "{error}"
+    );
     let dag = dags.get_dag(&created.dag_id).await.unwrap();
     assert_eq!(dag.status, "FAILED");
     assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
@@ -1608,6 +1620,47 @@ async fn retry_dag_materializes_a_cancelled_step_without_a_job() {
         .unwrap(),
         vec!["/a.mp4".to_string()]
     );
+}
+
+/// A retry that settles its only retryable step as a no-op (its dependency
+/// produced no outputs) reports that step as retried and delivers the DAG's
+/// completion.
+#[tokio::test]
+async fn retry_dag_counts_steps_settled_as_no_ops() {
+    let (manager, _jobs, dags, pool) = sqlx_manager().await;
+    let created = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("no-op retry", &["A", "B"]),
+        )
+        .await
+        .unwrap();
+    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
+    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
+    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
+    dags.complete_step_and_check_dependents(&step_a.id, &[])
+        .await
+        .unwrap();
+    sqlx::query("UPDATE dag_step_execution SET status = 'CANCELLED', job_id = NULL WHERE id = ?")
+        .bind(&step_b.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE dag_execution SET status = 'FAILED', error = 'boom' WHERE id = ?")
+        .bind(&created.dag_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let result = manager.retry_dag(&created.dag_id).await.unwrap();
+    assert_eq!(result.retried_steps, 1);
+    assert_eq!(result.message, "Successfully retried 1 steps");
+    assert!(result.job_ids.is_empty());
+    let dag = dags.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(dag.status, "COMPLETED");
+    assert_eq!(dags.get_step(&step_b.id).await.unwrap().status, "COMPLETED");
 }
 
 #[tokio::test]
