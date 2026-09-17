@@ -1307,6 +1307,9 @@ impl SessionPipelineState {
     }
 
     fn decrement_segment_pending(&mut self, source: SourceType, segment_index: u32, reason: &str) {
+        if source == SourceType::Danmu {
+            self.danmu_observed = true;
+        }
         // The counter was raised by the start that inserted this key. A completion
         // without one, such as a retried DAG whose failed run already settled the
         // segment, changes the artifacts but owes no decrement.
@@ -1335,7 +1338,6 @@ impl SessionPipelineState {
                 }
             }
             SourceType::Danmu => {
-                self.danmu_observed = true;
                 if self.pending_danmu_dags == 0 {
                     warn!(
                         session_id = %self.session_id,

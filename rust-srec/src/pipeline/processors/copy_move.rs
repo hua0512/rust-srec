@@ -481,7 +481,18 @@ impl Processor for CopyMoveProcessor {
                 && dest_meta.is_file()
                 && dest_meta.len() == source_size
             {
+                // A destination that resolves to the input itself (the destination
+                // template names the recording's own directory) is "in place": a
+                // move must not remove the only copy.
+                let in_place = tokio::task::spawn_blocking({
+                    let source = source.to_path_buf();
+                    let dest = dest.clone();
+                    move || same_file::is_same_file(&source, &dest).unwrap_or(false)
+                })
+                .await
+                .unwrap_or(false);
                 if config.operation == CopyMoveOperation::Move
+                    && !in_place
                     && let Err(e) = fs::remove_file(source).await
                 {
                     let error_msg = format!(
@@ -497,10 +508,17 @@ impl Processor for CopyMoveProcessor {
                     failed_inputs.push((source_path.clone(), error_msg));
                     continue;
                 }
-                let msg = format!(
-                    "Destination {} already holds this file from an earlier attempt; treating as completed",
-                    dest.display()
-                );
+                let msg = if in_place {
+                    format!(
+                        "Destination {} is the input itself; treating as completed without removing it",
+                        dest.display()
+                    )
+                } else {
+                    format!(
+                        "Destination {} already holds this file from an earlier attempt; treating as completed",
+                        dest.display()
+                    )
+                };
                 info!("{}", msg);
                 logs.push(create_log_entry(
                     crate::pipeline::job_queue::LogLevel::Info,
@@ -1418,6 +1436,48 @@ mod tests {
                 "{operation}: a move removes the source it left behind"
             );
         }
+    }
+
+    /// A destination template that resolves to the input's own directory makes
+    /// source and destination the same file; a retried move must keep it.
+    #[tokio::test]
+    async fn test_retry_of_an_in_place_move_keeps_the_only_copy() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("rec.mp4");
+        fs::write(&source_path, "content").await.unwrap();
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({
+                    "operation": "move",
+                    "destination": temp_dir.path().to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+        let processor = CopyMoveProcessor::new();
+
+        let first_attempt = processor
+            .process(&input, &ProcessorContext::noop("test"))
+            .await;
+        assert!(
+            first_attempt.is_err(),
+            "the first attempt rejects the collision"
+        );
+        assert_eq!(fs::read_to_string(&source_path).await.unwrap(), "content");
+
+        let retry = processor
+            .process(&input, &ProcessorContext::noop("test").with_retry(true))
+            .await
+            .unwrap();
+        assert!(retry.failed_inputs.is_empty(), "{:?}", retry.failed_inputs);
+        assert_eq!(retry.outputs, input.inputs);
+        assert_eq!(
+            fs::read_to_string(&source_path).await.unwrap(),
+            "content",
+            "the recording is never removed"
+        );
     }
 
     /// Without an earlier attempt to resume, a same-named file at the
