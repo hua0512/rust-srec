@@ -300,6 +300,15 @@ export function ExecuteConfigForm({
                       <Badge
                         variant="outline"
                         className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
+                        title={i18n._(
+                          msg`JSON of the session pairing (video and danmu per segment), or null`,
+                        )}
+                      >
+                        {'{manifest_json}'}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
                         title={i18n._(msg`Nth input: {input0}, {input1}...`)}
                       >
                         {'{inputN}'}

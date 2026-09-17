@@ -2366,7 +2366,7 @@ msgstr "日期占位符锚点"
 msgid "Date range:"
 msgstr "日期范围："
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:382
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:391
 msgid "Day (01-31)"
 msgstr "天 (01-31)"
 
@@ -2720,7 +2720,7 @@ msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。�
 msgid "Directory path copied"
 msgstr "目录路径已复制"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:459
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:468
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
@@ -2900,7 +2900,7 @@ msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "例如 /app/config/BaiduPCS-Go"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:452
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:461
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
@@ -2956,7 +2956,7 @@ msgstr "例如 gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:478
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:487
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
@@ -3857,7 +3857,7 @@ msgstr "FFMPEG_PATH 或 ffmpeg"
 msgid "File Configuration"
 msgstr "文件配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:474
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:483
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
@@ -4399,7 +4399,7 @@ msgstr "HLS 调优"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:389
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:398
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
@@ -4806,6 +4806,10 @@ msgstr "所有输入的 JSON 数组"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:296
 msgid "JSON array of all outputs"
 msgstr "所有输出的 JSON 数组"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:304
+msgid "JSON of the session pairing (video and danmu per segment), or null"
+msgstr "会话配对的 JSON（按分段列出视频和弹幕），否则为 null"
 
 #: src/components/ui/input-with-unit.tsx:28
 msgid "KB"
@@ -5379,7 +5383,7 @@ msgstr "元数据编辑器"
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:328
 msgid "Metadata Variables"
 msgstr "元数据变量"
 
@@ -5421,7 +5425,7 @@ msgstr "分钟"
 msgid "Mint Integrity Token"
 msgstr "签发完整性 token"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:396
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:405
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
 
@@ -5463,7 +5467,7 @@ msgstr "已停止监控"
 msgid "Month"
 msgstr "本月"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:375
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:384
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
@@ -6017,11 +6021,11 @@ msgstr "notifier@example.com"
 msgid "Now"
 msgstr "现在"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:303
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:312
 msgid "Nth input: {input0}, {input1}..."
 msgstr "第 N 个输入：{input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:310
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
 msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
@@ -6136,7 +6140,7 @@ msgstr "每行一个词"
 msgid "Ongoing"
 msgstr "进行中"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:485
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:494
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
@@ -6191,7 +6195,7 @@ msgstr "优化流头部"
 
 #: src/components/config/shared/proxy-settings-card.tsx:190
 #: src/components/config/shared/proxy-settings-card.tsx:210
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:430
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:439
 msgid "Optional"
 msgstr "可选"
 
@@ -6257,7 +6261,7 @@ msgstr "输出配置"
 msgid "Output deleted"
 msgstr "已删除产物"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:427
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:436
 msgid "Output Detection"
 msgstr "输出检测"
 
@@ -6689,7 +6693,7 @@ msgstr "平台配置更新成功"
 msgid "Platform configurations will appear here when available."
 msgstr "平台配置可用时将显示在此处。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:353
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
 msgid "Platform name"
 msgstr "平台名称"
 
@@ -7727,11 +7731,11 @@ msgstr "采样率"
 msgid "Sample Rate (Hz)"
 msgstr "采样率（Hz）"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:346
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:355
 msgid "Sanitized session title"
 msgstr "清理后的会话标题"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:339
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:348
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
@@ -7780,11 +7784,11 @@ msgstr "保存中"
 msgid "Saving..."
 msgstr "保存中..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:435
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:444
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传递到下一个管道步骤。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:448
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:457
 msgid "Scan Directory"
 msgstr "扫描目录"
 
@@ -7883,7 +7887,7 @@ msgstr "搜索模板..."
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:403
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:412
 msgid "Second (00-59)"
 msgstr "秒 (00-59)"
 
@@ -8169,7 +8173,7 @@ msgstr "会话已结束。其他详细信息不可用。"
 msgid "Session entered pending confirmation. Additional details are unavailable."
 msgstr "会话已进入待确认状态。其他详细信息不可用。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:332
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:341
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:495
 msgid "Session ID"
 msgstr "录制会话 ID"
@@ -8624,7 +8628,7 @@ msgstr "主播创建成功"
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:325
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:334
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:501
 msgid "Streamer ID"
 msgstr "主播 ID"
@@ -9076,7 +9080,7 @@ msgstr "基于时间"
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:371
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
@@ -9469,7 +9473,7 @@ msgstr "单位"
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T、P 等后缀表示更大的容量。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:410
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:419
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
@@ -9967,7 +9971,7 @@ msgstr "WUP"
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:368
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:377
 msgid "Year (4 digits)"
 msgstr "年 (4 位数字)"
 

@@ -123,8 +123,8 @@ impl PipelineInputManifest {
     }
 }
 
-/// Stem comparison folds ASCII case because the same recording can be listed
-/// with different case on Windows.
+/// Stems compare case-insensitively on every platform, like the stem index the
+/// subtitle processors use, so a recording renamed only by case still resolves.
 fn file_stem(path: &str) -> Option<String> {
     Path::new(path)
         .file_stem()

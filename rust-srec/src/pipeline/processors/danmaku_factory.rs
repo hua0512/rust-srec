@@ -311,6 +311,7 @@ impl Processor for DanmakuFactoryProcessor {
         // to overwrite.
         let mut batch = OutputBatch::new(&input.inputs);
         let mut produced = Vec::new();
+        let mut converted_xml = Vec::new();
 
         for (xml_path, ass_path) in xml_inputs.iter().zip(ass_outputs.iter()) {
             let xml = PathBuf::from(xml_path);
@@ -378,14 +379,17 @@ impl Processor for DanmakuFactoryProcessor {
             }
 
             produced.push(ass_path.clone());
+            converted_xml.push(xml_path.clone());
         }
 
         batch.commit().await?;
 
+        // Only an XML whose subtitle was published may be deleted; one whose
+        // conversion produced nothing is the only danmu left for that segment.
         let mut removed_xml_count = 0usize;
         let mut failed_remove_xml_count = 0usize;
         if config.delete_source_xml_on_success {
-            for xml_path in &xml_inputs {
+            for xml_path in &converted_xml {
                 match tokio::fs::remove_file(xml_path).await {
                     Ok(()) => {
                         removed_xml_count = removed_xml_count.saturating_add(1);
@@ -409,7 +413,7 @@ impl Processor for DanmakuFactoryProcessor {
         let mut exclude_passthrough = HashSet::new();
         if config.delete_source_xml_on_success && config.passthrough_inputs {
             // Avoid returning dangling paths when we deleted the sources.
-            exclude_passthrough.extend(xml_inputs.iter().cloned());
+            exclude_passthrough.extend(converted_xml.iter().cloned());
         }
 
         // For downstream steps we keep original inputs (video/xml) and append published `.ass`.
@@ -439,7 +443,7 @@ impl Processor for DanmakuFactoryProcessor {
             input_size_bytes: None,
             output_size_bytes: None,
             failed_inputs: vec![],
-            succeeded_inputs: xml_inputs,
+            succeeded_inputs: converted_xml,
             skipped_inputs: vec![],
             uploads: vec![],
             logs,

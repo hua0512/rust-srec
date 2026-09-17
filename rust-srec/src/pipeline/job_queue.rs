@@ -3290,14 +3290,18 @@ mod tests {
             "streamer-1",
             "session-1",
         );
+        let manifest = Arc::new(crate::pipeline::manifest::PipelineInputManifest::new(
+            "session-1",
+            "streamer-1",
+            crate::pipeline::manifest::ManifestScope::Session,
+            Vec::new(),
+        ));
+        job.manifest = Some(manifest.clone());
         queue.enqueue(job.clone()).await.unwrap();
         assert!(
-            !job_repo
-                .get_job(&job.id)
-                .await
-                .unwrap()
-                .state
-                .contains("session_start_ms")
+            parse_job_state(&job_repo.get_job(&job.id).await.unwrap().state)
+                .session_start
+                .is_none()
         );
 
         queue.resolve_job_metadata(&mut job).await;
@@ -3306,12 +3310,17 @@ mod tests {
             Some(session_start_ms)
         );
 
-        // The resolved value must now be in the DB row, not just in memory.
+        // The resolved value must now be in the DB row, not just in memory, and
+        // rewriting the state must keep the manifest that was stored with the job.
         let db_job = job_repo.get_job(&job.id).await.unwrap();
         let state: serde_json::Value = serde_json::from_str(&db_job.state).unwrap();
         assert_eq!(
             state.get("session_start_ms").and_then(|v| v.as_i64()),
             Some(session_start_ms)
+        );
+        assert_eq!(
+            parse_job_state(&db_job.state).manifest.as_deref(),
+            Some(manifest.as_ref())
         );
     }
 

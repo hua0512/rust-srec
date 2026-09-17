@@ -2366,7 +2366,7 @@ msgstr "Date placeholder anchor"
 msgid "Date range:"
 msgstr "Date range:"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:382
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:391
 msgid "Day (01-31)"
 msgstr "Day (01-31)"
 
@@ -2720,7 +2720,7 @@ msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). 
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:459
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:468
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
@@ -2900,7 +2900,7 @@ msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "e.g. /app/config/BaiduPCS-Go"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:452
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:461
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
 
@@ -2956,7 +2956,7 @@ msgstr "e.g. gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:478
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:487
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
@@ -3857,7 +3857,7 @@ msgstr "FFMPEG_PATH or ffmpeg"
 msgid "File Configuration"
 msgstr "File Configuration"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:474
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:483
 msgid "File Extension Filter"
 msgstr "File Extension Filter"
 
@@ -4399,7 +4399,7 @@ msgstr "HLS Tuning"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:389
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:398
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
@@ -4806,6 +4806,10 @@ msgstr "JSON array of all inputs"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:296
 msgid "JSON array of all outputs"
 msgstr "JSON array of all outputs"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:304
+msgid "JSON of the session pairing (video and danmu per segment), or null"
+msgstr "JSON of the session pairing (video and danmu per segment), or null"
 
 #: src/components/ui/input-with-unit.tsx:28
 msgid "KB"
@@ -5379,7 +5383,7 @@ msgstr "Metadata Editor"
 msgid "Metadata Tags"
 msgstr "Metadata Tags"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:328
 msgid "Metadata Variables"
 msgstr "Metadata Variables"
 
@@ -5421,7 +5425,7 @@ msgstr "Mins"
 msgid "Mint Integrity Token"
 msgstr "Mint Integrity Token"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:396
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:405
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
 
@@ -5463,7 +5467,7 @@ msgstr "Monitoring Stopped"
 msgid "Month"
 msgstr "Month"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:375
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:384
 msgid "Month (01-12)"
 msgstr "Month (01-12)"
 
@@ -6017,11 +6021,11 @@ msgstr "notifier@example.com"
 msgid "Now"
 msgstr "Now"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:303
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:312
 msgid "Nth input: {input0}, {input1}..."
 msgstr "Nth input: {input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:310
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
 msgid "Nth output: {output0}, {output1}..."
 msgstr "Nth output: {output0}, {output1}..."
 
@@ -6136,7 +6140,7 @@ msgstr "One word per line"
 msgid "Ongoing"
 msgstr "Ongoing"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:485
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:494
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
@@ -6191,7 +6195,7 @@ msgstr "Optimize Stream Headers"
 
 #: src/components/config/shared/proxy-settings-card.tsx:190
 #: src/components/config/shared/proxy-settings-card.tsx:210
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:430
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:439
 msgid "Optional"
 msgstr "Optional"
 
@@ -6257,7 +6261,7 @@ msgstr "Output Configuration"
 msgid "Output deleted"
 msgstr "Output deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:427
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:436
 msgid "Output Detection"
 msgstr "Output Detection"
 
@@ -6689,7 +6693,7 @@ msgstr "Platform configuration updated successfully"
 msgid "Platform configurations will appear here when available."
 msgstr "Platform configurations will appear here when available."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:353
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
 msgid "Platform name"
 msgstr "Platform name"
 
@@ -7727,11 +7731,11 @@ msgstr "Sample Rate"
 msgid "Sample Rate (Hz)"
 msgstr "Sample Rate (Hz)"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:346
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:355
 msgid "Sanitized session title"
 msgstr "Sanitized session title"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:339
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:348
 msgid "Sanitized streamer name"
 msgstr "Sanitized streamer name"
 
@@ -7780,11 +7784,11 @@ msgstr "Saving"
 msgid "Saving..."
 msgstr "Saving..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:435
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:444
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:448
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:457
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
@@ -7883,7 +7887,7 @@ msgstr "Search templates..."
 msgid "Search workflows..."
 msgstr "Search workflows..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:403
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:412
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
@@ -8169,7 +8173,7 @@ msgstr "Session ended. Additional details are unavailable."
 msgid "Session entered pending confirmation. Additional details are unavailable."
 msgstr "Session entered pending confirmation. Additional details are unavailable."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:332
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:341
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:495
 msgid "Session ID"
 msgstr "Session ID"
@@ -8624,7 +8628,7 @@ msgstr "Streamer created successfully"
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:325
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:334
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:501
 msgid "Streamer ID"
 msgstr "Streamer ID"
@@ -9076,7 +9080,7 @@ msgstr "Time Based"
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:371
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
 
@@ -9469,7 +9473,7 @@ msgstr "Unit"
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:410
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:419
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
@@ -9967,7 +9971,7 @@ msgstr "WUP"
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:368
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:377
 msgid "Year (4 digits)"
 msgstr "Year (4 digits)"
 

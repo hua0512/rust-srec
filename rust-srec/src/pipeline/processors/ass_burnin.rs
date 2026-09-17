@@ -62,6 +62,10 @@ pub struct AssBurnInConfig {
     pub match_strategy: AssMatchStrategy,
 
     /// If true, require an ASS file for every video input; otherwise videos without ASS are passed through.
+    ///
+    /// A subtitle is burned into one video per job. A later video that resolves
+    /// to a subtitle already burned in this job (a second copy of the same
+    /// recording) is passed through with a reason, whichever value this has.
     #[serde(default = "default_true")]
     pub require_ass: bool,
 
@@ -228,19 +232,42 @@ impl AssBurnInProcessor {
         Ok(candidate)
     }
 
-    /// Subtitle recorded for `video_path` by the session pairing: each danmu
-    /// path of the video's segment with an `.ass` extension. A candidate counts
-    /// only when it is spelled like one of the job's inputs, which resolves a
-    /// subtitle an upstream step relocated, or when it exists on disk.
-    async fn manifest_ass_for_video(
+    /// Subtitle candidates recorded for `video_path` by the session pairing:
+    /// each danmu path of the video's segment with an `.ass` extension.
+    fn manifest_ass_candidates(video_path: &str, manifest: &PipelineInputManifest) -> Vec<String> {
+        manifest
+            .danmu_for_video(video_path)
+            .iter()
+            .map(|danmu| {
+                Path::new(danmu)
+                    .with_extension("ass")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+
+    /// Resolve the subtitle for one video. With session pairing the recorded
+    /// candidate is looked for among the job's inputs first, which resolves a
+    /// subtitle an upstream step relocated; then any input with the video's
+    /// stem; then the candidate on disk. Inputs outrank a file next to the
+    /// recording so a stale subtitle from an earlier run never wins over the
+    /// one this job produced.
+    async fn resolve_ass_for_video(
         video_path: &str,
-        manifest: &PipelineInputManifest,
+        strategy: AssMatchStrategy,
+        manifest: Option<&PipelineInputManifest>,
         inputs: &[String],
+        ass_by_stem: &HashMap<String, String>,
     ) -> Result<Option<String>> {
-        for danmu in manifest.danmu_for_video(video_path) {
-            let candidate = Path::new(danmu).with_extension("ass");
-            let candidate = candidate.to_string_lossy();
-            let candidate_abs = lexical_absolute(&candidate);
+        let candidates = match (strategy, manifest) {
+            (AssMatchStrategy::Manifest, Some(manifest)) => {
+                Self::manifest_ass_candidates(video_path, manifest)
+            }
+            _ => Vec::new(),
+        };
+        for candidate in &candidates {
+            let candidate_abs = lexical_absolute(candidate);
             if let Some(input) = inputs.iter().find(|input| {
                 spelling_equal(
                     &lexical_absolute(input),
@@ -250,29 +277,16 @@ impl AssBurnInProcessor {
             }) {
                 return Ok(Some(input.clone()));
             }
-            if super::utils::try_exists(Path::new(candidate.as_ref())).await? {
-                return Ok(Some(candidate.into_owned()));
+        }
+        if let Some(ass) = Self::match_ass_by_stem(video_path, ass_by_stem) {
+            return Ok(Some(ass));
+        }
+        for candidate in candidates {
+            if super::utils::try_exists(Path::new(&candidate)).await? {
+                return Ok(Some(candidate));
             }
         }
         Ok(None)
-    }
-
-    /// Resolve the subtitle for one video: session pairing first when the
-    /// strategy asks for it and the job carries one, then the stem index.
-    async fn resolve_ass_for_video(
-        video_path: &str,
-        strategy: AssMatchStrategy,
-        manifest: Option<&PipelineInputManifest>,
-        inputs: &[String],
-        ass_by_stem: &HashMap<String, String>,
-    ) -> Result<Option<String>> {
-        if strategy == AssMatchStrategy::Manifest
-            && let Some(manifest) = manifest
-            && let Some(ass) = Self::manifest_ass_for_video(video_path, manifest, inputs).await?
-        {
-            return Ok(Some(ass));
-        }
-        Ok(Self::match_ass_by_stem(video_path, ass_by_stem))
     }
 
     /// Key under which a subtitle is consumed once per job, so two videos with
@@ -469,17 +483,6 @@ impl Processor for AssBurnInProcessor {
                 continue;
             };
 
-            if !consumed_ass.insert(Self::consumed_key(&ass_path)) {
-                let reason =
-                    format!("subtitle {ass_path} was already burned into an earlier video");
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    format!("Skipping {video_path}: {reason}"),
-                ));
-                skipped_inputs.push((video_path.clone(), reason));
-                continue;
-            }
-
             if !super::utils::try_exists(Path::new(&ass_path)).await? {
                 if config.require_ass {
                     return Err(crate::Error::PipelineError(format!(
@@ -491,6 +494,19 @@ impl Processor for AssBurnInProcessor {
                     video_path.clone(),
                     "matched .ass subtitle missing".to_string(),
                 ));
+                continue;
+            }
+
+            // Only a subtitle that exists can be consumed: a missing match must
+            // not mark later videos of the same recording as already burned.
+            if !consumed_ass.insert(Self::consumed_key(&ass_path)) {
+                let reason =
+                    format!("subtitle {ass_path} was already burned into an earlier video");
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Warn,
+                    format!("Skipping {video_path}: {reason}"),
+                ));
+                skipped_inputs.push((video_path.clone(), reason));
                 continue;
             }
 
@@ -788,26 +804,37 @@ mod tests {
     }
 
     /// The `.ass` derived from the recorded danmu path may be absent when an
-    /// upstream step wrote it elsewhere; a subtitle with the video's stem among
-    /// the inputs is used instead, and a real file next to the danmu is found
-    /// even when no input lists it.
+    /// upstream step wrote it elsewhere: a subtitle with the video's stem among
+    /// the inputs is used, and it keeps winning over a stale file next to the
+    /// danmu. Only when no input carries a subtitle is the file on disk used.
     #[tokio::test]
-    async fn derived_ass_falls_back_to_inputs_then_disk() {
+    async fn derived_ass_prefers_inputs_over_a_file_next_to_the_danmu() {
         let temp = TempDir::new().unwrap();
         let path = |name: &str| temp.path().join(name).to_string_lossy().into_owned();
         let manifest = manifest(&[(0, &[&path("rec.mp4")], &[&path("orig/rec.xml")])]);
-        let inputs = strings(&[&path("rec.mp4"), &path("out/rec.ass")]);
-        let ass_by_stem = AssBurnInProcessor::build_ass_index(&inputs);
-        let resolved = AssBurnInProcessor::resolve_ass_for_video(
-            &path("rec.mp4"),
-            AssMatchStrategy::Manifest,
-            Some(&manifest),
-            &inputs,
-            &ass_by_stem,
-        )
-        .await
-        .unwrap();
-        assert_eq!(resolved, Some(path("out/rec.ass")));
+        let with_ass = strings(&[&path("rec.mp4"), &path("out/rec.ass")]);
+        let video_only = strings(&[&path("rec.mp4")]);
+        async fn resolve(
+            video: &str,
+            inputs: &[String],
+            manifest: Option<&PipelineInputManifest>,
+        ) -> Option<String> {
+            AssBurnInProcessor::resolve_ass_for_video(
+                video,
+                AssMatchStrategy::Manifest,
+                manifest,
+                inputs,
+                &AssBurnInProcessor::build_ass_index(inputs),
+            )
+            .await
+            .unwrap()
+        }
+        let video = path("rec.mp4");
+        assert_eq!(
+            resolve(&video, &with_ass, Some(&manifest)).await,
+            Some(path("out/rec.ass"))
+        );
+        assert_eq!(resolve(&video, &video_only, Some(&manifest)).await, None);
 
         tokio::fs::create_dir(temp.path().join("orig"))
             .await
@@ -815,39 +842,39 @@ mod tests {
         tokio::fs::write(temp.path().join("orig/rec.ass"), b"[Script Info]")
             .await
             .unwrap();
-        let resolved = AssBurnInProcessor::resolve_ass_for_video(
-            &path("rec.mp4"),
-            AssMatchStrategy::Manifest,
-            Some(&manifest),
-            &inputs,
-            &ass_by_stem,
-        )
-        .await
-        .unwrap();
-        assert_eq!(resolved, Some(path("orig/rec.ass")));
-
-        let stem_only = AssBurnInProcessor::resolve_ass_for_video(
-            &path("rec.mp4"),
-            AssMatchStrategy::Manifest,
-            None,
-            &inputs,
-            &ass_by_stem,
-        )
-        .await
-        .unwrap();
-        assert_eq!(stem_only, Some(path("out/rec.ass")));
+        assert_eq!(
+            resolve(&video, &with_ass, Some(&manifest)).await,
+            Some(path("out/rec.ass")),
+            "a stale subtitle next to the danmu must not outrank the job's input"
+        );
+        assert_eq!(
+            resolve(&video, &video_only, Some(&manifest)).await,
+            Some(path("orig/rec.ass")),
+            "with no subtitle among the inputs the recorded one on disk is used"
+        );
+        assert_eq!(
+            resolve(&video, &with_ass, None).await,
+            Some(path("out/rec.ass")),
+            "without a pairing the stem index applies"
+        );
     }
 
     /// Two videos from different branches that share a stem resolve to the same
     /// subtitle; only the first is burned and the second is skipped with a reason.
+    /// A subtitle that is matched but missing on disk consumes nothing, so a
+    /// later video of the same recording reports the missing file, not a burn
+    /// that never happened.
     #[tokio::test]
-    async fn duplicate_video_stems_consume_a_subtitle_once() {
+    async fn duplicate_video_stems_consume_an_existing_subtitle_once() {
         let temp = TempDir::new().unwrap();
         let ffmpeg = super::super::output_tests::fake_success_ffmpeg(temp.path());
         let first = temp.path().join("a/rec.mp4");
         let second = temp.path().join("b/rec.mp4");
         let ass = temp.path().join("rec.ass");
-        for video in [&first, &second] {
+        let lost_first = temp.path().join("a/lost.mp4");
+        let lost_second = temp.path().join("b/lost.mp4");
+        let lost_ass = temp.path().join("lost.ass");
+        for video in [&first, &second, &lost_first, &lost_second] {
             tokio::fs::create_dir_all(video.parent().unwrap())
                 .await
                 .unwrap();
@@ -856,15 +883,19 @@ mod tests {
         tokio::fs::write(&ass, b"[Script Info]").await.unwrap();
         let input = ProcessorInput {
             inputs: strings(&[
+                &lost_first.to_string_lossy(),
+                &lost_second.to_string_lossy(),
                 &first.to_string_lossy(),
                 &second.to_string_lossy(),
                 &ass.to_string_lossy(),
+                &lost_ass.to_string_lossy(),
             ]),
             config: Some(
                 serde_json::json!({
                     "ffmpeg_path": ffmpeg,
                     "match_strategy": "stem",
                     "passthrough_inputs": false,
+                    "require_ass": false,
                 })
                 .to_string(),
             ),
@@ -880,9 +911,18 @@ mod tests {
             output.outputs,
             vec![temp.path().join("a/rec_burnin.mp4").to_string_lossy()]
         );
-        assert_eq!(output.skipped_inputs.len(), 1);
-        assert_eq!(output.skipped_inputs[0].0, second.to_string_lossy());
-        assert!(output.skipped_inputs[0].1.contains("already burned"));
+        assert_eq!(
+            output
+                .skipped_inputs
+                .iter()
+                .map(|(video, reason)| (video.clone(), reason.contains("already burned")))
+                .collect::<Vec<_>>(),
+            vec![
+                (lost_first.to_string_lossy().into_owned(), false),
+                (lost_second.to_string_lossy().into_owned(), false),
+                (second.to_string_lossy().into_owned(), true),
+            ]
+        );
         assert!(!temp.path().join("b/rec_burnin.mp4").exists());
     }
 

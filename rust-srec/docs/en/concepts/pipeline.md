@@ -311,8 +311,9 @@ belongs to which video is recorded per segment as the pipeline's session
 pairing, stored with the pipeline itself and available to every step, including
 after a restart or retry. Subtitle conversion and burn-in pair within a segment
 only: a segment without a danmaku file leaves its own video without subtitles
-and does not shift the pairing of later segments. No file is written next to
-the recordings; `_inputs.json` files left by earlier versions are unused and can
+and does not shift the pairing of later segments. A subtitle is burned into one
+video per job; a second copy of the same recording in the same job is passed
+through with a note. No file is written next to the recordings; `_inputs.json` files left by earlier versions are unused and can
 be deleted.
 
 Normal completion and restart recovery collect leaf outputs in DAG definition
