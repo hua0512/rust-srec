@@ -27,6 +27,10 @@ pub struct ExecuteConfig {
     /// - `{output}` - first output file path
     /// - `{output0}`, `{output1}`, ... - Nth output file path
     /// - `{outputs_json}` - JSON array of all outputs
+    ///
+    /// Workflow step jobs carry no output paths, so the `output` placeholders
+    /// expand to nothing there; name the file in the arguments and use
+    /// `scan_output_dir` to hand it to the next step.
     /// - `{manifest_json}` - JSON of the session pairing (video/danmu per
     ///   segment) for paired-segment and session-complete pipelines, else `null`
     /// - `{streamer_id}` - streamer ID
@@ -56,7 +60,9 @@ pub struct ExecuteConfig {
 
     /// Directory to scan for new files after command execution.
     /// If specified, the processor will detect files created during execution
-    /// and include them in the outputs for pipeline chaining.
+    /// and include them in the outputs for pipeline chaining. Supports the
+    /// same placeholders as `command`. Only files absent before the command
+    /// started and modified after it started count as new.
     #[serde(default)]
     pub scan_output_dir: Option<String>,
 
@@ -353,6 +359,10 @@ impl ExecuteCommandProcessor {
         Ok((cmd, serde_json::json!({ "command": command })))
     }
 
+    /// Coarse filesystem timestamps (FAT: 2 s) may predate the moment the
+    /// command started even for files it wrote.
+    const MODIFIED_TOLERANCE: std::time::Duration = std::time::Duration::from_secs(2);
+
     /// Scan a directory and return all file paths.
     async fn scan_directory(dir: &Path, extension_filter: Option<&str>) -> Vec<String> {
         let mut files = Vec::new();
@@ -384,18 +394,43 @@ impl ExecuteCommandProcessor {
     }
 
     /// Detect new files created in a directory by comparing before/after snapshots.
+    /// Files under `dir` that were absent from `before` and were modified at or
+    /// after `started_at`. Several jobs of one preset can share a directory, so
+    /// a file another job left there before this command ran is not this
+    /// command's output even when the snapshot missed it.
     async fn detect_new_files(
         before: &HashSet<String>,
         dir: &Path,
         extension_filter: Option<&str>,
+        started_at: std::time::SystemTime,
     ) -> Vec<String> {
         let after: HashSet<String> = Self::scan_directory(dir, extension_filter)
             .await
             .into_iter()
             .collect();
+        let threshold = started_at
+            .checked_sub(Self::MODIFIED_TOLERANCE)
+            .unwrap_or(started_at);
 
-        // Find files that exist now but didn't exist before
-        let mut new_files: Vec<String> = after.difference(before).cloned().collect();
+        let mut new_files = Vec::new();
+        for path in after.difference(before) {
+            let modified_after_start = match tokio::fs::metadata(path).await {
+                Ok(metadata) => metadata
+                    .modified()
+                    .map(|modified| modified >= threshold)
+                    .unwrap_or(true),
+                // Vanished between the two scans: not an output of this command.
+                Err(_) => false,
+            };
+            if modified_after_start {
+                new_files.push(path.clone());
+            } else {
+                debug!(
+                    path,
+                    "Ignoring file that predates the command in the scanned output directory"
+                );
+            }
+        }
         new_files.sort();
         new_files
     }
@@ -448,9 +483,15 @@ impl Processor for ExecuteCommandProcessor {
             ));
         }
 
+        // The scan directory accepts the same placeholders as the command, so a
+        // per-streamer or per-day output folder can be scanned.
+        let scan_output_dir = match config.scan_output_dir.as_deref() {
+            Some(dir) => Some(Self::expand_variables(None, dir, input)?),
+            None => None,
+        };
+
         // Take snapshot of output directory before execution (if scanning enabled)
-        let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
-        {
+        let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = scan_output_dir {
             let dir_path = Path::new(dir);
             let is_dir = tokio::fs::metadata(dir_path)
                 .await
@@ -476,6 +517,8 @@ impl Processor for ExecuteCommandProcessor {
         } else {
             None
         };
+
+        let started_at = std::time::SystemTime::now();
 
         // Execute command and capture logs (with timeout)
         let command_output_result = tokio::time::timeout(
@@ -540,11 +583,14 @@ impl Processor for ExecuteCommandProcessor {
         // 2. Use explicit outputs (if provided)
         // 3. Pass through inputs (fallback for chaining)
         let mut items_produced = Vec::new();
-        let outputs = if let (Some(dir), Some(before)) = (&config.scan_output_dir, &before_snapshot)
-        {
-            let new_files =
-                Self::detect_new_files(before, Path::new(dir), config.scan_extension.as_deref())
-                    .await;
+        let outputs = if let (Some(dir), Some(before)) = (&scan_output_dir, &before_snapshot) {
+            let new_files = Self::detect_new_files(
+                before,
+                Path::new(dir),
+                config.scan_extension.as_deref(),
+                started_at,
+            )
+            .await;
 
             if new_files.is_empty() {
                 debug!(
@@ -578,7 +624,7 @@ impl Processor for ExecuteCommandProcessor {
             input.inputs.clone()
         };
 
-        metadata["scan_output_dir"] = serde_json::json!(config.scan_output_dir);
+        metadata["scan_output_dir"] = serde_json::json!(scan_output_dir);
         metadata["scan_extension"] = serde_json::json!(config.scan_extension);
         Ok(ProcessorOutput {
             outputs,
@@ -949,12 +995,16 @@ mod tests {
         fs::write(dir.join("new1.mp4"), "test").await.unwrap();
         fs::write(dir.join("new2.txt"), "test").await.unwrap();
 
+        let started_at = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+
         // Detect new files (all)
-        let new_files = ExecuteCommandProcessor::detect_new_files(&before, dir, None).await;
+        let new_files =
+            ExecuteCommandProcessor::detect_new_files(&before, dir, None, started_at).await;
         assert_eq!(new_files.len(), 2);
 
         // Detect new files (only .mp4)
-        let new_mp4 = ExecuteCommandProcessor::detect_new_files(&before, dir, Some("mp4")).await;
+        let new_mp4 =
+            ExecuteCommandProcessor::detect_new_files(&before, dir, Some("mp4"), started_at).await;
         assert_eq!(new_mp4.len(), 1);
         assert!(new_mp4[0].contains("new1.mp4"));
     }
@@ -994,6 +1044,72 @@ mod tests {
 
         // Should fall back to inputs when no new files detected
         assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
+    }
+
+    /// The scanned directory expands placeholders, and a file that was already
+    /// there before the command started (another job's output that the snapshot
+    /// missed, or an older file) is not reported as this command's output.
+    #[tokio::test]
+    async fn scan_output_dir_expands_placeholders_and_ignores_files_that_predate_the_command() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let output_dir = temp_dir.path().join("streamer-7");
+        std::fs::create_dir_all(&output_dir).unwrap();
+        let stale = output_dir.join("stale.txt");
+        std::fs::write(&stale, "old").unwrap();
+        let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        std::fs::File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+        let fresh = output_dir.join("fresh.txt");
+        let template_dir = temp_dir.path().join("{streamer}-{session_id}");
+        #[cfg(windows)]
+        let command = format!("echo new> \"{}\"", fresh.display());
+        #[cfg(not(windows))]
+        let command = format!("echo new > '{}'", fresh.display());
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            config: Some(
+                serde_json::json!({
+                    "command": command,
+                    "scan_output_dir": template_dir.to_string_lossy(),
+                    "scan_extension": "txt",
+                })
+                .to_string(),
+            ),
+            streamer_id: "streamer".to_string(),
+            session_id: "7".to_string(),
+            ..Default::default()
+        };
+        // The stale file was not in the snapshot from this run's point of view
+        // when it is renamed into place by a sibling job; simulate that by
+        // scanning a directory the snapshot could not see it in.
+        let processor = ExecuteCommandProcessor::new();
+        let result = processor
+            .process(&input, &ProcessorContext::noop("test"))
+            .await
+            .unwrap();
+        assert_eq!(result.outputs, vec![fresh.to_string_lossy().into_owned()]);
+        let metadata: serde_json::Value =
+            serde_json::from_str(result.metadata.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            metadata["scan_output_dir"],
+            serde_json::json!(output_dir.to_string_lossy())
+        );
+
+        let before = HashSet::new();
+        let detected = ExecuteCommandProcessor::detect_new_files(
+            &before,
+            &output_dir,
+            Some("txt"),
+            std::time::SystemTime::now() - std::time::Duration::from_secs(60),
+        )
+        .await;
+        assert_eq!(detected, vec![fresh.to_string_lossy().into_owned()]);
     }
 
     /// Test scan output directory fallback prefers explicit outputs over input passthrough.

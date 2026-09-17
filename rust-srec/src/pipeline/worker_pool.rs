@@ -15,7 +15,9 @@ use super::dag_scheduler::{
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
-use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput};
+use super::processors::{
+    JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, UploadResultItem,
+};
 use super::progress::JobProgressSnapshot;
 
 /// How long a job already in `Processor::process` may keep running after the pool's
@@ -795,6 +797,7 @@ impl JobRunner {
                     Some(processor.name()),
                     job.execution_info.as_ref().and_then(|i| i.current_step),
                     job.execution_info.as_ref().and_then(|i| i.total_steps),
+                    &[],
                 )
                 .await
             {
@@ -995,7 +998,7 @@ impl JobRunner {
                 );
             }
             JobOutcome::Failed(e) => {
-                self.finish_failed(&facts, &e.to_string(), DagFailureKind::ProcessorError)
+                self.finish_failed(&facts, &e.to_string(), DagFailureKind::ProcessorError, &[])
                     .await;
             }
             JobOutcome::TimedOut if cancelled => {
@@ -1017,7 +1020,7 @@ impl JobRunner {
                     }
                 };
                 let reason = timeout_error(self.job_timeout, &facts, &input, progress.as_ref());
-                self.finish_failed(&facts, &reason, DagFailureKind::Timeout)
+                self.finish_failed(&facts, &reason, DagFailureKind::Timeout, &[])
                     .await;
             }
         }
@@ -1127,8 +1130,13 @@ impl JobRunner {
             {
                 warn!(job_id = %facts.id, error = %e, "Failed to record logs of a partially failed job");
             }
-            self.finish_failed(facts, &error, DagFailureKind::ProcessorError)
-                .await;
+            self.finish_failed(
+                facts,
+                &error,
+                DagFailureKind::ProcessorError,
+                &output.uploads,
+            )
+            .await;
             return;
         }
 
@@ -1225,7 +1233,14 @@ impl JobRunner {
 
     /// Persist a failed or timed-out job and fail its DAG. Processors own cleanup
     /// of their staged outputs; persisted artifact paths may belong to earlier attempts.
-    async fn finish_failed(&self, facts: &JobFacts, error: &str, kind: DagFailureKind) {
+    /// `uploads` are the per-file results of a partially failed upload batch.
+    async fn finish_failed(
+        &self,
+        facts: &JobFacts,
+        error: &str,
+        kind: DagFailureKind,
+        uploads: &[UploadResultItem],
+    ) {
         self.emit(PipelineEvent::JobFailed {
             job_id: facts.id.clone(),
             job_type: facts.job_type.clone(),
@@ -1240,6 +1255,7 @@ impl JobRunner {
                 Some(facts.processor_name),
                 facts.current_step,
                 facts.total_steps,
+                uploads,
             )
             .await
         {

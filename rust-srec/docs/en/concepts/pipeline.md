@@ -70,15 +70,19 @@ Use `program` and `args` to run an executable directly, without a shell:
 ```json
 {
   "program": "ffmpeg",
-  "args": ["-nostdin", "-n", "-i", "{input}", "-c", "copy", "{output}"]
+  "args": ["-nostdin", "-n", "-i", "{input}", "-c", "copy", "/recordings/converted/{streamer}_%Y%m%d_%H%M%S.mp4"],
+  "scan_output_dir": "/recordings/converted",
+  "scan_extension": "mp4"
 }
 ```
+
+Workflow steps receive no output paths, so `{output}`, `{outputN}` and `{outputs_json}` are empty there. Name the file in the arguments and set `scan_output_dir` (which accepts the same placeholders) so the file is handed to the next step: files that were not in the directory before the command started and were modified after it started are the step's outputs. Without a scan directory the inputs pass through unchanged.
 
 `program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. In paired-segment and session-complete pipelines, `{manifest_json}` expands to the JSON session pairing (which danmu file belongs to which video, per segment); elsewhere it expands to `null`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
 
 Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
 
-Shell syntax follows the server's operating system, regardless of the browser's operating system. For example, `ffmpeg -nostdin -n -i {input} -c copy {output}` uses a fixed native executable with placeholder arguments and works with the supported template grammar on both platforms, when FFmpeg is installed on the server.
+Shell syntax follows the server's operating system, regardless of the browser's operating system. For example, `ffmpeg -nostdin -n -i {input} -c copy {input}.mp4` uses a fixed native executable with placeholder arguments and works with the supported template grammar on both platforms, when FFmpeg is installed on the server.
 
 Command templates without recognized placeholders retain their existing shell behavior. With placeholders, the compiler accepts a bounded grammar and passes substituted data through process-local bindings. Placeholders may appear in ordinary argument words or file redirect targets; the command name must be fixed. Unknown and out-of-range placeholders remain literal. A bare empty value contributes no word, while existing quotes retain an empty argument. Empty redirect targets fail before launch.
 
@@ -119,7 +123,7 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 
 - **Login**: open any `baidupcs` preset in the web UI and use the account card to log in with a pasted cookie string (recommended) or BDUSS + STOKEN. Credentials are handed to BaiduPCS-Go and the session persists in its config directory (`BAIDUPCS_GO_CONFIG_DIR`); the same card shows the active account and quota. Enable **Remember for automatic re-login** to also store the credentials server-side (plaintext, like platform cookies): upload jobs then log in again by themselves when the session turns out to be expired — checked before the first attempt and once more before a retry. When a replayed login is rejected (typically because the stored session token was invalidated by a password change), a high-priority `baidupcs_relogin_failed` notification fires and further attempts pause for an hour, so dead credentials produce one alert instead of a failed Baidu call per job. Logging out forgets the stored credentials.
 - **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
-- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap.
+- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file lands directly under the destination folder.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
 Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
@@ -381,7 +385,11 @@ metadata shapes.
 A processor that reports some of its inputs as failed fails the job, and a workflow
 step with it, even when the remaining inputs were processed. The error names each
 failed input. What was published stays on disk and in the job's produced-file
-history, so a retry resumes past it.
+history, so a retry resumes past it. An rclone move or BaiduPCS upload that
+fails part-way records each file's own result instead of marking every file
+failed. Copy and move steps refuse two inputs that would land on the same
+destination name, and a thumbnail step takes the first frame of a recording
+shorter than the requested timestamp.
 
 Path mechanisms share filesystem resolution while preserving separate policies:
 ASS command spelling remains lexical; remux resolves existing relative command

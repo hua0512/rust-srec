@@ -188,7 +188,15 @@ async fn processors_reject_missing_empty_and_failed_outputs_without_replacing_fi
             )
             .await
             .unwrap();
-            assert!(result.is_err(), "{kind:?} must reject incomplete output");
+            if matches!(kind, Kind::Thumbnail) && !matches!(behavior, Behavior::Failure) {
+                // ffmpeg exiting 0 without a frame means the recording has none
+                // to give; the input is passed through rather than failed.
+                let output = result.unwrap();
+                assert_eq!(output.skipped_inputs.len(), 1);
+                assert_eq!(output.outputs, fixture.input.inputs);
+            } else {
+                assert!(result.is_err(), "{kind:?} must reject incomplete output");
+            }
             assert_sources_preserved(&fixture);
             assert_eq!(
                 std::fs::read(&fixture.input.outputs[0]).unwrap(),
@@ -311,7 +319,7 @@ async fn processor_cancellation_and_timeout_remove_partial_outputs() {
 
 #[tokio::test]
 #[ignore = "requires an installed FFmpeg binary"]
-async fn thumbnail_seek_beyond_short_recording_does_not_publish_a_missing_file() {
+async fn thumbnail_seek_beyond_short_recording_falls_back_to_the_first_frame() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("short.mp4");
     let output = dir.path().join("short.jpg");
@@ -349,9 +357,10 @@ async fn thumbnail_seek_beyond_short_recording_does_not_publish_a_missing_file()
         ),
     )
     .await
+    .unwrap()
     .unwrap();
-    assert!(result.is_err());
-    assert!(!output.exists());
+    assert_eq!(result.outputs, vec![output.to_string_lossy().into_owned()]);
+    assert!(std::fs::metadata(&output).unwrap().len() > 0);
     assert!(input.exists());
     wait_for_cleanup(dir.path()).await;
 }

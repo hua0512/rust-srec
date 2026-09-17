@@ -14,15 +14,17 @@
 use async_trait::async_trait;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 use tokio::fs;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
+use super::outputs::TempOutputGuard;
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
-use super::utils::{create_log_entry, tmp_output_path};
+use super::utils::create_log_entry;
 use crate::Result;
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 
@@ -135,26 +137,28 @@ impl CopyMoveProcessor {
         }
     }
 
-    /// Copy `source` to `dest` through a `tmp_output_path` sibling, verify
-    /// the byte count, and rename the copy into place. A crash or
-    /// cancellation mid-copy therefore leaves only a `.tmp-*` file — never
-    /// a partial file under the final destination name, which would block a
-    /// retried move when `overwrite` is disabled.
+    /// Copy `source` to `dest` through a temporary sibling, verify the byte
+    /// count, and rename the copy into place. A crash or cancellation mid-copy
+    /// therefore leaves at most a `.tmp-*` file, which the guard removes when
+    /// this future is dropped — never a partial file under the final
+    /// destination name, which would block a retried move when `overwrite` is
+    /// disabled.
     ///
-    /// Returns the bytes copied, or a user-facing error message; the
-    /// temporary copy is removed on every error path.
+    /// Returns the bytes copied, or a user-facing error message.
     async fn copy_via_tmp(
         source: &Path,
         dest: &Path,
         source_size: u64,
         config: &CopyMoveConfig,
     ) -> std::result::Result<u64, String> {
-        let tmp_dest = tmp_output_path(dest);
+        // Dropped on every exit; after a successful rename there is nothing
+        // left under its path to remove.
+        let temp = TempOutputGuard::new(dest);
+        let tmp_dest = temp.path().to_path_buf();
 
         let bytes_copied = match fs::copy(source, &tmp_dest).await {
             Ok(bytes) => bytes,
             Err(e) => {
-                Self::remove_tmp(&tmp_dest).await;
                 return Err(if Self::is_disk_full_error(&e) {
                     format!(
                         "Insufficient disk space while copying. Required: {}",
@@ -167,7 +171,6 @@ impl CopyMoveProcessor {
         };
 
         if config.verify_integrity && bytes_copied != source_size {
-            Self::remove_tmp(&tmp_dest).await;
             return Err(format!(
                 "File integrity check failed. Source size: {}, Destination size: {}",
                 source_size, bytes_copied
@@ -186,7 +189,6 @@ impl CopyMoveProcessor {
                 Err(e)
             };
             if let Err(e) = renamed {
-                Self::remove_tmp(&tmp_dest).await;
                 return Err(format!("Failed to move copy into place: {}", e));
             }
         }
@@ -194,18 +196,10 @@ impl CopyMoveProcessor {
         Ok(bytes_copied)
     }
 
-    /// Best-effort removal of a temporary copy that will not be renamed
-    /// into place.
-    async fn remove_tmp(tmp_dest: &Path) {
-        if let Err(e) = fs::remove_file(tmp_dest).await
-            && e.kind() != ErrorKind::NotFound
-        {
-            warn!(
-                path = %tmp_dest.display(),
-                error = %e,
-                "Failed to remove temporary copy"
-            );
-        }
+    /// Whether `source_path` is excluded by the configured patterns, matched
+    /// against the full path and the file name alike.
+    fn is_excluded(exclude_set: Option<&RegexSet>, source_path: &str, filename: &str) -> bool {
+        exclude_set.is_some_and(|set| set.is_match(source_path) || set.is_match(filename))
     }
 }
 
@@ -341,6 +335,32 @@ impl Processor for CopyMoveProcessor {
                 return Err(crate::Error::PipelineError(format!(
                     "Destination directory does not exist: {}",
                     dest_dir
+                )));
+            }
+        }
+
+        // Every input lands directly under the destination, so two inputs with
+        // the same file name (fan-in from two branches) would silently replace
+        // each other. Refuse the whole job before any transfer.
+        let mut destinations: HashMap<std::path::PathBuf, &String> = HashMap::new();
+        for source_path in &input.inputs {
+            let Some(filename) = Path::new(source_path).file_name() else {
+                continue;
+            };
+            if Self::is_excluded(
+                exclude_set.as_ref(),
+                source_path,
+                &filename.to_string_lossy(),
+            ) {
+                continue;
+            }
+            let dest = dest_dir_path.join(filename);
+            if let Some(earlier) = destinations.insert(dest.clone(), source_path) {
+                return Err(crate::Error::PipelineError(format!(
+                    "Inputs {} and {} would both be written to {}; rename one or send them to different destinations",
+                    earlier,
+                    source_path,
+                    dest.display()
                 )));
             }
         }
@@ -644,7 +664,7 @@ impl Processor for CopyMoveProcessor {
 
                             source_size
                         }
-                        Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => {
+                        Err(e) if e.kind() == ErrorKind::CrossesDevices => {
                             // Cross-filesystem move: fall back to copy + verify,
                             // then remove the source.
                             let bytes_copied =
@@ -1468,6 +1488,70 @@ mod tests {
                 "{operation}: a move removes the source it left behind"
             );
         }
+    }
+
+    /// Two inputs that share a file name would overwrite each other under the
+    /// destination; the job is refused before anything is transferred.
+    #[tokio::test]
+    async fn test_duplicate_destinations_are_refused_before_any_transfer() {
+        let temp_dir = TempDir::new().unwrap();
+        let first = temp_dir.path().join("a/rec.mp4");
+        let second = temp_dir.path().join("b/rec.mp4");
+        let excluded = temp_dir.path().join("c/rec.mp4");
+        for path in [&first, &second, &excluded] {
+            fs::create_dir_all(path.parent().unwrap()).await.unwrap();
+            fs::write(path, "content").await.unwrap();
+        }
+        let dest_dir = temp_dir.path().join("output");
+        let config = |exclude: &str| {
+            serde_json::json!({
+                "operation": "move",
+                "destination": dest_dir.to_string_lossy(),
+                "exclude_patterns": [exclude],
+            })
+            .to_string()
+        };
+        let processor = CopyMoveProcessor::new();
+
+        let error = processor
+            .process(
+                &ProcessorInput {
+                    inputs: vec![
+                        first.to_string_lossy().to_string(),
+                        second.to_string_lossy().to_string(),
+                    ],
+                    config: Some(config("never-matches")),
+                    ..Default::default()
+                },
+                &ProcessorContext::noop("test"),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("would both be written to"),
+            "{error}"
+        );
+        assert!(first.exists() && second.exists(), "nothing was moved");
+        assert!(!dest_dir.join("rec.mp4").exists());
+
+        // An excluded input does not count as a collision.
+        let output = processor
+            .process(
+                &ProcessorInput {
+                    inputs: vec![
+                        first.to_string_lossy().to_string(),
+                        excluded.to_string_lossy().to_string(),
+                    ],
+                    config: Some(config("/c/")),
+                    ..Default::default()
+                },
+                &ProcessorContext::noop("test"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.succeeded_inputs, vec![first.to_string_lossy()]);
+        assert_eq!(output.skipped_inputs.len(), 1);
+        assert!(dest_dir.join("rec.mp4").exists());
     }
 
     /// A destination template that resolves to the input's own directory makes

@@ -273,7 +273,9 @@ impl RcloneProcessor {
     ///
     /// Returned as a [`TempPath`] so the manifest is removed when the guard
     /// drops, including when a job timeout or cancellation drops the owning
-    /// future before the explicit `close()` in `process_batch`.
+    /// future before the explicit `close()` in `process_batch`. It lives in
+    /// the system temporary directory: `base_dir` may be a read-only mount or
+    /// the filesystem root when the inputs share no deeper ancestor.
     async fn create_files_from_list(
         inputs: &[String],
         base_dir: &Path,
@@ -281,7 +283,7 @@ impl RcloneProcessor {
         let named_file = tempfile::Builder::new()
             .prefix(".rclone_files_")
             .suffix(".txt")
-            .tempfile_in(base_dir)?;
+            .tempfile()?;
         let (file, temp_path) = named_file.into_parts();
         let mut file = tokio::fs::File::from_std(file);
 
@@ -737,9 +739,68 @@ impl RcloneProcessor {
             "Rclone {} batch failed",
             cmd_op
         );
-        Err(crate::Error::Other(
-            last_error.unwrap_or_else(|| "Rclone batch failed".to_string()),
-        ))
+        let error = last_error.unwrap_or_else(|| "Rclone batch failed".to_string());
+
+        // A move confirms each transferred file by the absence of its source, so
+        // a batch that failed part-way still has per-file results: the moved
+        // inputs are reported as completed and the rest as failed, and the
+        // worker pool fails the job from `failed_inputs`. Copy and sync give no
+        // per-file signal, so every input of a failed batch is failed.
+        let moved: Vec<String> = inputs
+            .iter()
+            .filter(|input| !pending_inputs.contains(input))
+            .cloned()
+            .collect();
+        if matches!(*operation, RcloneOperation::Move) && !moved.is_empty() {
+            return Ok(ProcessorOutput {
+                outputs: vec![],
+                duration_secs: start.elapsed().as_secs_f64(),
+                metadata: Some(
+                    serde_json::json!({
+                        "batch_size": inputs.len(),
+                        "base_dir": base_dir_str,
+                        "operation": cmd_op,
+                        "attempts": self.max_retries,
+                        "resumed_inputs": resumed_inputs,
+                        "moved_inputs": moved.len(),
+                        "failed_inputs": pending_inputs.len(),
+                    })
+                    .to_string(),
+                ),
+                items_produced: vec![],
+                input_size_bytes: Some(total_input_size),
+                output_size_bytes: None,
+                failed_inputs: pending_inputs
+                    .iter()
+                    .map(|input| (input.clone(), error.clone()))
+                    .collect(),
+                succeeded_inputs: moved.clone(),
+                skipped_inputs: vec![],
+                uploads: inputs
+                    .iter()
+                    .map(|input| {
+                        let completed = moved.contains(input);
+                        UploadResultItem {
+                            local_path: input.clone(),
+                            remote_path: completed
+                                .then(|| {
+                                    Self::batch_remote_path(&base_dir, remote_destination, input)
+                                })
+                                .flatten(),
+                            size_bytes: file_sizes.get(input).copied(),
+                            status: if completed {
+                                UploadItemStatus::Completed
+                            } else {
+                                UploadItemStatus::Failed
+                            },
+                            error: (!completed).then(|| error.clone()),
+                        }
+                    })
+                    .collect(),
+                logs,
+            });
+        }
+        Err(crate::Error::Other(error))
     }
 
     /// Determine remote destination path with placeholder expansion.
@@ -1027,6 +1088,74 @@ mod tests {
             "remote:/{}/StreamerName",
             pipeline_common::expand_path_template_at("%Y/%m/%d", Some(dt.timestamp_millis()))
         )
+    }
+
+    /// A move batch that fails after transferring some inputs reports each
+    /// file's own result: the moved ones as completed, the rest as failed, so
+    /// the worker pool fails the job without recording transferred files as
+    /// failed uploads.
+    #[tokio::test(start_paused = true)]
+    async fn batch_move_partial_failure_reports_per_file_results() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let names = ["a.mp4", "b.mp4", "c.mp4", "d.mp4"];
+        let paths: Vec<PathBuf> = names
+            .iter()
+            .map(|name| temp_dir.path().join(name))
+            .collect();
+        for path in &paths {
+            tokio::fs::write(path, b"video").await.unwrap();
+        }
+        // Every attempt moves one more input and then fails.
+        let runner = Arc::new(MockRcloneCommandRunner::new(
+            paths[..3]
+                .iter()
+                .map(|path| MockAttempt {
+                    moved_inputs: vec![path.clone()],
+                    succeeds: false,
+                })
+                .collect(),
+        ));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let inputs: Vec<String> = paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        let input = ProcessorInput {
+            inputs: inputs.clone(),
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("partial-move"))
+            .await
+            .unwrap();
+
+        assert_eq!(runner.commands().len(), 3);
+        assert_eq!(output.succeeded_inputs, inputs[..3]);
+        assert_eq!(output.failed_inputs.len(), 1);
+        assert_eq!(output.failed_inputs[0].0, inputs[3]);
+        assert!(output.failed_inputs[0].1.contains("rclone batch failed"));
+        assert!(output.outputs.is_empty());
+        assert_eq!(
+            output
+                .uploads
+                .iter()
+                .map(|item| (
+                    item.local_path.as_str(),
+                    item.status,
+                    item.remote_path.is_some()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (inputs[0].as_str(), UploadItemStatus::Completed, true),
+                (inputs[1].as_str(), UploadItemStatus::Completed, true),
+                (inputs[2].as_str(), UploadItemStatus::Completed, true),
+                (inputs[3].as_str(), UploadItemStatus::Failed, false),
+            ]
+        );
+        assert!(paths[3].exists(), "the unmoved source stays for a retry");
     }
 
     #[tokio::test(start_paused = true)]

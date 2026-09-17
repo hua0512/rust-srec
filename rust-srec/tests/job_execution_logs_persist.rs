@@ -149,7 +149,14 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
             .unwrap();
         if fail {
             queue
-                .fail_with_step_info(&job_id, "retry failed", Some("retry"), Some(2), Some(4))
+                .fail_with_step_info(
+                    &job_id,
+                    "retry failed",
+                    Some("retry"),
+                    Some(2),
+                    Some(4),
+                    &[],
+                )
                 .await
                 .unwrap();
         } else {

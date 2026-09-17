@@ -292,7 +292,7 @@ async fn processor_driver_child() {
                 }
             }
             "empty-overrides" => {
-                for (kind, suffix) in [(Kind::Audio, "good-input_audio.aac"), (Kind::Metadata, "good-input_meta.mp4"), (Kind::Thumbnail, "good-input.jpg")] {
+                for (kind, suffix) in [(Kind::Audio, "good-input_audio.mka"), (Kind::Metadata, "good-input_meta.mp4"), (Kind::Thumbnail, "good-input.jpg")] {
                     let mut fixture = super::fixture(kind, Behavior::Success, false);
                     fixture.input.outputs = vec![String::new()];
                     let result = fixture.processor.process(&fixture.input, &ProcessorContext::noop("generated-name")).await.unwrap();
