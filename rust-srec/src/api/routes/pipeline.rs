@@ -122,16 +122,20 @@ impl FromRef<AppState> for PipelineRouteState {
     }
 }
 
-/// Dependencies of the pipeline-preset endpoints in `presets`.
+/// Dependencies of the pipeline-preset endpoints in `presets`: the preset
+/// store, plus `pipeline_manager` to check a saved definition the way DAG
+/// creation will.
 #[derive(Clone)]
 pub struct PresetRouteState {
     pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
+    pipeline_manager: Arc<crate::pipeline::PipelineManager>,
 }
 
 impl FromRef<AppState> for PresetRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             pipeline_preset_repository: state.pipeline_preset_repository.clone(),
+            pipeline_manager: state.pipeline_manager.clone(),
         }
     }
 }

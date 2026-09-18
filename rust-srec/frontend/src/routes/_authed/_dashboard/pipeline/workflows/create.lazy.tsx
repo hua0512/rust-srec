@@ -6,6 +6,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
+import { validateBeforeSave } from '@/components/pipeline/workflows/validation-feedback';
 import { DagStepDefinition } from '@/api/schemas';
 
 export const Route = createLazyFileRoute(
@@ -39,15 +40,12 @@ function CreateWorkflowPage() {
     description?: string;
     steps: DagStepDefinition[];
   }) => {
-    createMutation.mutate({
-      data: {
-        name: data.name,
-        description: data.description,
-        dag: {
-          name: data.name,
-          steps: data.steps,
-        },
-      },
+    const dag = { name: data.name, steps: data.steps };
+    void validateBeforeSave(i18n, dag).then((proceed) => {
+      if (!proceed) return;
+      createMutation.mutate({
+        data: { name: data.name, description: data.description, dag },
+      });
     });
   };
 

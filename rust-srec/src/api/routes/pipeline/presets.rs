@@ -106,6 +106,7 @@ pub async fn create_pipeline_preset(
             "DAG pipeline preset must have at least one step",
         ));
     }
+    reject_unrunnable_definition(&state.pipeline_manager, &payload.dag).await?;
 
     // Create DAG preset
     let mut preset = crate::database::models::PipelinePreset::new(payload.name, payload.dag);
@@ -156,6 +157,7 @@ pub async fn update_pipeline_preset(
             "DAG pipeline preset must have at least one step",
         ));
     }
+    reject_unrunnable_definition(&state.pipeline_manager, &payload.dag).await?;
 
     let dag_json = serde_json::to_string(&payload.dag)
         .map_err(|e| ApiError::bad_request(format!("Invalid DAG definition: {}", e)))?;
@@ -176,6 +178,26 @@ pub async fn update_pipeline_preset(
         .map_err(ApiError::from)?;
 
     Ok(Json(PipelinePresetResponse::from(preset)))
+}
+
+/// Refuse to store a workflow that DAG creation would refuse to run: a
+/// missing preset or workflow, an unknown processor, a structural fault, or a
+/// delete racing a sibling. Reported when the workflow is saved rather than
+/// when the next recording finishes and its post-processing silently does not
+/// start. Warnings are left to the validate endpoint, which the editor calls
+/// before saving.
+async fn reject_unrunnable_definition(
+    pipeline_manager: &crate::pipeline::PipelineManager,
+    dag: &crate::database::models::job::DagPipelineDefinition,
+) -> ApiResult<()> {
+    let analysis = pipeline_manager
+        .analyze_dag_definition(dag.clone())
+        .await
+        .map_err(ApiError::from)?;
+    if analysis.errors.is_empty() {
+        return Ok(());
+    }
+    Err(ApiError::validation(analysis.errors.join("; ")))
 }
 
 #[utoipa::path(

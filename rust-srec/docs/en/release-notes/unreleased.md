@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Workflows are checked when they are saved**
+
+  Saving or validating a workflow now resolves its presets and nested workflows the way a run would, so a missing preset, an unknown processor, a cycle, or a delete or move racing a sibling step is reported in the editor instead of failing silently when the next recording finishes. A step that deletes its sources through an option, such as a remux with **Remove Input on Success**, beside a step that still reads them produces a warning in the editor and in the log when the workflow runs. See [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).
+
 - **A failed step no longer cancels unrelated branches, and destructive steps cannot race their siblings**
 
   When one step of a workflow fails, only the steps that depend on it are cancelled. Steps on other branches, such as a long subtitle burn-in running beside a failed thumbnail, finish normally; the workflow shows as running, with the failure as its error, until nothing is left running, and is then marked failed. Retrying it re-runs only the failed and cancelled steps. A workflow that places a `delete`, a `move` or a Baidu Netdisk upload that deletes local files next to another step reading the same files is now rejected when it is created, with a message naming the steps, instead of letting the two race for the files. See [error handling](../concepts/pipeline.md#error-handling) and [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).
