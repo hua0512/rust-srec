@@ -1829,6 +1829,50 @@ async fn retry_dag_after_a_partial_failure_reruns_only_the_failed_branch() {
     );
 }
 
+/// The retry sweeper re-queues a due retry whose step still waits on the job
+/// and drops one whose workflow has settled since.
+#[tokio::test]
+async fn run_due_retries_requeues_live_attempts_and_drops_settled_ones() {
+    let (manager, jobs, _dags, _pool) = sqlx_manager().await;
+    let live = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("live retry", &["A"]),
+        )
+        .await
+        .unwrap();
+    let settled = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_chain("settled retry", &["A"]),
+        )
+        .await
+        .unwrap();
+    for created in [&live, &settled] {
+        let job_id = &created.root_job_ids[0];
+        assert_eq!(jobs.mark_job_failed(job_id, "boom").await.unwrap(), 1);
+        assert_eq!(jobs.schedule_job_retry(job_id, 0).await.unwrap(), 1);
+    }
+    manager.cancel_pipeline(&settled.dag_id).await.unwrap();
+
+    assert_eq!(manager.run_due_retries().await, 1);
+    let live_job = jobs.get_job(&live.root_job_ids[0]).await.unwrap();
+    assert_eq!(live_job.status, "PENDING");
+    assert_eq!(live_job.retry_count, 1);
+    assert!(live_job.retry_after.is_none());
+    let settled_job = jobs.get_job(&settled.root_job_ids[0]).await.unwrap();
+    assert_eq!(settled_job.status, "FAILED");
+    assert!(
+        settled_job.retry_after.is_none(),
+        "a retry of a cancelled workflow is dropped"
+    );
+    assert_eq!(manager.run_due_retries().await, 0);
+}
+
 #[tokio::test]
 async fn whole_workflow_retry_restarts_failed_and_cancelled_root_jobs() {
     use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
@@ -2448,7 +2492,8 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
     assert!(manager.job_queue.progress_aggregator_is_running());
 
     manager.clone().start();
-    assert_eq!(manager.runtime.lock().tasks.len(), 3);
+    // Completion handler, coordinator, retry sweeper, stale-state cleanup.
+    assert_eq!(manager.runtime.lock().tasks.len(), 4);
 
     tokio::time::timeout(std::time::Duration::from_secs(1), manager.stop())
         .await
@@ -2532,6 +2577,8 @@ async fn test_expand_workflows_with_duplicate_names() {
                     name: "wf".to_string(),
                 },
                 depends_on: vec![],
+                retry: None,
+                timeout_secs: None,
             },
             DagStep {
                 id: "W2".to_string(),
@@ -2539,6 +2586,8 @@ async fn test_expand_workflows_with_duplicate_names() {
                     name: "wf".to_string(),
                 },
                 depends_on: vec!["W1".to_string()],
+                retry: None,
+                timeout_secs: None,
             },
             DagStep::with_dependencies(
                 "Z",
@@ -2611,6 +2660,8 @@ async fn test_expand_workflows_preserves_leaf_order() {
                     name: "wf".to_string(),
                 },
                 depends_on: vec![],
+                retry: None,
+                timeout_secs: None,
             },
             DagStep::with_dependencies(
                 "Z",

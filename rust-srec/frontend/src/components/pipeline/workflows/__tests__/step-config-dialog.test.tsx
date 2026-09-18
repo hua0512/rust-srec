@@ -236,6 +236,62 @@ describe('workflow preset warnings', () => {
   );
 });
 
+describe('StepConfigDialog step policy', () => {
+  const inline: DagStepDefinition = {
+    id: 'run',
+    depends_on: [],
+    step: { type: 'inline', processor: 'execute', config: { command: 'echo' } },
+  };
+
+  it('saves the retry budget and timeout with the step', async () => {
+    const { onSave } = renderDialog(inline);
+    // Radix tabs activate on mouse down, not on click.
+    fireEvent.mouseDown(
+      await screen.findByRole('tab', { name: /Flow & Dependencies/i }),
+      { button: 0 },
+    );
+    fireEvent.change(await screen.findByLabelText(/Attempts/i), {
+      target: { value: '3' },
+    });
+    fireEvent.change(screen.getByLabelText(/Retry backoff/i), {
+      target: { value: '30' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Timeout \(seconds\)/i), {
+      target: { value: '600' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      retry: { max_attempts: 3, backoff_secs: 30 },
+      timeout_secs: 600,
+    });
+  });
+
+  it('drops the policy when attempts fall back to one and the timeout is cleared', async () => {
+    const { onSave } = renderDialog({
+      ...inline,
+      retry: { max_attempts: 2, backoff_secs: 5 },
+      timeout_secs: 30,
+    });
+    // Radix tabs activate on mouse down, not on click.
+    fireEvent.mouseDown(
+      await screen.findByRole('tab', { name: /Flow & Dependencies/i }),
+      { button: 0 },
+    );
+    const attempts = await screen.findByLabelText(/Attempts/i);
+    expect(attempts).toHaveValue(2);
+    fireEvent.change(attempts, { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/^Timeout \(seconds\)/i), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = onSave.mock.calls[0][0];
+    expect(saved).not.toHaveProperty('retry');
+    expect(saved).not.toHaveProperty('timeout_secs');
+  });
+});
+
 describe('StepConfigDialog preset steps', () => {
   it('detaches a preset step into its own processor', async () => {
     const step: DagStepDefinition = {

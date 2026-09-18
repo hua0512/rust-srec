@@ -634,6 +634,9 @@ pub struct JobResponse {
     pub duration_secs: Option<f64>,
     /// Time spent waiting in queue before processing started (seconds).
     pub queue_wait_secs: Option<f64>,
+    /// When a failed workflow step job is scheduled to run again under its
+    /// step's retry policy; `null` when no automatic retry is pending.
+    pub retry_after: Option<DateTime<Utc>>,
 }
 
 /// Execution details for a job.
