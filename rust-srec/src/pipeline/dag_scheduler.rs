@@ -1320,9 +1320,11 @@ mod tests {
         let collected =
             DagScheduler::collect_leaf_outputs_from_step_executions(&definition, &[good, corrupt]);
         assert!(!collected.complete);
+        // Windows and the default macOS file systems fold case, so the two
+        // spellings are one file there (see `utils::fs::path_dedup_key`).
         assert_eq!(
             collected.paths,
-            if cfg!(windows) {
+            if cfg!(any(windows, target_os = "macos")) {
                 vec!["A.mp4", "last.mp4"]
             } else {
                 vec!["A.mp4", "a.mp4", "last.mp4"]
