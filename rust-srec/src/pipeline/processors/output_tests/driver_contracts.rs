@@ -185,7 +185,9 @@ async fn processor_driver_child() {
                     assert_eq!(result.skipped_inputs[0].0, skipped);
                     assert!(Path::new(&skipped).exists());
                     assert!(!Path::new(&fixture.input.outputs[1]).exists());
-                    assert!(result.input_size_bytes.is_none());
+                    // Batch metrics total the processed items; the skipped input adds nothing.
+                    assert_eq!(result.input_size_bytes, Some(2 * b"source".len() as u64));
+                    assert!(result.output_size_bytes.is_some_and(|size| size > 0));
                     let metadata: serde_json::Value =
                         serde_json::from_str(result.metadata.as_deref().unwrap()).unwrap();
                     assert_eq!(metadata["batch"], true);

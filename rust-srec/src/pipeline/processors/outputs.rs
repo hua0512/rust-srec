@@ -9,6 +9,9 @@ use crate::{Error, Result};
 /// Accumulate successful or skipped media results in input order. Batch callers
 /// own metadata, size metrics, commit/rollback and post-publication source deletion.
 /// Transfer results and partial-failure drivers use their own aggregation policy.
+/// Fold one item's result into the batch result. Size metrics are summed so a
+/// batch reports its total input and output bytes; an item without a size
+/// (a skipped input) leaves the totals untouched.
 pub(super) fn accumulate_media_output(
     batch: &mut super::ProcessorOutput,
     one: super::ProcessorOutput,
@@ -19,6 +22,14 @@ pub(super) fn accumulate_media_output(
     batch.skipped_inputs.extend(one.skipped_inputs);
     batch.succeeded_inputs.extend(one.succeeded_inputs);
     batch.logs.extend(one.logs);
+    for (total, size) in [
+        (&mut batch.input_size_bytes, one.input_size_bytes),
+        (&mut batch.output_size_bytes, one.output_size_bytes),
+    ] {
+        if let Some(size) = size {
+            *total = Some(total.unwrap_or(0).saturating_add(size));
+        }
+    }
 }
 
 pub(super) struct TempOutputGuard {

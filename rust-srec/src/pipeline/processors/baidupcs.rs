@@ -63,6 +63,34 @@ const MARKER_NO_TASKS: &str = "未检测到上传的文件";
 /// configs re-spawning a large upload dozens of times.
 const MAX_ATTEMPTS_CAP: u32 = 10;
 
+/// Bytes of local paths handed to one `upload` invocation. Windows limits a
+/// command line to 32,767 characters and the fixed arguments, the remote
+/// directory and the quoting of each path take the rest; a batch that does
+/// not fit runs as several invocations within the same attempt.
+const UPLOAD_ARGS_BUDGET: usize = 24 * 1024;
+
+/// Split `paths` into runs whose summed length (plus quoting and a separator
+/// per path) stays within `budget`. A single path longer than the budget
+/// forms its own run so nothing is dropped.
+fn chunk_by_argument_budget(paths: &[String], budget: usize) -> Vec<Vec<String>> {
+    let mut chunks: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    let mut used = 0usize;
+    for path in paths {
+        let cost = path.len().saturating_add(3);
+        if !current.is_empty() && used.saturating_add(cost) > budget {
+            chunks.push(std::mem::take(&mut current));
+            used = 0;
+        }
+        current.push(path.clone());
+        used = used.saturating_add(cost);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
 /// Same-name handling passed to `upload --policy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -166,6 +194,8 @@ pub struct BaiduPcsProcessor {
     /// at call time because the service container installs it after
     /// `PipelineManager` builds its processor list.
     authenticator_override: Option<Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>>,
+    /// See [`UPLOAD_ARGS_BUDGET`]; lowered by tests to exercise chunking.
+    upload_args_budget: usize,
 }
 
 #[async_trait]
@@ -202,8 +232,14 @@ struct UploadOutcomes {
     completed: HashMap<String, Option<String>>,
     /// Input → benign-skip reason line (already exists / size unchanged).
     skipped: HashMap<String, String>,
-    /// Input → terminal error line for this run.
+    /// Input → terminal error line for this run that another attempt may
+    /// resolve (a transfer error, a failure-table row).
     failed: HashMap<String, String>,
+    /// Input → error line for a file BaiduPCS-Go will never upload with this
+    /// configuration: an illegal file name, a file over the size limit, an
+    /// unreadable file or an exhausted quota. Retrying (and re-logging in
+    /// before it) cannot change the outcome.
+    permanent: HashMap<String, String>,
     /// Success/benign-skip markers whose task ID never mapped to an input.
     orphan_successes: usize,
     /// Failure markers whose task ID never mapped to an input.
@@ -278,9 +314,11 @@ fn match_input_by_containment<'a>(inputs: &'a [String], line: &str) -> Option<&'
 /// `跳过秒传失败, 开始秒传` matches neither the skip test (`, 跳过` /
 /// `已跳过`) nor the failure test (which requires [`MARKER_UPLOAD_FAILED`]
 /// without [`MARKER_RETRY`]), and `文件路径含有非法字符，已跳过` is a
-/// permanent failure despite its skip wording. Unrecognized lines are
-/// ignored; inputs without any marker stay unresolved and the caller
-/// decides between the orphan-success escape hatch and failing the attempt.
+/// permanent failure despite its skip wording. Failures the CLI reports as
+/// skips of the file itself land in `permanent`; transfer failures land in
+/// `failed`. Unrecognized lines are ignored; inputs without any marker stay
+/// unresolved and the caller decides between the orphan-success escape hatch
+/// and failing the attempt.
 fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutcomes {
     let mut outcomes = UploadOutcomes::default();
     let mut task_to_input: HashMap<String, String> = HashMap::new();
@@ -337,7 +375,7 @@ fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutco
                     // embedded in the sentence, not a task ID.
                     match match_input_by_containment(inputs, rest) {
                         Some(input) => {
-                            outcomes.failed.insert(input.clone(), rest.to_string());
+                            outcomes.permanent.insert(input.clone(), rest.to_string());
                         }
                         None => outcomes.orphan_failures += 1,
                     }
@@ -357,7 +395,7 @@ fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutco
                     // uploaded and never will be by this config.
                     match task_to_input.get(id) {
                         Some(input) => {
-                            outcomes.failed.insert(input.clone(), rest.to_string());
+                            outcomes.permanent.insert(input.clone(), rest.to_string());
                         }
                         None => outcomes.orphan_failures += 1,
                     }
@@ -395,6 +433,7 @@ impl BaiduPcsProcessor {
             binary_path: crate::baidupcs::resolve_binary_path(None),
             command_runner: Arc::new(ProcessBaiduPcsCommandRunner),
             authenticator_override: None,
+            upload_args_budget: UPLOAD_ARGS_BUDGET,
         }
     }
 
@@ -404,6 +443,7 @@ impl BaiduPcsProcessor {
             binary_path: path.into(),
             command_runner: Arc::new(ProcessBaiduPcsCommandRunner),
             authenticator_override: None,
+            upload_args_budget: UPLOAD_ARGS_BUDGET,
         }
     }
 
@@ -416,6 +456,7 @@ impl BaiduPcsProcessor {
             binary_path: path.into(),
             command_runner,
             authenticator_override: None,
+            upload_args_budget: UPLOAD_ARGS_BUDGET,
         }
     }
 
@@ -425,6 +466,12 @@ impl BaiduPcsProcessor {
         authenticator: Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>,
     ) -> Self {
         self.authenticator_override = Some(authenticator);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_upload_args_budget(mut self, budget: usize) -> Self {
+        self.upload_args_budget = budget;
         self
     }
 
@@ -438,7 +485,8 @@ impl BaiduPcsProcessor {
     /// True when a `who` probe positively reports no logged-in account
     /// (uid 0). Unparseable or failed probes return `false` so an odd CLI
     /// build cannot force a login loop; the retry-path re-login still
-    /// covers a genuinely broken session.
+    /// covers a genuinely broken session. The probe prints the account's
+    /// uid and name, so it runs without the job log.
     async fn session_logged_out(
         &self,
         binary_path: &str,
@@ -448,7 +496,11 @@ impl BaiduPcsProcessor {
         let _guard = crate::baidupcs::cli_lock().read().await;
         let mut cmd = crate::baidupcs::base_command(binary_path, config.config_dir.as_deref());
         cmd.arg("who");
-        match self.command_runner.run(&mut cmd, ctx).await {
+        match self
+            .command_runner
+            .run(&mut cmd, &ctx.without_job_log())
+            .await
+        {
             Ok(output) => {
                 let text = output
                     .logs
@@ -690,6 +742,7 @@ impl Processor for BaiduPcsProcessor {
             .map(|path| (path.clone(), Self::computed_remote_path(&remote_dir, path)))
             .collect();
         let mut skipped: HashMap<String, String> = HashMap::new();
+        let mut permanent: HashMap<String, String> = HashMap::new();
         let mut last_errors: HashMap<String, String> = HashMap::new();
         let mut logs: Vec<JobLogEntry> = Vec::new();
         let mut attempts_used = 0u32;
@@ -761,88 +814,127 @@ impl Processor for BaiduPcsProcessor {
 
             let _config_guard = crate::baidupcs::cli_lock().read().await;
 
-            let mut cmd = crate::baidupcs::base_command(&binary_path, config.config_dir.as_deref());
-            cmd.arg("upload");
-            cmd.args(["--policy", config.policy.as_arg()]);
-            if config.norapid {
-                cmd.arg("--norapid");
+            // One invocation per chunk of paths that fits the command line;
+            // the permit and guard above span every chunk of this attempt.
+            let chunks = chunk_by_argument_budget(&pending, self.upload_args_budget);
+            if chunks.len() > 1 {
+                ctx.info(format!(
+                    "Uploading {} file(s) in {} BaiduPCS-Go invocations to stay within the command-line length limit",
+                    pending.len(),
+                    chunks.len()
+                ));
             }
-            for arg in &config.args {
-                cmd.arg(arg);
-            }
-            for path in &pending {
-                cmd.arg(path);
-            }
-            cmd.arg(&remote_dir);
-
-            let command_output = match self.command_runner.run(&mut cmd, ctx).await {
-                Ok(output) => output,
-                Err(e) => {
-                    let message = format!("Failed to execute BaiduPCS-Go: {e}");
-                    for path in &pending {
-                        last_errors.insert(path.clone(), message.clone());
-                    }
-                    continue;
-                }
-            };
-
-            let exit_ok = command_output.status.success();
-            let exit_code = command_output.status.code().unwrap_or(-1);
-            let outcomes = parse_upload_outcomes(&command_output.logs, &pending);
-            logs.extend(command_output.logs);
-
             let mut still_pending = Vec::new();
-            let mut unresolved = Vec::new();
-            for path in pending.drain(..) {
-                if let Some(error) = outcomes.failed.get(&path) {
-                    last_errors.insert(path.clone(), error.clone());
-                    still_pending.push(path);
-                } else if let Some(reason) = outcomes.skipped.get(&path) {
-                    skipped.insert(path, reason.clone());
-                } else if let Some(remote) = outcomes.completed.get(&path) {
-                    let remote = remote
-                        .clone()
-                        .unwrap_or_else(|| Self::computed_remote_path(&remote_dir, &path));
-                    completed.insert(path, remote);
-                } else {
-                    unresolved.push(path);
-                }
-            }
-
-            if !unresolved.is_empty() {
-                // Escape hatch for path-echo mismatches: when the run
-                // finished cleanly and every unresolved input is covered by
-                // a success marker that merely failed to map back to a
-                // path, trust the run. Any orphan failure or the failure
-                // table poisons this because the unmatched success could
-                // then belong to a different file.
-                let attributable = outcomes.finished
-                    && exit_ok
-                    && !outcomes.saw_failure_table
-                    && outcomes.orphan_failures == 0
-                    && outcomes.orphan_successes >= unresolved.len();
-                if attributable {
-                    ctx.warn(format!(
-                        "BaiduPCS-Go reported {} unmatched success marker(s); treating {} remaining input(s) as uploaded",
-                        outcomes.orphan_successes,
-                        unresolved.len()
+            for chunk in chunks {
+                if ctx.cancellation_token.is_cancelled() {
+                    return Err(crate::Error::Other(
+                        "BaiduPCS-Go upload cancelled".to_string(),
                     ));
-                    for path in unresolved {
-                        let remote = Self::computed_remote_path(&remote_dir, &path);
-                        completed.insert(path, remote);
+                }
+                let mut cmd =
+                    crate::baidupcs::base_command(&binary_path, config.config_dir.as_deref());
+                cmd.arg("upload");
+                cmd.args(["--policy", config.policy.as_arg()]);
+                if config.norapid {
+                    cmd.arg("--norapid");
+                }
+                for arg in &config.args {
+                    cmd.arg(arg);
+                }
+                for path in &chunk {
+                    cmd.arg(path);
+                }
+                cmd.arg(&remote_dir);
+
+                let command_output = match self.command_runner.run(&mut cmd, ctx).await {
+                    Ok(output) => output,
+                    Err(e) => {
+                        let message = format!("Failed to execute BaiduPCS-Go: {e}");
+                        for path in chunk {
+                            last_errors.insert(path.clone(), message.clone());
+                            still_pending.push(path);
+                        }
+                        continue;
                     }
-                } else {
-                    let message = format!(
-                        "no per-file outcome reported by BaiduPCS-Go (exit code {exit_code})"
-                    );
-                    for path in unresolved {
-                        last_errors.insert(path.clone(), message.clone());
+                };
+
+                let exit_ok = command_output.status.success();
+                let exit_code = command_output.status.code().unwrap_or(-1);
+                let outcomes = parse_upload_outcomes(&command_output.logs, &chunk);
+                logs.extend(command_output.logs);
+
+                let mut unresolved = Vec::new();
+                for path in chunk {
+                    if let Some(error) = outcomes.permanent.get(&path) {
+                        // Never retried: another attempt (and the re-login
+                        // before it) cannot change the file or the account.
+                        permanent.insert(path, error.clone());
+                    } else if let Some(error) = outcomes.failed.get(&path) {
+                        last_errors.insert(path.clone(), error.clone());
                         still_pending.push(path);
+                    } else if let Some(reason) = outcomes.skipped.get(&path) {
+                        skipped.insert(path, reason.clone());
+                    } else if let Some(remote) = outcomes.completed.get(&path) {
+                        let remote = remote
+                            .clone()
+                            .unwrap_or_else(|| Self::computed_remote_path(&remote_dir, &path));
+                        completed.insert(path, remote);
+                    } else {
+                        unresolved.push(path);
+                    }
+                }
+
+                if !unresolved.is_empty() {
+                    // Escape hatch for path-echo mismatches: when the run
+                    // finished cleanly and every unresolved input is covered by
+                    // a success marker that merely failed to map back to a
+                    // path, trust the run. Any orphan failure or the failure
+                    // table poisons this because the unmatched success could
+                    // then belong to a different file.
+                    let attributable = outcomes.finished
+                        && exit_ok
+                        && !outcomes.saw_failure_table
+                        && outcomes.orphan_failures == 0
+                        && outcomes.orphan_successes >= unresolved.len();
+                    if attributable {
+                        ctx.warn(format!(
+                            "BaiduPCS-Go reported {} unmatched success marker(s); treating {} remaining input(s) as uploaded",
+                            outcomes.orphan_successes,
+                            unresolved.len()
+                        ));
+                        for path in unresolved {
+                            let remote = Self::computed_remote_path(&remote_dir, &path);
+                            completed.insert(path, remote);
+                        }
+                    } else {
+                        let message = format!(
+                            "no per-file outcome reported by BaiduPCS-Go (exit code {exit_code})"
+                        );
+                        for path in unresolved {
+                            last_errors.insert(path.clone(), message.clone());
+                            still_pending.push(path);
+                        }
                     }
                 }
             }
 
             pending = still_pending;
+        }
+
+        // Permanent failures were held out of the retries; report them with
+        // the files that ran out of attempts, in input order.
+        if !permanent.is_empty() {
+            last_errors.extend(
+                permanent
+                    .iter()
+                    .map(|(path, error)| (path.clone(), error.clone())),
+            );
+            pending = input
+                .inputs
+                .iter()
+                .filter(|path| pending.contains(*path) || permanent.contains_key(*path))
+                .cloned()
+                .collect();
         }
 
         if !pending.is_empty() {
@@ -1058,7 +1150,7 @@ mod tests {
         async fn run(
             &self,
             command: &mut Command,
-            _context: &ProcessorContext,
+            context: &ProcessorContext,
         ) -> Result<CommandOutput> {
             let args: Vec<String> = command
                 .as_std()
@@ -1084,10 +1176,15 @@ mod tests {
                 self.attempts.lock().unwrap().pop_front().ok_or_else(|| {
                     crate::Error::Other("unexpected BaiduPCS-Go attempt".to_string())
                 })?;
+            let logs: Vec<JobLogEntry> = attempt.lines.into_iter().map(JobLogEntry::info).collect();
+            // The real runner streams every line to the job log as it arrives.
+            for entry in &logs {
+                context.log_sink.try_send(entry.clone());
+            }
             Ok(CommandOutput {
                 status: test_exit_status(attempt.exit_ok),
                 duration: 0.0,
-                logs: attempt.lines.into_iter().map(JobLogEntry::info).collect(),
+                logs,
             })
         }
     }
@@ -1211,7 +1308,8 @@ mod tests {
             Some(&Some("/remote/b.flv".to_string()))
         );
         assert!(outcomes.skipped.contains_key("/rec/c.flv"));
-        assert!(outcomes.failed.contains_key("/rec/d.flv"));
+        assert!(outcomes.permanent.contains_key("/rec/d.flv"));
+        assert!(outcomes.failed.is_empty());
         assert_eq!(outcomes.orphan_successes, 0);
         assert_eq!(outcomes.orphan_failures, 0);
         assert!(!outcomes.saw_failure_table);
@@ -1266,7 +1364,8 @@ mod tests {
 
         let outcomes = parse_upload_outcomes(&logs, &inputs);
 
-        assert!(outcomes.failed.contains_key("/rec/bad+name.flv"));
+        assert!(outcomes.permanent.contains_key("/rec/bad+name.flv"));
+        assert!(outcomes.failed.is_empty());
         assert!(!outcomes.finished);
     }
 
@@ -1953,6 +2052,232 @@ mod tests {
         let commands = runner.commands();
         assert_eq!(commands.len(), 1, "no who probe without stored credentials");
         assert_eq!(commands[0][0], "upload");
+    }
+
+    /// A file BaiduPCS-Go will never accept (illegal name, over the size
+    /// limit) is not retried: the remaining attempts, and the re-login that
+    /// precedes a retry, are spent only on files a retry could still upload.
+    #[tokio::test(start_paused = true)]
+    async fn permanent_failures_are_not_retried() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let huge = temp_dir.path().join("huge.flv");
+        let flaky = temp_dir.path().join("flaky.flv");
+        tokio::fs::write(&huge, b"video").await.unwrap();
+        tokio::fs::write(&flaky, b"video").await.unwrap();
+        let huge_str = huge.to_string_lossy().into_owned();
+        let flaky_str = flaky.to_string_lossy().into_owned();
+
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![
+            // Probe: logged in.
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![who_line(42)],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &huge_str),
+                    queue_line(2, &flaky_str),
+                    "[1] 文件大小超过128G, 无法上传, 跳过...".to_string(),
+                    "[2] 上传文件失败, 网络错误".to_string(),
+                    finished_line(),
+                ],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &flaky_str),
+                    success_line(1, "/rec/flaky.flv"),
+                    finished_line(),
+                ],
+            },
+        ]));
+        let authenticator = MockAuthenticator::new(true, true);
+        let processor = MockBaiduPcsCommandRunner::processor(runner.clone())
+            .with_authenticator(authenticator.clone());
+        let input = ProcessorInput {
+            inputs: vec![huge_str.clone(), flaky_str.clone()],
+            config: Some(r#"{"destination_root":"/rec","max_retries":3}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("permanent"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 3, "who + first attempt + one retry");
+        assert!(
+            !commands[2].contains(&huge_str),
+            "the oversized file is not re-sent"
+        );
+        assert!(commands[2].contains(&flaky_str));
+        assert_eq!(output.failed_inputs.len(), 1);
+        assert_eq!(output.failed_inputs[0].0, huge_str);
+        assert!(output.failed_inputs[0].1.contains("128G"));
+        assert_eq!(output.succeeded_inputs, vec![flaky_str]);
+        assert_eq!(output.uploads[0].status, UploadItemStatus::Failed);
+        assert_eq!(output.uploads[1].status, UploadItemStatus::Completed);
+
+        // Only permanent failures: no retry runs at all, and the job fails.
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &huge_str),
+                "[1] 文件大小超过128G, 无法上传, 跳过...".to_string(),
+                finished_line(),
+            ],
+        }]));
+        let processor = MockBaiduPcsCommandRunner::processor(runner.clone());
+        let error = processor
+            .process(
+                &ProcessorInput {
+                    inputs: vec![huge_str.clone()],
+                    config: Some(r#"{"destination_root":"/rec","max_retries":3}"#.to_string()),
+                    ..Default::default()
+                },
+                &ProcessorContext::noop("permanent-only"),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(runner.commands().len(), 1);
+        assert!(error.to_string().contains("after 1 attempt(s)"), "{error}");
+    }
+
+    /// A batch whose paths do not fit one command line is uploaded in several
+    /// invocations within the same attempt, with every file's result kept.
+    #[tokio::test]
+    async fn large_batches_are_split_to_fit_the_command_line() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut inputs = Vec::new();
+        for name in ["a.flv", "b.flv", "c.flv"] {
+            let path = temp_dir.path().join(name);
+            tokio::fs::write(&path, b"video").await.unwrap();
+            inputs.push(path.to_string_lossy().into_owned());
+        }
+        let attempt_for = |paths: &[String]| MockAttempt {
+            exit_ok: true,
+            lines: paths
+                .iter()
+                .enumerate()
+                .flat_map(|(index, path)| {
+                    let id = index as u32 + 1;
+                    let remote = format!(
+                        "/rec/{}",
+                        Path::new(path).file_name().unwrap().to_string_lossy()
+                    );
+                    [queue_line(id, path), success_line(id, &remote)]
+                })
+                .chain([finished_line()])
+                .collect(),
+        };
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![
+            attempt_for(&inputs[..2]),
+            attempt_for(&inputs[2..]),
+        ]));
+        // Two paths fit, three do not.
+        let budget = inputs[0].len() * 2 + 8;
+        let processor =
+            MockBaiduPcsCommandRunner::processor(runner.clone()).with_upload_args_budget(budget);
+        let input = ProcessorInput {
+            inputs: inputs.clone(),
+            config: Some(r#"{"destination_root":"/rec","max_retries":1}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("chunked"))
+            .await
+            .unwrap();
+
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 2);
+        assert!(commands[0].contains(&inputs[0]) && commands[0].contains(&inputs[1]));
+        assert!(!commands[0].contains(&inputs[2]));
+        assert!(commands[1].contains(&inputs[2]));
+        assert_eq!(output.succeeded_inputs, inputs);
+        assert!(
+            output
+                .uploads
+                .iter()
+                .all(|item| item.status == UploadItemStatus::Completed)
+        );
+        assert_eq!(
+            chunk_by_argument_budget(&inputs, 1)
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![1, 1, 1],
+            "an oversized path still forms its own invocation"
+        );
+    }
+
+    /// The `who` probe prints the account's uid and name; those lines stay
+    /// out of the job log while the upload's own output still reaches it.
+    #[tokio::test]
+    async fn login_probe_output_stays_out_of_the_job_log() {
+        use std::sync::atomic::AtomicUsize;
+
+        use super::super::traits::JobLogSink;
+        use crate::pipeline::progress::ProgressReporter;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("a.flv");
+        tokio::fs::write(&file, b"video").await.unwrap();
+        let file_str = file.to_string_lossy().into_owned();
+
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![who_line(42)],
+            },
+            MockAttempt {
+                exit_ok: true,
+                lines: vec![
+                    queue_line(1, &file_str),
+                    success_line(1, "/rec/a.flv"),
+                    finished_line(),
+                ],
+            },
+        ]));
+        let authenticator = MockAuthenticator::new(true, true);
+        let processor = MockBaiduPcsCommandRunner::processor(runner.clone())
+            .with_authenticator(authenticator.clone());
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
+        let ctx = ProcessorContext::new(
+            "probe-log",
+            ProgressReporter::noop("probe-log"),
+            JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        processor
+            .process(
+                &ProcessorInput {
+                    inputs: vec![file_str.clone()],
+                    config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
+                    ..Default::default()
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        drop(ctx);
+
+        let mut logged = Vec::new();
+        while let Some(entry) = log_rx.recv().await {
+            logged.push(entry.message);
+        }
+        assert_eq!(runner.commands()[0], vec!["who".to_string()]);
+        assert!(
+            !logged.iter().any(|line| line.contains("uid: 42")),
+            "{logged:?}"
+        );
+        assert!(
+            logged.iter().any(|line| line.contains(&file_str)),
+            "{logged:?}"
+        );
     }
 
     #[test]

@@ -302,7 +302,7 @@ impl AudioExtractProcessor {
         // Check if input is an image - pass through as-is
         if is_image(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            info!("Input is an image, passing through: {}", input_path);
+            ctx.info(format!("Input is an image, passing through: {input_path}"));
             return Ok(ProcessorOutput::skipped_file(
                 input_path,
                 "input is an image, no audio to extract",
@@ -315,10 +315,9 @@ impl AudioExtractProcessor {
         // Check if input is a supported media format
         if !is_media(&ext) {
             let duration = start.elapsed().as_secs_f64();
-            info!(
-                "Input file is not a supported media format for audio extraction, passing through: {}",
-                input_path
-            );
+            ctx.info(format!(
+                "Input file is not a supported media format for audio extraction, passing through: {input_path}"
+            ));
             return Ok(ProcessorOutput::skipped_file(
                 input_path,
                 "not a supported media format for audio extraction",
@@ -334,10 +333,9 @@ impl AudioExtractProcessor {
             Ok(Some(stream)) => stream.codec,
             Ok(None) => {
                 let duration = start.elapsed().as_secs_f64();
-                info!(
-                    "Input file contains no audio stream, passing through: {}",
-                    input_path
-                );
+                ctx.info(format!(
+                    "Input file contains no audio stream, passing through: {input_path}"
+                ));
                 return Ok(ProcessorOutput::skipped_file(
                     input_path,
                     "input file contains no audio stream",
@@ -398,10 +396,9 @@ impl AudioExtractProcessor {
                 || stderr_output.contains("Output file does not contain any stream")
             {
                 batch.discard(&temp_path);
-                info!(
-                    "Input file contains no audio stream (detected by ffmpeg), passing through: {}",
-                    input_path
-                );
+                ctx.info(format!(
+                    "Input file contains no audio stream (detected by ffmpeg), passing through: {input_path}"
+                ));
                 return Ok(ProcessorOutput::skipped_file(
                     input_path,
                     "input file contains no audio stream",

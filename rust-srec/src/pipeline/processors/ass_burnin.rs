@@ -70,7 +70,12 @@ pub struct AssBurnInConfig {
     #[serde(default = "default_true")]
     pub require_ass: bool,
 
-    /// If true, include original inputs in outputs for downstream chaining; otherwise output only burned videos.
+    /// If true, include original inputs in outputs for downstream chaining.
+    ///
+    /// With `false`, the outputs are the burned videos plus the videos this job
+    /// passed through unprocessed (no subtitle, or a second copy of a recording
+    /// whose subtitle was already burned), so no video is lost downstream;
+    /// subtitles, danmaku files and burned sources are dropped.
     #[serde(default = "default_true")]
     pub passthrough_inputs: bool,
 
@@ -453,6 +458,8 @@ impl Processor for AssBurnInProcessor {
         let mut matched_ass_for_succeeded = Vec::new();
         let mut consumed_ass = HashSet::<String>::new();
         let mut total_duration = 0.0;
+        let mut input_size_bytes = 0u64;
+        let mut output_size_bytes = 0u64;
 
         for (idx, video_path) in video_inputs.iter().enumerate() {
             let output_path = &output_paths[idx];
@@ -576,7 +583,10 @@ impl Processor for AssBurnInProcessor {
                 )));
             }
 
-            output_size(&temp_path).await?;
+            output_size_bytes = output_size_bytes.saturating_add(output_size(&temp_path).await?);
+            if let Ok(metadata) = tokio::fs::metadata(video_path).await {
+                input_size_bytes = input_size_bytes.saturating_add(metadata.len());
+            }
             produced.push(output_path.clone());
             succeeded_inputs.push(video_path.clone());
             matched_ass_for_succeeded.push(ass_path);
@@ -632,7 +642,8 @@ impl Processor for AssBurnInProcessor {
             }
         }
 
-        // Outputs for chaining: either pass through non-video inputs and append produced videos, or return produced only.
+        // Outputs for chaining: pass the inputs through when configured; otherwise
+        // only the videos this job did not burn stay available downstream.
         let mut outputs = Vec::new();
         if config.passthrough_inputs {
             outputs.extend(Self::build_passthrough_outputs(
@@ -640,6 +651,8 @@ impl Processor for AssBurnInProcessor {
                 config.exclude_ass_from_passthrough,
                 &deleted_paths,
             ));
+        } else {
+            outputs.extend(skipped_inputs.iter().map(|(video, _)| video.clone()));
         }
         // Append produced burn-in videos (dedup).
         let mut seen = outputs.iter().cloned().collect::<HashSet<_>>();
@@ -668,8 +681,8 @@ impl Processor for AssBurnInProcessor {
                 .to_string(),
             ),
             items_produced: produced,
-            input_size_bytes: None,
-            output_size_bytes: None,
+            input_size_bytes: (!succeeded_inputs.is_empty()).then_some(input_size_bytes),
+            output_size_bytes: (!succeeded_inputs.is_empty()).then_some(output_size_bytes),
             failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
@@ -908,15 +921,23 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(output.succeeded_inputs, vec![first.to_string_lossy()]);
+        // Passthrough is off: the burned video plus every video this job did
+        // not burn, so the skipped copies still reach the next step.
         assert_eq!(
             output.outputs,
             vec![
+                lost_first.to_string_lossy().into_owned(),
+                lost_second.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
                 temp.path()
                     .join("a")
                     .join("rec_burnin.mp4")
                     .to_string_lossy()
+                    .into_owned(),
             ]
         );
+        assert_eq!(output.input_size_bytes, Some(b"video".len() as u64));
+        assert!(output.output_size_bytes.is_some_and(|size| size > 0));
         assert_eq!(
             output
                 .skipped_inputs

@@ -170,6 +170,14 @@
 
 ## Post-processing
 
+- **A failed step no longer cancels unrelated branches, and destructive steps cannot race their siblings**
+
+  When one step of a workflow fails, only the steps that depend on it are cancelled. Steps on other branches, such as a long subtitle burn-in running beside a failed thumbnail, finish normally; the workflow shows as running, with the failure as its error, until nothing is left running, and is then marked failed. Retrying it re-runs only the failed and cancelled steps. A workflow that places a `delete`, a `move` or a Baidu Netdisk upload that deletes local files next to another step reading the same files is now rejected when it is created, with a message naming the steps, instead of letting the two race for the files. See [error handling](../concepts/pipeline.md#error-handling) and [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).
+
+- **Processor details: duplicate archive entries, burn-in outputs, batch sizes and upload logs**
+
+  An archive step refuses two inputs that would share one entry name and suggests `preserve_paths`, instead of failing part-way or silently keeping one. A subtitle burn-in with passthrough off keeps the videos it did not burn in its outputs, so a recording without danmaku still reaches the next step. Batch jobs now report their total input and output sizes, and an execute step's metrics cover every input and output; a scan folder that cannot be read fails the step instead of reporting no outputs. Baidu Netdisk uploads no longer re-send files that Baidu rejected outright, split a large batch across several invocations so long path lists work on every platform, and keep the account details of the login check out of the job log; rclone logs omit connection-string parameters that may carry credentials.
+
 - **Subtitles follow their own segment, and no more `_inputs.json` files**
 
   Paired-segment and session-complete pipelines no longer create a `session_…_inputs.json` or `segment_…_inputs.json` file next to the recordings, so nothing extra gets uploaded, archived, moved or deleted with them. Files left by earlier versions are unused and safe to remove. Which danmaku file belongs to which video is now remembered per segment with the pipeline itself: a segment that recorded no danmaku leaves its own video without subtitles instead of shifting every later video onto the wrong subtitles, and subtitle conversion keeps working after an earlier step moved the files. Converted subtitles are written to a temporary file first, so a failed or timed-out conversion no longer leaves a truncated `.ass` in place. The first input of these pipelines is now the first recording, and scripts in an execute step can read the pairing through `{manifest_json}`. See [pipeline error handling](../concepts/pipeline.md#error-handling).

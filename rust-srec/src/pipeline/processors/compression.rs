@@ -13,12 +13,13 @@ use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use tar::Builder as TarBuilder;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
+use super::outputs::OutputBatch;
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default, tmp_output_path};
+use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
 use crate::pipeline::progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
@@ -607,6 +608,25 @@ impl Processor for CompressionProcessor {
             return Err(crate::Error::PipelineError(msg));
         }
 
+        // Two inputs mapping to one entry name would either abort the ZIP
+        // writer part-way or leave only the last file in a tar; refuse the job
+        // before any work so the user can enable `preserve_paths` or rename.
+        let mut entry_sources: std::collections::HashMap<String, &String> =
+            std::collections::HashMap::new();
+        for input_path in &input.inputs {
+            let entry = archive_entry_name(input_path, config.preserve_paths)?;
+            if let Some(earlier) = entry_sources.insert(entry.clone(), input_path) {
+                let msg = format!(
+                    "Inputs {earlier} and {input_path} would both be stored as {entry} in the archive; enable preserve_paths or rename one of them"
+                );
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Error,
+                    msg.clone(),
+                ));
+                return Err(crate::Error::PipelineError(msg));
+            }
+        }
+
         let start_msg = format!(
             "Creating {:?} archive with {} files -> {}",
             config.format,
@@ -619,7 +639,11 @@ impl Processor for CompressionProcessor {
             start_msg,
         ));
 
-        let tmp_path = tmp_output_path(&output_path);
+        // The archive is written to a staged temp and published by the shared
+        // batch, whose no-replace promotion cannot overwrite a file that appeared
+        // after the check above when overwriting is disabled.
+        let mut batch = OutputBatch::new(&input.inputs);
+        let tmp_path = batch.stage(&output_path, config.overwrite).await?;
 
         let inputs = input.inputs.clone();
         let config_for_blocking = config.clone();
@@ -628,37 +652,6 @@ impl Processor for CompressionProcessor {
         let progress = ctx.progress.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            struct TmpFileGuard {
-                path: Option<PathBuf>,
-            }
-
-            impl TmpFileGuard {
-                fn new(path: PathBuf) -> Self {
-                    Self { path: Some(path) }
-                }
-
-                fn commit(mut self) {
-                    self.path.take();
-                }
-            }
-
-            impl Drop for TmpFileGuard {
-                fn drop(&mut self) {
-                    if let Some(path) = self.path.take()
-                        && let Err(error) = std::fs::remove_file(&path)
-                        && error.kind() != std::io::ErrorKind::NotFound
-                    {
-                        warn!(
-                            %error,
-                            path = %path.display(),
-                            "failed to remove partial compression output"
-                        );
-                    }
-                }
-            }
-
-            let guard = TmpFileGuard::new(tmp_path.clone());
-
             if cancel.is_cancelled() {
                 return Err(crate::Error::PipelineError(
                     "Compression cancelled".to_string(),
@@ -689,23 +682,6 @@ impl Processor for CompressionProcessor {
                 ));
             }
 
-            match std::fs::rename(&tmp_path, &output_path) {
-                Ok(()) => {
-                    guard.commit();
-                }
-                Err(rename_err) => {
-                    if config_for_blocking.overwrite && output_path.exists() {
-                        std::fs::remove_file(&output_path)
-                            .map_err(|e| crate::Error::io_path("remove_file", &output_path, e))?;
-                        std::fs::rename(&tmp_path, &output_path)
-                            .map_err(|e| crate::Error::io_path("rename", &output_path, e))?;
-                        guard.commit();
-                    } else {
-                        return Err(crate::Error::io_path("rename", &output_path, rename_err));
-                    }
-                }
-            }
-
             Ok::<_, crate::Error>(sizes)
         })
         .await
@@ -730,9 +706,11 @@ impl Processor for CompressionProcessor {
                     crate::pipeline::job_queue::LogLevel::Error,
                     msg,
                 ));
+                // Dropping the batch removes the staged archive.
                 return Err(e);
             }
         };
+        batch.commit().await?;
 
         let compression_ratio = Self::calculate_compression_ratio(total_input_size, output_size);
         let duration = start.elapsed().as_secs_f64();
@@ -1184,6 +1162,61 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("already exists"));
+    }
+
+    /// Two inputs with the same file name cannot share one archive entry; the
+    /// job is refused before any archive is written, and `preserve_paths`
+    /// resolves the collision.
+    #[tokio::test]
+    async fn duplicate_entry_names_are_refused_before_writing() {
+        let temp_dir = TempDir::new().unwrap();
+        let first = temp_dir.path().join("a").join("rec.mp4");
+        let second = temp_dir.path().join("b").join("rec.mp4");
+        for path in [&first, &second] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"video").unwrap();
+        }
+        let output_path = temp_dir.path().join("recordings.zip");
+        let processor = CompressionProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let mut input = ProcessorInput {
+            inputs: vec![
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            outputs: vec![output_path.to_string_lossy().into_owned()],
+            config: None,
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let error = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("would both be stored as rec.mp4"),
+            "{error}"
+        );
+        assert!(!output_path.exists());
+        assert!(!std::fs::read_dir(temp_dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-")
+        }));
+
+        input.config = Some(serde_json::json!({ "preserve_paths": true }).to_string());
+        let output = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(output.outputs, vec![output_path.to_string_lossy()]);
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&output_path).unwrap()).unwrap();
+        let mut names: Vec<String> = (0..archive.len())
+            .map(|index| archive.by_index(index).unwrap().name().to_owned())
+            .collect();
+        names.sort();
+        assert!(names[0].ends_with("a/rec.mp4"), "{names:?}");
+        assert!(names[1].ends_with("b/rec.mp4"), "{names:?}");
     }
 
     #[tokio::test]

@@ -4,7 +4,7 @@ mod writes;
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::database::begin_immediate;
 use crate::database::models::{
@@ -116,15 +116,20 @@ pub trait DagRepository: Send + Sync {
         outputs: &[String],
     ) -> Result<StepCompletion>;
 
-    /// Atomically fail an active step and its non-terminal DAG.
-    /// Returns `None` when either record was already terminal.
+    /// Atomically fail an active step and cancel every step that depends on it,
+    /// directly or through other steps. Steps on independent branches keep
+    /// running: the DAG stays PROCESSING with `error` set until no step is
+    /// active, and is then finalized FAILED like any other settlement.
+    /// Returns the job IDs of the cancelled dependents that had a job (for
+    /// cancellation), or `None` when the step or the DAG was already terminal.
     async fn fail_step_and_cancel_dag(
         &self,
         step_id: &str,
         error: &str,
     ) -> Result<Option<Vec<String>>>;
 
-    /// Atomically fail a DAG and cancel all pending/blocked steps.
+    /// Atomically fail a whole DAG (a scheduler error, not a step result) and
+    /// cancel every step that has not settled, running ones included.
     /// Returns job IDs of steps that had jobs created (for cancellation).
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
@@ -168,7 +173,10 @@ pub trait DagRepository: Send + Sync {
         &self,
     ) -> Result<Vec<DagStepExecutionDbModel>>;
 
-    /// List non-terminal DAGs containing a step whose job has not been materialized.
+    /// List non-terminal DAGs containing a ready step whose job has not been
+    /// materialized: one with no job whose dependencies have all COMPLETED. A
+    /// step still waiting on a running dependency needs no recovery and is not
+    /// a candidate.
     async fn list_dag_ids_with_unmaterialized_steps(&self) -> Result<Vec<String>>;
 
     /// List PROCESSING steps of non-terminal DAGs whose attached job is FAILED or
@@ -227,14 +235,6 @@ impl SqlxDagRepository {
             let now = crate::database::time::now_ms();
             let outputs_json = serde_json::to_string(outputs)?;
 
-            fn output_dedup_key(output: &str) -> String {
-                if cfg!(windows) {
-                    output.to_lowercase()
-                } else {
-                    output.to_string()
-                }
-            }
-
             fn merge_dependency_outputs(
                 depends_on_step_ids: &[String],
                 completed_outputs_by_step_id: &HashMap<String, Vec<String>>,
@@ -247,7 +247,7 @@ impl SqlxDagRepository {
                         continue;
                     };
                     for out in dep_outputs {
-                        if seen.insert(output_dedup_key(out)) {
+                        if seen.insert(crate::utils::fs::path_dedup_key(out)) {
                             merged.push(out.clone());
                         }
                     }
@@ -397,23 +397,12 @@ impl SqlxDagRepository {
                 }
             }
 
-            // Settle the last step and parent DAG together before releasing the transaction.
-            if dag.completed_steps + dag.failed_steps >= dag.total_steps {
-                // DAG is complete
-                let final_status = if dag.failed_steps > 0 {
-                    "FAILED"
-                } else {
-                    "COMPLETED"
-                };
-                dag = sqlx::query_as::<_, DagExecutionDbModel>(
-                    "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? RETURNING *",
-                )
-                .bind(final_status)
-                .bind(now)
-                .bind(now)
-                .bind(&completed_step.dag_id)
-                .fetch_one(&mut *tx)
-                .await?;
+            // Settle the parent DAG in the same transaction once every step has
+            // settled; the cancelled dependents of a failed step count as settled.
+            if let Some(finalized) =
+                finalize_settled_dag(&mut tx, &completed_step.dag_id, now).await?
+            {
+                dag = finalized;
             }
 
             tx.commit().await?;
@@ -421,6 +410,71 @@ impl SqlxDagRepository {
         })
         .await
     }
+}
+
+/// Finalize a DAG whose steps have all settled, inside the completion or
+/// failure transaction that settled the last one. When no step is BLOCKED,
+/// PENDING or PROCESSING, the DAG becomes FAILED if any step failed or was
+/// cancelled and COMPLETED otherwise. Returns `None` for a DAG that still has
+/// an active step or is already terminal, which is left as it is.
+async fn finalize_settled_dag(
+    tx: &mut sqlx::SqliteConnection,
+    dag_id: &str,
+    now: i64,
+) -> Result<Option<DagExecutionDbModel>> {
+    let finalized = sqlx::query_as::<_, DagExecutionDbModel>(
+        r#"
+        UPDATE dag_execution
+        SET status = CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM dag_step_execution
+                    WHERE dag_id = dag_execution.id
+                      AND status IN ('FAILED', 'CANCELLED')
+                ) THEN 'FAILED'
+                ELSE 'COMPLETED'
+            END,
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+          AND NOT EXISTS (
+            SELECT 1 FROM dag_step_execution
+            WHERE dag_id = dag_execution.id
+              AND status IN ('BLOCKED', 'PENDING', 'PROCESSING')
+          )
+        RETURNING *
+        "#,
+    )
+    .bind(now)
+    .bind(now)
+    .bind(dag_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    Ok(finalized)
+}
+
+/// Step ids that depend on `origin`, directly or through other steps, from the
+/// rows' stored dependency lists.
+fn transitive_dependents(origin: &str, steps: &[DagStepExecutionDbModel]) -> HashSet<String> {
+    let mut dependents_of: HashMap<String, Vec<&str>> = HashMap::new();
+    for step in steps {
+        for dependency in step.get_depends_on() {
+            dependents_of
+                .entry(dependency)
+                .or_default()
+                .push(step.step_id.as_str());
+        }
+    }
+    let mut result = HashSet::new();
+    let mut queue = VecDeque::from([origin]);
+    while let Some(current) = queue.pop_front() {
+        for &dependent in dependents_of.get(current).into_iter().flatten() {
+            if result.insert(dependent.to_string()) {
+                queue.push_back(dependent);
+            }
+        }
+    }
+    result
 }
 
 #[async_trait]
@@ -915,48 +969,57 @@ impl DagRepository for SqlxDagRepository {
                 return Ok(None);
             }
 
-            let processing_job_ids: Vec<String> = sqlx::query_scalar(
-                r#"
-                SELECT job_id FROM dag_step_execution
-                WHERE dag_id = ? AND status = 'PROCESSING' AND job_id IS NOT NULL
-                "#,
+            // Only the steps downstream of the failed one have lost their inputs.
+            // A branch that does not depend on it keeps running and settles on
+            // its own; the DAG is finalized when the last active step does.
+            let rows = sqlx::query_as::<_, DagStepExecutionDbModel>(
+                "SELECT * FROM dag_step_execution WHERE dag_id = ?",
             )
             .bind(&step.dag_id)
             .fetch_all(&mut *tx)
             .await?;
+            let dependents = transitive_dependents(&step.step_id, &rows);
+            let mut cancelled_job_ids = Vec::new();
+            for row in rows
+                .iter()
+                .filter(|row| dependents.contains(&row.step_id))
+                .filter(|row| matches!(row.status.as_str(), "BLOCKED" | "PENDING" | "PROCESSING"))
+            {
+                sqlx::query(
+                    "UPDATE dag_step_execution SET status = 'CANCELLED', updated_at = ? WHERE id = ?",
+                )
+                .bind(now)
+                .bind(&row.id)
+                .execute(&mut *tx)
+                .await?;
+                if row.status == "PROCESSING"
+                    && let Some(job_id) = &row.job_id
+                {
+                    cancelled_job_ids.push(job_id.clone());
+                }
+            }
 
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'CANCELLED', updated_at = ?
-                WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING', 'PROCESSING')
-                "#,
-            )
-            .bind(now)
-            .bind(&step.dag_id)
-            .execute(&mut *tx)
-            .await?;
-
+            // The first failure's message becomes the DAG's error and later
+            // failures of a draining DAG keep it; the status is settled below.
             sqlx::query(
                 r#"
                 UPDATE dag_execution
-                SET status = 'FAILED',
-                    failed_steps = failed_steps + 1,
-                    completed_at = ?,
+                SET failed_steps = failed_steps + 1,
                     updated_at = ?,
-                    error = ?
-                WHERE id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                    error = COALESCE(error, ?)
+                WHERE id = ?
                 "#,
             )
-            .bind(now)
             .bind(now)
             .bind(error)
             .bind(&step.dag_id)
             .execute(&mut *tx)
             .await?;
 
+            finalize_settled_dag(&mut tx, &step.dag_id, now).await?;
+
             tx.commit().await?;
-            Ok(Some(processing_job_ids))
+            Ok(Some(cancelled_job_ids))
         })
         .await
     }
@@ -1368,6 +1431,17 @@ impl DagRepository for SqlxDagRepository {
                 FROM job
                 WHERE job.dag_step_execution_id = step.id
                   AND job.status IN ('PENDING', 'PROCESSING', 'COMPLETED')
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM json_each(step.depends_on_step_ids) AS dependency
+                WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM dag_step_execution AS upstream
+                  WHERE upstream.dag_id = step.dag_id
+                    AND upstream.step_id = dependency.value
+                    AND upstream.status = 'COMPLETED'
+                )
               )
             ORDER BY dag.created_at, dag.id
             "#,
@@ -1829,6 +1903,195 @@ mod tests {
 
         let dag = repo.get_dag(&dag_id).await.unwrap();
         assert_eq!(dag.status, "FAILED");
+    }
+
+    /// Rows for a DAG whose steps are in the given states, with a job row
+    /// attached where a job id is given. Returns the step execution ids.
+    async fn seed_dag_rows(
+        pool: &SqlitePool,
+        repo: &SqlxDagRepository,
+        definition: &DagPipelineDefinition,
+        steps: &[(&str, &str, Option<&str>)],
+    ) -> (DagExecutionDbModel, HashMap<String, String>) {
+        let mut dag = DagExecutionDbModel::new(definition, None, None);
+        dag.status = "PROCESSING".to_string();
+        repo.create_dag(&dag).await.unwrap();
+        let mut ids = HashMap::new();
+        for (step_id, status, job_id) in steps {
+            let depends_on = definition.get_step(step_id).unwrap().depends_on.clone();
+            let mut step = DagStepExecutionDbModel::new(&dag.id, step_id, &depends_on);
+            step.status = status.to_string();
+            if let Some(job_id) = job_id {
+                create_job(pool, job_id).await;
+                step.job_id = Some(job_id.to_string());
+            }
+            repo.create_step(&step).await.unwrap();
+            ids.insert(step_id.to_string(), step.id);
+        }
+        (dag, ids)
+    }
+
+    fn noop_definition(name: &str, steps: &[(&str, &[&str])]) -> DagPipelineDefinition {
+        DagPipelineDefinition::new(
+            name,
+            steps
+                .iter()
+                .map(|(id, depends_on)| {
+                    DagStep::with_dependencies(
+                        *id,
+                        PipelineStep::preset("noop"),
+                        depends_on.iter().map(|dep| dep.to_string()).collect(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    async fn step_statuses(repo: &SqlxDagRepository, dag_id: &str) -> Vec<String> {
+        let mut statuses: Vec<String> = repo
+            .get_steps_by_dag(dag_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|step| format!("{}={}", step.step_id, step.status))
+            .collect();
+        statuses.sort();
+        statuses
+    }
+
+    /// Failing a step cancels the steps that depend on it, directly or through
+    /// others, and returns the jobs of those already running. Independent
+    /// branches stay active, the first error is kept, and the DAG is finalized
+    /// only by the last branch to settle.
+    #[tokio::test]
+    async fn fail_step_cancels_transitive_dependents_and_keeps_independent_branches() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let definition = noop_definition(
+            "scoped fail-fast",
+            &[
+                ("A", &[]),
+                ("B", &["A"]),
+                ("C", &["A"]),
+                ("D", &["B", "C"]),
+                ("E", &["D"]),
+                ("F", &[]),
+            ],
+        );
+        // D running while its dependency B is still active only arises from a
+        // race, but its job must then be cancelled like any dependent.
+        let (dag, ids) = seed_dag_rows(
+            &pool,
+            &repo,
+            &definition,
+            &[
+                ("A", "COMPLETED", None),
+                ("B", "PROCESSING", Some("job-b")),
+                ("C", "PROCESSING", Some("job-c")),
+                ("D", "PROCESSING", Some("job-d")),
+                ("E", "BLOCKED", None),
+                ("F", "PROCESSING", Some("job-f")),
+            ],
+        )
+        .await;
+
+        let cancelled = repo
+            .fail_step_and_cancel_dag(&ids["B"], "B broke")
+            .await
+            .unwrap()
+            .expect("B was active");
+        assert_eq!(cancelled, vec!["job-d".to_string()]);
+        assert_eq!(
+            step_statuses(&repo, &dag.id).await,
+            [
+                "A=COMPLETED",
+                "B=FAILED",
+                "C=PROCESSING",
+                "D=CANCELLED",
+                "E=CANCELLED",
+                "F=PROCESSING"
+            ]
+        );
+        let draining = repo.get_dag(&dag.id).await.unwrap();
+        assert_eq!(draining.status, "PROCESSING");
+        assert_eq!(draining.failed_steps, 1);
+        assert_eq!(draining.error.as_deref(), Some("B broke"));
+        assert!(draining.completed_at.is_none());
+
+        // A second failure on the draining DAG keeps the first error and has
+        // nothing left to cancel.
+        let cancelled = repo
+            .fail_step_and_cancel_dag(&ids["C"], "C broke")
+            .await
+            .unwrap()
+            .expect("C was active");
+        assert!(cancelled.is_empty());
+        let draining = repo.get_dag(&dag.id).await.unwrap();
+        assert_eq!(draining.status, "PROCESSING");
+        assert_eq!(draining.failed_steps, 2);
+        assert_eq!(draining.error.as_deref(), Some("B broke"));
+
+        // A step that already settled is not failed again.
+        assert!(
+            repo.fail_step_and_cancel_dag(&ids["D"], "late")
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // The independent branch settles the DAG.
+        let completion = repo
+            .complete_step_and_check_dependents(&ids["F"], &[])
+            .await
+            .unwrap();
+        assert!(completion.ready_steps.is_empty());
+        assert_eq!(completion.dag.status, "FAILED");
+        assert!(completion.dag.completed_at.is_some());
+        assert_eq!(completion.dag.completed_steps, 1);
+        assert_eq!(completion.dag.failed_steps, 2);
+        assert_eq!(completion.dag.error.as_deref(), Some("B broke"));
+    }
+
+    /// Startup recovery materializes only a jobless step whose dependencies
+    /// have all completed. One still waiting on a running dependency is not a
+    /// candidate, so a DAG in normal flight is not re-read at every start.
+    #[tokio::test]
+    async fn unmaterialized_step_query_skips_steps_with_a_running_dependency() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let definition = noop_definition(
+            "waiting fan-in",
+            &[("A", &[]), ("B", &["A"]), ("C", &["A"]), ("D", &["B", "C"])],
+        );
+        let (dag, ids) = seed_dag_rows(
+            &pool,
+            &repo,
+            &definition,
+            &[
+                ("A", "COMPLETED", None),
+                ("B", "COMPLETED", None),
+                ("C", "PROCESSING", Some("job-c")),
+                ("D", "BLOCKED", None),
+            ],
+        )
+        .await;
+
+        assert!(
+            repo.list_dag_ids_with_unmaterialized_steps()
+                .await
+                .unwrap()
+                .is_empty(),
+            "D still waits on C"
+        );
+
+        let mut step_c = repo.get_step(&ids["C"]).await.unwrap();
+        step_c.status = "COMPLETED".to_string();
+        repo.update_step(&step_c).await.unwrap();
+        assert_eq!(
+            repo.list_dag_ids_with_unmaterialized_steps().await.unwrap(),
+            vec![dag.id.clone()],
+            "D is ready once every dependency completed"
+        );
     }
 
     #[tokio::test]

@@ -316,6 +316,22 @@ impl RcloneProcessor {
         moved_inputs
     }
 
+    /// A destination as it may appear in logs. An rclone connection string
+    /// (`remote,param=value,...:path` or `:backend,param=value:path`) carries
+    /// credentials in its parameters, which are elided; a plain `remote:path`
+    /// or local path is unchanged.
+    fn loggable_destination(destination: &str) -> String {
+        let backend_prefix = usize::from(destination.starts_with(':'));
+        let Some(colon) = destination[backend_prefix..].find(':') else {
+            return destination.to_owned();
+        };
+        let (remote_spec, path) = destination.split_at(backend_prefix + colon);
+        match remote_spec.split_once(',') {
+            Some((name, _parameters)) => format!("{name},…{path}"),
+            None => destination.to_owned(),
+        }
+    }
+
     /// Remote path of one batch input: `remote_root` + the input's path
     /// relative to `base_dir`, matching how rclone `--files-from` lays out
     /// files under the destination. Always joined with `/` — rclone remote
@@ -361,7 +377,9 @@ impl RcloneProcessor {
 
         info!(
             "Rclone {}: {} -> {}",
-            cmd_op, input_path, remote_destination
+            cmd_op,
+            input_path,
+            Self::loggable_destination(remote_destination)
         );
 
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
@@ -607,7 +625,7 @@ impl RcloneProcessor {
             pending_inputs.len(),
             inputs.len(),
             base_dir_str,
-            remote_destination
+            Self::loggable_destination(remote_destination)
         );
 
         let mut last_error = None;
@@ -822,7 +840,7 @@ impl RcloneProcessor {
 
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
-            template = %remote_destination_raw,
+            template = %Self::loggable_destination(&remote_destination_raw),
             streamer_id = %input.streamer_id,
             session_id = %input.session_id,
             streamer_name = ?input.streamer_name,
@@ -845,8 +863,8 @@ impl RcloneProcessor {
         );
 
         tracing::debug!(
-            template = %remote_destination_raw,
-            expanded = %expanded,
+            template = %Self::loggable_destination(&remote_destination_raw),
+            expanded = %Self::loggable_destination(&expanded),
             "Rclone: Placeholder expansion result"
         );
 
@@ -1752,6 +1770,38 @@ mod tests {
     fn test_supports_batch_input() {
         let processor = RcloneProcessor::new();
         assert!(processor.supports_batch_input());
+    }
+
+    /// Connection-string parameters hold access keys and passwords; logs show
+    /// the remote name and path only.
+    #[test]
+    fn loggable_destination_elides_connection_string_parameters() {
+        assert_eq!(
+            RcloneProcessor::loggable_destination(
+                ":s3,access_key_id=AKIA,secret_access_key=hunter2:bucket/records/a.mp4"
+            ),
+            ":s3,…:bucket/records/a.mp4"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination("drive,pass=s3cret,token=abc:/videos"),
+            "drive,…:/videos"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination("gdrive:/videos/{streamer}"),
+            "gdrive:/videos/{streamer}"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination("remote:/a,b/c.mp4"),
+            "remote:/a,b/c.mp4"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination(r"C:\records\a.mp4"),
+            r"C:\records\a.mp4"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination("/local/records"),
+            "/local/records"
+        );
     }
 
     #[test]

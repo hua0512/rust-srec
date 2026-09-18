@@ -1441,6 +1441,35 @@ async fn sqlx_manager() -> (
     (manager, jobs, dags, pool)
 }
 
+/// A→{B,C}→D of inline `remux` steps.
+fn remux_diamond(name: &str) -> DagPipelineDefinition {
+    let remux = || PipelineStep::Inline {
+        processor: "remux".to_string(),
+        config: serde_json::json!({}),
+    };
+    DagPipelineDefinition::new(
+        name,
+        vec![
+            crate::database::models::DagStep::new("A", remux()),
+            crate::database::models::DagStep::with_dependencies(
+                "B",
+                remux(),
+                vec!["A".to_string()],
+            ),
+            crate::database::models::DagStep::with_dependencies(
+                "C",
+                remux(),
+                vec!["A".to_string()],
+            ),
+            crate::database::models::DagStep::with_dependencies(
+                "D",
+                remux(),
+                vec!["B".to_string(), "C".to_string()],
+            ),
+        ],
+    )
+}
+
 fn remux_chain(name: &str, ids: &[&str]) -> DagPipelineDefinition {
     DagPipelineDefinition::new(
         name,
@@ -1661,6 +1690,143 @@ async fn retry_dag_counts_steps_settled_as_no_ops() {
     let dag = dags.get_dag(&created.dag_id).await.unwrap();
     assert_eq!(dag.status, "COMPLETED");
     assert_eq!(dags.get_step(&step_b.id).await.unwrap().status, "COMPLETED");
+}
+
+/// After a partial failure only the failed branch is re-run: the failed step's
+/// job is restarted, its cancelled dependent is materialized once that step
+/// completes again, and the branch that finished keeps its outputs.
+#[tokio::test]
+async fn retry_dag_after_a_partial_failure_reruns_only_the_failed_branch() {
+    let (manager, jobs, dags, _pool) = sqlx_manager().await;
+    let created = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            remux_diamond("partial failure"),
+        )
+        .await
+        .unwrap();
+    let scheduler = manager.dag_scheduler().unwrap().clone();
+    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
+    let step_id = |id: &str| {
+        steps
+            .iter()
+            .find(|step| step.step_id == id)
+            .unwrap()
+            .id
+            .clone()
+    };
+    let statuses = |dags: Arc<crate::database::repositories::SqlxDagRepository>| {
+        let dag_id = created.dag_id.clone();
+        async move {
+            let mut statuses: Vec<String> = dags
+                .get_steps_by_dag(&dag_id)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|step| format!("{}={}", step.step_id, step.status))
+                .collect();
+            statuses.sort();
+            statuses
+        }
+    };
+
+    let update = scheduler
+        .on_job_completed(
+            &step_id("A"),
+            &["/a.mp4".to_string()],
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(update.new_job_ids.len(), 2);
+    let job_b = dags.get_step(&step_id("B")).await.unwrap().job_id.unwrap();
+    // The worker fails the job before it reports the step failure.
+    assert_eq!(jobs.mark_job_failed(&job_b, "boom").await.unwrap(), 1);
+    let update = scheduler
+        .on_job_failed(&step_id("B"), "boom")
+        .await
+        .unwrap();
+    assert!(update.completion.is_none(), "C is still running");
+    let update = scheduler
+        .on_job_completed(
+            &step_id("C"),
+            &["/c.mp4".to_string()],
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(
+        update
+            .completion
+            .is_some_and(|completion| !completion.succeeded)
+    );
+    assert_eq!(
+        dags.get_dag(&created.dag_id).await.unwrap().status,
+        "FAILED"
+    );
+    assert_eq!(
+        statuses(dags.clone()).await,
+        ["A=COMPLETED", "B=FAILED", "C=COMPLETED", "D=CANCELLED"]
+    );
+
+    let result = manager.retry_dag(&created.dag_id).await.unwrap();
+    assert_eq!(result.retried_steps, 2, "B and D");
+    assert_eq!(result.job_ids, vec![job_b.clone()], "only B's job restarts");
+    let dag = dags.get_dag(&created.dag_id).await.unwrap();
+    assert_eq!(dag.status, "PROCESSING");
+    assert!(dag.error.is_none());
+    assert_eq!(dag.failed_steps, 0);
+    assert_eq!(jobs.get_job(&job_b).await.unwrap().status, "PENDING");
+    assert_eq!(
+        statuses(dags.clone()).await,
+        ["A=COMPLETED", "B=PROCESSING", "C=COMPLETED", "D=BLOCKED"]
+    );
+    assert!(dags.get_step(&step_id("D")).await.unwrap().job_id.is_none());
+    assert_eq!(
+        dags.get_step(&step_id("C")).await.unwrap().get_outputs(),
+        vec!["/c.mp4".to_string()],
+        "the finished branch keeps its outputs"
+    );
+
+    // B succeeds this time: D receives B's and C's outputs in dependency order.
+    let update = scheduler
+        .on_job_completed(
+            &step_id("B"),
+            &["/b.mp4".to_string()],
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(update.new_job_ids.len(), 1);
+    assert!(update.completion.is_none());
+    let job_d = jobs.get_job(&update.new_job_ids[0]).await.unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(job_d.input.as_deref().unwrap()).unwrap(),
+        vec!["/b.mp4".to_string(), "/c.mp4".to_string()]
+    );
+    assert_eq!(
+        statuses(dags.clone()).await,
+        ["A=COMPLETED", "B=COMPLETED", "C=COMPLETED", "D=PROCESSING"]
+    );
+    assert_eq!(
+        jobs.get_jobs_by_pipeline(&created.dag_id)
+            .await
+            .unwrap()
+            .len(),
+        4,
+        "B's job was reused"
+    );
 }
 
 #[tokio::test]
@@ -2573,6 +2739,202 @@ fn test_validate_step_processors_accepts_registered_processors() {
     );
 
     manager.validate_step_processors(&dag).unwrap();
+}
+
+fn consuming_step_dag(processor: &str, config: serde_json::Value) -> DagPipelineDefinition {
+    DagPipelineDefinition::new(
+        "consumer beside a reader",
+        vec![
+            DagStep::new(
+                "remux",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            ),
+            DagStep::with_dependencies(
+                "thumbnail",
+                PipelineStep::inline("thumbnail", serde_json::json!({})),
+                vec!["remux".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "consumer",
+                PipelineStep::inline(processor, config),
+                vec!["remux".to_string()],
+            ),
+        ],
+    )
+}
+
+/// Fan-out hands one step's outputs to every dependent and those run
+/// concurrently, so a step that removes them beside a step that still reads
+/// them is rejected, naming the steps involved.
+#[test]
+fn test_validate_consuming_steps_rejects_a_delete_beside_a_reader() {
+    let error =
+        super::dag::validate_consuming_steps(&consuming_step_dag("delete", serde_json::json!({})))
+            .expect_err("delete races thumbnail for remux's output");
+    let message = error.to_string();
+    assert!(
+        message.contains("Step 'consumer' removes the outputs of 'remux'"),
+        "{message}"
+    );
+    assert!(message.contains("'thumbnail' still read them"), "{message}");
+    assert!(message.contains("depend on that step"), "{message}");
+}
+
+/// A consuming step that depends on the reader, directly or through other
+/// steps, runs after it and is accepted.
+#[test]
+fn test_validate_consuming_steps_accepts_a_delete_after_its_readers() {
+    let after_thumbnail = DagPipelineDefinition::new(
+        "delete after thumbnail",
+        vec![
+            DagStep::new(
+                "remux",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            ),
+            DagStep::with_dependencies(
+                "thumbnail",
+                PipelineStep::inline("thumbnail", serde_json::json!({})),
+                vec!["remux".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "delete",
+                PipelineStep::inline("delete", serde_json::json!({})),
+                vec!["thumbnail".to_string()],
+            ),
+        ],
+    );
+    super::dag::validate_consuming_steps(&after_thumbnail).unwrap();
+
+    let fan_in = DagPipelineDefinition::new(
+        "delete fans in",
+        vec![
+            DagStep::new(
+                "remux",
+                PipelineStep::inline("remux", serde_json::json!({})),
+            ),
+            DagStep::with_dependencies(
+                "thumbnail",
+                PipelineStep::inline("thumbnail", serde_json::json!({})),
+                vec!["remux".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "upload",
+                PipelineStep::inline("rclone", serde_json::json!({ "operation": "copy" })),
+                vec!["thumbnail".to_string()],
+            ),
+            DagStep::with_dependencies(
+                "delete",
+                PipelineStep::inline("delete", serde_json::json!({})),
+                vec!["remux".to_string(), "upload".to_string()],
+            ),
+        ],
+    );
+    super::dag::validate_consuming_steps(&fan_in).unwrap();
+}
+
+/// Root steps all read the pipeline's inputs, so two destructive roots race
+/// each other and are rejected too.
+#[test]
+fn test_validate_consuming_steps_rejects_two_destructive_roots() {
+    let dag = DagPipelineDefinition::new(
+        "two destructive roots",
+        vec![
+            DagStep::new(
+                "delete",
+                PipelineStep::inline("delete", serde_json::json!({})),
+            ),
+            DagStep::new(
+                "move",
+                PipelineStep::inline("copy_move", serde_json::json!({ "operation": "move" })),
+            ),
+        ],
+    );
+    let message = super::dag::validate_consuming_steps(&dag)
+        .expect_err("both roots consume the pipeline's inputs")
+        .to_string();
+    assert!(
+        message.contains("removes the pipeline's inputs"),
+        "{message}"
+    );
+}
+
+/// The seeded default workflows pair a `remux` preset that removes its own
+/// input with a `thumbnail` as root steps; flag-driven media processors are
+/// not treated as consumers, so they keep working.
+#[test]
+fn test_validate_consuming_steps_accepts_the_seeded_remux_and_thumbnail_roots() {
+    let dag = DagPipelineDefinition::new(
+        "remux_thumbnail",
+        vec![
+            DagStep::new(
+                "remux",
+                PipelineStep::inline(
+                    "remux",
+                    serde_json::json!({ "format": "mp4", "remove_input_on_success": true }),
+                ),
+            ),
+            DagStep::new(
+                "thumbnail",
+                PipelineStep::inline("thumbnail", serde_json::json!({})),
+            ),
+        ],
+    );
+    super::dag::validate_consuming_steps(&dag).unwrap();
+}
+
+/// Only the modes that remove local files count: rclone and copy/move in
+/// `move` mode and a Baidu upload that deletes its sources.
+#[test]
+fn test_validate_consuming_steps_distinguishes_transfer_modes() {
+    for (processor, config) in [
+        ("copy_move", serde_json::json!({ "operation": "move" })),
+        ("rclone", serde_json::json!({ "operation": "Move" })),
+        (
+            "baidupcs",
+            serde_json::json!({ "remove_source_after_upload": true }),
+        ),
+    ] {
+        super::dag::validate_consuming_steps(&consuming_step_dag(processor, config.clone()))
+            .expect_err(&format!("{processor} {config} removes its inputs"));
+    }
+    for (processor, config) in [
+        ("copy_move", serde_json::json!({ "operation": "copy" })),
+        ("rclone", serde_json::json!({})),
+        (
+            "baidupcs",
+            serde_json::json!({ "remove_source_after_upload": false }),
+        ),
+        (
+            "metadata",
+            serde_json::json!({ "remove_input_on_success": true }),
+        ),
+    ] {
+        super::dag::validate_consuming_steps(&consuming_step_dag(processor, config.clone()))
+            .unwrap_or_else(|error| panic!("{processor} {config} only reads its inputs: {error}"));
+    }
+}
+
+/// The check runs when a DAG is created, so the racing definition never
+/// reaches the scheduler.
+#[tokio::test]
+async fn test_create_dag_pipeline_rejects_a_step_that_removes_a_siblings_inputs() {
+    let (manager, _jobs, dags, _pool) = sqlx_manager().await;
+    let error = manager
+        .create_dag_pipeline(
+            "session",
+            "streamer",
+            vec!["/in.flv".to_string()],
+            consuming_step_dag("delete", serde_json::json!({})),
+        )
+        .await
+        .expect_err("rejected before publication");
+    assert!(matches!(error, Error::Validation(_)), "{error}");
+    assert!(
+        dags.list_dag_ids_with_unmaterialized_steps()
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

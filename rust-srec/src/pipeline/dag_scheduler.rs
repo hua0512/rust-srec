@@ -3,7 +3,7 @@
 //! The DagScheduler is responsible for:
 //! - Creating jobs for ready DAG steps
 //! - Handling job completion and triggering downstream steps (fan-in)
-//! - Implementing fail-fast behavior on job failure
+//! - Cancelling the steps downstream of a failed job while other branches settle
 //! - Tracking DAG execution progress
 
 use chrono::{DateTime, Utc};
@@ -141,14 +141,6 @@ impl DagScheduler {
         }
     }
 
-    fn output_dedup_key(output: &str) -> String {
-        if cfg!(windows) {
-            output.to_lowercase()
-        } else {
-            output.to_string()
-        }
-    }
-
     pub(super) fn collect_leaf_outputs_from_step_executions(
         def: &DagPipelineDefinition,
         step_execs: &[DagStepExecutionDbModel],
@@ -183,7 +175,7 @@ impl DagScheduler {
                 },
             };
             for output in step_outputs {
-                if seen.insert(Self::output_dedup_key(&output)) {
+                if seen.insert(crate::utils::fs::path_dedup_key(&output)) {
                     outputs.push(output);
                 }
             }
@@ -486,13 +478,15 @@ impl DagScheduler {
 
     /// Handle job failure for a DAG step.
     ///
-    /// Implements fail-fast behavior:
-    /// 1. Marks the step as failed
-    /// 2. Cancels all pending/blocked steps in the DAG
-    /// 3. Signals cancellation for any processing jobs
-    /// 4. Marks the DAG as failed
+    /// Fail-fast is scoped to the failed step's descendants:
+    /// 1. Marks the step as failed and records the error on the DAG
+    /// 2. Cancels the steps that depend on it, directly or indirectly
+    /// 3. Signals cancellation for the cancelled steps' jobs
+    /// 4. Finalizes the DAG as FAILED once no step is active; independent
+    ///    branches keep running and the last one to settle finalizes it
     ///
-    /// Returns the count of cancelled items.
+    /// Returns the count of cancelled jobs and, when the DAG became terminal
+    /// through this failure, its completion.
     pub async fn on_job_failed(
         &self,
         dag_step_execution_id: &str,
@@ -522,10 +516,10 @@ impl DagScheduler {
             dag_id = %step.dag_id,
             step_id = %step.step_id,
             error = %error,
-            "DAG step failed, implementing fail-fast"
+            "DAG step failed; cancelling the steps that depend on it"
         );
 
-        // Cancel processing jobs
+        // Cancel the jobs of the cancelled dependents.
         let mut cancelled_count = 0u64;
         for job_id in &processing_job_ids {
             if let Err(e) = self.job_queue.cancel_job(job_id).await {
@@ -539,12 +533,6 @@ impl DagScheduler {
             }
         }
 
-        info!(
-            dag_id = %step.dag_id,
-            cancelled_jobs = %cancelled_count,
-            "DAG failed, cancelled pending work"
-        );
-
         let updated_dag = match self.dag_repository.get_dag(&step.dag_id).await {
             Ok(dag) => Some(dag),
             Err(error) => {
@@ -552,10 +540,23 @@ impl DagScheduler {
                 None
             }
         };
-        let completion = match updated_dag {
-            Some(dag) => self.completion_info(&dag, false).await,
+        let completion = match &updated_dag {
+            Some(dag) => self.completion_info(dag, false).await,
             None => None,
         };
+        if completion.is_some() {
+            info!(
+                dag_id = %step.dag_id,
+                cancelled_jobs = %cancelled_count,
+                "DAG failed; no step is still running"
+            );
+        } else {
+            info!(
+                dag_id = %step.dag_id,
+                cancelled_jobs = %cancelled_count,
+                "DAG step failed; independent branches keep running until they settle"
+            );
+        }
 
         Ok(DagJobFailedUpdate {
             cancelled_count,
@@ -1067,7 +1068,7 @@ impl DagScheduler {
                         continue;
                     };
                     for out in dep_outputs {
-                        if seen.insert(Self::output_dedup_key(out)) {
+                        if seen.insert(crate::utils::fs::path_dedup_key(out)) {
                             merged.push(out.clone());
                         }
                     }
@@ -2404,6 +2405,51 @@ mod tests {
         )
     }
 
+    /// `noop` steps wired as given: `(id, dependencies)`.
+    fn noop_pipeline(name: &str, steps: &[(&str, &[&str])]) -> DagPipelineDefinition {
+        DagPipelineDefinition::new(
+            name,
+            steps
+                .iter()
+                .map(|(id, depends_on)| {
+                    DagStep::with_dependencies(
+                        *id,
+                        PipelineStep::inline("noop", serde_json::json!({})),
+                        depends_on.iter().map(|dep| dep.to_string()).collect(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// `"<step>=<status>"` for every step of a DAG, in step-id order.
+    async fn step_statuses(
+        dag_repo: &crate::database::repositories::dag::SqlxDagRepository,
+        dag_id: &str,
+    ) -> Vec<String> {
+        let mut statuses: Vec<String> = dag_repo
+            .get_steps_by_dag(dag_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|step| format!("{}={}", step.step_id, step.status))
+            .collect();
+        statuses.sort();
+        statuses
+    }
+
+    async fn complete(
+        scheduler: &DagScheduler,
+        step_execution_id: &str,
+        outputs: &[&str],
+    ) -> DagJobCompletedUpdate {
+        let outputs: Vec<String> = outputs.iter().map(|output| output.to_string()).collect();
+        scheduler
+            .on_job_completed(step_execution_id, &outputs, None, None, None, None)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn startup_recovery_materializes_pending_jobless_step_once() {
         let pool = setup_test_pool().await;
@@ -2650,6 +2696,191 @@ mod tests {
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Completed));
         assert_eq!(dag.completed_steps, 1);
         assert_eq!(dag.failed_steps, 0);
+    }
+
+    /// A→{B,C}→D where B fails while C runs. Only D, which depends on B, is
+    /// cancelled; C keeps its job and finishes; the DAG stays PROCESSING with
+    /// the error recorded until C settles, and then fails exactly once.
+    #[tokio::test]
+    async fn failed_step_cancels_only_its_dependents_and_the_dag_settles_after_siblings() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                noop_pipeline(
+                    "diamond",
+                    &[("A", &[]), ("B", &["A"]), ("C", &["A"]), ("D", &["B", "C"])],
+                ),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
+        let step_id = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id == id)
+                .unwrap()
+                .id
+                .clone()
+        };
+
+        let update = complete(&scheduler, &step_id("A"), &["/a.mp4"]).await;
+        assert_eq!(update.new_job_ids.len(), 2, "B and C fan out");
+        assert!(update.completion.is_none());
+        assert_eq!(
+            scheduler.recover_dag_jobs().await.unwrap(),
+            0,
+            "D waits on running steps and is not a recovery candidate"
+        );
+
+        let update = scheduler
+            .on_job_failed(&step_id("B"), "boom")
+            .await
+            .unwrap();
+        assert_eq!(update.cancelled_count, 0, "D had no job to cancel");
+        assert!(update.completion.is_none(), "C is still running");
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Processing));
+        assert_eq!(dag.error.as_deref(), Some("Step 'B' failed: boom"));
+        assert_eq!(dag.failed_steps, 1);
+        assert!(dag.completed_at.is_none());
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=COMPLETED", "B=FAILED", "C=PROCESSING", "D=CANCELLED"]
+        );
+        let step_c = dag_repo.get_step(&step_id("C")).await.unwrap();
+        let job_c = job_repo
+            .get_job(step_c.job_id.as_deref().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            job_c.status, "PENDING",
+            "the independent branch keeps its job"
+        );
+
+        // A late completion for the cancelled dependent changes nothing.
+        let update = complete(&scheduler, &step_id("D"), &["/late.mp4"]).await;
+        assert!(update.new_job_ids.is_empty());
+        assert!(update.completion.is_none());
+        let step_d = dag_repo.get_step(&step_id("D")).await.unwrap();
+        assert_eq!(step_d.get_status(), Some(DagStepStatus::Cancelled));
+        assert!(step_d.get_outputs().is_empty());
+        assert_eq!(
+            dag_repo
+                .get_dag(&created.dag_id)
+                .await
+                .unwrap()
+                .completed_steps,
+            1
+        );
+
+        // The last active step finalizes the DAG; the cancelled dependent is
+        // not materialized.
+        let update = complete(&scheduler, &step_id("C"), &["/c.mp4"]).await;
+        assert!(update.new_job_ids.is_empty());
+        let completion = update.completion.expect("C settles the DAG");
+        assert!(!completion.succeeded);
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert!(dag.completed_at.is_some());
+        assert_eq!(dag.completed_steps, 2);
+        assert_eq!(dag.failed_steps, 1);
+        assert_eq!(dag.error.as_deref(), Some("Step 'B' failed: boom"));
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=COMPLETED", "B=FAILED", "C=COMPLETED", "D=CANCELLED"]
+        );
+        assert_eq!(
+            job_repo
+                .get_jobs_by_pipeline(&created.dag_id)
+                .await
+                .unwrap()
+                .len(),
+            3,
+            "D never got a job"
+        );
+    }
+
+    /// A→B→C where the root fails: nothing else is active, so B and C are
+    /// cancelled and the DAG fails in the same call. A repeated failure report
+    /// for the settled step is ignored.
+    #[tokio::test]
+    async fn failed_root_cancels_its_chain_and_fails_the_dag_at_once() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                noop_pipeline("chain", &[("A", &[]), ("B", &["A"]), ("C", &["B"])]),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let root = scheduler
+            .get_dag_steps(&created.dag_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|step| step.step_id == "A")
+            .unwrap();
+
+        let update = scheduler.on_job_failed(&root.id, "boom").await.unwrap();
+        assert_eq!(update.cancelled_count, 0, "the chain had no jobs yet");
+        let completion = update.completion.expect("no other step is active");
+        assert!(!completion.succeeded);
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert!(dag.completed_at.is_some());
+        assert_eq!(dag.completed_steps, 0);
+        assert_eq!(dag.failed_steps, 1);
+        assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=FAILED", "B=CANCELLED", "C=CANCELLED"]
+        );
+        for step in dag_repo.get_steps_by_dag(&created.dag_id).await.unwrap() {
+            if step.step_id != "A" {
+                assert!(step.job_id.is_none(), "{} never got a job", step.step_id);
+            }
+        }
+
+        let update = scheduler.on_job_failed(&root.id, "again").await.unwrap();
+        assert_eq!(update.cancelled_count, 0);
+        assert!(update.completion.is_none());
+        assert_eq!(
+            dag_repo
+                .get_dag(&created.dag_id)
+                .await
+                .unwrap()
+                .failed_steps,
+            1
+        );
     }
 
     #[tokio::test]
