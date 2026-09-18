@@ -883,15 +883,16 @@ impl DagPipelineDefinition {
 pub enum DagStepStatus {
     /// Step is waiting for dependencies to complete.
     Blocked,
-    /// All dependencies complete, job created and queued.
+    /// All dependencies complete; no job row exists yet.
     Pending,
-    /// Job is currently being executed.
+    /// A job row is attached (queued or running).
     Processing,
-    /// Job finished successfully.
+    /// Job finished successfully, or the step ran as a no-op.
     Completed,
     /// Job failed.
     Failed,
-    /// Step was cancelled due to fail-fast or user intervention.
+    /// Step was cancelled: a step it depends on failed, the whole DAG was
+    /// failed or cancelled, or its job could not be created.
     Cancelled,
 }
 

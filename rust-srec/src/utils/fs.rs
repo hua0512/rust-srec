@@ -46,3 +46,15 @@ pub fn ensure_dir_all_sync(path: &Path) -> Result<()> {
 pub fn ensure_dir_all_sync_with_op(op: &'static str, path: &Path) -> Result<()> {
     std::fs::create_dir_all(path).map_err(|e| io_error(op, path, e))
 }
+
+/// Key under which two spellings of one path count as the same file when
+/// outputs are merged or de-duplicated. Windows and the default macOS file
+/// systems fold case, so the key is lower-cased there; other platforms keep
+/// the spelling as it is. Matches the case policy of the media processors.
+pub fn path_dedup_key(path: &str) -> String {
+    if cfg!(any(windows, target_os = "macos")) {
+        path.to_lowercase()
+    } else {
+        path.to_owned()
+    }
+}

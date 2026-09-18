@@ -1268,8 +1268,9 @@ impl JobRunner {
     }
 
     /// Fail-fast for a failed DAG step job: reports the failure to
-    /// `DagScheduler::on_job_failed`, which cancels sibling jobs, and forwards any resulting
-    /// completion. No-op when the pool has no scheduler.
+    /// `DagScheduler::on_job_failed`, which cancels the steps that depend on it while
+    /// independent branches keep running, and forwards the completion once the DAG has
+    /// settled. No-op when the pool has no scheduler.
     async fn fail_dag_step(&self, dag_step_id: &str, reason: &str, kind: DagFailureKind) {
         let Some(scheduler) = &self.dag_scheduler else {
             return;

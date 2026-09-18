@@ -76,7 +76,7 @@ Use `program` and `args` to run an executable directly, without a shell:
 }
 ```
 
-Workflow steps receive no output paths, so `{output}`, `{outputN}` and `{outputs_json}` are empty there. Name the file in the arguments and set `scan_output_dir` (which accepts the same placeholders) so the file is handed to the next step: files that were not in the directory before the command started and were modified after it started are the step's outputs. Without a scan directory the inputs pass through unchanged.
+Workflow steps receive no output paths, so `{output}`, `{outputN}` and `{outputs_json}` are empty there. Name the file in the arguments and set `scan_output_dir` (which accepts the same placeholders) so the file is handed to the next step: files that were not in the directory before the command started and were modified after it started are the step's outputs. Without a scan directory the inputs pass through unchanged. The step's size metrics and its list of succeeded inputs cover every input it received and every output it detected, and a scan directory that cannot be read fails the step instead of reporting no outputs.
 
 `program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. In paired-segment and session-complete pipelines, `{manifest_json}` expands to the JSON session pairing (which danmu file belongs to which video, per segment); elsewhere it expands to `null`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
 
@@ -115,6 +115,8 @@ The `compression` processor bundles its input files into a single archive. It do
 
 The processor accepts a batch, so a step that receives several files from its dependencies produces one archive containing all of them. Its output is the archive path only — the inputs are not deleted, and a `delete` step depending on it removes the archive, not the sources.
 
+Two inputs that would be stored under the same entry name, typically the same file name from two folders with `preserve_paths` off, are rejected before any archive is written. Enable `preserve_paths` or rename one of them.
+
 ZIP entries are always written with ZIP64 sizes, so a single recording larger than 4 GiB archives correctly. The cost is 40 bytes per entry, and the archives still open with ordinary ZIP tools.
 
 ### Baidu Netdisk (`baidupcs`)
@@ -123,7 +125,7 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 
 - **Login**: open any `baidupcs` preset in the web UI and use the account card to log in with a pasted cookie string (recommended) or BDUSS + STOKEN. Credentials are handed to BaiduPCS-Go and the session persists in its config directory (`BAIDUPCS_GO_CONFIG_DIR`); the same card shows the active account and quota. Enable **Remember for automatic re-login** to also store the credentials server-side (plaintext, like platform cookies): upload jobs then log in again by themselves when the session turns out to be expired — checked before the first attempt and once more before a retry. When a replayed login is rejected (typically because the stored session token was invalidated by a password change), a high-priority `baidupcs_relogin_failed` notification fires and further attempts pause for an hour, so dead credentials produce one alert instead of a failed Baidu call per job. Logging out forgets the stored credentials.
 - **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
-- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file lands directly under the destination folder.
+- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file lands directly under the destination folder. Files that Baidu rejects outright (an illegal name, a file over the size limit, an unreadable file or an exhausted quota) are recorded as failed and are not re-sent by later attempts. A large batch is uploaded through several BaiduPCS-Go invocations so the command line stays within the platform limit, and the login check that precedes an upload is not written to the job log.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
 Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
@@ -176,6 +178,7 @@ Processor outputs are also significant:
 - Derivative processors such as `thumbnail` and `audio_extract` output only the generated derivative, not their source file.
 - `rclone` `copy` and `sync` pass their local input paths through; `rclone` `move` produces no local outputs because it consumes the local files.
 - `baidupcs` passes its local input paths through, unless **Delete local files after upload** is enabled, in which case the consumed files are dropped from its outputs.
+- `ass_burnin` outputs the burned videos. With **Passthrough Inputs** enabled it also passes its inputs through; with it disabled, the videos it left untouched (no matching subtitle, or a second copy of a recording whose subtitle was already burned) stay in its outputs, while subtitles and burned sources are dropped.
 - `delete` produces no outputs.
 
 A step whose dependencies produced no outputs, such as a `delete` after an
@@ -208,6 +211,8 @@ Fan-out describes graph routing, not a guarantee of simultaneous execution.
 A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
 
 Do **not** place a `delete` step after a `remux`/transcode step: it would delete the converted result, because that is what the transcode produced. To delete the original source after converting, enable **Remove Input on Success** (`remove_input_on_success`) on the transcode step instead.
+
+A step that removes its inputs (`delete`, an `rclone` or `copy_move` step in `move` mode, or a `baidupcs` step with **Delete local files after upload**) must not share a parent with another step that still reads the same files, because fan-out runs both at once. Such a workflow is rejected when it is created, with a message naming the steps involved; make the removing step depend on the other reader, directly or through other steps, so it runs after it. Root steps all read the pipeline's inputs and count as sharing one parent. Removal driven by a processor option, such as **Remove Input on Success**, is not covered by this check.
 
 ::: tip Performance Tip
 Re-encoding (like `ass_burnin`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
@@ -327,7 +332,8 @@ through with a note. No file is written next to the recordings; `_inputs.json` f
 be deleted.
 
 Normal completion and restart recovery collect leaf outputs in DAG definition
-order, keeping the first occurrence of each path with case folding on Windows.
+order, keeping the first occurrence of each path with case folding on Windows
+and macOS.
 Missing leaf records or malformed output arrays leave recovery incomplete while
 preserving the valid outputs. Completing a step twice does not create another
 downstream job or increment the DAG's completed-step count again.
@@ -345,7 +351,11 @@ abandoned processor runs off the async worker and is best effort; a normal
 publication waits for its commit or rollback. Subtitle and font paths support
 apostrophes and filtergraph delimiters without extra user escaping.
 
-- **Fail-fast**: When a step fails, pending downstream steps are cancelled
+- **Fail-fast**: When a step fails, only the steps that depend on it, directly
+  or through other steps, are cancelled. Steps on independent branches keep
+  running and finish normally; the workflow stays in progress, with the failure
+  recorded as its error, until no step is running, and is then marked failed.
+  A retry re-runs only the failed and cancelled steps.
 - **Retry**: Failed steps can be retried manually or automatically. A retry
   checks every job it will restart before changing anything; if restarting
   breaks down part-way, the workflow is failed again with the retry error and
@@ -380,7 +390,8 @@ publishes nothing, and one item's output can never overwrite another item's inpu
 ASS retains its artifact-matching loop and the same staged publication. Source
 deletion remains after successful publication, and skipped sources remain.
 Outputs, succeeded/skipped inputs and logs retain their input order and existing
-metadata shapes.
+metadata shapes. Batch jobs report the summed input and output sizes of the
+items they processed.
 
 A processor that reports some of its inputs as failed fails the job, and a workflow
 step with it, even when the remaining inputs were processed. The error names each

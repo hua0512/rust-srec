@@ -363,34 +363,40 @@ impl ExecuteCommandProcessor {
     /// command started even for files it wrote.
     const MODIFIED_TOLERANCE: std::time::Duration = std::time::Duration::from_secs(2);
 
-    /// Scan a directory and return all file paths.
-    async fn scan_directory(dir: &Path, extension_filter: Option<&str>) -> Vec<String> {
+    /// Scan a directory and return all file paths. A directory that cannot be
+    /// read is an error: treating it as empty would silently turn every file
+    /// the command wrote into "no new files" and pass the inputs through.
+    async fn scan_directory(dir: &Path, extension_filter: Option<&str>) -> Result<Vec<String>> {
         let mut files = Vec::new();
-
-        if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
-            while let Ok(Some(entry)) = entries.next_entry().await {
-                let path = entry.path();
-                let is_file = entry
-                    .file_type()
-                    .await
-                    .map(|t| t.is_file())
-                    .unwrap_or(false);
-                if is_file {
-                    // Apply extension filter if specified
-                    if let Some(ext_filter) = extension_filter {
-                        if let Some(ext) = path.extension().and_then(|e| e.to_str())
-                            && ext.eq_ignore_ascii_case(ext_filter)
-                        {
-                            files.push(path.to_string_lossy().to_string());
-                        }
-                    } else {
-                        files.push(path.to_string_lossy().to_string());
-                    }
+        let mut entries = tokio::fs::read_dir(dir)
+            .await
+            .map_err(|e| crate::Error::io_path("read output directory", dir, e))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| crate::Error::io_path("read output directory", dir, e))?
+        {
+            let path = entry.path();
+            let is_file = entry
+                .file_type()
+                .await
+                .map_err(|e| crate::Error::io_path("inspect output directory entry", &path, e))?
+                .is_file();
+            if !is_file {
+                continue;
+            }
+            if let Some(ext_filter) = extension_filter {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                    && ext.eq_ignore_ascii_case(ext_filter)
+                {
+                    files.push(path.to_string_lossy().to_string());
                 }
+            } else {
+                files.push(path.to_string_lossy().to_string());
             }
         }
 
-        files
+        Ok(files)
     }
 
     /// Detect new files created in a directory by comparing before/after snapshots.
@@ -403,9 +409,9 @@ impl ExecuteCommandProcessor {
         dir: &Path,
         extension_filter: Option<&str>,
         started_at: std::time::SystemTime,
-    ) -> Vec<String> {
+    ) -> Result<Vec<String>> {
         let after: HashSet<String> = Self::scan_directory(dir, extension_filter)
-            .await
+            .await?
             .into_iter()
             .collect();
         let threshold = started_at
@@ -432,7 +438,13 @@ impl ExecuteCommandProcessor {
             }
         }
         new_files.sort();
-        new_files
+        Ok(new_files)
+    }
+
+    /// Total size of the listed files that exist, or `None` when none does.
+    async fn total_size(paths: &[String]) -> Option<u64> {
+        let sizes = super::inputs::input_size_map(paths).await;
+        (!sizes.is_empty()).then(|| sizes.values().sum())
     }
 }
 
@@ -510,7 +522,7 @@ impl Processor for ExecuteCommandProcessor {
 
             Some(
                 Self::scan_directory(dir_path, config.scan_extension.as_deref())
-                    .await
+                    .await?
                     .into_iter()
                     .collect(),
             )
@@ -562,20 +574,8 @@ impl Processor for ExecuteCommandProcessor {
 
         ctx.info(format!("Command completed in {:.2}s", duration));
 
-        // Get file sizes for metrics if paths exist
-        let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
-        let output_path = input.outputs.first().map(|s| s.as_str()).unwrap_or("");
-
-        let input_size_bytes = if !input_path.is_empty() {
-            tokio::fs::metadata(input_path).await.ok().map(|m| m.len())
-        } else {
-            None
-        };
-        let output_size_bytes = if !output_path.is_empty() {
-            tokio::fs::metadata(output_path).await.ok().map(|m| m.len())
-        } else {
-            None
-        };
+        // Metrics describe every input the command received, not only the first.
+        let input_size_bytes = Self::total_size(&input.inputs).await;
 
         // Determine outputs for pipeline chaining
         // Priority:
@@ -590,7 +590,7 @@ impl Processor for ExecuteCommandProcessor {
                 config.scan_extension.as_deref(),
                 started_at,
             )
-            .await;
+            .await?;
 
             if new_files.is_empty() {
                 debug!(
@@ -626,6 +626,7 @@ impl Processor for ExecuteCommandProcessor {
 
         metadata["scan_output_dir"] = serde_json::json!(scan_output_dir);
         metadata["scan_extension"] = serde_json::json!(config.scan_extension);
+        let output_size_bytes = Self::total_size(&items_produced).await;
         Ok(ProcessorOutput {
             outputs,
             duration_secs: duration,
@@ -634,11 +635,8 @@ impl Processor for ExecuteCommandProcessor {
             input_size_bytes,
             output_size_bytes,
             failed_inputs: vec![],
-            succeeded_inputs: if input_path.is_empty() {
-                vec![]
-            } else {
-                vec![input_path.to_string()]
-            },
+            // The command received every input; none is skipped or failed individually.
+            succeeded_inputs: input.inputs.clone(),
             skipped_inputs: vec![],
             uploads: vec![],
             logs: command_output.logs,
@@ -959,18 +957,33 @@ mod tests {
         fs::write(dir.join("log.txt"), "test").await.unwrap();
 
         // Scan all files
-        let all_files = ExecuteCommandProcessor::scan_directory(dir, None).await;
+        let all_files = ExecuteCommandProcessor::scan_directory(dir, None)
+            .await
+            .unwrap();
         assert_eq!(all_files.len(), 3);
 
         // Scan only .mp4 files
-        let mp4_files = ExecuteCommandProcessor::scan_directory(dir, Some("mp4")).await;
+        let mp4_files = ExecuteCommandProcessor::scan_directory(dir, Some("mp4"))
+            .await
+            .unwrap();
         assert_eq!(mp4_files.len(), 1);
         assert!(mp4_files[0].contains("video.mp4"));
 
         // Scan only .txt files
-        let txt_files = ExecuteCommandProcessor::scan_directory(dir, Some("txt")).await;
+        let txt_files = ExecuteCommandProcessor::scan_directory(dir, Some("txt"))
+            .await
+            .unwrap();
         assert_eq!(txt_files.len(), 1);
         assert!(txt_files[0].contains("log.txt"));
+
+        // A directory that cannot be read is reported, not treated as empty.
+        let error = ExecuteCommandProcessor::scan_directory(&dir.join("missing"), None)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("read output directory"),
+            "{error}"
+        );
     }
 
     /// Test detect_new_files helper function.
@@ -988,6 +1001,7 @@ mod tests {
         // Take snapshot
         let before: HashSet<String> = ExecuteCommandProcessor::scan_directory(dir, None)
             .await
+            .unwrap()
             .into_iter()
             .collect();
 
@@ -998,13 +1012,16 @@ mod tests {
         let started_at = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
 
         // Detect new files (all)
-        let new_files =
-            ExecuteCommandProcessor::detect_new_files(&before, dir, None, started_at).await;
+        let new_files = ExecuteCommandProcessor::detect_new_files(&before, dir, None, started_at)
+            .await
+            .unwrap();
         assert_eq!(new_files.len(), 2);
 
         // Detect new files (only .mp4)
         let new_mp4 =
-            ExecuteCommandProcessor::detect_new_files(&before, dir, Some("mp4"), started_at).await;
+            ExecuteCommandProcessor::detect_new_files(&before, dir, Some("mp4"), started_at)
+                .await
+                .unwrap();
         assert_eq!(new_mp4.len(), 1);
         assert!(new_mp4[0].contains("new1.mp4"));
     }
@@ -1108,8 +1125,14 @@ mod tests {
             Some("txt"),
             std::time::SystemTime::now() - std::time::Duration::from_secs(60),
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(detected, vec![fresh.to_string_lossy().into_owned()]);
+        assert_eq!(result.succeeded_inputs, input.inputs);
+        assert_eq!(
+            result.output_size_bytes,
+            Some(std::fs::metadata(&fresh).unwrap().len())
+        );
     }
 
     /// Test scan output directory fallback prefers explicit outputs over input passthrough.

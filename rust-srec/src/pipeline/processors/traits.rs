@@ -227,6 +227,21 @@ impl ProcessorContext {
         self
     }
 
+    /// A context for a command whose output must not reach the job log, such
+    /// as a probe that prints account details. Progress, cancellation and the
+    /// retry flag are shared with `self`; entries sent to the returned
+    /// context's log sink are discarded without counting as dropped for the job.
+    pub fn without_job_log(&self) -> Self {
+        let (log_tx, _discarded) = tokio::sync::mpsc::channel(1);
+        Self {
+            job_id: self.job_id.clone(),
+            progress: self.progress.clone(),
+            log_sink: JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
+            cancellation_token: self.cancellation_token.clone(),
+            is_retry: self.is_retry,
+        }
+    }
+
     /// Emit a log entry.
     pub fn log(&self, entry: JobLogEntry) {
         self.log_sink.try_send(entry);
@@ -381,18 +396,10 @@ pub trait Processor: Send + Sync {
     /// Indicates if this processor supports multiple inputs in a single job (batch processing).
     ///
     /// When `true`, the processor can handle multiple input files in a single `process()` call.
-    /// When `false` (default), the worker pool will split multi-input jobs into separate jobs.
-    ///
+    /// When `false` (default), the worker pool splits a multi-input standalone job into one
+    /// job per input; a multi-input DAG step job is failed instead, because a step must not
+    /// complete more than once.
     fn supports_batch_input(&self) -> bool {
-        false
-    }
-
-    /// Indicates if this processor can produce multiple outputs from a single input (fan-out).
-    ///
-    /// When `true`, the processor may produce multiple output files from a single input.
-    /// The worker pool will pass all outputs as inputs to the next pipeline step.
-    ///
-    fn supports_fan_out(&self) -> bool {
         false
     }
 }

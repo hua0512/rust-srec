@@ -310,17 +310,6 @@ fn push_overlong_summary(
     }
 }
 
-/// Build a sibling temp path for `final_path` (`<name>.tmp-<uuid>`).
-/// Writing to this path and renaming into place keeps a crashed or
-/// cancelled job from leaving a partial file under the final name.
-pub(super) fn tmp_output_path(final_path: &Path) -> std::path::PathBuf {
-    std::path::PathBuf::from(format!(
-        "{}.tmp-{}",
-        final_path.display(),
-        uuid::Uuid::new_v4()
-    ))
-}
-
 #[derive(Clone)]
 enum CommandMode {
     Plain,

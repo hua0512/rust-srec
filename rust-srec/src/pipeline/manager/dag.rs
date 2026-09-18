@@ -890,6 +890,7 @@ where
             dag_step.step = resolved;
         }
         self.validate_step_processors(&resolved_dag)?;
+        validate_consuming_steps(&resolved_dag)?;
 
         // Look up metadata for placeholder support
         let (streamer_name, platform) = self.lookup_streamer_metadata(streamer_id).await;
@@ -1182,4 +1183,109 @@ where
             known.join(", ")
         )))
     }
+}
+
+/// Whether a resolved step removes the files it receives: a `delete`, an rclone
+/// or copy/move step in `move` mode, or a Baidu Netdisk upload that deletes its
+/// local files. A `Preset` or `Workflow` step is never reported; callers pass
+/// definitions that `resolve_dag_step` and `expand_workflows_in_dag` have
+/// already turned into `PipelineStep::Inline`.
+fn consumes_inputs(step: &PipelineStep) -> bool {
+    let PipelineStep::Inline { processor, config } = step else {
+        return false;
+    };
+    let flag = |key: &str| config.get(key).and_then(serde_json::Value::as_bool) == Some(true);
+    let operation_is_move = || {
+        config
+            .get("operation")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|operation| operation.eq_ignore_ascii_case("move"))
+    };
+    match processor.as_str() {
+        "delete" | "cleanup" => true,
+        "rclone" | "upload" | "copy_move" => operation_is_move(),
+        "baidupcs" => flag("remove_source_after_upload"),
+        _ => false,
+    }
+}
+
+/// Reject a step that removes its inputs while a sibling still reads them.
+///
+/// Fan-out hands the same output paths to every dependent of a step, and those
+/// dependents run concurrently. A `delete` or `move` next to a `thumbnail` on
+/// the same parent therefore races the thumbnail for the file. The consuming
+/// step must depend, directly or through other steps, on every other step that
+/// reads the same outputs; root steps read the pipeline's inputs and count as
+/// sharing one parent.
+pub(super) fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()> {
+    // Every step that finishes before `step` may start is an ancestor of it.
+    let ancestors_of = |step: &crate::database::models::DagStep| -> HashSet<String> {
+        let mut seen = HashSet::new();
+        let mut queue: Vec<String> = step.depends_on.clone();
+        while let Some(current) = queue.pop() {
+            if seen.contains(&current) {
+                continue;
+            }
+            if let Some(upstream) = dag.get_step(&current) {
+                queue.extend(upstream.depends_on.iter().cloned());
+            }
+            seen.insert(current);
+        }
+        seen
+    };
+
+    for consumer in dag.steps.iter().filter(|step| consumes_inputs(&step.step)) {
+        let ancestors = ancestors_of(consumer);
+        let shares_parent = |other: &crate::database::models::DagStep| {
+            if consumer.depends_on.is_empty() {
+                other.depends_on.is_empty()
+            } else {
+                other
+                    .depends_on
+                    .iter()
+                    .any(|parent| consumer.depends_on.contains(parent))
+            }
+        };
+        let readers: Vec<&str> = dag
+            .steps
+            .iter()
+            .filter(|other| other.id != consumer.id)
+            .filter(|other| shares_parent(other))
+            .filter(|other| !ancestors.contains(other.id.as_str()))
+            .map(|other| other.id.as_str())
+            .collect();
+        if readers.is_empty() {
+            continue;
+        }
+        let source = if consumer.depends_on.is_empty() {
+            "the pipeline's inputs".to_string()
+        } else {
+            format!(
+                "the outputs of {}",
+                consumer
+                    .depends_on
+                    .iter()
+                    .map(|parent| format!("'{parent}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        return Err(crate::Error::Validation(format!(
+            "Step '{}' removes {} while {} still read them; make '{}' depend on {} so it runs after them",
+            consumer.id,
+            source,
+            readers
+                .iter()
+                .map(|reader| format!("'{reader}'"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            consumer.id,
+            if readers.len() == 1 {
+                "that step"
+            } else {
+                "those steps"
+            }
+        )));
+    }
+    Ok(())
 }
