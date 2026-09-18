@@ -150,9 +150,10 @@ impl ThumbnailProcessor {
         let temp_path = batch.stage(Path::new(output_path), true).await?;
         let temp_name = temp_path.to_string_lossy();
 
-        // A seek past the end of a short recording makes ffmpeg exit 0 without
-        // writing a frame. The first frame is then taken instead, and only when
-        // even that yields nothing is the input passed through.
+        // A seek past the end of a short recording leaves no frame: older ffmpeg
+        // versions exit 0, newer ones fail with "Nothing was written into output
+        // file". Either way the first frame is taken instead, and only when even
+        // that yields nothing is the input passed through.
         let mut seek_secs = config.timestamp_secs;
         let mut total_duration = 0.0;
         let mut logs = Vec::new();
@@ -172,7 +173,25 @@ impl ThumbnailProcessor {
                 .await?;
             total_duration += command_output.duration;
 
+            let produced = tokio::fs::metadata(&temp_path)
+                .await
+                .map(|metadata| metadata.is_file() && metadata.len() > 0)
+                .unwrap_or(false);
+
             if !command_output.status.success() {
+                // Nothing was written at a later timestamp: retry from the start
+                // before judging the failure, so a seek past the end and a real
+                // decode error are told apart by the first-frame attempt.
+                if seek_secs > 0.0 && !produced {
+                    logs.extend(command_output.logs);
+                    ctx.info(format!(
+                        "No frame at {:.2}s (recording shorter than the requested timestamp); using the first frame of {}",
+                        seek_secs, input_path
+                    ));
+                    seek_secs = 0.0;
+                    continue;
+                }
+
                 // Reconstruct stderr for error analysis
                 let stderr = command_output
                     .logs
@@ -188,6 +207,7 @@ impl ThumbnailProcessor {
                 // Check for no video stream error - pass through instead of failing
                 if stderr.contains("does not contain any stream")
                     || stderr.contains("Output file is empty")
+                    || stderr.contains("Nothing was written into output file")
                     || stderr.contains("Invalid data found")
                     || stderr.contains("no video stream")
                 {
@@ -211,10 +231,6 @@ impl ThumbnailProcessor {
                 )));
             }
 
-            let produced = tokio::fs::metadata(&temp_path)
-                .await
-                .map(|metadata| metadata.is_file() && metadata.len() > 0)
-                .unwrap_or(false);
             if produced {
                 break command_output;
             }

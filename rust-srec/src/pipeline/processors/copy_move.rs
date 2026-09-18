@@ -1543,7 +1543,7 @@ mod tests {
                         first.to_string_lossy().to_string(),
                         excluded.to_string_lossy().to_string(),
                     ],
-                    config: Some(config(r"[\/]c[\/]")),
+                    config: Some(config(r"[\\/]c[\\/]")),
                     ..Default::default()
                 },
                 &ProcessorContext::noop("test"),
