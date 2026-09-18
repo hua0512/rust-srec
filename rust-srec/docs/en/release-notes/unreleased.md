@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Workflows are checked when they are saved**
+
+  Saving or validating a workflow now resolves its presets and nested workflows the way a run would, so a missing preset, an unknown processor, a cycle, or a delete or move racing a sibling step is reported in the editor instead of failing silently when the next recording finishes. A step that deletes its sources through an option, such as a remux with **Remove Input on Success**, beside a step that still reads them produces a warning in the editor and in the log when the workflow runs. See [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).
+
 - **Busy queues finish workflows before starting new ones**
 
   When a worker becomes free, a step that continues a workflow already in progress is now claimed before the first step of a new workflow at the same priority, oldest first within that order. Under a backlog, recordings finish their post-processing one after another instead of many sitting half done. Explicit job priorities still take precedence.

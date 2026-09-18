@@ -7,7 +7,6 @@ import {
   Workflow,
   Save,
   Settings2,
-  CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
@@ -30,6 +29,7 @@ import {
 
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import { validateDagDefinition } from '@/server/functions/pipeline';
+import { reportValidation } from './validation-feedback';
 import { toast } from 'sonner';
 import { DagStepDefinition, DagStepDefinitionSchema } from '@/api/schemas';
 import { useWorkflowSteps } from './use-workflow-steps';
@@ -103,38 +103,7 @@ export function WorkflowEditor({
         },
       });
 
-      if (result.valid) {
-        toast.success(i18n._(msg`Pipeline is valid`), {
-          description: i18n._(
-            msg`No errors found. Max depth: ${result.max_depth}`,
-          ),
-          icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
-        });
-      } else {
-        toast.error(i18n._(msg`Validation Failed`), {
-          description: (
-            <div className="space-y-1 mt-1">
-              {result.errors.map((e, i) => (
-                <p
-                  key={i}
-                  className="text-xs font-mono bg-destructive/10 p-1 rounded text-destructive"
-                >
-                  {e}
-                </p>
-              ))}
-              {result.warnings.map((e, i) => (
-                <p
-                  key={i}
-                  className="text-xs font-mono bg-yellow-500/10 p-1 rounded text-yellow-500"
-                >
-                  {e}
-                </p>
-              ))}
-            </div>
-          ),
-          duration: 5000,
-        });
-      }
+      reportValidation(i18n, result, { announceSuccess: true });
     } catch (error) {
       console.error(error);
       toast.error(i18n._(msg`Validation service unavailable`));

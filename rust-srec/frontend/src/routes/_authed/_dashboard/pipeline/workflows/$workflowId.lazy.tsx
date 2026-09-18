@@ -9,6 +9,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
+import { validateBeforeSave } from '@/components/pipeline/workflows/validation-feedback';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { DagStepDefinition } from '@/api/schemas';
 
@@ -56,18 +57,15 @@ function EditWorkflowPage() {
     description?: string;
     steps: DagStepDefinition[];
   }) => {
-    updateMutation.mutate({
-      data: {
-        id: workflowId,
+    const dag = { name: data.name, steps: data.steps };
+    void validateBeforeSave(i18n, dag).then((proceed) => {
+      if (!proceed) return;
+      updateMutation.mutate({
         data: {
-          name: data.name,
-          description: data.description,
-          dag: {
-            name: data.name,
-            steps: data.steps,
-          },
+          id: workflowId,
+          data: { name: data.name, description: data.description, dag },
         },
-      },
+      });
     });
   };
 
