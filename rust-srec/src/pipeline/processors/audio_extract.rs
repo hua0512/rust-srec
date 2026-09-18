@@ -97,6 +97,12 @@ impl Default for AudioExtractConfig {
     }
 }
 
+/// An audio stream ffprobe found in the input.
+struct AudioStream {
+    /// `codec_name` as reported; `None` when the probe did not report one.
+    codec: Option<String>,
+}
+
 /// Processor for extracting audio from video files.
 ///
 /// Uses ffmpeg to extract audio streams with optional transcoding.
@@ -191,24 +197,47 @@ impl AudioExtractProcessor {
     }
 
     /// Determine the output file path based on config and input.
+    ///
+    /// `codec` is the source audio codec reported by ffprobe; a stream copy
+    /// takes its extension from it so ffmpeg picks a container that can hold
+    /// the stream.
     fn determine_output_path(
         &self,
         input_path: &str,
         config: &AudioExtractConfig,
         output_override: Option<&str>,
+        codec: Option<&str>,
     ) -> String {
         super::planning::choose_output(config.output_path.as_deref(), output_override, || {
             let extension = config
                 .format
                 .as_ref()
                 .map(|format| format.extension())
-                .unwrap_or("aac");
+                .unwrap_or_else(|| Self::copy_extension(codec));
             super::planning::sibling_output(Path::new(input_path), "output", "_audio", extension)
         })
     }
 
-    /// Check if the input file has an audio stream using ffprobe.
-    async fn has_audio_stream(&self, input_path: &str) -> Result<bool> {
+    /// Container extension for a stream copy of `codec`. Raw elementary streams
+    /// are used where ffmpeg has a muxer for them; anything else goes into
+    /// Matroska audio, which accepts every codec ffmpeg can demux.
+    fn copy_extension(codec: Option<&str>) -> &'static str {
+        match codec {
+            Some("aac") => "aac",
+            Some("mp3") => "mp3",
+            Some("opus") => "opus",
+            Some("vorbis") => "ogg",
+            Some("flac") => "flac",
+            Some("ac3") => "ac3",
+            Some("eac3") => "eac3",
+            Some("alac") => "m4a",
+            Some(codec) if codec.starts_with("pcm_") => "wav",
+            _ => "mka",
+        }
+    }
+
+    /// The first audio stream of the file, or `None` when it has none, using ffprobe.
+    async fn probe_audio_codec(&self, input_path: &str) -> Result<Option<AudioStream>> {
         let ffprobe_path = std::env::var("FFPROBE_PATH").unwrap_or_else(|_| "ffprobe".to_string());
 
         let mut cmd = process_utils::tokio_command(&ffprobe_path);
@@ -218,7 +247,7 @@ impl AudioExtractProcessor {
             "-select_streams",
             "a:0",
             "-show_entries",
-            "stream=codec_type",
+            "stream=codec_type,codec_name",
             "-of",
             "csv=p=0",
             input_path,
@@ -230,9 +259,22 @@ impl AudioExtractProcessor {
                 output.status
             )));
         }
-        Ok(output.logs.iter().any(|entry| {
-            entry.level == crate::pipeline::job_queue::LogLevel::Info
-                && entry.message.trim() == "audio"
+        // One csv line per selected stream, `codec_name,codec_type`; a build
+        // that omits the codec name still identifies the stream by its type.
+        Ok(output.logs.iter().find_map(|entry| {
+            if entry.level != crate::pipeline::job_queue::LogLevel::Info {
+                return None;
+            }
+            let fields: Vec<&str> = entry.message.trim().split(',').collect();
+            if !fields.contains(&"audio") {
+                return None;
+            }
+            Some(AudioStream {
+                codec: fields
+                    .iter()
+                    .find(|field| **field != "audio" && !field.is_empty())
+                    .map(|codec| codec.to_string()),
+            })
         }))
     }
 
@@ -288,9 +330,9 @@ impl AudioExtractProcessor {
 
         // Check if input has audio stream
         // If no audio stream, pass through the input file instead of failing
-        match self.has_audio_stream(input_path).await {
-            Ok(true) => {}
-            Ok(false) => {
+        let codec = match self.probe_audio_codec(input_path).await {
+            Ok(Some(stream)) => stream.codec,
+            Ok(None) => {
                 let duration = start.elapsed().as_secs_f64();
                 info!(
                     "Input file contains no audio stream, passing through: {}",
@@ -307,13 +349,15 @@ impl AudioExtractProcessor {
             Err(e) => {
                 // If ffprobe fails, we'll try to extract anyway and let ffmpeg report the error
                 warn!("Could not verify audio stream presence: {}", e);
+                None
             }
-        }
+        };
 
         let output_path = self.determine_output_path(
             input_path,
             config,
             output_override.filter(|s| !s.is_empty()),
+            codec.as_deref(),
         );
         let temp_path = batch.stage(Path::new(&output_path), true).await?;
 
@@ -397,6 +441,7 @@ impl AudioExtractProcessor {
             metadata: Some(
                 serde_json::json!({
                     "format": config.format.as_ref().map(|f| format!("{:?}", f)),
+                    "source_codec": codec,
                     "bitrate": config.bitrate,
                     "sample_rate": config.sample_rate,
                     "channels": config.channels,
@@ -756,6 +801,7 @@ mod tests {
             "/input.mp4",
             &config,
             input.outputs.first().map(String::as_str),
+            None,
         );
         assert_eq!(output, "/custom/output.mp3");
     }
@@ -777,6 +823,7 @@ mod tests {
             "/input.mp4",
             &config,
             input.outputs.first().map(String::as_str),
+            None,
         );
         assert_eq!(output, "/processor/output.mp3");
     }
@@ -801,8 +848,34 @@ mod tests {
             "/path/to/video.mp4",
             &config,
             input.outputs.first().map(String::as_str),
+            Some("opus"),
         );
         assert!(output.contains("video_audio.mp3"));
+    }
+
+    /// A stream copy keeps the source codec, so the generated name must use a
+    /// container that can hold it instead of always claiming `.aac`.
+    #[test]
+    fn stream_copy_extension_follows_the_source_codec() {
+        let processor = AudioExtractProcessor::new();
+        let config = AudioExtractConfig::default();
+        for (codec, extension) in [
+            (Some("aac"), "aac"),
+            (Some("mp3"), "mp3"),
+            (Some("opus"), "opus"),
+            (Some("vorbis"), "ogg"),
+            (Some("flac"), "flac"),
+            (Some("pcm_s16le"), "wav"),
+            (Some("something_new"), "mka"),
+            (None, "mka"),
+        ] {
+            let output =
+                processor.determine_output_path("/path/to/video.mp4", &config, None, codec);
+            assert!(
+                output.ends_with(&format!("video_audio.{extension}")),
+                "{codec:?}: {output}"
+            );
+        }
     }
 
     #[tokio::test]

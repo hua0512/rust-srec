@@ -150,98 +150,113 @@ impl ThumbnailProcessor {
         let temp_path = batch.stage(Path::new(output_path), true).await?;
         let temp_name = temp_path.to_string_lossy();
 
-        ctx.info(format!(
-            "Extracting thumbnail from {} at {:.2}s{}",
-            input_path,
-            config.timestamp_secs,
-            if config.preserve_resolution {
-                " (native resolution)"
-            } else {
-                ""
+        // A seek past the end of a short recording leaves no frame: older ffmpeg
+        // versions exit 0, newer ones fail with "Nothing was written into output
+        // file". Either way the first frame is taken instead, and only when even
+        // that yields nothing is the input passed through.
+        let mut seek_secs = config.timestamp_secs;
+        let mut total_duration = 0.0;
+        let mut logs = Vec::new();
+        let command_output = loop {
+            ctx.info(format!(
+                "Extracting thumbnail from {} at {:.2}s{}",
+                input_path,
+                seek_secs,
+                if config.preserve_resolution {
+                    " (native resolution)"
+                } else {
+                    ""
+                }
+            ));
+            let command_output = self
+                .run_ffmpeg(input_path, seek_secs, &temp_name, config, ctx)
+                .await?;
+            total_duration += command_output.duration;
+
+            let produced = tokio::fs::metadata(&temp_path)
+                .await
+                .map(|metadata| metadata.is_file() && metadata.len() > 0)
+                .unwrap_or(false);
+
+            if !command_output.status.success() {
+                // Nothing was written at a later timestamp: retry from the start
+                // before judging the failure, so a seek past the end and a real
+                // decode error are told apart by the first-frame attempt.
+                if seek_secs > 0.0 && !produced {
+                    logs.extend(command_output.logs);
+                    ctx.info(format!(
+                        "No frame at {:.2}s (recording shorter than the requested timestamp); using the first frame of {}",
+                        seek_secs, input_path
+                    ));
+                    seek_secs = 0.0;
+                    continue;
+                }
+
+                // Reconstruct stderr for error analysis
+                let stderr = command_output
+                    .logs
+                    .iter()
+                    .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
+                    .map(|l| l.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                ctx.error(format!("ffmpeg failed: {}", stderr));
+                logs.extend(command_output.logs);
+
+                // Check for no video stream error - pass through instead of failing
+                if stderr.contains("does not contain any stream")
+                    || stderr.contains("Output file is empty")
+                    || stderr.contains("Nothing was written into output file")
+                    || stderr.contains("Invalid data found")
+                    || stderr.contains("no video stream")
+                {
+                    batch.discard(&temp_path);
+                    ctx.info(format!(
+                        "Input file has no extractable video frames, passing through: {}",
+                        input_path
+                    ));
+                    return Ok(ProcessorOutput::skipped_file(
+                        input_path,
+                        "no extractable video frames",
+                        "no_video_frames",
+                        total_duration,
+                        logs,
+                    ));
+                }
+
+                return Err(crate::Error::Other(format!(
+                    "ffmpeg failed with exit code: {}",
+                    command_output.status.code().unwrap_or(-1)
+                )));
             }
-        ));
 
-        // Build ffmpeg command
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        crate::utils::configure_ffmpeg_locale(&mut cmd);
-        cmd.args([
-            "-y",
-            "-hide_banner",
-            "-nostats",
-            "-loglevel",
-            "warning",
-            "-progress",
-            "pipe:1",
-            "-ss",
-            &format!("{:.2}", config.timestamp_secs),
-            "-i",
-            input_path,
-            "-vframes",
-            "1",
-        ]);
-
-        // MJPEG requires even dimensions; always ensure width and height are even.
-        if !config.preserve_resolution {
-            // -2 auto-calculates height rounded to the nearest even number
-            cmd.args(["-vf", &format!("scale={}:-2", config.width)]);
-        } else {
-            // Pad to even dimensions (adds 1px black border only if odd)
-            cmd.args(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]);
-        }
-
-        cmd.args([
-            "-q:v",
-            &config.quality.to_string(),
-            "-update",
-            "1",
-            &temp_name,
-        ]);
-
-        // Execute command and capture logs
-        let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
-            &mut cmd,
-            &ctx.progress,
-            Some(ctx.log_sink.clone()),
-        )
-        .await?;
-
-        if !command_output.status.success() {
-            // Reconstruct stderr for error analysis
-            let stderr = command_output
-                .logs
-                .iter()
-                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
-                .map(|l| l.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            ctx.error(format!("ffmpeg failed: {}", stderr));
-
-            // Check for no video stream error - pass through instead of failing
-            if stderr.contains("does not contain any stream")
-                || stderr.contains("Output file is empty")
-                || stderr.contains("Invalid data found")
-                || stderr.contains("no video stream")
-            {
-                batch.discard(&temp_path);
+            if produced {
+                break command_output;
+            }
+            logs.extend(command_output.logs);
+            if seek_secs > 0.0 {
                 ctx.info(format!(
-                    "Input file has no extractable video frames, passing through: {}",
-                    input_path
+                    "No frame at {:.2}s (recording shorter than the requested timestamp); using the first frame of {}",
+                    seek_secs, input_path
                 ));
-                return Ok(ProcessorOutput::skipped_file(
-                    input_path,
-                    "no extractable video frames",
-                    "no_video_frames",
-                    command_output.duration,
-                    command_output.logs,
-                ));
+                seek_secs = 0.0;
+                continue;
             }
-
-            return Err(crate::Error::Other(format!(
-                "ffmpeg failed with exit code: {}",
-                command_output.status.code().unwrap_or(-1)
-            )));
-        }
+            batch.discard(&temp_path);
+            ctx.info(format!(
+                "Input file has no extractable video frames, passing through: {}",
+                input_path
+            ));
+            return Ok(ProcessorOutput::skipped_file(
+                input_path,
+                "no extractable video frames",
+                "no_video_frames",
+                total_duration,
+                logs,
+            ));
+        };
+        logs.extend(command_output.logs);
 
         let output_size_bytes = Some(output_size(&temp_path).await?);
         debug!("ffmpeg exited successfully");
@@ -263,10 +278,11 @@ impl ThumbnailProcessor {
         // Only return the newly produced thumbnail (no additive passthrough)
         Ok(ProcessorOutput {
             outputs: vec![output_path.to_string()],
-            duration_secs: command_output.duration,
+            duration_secs: total_duration,
             metadata: Some(
                 serde_json::json!({
                     "timestamp_secs": config.timestamp_secs,
+                    "seek_secs": seek_secs,
                     "width": width_str,
                     "preserve_resolution": config.preserve_resolution,
                 })
@@ -279,8 +295,60 @@ impl ThumbnailProcessor {
             succeeded_inputs: vec![input_path.to_string()],
             skipped_inputs: vec![],
             uploads: vec![],
-            logs: command_output.logs,
+            logs,
         })
+    }
+
+    /// Run one ffmpeg frame grab of `input_path` at `seek_secs` into `temp_name`.
+    async fn run_ffmpeg(
+        &self,
+        input_path: &str,
+        seek_secs: f64,
+        temp_name: &str,
+        config: &ThumbnailConfig,
+        ctx: &ProcessorContext,
+    ) -> Result<super::utils::CommandOutput> {
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        crate::utils::configure_ffmpeg_locale(&mut cmd);
+        cmd.args([
+            "-y",
+            "-hide_banner",
+            "-nostats",
+            "-loglevel",
+            "warning",
+            "-progress",
+            "pipe:1",
+            "-ss",
+            &format!("{:.2}", seek_secs),
+            "-i",
+            input_path,
+            "-vframes",
+            "1",
+        ]);
+
+        // MJPEG requires even dimensions; always ensure width and height are even.
+        if !config.preserve_resolution {
+            // -2 auto-calculates height rounded to the nearest even number
+            cmd.args(["-vf", &format!("scale={}:-2", config.width)]);
+        } else {
+            // Pad to even dimensions (adds 1px black border only if odd)
+            cmd.args(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]);
+        }
+
+        cmd.args([
+            "-q:v",
+            &config.quality.to_string(),
+            "-update",
+            "1",
+            temp_name,
+        ]);
+
+        crate::pipeline::processors::utils::run_ffmpeg_with_progress(
+            &mut cmd,
+            &ctx.progress,
+            Some(ctx.log_sink.clone()),
+        )
+        .await
     }
 }
 
@@ -370,6 +438,97 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    /// A stand-in ffmpeg that writes a frame only when asked for the first one
+    /// (`-ss 0.00`), and never for an input named `never*`.
+    fn fake_seeking_ffmpeg(dir: &Path) -> String {
+        #[cfg(windows)]
+        let (name, script) = (
+            "ffmpeg.cmd",
+            concat!(
+                "@echo off\r\nsetlocal\r\nset \"ss=\"\r\nset \"input=\"\r\n:args\r\n",
+                "if \"%~2\"==\"\" goto run\r\n",
+                "if \"%~1\"==\"-ss\" set \"ss=%~2\"\r\n",
+                "if \"%~1\"==\"-i\" set \"input=%~2\"\r\n",
+                "shift\r\ngoto args\r\n:run\r\nset \"output=%~1\"\r\n",
+                "if not \"%input:never=%\"==\"%input%\" exit /b 0\r\n",
+                "if \"%ss%\"==\"0.00\" echo complete> \"%output%\"\r\nexit /b 0\r\n",
+            ),
+        );
+        #[cfg(not(windows))]
+        let (name, script) = (
+            "ffmpeg.sh",
+            concat!(
+                "#!/bin/sh\nss=\"\"; input=\"\"\nwhile [ $# -gt 1 ]; do\n",
+                "  case \"$1\" in\n    -ss) ss=\"$2\";;\n    -i) input=\"$2\";;\n  esac\n  shift\ndone\n",
+                "output=\"$1\"\ncase \"$input\" in *never*) exit 0;; esac\n",
+                "if [ \"$ss\" = \"0.00\" ]; then printf complete > \"$output\"; fi\nexit 0\n",
+            ),
+        );
+        let path = dir.join(name);
+        std::fs::write(&path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    /// A recording shorter than `timestamp_secs` gets its first frame instead
+    /// of failing the batch; one that yields no frame at all is passed through
+    /// while its siblings are still published.
+    #[tokio::test]
+    async fn short_recordings_fall_back_to_the_first_frame_or_pass_through() {
+        let temp = TempDir::new().unwrap();
+        let ffmpeg = fake_seeking_ffmpeg(temp.path());
+        let short = temp.path().join("short.mp4");
+        let never = temp.path().join("never.mp4");
+        fs::write(&short, b"video").unwrap();
+        fs::write(&never, b"video").unwrap();
+        let input = ProcessorInput {
+            inputs: vec![
+                short.to_string_lossy().into_owned(),
+                never.to_string_lossy().into_owned(),
+            ],
+            config: Some(serde_json::json!({ "timestamp_secs": 10 }).to_string()),
+            ..Default::default()
+        };
+
+        let output = ThumbnailProcessor::with_ffmpeg_path(&ffmpeg)
+            .process(&input, &ProcessorContext::noop("test"))
+            .await
+            .unwrap();
+        let thumbnail = temp.path().join("short.jpg");
+        assert_eq!(
+            fs::read_to_string(&thumbnail).unwrap().trim(),
+            "complete",
+            "the first frame stands in for the unreachable timestamp"
+        );
+        assert_eq!(
+            output.outputs,
+            vec![
+                thumbnail.to_string_lossy().into_owned(),
+                never.to_string_lossy().into_owned()
+            ]
+        );
+        assert_eq!(output.succeeded_inputs, vec![short.to_string_lossy()]);
+        assert_eq!(
+            output.skipped_inputs,
+            vec![(
+                never.to_string_lossy().into_owned(),
+                "no extractable video frames".to_string()
+            )]
+        );
+        assert!(!temp.path().join("never.jpg").exists());
+        assert!(!std::fs::read_dir(temp.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-")
+        }));
+    }
 
     #[test]
     fn test_thumbnail_processor_type() {

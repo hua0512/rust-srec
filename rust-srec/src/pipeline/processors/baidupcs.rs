@@ -542,6 +542,51 @@ impl BaiduPcsProcessor {
     }
 }
 
+impl BaiduPcsProcessor {
+    /// Per-file results in input order: completed and skipped files as the CLI
+    /// reported them, every other input failed with its last error.
+    fn upload_results(
+        input: &ProcessorInput,
+        completed: &HashMap<String, String>,
+        skipped: &HashMap<String, String>,
+        last_errors: &HashMap<String, String>,
+        file_sizes: &HashMap<String, u64>,
+        remote_dir: &str,
+    ) -> Vec<UploadResultItem> {
+        input
+            .inputs
+            .iter()
+            .map(|path| {
+                if let Some(remote) = completed.get(path) {
+                    UploadResultItem {
+                        local_path: path.clone(),
+                        remote_path: Some(remote.clone()),
+                        size_bytes: file_sizes.get(path).copied(),
+                        status: UploadItemStatus::Completed,
+                        error: None,
+                    }
+                } else if let Some(reason) = skipped.get(path) {
+                    UploadResultItem {
+                        local_path: path.clone(),
+                        remote_path: Some(Self::computed_remote_path(remote_dir, path)),
+                        size_bytes: file_sizes.get(path).copied(),
+                        status: UploadItemStatus::Skipped,
+                        error: Some(reason.clone()),
+                    }
+                } else {
+                    UploadResultItem {
+                        local_path: path.clone(),
+                        remote_path: None,
+                        size_bytes: file_sizes.get(path).copied(),
+                        status: UploadItemStatus::Failed,
+                        error: last_errors.get(path).cloned(),
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
 impl Default for BaiduPcsProcessor {
     fn default() -> Self {
         Self::new()
@@ -616,6 +661,26 @@ impl Processor for BaiduPcsProcessor {
         };
 
         let remote_dir = Self::determine_remote_destination(input, &config);
+
+        // `upload` lays every file directly under `remote_dir`, so two inputs
+        // with the same file name (fan-in from two branches) would overwrite or
+        // skip each other remotely. Refuse the job before any transfer.
+        let mut remote_names: HashMap<String, &String> = HashMap::new();
+        for path in &pending {
+            let name = path
+                .rsplit(['/', '\\'])
+                .next()
+                .filter(|name| !name.is_empty())
+                .unwrap_or(path)
+                .to_string();
+            if let Some(earlier) = remote_names.insert(name.clone(), path) {
+                return Err(crate::Error::Validation(format!(
+                    "Inputs {earlier} and {path} would both upload as {}/{name}; rename one or upload them in separate steps",
+                    remote_dir.trim_end_matches('/')
+                )));
+            }
+        }
+
         let file_sizes = super::inputs::input_size_map(&pending).await;
         let total_input_size = file_sizes.values().copied().sum::<u64>();
         let attempts_max = config.max_retries.clamp(1, MAX_ATTEMPTS_CAP);
@@ -797,15 +862,83 @@ impl Processor for BaiduPcsProcessor {
                 .join("; ");
             error!(
                 failed = pending.len(),
+                completed = completed.len(),
                 attempts = attempts_used,
                 "BaiduPCS-Go upload failed"
             );
-            return Err(crate::Error::Other(format!(
-                "BaiduPCS-Go upload failed for {} file(s) after {} attempt(s): {}",
-                pending.len(),
-                attempts_used,
-                detail
-            )));
+            if completed.is_empty() && skipped.is_empty() {
+                return Err(crate::Error::Other(format!(
+                    "BaiduPCS-Go upload failed for {} file(s) after {} attempt(s): {}",
+                    pending.len(),
+                    attempts_used,
+                    detail
+                )));
+            }
+            // Some files did upload: hand the per-file results to the worker
+            // pool, which fails the job from `failed_inputs` and records every
+            // file's outcome. Sources are only removed after a full success.
+            let uploads = Self::upload_results(
+                input,
+                &completed,
+                &skipped,
+                &last_errors,
+                &file_sizes,
+                &remote_dir,
+            );
+            return Ok(ProcessorOutput {
+                outputs: input
+                    .inputs
+                    .iter()
+                    .filter(|path| !resumed.contains(*path))
+                    .cloned()
+                    .collect(),
+                duration_secs: start.elapsed().as_secs_f64(),
+                metadata: Some(
+                    serde_json::json!({
+                        "batch_size": input.inputs.len(),
+                        "remote_dir": remote_dir,
+                        "policy": config.policy.as_arg(),
+                        "attempts": attempts_used,
+                        "resumed_inputs": resumed.len(),
+                        "removed_sources": 0,
+                        "skipped": skipped.len(),
+                        "failed": pending.len(),
+                    })
+                    .to_string(),
+                ),
+                items_produced: vec![],
+                input_size_bytes: Some(total_input_size),
+                output_size_bytes: None,
+                failed_inputs: pending
+                    .iter()
+                    .map(|path| {
+                        (
+                            path.clone(),
+                            last_errors
+                                .get(path)
+                                .cloned()
+                                .unwrap_or_else(|| "unknown error".to_string()),
+                        )
+                    })
+                    .collect(),
+                succeeded_inputs: input
+                    .inputs
+                    .iter()
+                    .filter(|path| completed.contains_key(*path))
+                    .cloned()
+                    .collect(),
+                skipped_inputs: input
+                    .inputs
+                    .iter()
+                    .filter_map(|path| {
+                        skipped
+                            .get(path)
+                            .map(|reason| (path.clone(), reason.clone()))
+                    })
+                    .collect(),
+                uploads,
+                logs,
+            });
         }
 
         let mut removed: HashSet<String> = resumed.iter().cloned().collect();
@@ -829,40 +962,14 @@ impl Processor for BaiduPcsProcessor {
             }
         }
 
-        let uploads: Vec<UploadResultItem> = input
-            .inputs
-            .iter()
-            .map(|path| {
-                if let Some(remote) = completed.get(path) {
-                    UploadResultItem {
-                        local_path: path.clone(),
-                        remote_path: Some(remote.clone()),
-                        size_bytes: file_sizes.get(path).copied(),
-                        status: UploadItemStatus::Completed,
-                        error: None,
-                    }
-                } else if let Some(reason) = skipped.get(path) {
-                    UploadResultItem {
-                        local_path: path.clone(),
-                        remote_path: Some(Self::computed_remote_path(&remote_dir, path)),
-                        size_bytes: file_sizes.get(path).copied(),
-                        status: UploadItemStatus::Skipped,
-                        error: Some(reason.clone()),
-                    }
-                } else {
-                    // Unreachable while the retry loop returns Err on any
-                    // unresolved input; recorded as Failed so a future bug
-                    // can never persist a phantom success.
-                    UploadResultItem {
-                        local_path: path.clone(),
-                        remote_path: None,
-                        size_bytes: file_sizes.get(path).copied(),
-                        status: UploadItemStatus::Failed,
-                        error: last_errors.get(path).cloned(),
-                    }
-                }
-            })
-            .collect();
+        let uploads = Self::upload_results(
+            input,
+            &completed,
+            &skipped,
+            &last_errors,
+            &file_sizes,
+            &remote_dir,
+        );
 
         let duration = start.elapsed().as_secs_f64();
         info!(
@@ -1298,6 +1405,109 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("after 2 attempt(s)"), "got: {message}");
         assert!(message.contains("no per-file outcome"), "got: {message}");
+    }
+
+    /// A batch in which some files uploaded reports every file's own result
+    /// instead of failing the job as a whole with no records.
+    #[tokio::test]
+    async fn partial_failure_reports_per_file_results_and_keeps_sources() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let uploaded = temp_dir.path().join("a.flv");
+        let failed = temp_dir.path().join("b.flv");
+        tokio::fs::write(&uploaded, b"video-a").await.unwrap();
+        tokio::fs::write(&failed, b"video-b").await.unwrap();
+        let uploaded_str = uploaded.to_string_lossy().into_owned();
+        let failed_str = failed.to_string_lossy().into_owned();
+
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: false,
+            lines: vec![
+                queue_line(1, &uploaded_str),
+                success_line(1, "/rec/a.flv"),
+                queue_line(2, &failed_str),
+            ],
+        }]));
+        let processor = MockBaiduPcsCommandRunner::processor(runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![uploaded_str.clone(), failed_str.clone()],
+            config: Some(
+                r#"{"destination_root":"/rec","max_retries":1,"remove_source_after_upload":true}"#
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("partial"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, vec![uploaded_str.clone()]);
+        assert_eq!(output.failed_inputs.len(), 1);
+        assert_eq!(output.failed_inputs[0].0, failed_str);
+        assert_eq!(
+            output
+                .uploads
+                .iter()
+                .map(|item| (
+                    item.local_path.as_str(),
+                    item.status,
+                    item.remote_path.as_deref()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    uploaded_str.as_str(),
+                    UploadItemStatus::Completed,
+                    Some("/rec/a.flv")
+                ),
+                (failed_str.as_str(), UploadItemStatus::Failed, None),
+            ]
+        );
+        assert_eq!(output.outputs, input.inputs);
+        assert!(
+            uploaded.exists(),
+            "sources are removed only after a fully successful batch"
+        );
+    }
+
+    /// Every file lands directly under the destination folder, so two inputs
+    /// with the same name are refused before anything is uploaded.
+    #[tokio::test]
+    async fn same_named_inputs_are_rejected_before_uploading() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = temp_dir.path().join("x").join("rec.flv");
+        let second = temp_dir.path().join("y").join("rec.flv");
+        for path in [&first, &second] {
+            tokio::fs::create_dir_all(path.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(path, b"video").await.unwrap();
+        }
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(Vec::new()));
+        let processor = MockBaiduPcsCommandRunner::processor(runner.clone());
+        let input = ProcessorInput {
+            inputs: vec![
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let error = processor
+            .process(&input, &ProcessorContext::noop("collision"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, crate::Error::Validation(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("would both upload as /rec/rec.flv"),
+            "{error}"
+        );
+        assert!(runner.commands().is_empty());
     }
 
     #[tokio::test]

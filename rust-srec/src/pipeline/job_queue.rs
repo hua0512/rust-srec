@@ -598,6 +598,14 @@ pub struct ActiveUploadInfo {
     pub progress: Option<JobProgressSnapshot>,
 }
 
+/// Where a job failed, recorded in its execution info when known.
+#[derive(Default, Clone, Copy)]
+struct FailedStep<'a> {
+    processor_name: Option<&'a str>,
+    step_number: Option<u32>,
+    total_steps: Option<u32>,
+}
+
 struct FailedUploadContext {
     job_type: String,
     streamer_id: Option<String>,
@@ -1600,10 +1608,9 @@ impl JobQueue {
         self.fail_internal(
             job_id,
             error,
-            None,
-            None,
-            None,
+            FailedStep::default(),
             FailureMetadata::DatabaseLog,
+            &[],
         )
         .await?;
         warn!("Job {} failed: {}", job_id, error);
@@ -1612,12 +1619,21 @@ impl JobQueue {
 
     /// Fail before processor invocation without rewriting unavailable or invalid metadata.
     pub async fn fail_execution_start(&self, job_id: &str, error: &str) -> Result<()> {
-        self.fail_internal(job_id, error, None, None, None, FailureMetadata::Preserve)
-            .await
+        self.fail_internal(
+            job_id,
+            error,
+            FailedStep::default(),
+            FailureMetadata::Preserve,
+            &[],
+        )
+        .await
     }
 
     /// Mark a job as failed with step information for observability.
     /// Records the error message, failing step, and processor name in execution_info.
+    /// `uploads` carries the per-file results an upload processor reported for
+    /// a partially failed batch; inputs it does not cover are recorded as failed
+    /// with the job's error.
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
@@ -1625,14 +1641,18 @@ impl JobQueue {
         processor_name: Option<&str>,
         step_number: Option<u32>,
         total_steps: Option<u32>,
+        uploads: &[UploadResultItem],
     ) -> Result<()> {
         self.fail_internal(
             job_id,
             error,
-            processor_name,
-            step_number,
-            total_steps,
+            FailedStep {
+                processor_name,
+                step_number,
+                total_steps,
+            },
             FailureMetadata::DatabaseAndCacheLog,
+            uploads,
         )
         .await?;
         warn!(
@@ -2500,11 +2520,15 @@ impl JobQueue {
         &self,
         job_id: &str,
         error: &str,
-        processor_name: Option<&str>,
-        step_number: Option<u32>,
-        total_steps: Option<u32>,
+        step: FailedStep<'_>,
         metadata: FailureMetadata,
+        uploads: &[UploadResultItem],
     ) -> Result<()> {
+        let FailedStep {
+            processor_name,
+            step_number,
+            total_steps,
+        } = step;
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
         let mut transitioned = false;
 
@@ -2594,21 +2618,41 @@ impl JobQueue {
             return Err(Error::not_found("Job", job_id));
         }
 
-        // Synthesize failed rows only after this failure transition wins.
+        // Persist per-file rows only after this failure transition wins.
         // A concurrent cancellation that wins first returns above without
-        // leaving FAILED upload records on a CANCELLED job.
+        // leaving FAILED upload records on a CANCELLED job. Results the
+        // processor reported for individual files are kept as reported, so a
+        // file that did transfer before the batch failed is not recorded as
+        // failed; every other input failed with the job's error.
+        let mut file_counts = (0u32, 0u32, 0u32);
         if transitioned && let Some(context) = &failed_upload_ctx {
+            let reported: HashMap<&str, &UploadResultItem> = uploads
+                .iter()
+                .map(|item| (item.local_path.as_str(), item))
+                .collect();
             let items: Vec<UploadResultItem> = context
                 .inputs
                 .iter()
-                .map(|path| UploadResultItem {
-                    local_path: path.clone(),
-                    remote_path: None,
-                    size_bytes: None,
-                    status: UploadItemStatus::Failed,
-                    error: Some(error.to_string()),
+                .map(|path| {
+                    reported
+                        .get(path.as_str())
+                        .map(|item| (*item).clone())
+                        .unwrap_or_else(|| UploadResultItem {
+                            local_path: path.clone(),
+                            remote_path: None,
+                            size_bytes: None,
+                            status: UploadItemStatus::Failed,
+                            error: Some(error.to_string()),
+                        })
                 })
                 .collect();
+            for item in &items {
+                match item.status {
+                    UploadItemStatus::Completed => file_counts.0 += 1,
+                    UploadItemStatus::Failed => file_counts.1 += 1,
+                    UploadItemStatus::Skipped => file_counts.2 += 1,
+                }
+            }
             self.persist_upload_records(
                 job_id,
                 &context.job_type,
@@ -2636,9 +2680,9 @@ impl JobQueue {
                     job_id: job_id.to_string(),
                     streamer_id: context.streamer_id,
                     status: UploadTerminalStatus::Failed,
-                    files_succeeded: 0,
-                    files_failed: context.inputs.len() as u32,
-                    files_skipped: 0,
+                    files_succeeded: file_counts.0,
+                    files_failed: file_counts.1,
+                    files_skipped: file_counts.2,
                     error: Some(error.to_string()),
                 });
             }
@@ -3113,6 +3157,81 @@ mod tests {
         );
         job.manifest = None;
         assert_eq!(job_state_json(&job), "{}");
+    }
+
+    /// Per-file results an upload processor reported for a partially failed
+    /// batch are kept as reported; only inputs without a result are failed with
+    /// the job's error.
+    #[tokio::test]
+    async fn failed_upload_job_keeps_reported_per_file_results() {
+        let queue = JobQueue::new();
+        let broadcaster =
+            UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
+                bytes::Bytes::new()
+            }));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+        let job_id = queue
+            .enqueue(Job::new(
+                "rclone",
+                vec![
+                    "/rec/a.mp4".to_string(),
+                    "/rec/b.mp4".to_string(),
+                    "/rec/c.mp4".to_string(),
+                ],
+                vec![],
+                "streamer",
+                "session",
+            ))
+            .await
+            .unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+
+        queue
+            .fail_with_step_info(
+                &job_id,
+                "1 of 3 inputs failed: /rec/c.mp4: boom",
+                Some("rclone"),
+                None,
+                None,
+                &[
+                    UploadResultItem {
+                        local_path: "/rec/a.mp4".to_string(),
+                        remote_path: Some("remote:/a.mp4".to_string()),
+                        size_bytes: Some(1),
+                        status: UploadItemStatus::Completed,
+                        error: None,
+                    },
+                    UploadResultItem {
+                        local_path: "/rec/b.mp4".to_string(),
+                        remote_path: Some("remote:/b.mp4".to_string()),
+                        size_bytes: Some(1),
+                        status: UploadItemStatus::Skipped,
+                        error: Some("exists".to_string()),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+        let terminal = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                let envelope = rx.recv().await.expect("broadcast channel stays open");
+                if let UploadStatusEvent::Terminal {
+                    files_succeeded,
+                    files_failed,
+                    files_skipped,
+                    status,
+                    ..
+                } = envelope.event.as_ref()
+                {
+                    break (*files_succeeded, *files_failed, *files_skipped, *status);
+                }
+            }
+        })
+        .await
+        .expect("a terminal upload event is emitted");
+        assert_eq!(terminal, (1, 1, 1, UploadTerminalStatus::Failed));
     }
 
     #[tokio::test]
@@ -4068,6 +4187,7 @@ mod tests {
                 Some("RemuxProcessor"),
                 Some(1),
                 Some(3),
+                &[],
             )
             .await
             .unwrap();
