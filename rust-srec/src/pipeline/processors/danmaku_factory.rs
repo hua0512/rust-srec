@@ -590,8 +590,9 @@ mod tests {
         };
         let output = processor.process(&succeeding, &ctx).await.unwrap();
         let ass = good.with_extension("ass");
+        // The Windows stand-in writes through `echo`, which appends CRLF.
         assert_eq!(
-            tokio::fs::read_to_string(&ass).await.unwrap(),
+            tokio::fs::read_to_string(&ass).await.unwrap().trim_end(),
             "[Script Info]"
         );
         assert_eq!(output.items_produced, vec![ass.to_string_lossy()]);
