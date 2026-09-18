@@ -729,6 +729,9 @@ struct JobFacts {
     dag_step_execution_id: Option<String>,
     current_step: Option<u32>,
     total_steps: Option<u32>,
+    /// Retries this attempt already sits on top of; decides whether a step's
+    /// retry budget has another attempt left.
+    retry_count: i32,
 }
 
 impl JobRunner {
@@ -910,6 +913,12 @@ impl JobRunner {
                 .as_ref()
                 .is_some_and(|info| info.current_processor.is_some());
 
+        // A workflow step may set its own timeout; the pool default covers the rest.
+        let job_timeout = job
+            .timeout_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(self.job_timeout);
+
         let facts = JobFacts {
             id: job.id.clone(),
             job_type: job.job_type.clone(),
@@ -917,6 +926,7 @@ impl JobRunner {
             dag_step_execution_id: job.dag_step_execution_id.take(),
             current_step: job.execution_info.as_ref().and_then(|i| i.current_step),
             total_steps: job.execution_info.as_ref().and_then(|i| i.total_steps),
+            retry_count: job.retry_count,
         };
 
         let input = ProcessorInput {
@@ -958,7 +968,14 @@ impl JobRunner {
         .with_retry(is_retry);
 
         let outcome = self
-            .execute(processor, &input, &ctx, &facts.id, &processor_token)
+            .execute(
+                processor,
+                &input,
+                &ctx,
+                &facts.id,
+                &processor_token,
+                job_timeout,
+            )
             .await;
 
         // Drop ctx to close the log channel
@@ -1019,7 +1036,7 @@ impl JobRunner {
                         None
                     }
                 };
-                let reason = timeout_error(self.job_timeout, &facts, &input, progress.as_ref());
+                let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
                 self.finish_failed(&facts, &reason, DagFailureKind::Timeout, &[])
                     .await;
             }
@@ -1033,7 +1050,7 @@ impl JobRunner {
     }
 
     /// Await `Processor::process` against the job's own cancellation, the pool's shutdown, and
-    /// `job_timeout`.
+    /// `job_timeout` (the step's own timeout, or the pool default).
     ///
     /// On shutdown a job gets `SHUTDOWN_DRAIN_GRACE` to finish on its own; past that its own
     /// token is cancelled, which is the only signal that reaches the processor, since
@@ -1049,8 +1066,9 @@ impl JobRunner {
         ctx: &ProcessorContext,
         job_id: &str,
         job_token: &CancellationToken,
+        job_timeout: std::time::Duration,
     ) -> JobOutcome {
-        let timed = tokio::time::timeout(self.job_timeout, processor.process(input, ctx));
+        let timed = tokio::time::timeout(job_timeout, processor.process(input, ctx));
         tokio::pin!(timed);
 
         let shutdown_drain = {
@@ -1234,6 +1252,11 @@ impl JobRunner {
     /// Persist a failed or timed-out job and fail its DAG. Processors own cleanup
     /// of their staged outputs; persisted artifact paths may belong to earlier attempts.
     /// `uploads` are the per-file results of a partially failed upload batch.
+    /// Persist a failed attempt. A workflow step with retry budget left is
+    /// scheduled for another attempt instead of failing its workflow: the job
+    /// row is FAILED with the retry time recorded, the step stays PROCESSING,
+    /// and the manager's retry sweeper re-queues the job when it is due. The
+    /// error message says so, since the job list shows it as failed meanwhile.
     async fn finish_failed(
         &self,
         facts: &JobFacts,
@@ -1241,17 +1264,39 @@ impl JobRunner {
         kind: DagFailureKind,
         uploads: &[UploadResultItem],
     ) {
+        let planned = match (&kind, facts.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
+            (DagFailureKind::NonBatchInput, _, _) | (_, None, _) | (_, _, None) => None,
+            (_, Some(dag_step_id), Some(scheduler)) => scheduler
+                .plan_step_retry(dag_step_id, facts.retry_count)
+                .await
+                .unwrap_or_else(|error| {
+                    warn!(job_id = %facts.id, %error, "Could not plan a step retry; failing the step");
+                    None
+                }),
+        };
+        let message = match &planned {
+            Some(planned) => format!(
+                "{error}; attempt {} of {} failed, retrying at {}",
+                planned.next_attempt - 1,
+                planned.max_attempts,
+                planned
+                    .retry_after
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            ),
+            None => error.to_string(),
+        };
+
         self.emit(PipelineEvent::JobFailed {
             job_id: facts.id.clone(),
             job_type: facts.job_type.clone(),
-            error: error.to_string(),
+            error: message.clone(),
         });
 
         if let Err(error) = self
             .job_queue
             .fail_with_step_info(
                 &facts.id,
-                error,
+                &message,
                 Some(facts.processor_name),
                 facts.current_step,
                 facts.total_steps,
@@ -1262,9 +1307,34 @@ impl JobRunner {
             error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
         }
 
-        if let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() {
-            self.fail_dag_step(dag_step_id, error, kind).await;
+        let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() else {
+            return;
+        };
+        if let Some(planned) = planned {
+            match self
+                .job_queue
+                .schedule_retry(&facts.id, planned.retry_after)
+                .await
+            {
+                Ok(()) => {
+                    info!(
+                        job_id = %facts.id,
+                        dag_step_execution_id = %dag_step_id,
+                        next_attempt = planned.next_attempt,
+                        max_attempts = planned.max_attempts,
+                        retry_after = %planned.retry_after,
+                        "Step failed; automatic retry scheduled"
+                    );
+                    return;
+                }
+                Err(error) => {
+                    // Without the schedule nothing would advance the step, so the
+                    // failure has to reach the workflow after all.
+                    warn!(job_id = %facts.id, %error, "Could not schedule the step retry; failing the step");
+                }
+            }
         }
+        self.fail_dag_step(dag_step_id, &message, kind).await;
     }
 
     /// Fail-fast for a failed DAG step job: reports the failure to
@@ -1986,6 +2056,221 @@ mod tests {
         fn name(&self) -> &'static str {
             "failing"
         }
+    }
+
+    /// A step with retry budget left does not fail its workflow: the job row
+    /// is FAILED with the retry time recorded and the step keeps waiting on it.
+    /// Once the budget is spent the failure reaches the workflow as usual.
+    #[tokio::test]
+    async fn failed_step_with_a_retry_budget_is_rescheduled_then_fails_when_spent() {
+        use crate::database::models::{
+            DagPipelineDefinition, DagStep, PipelineStep, StepRetryPolicy,
+        };
+        use crate::database::repositories::{
+            DagRepository, JobRepository, SqlxDagRepository, SqlxJobRepository,
+        };
+        use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let dag_repo = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
+        let scheduler = Arc::new(DagScheduler::new(
+            queue.clone(),
+            dag_repo.clone(),
+            job_repo.clone(),
+        ));
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "retry budget",
+                    vec![
+                        DagStep::new("A", PipelineStep::inline("failing", serde_json::json!({})))
+                            .with_retry(StepRetryPolicy {
+                                max_attempts: 2,
+                                backoff_secs: 0,
+                            }),
+                    ],
+                ),
+                &["/rec/a.mp4".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let job_id = created.root_job_ids[0].clone();
+        let step = dag_repo
+            .get_steps_by_dag(&created.dag_id)
+            .await
+            .unwrap()
+            .remove(0);
+
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (dag_tx, mut dag_rx) = tokio::sync::mpsc::channel(4);
+        let worker_pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
+        worker_pool.start_with_dag_scheduler(
+            queue.clone(),
+            vec![Arc::new(FailingProcessor)],
+            Some(scheduler.clone()),
+            Some(dag_tx),
+            Some(event_tx),
+        );
+        async fn next_failure(event_rx: &mut broadcast::Receiver<PipelineEvent>) -> String {
+            loop {
+                if let PipelineEvent::JobFailed { error, .. } = event_rx.recv().await.unwrap() {
+                    break error;
+                }
+            }
+        }
+
+        let first = tokio::time::timeout(Duration::from_secs(5), next_failure(&mut event_rx))
+            .await
+            .expect("the first attempt fails");
+        assert!(
+            first.contains("boom; attempt 1 of 2 failed, retrying at "),
+            "{first}"
+        );
+        // The schedule is written after the failure row; wait for it.
+        let job = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let job = job_repo.get_job(&job_id).await.unwrap();
+                if job.retry_after.is_some() {
+                    break job;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the retry is scheduled");
+        assert_eq!(job.status, JobStatus::Failed.as_str());
+        assert!(job.error.as_deref().unwrap().contains("retrying at"));
+        assert_eq!(
+            dag_repo.get_step(&step.id).await.unwrap().status,
+            "PROCESSING"
+        );
+        assert_eq!(
+            dag_repo.get_dag(&created.dag_id).await.unwrap().status,
+            "PROCESSING"
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), dag_rx.recv())
+                .await
+                .is_err(),
+            "no completion while a retry is pending"
+        );
+
+        // What the manager's sweeper does: the zero-backoff retry is due.
+        let due = queue.list_due_retries(chrono::Utc::now()).await.unwrap();
+        assert_eq!(
+            due.iter().map(|job| job.id.clone()).collect::<Vec<_>>(),
+            vec![job_id.clone()]
+        );
+        queue.retry_job(&job_id).await.unwrap();
+
+        let second = tokio::time::timeout(Duration::from_secs(5), next_failure(&mut event_rx))
+            .await
+            .expect("the second attempt fails");
+        assert!(
+            second.contains("boom") && !second.contains("retrying"),
+            "{second}"
+        );
+        let completion = tokio::time::timeout(Duration::from_secs(5), dag_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!completion.succeeded);
+        worker_pool.stop().await;
+
+        let job = job_repo.get_job(&job_id).await.unwrap();
+        assert_eq!(job.status, JobStatus::Failed.as_str());
+        assert_eq!(job.retry_count, 1);
+        assert!(job.retry_after.is_none());
+        assert_eq!(dag_repo.get_step(&step.id).await.unwrap().status, "FAILED");
+        assert_eq!(
+            dag_repo.get_dag(&created.dag_id).await.unwrap().status,
+            "FAILED"
+        );
+    }
+
+    /// A step's own timeout beats the pool default for that step's job.
+    #[tokio::test]
+    async fn step_timeout_override_beats_the_pool_default() {
+        use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+        use crate::database::repositories::{JobRepository, SqlxDagRepository, SqlxJobRepository};
+        use crate::pipeline::dag_scheduler::{DagRunContext, DagScheduler};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let dag_repo = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
+        let scheduler = Arc::new(DagScheduler::new(
+            queue.clone(),
+            dag_repo.clone(),
+            job_repo.clone(),
+        ));
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "step timeout",
+                    vec![
+                        DagStep::new("A", PipelineStep::inline("sleep", serde_json::json!({})))
+                            .with_timeout_secs(1),
+                    ],
+                ),
+                &["/rec/a.mp4".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let worker_pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 1,
+                job_timeout_secs: 3600,
+                poll_interval_ms: 10,
+                adaptive: AdaptiveWorkerPoolConfig::default(),
+            },
+        );
+        worker_pool.start_with_dag_scheduler(
+            queue.clone(),
+            vec![Arc::new(SleepProcessor)],
+            Some(scheduler),
+            None,
+            Some(event_tx),
+        );
+
+        let failure = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let PipelineEvent::JobFailed { error, .. } = event_rx.recv().await.unwrap() {
+                    break error;
+                }
+            }
+        })
+        .await
+        .expect("the step's one-second timeout fires long before the pool's hour");
+        assert!(failure.starts_with(TIMED_OUT_ERROR), "{failure}");
+        worker_pool.stop().await;
+        assert_eq!(
+            job_repo
+                .get_job(&created.root_job_ids[0])
+                .await
+                .unwrap()
+                .status,
+            JobStatus::Failed.as_str()
+        );
     }
 
     fn test_pool_config() -> WorkerPoolConfig {

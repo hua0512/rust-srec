@@ -423,6 +423,11 @@ pub struct Job {
     pub error: Option<String>,
     /// Number of retry attempts.
     pub retry_count: i32,
+    /// When a scheduled automatic retry of this failed job may run.
+    pub retry_after: Option<DateTime<Utc>>,
+    /// Timeout for one attempt, in seconds, set by the workflow step; the
+    /// worker pool's default applies when absent.
+    pub timeout_secs: Option<u64>,
     // Pipeline chain fields
     /// Pipeline ID to group related jobs (first job's ID).
     pub pipeline_id: Option<String>,
@@ -467,6 +472,8 @@ impl Job {
             completed_at: None,
             error: None,
             retry_count: 0,
+            retry_after: None,
+            timeout_secs: None,
             pipeline_id: None,
             execution_info: None,
             duration_secs: None,
@@ -504,6 +511,8 @@ impl Job {
             completed_at: None,
             error: None,
             retry_count: 0,
+            retry_after: None,
+            timeout_secs: None,
             pipeline_id,
             execution_info: None,
             duration_secs: None,
@@ -1861,6 +1870,54 @@ impl JobQueue {
 
     /// Retry a failed or cancelled job.
     /// Returns error if job is not in a retryable terminal status.
+    /// Record that the failed job `job_id` gets another attempt at
+    /// `retry_after`; the manager's retry sweeper re-queues it when due.
+    pub async fn schedule_retry(&self, job_id: &str, retry_after: DateTime<Utc>) -> Result<()> {
+        let Some(repo) = &self.job_repository else {
+            return Err(Error::Validation(
+                "Scheduled retries need a job repository".to_string(),
+            ));
+        };
+        if repo
+            .schedule_job_retry(job_id, retry_after.timestamp_millis())
+            .await?
+            == 0
+        {
+            return Err(Error::InvalidStateTransition {
+                from: "not FAILED".to_string(),
+                to: "scheduled retry".to_string(),
+            });
+        }
+        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            job.retry_after = Some(retry_after);
+        }
+        Ok(())
+    }
+
+    /// Failed jobs whose scheduled retry is due at `now`, earliest first.
+    pub async fn list_due_retries(&self, now: DateTime<Utc>) -> Result<Vec<Job>> {
+        let Some(repo) = &self.job_repository else {
+            return Ok(Vec::new());
+        };
+        Ok(repo
+            .list_jobs_due_for_retry(now.timestamp_millis())
+            .await?
+            .iter()
+            .map(db_model_to_job)
+            .collect())
+    }
+
+    /// Drop the scheduled retry of `job_id`; the job stays failed.
+    pub async fn clear_scheduled_retry(&self, job_id: &str) -> Result<()> {
+        if let Some(repo) = &self.job_repository {
+            repo.clear_job_retry(job_id).await?;
+        }
+        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            job.retry_after = None;
+        }
+        Ok(())
+    }
+
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         if let Some(repo) = &self.job_repository {
             repo.reset_job_for_retry(id).await?;
@@ -2874,6 +2931,8 @@ pub(crate) struct JobStateMeta {
     pub(crate) platform: Option<String>,
     pub(crate) session_start: Option<DateTime<Utc>>,
     pub(crate) manifest: Option<Arc<PipelineInputManifest>>,
+    /// Per-attempt timeout of a workflow step job; not a placeholder source.
+    pub(crate) timeout_secs: Option<u64>,
 }
 
 impl JobStateMeta {
@@ -2899,6 +2958,7 @@ pub(crate) fn job_state_json(job: &Job) -> String {
         || job.platform.is_some()
         || job.session_start.is_some()
         || job.manifest.is_some()
+        || job.timeout_secs.is_some()
     {
         let mut state = serde_json::json!({
             "streamer_name": job.streamer_name.clone(),
@@ -2906,6 +2966,9 @@ pub(crate) fn job_state_json(job: &Job) -> String {
             "platform": job.platform.clone(),
             "session_start_ms": job.session_start.as_ref().map(|dt| dt.timestamp_millis()),
         });
+        if let Some(timeout_secs) = job.timeout_secs {
+            state["timeout_secs"] = serde_json::json!(timeout_secs);
+        }
         if let Some(manifest) = job.manifest.as_deref() {
             state["manifest"] = match serde_json::to_value(manifest) {
                 Ok(value) => value,
@@ -2957,6 +3020,7 @@ pub(crate) fn parse_job_state(state: &str) -> JobStateMeta {
                     .ok()
             })
             .map(Arc::new),
+        timeout_secs: obj.get("timeout_secs").and_then(|v| v.as_u64()),
     }
 }
 
@@ -3017,6 +3081,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         duration_secs: job.duration_secs,
         queue_wait_secs: job.queue_wait_secs,
         dag_step_execution_id: job.dag_step_execution_id.clone(),
+        retry_after: job.retry_after.map(|at| at.timestamp_millis()),
     }
 }
 
@@ -3065,6 +3130,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         platform,
         session_start,
         manifest,
+        timeout_secs,
     } = parse_job_state(&db_job.state);
 
     Job {
@@ -3086,6 +3152,10 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         completed_at,
         error: db_job.error.clone(),
         retry_count: db_job.retry_count,
+        retry_after: db_job
+            .retry_after
+            .map(crate::database::time::ms_to_datetime),
+        timeout_secs,
         pipeline_id: db_job.pipeline_id.clone(),
         // Parse execution_info JSON
         execution_info: db_job

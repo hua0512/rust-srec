@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Workflow steps can retry themselves and set their own timeout**
+
+  A step definition can now carry `retry` (`max_attempts`, `backoff_secs`) and `timeout_secs`. A failed or timed-out attempt with budget left is retried automatically after the backoff, which doubles each time; until then the job shows as failed with the next attempt's time, the workflow keeps running and nothing downstream is cancelled. Retries survive a restart and are dropped when the workflow is cancelled. The step's timeout replaces the worker pool default for that job. Both settings are available in the step dialog of the workflow editor. See [per-step retries and timeouts](../concepts/pipeline.md#per-step-retries-and-timeouts).
+
 - **Workflows are checked when they are saved**
 
   Saving or validating a workflow now resolves its presets and nested workflows the way a run would, so a missing preset, an unknown processor, a cycle, or a delete or move racing a sibling step is reported in the editor instead of failing silently when the next recording finishes. A step that deletes its sources through an option, such as a remux with **Remove Input on Success**, beside a step that still reads them produces a warning in the editor and in the log when the workflow runs. See [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).

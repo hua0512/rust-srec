@@ -198,6 +198,9 @@ pub struct JobDbModel {
     pub queue_wait_secs: Option<f64>,
     /// DAG step execution ID (if this job is part of a DAG pipeline)
     pub dag_step_execution_id: Option<String>,
+    /// Scheduled automatic retry of a FAILED workflow step job, in
+    /// milliseconds since the epoch; NULL when none is pending.
+    pub retry_after: Option<i64>,
 }
 
 impl JobDbModel {
@@ -226,6 +229,7 @@ impl JobDbModel {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
+            retry_after: None,
         }
     }
 
@@ -262,6 +266,7 @@ impl JobDbModel {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
+            retry_after: None,
         }
     }
 
@@ -305,6 +310,7 @@ impl JobDbModel {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
+            retry_after: None,
         }
     }
 
@@ -625,6 +631,40 @@ impl Default for PipelineDefinition {
 // DAG Pipeline Support
 // ============================================================================
 
+/// Automatic retries of a workflow step whose job failed, applied before the
+/// failure reaches the workflow.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct StepRetryPolicy {
+    /// Attempts in total, including the first run; `1` means no retry.
+    pub max_attempts: u32,
+    /// Wait before the second attempt, in seconds, doubled for every further
+    /// attempt and capped at six hours.
+    #[serde(default = "StepRetryPolicy::default_backoff_secs")]
+    pub backoff_secs: u64,
+}
+
+impl StepRetryPolicy {
+    /// Wait before the first retry when the policy does not say.
+    pub const DEFAULT_BACKOFF_SECS: u64 = 60;
+    /// Longest wait between two attempts, whatever the doubling reaches.
+    pub const MAX_BACKOFF_SECS: u64 = 6 * 60 * 60;
+
+    fn default_backoff_secs() -> u64 {
+        Self::DEFAULT_BACKOFF_SECS
+    }
+
+    /// Wait before attempt number `next_attempt`, where the first run is
+    /// attempt 1: `backoff_secs` doubled for every retry already made.
+    pub fn backoff_before(&self, next_attempt: u32) -> std::time::Duration {
+        let doublings = next_attempt.saturating_sub(2).min(16);
+        let secs = self
+            .backoff_secs
+            .saturating_mul(1u64 << doublings)
+            .min(Self::MAX_BACKOFF_SECS);
+        std::time::Duration::from_secs(secs)
+    }
+}
+
 /// A step within a DAG pipeline with explicit dependencies.
 /// Each step has a unique ID and can depend on other steps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -636,6 +676,13 @@ pub struct DagStep {
     /// IDs of steps this depends on (fan-in: waits for all to complete).
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Automatic retries when this step's job fails; none by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<StepRetryPolicy>,
+    /// Timeout for one attempt of this step's job, in seconds, instead of the
+    /// worker pool's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
 }
 
 impl DagStep {
@@ -645,6 +692,8 @@ impl DagStep {
             id: id.into(),
             step,
             depends_on: Vec::new(),
+            retry: None,
+            timeout_secs: None,
         }
     }
 
@@ -658,12 +707,26 @@ impl DagStep {
             id: id.into(),
             step,
             depends_on,
+            retry: None,
+            timeout_secs: None,
         }
     }
 
     /// Check if this step has no dependencies (root step).
     pub fn is_root(&self) -> bool {
         self.depends_on.is_empty()
+    }
+
+    /// Retry a failed job of this step under `policy`.
+    pub fn with_retry(mut self, policy: StepRetryPolicy) -> Self {
+        self.retry = Some(policy);
+        self
+    }
+
+    /// Time out one attempt of this step's job after `secs` seconds.
+    pub fn with_timeout_secs(mut self, secs: u64) -> Self {
+        self.timeout_secs = Some(secs);
+        self
     }
 }
 
@@ -731,6 +794,25 @@ impl DagPipelineDefinition {
             return Err(crate::Error::validation(
                 "DAG pipeline must have at least one root step (no dependencies)",
             ));
+        }
+
+        for step in &self.steps {
+            if step
+                .retry
+                .as_ref()
+                .is_some_and(|retry| retry.max_attempts == 0)
+            {
+                return Err(crate::Error::validation(format!(
+                    "Step '{}' has a retry policy with zero attempts",
+                    step.id
+                )));
+            }
+            if step.timeout_secs == Some(0) {
+                return Err(crate::Error::validation(format!(
+                    "Step '{}' has a zero timeout",
+                    step.id
+                )));
+            }
         }
 
         // Check for cycles using DFS
@@ -1499,6 +1581,95 @@ mod tests {
         let deserialized: DagStep = serde_json::from_value(json_val).unwrap();
         assert_eq!(deserialized.id, "upload");
         assert_eq!(deserialized.depends_on, vec!["remux"]);
+    }
+
+    /// Retry and timeout are optional, absent from the JSON when unset, and
+    /// round-trip when set; the backoff has a default.
+    #[test]
+    fn test_dag_step_retry_and_timeout_round_trip() {
+        let plain = DagStep::new("remux", PipelineStep::preset("remux"));
+        let json_val = serde_json::to_value(&plain).unwrap();
+        assert!(json_val.get("retry").is_none());
+        assert!(json_val.get("timeout_secs").is_none());
+        let parsed: DagStep = serde_json::from_value(serde_json::json!({
+            "id": "remux",
+            "step": {"type": "preset", "name": "remux"}
+        }))
+        .unwrap();
+        assert_eq!(parsed, plain);
+
+        let configured = DagStep::new("upload", PipelineStep::preset("upload"))
+            .with_retry(StepRetryPolicy {
+                max_attempts: 3,
+                backoff_secs: 30,
+            })
+            .with_timeout_secs(600);
+        let json_val = serde_json::to_value(&configured).unwrap();
+        assert_eq!(
+            json_val["retry"],
+            serde_json::json!({"max_attempts": 3, "backoff_secs": 30})
+        );
+        assert_eq!(json_val["timeout_secs"], 600);
+        let parsed: DagStep = serde_json::from_value(json_val).unwrap();
+        assert_eq!(parsed, configured);
+
+        let parsed: DagStep = serde_json::from_value(serde_json::json!({
+            "id": "upload",
+            "step": {"type": "preset", "name": "upload"},
+            "retry": {"max_attempts": 2}
+        }))
+        .unwrap();
+        assert_eq!(
+            parsed.retry.unwrap().backoff_secs,
+            StepRetryPolicy::DEFAULT_BACKOFF_SECS
+        );
+    }
+
+    /// The wait doubles per retry from the configured backoff and is capped.
+    #[test]
+    fn test_step_retry_policy_backoff_doubles_and_caps() {
+        let policy = StepRetryPolicy {
+            max_attempts: 5,
+            backoff_secs: 30,
+        };
+        assert_eq!(policy.backoff_before(2).as_secs(), 30);
+        assert_eq!(policy.backoff_before(3).as_secs(), 60);
+        assert_eq!(policy.backoff_before(4).as_secs(), 120);
+        let long = StepRetryPolicy {
+            max_attempts: 40,
+            backoff_secs: 3600,
+        };
+        assert_eq!(
+            long.backoff_before(30).as_secs(),
+            StepRetryPolicy::MAX_BACKOFF_SECS
+        );
+        let immediate = StepRetryPolicy {
+            max_attempts: 2,
+            backoff_secs: 0,
+        };
+        assert_eq!(immediate.backoff_before(2).as_secs(), 0);
+    }
+
+    /// A zero attempt budget or a zero timeout is a definition error.
+    #[test]
+    fn test_dag_validation_rejects_zero_retry_budget_and_timeout() {
+        let zero_attempts = DagPipelineDefinition::new(
+            "zero attempts",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")).with_retry(StepRetryPolicy {
+                    max_attempts: 0,
+                    backoff_secs: 1,
+                }),
+            ],
+        );
+        let error = zero_attempts.validate().unwrap_err().to_string();
+        assert!(error.contains("zero attempts"), "{error}");
+        let zero_timeout = DagPipelineDefinition::new(
+            "zero timeout",
+            vec![DagStep::new("A", PipelineStep::preset("remux")).with_timeout_secs(0)],
+        );
+        let error = zero_timeout.validate().unwrap_err().to_string();
+        assert!(error.contains("zero timeout"), "{error}");
     }
 
     #[test]

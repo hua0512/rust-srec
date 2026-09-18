@@ -377,6 +377,25 @@ Produced-artifact history can include files published by earlier attempts. A lat
 failure does not delete those files. Processors manage their own staged temporary
 outputs, with the cleanup limits described above.
 
+### Per-step retries and timeouts
+
+A workflow step can carry its own retry budget and timeout in its definition:
+
+```json
+{
+  "id": "upload",
+  "step": {"type": "preset", "name": "upload"},
+  "depends_on": ["remux"],
+  "retry": {"max_attempts": 3, "backoff_secs": 60},
+  "timeout_secs": 7200
+}
+```
+
+- `retry.max_attempts` counts the first run, so `3` allows two automatic retries; `1`, or no `retry`, means none. `retry.backoff_secs` (default 60) is the wait before the second attempt; it doubles for each further attempt and is capped at six hours.
+- `timeout_secs` limits one attempt of that step's job and replaces the worker pool's default timeout for it.
+
+When an attempt fails or times out with attempts left, the job is shown as failed with the time of the next attempt in its error message and in `retry_after`, the step keeps waiting and the workflow stays in progress; nothing downstream is cancelled. The retry starts within about fifteen seconds of its time, also after a restart. A job whose inputs the processor cannot take at all is not retried. Once the budget is spent the failure reaches the workflow as described above, and the manual retry remains available. Cancelling the workflow drops a pending retry. The step dialog of the workflow editor exposes both settings under **Retries and timeout**.
+
 ### Processor Result Contracts
 
 Media processors share output planning, sequential execution and single-file skip

@@ -109,6 +109,18 @@ pub struct DagJobFailedUpdate {
     pub completion: Option<DagCompletionInfo>,
 }
 
+/// An automatic retry planned for a failed step job under the step's
+/// [`crate::database::models::StepRetryPolicy`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedRetry {
+    /// When the manager's retry sweeper may re-queue the job.
+    pub retry_after: DateTime<Utc>,
+    /// Number of the attempt that will run next; the first run is attempt 1.
+    pub next_attempt: u32,
+    /// The step's attempt budget, including the first run.
+    pub max_attempts: u32,
+}
+
 /// Result of creating a DAG pipeline.
 #[derive(Debug, Clone)]
 pub struct DagCreationResult {
@@ -432,6 +444,7 @@ impl DagScheduler {
                 platform,
                 session_start,
                 manifest: None,
+                timeout_secs: None,
             };
 
             match self
@@ -564,6 +577,73 @@ impl DagScheduler {
         })
     }
 
+    /// Whether the failed job of `dag_step_execution_id` gets another attempt
+    /// under its step's retry policy, and when. `retry_count` is the number of
+    /// retries the job has already had. `None` when the step has no policy,
+    /// the budget is spent, or the step or its DAG is no longer active, in
+    /// which case the failure is applied to the workflow as usual.
+    pub async fn plan_step_retry(
+        &self,
+        dag_step_execution_id: &str,
+        retry_count: i32,
+    ) -> Result<Option<PlannedRetry>> {
+        let step = self.dag_repository.get_step(dag_step_execution_id).await?;
+        if step.get_status() != Some(crate::database::models::DagStepStatus::Processing) {
+            return Ok(None);
+        }
+        let dag = self.dag_repository.get_dag(&step.dag_id).await?;
+        if dag.get_status().is_some_and(|status| status.is_terminal()) {
+            return Ok(None);
+        }
+        let Some(policy) = dag
+            .get_dag_definition()
+            .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone())
+        else {
+            return Ok(None);
+        };
+        let attempts_made = u32::try_from(retry_count)
+            .unwrap_or(u32::MAX)
+            .saturating_add(1);
+        if attempts_made >= policy.max_attempts {
+            return Ok(None);
+        }
+        let next_attempt = attempts_made.saturating_add(1);
+        let wait =
+            chrono::Duration::from_std(policy.backoff_before(next_attempt)).unwrap_or_else(|_| {
+                chrono::Duration::seconds(
+                    crate::database::models::StepRetryPolicy::MAX_BACKOFF_SECS as i64,
+                )
+            });
+        Ok(Some(PlannedRetry {
+            retry_after: Utc::now() + wait,
+            next_attempt,
+            max_attempts: policy.max_attempts,
+        }))
+    }
+
+    /// Whether `job_id` is still the attempt `dag_step_execution_id` is waiting
+    /// on in a DAG that has not settled, so a scheduled retry of it is still
+    /// wanted. A step that was cancelled, failed by recovery or deleted in the
+    /// meantime answers `false`.
+    pub async fn step_awaits_job(&self, dag_step_execution_id: &str, job_id: &str) -> Result<bool> {
+        let step = match self.dag_repository.get_step(dag_step_execution_id).await {
+            Ok(step) => step,
+            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        if step.get_status() != Some(crate::database::models::DagStepStatus::Processing)
+            || step.job_id.as_deref() != Some(job_id)
+        {
+            return Ok(false);
+        }
+        let dag = match self.dag_repository.get_dag(&step.dag_id).await {
+            Ok(dag) => dag,
+            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        Ok(!dag.get_status().is_some_and(|status| status.is_terminal()))
+    }
+
     fn build_step_job(
         dag_id: &str,
         step_execution_id: &str,
@@ -627,6 +707,8 @@ impl DagScheduler {
             completed_at: None,
             error: None,
             retry_count: 0,
+            retry_after: None,
+            timeout_secs: dag_step.timeout_secs,
             pipeline_id: Some(dag_id.to_string()),
             execution_info: None,
             duration_secs: None,
@@ -1543,16 +1625,22 @@ mod tests {
                     id: "A".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec![],
+                    retry: None,
+                    timeout_secs: None,
                 },
                 DagStep {
                     id: "B".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec!["A".to_string()],
+                    retry: None,
+                    timeout_secs: None,
                 },
                 DagStep {
                     id: "C".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec!["A".to_string()],
+                    retry: None,
+                    timeout_secs: None,
                 },
             ],
         );
@@ -1593,11 +1681,15 @@ mod tests {
                     id: "A".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec![],
+                    retry: None,
+                    timeout_secs: None,
                 },
                 DagStep {
                     id: "B".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec!["A".to_string()],
+                    retry: None,
+                    timeout_secs: None,
                 },
             ],
         );
@@ -1673,6 +1765,8 @@ mod tests {
                 id: "A".to_string(),
                 step: PipelineStep::inline("noop", serde_json::json!({})),
                 depends_on: vec![],
+                retry: None,
+                timeout_secs: None,
             }],
         );
 
@@ -1724,6 +1818,8 @@ mod tests {
                 id: "A".to_string(),
                 step: PipelineStep::inline("noop", serde_json::json!({})),
                 depends_on: vec![],
+                retry: None,
+                timeout_secs: None,
             }],
         );
 
@@ -1796,11 +1892,15 @@ mod tests {
                     id: "A".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec![],
+                    retry: None,
+                    timeout_secs: None,
                 },
                 DagStep {
                     id: "B".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec!["A".to_string()],
+                    retry: None,
+                    timeout_secs: None,
                 },
             ],
         );
@@ -2397,11 +2497,15 @@ mod tests {
                     id: "A".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec![],
+                    retry: None,
+                    timeout_secs: None,
                 },
                 DagStep {
                     id: "B".to_string(),
                     step: PipelineStep::inline("noop", serde_json::json!({})),
                     depends_on: vec!["A".to_string()],
+                    retry: None,
+                    timeout_secs: None,
                 },
             ],
         )
@@ -2882,6 +2986,150 @@ mod tests {
                 .unwrap()
                 .failed_steps,
             1
+        );
+    }
+
+    /// The plan follows the step's policy, doubling the wait per retry and
+    /// stopping when the budget is spent; the step's timeout reaches its job.
+    #[tokio::test]
+    async fn plan_step_retry_follows_the_step_policy_and_stops_when_spent() {
+        use crate::database::models::StepRetryPolicy;
+
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "retry policy",
+                    vec![
+                        DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({})))
+                            .with_retry(StepRetryPolicy {
+                                max_attempts: 3,
+                                backoff_secs: 10,
+                            })
+                            .with_timeout_secs(600),
+                        DagStep::new("B", PipelineStep::inline("noop", serde_json::json!({}))),
+                    ],
+                ),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
+        let step_id = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id == id)
+                .unwrap()
+                .id
+                .clone()
+        };
+        let job_of = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id == id)
+                .unwrap()
+                .job_id
+                .clone()
+                .unwrap()
+        };
+
+        let before = Utc::now();
+        let first = scheduler
+            .plan_step_retry(&step_id("A"), 0)
+            .await
+            .unwrap()
+            .expect("first retry");
+        assert_eq!((first.next_attempt, first.max_attempts), (2, 3));
+        let wait = first.retry_after - before;
+        assert!(
+            wait >= chrono::Duration::seconds(10) && wait < chrono::Duration::seconds(12),
+            "{wait}"
+        );
+        let second = scheduler
+            .plan_step_retry(&step_id("A"), 1)
+            .await
+            .unwrap()
+            .expect("second retry");
+        assert_eq!(second.next_attempt, 3);
+        assert!(second.retry_after - before >= chrono::Duration::seconds(20));
+        assert!(
+            scheduler
+                .plan_step_retry(&step_id("A"), 2)
+                .await
+                .unwrap()
+                .is_none(),
+            "budget spent"
+        );
+        assert!(
+            scheduler
+                .plan_step_retry(&step_id("B"), 0)
+                .await
+                .unwrap()
+                .is_none(),
+            "no policy"
+        );
+
+        let job_a = job_repo.get_job(&job_of("A")).await.unwrap();
+        assert_eq!(
+            crate::pipeline::job_queue::parse_job_state(&job_a.state).timeout_secs,
+            Some(600)
+        );
+        let job_b = job_repo.get_job(&job_of("B")).await.unwrap();
+        assert_eq!(
+            crate::pipeline::job_queue::parse_job_state(&job_b.state).timeout_secs,
+            None
+        );
+
+        assert!(
+            scheduler
+                .step_awaits_job(&step_id("A"), &job_of("A"))
+                .await
+                .unwrap()
+        );
+        assert!(
+            !scheduler
+                .step_awaits_job(&step_id("A"), "another-job")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !scheduler
+                .step_awaits_job("missing-step", &job_of("A"))
+                .await
+                .unwrap()
+        );
+
+        // A step that failed for good plans nothing and awaits nothing.
+        scheduler
+            .on_job_failed(&step_id("A"), "boom")
+            .await
+            .unwrap();
+        assert!(
+            scheduler
+                .plan_step_retry(&step_id("A"), 0)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !scheduler
+                .step_awaits_job(&step_id("A"), &job_of("A"))
+                .await
+                .unwrap()
         );
     }
 
