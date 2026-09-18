@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::{
     AssBurnInProcessor, AudioExtractProcessor, MetadataProcessor, Processor, ProcessorContext,
-    ProcessorInput, ThumbnailProcessor,
+    ProcessorInput, RemuxProcessor, ThumbnailProcessor,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -14,9 +14,16 @@ enum Kind {
     Audio,
     Metadata,
     BurnIn,
+    Remux,
 }
 
-const KINDS: [Kind; 4] = [Kind::Thumbnail, Kind::Audio, Kind::Metadata, Kind::BurnIn];
+const KINDS: [Kind; 5] = [
+    Kind::Thumbnail,
+    Kind::Audio,
+    Kind::Metadata,
+    Kind::BurnIn,
+    Kind::Remux,
+];
 
 #[derive(Clone, Copy)]
 enum Behavior {
@@ -96,6 +103,7 @@ fn fixture(kind: Kind, behavior: Behavior, batch: bool) -> Fixture {
         Kind::Audio => Box::new(AudioExtractProcessor::with_ffmpeg_path(&binary)),
         Kind::Metadata => Box::new(MetadataProcessor::with_ffmpeg_path(&binary)),
         Kind::BurnIn => Box::new(AssBurnInProcessor::new()),
+        Kind::Remux => Box::new(RemuxProcessor::with_ffmpeg_path(&binary)),
     };
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();

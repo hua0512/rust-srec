@@ -300,8 +300,15 @@ pub struct ProcessorOutput {
     /// Output file size in bytes (for metrics).
     pub output_size_bytes: Option<u64>,
     /// Input files that failed processing with their error messages.
-    /// Used for partial failure reporting in multi-input jobs.
     /// Each tuple contains (input_path, error_message).
+    ///
+    /// A non-empty list makes the worker pool fail the job, with an error that
+    /// names every failed input, after it has recorded `items_produced` and
+    /// `logs`; a DAG step then fails fast. Report the successful inputs'
+    /// outputs anyway so a retry can resume past them. Upload processors do not
+    /// use this list: they return `Err` on a partial failure, and the queue's
+    /// failure path records every input as failed; `uploads` is persisted only
+    /// when a job completes.
     pub failed_inputs: Vec<(String, String)>,
     /// Input files that were successfully processed.
     /// Used for partial failure reporting in multi-input jobs.

@@ -260,21 +260,17 @@ async fn processor_driver_child() {
                     }
                     let result = fixture
                         .processor
-                        .process(
-                            &fixture.input,
-                            &ProcessorContext::noop("incremental-driver"),
-                        )
+                        .process(&fixture.input, &ProcessorContext::noop("staged-driver"))
                         .await;
                     if failure {
                         assert!(result.is_err());
-                        assert!(
-                            !Path::new(&fixture.input.outputs[0]).exists(),
-                            "remux explicit-error cleanup removes the earlier publication"
-                        );
-                        assert_eq!(
-                            std::fs::read(&fixture.input.outputs[2]).unwrap(),
-                            b"existing"
-                        );
+                        for output in [&fixture.input.outputs[0], &fixture.input.outputs[2]] {
+                            assert_eq!(
+                                std::fs::read(output).unwrap(),
+                                b"existing",
+                                "a failed batch publishes nothing"
+                            );
+                        }
                         for source in &fixture.input.inputs {
                             assert!(Path::new(source).exists());
                         }
@@ -334,7 +330,7 @@ async fn processor_driver_child() {
                         tokio::time::timeout(Duration::from_secs(5), async {
                             loop {
                                 let second_started = std::fs::read_dir(dir.path()).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().starts_with("second.tmp-"));
-                                if Path::new(&outputs[0]).exists() && second_started { break; }
+                                if second_started { break; }
                                 tokio::time::sleep(Duration::from_millis(10)).await;
                             }
                         }).await.unwrap();
@@ -342,7 +338,7 @@ async fn processor_driver_child() {
                 }
                 drop(task);
                 wait_for_cleanup(dir.path()).await;
-                assert!(Path::new(&outputs[0]).exists(), "cancellation preserves the already-published remux output");
+                assert!(!Path::new(&outputs[0]).exists(), "a cancelled batch publishes nothing, not even its finished first item");
                 assert!(!Path::new(&outputs[1]).exists());
                 for source in inputs { assert!(Path::new(&source).exists()); }
             }

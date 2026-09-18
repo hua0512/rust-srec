@@ -174,6 +174,10 @@
 
   Paired-segment and session-complete pipelines no longer create a `session_…_inputs.json` or `segment_…_inputs.json` file next to the recordings, so nothing extra gets uploaded, archived, moved or deleted with them. Files left by earlier versions are unused and safe to remove. Which danmaku file belongs to which video is now remembered per segment with the pipeline itself: a segment that recorded no danmaku leaves its own video without subtitles instead of shifting every later video onto the wrong subtitles, and subtitle conversion keeps working after an earlier step moved the files. Converted subtitles are written to a temporary file first, so a failed or timed-out conversion no longer leaves a truncated `.ass` in place. The first input of these pipelines is now the first recording, and scripts in an execute step can read the pairing through `{manifest_json}`. See [pipeline error handling](../concepts/pipeline.md#error-handling).
 
+- **Retrying a workflow now delivers its results, and half-done steps no longer count as success**
+
+  A recording workflow that failed, was retried and then succeeded within the hour had its success ignored, so the following workflows kept working with the raw recording instead of the retried result. Retried workflows now hand over their results. A step that could only process some of its files (for example a move where one file could not be transferred) used to complete as if everything had worked, so the failure went unnoticed and later steps, including the end-of-recording workflow, only ever saw the files that were handled. Such a step now fails with a message naming each file that failed and keeps what it did produce. Retrying a copy or move step picks up where it left off: files already present at the destination are not transferred again. Batch remux jobs write all their outputs to temporary files and publish them together, so a failure or cancellation part-way through no longer leaves some outputs published, and one output can no longer overwrite another input of the same job.
+
 - **Execute editors support programs with literal arguments**
 
   Preset and inline workflow editors now offer shell-command or program/arguments mode. Each argument has its own field and preserves empty values, spaces, quotes and line breaks. Existing command configurations remain editable; changing modes clears the previous mode's fields while retaining output-scanning settings. Server-specific shell restrictions are explained beside the command field. See [Execute](../concepts/pipeline.md#execute-execute).
@@ -427,7 +431,7 @@
 
 - **Shared processor drivers preserve publication policies**
 
-  Output planning, four media drivers, nine single-file skip results and path-resolution mechanisms now share implementations with explicit naming, mapping, publication and identity policies. Staged rollback and incremental remux cleanup remain distinct; see [processor contracts](../concepts/pipeline.md#processor-result-contracts).
+  Output planning, four media drivers, nine single-file skip results and path-resolution mechanisms now share implementations with explicit naming, mapping, publication and identity policies. All media drivers share the same staged publication; see [processor contracts](../concepts/pipeline.md#processor-result-contracts).
 
 - **Pipeline completion and recovery share artifact handling with fewer reads**
 

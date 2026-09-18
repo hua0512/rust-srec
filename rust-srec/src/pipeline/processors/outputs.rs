@@ -131,22 +131,6 @@ fn promote(temp: &Path, output: &Path, overwrite: bool) -> Result<()> {
     }
 }
 
-pub(super) async fn promote_output(
-    temp: TempOutputGuard,
-    output: &Path,
-    overwrite: bool,
-) -> Result<()> {
-    let output = output.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let mut temp = temp;
-        temp.cleanup_on_current_thread = true;
-        verified_size(temp.path())?;
-        promote(temp.path(), &output, overwrite)
-    })
-    .await
-    .map_err(|error| Error::PipelineError(format!("Output promotion failed: {error}")))?
-}
-
 fn validate_destination(
     output: &Path,
     sources: &[PathBuf],
@@ -373,6 +357,20 @@ mod tests {
                 .to_string_lossy()
                 .contains(".tmp-")
         }));
+    }
+
+    /// External tools pick their container from the extension, so a staged
+    /// path keeps it; the guard removes the file it named on drop.
+    #[test]
+    fn temp_output_guard_preserves_extension_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output.mp4");
+        let guard = TempOutputGuard::new(&output);
+        let temp = guard.path().to_path_buf();
+        std::fs::write(&temp, b"partial").unwrap();
+        assert_eq!(temp.extension(), Some(std::ffi::OsStr::new("mp4")));
+        drop(guard);
+        assert!(!temp.exists());
     }
 
     #[tokio::test]

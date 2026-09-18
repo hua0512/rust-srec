@@ -1284,6 +1284,120 @@ async fn session_complete_pipeline_stores_pairing_on_the_dag_row() {
     );
 }
 
+/// A segment workflow that fails, is retried and then succeeds must hand its
+/// retried outputs to the coordinator; the failed run's fallback (the raw
+/// recording) must not reach the session-complete workflow instead.
+#[tokio::test]
+async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
+            .with_dag_repository(dags.clone());
+    let remux = |id: &str| {
+        crate::database::models::DagStep::new(
+            id,
+            PipelineStep::Inline {
+                processor: "remux".to_string(),
+                config: serde_json::json!({}),
+            },
+        )
+    };
+    let session_id = "session-1".to_string();
+    let streamer_id = "streamer-1".to_string();
+    manager
+        .pipeline_coordinator
+        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            danmu_enabled: false,
+            segment_pipeline: Some(DagPipelineDefinition::new("segment", vec![remux("A")])),
+            paired_segment_pipeline: None,
+            session_complete_pipeline: Some(DagPipelineDefinition::new(
+                "session",
+                vec![remux("S")],
+            )),
+        });
+    let commands = manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::VideoSegmentCompleted {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.clone(),
+            segment_index: 0,
+            path: PathBuf::from("/rec/0.flv"),
+        },
+    );
+    manager.execute_pipeline_commands(commands).await;
+    let segment_dags = dags
+        .list_dags(None, Some(&session_id), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(segment_dags.len(), 1);
+    let dag_id = segment_dags[0].id.clone();
+    let step = dags.get_steps_by_dag(&dag_id).await.unwrap().remove(0);
+    let job_id = step.job_id.clone().unwrap();
+    let scheduler = manager.dag_scheduler().unwrap().clone();
+
+    // First attempt fails: the coordinator adopts the raw recording as fallback.
+    jobs.mark_job_failed(&job_id, "boom").await.unwrap();
+    let failed = scheduler.on_job_failed(&step.id, "boom").await.unwrap();
+    manager
+        .handle_dag_completion(failed.completion.unwrap())
+        .await;
+
+    let retried = manager.retry_dag(&dag_id).await.unwrap();
+    assert_eq!(retried.retried_steps, 1);
+    let completed = scheduler
+        .on_job_completed(
+            &step.id,
+            &["/rec/0.mp4".to_string()],
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let completion = completed.completion.unwrap();
+    assert!(completion.succeeded);
+    manager.handle_dag_completion(completion).await;
+
+    let mut commands =
+        manager
+            .pipeline_coordinator
+            .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+                session_id: session_id.clone(),
+                streamer_id: streamer_id.clone(),
+                should_run_session_complete: true,
+            });
+    commands.extend(manager.pipeline_coordinator.apply_event_inline(
+        PipelineCoordinationEvent::SessionEndPersisted {
+            session_id: session_id.clone(),
+        },
+    ));
+    manager.execute_pipeline_commands(commands).await;
+
+    let session_dag = dags
+        .list_dags(None, Some(&session_id), 10, 0)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|dag| dag.segment_source.as_deref() == Some("session_complete"))
+        .expect("the session-complete workflow was published");
+    let root = jobs.get_jobs_by_pipeline(&session_dag.id).await.unwrap();
+    assert_eq!(root.len(), 1);
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(root[0].input.as_deref().unwrap()).unwrap(),
+        vec!["/rec/0.mp4".to_string()],
+        "the retried output, not the failed run's fallback, reaches session-complete"
+    );
+}
+
 #[tokio::test]
 async fn whole_workflow_retry_restarts_failed_and_cancelled_root_jobs() {
     use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};

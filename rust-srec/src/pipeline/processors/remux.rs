@@ -6,7 +6,7 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use super::outputs::{TempOutputGuard, promote_output as promote_remux_output};
+use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
@@ -543,13 +543,15 @@ impl RemuxProcessor {
         Ok(candidate)
     }
 
+    /// Remux one input into a staged file owned by `batch`; the caller publishes
+    /// the whole batch and deletes sources only after that.
     async fn process_one(
         &self,
         input_path: &str,
         output_override: Option<&str>,
         config: &RemuxConfig,
         ctx: &ProcessorContext,
-        remove_input_on_success: bool,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
@@ -610,12 +612,15 @@ impl RemuxProcessor {
             input_path, output_path, config.video_codec, config.audio_codec
         ));
 
-        let temp_output = TempOutputGuard::new(Path::new(output_path));
+        // Staging validates the destination against every input of the batch, so
+        // one item's output can never overwrite a sibling input that has not been
+        // remuxed yet.
+        let temp_path = batch.stage(output_path_obj, config.overwrite).await?;
         let mut args = self.build_args(input_path, config, output_path);
         let output_arg = args.last_mut().ok_or_else(|| {
             crate::Error::PipelineError("FFmpeg command has no output path".to_string())
         })?;
-        *output_arg = temp_output.path().to_string_lossy().into_owned();
+        *output_arg = temp_path.to_string_lossy().into_owned();
         debug!("FFmpeg args: {:?}", args);
 
         // Build ffmpeg command
@@ -647,80 +652,25 @@ impl RemuxProcessor {
             )));
         }
 
-        promote_remux_output(temp_output, Path::new(output_path), config.overwrite).await?;
+        let output_size_bytes = Some(output_size(&temp_path).await?);
 
         ctx.info(format!(
             "Processing completed in {:.2}s: {}",
             command_output.duration, output_path
         ));
 
-        // Remove input file if requested and successful
-        let mut logs = command_output.logs;
-        // Both paths exist now that the output has been promoted, so their comparison keys
-        // resolve fully. If they name one file, `promote_remux_output` has already replaced
-        // the input with the remuxed result and deleting it would destroy that result.
-        let output_replaced_input = remove_input_on_success
-            && super::paths::spelling_equal(
-                &comparison_key(input_path).await,
-                &comparison_key(output_path).await,
-                super::paths::CasePolicy::WindowsAndMacOs,
-            );
-        if remove_input_on_success {
-            if output_replaced_input {
-                let msg = format!(
-                    "Not removing input {input_path}: it is the same file as the remux output"
-                );
-                warn!("{msg}");
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
-            } else {
-                match tokio::fs::remove_file(input_path).await {
-                    Ok(()) => {
-                        info!("Removed input file after successful remux: {}", input_path);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Info,
-                            format!("Removed input file: {}", input_path),
-                        ));
-                    }
-                    Err(e) => {
-                        ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Warn,
-                            format!("Failed to remove input file {}: {}", input_path, e),
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Get file sizes for metrics
         let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
-        let output_size_bytes = tokio::fs::metadata(output_path).await.ok().map(|m| m.len());
 
         // Only return the newly produced output file (no additive passthrough)
-        let outputs = vec![output_path.to_string()];
-
         Ok(ProcessorOutput {
-            outputs,
+            outputs: vec![output_path.to_string()],
             duration_secs: command_output.duration,
-            metadata: Some(
-                serde_json::json!({
-                    "video_codec": format!("{:?}", config.video_codec),
-                    "audio_codec": format!("{:?}", config.audio_codec),
-                    "input_removed": remove_input_on_success && !output_replaced_input,
-                })
-                .to_string(),
-            ),
             items_produced: vec![output_path.to_string()],
             input_size_bytes,
             output_size_bytes,
-            failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
-            skipped_inputs: vec![],
-            uploads: vec![],
-            logs,
+            logs: command_output.logs,
+            ..Default::default()
         })
     }
 }
@@ -729,20 +679,19 @@ struct RemuxProcessorItem<'a> {
     processor: &'a RemuxProcessor,
     config: &'a RemuxConfig,
     ctx: &'a ProcessorContext,
-    remove_input: bool,
 }
 
 #[async_trait]
 impl super::media_driver::MediaItem for RemuxProcessorItem<'_> {
-    type Publication = super::media_driver::IncrementalPublication;
+    type Publication = super::media_driver::StagedPublication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        _publication: &mut Self::Publication,
+        publication: &mut Self::Publication,
     ) -> Result<ProcessorOutput> {
         self.processor
-            .process_one(input, output, self.config, self.ctx, self.remove_input)
+            .process_one(input, output, self.config, self.ctx, &mut publication.0)
             .await
     }
 }
@@ -790,16 +739,16 @@ impl Processor for RemuxProcessor {
         let is_batch = plan.is_batch();
         let output = super::media_driver::run_media(
             plan,
-            super::media_driver::IncrementalPublication,
+            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
             &RemuxProcessorItem {
                 processor: self,
                 config: &config,
                 ctx,
-                remove_input: !is_batch && config.remove_input_on_success,
             },
         )
         .await?;
-        if !is_batch {
+        if !is_batch && output.succeeded_inputs.is_empty() {
+            // A single unsupported input keeps the shared skip result unchanged.
             return Ok(output);
         }
         let ProcessorOutput {
@@ -808,10 +757,13 @@ impl Processor for RemuxProcessor {
             items_produced,
             succeeded_inputs,
             skipped_inputs,
+            input_size_bytes,
+            output_size_bytes,
             mut logs,
             ..
         } = output;
 
+        // Sources are deleted only after every output of the job has been published.
         let mut removed_inputs = 0usize;
         if config.remove_input_on_success {
             // An input the remux wrote back over (see the identity check in process_one) is now the
@@ -853,6 +805,7 @@ impl Processor for RemuxProcessor {
                     ));
                 } else {
                     removed_inputs += 1;
+                    info!("Removed input file after successful remux: {}", input_path);
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Info,
                         format!("Removed input file: {}", input_path),
@@ -861,22 +814,29 @@ impl Processor for RemuxProcessor {
             }
         }
 
+        let metadata = if is_batch {
+            serde_json::json!({
+                "batch": true,
+                "inputs": input.inputs.len(),
+                "input_removed": removed_inputs > 0,
+                "video_codec": format!("{:?}", config.video_codec),
+                "audio_codec": format!("{:?}", config.audio_codec),
+            })
+        } else {
+            serde_json::json!({
+                "video_codec": format!("{:?}", config.video_codec),
+                "audio_codec": format!("{:?}", config.audio_codec),
+                "input_removed": removed_inputs > 0,
+            })
+        };
+
         Ok(ProcessorOutput {
             outputs,
             duration_secs,
-            metadata: Some(
-                serde_json::json!({
-                    "batch": true,
-                    "inputs": input.inputs.len(),
-                    "input_removed": removed_inputs > 0,
-                    "video_codec": format!("{:?}", config.video_codec),
-                    "audio_codec": format!("{:?}", config.audio_codec),
-                })
-                .to_string(),
-            ),
+            metadata: Some(metadata.to_string()),
             items_produced,
-            input_size_bytes: None,
-            output_size_bytes: None,
+            input_size_bytes: if is_batch { None } else { input_size_bytes },
+            output_size_bytes: if is_batch { None } else { output_size_bytes },
             failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
@@ -899,8 +859,8 @@ mod tests {
     }
 
     /// An output that reaches the input through a symlinked directory is still the input:
-    /// `promote_remux_output` would write over it and `remove_input_on_success` would then
-    /// delete the result.
+    /// publishing would write over it and `remove_input_on_success` would then delete the
+    /// result.
     #[cfg(unix)]
     #[tokio::test]
     async fn test_output_override_aliasing_the_input_is_rejected() {
@@ -1243,97 +1203,6 @@ mod tests {
         assert_eq!(output.outputs.len(), 2);
         assert!(a.exists());
         assert!(b.exists());
-    }
-
-    #[tokio::test]
-    async fn test_remux_promotion_without_overwrite_preserves_existing_output() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("output.mp4");
-        fs::write(&output_path, "existing").unwrap();
-
-        let temp_output = TempOutputGuard::new(&output_path);
-        let temp_path = temp_output.path().to_path_buf();
-        fs::write(&temp_path, "replacement").unwrap();
-
-        let error = promote_remux_output(temp_output, &output_path, false)
-            .await
-            .unwrap_err();
-
-        assert!(error.to_string().contains("overwrite is disabled"));
-        assert_eq!(fs::read_to_string(&output_path).unwrap(), "existing");
-        assert!(!temp_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_remux_promotion_without_overwrite_creates_output() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("output.mp4");
-        let temp_output = TempOutputGuard::new(&output_path);
-        let temp_path = temp_output.path().to_path_buf();
-        fs::write(&temp_path, "completed").unwrap();
-
-        promote_remux_output(temp_output, &output_path, false)
-            .await
-            .unwrap();
-
-        assert_eq!(fs::read_to_string(&output_path).unwrap(), "completed");
-        assert!(!temp_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_concurrent_remux_promotions_without_overwrite_have_one_winner() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("output.mp4");
-        let first_temp = TempOutputGuard::new(&output_path);
-        let first_path = first_temp.path().to_path_buf();
-        fs::write(&first_path, "first").unwrap();
-        let second_temp = TempOutputGuard::new(&output_path);
-        let second_path = second_temp.path().to_path_buf();
-        fs::write(&second_path, "second").unwrap();
-
-        let (first_result, second_result) = tokio::join!(
-            promote_remux_output(first_temp, &output_path, false),
-            promote_remux_output(second_temp, &output_path, false),
-        );
-
-        assert_ne!(first_result.is_ok(), second_result.is_ok());
-        assert!(matches!(
-            fs::read_to_string(&output_path).unwrap().as_str(),
-            "first" | "second"
-        ));
-        assert!(!first_path.exists());
-        assert!(!second_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_remux_promotion_with_overwrite_replaces_output() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("output.mp4");
-        fs::write(&output_path, "existing").unwrap();
-
-        let temp_output = TempOutputGuard::new(&output_path);
-        let temp_path = temp_output.path().to_path_buf();
-        fs::write(&temp_path, "replacement").unwrap();
-
-        promote_remux_output(temp_output, &output_path, true)
-            .await
-            .unwrap();
-
-        assert_eq!(fs::read_to_string(&output_path).unwrap(), "replacement");
-        assert!(!temp_path.exists());
-    }
-
-    #[test]
-    fn test_remux_temp_output_guard_preserves_extension_and_cleans_up() {
-        let temp_dir = TempDir::new().unwrap();
-        let output_path = temp_dir.path().join("output.mp4");
-        let temp_output = TempOutputGuard::new(&output_path);
-        let temp_path = temp_output.path().to_path_buf();
-        fs::write(&temp_path, "partial").unwrap();
-
-        assert_eq!(temp_path.extension(), Some(std::ffi::OsStr::new("mp4")));
-        drop(temp_output);
-        assert!(!temp_path.exists());
     }
 
     #[tokio::test]

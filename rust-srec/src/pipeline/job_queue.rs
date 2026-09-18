@@ -962,6 +962,41 @@ impl JobQueue {
         Ok(())
     }
 
+    /// Persist the logs a processor returned with its result and fold them into
+    /// the job's execution summary. Entries the streaming collector already wrote
+    /// are not duplicated. Used for a result the pool turns into a failure, where
+    /// `complete_if_processing` never runs. A repository-less queue keeps no
+    /// execution history for failed jobs, so this is a no-op there.
+    pub(crate) async fn record_result_logs(
+        &self,
+        job_id: &str,
+        logs: &[JobLogEntry],
+    ) -> Result<()> {
+        let Some(repo) = &self.job_repository else {
+            return Ok(());
+        };
+        let new_logs = self
+            .persist_logs_to_db(job_id, logs, LogPersistence::Snapshot)
+            .await?;
+        if new_logs.is_empty() {
+            return Ok(());
+        }
+        let stored = repo.get_job_execution_info(job_id).await?;
+        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+            stored.as_deref(),
+            JsonContext::JobField {
+                job_id,
+                field: "execution_info",
+            },
+            "Invalid execution_info JSON; resetting to defaults",
+        );
+        update_log_summary(&mut exec_info, &new_logs);
+        extend_logs_capped(&mut exec_info, &new_logs);
+        let execution_info = serde_json::to_string(&exec_info)?;
+        repo.update_job_execution_info(job_id, &execution_info)
+            .await
+    }
+
     fn log_persistence_lock(&self, job_id: &str) -> &tokio::sync::Mutex<()> {
         let mut hasher = DefaultHasher::new();
         job_id.hash(&mut hasher);
