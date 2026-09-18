@@ -124,6 +124,40 @@ jobs:
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
+  tool-gated-tests:
+    name: Tool-gated tests (ffmpeg, rclone)
+    needs: check-changes
+    if: needs.check-changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mozilla-actions/sccache-action@v0.0.11
+        with:
+          version: "v0.13.0"
+      - uses: ./.github/actions/setup-rust
+      - uses: taiki-e/install-action@nextest
+      - uses: ./.github/actions/setup-protoc
+      - name: Install Linux TLS dependencies and fixture tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev ffmpeg rclone
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: pr-test-tools
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Tests that need a real ffmpeg or rclone are `#[ignore]`d so the plain
+      # suite runs anywhere; this job is where they are actually exercised. Every
+      # ignored test of the package runs here except the SQLite stress test,
+      # so a newly gated test is picked up without editing this filter.
+      - name: Run ffmpeg and rclone gated tests
+        run: cargo nextest run --locked -p rust-srec --run-ignored ignored-only -E 'not binary(sqlite_claim_stress)'
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
+
   streamlink-control:
     name: Streamlink control (${{ matrix.os }}, Python ${{ matrix.python }})
     needs: check-changes
