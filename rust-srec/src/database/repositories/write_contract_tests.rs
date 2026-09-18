@@ -102,6 +102,7 @@ fn job(id: &str, step_id: Option<&str>, seed: i64) -> JobDbModel {
         duration_secs: Some(seed as f64 + 0.25),
         queue_wait_secs: Some(seed as f64 + 0.5),
         dag_step_execution_id: step_id.map(str::to_owned),
+        retry_after: None,
     }
 }
 

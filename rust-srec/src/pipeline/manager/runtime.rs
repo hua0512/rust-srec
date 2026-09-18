@@ -70,6 +70,24 @@ where
             "pipeline coordinator"
         });
 
+        let retry_manager = Arc::downgrade(&self);
+        let retry_token = self.cancellation_token.clone();
+        runtime.tasks.spawn(async move {
+            let interval = std::time::Duration::from_secs(RETRY_SWEEP_INTERVAL_SECS);
+            loop {
+                tokio::select! {
+                    _ = retry_token.cancelled() => break,
+                    _ = tokio::time::sleep(interval) => {
+                        let Some(manager) = retry_manager.upgrade() else {
+                            break;
+                        };
+                        manager.run_due_retries().await;
+                    }
+                }
+            }
+            "automatic retry sweeper"
+        });
+
         let cleanup_manager = Arc::downgrade(&self);
         let cleanup_token = self.cancellation_token.clone();
         runtime.tasks.spawn(async move {

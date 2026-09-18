@@ -167,7 +167,8 @@
     ],
     "nullable_epoch_ms": [
       "started_at",
-      "completed_at"
+      "completed_at",
+      "retry_after"
     ],
     "non_timestamp_columns": [
       "id",

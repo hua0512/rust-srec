@@ -1059,6 +1059,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
     });
 
     JobResponse {
+        retry_after: job.retry_after,
         id: job.id,
         session_id: job.session_id,
         streamer_id: job.streamer_id,

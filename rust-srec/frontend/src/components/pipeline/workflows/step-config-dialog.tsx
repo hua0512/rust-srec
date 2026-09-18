@@ -19,6 +19,38 @@ import {
 import { usePresetByName, useReferencedPresets } from './preset-lookup';
 import { PresetLookupStatus } from './preset-lookup-status';
 import { getStepIdError } from './step-operations';
+
+/**
+ * Turns the retry and timeout inputs into the optional step fields: attempts
+ * of 1 or less (or blank) mean no retry policy, a blank timeout means the
+ * worker pool default, and a blank backoff leaves the backend default.
+ */
+export function stepPolicyFromInputs(
+  attempts: string,
+  backoffSecs: string,
+  timeoutSecs: string,
+): Pick<DagStepDefinition, 'retry' | 'timeout_secs'> {
+  const positiveInt = (value: string): number | undefined => {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  };
+  const policy: Pick<DagStepDefinition, 'retry' | 'timeout_secs'> = {};
+  const maxAttempts = positiveInt(attempts);
+  if (maxAttempts !== undefined && maxAttempts > 1) {
+    const backoff = Number.parseInt(backoffSecs.trim(), 10);
+    policy.retry = {
+      max_attempts: maxAttempts,
+      ...(Number.isFinite(backoff) && backoff >= 0
+        ? { backoff_secs: backoff }
+        : {}),
+    };
+  }
+  const timeout = positiveInt(timeoutSecs);
+  if (timeout !== undefined) {
+    policy.timeout_secs = timeout;
+  }
+  return policy;
+}
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -199,6 +231,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
       id: idValue,
       depends_on: dependsOn,
       step: finalStepContent,
+      ...stepPolicyFromInputs(retryAttempts, retryBackoff, timeoutSecs),
     });
     onOpenChange(false);
   };
@@ -245,12 +278,32 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const [dependsOn, setDependsOn] = useState<string[]>(
     dagStep?.depends_on || [],
   );
+  const [retryAttempts, setRetryAttempts] = useState(
+    dagStep?.retry ? String(dagStep.retry.max_attempts) : '',
+  );
+  const [retryBackoff, setRetryBackoff] = useState(
+    dagStep?.retry?.backoff_secs != null
+      ? String(dagStep.retry.backoff_secs)
+      : '',
+  );
+  const [timeoutSecs, setTimeoutSecs] = useState(
+    dagStep?.timeout_secs != null ? String(dagStep.timeout_secs) : '',
+  );
   const idError = getStepIdError(allSteps, currentStepIndex, idValue);
 
   useEffect(() => {
     if (open && dagStep) {
       setIdValue(dagStep.id || '');
       setDependsOn(dagStep.depends_on || []);
+      setRetryAttempts(dagStep.retry ? String(dagStep.retry.max_attempts) : '');
+      setRetryBackoff(
+        dagStep.retry?.backoff_secs != null
+          ? String(dagStep.retry.backoff_secs)
+          : '',
+      );
+      setTimeoutSecs(
+        dagStep.timeout_secs != null ? String(dagStep.timeout_secs) : '',
+      );
     }
   }, [open, dagStep]);
 
@@ -665,6 +718,75 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                       <Trans>
                         Select the steps that must complete successfully before
                         this step runs.
+                      </Trans>
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">
+                      <Trans>Retries and timeout</Trans>
+                    </Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="step-retry-attempts"
+                          className="text-xs text-muted-foreground"
+                        >
+                          <Trans>Attempts (including the first run)</Trans>
+                        </Label>
+                        <UiInput
+                          id="step-retry-attempts"
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={retryAttempts}
+                          onChange={(e) => setRetryAttempts(e.target.value)}
+                          placeholder="1"
+                          className="bg-background/50 font-mono text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="step-retry-backoff"
+                          className="text-xs text-muted-foreground"
+                        >
+                          <Trans>Retry backoff (seconds)</Trans>
+                        </Label>
+                        <UiInput
+                          id="step-retry-backoff"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={retryBackoff}
+                          onChange={(e) => setRetryBackoff(e.target.value)}
+                          placeholder="60"
+                          className="bg-background/50 font-mono text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="step-timeout"
+                          className="text-xs text-muted-foreground"
+                        >
+                          <Trans>Timeout (seconds)</Trans>
+                        </Label>
+                        <UiInput
+                          id="step-timeout"
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={timeoutSecs}
+                          onChange={(e) => setTimeoutSecs(e.target.value)}
+                          placeholder={i18n._(msg`pool default`)}
+                          className="bg-background/50 font-mono text-sm"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      <Trans>
+                        Leave attempts empty or at 1 for no automatic retry; the
+                        backoff doubles after each failed attempt. Leave the
+                        timeout empty to use the worker pool default.
                       </Trans>
                     </p>
                   </div>

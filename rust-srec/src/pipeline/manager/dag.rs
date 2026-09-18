@@ -1026,6 +1026,8 @@ where
                             id: new_id,
                             step: s.step.clone(),
                             depends_on: new_deps,
+                            retry: s.retry.clone(),
+                            timeout_secs: s.timeout_secs,
                         }
                     })
                     .collect();

@@ -170,6 +170,10 @@
 
 ## Post-processing
 
+- **Workflow steps can retry themselves and set their own timeout**
+
+  A step definition can now carry `retry` (`max_attempts`, `backoff_secs`) and `timeout_secs`. A failed or timed-out attempt with budget left is retried automatically after the backoff, which doubles each time; until then the job shows as failed with the next attempt's time, the workflow keeps running and nothing downstream is cancelled. Retries survive a restart and are dropped when the workflow is cancelled. The step's timeout replaces the worker pool default for that job. Both settings are available in the step dialog of the workflow editor. See [per-step retries and timeouts](../concepts/pipeline.md#per-step-retries-and-timeouts).
+
 - **A failed step no longer cancels unrelated branches, and destructive steps cannot race their siblings**
 
   When one step of a workflow fails, only the steps that depend on it are cancelled. Steps on other branches, such as a long subtitle burn-in running beside a failed thumbnail, finish normally; the workflow shows as running, with the failure as its error, until nothing is left running, and is then marked failed. Retrying it re-runs only the failed and cancelled steps. A workflow that places a `delete`, a `move` or a Baidu Netdisk upload that deletes local files next to another step reading the same files is now rejected when it is created, with a message naming the steps, instead of letting the two race for the files. See [error handling](../concepts/pipeline.md#error-handling) and [automatic cleanup](../concepts/pipeline.md#automatic-cleanup).

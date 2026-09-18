@@ -10,9 +10,15 @@ const INSERT: &str = r#"
         id, job_type, status, config, state, created_at, updated_at,
         input, outputs, priority, streamer_id, session_id,
         started_at, completed_at, error, retry_count,
-        pipeline_id, execution_info, duration_secs, queue_wait_secs, dag_step_execution_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        pipeline_id, execution_info, duration_secs, queue_wait_secs, dag_step_execution_id,
+        retry_after
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#;
+
+// `retry_after` is deliberately absent from the full-row update: only
+// `schedule_job_retry`, `clear_job_retry` and `reset_job_for_retry` move it, so
+// a completion or failure write racing the retry sweeper cannot drop a
+// scheduled retry or resurrect a cleared one.
 
 const UPDATE: &str = r#"
     UPDATE job SET
@@ -52,6 +58,7 @@ pub(crate) async fn insert_job(connection: &mut SqliteConnection, job: &JobDbMod
         .bind(job.duration_secs)
         .bind(job.queue_wait_secs)
         .bind(&job.dag_step_execution_id)
+        .bind(job.retry_after)
         .execute(connection)
         .await?;
     Ok(())
