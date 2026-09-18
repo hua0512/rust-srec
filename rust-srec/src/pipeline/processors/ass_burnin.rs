@@ -869,11 +869,11 @@ mod tests {
     async fn duplicate_video_stems_consume_an_existing_subtitle_once() {
         let temp = TempDir::new().unwrap();
         let ffmpeg = super::super::output_tests::fake_success_ffmpeg(temp.path());
-        let first = temp.path().join("a/rec.mp4");
-        let second = temp.path().join("b/rec.mp4");
+        let first = temp.path().join("a").join("rec.mp4");
+        let second = temp.path().join("b").join("rec.mp4");
         let ass = temp.path().join("rec.ass");
-        let lost_first = temp.path().join("a/lost.mp4");
-        let lost_second = temp.path().join("b/lost.mp4");
+        let lost_first = temp.path().join("a").join("lost.mp4");
+        let lost_second = temp.path().join("b").join("lost.mp4");
         let lost_ass = temp.path().join("lost.ass");
         for video in [&first, &second, &lost_first, &lost_second] {
             tokio::fs::create_dir_all(video.parent().unwrap())
@@ -910,7 +910,12 @@ mod tests {
         assert_eq!(output.succeeded_inputs, vec![first.to_string_lossy()]);
         assert_eq!(
             output.outputs,
-            vec![temp.path().join("a/rec_burnin.mp4").to_string_lossy()]
+            vec![
+                temp.path()
+                    .join("a")
+                    .join("rec_burnin.mp4")
+                    .to_string_lossy()
+            ]
         );
         assert_eq!(
             output
@@ -924,7 +929,7 @@ mod tests {
                 (second.to_string_lossy().into_owned(), true),
             ]
         );
-        assert!(!temp.path().join("b/rec_burnin.mp4").exists());
+        assert!(!temp.path().join("b").join("rec_burnin.mp4").exists());
     }
 
     #[tokio::test]
