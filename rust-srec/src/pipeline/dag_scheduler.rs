@@ -17,17 +17,22 @@ use crate::database::models::{
 };
 use crate::database::repositories::{DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
+use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::{Job, JobQueue, JobStatus};
+use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
 
 pub(crate) type PublicationRollback = Box<dyn FnOnce() + Send>;
 pub(crate) type BeforeRootJobsHook = Box<dyn FnOnce(&str) -> PublicationRollback + Send>;
 
-/// Optional metadata associated with a DAG execution.
+/// Optional metadata stored on the DAG execution row.
 #[derive(Debug, Clone, Default)]
 pub struct DagExecutionMetadata {
     pub segment_index: Option<u32>,
     pub segment_source: Option<String>,
+    /// Per-segment video/danmu pairing of a paired-segment or session-complete
+    /// pipeline; also copied into every step job.
+    pub manifest: Option<PipelineInputManifest>,
 }
 
 /// Session and streamer metadata propagated to every job in a DAG run.
@@ -39,6 +44,40 @@ pub struct DagRunContext {
     pub session_title: Option<String>,
     pub platform: Option<String>,
     pub session_start: Option<DateTime<Utc>>,
+    /// Copied into every step job; taken from `DagExecutionMetadata` at
+    /// publication and from the DAG row afterwards.
+    pub manifest: Option<Arc<PipelineInputManifest>>,
+}
+
+impl DagRunContext {
+    /// Context for steps materialized after publication. The manifest comes from
+    /// the DAG row rather than a sibling job so downstream steps do not depend on
+    /// another job's state surviving.
+    fn for_downstream(dag: &DagExecutionDbModel, meta: JobStateMeta) -> Self {
+        Self {
+            streamer_id: dag.streamer_id.clone(),
+            session_id: dag.session_id.clone(),
+            streamer_name: meta.streamer_name,
+            session_title: meta.session_title,
+            platform: meta.platform,
+            session_start: meta.session_start,
+            manifest: input_manifest(dag),
+        }
+    }
+}
+
+/// Parse the manifest stored on a DAG row; a malformed value is logged and
+/// treated as absent so the DAG can still advance with stem-based pairing.
+pub(crate) fn input_manifest(dag: &DagExecutionDbModel) -> Option<Arc<PipelineInputManifest>> {
+    json::parse_optional::<PipelineInputManifest>(
+        dag.input_manifest.as_deref(),
+        JsonContext::DagExecutionField {
+            dag_execution_id: &dag.id,
+            field: "input_manifest",
+        },
+        "Invalid input_manifest JSON; pairing falls back to file stems",
+    )
+    .map(Arc::new)
 }
 
 /// Notification emitted when a DAG reaches a terminal state.
@@ -220,6 +259,7 @@ impl DagScheduler {
         dag_definition.validate()?;
 
         // 2. Build the DAG execution and all records required for publication.
+        let mut context = context;
         let mut dag_exec = DagExecutionDbModel::new(
             &dag_definition,
             context.streamer_id.clone(),
@@ -229,6 +269,10 @@ impl DagScheduler {
         if let Some(meta) = metadata {
             dag_exec.segment_index = meta.segment_index.map(i64::from);
             dag_exec.segment_source = meta.segment_source;
+            if let Some(manifest) = meta.manifest {
+                dag_exec.input_manifest = Some(serde_json::to_string(&manifest)?);
+                context.manifest = Some(Arc::new(manifest));
+            }
         }
         let dag_id = dag_exec.id.clone();
         let mut step_executions = Vec::with_capacity(dag_definition.steps.len());
@@ -407,14 +451,16 @@ impl DagScheduler {
                         &ready_step.id,
                         dag_step,
                         merged_inputs,
-                        &DagRunContext {
-                            streamer_id: dag.streamer_id.clone(),
-                            session_id: dag.session_id.clone(),
-                            streamer_name: streamer_name.clone(),
-                            session_title: session_title.clone(),
-                            platform: platform.clone(),
-                            session_start,
-                        },
+                        &DagRunContext::for_downstream(
+                            &dag,
+                            JobStateMeta {
+                                streamer_name: streamer_name.clone(),
+                                session_title: session_title.clone(),
+                                platform: platform.clone(),
+                                session_start,
+                                manifest: None,
+                            },
+                        ),
                     )
                     .await
                 {
@@ -609,6 +655,7 @@ impl DagScheduler {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: Some(step_execution_id.to_string()),
+            manifest: context.manifest.clone(),
         };
         job_db.state = job_state_json(&job);
 
@@ -838,12 +885,7 @@ impl DagScheduler {
         // JSON. Relying on the dequeue-time backfill
         // (JobQueue::resolve_job_metadata) instead would lose session_start
         // whenever the live_sessions row was deleted before the retry.
-        let JobStateMeta {
-            streamer_name,
-            session_title,
-            platform,
-            session_start,
-        } = self.recover_placeholder_metadata(&steps).await;
+        let placeholder_meta = self.recover_placeholder_metadata(&steps).await;
 
         let mut status_by_step_id = HashMap::<String, String>::with_capacity(steps.len());
         let mut outputs_by_step_id = HashMap::<String, Vec<String>>::with_capacity(steps.len());
@@ -912,14 +954,7 @@ impl DagScheduler {
                     &step_exec.id,
                     dag_step,
                     merged_inputs,
-                    &DagRunContext {
-                        streamer_id: dag.streamer_id.clone(),
-                        session_id: dag.session_id.clone(),
-                        streamer_name: streamer_name.clone(),
-                        session_title: session_title.clone(),
-                        platform: platform.clone(),
-                        session_start,
-                    },
+                    &DagRunContext::for_downstream(&dag, placeholder_meta.clone()),
                 )
                 .await?;
             new_job_ids.push(job_id);
@@ -1440,6 +1475,7 @@ mod tests {
                     session_title: Some("Title".to_string()),
                     platform: Some("Platform".to_string()),
                     session_start: Some(session_start),
+                    manifest: None,
                 },
             )
             .await
@@ -1642,6 +1678,7 @@ mod tests {
                     session_title: Some("Title".to_string()),
                     platform: Some("Platform".to_string()),
                     session_start: Some(session_start),
+                    manifest: None,
                 },
             )
             .await
@@ -1676,6 +1713,146 @@ mod tests {
             state.get("streamer_name").and_then(|v| v.as_str()),
             Some("Streamer")
         );
+    }
+
+    /// Every path that materializes a step job — publication, completion of a
+    /// dependency, retry fan-out and startup recovery — must copy the DAG row's
+    /// manifest into the job so the processor can pair videos with danmu.
+    #[tokio::test]
+    async fn manifest_reaches_jobs_created_by_every_materialization_path() {
+        use crate::pipeline::manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let manifest = PipelineInputManifest::new(
+            "session-1",
+            "streamer-1",
+            ManifestScope::Segment { index: 4 },
+            vec![ManifestSegment {
+                segment_index: 4,
+                video: vec!["/rec/4.mp4".to_string()],
+                danmu: vec!["/rec/4.xml".to_string()],
+            }],
+        );
+        let manifest_value = serde_json::to_value(&manifest).unwrap();
+        let state_manifest = |job: &JobDbModel| -> serde_json::Value {
+            let state: serde_json::Value = serde_json::from_str(&job.state).unwrap();
+            state["manifest"].clone()
+        };
+
+        let created = scheduler
+            .create_dag_pipeline_with_hook(
+                two_step_pipeline("manifest propagation"),
+                &["/rec/4.mp4".to_string(), "/rec/4.xml".to_string()],
+                DagRunContext {
+                    streamer_id: Some("streamer-1".to_string()),
+                    session_id: Some("session-1".to_string()),
+                    streamer_name: Some("Streamer".to_string()),
+                    ..DagRunContext::default()
+                },
+                Some(DagExecutionMetadata {
+                    segment_index: Some(4),
+                    segment_source: Some("paired".to_string()),
+                    manifest: Some(manifest.clone()),
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(
+            input_manifest(&dag).as_deref(),
+            Some(&manifest),
+            "publication stores the manifest on the DAG row"
+        );
+        let root = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+        assert_eq!(state_manifest(&root), manifest_value, "root job");
+        let parsed = parse_job_state(&root.state);
+        assert_eq!(parsed.manifest.as_deref(), Some(&manifest));
+        assert_eq!(parsed.streamer_name.as_deref(), Some("Streamer"));
+
+        // Completion of A creates B from the DAG row, not from A's job state.
+        let update = scheduler
+            .on_job_completed(
+                root.dag_step_execution_id.as_deref().unwrap(),
+                &["/rec/4.mp4".to_string(), "/rec/4.ass".to_string()],
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(update.new_job_ids.len(), 1);
+        let downstream = job_repo.get_job(&update.new_job_ids[0]).await.unwrap();
+        assert_eq!(state_manifest(&downstream), manifest_value, "completion");
+
+        // Retry fan-out: B is BLOCKED again without a job row.
+        let step_b = dag_repo
+            .get_step(downstream.dag_step_execution_id.as_deref().unwrap())
+            .await
+            .unwrap();
+        sqlx::query("UPDATE dag_step_execution SET status = 'BLOCKED', job_id = NULL WHERE id = ?")
+            .bind(&step_b.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let retried = scheduler
+            .enqueue_now_ready_steps(&created.dag_id)
+            .await
+            .unwrap();
+        assert_eq!(retried.len(), 1);
+        let retried_job = job_repo.get_job(&retried[0]).await.unwrap();
+        assert_eq!(
+            state_manifest(&retried_job),
+            manifest_value,
+            "retry fan-out"
+        );
+
+        // Startup recovery materializes a PENDING step through the same row once
+        // no live job references the step any more.
+        sqlx::query("UPDATE job SET status = 'CANCELLED' WHERE dag_step_execution_id = ?")
+            .bind(&step_b.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE dag_step_execution SET status = 'PENDING', job_id = NULL WHERE id = ?")
+            .bind(&step_b.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 1);
+        let recovered_step = dag_repo.get_step(&step_b.id).await.unwrap();
+        let recovered_job = job_repo
+            .get_job(recovered_step.job_id.as_deref().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(state_manifest(&recovered_job), manifest_value, "recovery");
+
+        // A DAG without a manifest yields jobs without one.
+        let plain = scheduler
+            .create_dag_pipeline(
+                two_step_pipeline("no manifest"),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let plain_root = job_repo.get_job(&plain.root_job_ids[0]).await.unwrap();
+        assert!(parse_job_state(&plain_root.state).manifest.is_none());
+        assert!(input_manifest(&dag_repo.get_dag(&plain.dag_id).await.unwrap()).is_none());
     }
 
     fn two_step_pipeline(name: &str) -> DagPipelineDefinition {

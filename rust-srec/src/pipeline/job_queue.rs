@@ -25,6 +25,7 @@ use crate::database::models::{
 use crate::database::repositories::{
     JobRepository, SessionRepository, StreamerRepository, UploadRecordRepository,
 };
+use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::processors::utils as processor_utils;
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
@@ -433,6 +434,9 @@ pub struct Job {
     pub queue_wait_secs: Option<f64>,
     /// DAG step execution ID (if this job is part of a DAG pipeline).
     pub dag_step_execution_id: Option<String>,
+    /// Per-segment video/danmu pairing copied from the DAG row of a
+    /// paired-segment or session-complete pipeline; persisted in `state`.
+    pub manifest: Option<Arc<PipelineInputManifest>>,
 }
 
 impl Job {
@@ -468,6 +472,7 @@ impl Job {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
+            manifest: None,
         }
     }
 
@@ -504,6 +509,7 @@ impl Job {
             duration_secs: None,
             queue_wait_secs: None,
             dag_step_execution_id: None,
+            manifest: None,
         }
     }
 
@@ -2236,6 +2242,7 @@ impl JobQueue {
             if let Some(session_start) = job.session_start {
                 split_job = split_job.with_session_start(session_start);
             }
+            split_job.manifest = job.manifest.clone();
 
             match self.enqueue(split_job).await {
                 Ok(job_id) => created_job_ids.push(job_id),
@@ -2787,10 +2794,12 @@ pub(crate) struct JobStateMeta {
     pub(crate) session_title: Option<String>,
     pub(crate) platform: Option<String>,
     pub(crate) session_start: Option<DateTime<Utc>>,
+    pub(crate) manifest: Option<Arc<PipelineInputManifest>>,
 }
 
 impl JobStateMeta {
-    /// True when at least one field carries a value.
+    /// True when at least one placeholder field carries a value. The manifest
+    /// is not a placeholder source: DAG recovery reads it from the DAG row.
     pub(crate) fn has_any(&self) -> bool {
         self.streamer_name.is_some()
             || self.session_title.is_some()
@@ -2810,14 +2819,24 @@ pub(crate) fn job_state_json(job: &Job) -> String {
         || job.session_title.is_some()
         || job.platform.is_some()
         || job.session_start.is_some()
+        || job.manifest.is_some()
     {
-        serde_json::json!({
+        let mut state = serde_json::json!({
             "streamer_name": job.streamer_name.clone(),
             "session_title": job.session_title.clone(),
             "platform": job.platform.clone(),
             "session_start_ms": job.session_start.as_ref().map(|dt| dt.timestamp_millis()),
-        })
-        .to_string()
+        });
+        if let Some(manifest) = job.manifest.as_deref() {
+            state["manifest"] = match serde_json::to_value(manifest) {
+                Ok(value) => value,
+                Err(error) => {
+                    warn!(job_id = %job.id, %error, "Failed to serialize job manifest; storing null");
+                    serde_json::Value::Null
+                }
+            };
+        }
+        state.to_string()
     } else {
         "{}".to_string()
     }
@@ -2850,6 +2869,15 @@ pub(crate) fn parse_job_state(state: &str) -> JobStateMeta {
             .get("session_start_ms")
             .and_then(|v| v.as_i64())
             .map(crate::database::time::ms_to_datetime),
+        manifest: obj
+            .get("manifest")
+            .filter(|value| !value.is_null())
+            .and_then(|value| {
+                serde_json::from_value::<PipelineInputManifest>(value.clone())
+                    .inspect_err(|error| warn!(%error, "Invalid manifest in job state; ignoring"))
+                    .ok()
+            })
+            .map(Arc::new),
     }
 }
 
@@ -2957,6 +2985,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         session_title,
         platform,
         session_start,
+        manifest,
     } = parse_job_state(&db_job.state);
 
     Job {
@@ -2991,6 +3020,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         session_title,
         platform,
         session_start,
+        manifest,
     }
 }
 
@@ -3003,6 +3033,52 @@ impl Default for JobQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The manifest travels in the `state` column with the placeholder metadata
+    /// and comes back through `db_model_to_job`; rows written before the column
+    /// existed, or with a corrupt value, yield no manifest.
+    #[test]
+    fn job_state_round_trips_the_manifest() {
+        use crate::pipeline::manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
+        let manifest = Arc::new(PipelineInputManifest::new(
+            "session",
+            "streamer",
+            ManifestScope::Session,
+            vec![ManifestSegment {
+                segment_index: 0,
+                video: vec!["/rec/0.mp4".to_string()],
+                danmu: vec!["/rec/0.xml".to_string()],
+            }],
+        ));
+        let mut job = Job::new("remux", vec!["/rec/0.mp4".to_string()], vec![], "s", "sess");
+        job.manifest = Some(manifest.clone());
+
+        let state = job_state_json(&job);
+        let parsed = parse_job_state(&state);
+        assert_eq!(parsed.manifest.as_deref(), Some(manifest.as_ref()));
+        assert!(
+            !parsed.has_any(),
+            "a manifest alone is not placeholder metadata"
+        );
+        assert_eq!(
+            db_model_to_job(&job_to_db_model(&job)).manifest,
+            job.manifest
+        );
+
+        assert!(parse_job_state("{}").manifest.is_none());
+        assert!(
+            parse_job_state(r#"{"streamer_name":"S","manifest":null}"#)
+                .manifest
+                .is_none()
+        );
+        assert!(
+            parse_job_state(r#"{"manifest":{"version":"nope"}}"#)
+                .manifest
+                .is_none()
+        );
+        job.manifest = None;
+        assert_eq!(job_state_json(&job), "{}");
+    }
 
     #[tokio::test]
     async fn baidupcs_progress_reports_are_broadcast_as_upload_progress() {
@@ -3214,14 +3290,18 @@ mod tests {
             "streamer-1",
             "session-1",
         );
+        let manifest = Arc::new(crate::pipeline::manifest::PipelineInputManifest::new(
+            "session-1",
+            "streamer-1",
+            crate::pipeline::manifest::ManifestScope::Session,
+            Vec::new(),
+        ));
+        job.manifest = Some(manifest.clone());
         queue.enqueue(job.clone()).await.unwrap();
         assert!(
-            !job_repo
-                .get_job(&job.id)
-                .await
-                .unwrap()
-                .state
-                .contains("session_start_ms")
+            parse_job_state(&job_repo.get_job(&job.id).await.unwrap().state)
+                .session_start
+                .is_none()
         );
 
         queue.resolve_job_metadata(&mut job).await;
@@ -3230,12 +3310,17 @@ mod tests {
             Some(session_start_ms)
         );
 
-        // The resolved value must now be in the DB row, not just in memory.
+        // The resolved value must now be in the DB row, not just in memory, and
+        // rewriting the state must keep the manifest that was stored with the job.
         let db_job = job_repo.get_job(&job.id).await.unwrap();
         let state: serde_json::Value = serde_json::from_str(&db_job.state).unwrap();
         assert_eq!(
             state.get("session_start_ms").and_then(|v| v.as_i64()),
             Some(session_start_ms)
+        );
+        assert_eq!(
+            parse_job_state(&db_job.state).manifest.as_deref(),
+            Some(manifest.as_ref())
         );
     }
 

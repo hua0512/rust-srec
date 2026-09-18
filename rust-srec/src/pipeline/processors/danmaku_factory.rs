@@ -1,9 +1,9 @@
 //! DanmakuFactory processor for converting danmu XML to ASS subtitles.
 //!
-//! Designed for paired/session DAG pipelines where `inputs[]` may contain a manifest + video + danmu files.
+//! Designed for paired/session DAG pipelines where `inputs[]` may contain video and danmu files.
 //! This processor:
-//! - Selects danmu XML inputs (prefer manifest's `danmu_inputs` when present)
-//! - Runs DanmakuFactory to generate `.ass` files
+//! - Selects danmu XML inputs (the session pairing's danmu files when the job carries one)
+//! - Runs DanmakuFactory to generate `.ass` files, staged and published together
 //! - Returns outputs that include the original inputs plus generated `.ass` paths for downstream steps
 
 use async_trait::async_trait;
@@ -13,9 +13,12 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
+use super::outputs::OutputBatch;
+use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
+use crate::pipeline::manifest::PipelineInputManifest;
 
 fn default_true() -> bool {
     true
@@ -58,7 +61,8 @@ pub struct DanmakuFactoryConfig {
     #[serde(default = "default_true")]
     pub verify_output_exists: bool,
 
-    /// Prefer selecting XML inputs from the JSON manifest (looks for `danmu_inputs` array).
+    /// Convert only the danmu files recorded by the session pairing when the
+    /// job carries one, instead of every `.xml` input.
     #[serde(default = "default_true")]
     pub prefer_manifest: bool,
 
@@ -121,33 +125,54 @@ impl DanmakuFactoryProcessor {
             .to_string()
     }
 
-    async fn select_danmu_xml_inputs(inputs: &[String], prefer_manifest: bool) -> Vec<String> {
-        if prefer_manifest
-            // Look for a JSON file in the inputs list (manifest is usually first).
-            && let Some(manifest_path) = inputs
-                .iter()
-                .find(|p| p.to_lowercase().ends_with(".json"))
-            && let Ok(text) = tokio::fs::read_to_string(manifest_path).await
-            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
-            && let Some(array) = value.get("danmu_inputs").and_then(|v| v.as_array())
-        {
-            let mut out = Vec::new();
-            for item in array {
-                if let Some(s) = item.as_str() {
-                    out.push(s.to_string());
+    fn is_xml(path: &str) -> bool {
+        path.to_lowercase().ends_with(".xml")
+    }
+
+    /// XML inputs to convert. With a session pairing, the recorded danmu paths
+    /// are resolved against the job's `.xml` inputs by spelling, then by stem so
+    /// a file an upstream step relocated still converts; when none resolves,
+    /// every `.xml` input is converted, as without a pairing.
+    fn select_danmu_xml_inputs(
+        inputs: &[String],
+        manifest: Option<&PipelineInputManifest>,
+        prefer_manifest: bool,
+    ) -> Vec<String> {
+        let xml_inputs: Vec<&String> = inputs.iter().filter(|p| Self::is_xml(p)).collect();
+        if prefer_manifest && let Some(manifest) = manifest {
+            let mut selected = Vec::new();
+            let mut seen = HashSet::<&str>::new();
+            for danmu in manifest.danmu_inputs() {
+                let danmu_abs = lexical_absolute(danmu);
+                let resolved = xml_inputs
+                    .iter()
+                    .find(|input| {
+                        spelling_equal(&lexical_absolute(input), &danmu_abs, CasePolicy::Windows)
+                    })
+                    .or_else(|| {
+                        let stem = Self::stem_key(danmu)?;
+                        xml_inputs
+                            .iter()
+                            .find(|input| Self::stem_key(input).is_some_and(|key| key == stem))
+                    });
+                if let Some(input) = resolved
+                    && seen.insert(input.as_str())
+                {
+                    selected.push((*input).clone());
                 }
             }
-            if !out.is_empty() {
-                return out;
+            if !selected.is_empty() {
+                return selected;
             }
         }
 
-        // Fallback: any `.xml` inputs.
-        inputs
-            .iter()
-            .filter(|p| p.to_lowercase().ends_with(".xml"))
-            .cloned()
-            .collect()
+        xml_inputs.into_iter().cloned().collect()
+    }
+
+    fn stem_key(path: &str) -> Option<String> {
+        Path::new(path)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_lowercase())
     }
 
     fn build_outputs_for_chaining(
@@ -226,7 +251,11 @@ impl Processor for DanmakuFactoryProcessor {
             ));
         }
 
-        let xml_inputs = Self::select_danmu_xml_inputs(&input.inputs, config.prefer_manifest).await;
+        let xml_inputs = Self::select_danmu_xml_inputs(
+            &input.inputs,
+            input.manifest.as_deref(),
+            config.prefer_manifest,
+        );
         let xml_count = xml_inputs.len();
 
         if xml_count == 0 {
@@ -268,7 +297,6 @@ impl Processor for DanmakuFactoryProcessor {
             .collect();
 
         let binary = Self::resolve_binary_path(&config);
-        let mut items_produced = Vec::new();
         let mut duration_secs = 0.0;
         let mut delete_warnings: Vec<String> = Vec::new();
 
@@ -276,6 +304,15 @@ impl Processor for DanmakuFactoryProcessor {
             "DanmakuFactory converting {} XML files (passthrough_inputs={})",
             xml_count, config.passthrough_inputs
         );
+
+        // Every `.ass` is written to a staged temporary path and published only
+        // after the whole batch converted, so a failure or timeout mid-batch
+        // leaves no truncated subtitle at a destination a retry would refuse
+        // to overwrite.
+        let mut batch = OutputBatch::new(&input.inputs);
+        let mut produced = Vec::new();
+        let mut converted_xml = Vec::new();
+        let mut skipped_inputs = Vec::new();
 
         for (xml_path, ass_path) in xml_inputs.iter().zip(ass_outputs.iter()) {
             let xml = PathBuf::from(xml_path);
@@ -295,8 +332,11 @@ impl Processor for DanmakuFactoryProcessor {
                 )));
             }
 
+            let temp_path = batch.stage(&ass, config.overwrite).await?;
+            let temp = temp_path.to_string_lossy().into_owned();
+
             let mut cmd = Command::new(&binary);
-            let mut args = Self::substitute_args(&config.args, xml_path, ass_path);
+            let mut args = Self::substitute_args(&config.args, xml_path, &temp);
             args.extend(config.extra_args.iter().cloned());
             cmd.args(&args);
 
@@ -319,20 +359,39 @@ impl Processor for DanmakuFactoryProcessor {
                 )));
             }
 
-            if config.verify_output_exists && !super::utils::try_exists(&ass).await? {
-                return Err(crate::Error::PipelineError(format!(
-                    "DanmakuFactory reported success but output file was not created: {}",
-                    ass.display()
-                )));
+            if !super::utils::try_exists(&temp_path).await? {
+                if config.verify_output_exists {
+                    return Err(crate::Error::PipelineError(format!(
+                        "DanmakuFactory reported success but output file was not created: {}",
+                        ass.display()
+                    )));
+                }
+                let msg = format!(
+                    "DanmakuFactory produced no output for {}; nothing to publish",
+                    xml.display()
+                );
+                warn!("{}", msg);
+                logs.push(create_log_entry(
+                    crate::pipeline::job_queue::LogLevel::Warn,
+                    msg,
+                ));
+                batch.discard(&temp_path);
+                skipped_inputs.push((xml_path.clone(), "produced no output".to_string()));
+                continue;
             }
 
-            items_produced.push(ass_path.clone());
+            produced.push(ass_path.clone());
+            converted_xml.push(xml_path.clone());
         }
 
+        batch.commit().await?;
+
+        // Only an XML whose subtitle was published may be deleted; one whose
+        // conversion produced nothing is the only danmu left for that segment.
         let mut removed_xml_count = 0usize;
         let mut failed_remove_xml_count = 0usize;
         if config.delete_source_xml_on_success {
-            for xml_path in &xml_inputs {
+            for xml_path in &converted_xml {
                 match tokio::fs::remove_file(xml_path).await {
                     Ok(()) => {
                         removed_xml_count = removed_xml_count.saturating_add(1);
@@ -356,13 +415,13 @@ impl Processor for DanmakuFactoryProcessor {
         let mut exclude_passthrough = HashSet::new();
         if config.delete_source_xml_on_success && config.passthrough_inputs {
             // Avoid returning dangling paths when we deleted the sources.
-            exclude_passthrough.extend(xml_inputs.iter().cloned());
+            exclude_passthrough.extend(converted_xml.iter().cloned());
         }
 
-        // For downstream steps we keep original inputs (manifest/video) and append produced `.ass`.
+        // For downstream steps we keep original inputs (video/xml) and append published `.ass`.
         let outputs = Self::build_outputs_for_chaining(
             &input.inputs,
-            &ass_outputs,
+            &produced,
             config.passthrough_inputs,
             &exclude_passthrough,
         );
@@ -373,7 +432,7 @@ impl Processor for DanmakuFactoryProcessor {
             metadata: Some(
                 serde_json::json!({
                     "xml_inputs": xml_count,
-                    "ass_outputs": ass_outputs.len(),
+                    "ass_outputs": produced.len(),
                     "passthrough_inputs": config.passthrough_inputs,
                     "delete_source_xml_on_success": config.delete_source_xml_on_success,
                     "removed_xml_count": removed_xml_count,
@@ -382,12 +441,12 @@ impl Processor for DanmakuFactoryProcessor {
                 })
                 .to_string(),
             ),
-            items_produced,
+            items_produced: produced,
             input_size_bytes: None,
             output_size_bytes: None,
             failed_inputs: vec![],
-            succeeded_inputs: xml_inputs,
-            skipped_inputs: vec![],
+            succeeded_inputs: converted_xml,
+            skipped_inputs,
             uploads: vec![],
             logs,
         })
@@ -405,34 +464,200 @@ mod tests {
         assert_eq!(Path::new(&out).file_name().unwrap(), "c.ass");
     }
 
-    #[tokio::test]
-    async fn test_selects_manifest_danmu_inputs() {
-        let temp = TempDir::new().unwrap();
-        let manifest = temp.path().join("segment_inputs.json");
-        let xml1 = temp.path().join("a.xml");
-        let xml2 = temp.path().join("b.xml");
-
-        tokio::fs::write(&xml1, "<i></i>").await.unwrap();
-        tokio::fs::write(&xml2, "<i></i>").await.unwrap();
-        tokio::fs::write(
-            &manifest,
-            serde_json::json!({
-                "danmu_inputs": [xml1.to_string_lossy().to_string()]
-            })
-            .to_string(),
+    fn manifest(danmu: &[&str]) -> PipelineInputManifest {
+        use crate::pipeline::manifest::{ManifestScope, ManifestSegment};
+        PipelineInputManifest::new(
+            "session",
+            "streamer",
+            ManifestScope::Segment { index: 0 },
+            vec![ManifestSegment {
+                segment_index: 0,
+                video: vec!["/rec/a.mp4".to_string()],
+                danmu: danmu.iter().map(|path| path.to_string()).collect(),
+            }],
         )
-        .await
-        .unwrap();
+    }
 
-        let inputs = vec![
-            manifest.to_string_lossy().to_string(),
-            xml1.to_string_lossy().to_string(),
-            xml2.to_string_lossy().to_string(),
-        ];
+    fn strings(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|path| path.to_string()).collect()
+    }
 
-        let selected = DanmakuFactoryProcessor::select_danmu_xml_inputs(&inputs, true).await;
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0], xml1.to_string_lossy().to_string());
+    #[test]
+    fn session_pairing_selects_recorded_danmu_by_spelling_then_stem() {
+        let inputs = strings(&["/rec/a.mp4", "/rec/a.xml", "/rec/b.xml", "/rec/c.ass"]);
+        assert_eq!(
+            DanmakuFactoryProcessor::select_danmu_xml_inputs(
+                &inputs,
+                Some(&manifest(&["/rec/a.xml"])),
+                true
+            ),
+            vec!["/rec/a.xml"]
+        );
+
+        // An upstream step moved the recording: the stem still resolves it.
+        let relocated = strings(&["/archive/a.mp4", "/archive/A.xml", "/archive/b.xml"]);
+        assert_eq!(
+            DanmakuFactoryProcessor::select_danmu_xml_inputs(
+                &relocated,
+                Some(&manifest(&["/rec/a.xml", "/rec/a.xml"])),
+                true
+            ),
+            vec!["/archive/A.xml"]
+        );
+
+        // Nothing recorded is present, no pairing, or pairing disabled: every `.xml` input.
+        for (manifest, prefer) in [
+            (Some(manifest(&["/rec/zzz.xml"])), true),
+            (None, true),
+            (Some(manifest(&["/rec/a.xml"])), false),
+        ] {
+            assert_eq!(
+                DanmakuFactoryProcessor::select_danmu_xml_inputs(
+                    &inputs,
+                    manifest.as_ref(),
+                    prefer
+                ),
+                vec!["/rec/a.xml", "/rec/b.xml"]
+            );
+        }
+    }
+
+    /// A stand-in DanmakuFactory that writes its `-o` argument; an input named
+    /// `fail*` writes and then exits non-zero, one named `nothing*` exits zero
+    /// without writing anything.
+    fn fake_danmaku_factory(dir: &Path) -> String {
+        #[cfg(windows)]
+        let (name, script) = (
+            "DanmakuFactory.cmd",
+            concat!(
+                "@echo off\r\nsetlocal\r\n:args\r\nif \"%~1\"==\"\" goto run\r\n",
+                "if \"%~1\"==\"-o\" set \"output=%~2\"\r\n",
+                "if \"%~1\"==\"-i\" set \"input=%~2\"\r\n",
+                "shift\r\ngoto args\r\n:run\r\n",
+                "if not \"%input:nothing=%\"==\"%input%\" exit /b 0\r\n",
+                "echo [Script Info]> \"%output%\"\r\n",
+                "if not \"%input:fail=%\"==\"%input%\" exit /b 3\r\nexit /b 0\r\n",
+            ),
+        );
+        #[cfg(not(windows))]
+        let (name, script) = (
+            "DanmakuFactory.sh",
+            concat!(
+                "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n",
+                "    -o) output=\"$2\"; shift;;\n",
+                "    -i) input=\"$2\"; shift;;\n",
+                "  esac\n  shift\ndone\n",
+                "case \"$input\" in *nothing*) exit 0;; esac\n",
+                "printf '[Script Info]' > \"$output\"\n",
+                "case \"$input\" in *fail*) exit 3;; esac\nexit 0\n",
+            ),
+        );
+        let path = dir.join(name);
+        std::fs::write(&path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    #[tokio::test]
+    async fn staged_subtitles_are_published_together_or_not_at_all() {
+        let temp = TempDir::new().unwrap();
+        let binary = fake_danmaku_factory(temp.path());
+        let good = temp.path().join("good.xml");
+        let fail = temp.path().join("fail.xml");
+        tokio::fs::write(&good, "<i></i>").await.unwrap();
+        tokio::fs::write(&fail, "<i></i>").await.unwrap();
+        let processor = DanmakuFactoryProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+
+        let failing = ProcessorInput {
+            inputs: strings(&[&good.to_string_lossy(), &fail.to_string_lossy()]),
+            config: Some(serde_json::json!({ "binary_path": binary }).to_string()),
+            ..Default::default()
+        };
+        let error = processor.process(&failing, &ctx).await.unwrap_err();
+        assert!(error.to_string().contains("exit code"), "{error}");
+        assert!(!good.with_extension("ass").exists());
+        assert!(!fail.with_extension("ass").exists());
+
+        let succeeding = ProcessorInput {
+            inputs: strings(&[&good.to_string_lossy()]),
+            config: Some(serde_json::json!({ "binary_path": binary }).to_string()),
+            ..Default::default()
+        };
+        let output = processor.process(&succeeding, &ctx).await.unwrap();
+        let ass = good.with_extension("ass");
+        // The Windows stand-in writes through `echo`, which appends CRLF.
+        assert_eq!(
+            tokio::fs::read_to_string(&ass).await.unwrap().trim_end(),
+            "[Script Info]"
+        );
+        assert_eq!(output.items_produced, vec![ass.to_string_lossy()]);
+        assert_eq!(
+            output.outputs,
+            vec![
+                good.to_string_lossy().into_owned(),
+                ass.to_string_lossy().into_owned()
+            ]
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    /// With output verification off, an XML whose conversion wrote nothing is
+    /// reported as skipped and passed through; only converted XMLs are deleted.
+    #[tokio::test]
+    async fn source_xml_is_deleted_only_when_its_subtitle_was_published() {
+        let temp = TempDir::new().unwrap();
+        let binary = fake_danmaku_factory(temp.path());
+        let good = temp.path().join("good.xml");
+        let nothing = temp.path().join("nothing.xml");
+        tokio::fs::write(&good, "<i></i>").await.unwrap();
+        tokio::fs::write(&nothing, "<i></i>").await.unwrap();
+        let input = ProcessorInput {
+            inputs: strings(&[&good.to_string_lossy(), &nothing.to_string_lossy()]),
+            config: Some(
+                serde_json::json!({
+                    "binary_path": binary,
+                    "verify_output_exists": false,
+                    "delete_source_xml_on_success": true,
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = DanmakuFactoryProcessor::new()
+            .process(&input, &ProcessorContext::noop("test"))
+            .await
+            .unwrap();
+        let ass = good.with_extension("ass");
+        assert!(!good.exists(), "a converted XML is deleted");
+        assert!(nothing.exists(), "an XML that produced nothing is kept");
+        assert!(!nothing.with_extension("ass").exists());
+        assert_eq!(output.succeeded_inputs, vec![good.to_string_lossy()]);
+        assert_eq!(
+            output.skipped_inputs,
+            vec![(
+                nothing.to_string_lossy().into_owned(),
+                "produced no output".to_string()
+            )]
+        );
+        assert_eq!(
+            output.outputs,
+            vec![
+                nothing.to_string_lossy().into_owned(),
+                ass.to_string_lossy().into_owned()
+            ]
+        );
     }
 
     #[tokio::test]
@@ -462,7 +687,7 @@ mod tests {
         let ctx = ProcessorContext::noop("test");
 
         let input = ProcessorInput {
-            inputs: vec!["a.mp4".to_string(), "segment_inputs.json".to_string()],
+            inputs: vec!["a.mp4".to_string(), "cover.jpg".to_string()],
             outputs: vec![],
             config: None,
             streamer_id: "test".to_string(),
@@ -480,7 +705,7 @@ mod tests {
     #[test]
     fn test_build_outputs_filters_excluded_passthrough_inputs() {
         let inputs = vec![
-            "manifest.json".to_string(),
+            "cover.jpg".to_string(),
             "video.mp4".to_string(),
             "danmu.xml".to_string(),
         ];
@@ -490,6 +715,6 @@ mod tests {
 
         let outputs =
             DanmakuFactoryProcessor::build_outputs_for_chaining(&inputs, &ass, true, &exclude);
-        assert_eq!(outputs, vec!["manifest.json", "video.mp4", "danmu.ass"]);
+        assert_eq!(outputs, vec!["cover.jpg", "video.mp4", "danmu.ass"]);
     }
 }

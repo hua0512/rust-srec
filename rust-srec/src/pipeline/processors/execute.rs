@@ -27,6 +27,8 @@ pub struct ExecuteConfig {
     /// - `{output}` - first output file path
     /// - `{output0}`, `{output1}`, ... - Nth output file path
     /// - `{outputs_json}` - JSON array of all outputs
+    /// - `{manifest_json}` - JSON of the session pairing (video/danmu per
+    ///   segment) for paired-segment and session-complete pipelines, else `null`
     /// - `{streamer_id}` - streamer ID
     /// - `{session_id}` - session ID
     ///
@@ -196,6 +198,11 @@ impl ExecuteCommandProcessor {
         let inputs_json = serde_json::to_string(&input.inputs).unwrap_or_else(|_| "[]".to_string());
         let outputs_json =
             serde_json::to_string(&input.outputs).unwrap_or_else(|_| "[]".to_string());
+        let manifest_json = input
+            .manifest
+            .as_deref()
+            .and_then(|manifest| serde_json::to_string(manifest).ok())
+            .unwrap_or_else(|| "null".to_string());
 
         // Same fallbacks as utils::filename::expand_placeholders: `{streamer}`
         // degrades to the id, `{title}` to empty, both filesystem-sanitized.
@@ -215,6 +222,7 @@ impl ExecuteCommandProcessor {
             "output" => Some(output_path),
             "inputs_json" => Some(inputs_json.as_str()),
             "outputs_json" => Some(outputs_json.as_str()),
+            "manifest_json" => Some(manifest_json.as_str()),
             "streamer_id" => Some(input.streamer_id.as_str()),
             "session_id" => Some(input.session_id.as_str()),
             "streamer" => Some(streamer_display.as_str()),
@@ -1090,6 +1098,37 @@ mod tests {
                 "sess"
             ]
         );
+    }
+
+    #[test]
+    fn manifest_json_expands_to_the_session_pairing_or_null() {
+        use crate::pipeline::manifest::{ManifestScope, ManifestSegment, PipelineInputManifest};
+        let values = |out: PreparedShellCommand| {
+            out.environment
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect::<Vec<_>>()
+        };
+        let mut input = ProcessorInput {
+            inputs: vec!["/in0.mp4".to_string()],
+            ..Default::default()
+        };
+        let out = subst(ShellKind::Posix, "echo {manifest_json}", &input);
+        assert_eq!(values(out), ["null"]);
+
+        let manifest = PipelineInputManifest::new(
+            "session",
+            "streamer",
+            ManifestScope::Segment { index: 2 },
+            vec![ManifestSegment {
+                segment_index: 2,
+                video: vec!["/in0.mp4".to_string()],
+                danmu: vec!["/in0.xml".to_string()],
+            }],
+        );
+        input.manifest = Some(std::sync::Arc::new(manifest.clone()));
+        let out = subst(ShellKind::Posix, "echo {manifest_json}", &input);
+        assert_eq!(values(out), [serde_json::to_string(&manifest).unwrap()]);
     }
 
     #[test]

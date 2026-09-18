@@ -90,7 +90,7 @@ msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, one {# done} other {# done}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:786
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:788
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, one {# Error} other {# Errors}}"
 
@@ -110,7 +110,7 @@ msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
 
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:806
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:808
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, one {# Line} other {# Lines}}"
 
@@ -144,7 +144,7 @@ msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, one {# step} other {# steps}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:796
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:798
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
@@ -753,7 +753,7 @@ msgstr "Are you sure you want to delete {0} sessions? This action cannot be undo
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:459
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:461
 msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
 msgstr "Are you sure you want to delete this job? This will permanently remove it from your list."
 
@@ -1219,8 +1219,8 @@ msgid "Buffer Limits"
 msgstr "Buffer Limits"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
-msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
-msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
+msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
+msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:680
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
@@ -1271,7 +1271,7 @@ msgstr "Cache"
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:448
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:450
 msgid "Cancel Execution"
 msgstr "Cancel Execution"
 
@@ -1484,7 +1484,7 @@ msgstr "Choose your display language"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:326
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:245
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:248
 msgid "Cleanup"
 msgstr "Cleanup"
 
@@ -1599,7 +1599,7 @@ msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 #: src/components/pipeline/status-config.ts:106
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:361
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:297
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:721
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:723
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:99
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:475
 msgid "Completed"
@@ -1826,7 +1826,7 @@ msgstr "Consecutive Failures"
 msgid "Container"
 msgstr "Container"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:488
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:490
 msgid "Context"
 msgstr "Context"
 
@@ -1839,8 +1839,12 @@ msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:87
-msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
-msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
+msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Pairs per segment and is batch-safe."
+msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Pairs per segment and is batch-safe."
+
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
+msgid "Convert only the danmu recorded for this session's segments"
+msgstr "Convert only the danmu recorded for this session's segments"
 
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:145
 msgid "Cookie string"
@@ -2089,7 +2093,7 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:91
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:703
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:705
 msgid "Created"
 msgstr "Created"
 
@@ -2362,7 +2366,7 @@ msgstr "Date placeholder anchor"
 msgid "Date range:"
 msgstr "Date range:"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:382
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:391
 msgid "Day (01-31)"
 msgstr "Day (01-31)"
 
@@ -2506,7 +2510,7 @@ msgstr "Delete File"
 msgid "Delete filter"
 msgstr "Delete filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:468
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:470
 msgid "Delete Job"
 msgstr "Delete Job"
 
@@ -2563,7 +2567,7 @@ msgstr "Delete source file after successful processing"
 msgid "Delete Source Videos"
 msgstr "Delete Source Videos"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:257
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:260
 msgid "Delete Source XML"
 msgstr "Delete Source XML"
 
@@ -2587,7 +2591,7 @@ msgstr "Delete with files"
 msgid "Delete Workflow?"
 msgstr "Delete Workflow?"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:260
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:263
 msgid "Delete XML files after successful conversion"
 msgstr "Delete XML files after successful conversion"
 
@@ -2716,7 +2720,7 @@ msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). 
 msgid "Directory path copied"
 msgstr "Directory path copied"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:459
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:468
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
@@ -2875,7 +2879,7 @@ msgstr "Dual Format"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:660
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:662
 msgid "Duration"
 msgstr "Duration"
 
@@ -2896,7 +2900,7 @@ msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "e.g. /app/config/BaiduPCS-Go"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:452
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:461
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
 
@@ -2952,7 +2956,7 @@ msgstr "e.g. gdrive:/videos"
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:478
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:487
 msgid "e.g. mp4"
 msgstr "e.g. mp4"
 
@@ -3201,7 +3205,7 @@ msgstr "Error"
 
 #: src/components/streamers/card/use-streamer-status.tsx:196
 #: src/components/streamers/card/use-streamer-status.tsx:236
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:749
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:751
 msgid "Error Details"
 msgstr "Error Details"
 
@@ -3242,7 +3246,7 @@ msgstr "Error loading workflow"
 msgid "Error:"
 msgstr "Error:"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:689
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:691
 msgid "ETA"
 msgstr "ETA"
 
@@ -3853,7 +3857,7 @@ msgstr "FFMPEG_PATH or ffmpeg"
 msgid "File Configuration"
 msgstr "File Configuration"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:474
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:483
 msgid "File Extension Filter"
 msgstr "File Extension Filter"
 
@@ -4395,7 +4399,7 @@ msgstr "HLS Tuning"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:389
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:398
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
@@ -4613,7 +4617,7 @@ msgstr "Include"
 msgid "Include Keywords"
 msgstr "Include Keywords"
 
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:225
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:228
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
@@ -4665,7 +4669,7 @@ msgstr "Input Arguments"
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:563
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:565
 msgid "Input Path"
 msgstr "Input Path"
 
@@ -4802,6 +4806,10 @@ msgstr "JSON array of all inputs"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:296
 msgid "JSON array of all outputs"
 msgstr "JSON array of all outputs"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:304
+msgid "JSON of the session pairing (video and danmu per segment), or null"
+msgstr "JSON of the session pairing (video and danmu per segment), or null"
 
 #: src/components/ui/input-with-unit.tsx:28
 msgid "KB"
@@ -4984,7 +4992,7 @@ msgstr "Loading Danmu"
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:825
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:827
 msgid "Loading logs..."
 msgstr "Loading logs..."
 
@@ -4993,7 +5001,7 @@ msgstr "Loading logs..."
 msgid "Loading more..."
 msgstr "Loading more..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:862
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:864
 msgid "Loading older logs..."
 msgstr "Loading older logs..."
 
@@ -5170,10 +5178,6 @@ msgstr "Manage your application configuration."
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:190
-msgid "Manifest (Pair by Order)"
-msgstr "Manifest (Pair by Order)"
-
 #: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
 msgstr "Manual update required"
@@ -5324,12 +5328,12 @@ msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:104
 #: src/components/ui/input-with-unit.tsx:29
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:531
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:542
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:533
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:544
 msgid "MB"
 msgstr "MB"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:683
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:685
 msgid "MB/s"
 msgstr "MB/s"
 
@@ -5379,7 +5383,7 @@ msgstr "Metadata Editor"
 msgid "Metadata Tags"
 msgstr "Metadata Tags"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:328
 msgid "Metadata Variables"
 msgstr "Metadata Variables"
 
@@ -5421,7 +5425,7 @@ msgstr "Mins"
 msgid "Mint Integrity Token"
 msgstr "Mint Integrity Token"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:396
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:405
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
 
@@ -5463,7 +5467,7 @@ msgstr "Monitoring Stopped"
 msgid "Month"
 msgstr "Month"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:375
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:384
 msgid "Month (01-12)"
 msgstr "Month (01-12)"
 
@@ -5723,7 +5727,7 @@ msgstr "No filters yet"
 msgid "No gift data"
 msgstr "No gift data"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:585
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:587
 msgid "No input paths"
 msgstr "No input paths"
 
@@ -5748,7 +5752,7 @@ msgstr "No limit"
 msgid "No log files found"
 msgstr "No log files found"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:874
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:876
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
@@ -5780,7 +5784,7 @@ msgstr "No modules configured"
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:620
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:622
 msgid "No output generated"
 msgstr "No output generated"
 
@@ -6017,11 +6021,11 @@ msgstr "notifier@example.com"
 msgid "Now"
 msgstr "Now"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:303
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:312
 msgid "Nth input: {input0}, {input1}..."
 msgstr "Nth input: {input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:310
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:319
 msgid "Nth output: {output0}, {output1}..."
 msgstr "Nth output: {output0}, {output1}..."
 
@@ -6136,7 +6140,7 @@ msgstr "One word per line"
 msgid "Ongoing"
 msgstr "Ongoing"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:485
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:494
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
@@ -6191,7 +6195,7 @@ msgstr "Optimize Stream Headers"
 
 #: src/components/config/shared/proxy-settings-card.tsx:190
 #: src/components/config/shared/proxy-settings-card.tsx:210
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:430
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:439
 msgid "Optional"
 msgstr "Optional"
 
@@ -6257,7 +6261,7 @@ msgstr "Output Configuration"
 msgid "Output deleted"
 msgstr "Output deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:427
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:436
 msgid "Output Detection"
 msgstr "Output Detection"
 
@@ -6279,7 +6283,7 @@ msgstr "Output Format"
 msgid "Output Options"
 msgstr "Output Options"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:598
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:600
 msgid "Output Path"
 msgstr "Output Path"
 
@@ -6434,7 +6438,7 @@ msgid "Parsing..."
 msgstr "Parsing..."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:286
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:222
+#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:225
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
@@ -6552,7 +6556,7 @@ msgstr "Per-Streamer"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:851
 #: src/components/sessions/overview-tab.tsx:205
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:653
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:655
 msgid "Performance"
 msgstr "Performance"
 
@@ -6568,7 +6572,7 @@ msgstr "Pick a preset theme or import a custom one."
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:506
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:508
 msgid "Pipeline"
 msgstr "Pipeline"
 
@@ -6689,7 +6693,7 @@ msgstr "Platform configuration updated successfully"
 msgid "Platform configurations will appear here when available."
 msgstr "Platform configurations will appear here when available."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:353
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
 msgid "Platform name"
 msgstr "Platform name"
 
@@ -6813,8 +6817,8 @@ msgid "Precision Schedule"
 msgstr "Precision Schedule"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:199
-msgid "Prefer Manifest"
-msgstr "Prefer Manifest"
+msgid "Prefer session pairing"
+msgstr "Prefer session pairing"
 
 #: src/components/streamers/config/stream-selection-input.tsx:61
 msgid "Preferences"
@@ -7104,7 +7108,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:668
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:670
 msgid "Queue"
 msgstr "Queue"
 
@@ -7516,7 +7520,7 @@ msgstr "Resolution change"
 msgid "Resource Limits"
 msgstr "Resource Limits"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:520
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:522
 msgid "Resources"
 msgstr "Resources"
 
@@ -7583,7 +7587,7 @@ msgstr "Retry Delay (ms)"
 msgid "Retry Delay Base (ms)"
 msgstr "Retry Delay Base (ms)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:437
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:439
 msgid "Retry Job"
 msgstr "Retry Job"
 
@@ -7600,7 +7604,7 @@ msgstr "Retry Policy"
 msgid "Retry selected"
 msgstr "Retry selected"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:423
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:425
 msgid "Retry Workflow"
 msgstr "Retry Workflow"
 
@@ -7727,11 +7731,11 @@ msgstr "Sample Rate"
 msgid "Sample Rate (Hz)"
 msgstr "Sample Rate (Hz)"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:346
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:355
 msgid "Sanitized session title"
 msgstr "Sanitized session title"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:339
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:348
 msgid "Sanitized streamer name"
 msgstr "Sanitized streamer name"
 
@@ -7780,11 +7784,11 @@ msgstr "Saving"
 msgid "Saving..."
 msgstr "Saving..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:435
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:444
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:448
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:457
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
@@ -7883,7 +7887,7 @@ msgstr "Search templates..."
 msgid "Search workflows..."
 msgstr "Search workflows..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:403
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:412
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
@@ -8169,8 +8173,8 @@ msgstr "Session ended. Additional details are unavailable."
 msgid "Session entered pending confirmation. Additional details are unavailable."
 msgstr "Session entered pending confirmation. Additional details are unavailable."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:332
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:493
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:341
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:495
 msgid "Session ID"
 msgstr "Session ID"
 
@@ -8185,6 +8189,10 @@ msgstr "Session Menu"
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:265
 msgid "Session not found"
 msgstr "Session not found"
+
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:190
+msgid "Session pairing (same segment)"
+msgstr "Session pairing (same segment)"
 
 #: src/components/sessions/overview-tab.tsx:154
 msgid "Session Preview"
@@ -8407,7 +8415,7 @@ msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
 #: src/components/streamers/edit/active-download-card.tsx:125
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:678
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:680
 msgid "Speed"
 msgstr "Speed"
 
@@ -8458,7 +8466,7 @@ msgstr "Start Time"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:309
 #: src/components/sessions/overview-tab.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:303
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:710
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:712
 msgid "Started"
 msgstr "Started"
 
@@ -8620,8 +8628,8 @@ msgstr "Streamer created successfully"
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:325
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:499
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:334
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:501
 msgid "Streamer ID"
 msgstr "Streamer ID"
 
@@ -8973,7 +8981,7 @@ msgstr "This filter's settings could not be read."
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:414
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:416
 msgid "This job is a workflow step, so it restarts together with the rest of the workflow."
 msgstr "This job is a workflow step, so it restarts together with the rest of the workflow."
 
@@ -9072,7 +9080,7 @@ msgstr "Time Based"
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:362
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:371
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
 
@@ -9212,7 +9220,7 @@ msgstr "Top Words"
 msgid "total"
 msgstr "total"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:811
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:813
 msgid "Total"
 msgstr "Total"
 
@@ -9465,7 +9473,7 @@ msgstr "Unit"
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:410
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:419
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
@@ -9618,10 +9626,6 @@ msgstr "URL is required"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:909
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
-
-#: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
-msgid "Use danmu_inputs from job manifest"
-msgstr "Use danmu_inputs from job manifest"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:109
 msgid "Use engine setting"
@@ -9967,7 +9971,7 @@ msgstr "WUP"
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:368
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:377
 msgid "Year (4 digits)"
 msgstr "Year (4 digits)"
 

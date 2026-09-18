@@ -927,6 +927,7 @@ impl JobRunner {
             platform: job.platform.take(),
             session_start: job.session_start.take(),
             created_at: job.created_at,
+            manifest: job.manifest.take(),
         };
 
         self.emit(PipelineEvent::JobStarted {

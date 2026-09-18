@@ -1203,6 +1203,87 @@ fn test_pipeline_manager_creation() {
     assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
 }
 
+/// The session-complete runner stores per-segment pairing on the DAG row and
+/// hands the DAG plain media inputs, videos first; nothing is written next to
+/// the recordings.
+#[tokio::test]
+async fn session_complete_pipeline_stores_pairing_on_the_dag_row() {
+    use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+    use crate::pipeline::{ManifestScope, PipelineInputManifest, SegmentOutput};
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone())
+            .with_dag_repository(dags.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let segment = |index: u32, name: &str| SegmentOutput {
+        segment_index: index,
+        path: dir.path().join(name),
+    };
+    let mut outputs = SessionOutputs::new("session".to_string(), "streamer".to_string(), true);
+    outputs.video_outputs = vec![segment(1, "1.mp4"), segment(0, "0.mp4")];
+    outputs.danmu_outputs = vec![segment(1, "1.xml")];
+    let definition = DagPipelineDefinition::new(
+        "session",
+        vec![crate::database::models::DagStep::new(
+            "A",
+            PipelineStep::Inline {
+                processor: "remux".to_string(),
+                config: serde_json::json!({}),
+            },
+        )],
+    );
+
+    // The returned flag also covers the session-repository dispatch mark, which
+    // this manager has no repository for; the DAG row is the evidence here.
+    manager
+        .run_session_complete_pipeline(outputs, definition)
+        .await;
+
+    let published = dags.list_dags(None, Some("session"), 10, 0).await.unwrap();
+    assert_eq!(published.len(), 1);
+    let manifest: PipelineInputManifest =
+        serde_json::from_str(published[0].input_manifest.as_deref().unwrap()).unwrap();
+    assert_eq!(manifest.scope, ManifestScope::Session);
+    assert_eq!(manifest.session_id, "session");
+    assert_eq!(manifest.streamer_id, "streamer");
+    assert_eq!(
+        manifest
+            .segments
+            .iter()
+            .map(|segment| (
+                segment.segment_index,
+                segment.video.len(),
+                segment.danmu.len()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(0, 1, 0), (1, 1, 1)]
+    );
+    assert_eq!(
+        manifest.danmu_for_video(&dir.path().join("1.mp4").to_string_lossy()),
+        &[dir.path().join("1.xml").to_string_lossy().into_owned()]
+    );
+    let root = jobs.get_jobs_by_pipeline(&published[0].id).await.unwrap();
+    assert_eq!(root.len(), 1);
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(root[0].input.as_deref().unwrap()).unwrap(),
+        vec![
+            dir.path().join("0.mp4").to_string_lossy().into_owned(),
+            dir.path().join("1.mp4").to_string_lossy().into_owned(),
+            dir.path().join("1.xml").to_string_lossy().into_owned(),
+        ]
+    );
+    assert!(
+        std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+        "no manifest file is written next to the recordings"
+    );
+}
+
 #[tokio::test]
 async fn whole_workflow_retry_restarts_failed_and_cancelled_root_jobs() {
     use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};

@@ -196,10 +196,13 @@ export function DanmakuFactoryConfigForm({
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
                     <FormLabel className="text-xs">
-                      <Trans>Prefer Manifest</Trans>
+                      <Trans>Prefer session pairing</Trans>
                     </FormLabel>
                     <FormDescription className="text-[10px]">
-                      <Trans>Use danmu_inputs from job manifest</Trans>
+                      <Trans>
+                        Convert only the danmu recorded for this session's
+                        segments
+                      </Trans>
                     </FormDescription>
                   </div>
                   <FormControl>

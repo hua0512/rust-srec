@@ -74,7 +74,7 @@ Use `program` and `args` to run an executable directly, without a shell:
 }
 ```
 
-`program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
+`program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. In paired-segment and session-complete pipelines, `{manifest_json}` expands to the JSON session pairing (which danmu file belongs to which video, per segment); elsewhere it expands to `null`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
 
 Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
 
@@ -304,13 +304,17 @@ Save DAG definitions as reusable presets:
 
 ## Error Handling
 
-Paired-segment and session-complete pipelines receive a successfully written
-input manifest first, followed by video inputs and then danmaku inputs. The
-manifest names remain `segment_<session>_<index>_inputs.json` and
-`session_<session>_inputs.json`. Session-complete inputs are ordered by segment
-index; paired inputs retain their collected order. If manifest writing fails,
-the original artifact inputs remain available and the operation is reported as
-incomplete.
+Paired-segment and session-complete pipelines receive their video inputs
+first, followed by their danmaku inputs. Session-complete inputs are ordered by
+segment index; paired inputs retain their collected order. Which danmaku file
+belongs to which video is recorded per segment as the pipeline's session
+pairing, stored with the pipeline itself and available to every step, including
+after a restart or retry. Subtitle conversion and burn-in pair within a segment
+only: a segment without a danmaku file leaves its own video without subtitles
+and does not shift the pairing of later segments. A subtitle is burned into one
+video per job; a second copy of the same recording in the same job is passed
+through with a note. No file is written next to the recordings; `_inputs.json` files left by earlier versions are unused and can
+be deleted.
 
 Normal completion and restart recovery collect leaf outputs in DAG definition
 order, keeping the first occurrence of each path with case folding on Windows.

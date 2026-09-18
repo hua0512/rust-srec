@@ -1293,7 +1293,9 @@ impl DagRepository for SqlxDagRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::{DagPipelineDefinition, DagStep, JobDbModel, PipelineStep};
+    use crate::database::models::{
+        DagExecutionStatus, DagPipelineDefinition, DagStep, JobDbModel, PipelineStep,
+    };
     use crate::database::repositories::{JobRepository as _, SqlxJobRepository};
     use crate::database::{init_pool_with_size, run_migrations};
 
@@ -1330,6 +1332,49 @@ mod tests {
         let retrieved = repo.get_dag(&dag_id).await.unwrap();
         assert_eq!(retrieved.id, dag_id);
         assert_eq!(retrieved.total_steps, 1);
+    }
+
+    /// The manifest is published in the same transaction as the steps and root
+    /// jobs and comes back verbatim, so a restart or retry never has to look for
+    /// pairing information outside the DAG row.
+    #[tokio::test]
+    async fn publish_dag_round_trips_the_input_manifest() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "manifest-dag",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+        let mut dag = DagExecutionDbModel::new(&dag_def, None, Some("session".to_string()));
+        dag.status = DagExecutionStatus::Processing.as_str().to_string();
+        let manifest = serde_json::json!({
+            "version": 1,
+            "session_id": "session",
+            "streamer_id": "streamer",
+            "scope": { "segment": { "index": 3 } },
+            "segments": [{ "segment_index": 3, "video": ["/rec/3.mp4"], "danmu": ["/rec/3.xml"] }],
+        })
+        .to_string();
+        dag.input_manifest = Some(manifest.clone());
+        let mut step = DagStepExecutionDbModel::new(&dag.id, "A", &[]);
+        let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+        step.status = DagStepStatus::Processing.as_str().to_string();
+        step.job_id = Some(job.id.clone());
+        job.pipeline_id = Some(dag.id.clone());
+        job.dag_step_execution_id = Some(step.id.clone());
+
+        repo.publish_dag(&dag, &[step], &[job]).await.unwrap();
+
+        let stored = repo.get_dag(&dag.id).await.unwrap();
+        assert_eq!(stored.input_manifest.as_deref(), Some(manifest.as_str()));
+        let listed = repo.list_dags(None, Some("session"), 10, 0).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].input_manifest, stored.input_manifest);
+
+        let mut plain = DagExecutionDbModel::new(&dag_def, None, None);
+        plain.status = DagExecutionStatus::Processing.as_str().to_string();
+        repo.create_dag(&plain).await.unwrap();
+        assert_eq!(repo.get_dag(&plain.id).await.unwrap().input_manifest, None);
     }
 
     #[tokio::test]

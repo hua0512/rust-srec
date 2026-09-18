@@ -61,6 +61,7 @@ fn dag(id: &str) -> DagExecutionDbModel {
         total_steps: 3,
         completed_steps: 2,
         failed_steps: 1,
+        input_manifest: None,
     }
 }
 

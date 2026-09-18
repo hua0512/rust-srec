@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, trace, warn};
 
 use crate::database::models::job::DagPipelineDefinition;
+use crate::pipeline::manifest::ManifestSegment;
 
 const COORDINATOR_CAPACITY: usize = 1024;
 
@@ -71,10 +72,29 @@ pub struct PairedSegmentOutputs {
     pub danmu_outputs: Vec<PathBuf>,
 }
 
+impl PairedSegmentOutputs {
+    /// The segment's video and danmu artifacts in collected order.
+    pub fn manifest_segment(&self) -> ManifestSegment {
+        ManifestSegment {
+            segment_index: self.segment_index,
+            video: paths_to_strings(&self.video_outputs),
+            danmu: paths_to_strings(&self.danmu_outputs),
+        }
+    }
+}
+
+fn paths_to_strings(paths: &[PathBuf]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
+}
+
 /// Snapshot of coordinator state at the moment `SessionPipelineState::try_finalize`
 /// emits `CreateSessionCompleteDag`. It carries sorted artifact inputs together
 /// with the readiness flags and monotonic observation times that produced the
-/// dispatch. The runner uses the identities and paths to write its input manifest.
+/// dispatch. The runner uses the identities and paths to build the DAG's input
+/// manifest.
 #[derive(Debug, Clone)]
 pub struct SessionOutputs {
     pub session_id: String,
@@ -130,6 +150,34 @@ impl SessionOutputs {
         let mut outputs = self.danmu_outputs.to_vec();
         outputs.sort_by_key(|o| o.segment_index);
         outputs.into_iter().map(|o| o.path).collect()
+    }
+
+    /// Video and danmu outputs grouped by segment, ascending by segment index.
+    /// A segment that produced only one of the two kinds is still listed so its
+    /// videos are never paired with a neighbouring segment's danmu.
+    pub fn manifest_segments(&self) -> Vec<ManifestSegment> {
+        fn segment(
+            segments: &mut BTreeMap<u32, ManifestSegment>,
+            index: u32,
+        ) -> &mut ManifestSegment {
+            segments.entry(index).or_insert_with(|| ManifestSegment {
+                segment_index: index,
+                video: Vec::new(),
+                danmu: Vec::new(),
+            })
+        }
+        let mut segments = BTreeMap::new();
+        for output in &self.video_outputs {
+            segment(&mut segments, output.segment_index)
+                .video
+                .push(output.path.to_string_lossy().into_owned());
+        }
+        for output in &self.danmu_outputs {
+            segment(&mut segments, output.segment_index)
+                .danmu
+                .push(output.path.to_string_lossy().into_owned());
+        }
+        segments.into_values().collect()
     }
 }
 

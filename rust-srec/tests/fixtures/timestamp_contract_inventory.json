@@ -49,7 +49,8 @@
       "error",
       "total_steps",
       "completed_steps",
-      "failed_steps"
+      "failed_steps",
+      "input_manifest"
     ]
   },
   "dag_step_execution": {
