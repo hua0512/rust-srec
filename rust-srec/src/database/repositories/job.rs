@@ -466,20 +466,30 @@ impl JobRepository for SqlxJobRepository {
             // Avoid taking a write lock when there are no pending jobs: first select the next job id,
             // then claim it with a conditional UPDATE. This reduces lock contention under load.
             //
-            // Claim order is priority DESC, created_at ASC, id ASC: within a priority the oldest
-            // job runs first, so a steady arrival rate cannot starve work already in the queue.
-            // This deliberately differs from list_jobs_filtered, which orders newest-first for
-            // display; JobQueue::dequeue's in-memory fallback mirrors the order used here.
+            // Claim order is priority DESC, then steps that continue a workflow before steps
+            // that start one, then created_at ASC, id ASC. A job attached to a DAG step with
+            // dependencies continues work already invested in that workflow, so under a
+            // backlog workflows finish instead of many being half done; a root step or a
+            // job without a step starts new work. Within a rank the oldest job runs first, so
+            // a steady arrival rate cannot starve work already in the queue. This deliberately
+            // differs from list_jobs_filtered, which orders newest-first for display;
+            // JobQueue::dequeue's in-memory fallback keeps only the priority and age order,
+            // as it cannot see step dependencies.
             for _ in 0..3 {
                 let next_id: Option<String> = match job_types {
                     Some(types) if !types.is_empty() => {
                         let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
                         let sql = format!(
                             r#"
-                            SELECT id
+                            SELECT job.id
                             FROM job
-                            WHERE status = ? AND job_type IN ({})
-                            ORDER BY priority DESC, created_at ASC, id ASC
+                            LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
+                            WHERE job.status = ? AND job.job_type IN ({})
+                            ORDER BY job.priority DESC,
+                                     CASE WHEN step.depends_on_step_ids IS NOT NULL
+                                               AND step.depends_on_step_ids != '[]'
+                                          THEN 0 ELSE 1 END ASC,
+                                     job.created_at ASC, job.id ASC
                             LIMIT 1
                             "#,
                             placeholders
@@ -495,10 +505,15 @@ impl JobRepository for SqlxJobRepository {
                     _ => {
                         sqlx::query_scalar::<_, String>(
                             r#"
-                            SELECT id
+                            SELECT job.id
                             FROM job
-                            WHERE status = ?
-                            ORDER BY priority DESC, created_at ASC, id ASC
+                            LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
+                            WHERE job.status = ?
+                            ORDER BY job.priority DESC,
+                                     CASE WHEN step.depends_on_step_ids IS NOT NULL
+                                               AND step.depends_on_step_ids != '[]'
+                                          THEN 0 ELSE 1 END ASC,
+                                     job.created_at ASC, job.id ASC
                             LIMIT 1
                             "#,
                         )
@@ -996,6 +1011,85 @@ mod stress_tests {
             claim_order,
             vec![(400, 5), (100, 0), (200, 0), (300, 0)],
             "expected priority first, then oldest-first within a priority"
+        );
+    }
+
+    /// Within a priority, a job that continues a workflow (its step has
+    /// dependencies) is claimed before jobs that start work, whether a root
+    /// step or a job outside any workflow; those still go oldest-first, and a
+    /// higher priority still outranks everything.
+    #[tokio::test]
+    async fn claim_prefers_jobs_that_continue_a_workflow_within_a_priority() {
+        use crate::database::models::{
+            DagExecutionDbModel, DagPipelineDefinition, DagStep, DagStepExecutionDbModel,
+            PipelineStep,
+        };
+        use crate::database::repositories::dag::{DagRepository as _, SqlxDagRepository};
+
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("claim_continue.db");
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            db_path.to_string_lossy().replace('\\', "/")
+        );
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let dags = SqlxDagRepository::new(pool.clone(), pool);
+
+        let definition = DagPipelineDefinition::new(
+            "continue",
+            vec![
+                DagStep::new("root", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "next",
+                    PipelineStep::preset("thumbnail"),
+                    vec!["root".to_string()],
+                ),
+            ],
+        );
+        let dag = DagExecutionDbModel::new(&definition, None, None);
+        dags.create_dag(&dag).await.unwrap();
+        let root = DagStepExecutionDbModel::new(&dag.id, "root", &[]);
+        let next = DagStepExecutionDbModel::new(&dag.id, "next", &["root".to_string()]);
+        dags.create_step(&root).await.unwrap();
+        dags.create_step(&next).await.unwrap();
+
+        let base = crate::database::time::now_ms();
+        // (label, age offset, priority, step): inserted newest-first.
+        let mut ids = Vec::new();
+        for (label, age_offset_ms, priority, step) in [
+            ("urgent root", 400i64, 5, Some(&root)),
+            ("continues", 300, 0, Some(&next)),
+            ("root", 200, 0, Some(&root)),
+            ("plain", 100, 0, None),
+        ] {
+            let mut job = JobDbModel::new_with_input(
+                "remux",
+                format!("input-{label}"),
+                priority,
+                Some("streamer".to_string()),
+                Some("session".to_string()),
+                "{}",
+            );
+            job.created_at = base + age_offset_ms;
+            job.dag_step_execution_id = step.map(|step| step.id.clone());
+            repo.create_job(&job).await.unwrap();
+            ids.push((label, job.id));
+        }
+
+        let mut claim_order = Vec::new();
+        while let Some(job) = repo.claim_next_pending_job(None).await.unwrap() {
+            let (label, _) = ids
+                .iter()
+                .find(|(_, id)| id == &job.id)
+                .expect("claimed a job we created");
+            claim_order.push(*label);
+        }
+        assert_eq!(
+            claim_order,
+            vec!["urgent root", "continues", "plain", "root"],
+            "priority first, then the step that continues a workflow, then oldest-first"
         );
     }
 
