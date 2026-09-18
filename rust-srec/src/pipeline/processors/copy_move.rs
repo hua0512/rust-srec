@@ -1495,9 +1495,9 @@ mod tests {
     #[tokio::test]
     async fn test_duplicate_destinations_are_refused_before_any_transfer() {
         let temp_dir = TempDir::new().unwrap();
-        let first = temp_dir.path().join("a/rec.mp4");
-        let second = temp_dir.path().join("b/rec.mp4");
-        let excluded = temp_dir.path().join("c/rec.mp4");
+        let first = temp_dir.path().join("a").join("rec.mp4");
+        let second = temp_dir.path().join("b").join("rec.mp4");
+        let excluded = temp_dir.path().join("c").join("rec.mp4");
         for path in [&first, &second, &excluded] {
             fs::create_dir_all(path.parent().unwrap()).await.unwrap();
             fs::write(path, "content").await.unwrap();
@@ -1534,7 +1534,8 @@ mod tests {
         assert!(first.exists() && second.exists(), "nothing was moved");
         assert!(!dest_dir.join("rec.mp4").exists());
 
-        // An excluded input does not count as a collision.
+        // An excluded input does not count as a collision. The pattern accepts
+        // either separator so the directory matches on Windows too.
         let output = processor
             .process(
                 &ProcessorInput {
@@ -1542,7 +1543,7 @@ mod tests {
                         first.to_string_lossy().to_string(),
                         excluded.to_string_lossy().to_string(),
                     ],
-                    config: Some(config("/c/")),
+                    config: Some(config(r"[\/]c[\/]")),
                     ..Default::default()
                 },
                 &ProcessorContext::noop("test"),
