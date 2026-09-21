@@ -63,7 +63,7 @@ describe('fetchBackend', () => {
     expect(retryHeaders.get('Authorization')).toBe('Bearer new-token');
   });
 
-  it.each(['transient', 'rejected'])(
+  it.each(['transient', 'rejected', 'superseded'])(
     'reports the original 401 without retrying when the refresh is %s',
     async (status) => {
       refreshAuthTokenGlobalMock.mockResolvedValue({ status });

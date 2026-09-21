@@ -49,6 +49,23 @@ function createSession(overrides: Partial<SessionData['token']> = {}) {
   return session;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function refreshResponse(refreshToken: string) {
+  return Response.json({
+    access_token: `access-${refreshToken}`,
+    refresh_token: refreshToken,
+    expires_in: 900,
+    refresh_expires_in: 86_400,
+  });
+}
+
 describe('tokenRefresh', () => {
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -231,89 +248,246 @@ describe('tokenRefresh', () => {
     expect(session.data.token?.refresh_token).toBe('refresh-rotated');
   });
 
-  // A caller that starts while an earlier successful refresh is still inside
-  // session.update sees an empty rotation cache and an empty in-flight map, so
-  // it issues its own request for a token the backend has already rotated. Its
-  // own answer is worthless; the rotation recorded a moment later is not.
-  it.each([
-    ['is answered 401', new Response(null, { status: 401 })],
-    ['cannot reach the backend', new TypeError('fetch failed')],
-    ['gets a body that is not JSON', new Response('<html></html>')],
-    ['gets a body without an access token', Response.json({ expires_in: 900 })],
-  ])(
-    'adopts a concurrent rotation when its own attempt %s',
-    async (_label, secondAnswer) => {
-      const now = Date.now();
-      refreshTokenCounter += 1;
-      const token = {
-        access_token: 'access-1',
-        refresh_token: `refresh-${refreshTokenCounter}`,
-        expires_in: now + 10_000,
-        refresh_expires_in: now + 3_600_000,
-      };
-
-      let releaseUpdate!: () => void;
-      const updateGate = new Promise<void>((resolve) => {
-        releaseUpdate = resolve;
+  it.each(['pending', 'failed'])(
+    'shares a rotation while the first cookie write is %s',
+    async (writeState) => {
+      const first = createSession();
+      const original = structuredClone(first.data);
+      const second = createSession(original.token);
+      const gate = deferred<void>();
+      const updateStarted = deferred<void>();
+      first.update.mockImplementation(async () => {
+        updateStarted.resolve();
+        await gate.promise;
+        if (writeState === 'failed') throw new Error('cookie write failed');
       });
-      const first = {
-        data: { username: 'alice', roles: ['admin'], token },
-        update: vi.fn(() => updateGate),
-        clear: vi.fn(),
-      };
-      const second = {
-        data: { username: 'alice', roles: ['admin'], token },
-        update: vi.fn(),
-        clear: vi.fn(),
-      };
-
-      let deliverSecond!: () => void;
-      const secondPending = new Promise<Response>((resolve, reject) => {
-        deliverSecond = () =>
-          secondAnswer instanceof Response
-            ? resolve(secondAnswer)
-            : reject(secondAnswer);
-      });
+      const rotated = `${original.token!.refresh_token}-rotated`;
       const fetchMock = vi
         .fn()
-        .mockResolvedValueOnce(
-          Response.json({
-            access_token: 'access-2',
-            refresh_token: 'refresh-rotated',
-            expires_in: 900,
-            refresh_expires_in: 86_400,
-          }),
-        )
-        .mockReturnValueOnce(secondPending);
+        .mockResolvedValueOnce(refreshResponse(rotated))
+        .mockResolvedValue(new Response(null, { status: 401 }));
       vi.stubGlobal('fetch', fetchMock);
-
       useAppSessionMock.mockResolvedValue(first);
-      const firstCall = refreshAuthTokenGlobal();
-      await vi.waitFor(() => expect(first.update).toHaveBeenCalled());
-
-      useAppSessionMock.mockResolvedValue(second);
-      const secondCall = refreshAuthTokenGlobal();
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-
-      releaseUpdate();
-      await firstCall;
-      deliverSecond();
-
-      await expect(secondCall).resolves.toEqual({
-        status: 'refreshed',
-        accessToken: 'access-2',
-      });
-      expect(second.clear).not.toHaveBeenCalled();
-      expect(second.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          token: expect.objectContaining({
-            access_token: 'access-2',
-            refresh_token: 'refresh-rotated',
-          }),
-        }),
+      const firstCall = refreshAuthTokenGlobal().catch(
+        (error: unknown) => error,
       );
+      await updateStarted.promise;
+      if (writeState === 'failed') {
+        gate.resolve();
+        await firstCall;
+      }
+      useAppSessionMock.mockResolvedValue(second);
+      try {
+        await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+          status: 'refreshed',
+          accessToken: `access-${rotated}`,
+        });
+        expect(second.data.token?.refresh_token).toBe(rotated);
+        expect(second.clear).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        gate.resolve();
+        await firstCall;
+      }
     },
   );
+
+  it('shares one successful refresh between callers using the desktop session', async () => {
+    const session = createSession();
+    const rotated = `${session.data.token!.refresh_token}-rotated`;
+    const fetchMock = vi.fn().mockResolvedValue(refreshResponse(rotated));
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await Promise.all([
+      refreshAuthTokenGlobal(),
+      refreshAuthTokenGlobal(),
+    ]);
+    expect(results).toEqual([
+      { status: 'refreshed', accessToken: `access-${rotated}` },
+      { status: 'refreshed', accessToken: `access-${rotated}` },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(session.update).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['refreshed', false],
+    ['rejected', false],
+    ['transient', false],
+    ['refreshed', true],
+    ['rejected', true],
+    ['transient', true],
+  ] as const)(
+    'ignores a %s refresh after sign-out (new login: %s)',
+    async (outcome, loginAgain) => {
+      const session = createSession();
+      const original = structuredClone(session.data) as SessionData;
+      const pending = deferred<Response>();
+      const started = deferred<void>();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => {
+          started.resolve();
+          return pending.promise;
+        }),
+      );
+      const refresh = refreshAuthTokenGlobal();
+      await started.promise;
+      await session.clear();
+      if (loginAgain) {
+        await session.update({
+          ...original,
+          username: 'bob',
+          token: {
+            ...original.token,
+            access_token: 'bob-access',
+            refresh_token: 'bob-refresh',
+          },
+        });
+      }
+      const expected = structuredClone(session.data);
+      session.update.mockClear();
+      session.clear.mockClear();
+      pending.resolve(
+        outcome === 'refreshed'
+          ? refreshResponse(`${original.token.refresh_token}-rotated`)
+          : new Response(null, { status: outcome === 'rejected' ? 401 : 503 }),
+      );
+      await expect(refresh).resolves.toEqual({ status: 'superseded' });
+      expect(session.data).toEqual(expected);
+      expect(session.update).not.toHaveBeenCalled();
+      expect(session.clear).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the current login visible when a session check is superseded', async () => {
+    const session = createSession();
+    const original = structuredClone(session.data) as SessionData;
+    const pending = deferred<Response>();
+    const started = deferred<void>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        started.resolve();
+        return pending.promise;
+      }),
+    );
+    const check = ensureValidToken();
+    await started.promise;
+    await session.update({
+      ...original,
+      username: 'bob',
+      token: {
+        ...original.token,
+        access_token: 'bob-access',
+        refresh_token: 'bob-refresh',
+      },
+    });
+    pending.resolve(new Response(null, { status: 401 }));
+    await expect(check).resolves.toMatchObject({
+      username: 'bob',
+      token: { access_token: 'bob-access' },
+    });
+    expect(session.clear).not.toHaveBeenCalled();
+  });
+
+  it('repairs every predecessor after successive rotations', async () => {
+    const session = createSession();
+    const original = structuredClone(session.data) as SessionData;
+    const r1 = `${original.token.refresh_token}-r1`;
+    const r2 = `${original.token.refresh_token}-r2`;
+    const r3 = `${original.token.refresh_token}-r3`;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(refreshResponse(r1))
+      .mockResolvedValueOnce(refreshResponse(r2))
+      .mockResolvedValueOnce(refreshResponse(r3));
+    vi.stubGlobal('fetch', fetchMock);
+    await refreshAuthTokenGlobal();
+    const firstRotation = structuredClone(session.data) as SessionData;
+    await refreshAuthTokenGlobal();
+    await refreshAuthTokenGlobal();
+    for (const stale of [original, firstRotation]) {
+      const request = createSession(stale.token);
+      await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+        status: 'refreshed',
+        accessToken: `access-${r3}`,
+      });
+      expect(request.data.token?.refresh_token).toBe(r3);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['refreshed', 'rejected', 'transient'] as const)(
+    'waits for a cached successor already rotating (%s)',
+    async (outcome) => {
+      const session = createSession();
+      const original = structuredClone(session.data) as SessionData;
+      const r1 = `${original.token.refresh_token}-r1`;
+      const r2 = `${original.token.refresh_token}-r2`;
+      const pending = deferred<Response>();
+      const started = deferred<void>();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(refreshResponse(r1))
+        .mockImplementationOnce(() => {
+          started.resolve();
+          return pending.promise;
+        });
+      vi.stubGlobal('fetch', fetchMock);
+      await refreshAuthTokenGlobal();
+      const successorCall = refreshAuthTokenGlobal();
+      await started.promise;
+      const staleRequest = createSession(original.token);
+      const staleCall = refreshAuthTokenGlobal();
+      await Promise.resolve();
+      expect(staleRequest.update).not.toHaveBeenCalled();
+      pending.resolve(
+        outcome === 'refreshed'
+          ? refreshResponse(r2)
+          : new Response(null, { status: outcome === 'rejected' ? 401 : 503 }),
+      );
+      await successorCall;
+      if (outcome === 'rejected') {
+        await expect(staleCall).resolves.toEqual({ status: 'rejected' });
+        expect(staleRequest.clear).toHaveBeenCalledOnce();
+      } else {
+        const latest = outcome === 'refreshed' ? r2 : r1;
+        await expect(staleCall).resolves.toEqual({
+          status: 'refreshed',
+          accessToken: `access-${latest}`,
+        });
+        expect(staleRequest.data.token?.refresh_token).toBe(latest);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('does not renew a predecessor cache deadline when it is read', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = createSession();
+      const original = structuredClone(session.data) as SessionData;
+      const r1 = `${original.token.refresh_token}-r1`;
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(refreshResponse(r1))
+        .mockResolvedValueOnce(new Response(null, { status: 401 }));
+      vi.stubGlobal('fetch', fetchMock);
+      await refreshAuthTokenGlobal();
+      vi.advanceTimersByTime(59_000);
+      createSession(original.token);
+      await refreshAuthTokenGlobal();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1_001);
+      createSession(original.token);
+      await expect(refreshAuthTokenGlobal()).resolves.toEqual({
+        status: 'rejected',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('treats a success response without an access token as transient', async () => {
     const session = createSession();
