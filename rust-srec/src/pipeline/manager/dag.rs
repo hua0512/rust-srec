@@ -865,6 +865,55 @@ where
 
     /// A manifest in `metadata` is stored on the DAG row and reaches every step
     /// job; only the paired-segment and session-complete runners supply one.
+    /// Check a definition as [`Self::create_dag_pipeline`] would, without
+    /// creating anything: workflows are expanded, presets resolved, and the
+    /// structural, processor and sibling checks run on the result. Whatever
+    /// creation would refuse is an error; option-driven deletion beside a
+    /// reader is a warning. A repository failure is returned as `Err`.
+    pub async fn analyze_dag_definition(
+        &self,
+        dag_definition: DagPipelineDefinition,
+    ) -> Result<DagAnalysis> {
+        fn record(result: Result<()>, errors: &mut Vec<String>) -> Result<()> {
+            match result {
+                Ok(()) => Ok(()),
+                Err(crate::Error::Validation(message)) => {
+                    errors.push(message);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }
+        }
+
+        let mut analysis = DagAnalysis::default();
+        let mut resolved = match self.expand_workflows_in_dag(dag_definition).await {
+            Ok(expanded) => expanded,
+            Err(crate::Error::Validation(message)) => {
+                analysis.errors.push(message);
+                return Ok(analysis);
+            }
+            Err(error) => return Err(error),
+        };
+        for dag_step in &mut resolved.steps {
+            match self.resolve_dag_step(&dag_step.step).await {
+                Ok(step) => dag_step.step = step,
+                Err(crate::Error::Validation(message)) => analysis.errors.push(message),
+                Err(error) => return Err(error),
+            }
+        }
+        if !analysis.errors.is_empty() {
+            return Ok(analysis);
+        }
+        record(resolved.validate(), &mut analysis.errors)?;
+        record(
+            self.validate_step_processors(&resolved),
+            &mut analysis.errors,
+        )?;
+        record(validate_consuming_steps(&resolved), &mut analysis.errors)?;
+        analysis.warnings = consuming_step_warnings(&resolved);
+        Ok(analysis)
+    }
+
     pub(super) async fn create_dag_pipeline_internal(
         &self,
         session_id: &str,
@@ -891,6 +940,9 @@ where
         }
         self.validate_step_processors(&resolved_dag)?;
         validate_consuming_steps(&resolved_dag)?;
+        for warning in consuming_step_warnings(&resolved_dag) {
+            warn!(session_id = %session_id, streamer_id = %streamer_id, "{warning}");
+        }
 
         // Look up metadata for placeholder support
         let (streamer_name, platform) = self.lookup_streamer_metadata(streamer_id).await;
@@ -1209,6 +1261,90 @@ fn consumes_inputs(step: &PipelineStep) -> bool {
     }
 }
 
+/// Whether a resolved step deletes its sources through a processor option once
+/// it has succeeded, and which option does it: `remux` and `metadata` with
+/// `remove_input_on_success`, `ass_burnin` deleting its source videos or
+/// subtitles, `danmaku_factory` deleting its source XML.
+fn removes_inputs_on_success(step: &PipelineStep) -> Option<&'static str> {
+    let PipelineStep::Inline { processor, config } = step else {
+        return None;
+    };
+    let flag = |key: &'static str| {
+        (config.get(key).and_then(serde_json::Value::as_bool) == Some(true)).then_some(key)
+    };
+    match processor.as_str() {
+        "remux" | "metadata" => flag("remove_input_on_success"),
+        "ass_burnin" => {
+            flag("delete_source_videos_on_success").or_else(|| flag("delete_source_ass_on_success"))
+        }
+        "danmaku_factory" => flag("delete_source_xml_on_success"),
+        _ => None,
+    }
+}
+
+/// Steps that read the same files as `consumer` without being ordered before
+/// it: they share a parent with it (root steps share the pipeline's inputs) and
+/// are not among its ancestors, so fan-out may run them at the same time.
+fn concurrent_readers<'a>(
+    dag: &'a DagPipelineDefinition,
+    consumer: &crate::database::models::DagStep,
+) -> Vec<&'a str> {
+    // Every step that finishes before `consumer` may start is an ancestor of it.
+    let mut ancestors = HashSet::new();
+    let mut queue: Vec<String> = consumer.depends_on.clone();
+    while let Some(current) = queue.pop() {
+        if ancestors.contains(&current) {
+            continue;
+        }
+        if let Some(upstream) = dag.get_step(&current) {
+            queue.extend(upstream.depends_on.iter().cloned());
+        }
+        ancestors.insert(current);
+    }
+    let shares_parent = |other: &crate::database::models::DagStep| {
+        if consumer.depends_on.is_empty() {
+            other.depends_on.is_empty()
+        } else {
+            other
+                .depends_on
+                .iter()
+                .any(|parent| consumer.depends_on.contains(parent))
+        }
+    };
+    dag.steps
+        .iter()
+        .filter(|other| other.id != consumer.id)
+        .filter(|other| shares_parent(other))
+        .filter(|other| !ancestors.contains(other.id.as_str()))
+        .map(|other| other.id.as_str())
+        .collect()
+}
+
+/// What `consumer` receives: the pipeline's inputs for a root step, otherwise
+/// the outputs of its parents.
+fn shared_files_description(consumer: &crate::database::models::DagStep) -> String {
+    if consumer.depends_on.is_empty() {
+        "the pipeline's inputs".to_string()
+    } else {
+        format!("the outputs of {}", quoted_list(&consumer.depends_on))
+    }
+}
+
+fn quoted_list<S: AsRef<str>>(ids: &[S]) -> String {
+    ids.iter()
+        .map(|id| format!("'{}'", id.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn those_steps(count: usize) -> &'static str {
+    if count == 1 {
+        "that step"
+    } else {
+        "those steps"
+    }
+}
+
 /// Reject a step that removes its inputs while a sibling still reads them.
 ///
 /// Fan-out hands the same output paths to every dependent of a step, and those
@@ -1218,74 +1354,45 @@ fn consumes_inputs(step: &PipelineStep) -> bool {
 /// reads the same outputs; root steps read the pipeline's inputs and count as
 /// sharing one parent.
 pub(super) fn validate_consuming_steps(dag: &DagPipelineDefinition) -> Result<()> {
-    // Every step that finishes before `step` may start is an ancestor of it.
-    let ancestors_of = |step: &crate::database::models::DagStep| -> HashSet<String> {
-        let mut seen = HashSet::new();
-        let mut queue: Vec<String> = step.depends_on.clone();
-        while let Some(current) = queue.pop() {
-            if seen.contains(&current) {
-                continue;
-            }
-            if let Some(upstream) = dag.get_step(&current) {
-                queue.extend(upstream.depends_on.iter().cloned());
-            }
-            seen.insert(current);
-        }
-        seen
-    };
-
     for consumer in dag.steps.iter().filter(|step| consumes_inputs(&step.step)) {
-        let ancestors = ancestors_of(consumer);
-        let shares_parent = |other: &crate::database::models::DagStep| {
-            if consumer.depends_on.is_empty() {
-                other.depends_on.is_empty()
-            } else {
-                other
-                    .depends_on
-                    .iter()
-                    .any(|parent| consumer.depends_on.contains(parent))
-            }
-        };
-        let readers: Vec<&str> = dag
-            .steps
-            .iter()
-            .filter(|other| other.id != consumer.id)
-            .filter(|other| shares_parent(other))
-            .filter(|other| !ancestors.contains(other.id.as_str()))
-            .map(|other| other.id.as_str())
-            .collect();
+        let readers = concurrent_readers(dag, consumer);
         if readers.is_empty() {
             continue;
         }
-        let source = if consumer.depends_on.is_empty() {
-            "the pipeline's inputs".to_string()
-        } else {
-            format!(
-                "the outputs of {}",
-                consumer
-                    .depends_on
-                    .iter()
-                    .map(|parent| format!("'{parent}'"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        };
         return Err(crate::Error::Validation(format!(
             "Step '{}' removes {} while {} still read them; make '{}' depend on {} so it runs after them",
             consumer.id,
-            source,
-            readers
-                .iter()
-                .map(|reader| format!("'{reader}'"))
-                .collect::<Vec<_>>()
-                .join(", "),
+            shared_files_description(consumer),
+            quoted_list(&readers),
             consumer.id,
-            if readers.len() == 1 {
-                "that step"
-            } else {
-                "those steps"
-            }
+            those_steps(readers.len())
         )));
     }
     Ok(())
+}
+
+/// Warn about a step that deletes its sources through a processor option while
+/// a sibling still reads them. Unlike an explicit `delete` or `move` this is
+/// not rejected: the files go only after the step itself has succeeded, so a
+/// sibling that finishes first is unaffected and the outcome depends on
+/// scheduling rather than being wrong every time.
+pub(super) fn consuming_step_warnings(dag: &DagPipelineDefinition) -> Vec<String> {
+    dag.steps
+        .iter()
+        .filter_map(|consumer| {
+            let option = removes_inputs_on_success(&consumer.step)?;
+            let readers = concurrent_readers(dag, consumer);
+            (!readers.is_empty()).then(|| {
+                format!(
+                    "Step '{}' deletes {} once it succeeds ({}) while {} still read them; whichever finishes first decides whether the other finds its files. Make '{}' depend on {} or turn the option off",
+                    consumer.id,
+                    shared_files_description(consumer),
+                    option,
+                    quoted_list(&readers),
+                    consumer.id,
+                    those_steps(readers.len())
+                )
+            })
+        })
+        .collect()
 }

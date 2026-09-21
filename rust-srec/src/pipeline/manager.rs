@@ -599,6 +599,18 @@ pub struct PipelineCreationResult {
     pub steps: Vec<String>,
 }
 
+/// Outcome of checking a workflow definition the way DAG creation would,
+/// without creating anything. See `PipelineManager::analyze_dag_definition`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DagAnalysis {
+    /// Problems creation would refuse: an unknown workflow or processor, a
+    /// structural fault, or a step that removes files a sibling still reads.
+    pub errors: Vec<String>,
+    /// Hazards creation tolerates and logs: a step that deletes its sources
+    /// through a processor option while a sibling still reads them.
+    pub warnings: Vec<String>,
+}
+
 /// Outcome of retrying the failed and cancelled branches of a workflow.
 #[derive(Debug)]
 pub struct DagRetryResult {

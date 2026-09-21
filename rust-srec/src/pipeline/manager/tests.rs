@@ -2858,11 +2858,10 @@ fn test_validate_consuming_steps_rejects_two_destructive_roots() {
     );
 }
 
-/// The seeded default workflows pair a `remux` preset that removes its own
-/// input with a `thumbnail` as root steps; flag-driven media processors are
-/// not treated as consumers, so they keep working.
+/// Removal driven by a processor option is a warning, not an error, so a
+/// `remux` that deletes its input beside a `thumbnail` still creates.
 #[test]
-fn test_validate_consuming_steps_accepts_the_seeded_remux_and_thumbnail_roots() {
+fn test_validate_consuming_steps_leaves_option_driven_removal_to_warnings() {
     let dag = DagPipelineDefinition::new(
         "remux_thumbnail",
         vec![
@@ -2912,6 +2911,167 @@ fn test_validate_consuming_steps_distinguishes_transfer_modes() {
         super::dag::validate_consuming_steps(&consuming_step_dag(processor, config.clone()))
             .unwrap_or_else(|error| panic!("{processor} {config} only reads its inputs: {error}"));
     }
+}
+
+/// Option-driven removal beside a reader is a warning naming the option and
+/// the readers; ordering the reader first clears it.
+#[test]
+fn test_consuming_step_warnings_flag_option_driven_deletion_beside_a_reader() {
+    let warnings = super::dag::consuming_step_warnings(&consuming_step_dag(
+        "remux",
+        serde_json::json!({ "remove_input_on_success": true }),
+    ));
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = &warnings[0];
+    assert!(
+        warning.contains("Step 'consumer' deletes the outputs of 'remux'"),
+        "{warning}"
+    );
+    assert!(warning.contains("(remove_input_on_success)"), "{warning}");
+    assert!(warning.contains("'thumbnail' still read them"), "{warning}");
+    assert!(warning.contains("depend on that step"), "{warning}");
+
+    for (processor, config) in [
+        (
+            "ass_burnin",
+            serde_json::json!({ "delete_source_videos_on_success": true }),
+        ),
+        (
+            "ass_burnin",
+            serde_json::json!({ "delete_source_ass_on_success": true }),
+        ),
+        (
+            "danmaku_factory",
+            serde_json::json!({ "delete_source_xml_on_success": true }),
+        ),
+        (
+            "metadata",
+            serde_json::json!({ "remove_input_on_success": true }),
+        ),
+    ] {
+        let warnings =
+            super::dag::consuming_step_warnings(&consuming_step_dag(processor, config.clone()));
+        assert_eq!(warnings.len(), 1, "{processor} {config}: {warnings:?}");
+    }
+    for (processor, config) in [
+        (
+            "remux",
+            serde_json::json!({ "remove_input_on_success": false }),
+        ),
+        ("remux", serde_json::json!({})),
+        ("thumbnail", serde_json::json!({})),
+        ("delete", serde_json::json!({})),
+    ] {
+        let warnings =
+            super::dag::consuming_step_warnings(&consuming_step_dag(processor, config.clone()));
+        assert!(warnings.is_empty(), "{processor} {config}: {warnings:?}");
+    }
+
+    // The seeded "Stream Archive" shape: the thumbnail depends on the
+    // deleting remux, so it always reads first.
+    let ordered = DagPipelineDefinition::new(
+        "ordered",
+        vec![
+            DagStep::new(
+                "remux",
+                PipelineStep::inline(
+                    "remux",
+                    serde_json::json!({ "remove_input_on_success": true }),
+                ),
+            ),
+            DagStep::with_dependencies(
+                "thumbnail",
+                PipelineStep::inline("thumbnail", serde_json::json!({})),
+                vec!["remux".to_string()],
+            ),
+        ],
+    );
+    assert!(super::dag::consuming_step_warnings(&ordered).is_empty());
+}
+
+/// The analysis reports what creation would refuse, plus the warnings it
+/// would log, and creates nothing.
+#[tokio::test]
+async fn test_analyze_dag_definition_reports_creation_errors_and_warnings() {
+    let (manager, _jobs, dags, _pool) = sqlx_manager().await;
+
+    let racing = manager
+        .analyze_dag_definition(consuming_step_dag("delete", serde_json::json!({})))
+        .await
+        .unwrap();
+    assert_eq!(racing.errors.len(), 1, "{racing:?}");
+    assert!(
+        racing.errors[0].contains("removes the outputs of 'remux'"),
+        "{racing:?}"
+    );
+    assert!(racing.warnings.is_empty());
+
+    let unknown = manager
+        .analyze_dag_definition(DagPipelineDefinition::new(
+            "unknown",
+            vec![DagStep::new(
+                "A",
+                PipelineStep::inline("totally_not_a_processor", serde_json::json!({})),
+            )],
+        ))
+        .await
+        .unwrap();
+    assert!(
+        unknown
+            .errors
+            .iter()
+            .any(|error| error.contains("totally_not_a_processor")),
+        "{unknown:?}"
+    );
+
+    let cyclic = manager
+        .analyze_dag_definition(DagPipelineDefinition::new(
+            "cycle",
+            vec![
+                DagStep::with_dependencies(
+                    "A",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                    vec!["B".to_string()],
+                ),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::inline("remux", serde_json::json!({})),
+                    vec!["A".to_string()],
+                ),
+            ],
+        ))
+        .await
+        .unwrap();
+    assert!(!cyclic.errors.is_empty(), "{cyclic:?}");
+
+    let warned = manager
+        .analyze_dag_definition(consuming_step_dag(
+            "remux",
+            serde_json::json!({ "remove_input_on_success": true }),
+        ))
+        .await
+        .unwrap();
+    assert!(warned.errors.is_empty(), "{warned:?}");
+    assert_eq!(warned.warnings.len(), 1, "{warned:?}");
+
+    // Without a preset repository a preset name resolves to the processor of
+    // that name, as creation does.
+    let preset = manager
+        .analyze_dag_definition(DagPipelineDefinition::new(
+            "preset",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(preset, DagAnalysis::default());
+
+    assert!(
+        dags.list_dag_ids_with_unmaterialized_steps()
+            .await
+            .unwrap()
+            .is_empty(),
+        "analysis creates nothing"
+    );
 }
 
 /// The check runs when a DAG is created, so the racing definition never

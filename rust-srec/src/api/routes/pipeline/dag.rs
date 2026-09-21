@@ -681,6 +681,7 @@ pub async fn get_dag_stats(
     security(("bearer_auth" = []))
 )]
 pub async fn validate_dag(
+    State(state): State<PipelineRouteState>,
     Json(request): Json<ValidateDagRequest>,
 ) -> ApiResult<Json<ValidateDagResponse>> {
     let dag = &request.dag;
@@ -844,6 +845,19 @@ pub async fn validate_dag(
             "DAG has depth {} - deep pipelines may be slow",
             max_depth
         ));
+    }
+
+    // With the graph itself sound, check what creation would check: presets
+    // and workflows resolve, processors exist, and no step removes files a
+    // sibling still reads.
+    if errors.is_empty() {
+        let analysis = state
+            .pipeline_manager
+            .analyze_dag_definition(dag.clone())
+            .await
+            .map_err(ApiError::from)?;
+        errors.extend(analysis.errors);
+        warnings.extend(analysis.warnings);
     }
 
     Ok(Json(ValidateDagResponse {

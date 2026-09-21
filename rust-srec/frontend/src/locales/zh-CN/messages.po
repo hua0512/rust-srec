@@ -977,7 +977,7 @@ msgstr "返回录制会话"
 msgid "Back to streamers"
 msgstr "返回主播列表"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:157
+#: src/components/pipeline/workflows/workflow-editor.tsx:126
 msgid "Back to workflows"
 msgstr "返回工作流列表"
 
@@ -1688,7 +1688,7 @@ msgstr "配置路径（可选）"
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:52
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
-#: src/components/pipeline/workflows/workflow-editor.tsx:224
+#: src/components/pipeline/workflows/workflow-editor.tsx:193
 #: src/lib/menu-list.ts:114
 msgid "Configuration"
 msgstr "配置"
@@ -2059,7 +2059,7 @@ msgstr "创建新处理任务"
 msgid "Create New Preset"
 msgstr "创建新预设"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:56
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:54
 msgid "Create New Workflow"
 msgstr "创建新工作流"
 
@@ -2630,12 +2630,12 @@ msgstr "投递策略"
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:259
+#: src/components/pipeline/workflows/workflow-editor.tsx:228
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
-#: src/components/pipeline/workflows/workflow-editor.tsx:254
+#: src/components/pipeline/workflows/workflow-editor.tsx:223
 msgid "Description"
 msgstr "描述"
 
@@ -2647,7 +2647,7 @@ msgstr "描述由系统管理"
 msgid "Deselect All"
 msgstr "取消全选"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:170
+#: src/components/pipeline/workflows/workflow-editor.tsx:139
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
@@ -2972,7 +2972,7 @@ msgstr "例如：重封装为 H.264"
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:238
+#: src/components/pipeline/workflows/workflow-editor.tsx:207
 msgid "e.g., Standard Processing"
 msgstr "例如：标准处理"
 
@@ -3010,7 +3010,7 @@ msgid "Edit Preset: {0}"
 msgstr "编辑预设：{0}"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:103
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:101
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
@@ -3238,7 +3238,7 @@ msgstr "加载主播失败：{0}"
 msgid "Error loading template"
 msgstr "加载模板失败"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:91
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:89
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
@@ -3526,7 +3526,7 @@ msgid "Failed to create template: {0}"
 msgstr "创建模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:33
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:34
 msgid "Failed to create workflow: {0}"
 msgstr "创建工作流失败：{0}"
 
@@ -3769,7 +3769,7 @@ msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:51
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
 
@@ -5550,7 +5550,7 @@ msgstr "我的模板"
 
 #: src/components/notifications/channel-form.tsx:382
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
-#: src/components/pipeline/workflows/workflow-editor.tsx:234
+#: src/components/pipeline/workflows/workflow-editor.tsx:203
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
@@ -5706,7 +5706,7 @@ msgid "No engines found."
 msgstr "未找到引擎。"
 
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:109
+#: src/components/pipeline/workflows/validation-feedback.tsx:74
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
@@ -6617,9 +6617,13 @@ msgstr "该处理管道已结束或已取消"
 msgid "Pipeline is empty."
 msgstr "处理管道为空。"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:107
+#: src/components/pipeline/workflows/validation-feedback.tsx:73
 msgid "Pipeline is valid"
 msgstr "处理管道有效"
+
+#: src/components/pipeline/workflows/validation-feedback.tsx:68
+msgid "Pipeline is valid, with warnings"
+msgstr "管道有效，但有警告"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:115
 msgid "Pipeline job created successfully"
@@ -7768,7 +7772,7 @@ msgstr "将设置保存为 JSON 文件"
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:199
+#: src/components/pipeline/workflows/workflow-editor.tsx:168
 msgid "Save Workflow"
 msgstr "保存工作流"
 
@@ -7779,7 +7783,7 @@ msgstr "保存中"
 
 #: src/components/config/platforms/platform-editor.tsx:188
 #: src/components/config/templates/template-editor.tsx:243
-#: src/components/pipeline/workflows/workflow-editor.tsx:197
+#: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "保存中..."
@@ -9685,15 +9689,15 @@ msgstr "用户名（可选）"
 msgid "Users"
 msgstr "用户"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:188
+#: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
 msgstr "校验"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:114
+#: src/components/pipeline/workflows/validation-feedback.tsx:56
 msgid "Validation Failed"
 msgstr "校验失败"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:140
+#: src/components/pipeline/workflows/workflow-editor.tsx:109
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
@@ -9923,7 +9927,7 @@ msgstr "宽度（像素，保持宽高比）"
 msgid "workflow"
 msgstr "工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:25
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:26
 msgid "Workflow created successfully"
 msgstr "工作流创建成功"
 
@@ -9931,7 +9935,7 @@ msgstr "工作流创建成功"
 msgid "Workflow deleted successfully"
 msgstr "工作流删除成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:94
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:92
 msgid "Workflow not found"
 msgstr "未找到工作流"
 
@@ -9943,7 +9947,7 @@ msgstr "已开始重试工作流"
 msgid "Workflow Step"
 msgstr "工作流步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:39
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:40
 msgid "Workflow updated successfully"
 msgstr "工作流更新成功"
 

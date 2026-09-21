@@ -977,7 +977,7 @@ msgstr "Back to Sessions"
 msgid "Back to streamers"
 msgstr "Back to streamers"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:157
+#: src/components/pipeline/workflows/workflow-editor.tsx:126
 msgid "Back to workflows"
 msgstr "Back to workflows"
 
@@ -1688,7 +1688,7 @@ msgstr "Config Path (Optional)"
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:52
 #: src/components/pipeline/workflows/step-config-dialog.tsx:425
-#: src/components/pipeline/workflows/workflow-editor.tsx:224
+#: src/components/pipeline/workflows/workflow-editor.tsx:193
 #: src/lib/menu-list.ts:114
 msgid "Configuration"
 msgstr "Configuration"
@@ -2059,7 +2059,7 @@ msgstr "Create New Pipeline Job"
 msgid "Create New Preset"
 msgstr "Create New Preset"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:56
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:54
 msgid "Create New Workflow"
 msgstr "Create New Workflow"
 
@@ -2630,12 +2630,12 @@ msgstr "Delivery Policy"
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:259
+#: src/components/pipeline/workflows/workflow-editor.tsx:228
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
-#: src/components/pipeline/workflows/workflow-editor.tsx:254
+#: src/components/pipeline/workflows/workflow-editor.tsx:223
 msgid "Description"
 msgstr "Description"
 
@@ -2647,7 +2647,7 @@ msgstr "Description is managed by the system"
 msgid "Deselect All"
 msgstr "Deselect All"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:170
+#: src/components/pipeline/workflows/workflow-editor.tsx:139
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
@@ -2972,7 +2972,7 @@ msgstr "e.g. Remux to H.264"
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:238
+#: src/components/pipeline/workflows/workflow-editor.tsx:207
 msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
@@ -3010,7 +3010,7 @@ msgid "Edit Preset: {0}"
 msgstr "Edit Preset: {0}"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:103
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:101
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
@@ -3238,7 +3238,7 @@ msgstr "Error loading streamers: {0}"
 msgid "Error loading template"
 msgstr "Error loading template"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:91
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:89
 msgid "Error loading workflow"
 msgstr "Error loading workflow"
 
@@ -3526,7 +3526,7 @@ msgid "Failed to create template: {0}"
 msgstr "Failed to create template: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:33
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:34
 msgid "Failed to create workflow: {0}"
 msgstr "Failed to create workflow: {0}"
 
@@ -3769,7 +3769,7 @@ msgid "Failed to update template: {0}"
 msgstr "Failed to update template: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:51
 msgid "Failed to update workflow: {0}"
 msgstr "Failed to update workflow: {0}"
 
@@ -5550,7 +5550,7 @@ msgstr "My Template"
 
 #: src/components/notifications/channel-form.tsx:382
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
-#: src/components/pipeline/workflows/workflow-editor.tsx:234
+#: src/components/pipeline/workflows/workflow-editor.tsx:203
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
@@ -5706,7 +5706,7 @@ msgid "No engines found."
 msgstr "No engines found."
 
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:109
+#: src/components/pipeline/workflows/validation-feedback.tsx:74
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
@@ -6617,9 +6617,13 @@ msgstr "Pipeline is already completed or cancelled"
 msgid "Pipeline is empty."
 msgstr "Pipeline is empty."
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:107
+#: src/components/pipeline/workflows/validation-feedback.tsx:73
 msgid "Pipeline is valid"
 msgstr "Pipeline is valid"
+
+#: src/components/pipeline/workflows/validation-feedback.tsx:68
+msgid "Pipeline is valid, with warnings"
+msgstr "Pipeline is valid, with warnings"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:115
 msgid "Pipeline job created successfully"
@@ -7768,7 +7772,7 @@ msgstr "Save settings to a JSON file"
 msgid "Save with incomplete delete checks?"
 msgstr "Save with incomplete delete checks?"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:199
+#: src/components/pipeline/workflows/workflow-editor.tsx:168
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
@@ -7779,7 +7783,7 @@ msgstr "Saving"
 
 #: src/components/config/platforms/platform-editor.tsx:188
 #: src/components/config/templates/template-editor.tsx:243
-#: src/components/pipeline/workflows/workflow-editor.tsx:197
+#: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "Saving..."
@@ -9685,15 +9689,15 @@ msgstr "Username (Optional)"
 msgid "Users"
 msgstr "Users"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:188
+#: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
 msgstr "Validate"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:114
+#: src/components/pipeline/workflows/validation-feedback.tsx:56
 msgid "Validation Failed"
 msgstr "Validation Failed"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:140
+#: src/components/pipeline/workflows/workflow-editor.tsx:109
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
@@ -9923,7 +9927,7 @@ msgstr "Width in pixels (keeps aspect ratio)"
 msgid "workflow"
 msgstr "workflow"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:25
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:26
 msgid "Workflow created successfully"
 msgstr "Workflow created successfully"
 
@@ -9931,7 +9935,7 @@ msgstr "Workflow created successfully"
 msgid "Workflow deleted successfully"
 msgstr "Workflow deleted successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:94
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:92
 msgid "Workflow not found"
 msgstr "Workflow not found"
 
@@ -9943,7 +9947,7 @@ msgstr "Workflow retry initiated"
 msgid "Workflow Step"
 msgstr "Workflow Step"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:39
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:40
 msgid "Workflow updated successfully"
 msgstr "Workflow updated successfully"
 
