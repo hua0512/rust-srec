@@ -207,6 +207,8 @@ In this graph, `rclone` still waits for `thumbnail` because both `remux` and `th
 
 Fan-out describes graph routing, not a guarantee of simultaneous execution.
 
+When a worker becomes free, a step that continues a workflow already in progress is claimed before the first step of a new workflow at the same priority, and within that order the oldest job goes first. A busy queue therefore finishes workflows instead of leaving many half done.
+
 ### Automatic Cleanup
 A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
 
