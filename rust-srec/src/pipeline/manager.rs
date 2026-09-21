@@ -15,8 +15,8 @@ use super::coordination::{
     SessionOutputs, SourceType,
 };
 use super::dag_scheduler::{
-    BeforeRootJobsHook, DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRunContext,
-    DagScheduler, PublicationRollback,
+    BeforeRootJobsHook, DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRetryError,
+    DagRunContext, DagScheduler, PublicationRollback,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{

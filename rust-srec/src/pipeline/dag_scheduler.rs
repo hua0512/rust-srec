@@ -8,6 +8,7 @@
 
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -119,6 +120,120 @@ pub struct PlannedRetry {
     pub next_attempt: u32,
     /// The step's attempt budget, including the first run.
     pub max_attempts: u32,
+}
+
+impl PlannedRetry {
+    /// The job's error message while it waits for this retry: the job list
+    /// shows the job as failed until then, so the message says what comes next.
+    fn describe(&self, error: &str) -> String {
+        format!(
+            "{error}; attempt {} of {} failed, retrying at {}",
+            self.next_attempt - 1,
+            self.max_attempts,
+            self.retry_after
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        )
+    }
+}
+
+/// Why a step job attempt failed, as the worker observed it. Decides whether
+/// the step's retry policy applies: another attempt is only worth scheduling
+/// when the same job could succeed next time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepFailureKind {
+    /// `Processor::process` returned an error, or handled only part of a batch.
+    ProcessorError,
+    /// The attempt outlived its timeout.
+    Timeout,
+    /// The job's inputs cannot be handled by its processor at all: a
+    /// multi-input job routed to a processor without batch support. The same
+    /// inputs would be rejected again.
+    NonBatchInput,
+    /// The attempt's start could not be persisted, so the processor never ran.
+    /// Recording a retry needs the job-row write that just failed, so the
+    /// failure is applied at once.
+    ExecutionStart,
+}
+
+impl StepFailureKind {
+    fn retryable(self) -> bool {
+        matches!(self, Self::ProcessorError | Self::Timeout)
+    }
+}
+
+/// A failed attempt of a step job, reported by the worker that ran it.
+#[derive(Debug, Clone, Copy)]
+pub struct FailedStepAttempt<'a> {
+    pub job_id: &'a str,
+    /// Retries the attempt already sat on top of; the first run has none.
+    pub retry_count: i32,
+    pub error: &'a str,
+    pub kind: StepFailureKind,
+}
+
+/// What became of a failed step job attempt.
+#[derive(Debug)]
+pub enum StepFailureOutcome {
+    /// Another attempt is scheduled under the step's retry policy: the step
+    /// stays PROCESSING and the workflow keeps running.
+    Retried(PlannedRetry),
+    /// The failure reached the workflow: the step is FAILED and the steps
+    /// that depend on it are cancelled.
+    Failed(DagJobFailedUpdate),
+    /// The step had already settled; nothing changed.
+    Ignored,
+}
+
+/// What retrying a workflow's failed and cancelled branches did.
+#[derive(Debug)]
+pub struct DagRetryUpdate {
+    /// Steps that were FAILED or CANCELLED when the retry began.
+    pub retryable_steps: usize,
+    /// Of those, the steps the retry restarted or settled: no longer FAILED
+    /// or CANCELLED afterwards.
+    pub retried_steps: usize,
+    /// Steps whose job had completed while the earlier run was being
+    /// cancelled; their result was replayed instead of re-running the job.
+    pub reconciled_steps: usize,
+    /// Jobs the retry restarted, for the caller to announce.
+    pub restarted_jobs: Vec<Job>,
+    /// Every job the retry restarted or created, in the order it did so.
+    pub job_ids: Vec<String>,
+    /// Terminal outcomes the retry itself reached, in order: a no-op step or
+    /// a replayed result can settle the whole workflow.
+    pub completions: Vec<DagCompletionInfo>,
+}
+
+/// Why [`DagScheduler::retry_dag`] did not retry a workflow.
+#[derive(Debug)]
+pub enum DagRetryError {
+    /// The retry was refused before any row changed: the DAG is not terminal,
+    /// nothing in it is retryable, or a job it would restart is missing or
+    /// still active. The DAG is as it was.
+    Rejected(Error),
+    /// Restarting broke down after the rows were reset. The DAG was failed
+    /// again with the retry error so it is terminal, and retryable, instead
+    /// of stranded in PROCESSING; `completion` is that failure's, for the
+    /// caller to forward like any other.
+    Refailed {
+        error: Error,
+        completion: Option<Box<DagCompletionInfo>>,
+    },
+}
+
+impl From<Error> for DagRetryError {
+    fn from(error: Error) -> Self {
+        Self::Rejected(error)
+    }
+}
+
+/// What [`DagScheduler::retry_dag`] does with a retryable step's job.
+enum RetryAction {
+    /// The job failed or was cancelled: it runs again.
+    Restart(Job),
+    /// The job completed while the earlier run was being cancelled: its
+    /// result is replayed so the step and its dependents advance.
+    Replay(Job),
 }
 
 /// Result of creating a DAG pipeline.
@@ -384,14 +499,141 @@ impl DagScheduler {
         self.fail_dag_internal(dag_id, error).await
     }
 
-    /// Fail the DAG execution for a given step execution ID (used when the scheduler can't advance).
-    pub async fn fail_dag_for_step(
+    /// Fail the DAG of a step whose workflow cannot advance.
+    async fn fail_dag_for_step(
         &self,
         dag_step_execution_id: &str,
         error: &str,
     ) -> Result<Option<DagCompletionInfo>> {
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
         self.fail_dag_internal(&step.dag_id, error).await
+    }
+
+    /// Advance the workflow after a step's job completed: the worker's entry
+    /// point for a job outcome, wrapping [`Self::on_job_completed`]. When the
+    /// workflow cannot advance from the result, it is failed with that error
+    /// so it settles instead of waiting for a completion that will not come
+    /// again; the returned update then carries the failure's completion.
+    pub async fn on_job_attempt_completed(
+        &self,
+        dag_step_execution_id: &str,
+        outputs: &[String],
+        streamer_name: Option<&str>,
+        session_title: Option<&str>,
+        platform: Option<&str>,
+        session_start: Option<DateTime<Utc>>,
+    ) -> Result<DagJobCompletedUpdate> {
+        match self
+            .on_job_completed(
+                dag_step_execution_id,
+                outputs,
+                streamer_name,
+                session_title,
+                platform,
+                session_start,
+            )
+            .await
+        {
+            Ok(update) => Ok(update),
+            Err(error) => {
+                error!(
+                    dag_step_execution_id,
+                    %error,
+                    "Failed to advance the workflow after a step completed; failing it"
+                );
+                let completion = self
+                    .fail_dag_for_step(
+                        dag_step_execution_id,
+                        &format!("DAG scheduler error: {error}"),
+                    )
+                    .await?;
+                Ok(DagJobCompletedUpdate {
+                    new_job_ids: Vec::new(),
+                    completion,
+                })
+            }
+        }
+    }
+
+    /// Apply a failed attempt of a step's job to its workflow: the worker's
+    /// entry point for a job outcome.
+    ///
+    /// Decides first whether the step's retry policy grants another attempt,
+    /// then has `persist_failure` record the attempt on the job row with the
+    /// message the job list should show: the error, extended with the retry
+    /// time when one is planned. With the row recorded, a planned retry is
+    /// stored for the manager's sweeper and the step stays PROCESSING;
+    /// otherwise the failure reaches the step and its dependents through
+    /// [`Self::on_job_failed`]. A retry that cannot be recorded, or whose job
+    /// row could not be written, falls back to failing the step: nothing else
+    /// would advance it.
+    pub async fn on_job_attempt_failed<F, Fut>(
+        &self,
+        dag_step_execution_id: &str,
+        attempt: FailedStepAttempt<'_>,
+        persist_failure: F,
+    ) -> Result<StepFailureOutcome>
+    where
+        F: FnOnce(String) -> Fut,
+        Fut: Future<Output = Result<()>>,
+    {
+        let planned = if attempt.kind.retryable() {
+            self.plan_step_retry(dag_step_execution_id, attempt.retry_count)
+                .await
+                .unwrap_or_else(|error| {
+                    warn!(
+                        job_id = %attempt.job_id,
+                        %error,
+                        "Could not plan a step retry; failing the step"
+                    );
+                    None
+                })
+        } else {
+            None
+        };
+        let message = match &planned {
+            Some(planned) => planned.describe(attempt.error),
+            None => attempt.error.to_string(),
+        };
+
+        let recorded = persist_failure(message.clone()).await;
+        if let Err(error) = &recorded {
+            error!(job_id = %attempt.job_id, %error, "Failed to persist pipeline job failure");
+        }
+        if let (Some(planned), Ok(())) = (planned, &recorded) {
+            match self
+                .job_queue
+                .schedule_retry(attempt.job_id, planned.retry_after)
+                .await
+            {
+                Ok(()) => {
+                    info!(
+                        job_id = %attempt.job_id,
+                        dag_step_execution_id,
+                        next_attempt = planned.next_attempt,
+                        max_attempts = planned.max_attempts,
+                        retry_after = %planned.retry_after,
+                        "Step failed; automatic retry scheduled"
+                    );
+                    return Ok(StepFailureOutcome::Retried(planned));
+                }
+                Err(error) => warn!(
+                    job_id = %attempt.job_id,
+                    %error,
+                    "Could not schedule the step retry; failing the step"
+                ),
+            }
+        }
+
+        Ok(
+            match self
+                .apply_step_failure(dag_step_execution_id, &message)
+                .await?
+            {
+                Some(update) => StepFailureOutcome::Failed(update),
+                None => StepFailureOutcome::Ignored,
+            },
+        )
     }
 
     /// Handle job completion for a DAG step.
@@ -499,13 +741,29 @@ impl DagScheduler {
     ///    branches keep running and the last one to settle finalizes it
     ///
     /// Returns the count of cancelled jobs and, when the DAG became terminal
-    /// through this failure, its completion.
+    /// through this failure, its completion. A failure reported for a step
+    /// that has already settled changes nothing and returns an empty update.
     pub async fn on_job_failed(
         &self,
         dag_step_execution_id: &str,
         error: &str,
     ) -> Result<DagJobFailedUpdate> {
-        // Get step info
+        Ok(self
+            .apply_step_failure(dag_step_execution_id, error)
+            .await?
+            .unwrap_or(DagJobFailedUpdate {
+                cancelled_count: 0,
+                completion: None,
+            }))
+    }
+
+    /// [`Self::on_job_failed`], returning `None` for a step that had already
+    /// settled.
+    async fn apply_step_failure(
+        &self,
+        dag_step_execution_id: &str,
+        error: &str,
+    ) -> Result<Option<DagJobFailedUpdate>> {
         let step = self.dag_repository.get_step(dag_step_execution_id).await?;
 
         let failure_error = format!("Step '{}' failed: {}", step.step_id, error);
@@ -519,10 +777,7 @@ impl DagScheduler {
                 step_id = %step.step_id,
                 "Ignoring failure for terminal DAG step"
             );
-            return Ok(DagJobFailedUpdate {
-                cancelled_count: 0,
-                completion: None,
-            });
+            return Ok(None);
         };
 
         error!(
@@ -571,10 +826,10 @@ impl DagScheduler {
             );
         }
 
-        Ok(DagJobFailedUpdate {
+        Ok(Some(DagJobFailedUpdate {
             cancelled_count,
             completion,
-        })
+        }))
     }
 
     /// Whether the failed job of `dag_step_execution_id` gets another attempt
@@ -926,19 +1181,209 @@ impl DagScheduler {
             .cancelled_count)
     }
 
-    /// Reset a failed DAG execution so it can be retried.
+    /// Retry every failed or cancelled branch of a terminal workflow.
     ///
-    /// This restores cancelled downstream steps back to `BLOCKED`, clears the DAG terminal state,
-    /// and marks failed steps as active again so retried jobs can fan-out to subsequent steps.
-    /// Returns the jobs materialized for steps that were already ready and, when
-    /// no-op completions settled the whole DAG, its completion.
-    pub async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<DagJobCompletedUpdate> {
-        self.dag_repository.reset_dag_for_retry(dag_id).await?;
+    /// Every FAILED or CANCELLED step is retried: one with a job has that job
+    /// restarted; one without (its job creation failed, or it was cancelled
+    /// before it was materialized) is materialized again once the reset
+    /// unblocks it. A step whose job completed while the run was being
+    /// cancelled has that result replayed instead. Every job is checked
+    /// before any row changes, so a missing or still active job rejects the
+    /// retry while the DAG is untouched and still retryable.
+    ///
+    /// `after_reset` runs once the rows are reset and before any job is
+    /// restarted or materialized: a restarted job can settle the workflow
+    /// again at once, and the caller may need to stop treating the earlier
+    /// outcome as current before that can happen.
+    pub async fn retry_dag(
+        &self,
+        dag_id: &str,
+        after_reset: impl FnOnce(),
+    ) -> std::result::Result<DagRetryUpdate, DagRetryError> {
+        let dag = self.dag_repository.get_dag(dag_id).await?;
+        if !matches!(
+            dag.get_status(),
+            Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled)
+        ) {
+            return Err(
+                Error::Validation("DAG is not in FAILED or CANCELLED status".to_string()).into(),
+            );
+        }
 
-        // Some cancelled steps may already have all dependencies completed (e.g. a parallel
-        // branch when fail-fast triggers). Since no new completion events will occur for those
-        // dependencies, proactively enqueue any now-ready steps.
-        self.enqueue_now_ready_steps(dag_id).await
+        let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
+        let retryable_steps: Vec<&DagStepExecutionDbModel> = steps
+            .iter()
+            .filter(|step| {
+                matches!(
+                    step.get_status(),
+                    Some(DagStepStatus::Failed | DagStepStatus::Cancelled)
+                )
+            })
+            .collect();
+        if retryable_steps.is_empty() {
+            return Err(Error::Validation(
+                "No failed or cancelled steps found to retry".to_string(),
+            )
+            .into());
+        }
+
+        let mut actions = Vec::with_capacity(retryable_steps.len());
+        for step in &retryable_steps {
+            let Some(job_id) = step.job_id.as_deref() else {
+                continue;
+            };
+            let job = self.job_queue.get_job(job_id).await?.ok_or_else(|| {
+                Error::Validation(format!(
+                    "Job {} of step '{}' no longer exists; the workflow cannot be retried",
+                    job_id, step.step_id
+                ))
+            })?;
+            let action = match job.status {
+                JobStatus::Failed | JobStatus::Cancelled => RetryAction::Restart(job),
+                JobStatus::Completed => RetryAction::Replay(job),
+                JobStatus::Pending | JobStatus::Processing => {
+                    return Err(Error::Validation(format!(
+                        "Job {} of step '{}' is {} and cannot be retried",
+                        job_id,
+                        step.step_id,
+                        job.status.as_str()
+                    ))
+                    .into());
+                }
+            };
+            actions.push((*step, action));
+        }
+
+        // From here on every failure re-fails the DAG with the retry error, so
+        // a partially restarted DAG never sits in PROCESSING with nothing to
+        // advance it.
+        if let Err(error) = self.dag_repository.reset_dag_for_retry(dag_id).await {
+            return Err(self.refail_after_retry(dag_id, error).await);
+        }
+        after_reset();
+
+        // A cancelled step whose dependencies had all completed (a parallel
+        // branch cut short by fail-fast) gets no further completion event, so
+        // it is materialized here; a no-op step can settle the DAG at once.
+        let mut completions = Vec::new();
+        let mut job_ids = match self.enqueue_now_ready_steps(dag_id).await {
+            Ok(update) => {
+                completions.extend(update.completion);
+                update.new_job_ids
+            }
+            Err(error) => return Err(self.refail_after_retry(dag_id, error).await),
+        };
+
+        let mut restarted_jobs = Vec::new();
+        let mut reconciled_steps = 0usize;
+        for (step, action) in actions {
+            match action {
+                RetryAction::Restart(job) => match self.job_queue.retry_job(&job.id).await {
+                    Ok(job) => {
+                        job_ids.push(job.id.clone());
+                        restarted_jobs.push(job);
+                    }
+                    // Two retries of the same DAG can pass the terminal check
+                    // before either reset commits; a job the other one already
+                    // restarted needs nothing more from this call.
+                    Err(error) if self.job_already_restarted(&job.id).await => {
+                        debug!(
+                            dag_id,
+                            job_id = %job.id,
+                            %error,
+                            "Job was restarted by a concurrent retry"
+                        );
+                        job_ids.push(job.id);
+                    }
+                    Err(error) => return Err(self.refail_after_retry(dag_id, error).await),
+                },
+                RetryAction::Replay(job) => {
+                    match self
+                        .on_job_completed(
+                            &step.id,
+                            &job.outputs,
+                            job.streamer_name.as_deref(),
+                            job.session_title.as_deref(),
+                            job.platform.as_deref(),
+                            job.session_start,
+                        )
+                        .await
+                    {
+                        Ok(update) => {
+                            reconciled_steps += 1;
+                            job_ids.extend(update.new_job_ids);
+                            completions.extend(update.completion);
+                        }
+                        Err(error) => return Err(self.refail_after_retry(dag_id, error).await),
+                    }
+                }
+            }
+        }
+
+        // Steps settled by the retry itself (restarted, materialized, or
+        // completed as no-ops) are those that are no longer FAILED or CANCELLED.
+        let retryable_ids: HashSet<&str> = retryable_steps
+            .iter()
+            .map(|step| step.id.as_str())
+            .collect();
+        // The reset alone makes every retryable step active again, so a
+        // lower count means a restarted job already failed again; the retry
+        // itself has taken effect either way, so an unreadable row set only
+        // costs the exact count.
+        let retried_steps = match self.dag_repository.get_steps_by_dag(dag_id).await {
+            Ok(steps) => steps
+                .iter()
+                .filter(|step| {
+                    retryable_ids.contains(step.id.as_str())
+                        && !matches!(
+                            step.get_status(),
+                            Some(DagStepStatus::Failed | DagStepStatus::Cancelled)
+                        )
+                })
+                .count(),
+            Err(error) => {
+                warn!(dag_id, %error, "Could not count the retried steps after the retry");
+                retryable_steps.len()
+            }
+        };
+
+        Ok(DagRetryUpdate {
+            retryable_steps: retryable_steps.len(),
+            retried_steps,
+            reconciled_steps,
+            restarted_jobs,
+            job_ids,
+            completions,
+        })
+    }
+
+    /// Whether `job_id` is already queued or running, as after a concurrent retry.
+    async fn job_already_restarted(&self, job_id: &str) -> bool {
+        matches!(
+            self.job_queue.get_job(job_id).await,
+            Ok(Some(job)) if matches!(job.status, JobStatus::Pending | JobStatus::Processing)
+        )
+    }
+
+    /// Fail a DAG whose retry broke down after its rows were reset, so it is
+    /// terminal (and retryable) again instead of stranded in PROCESSING.
+    async fn refail_after_retry(&self, dag_id: &str, error: Error) -> DagRetryError {
+        let message = format!("Retry failed: {error}");
+        let completion = match self.fail_dag(dag_id, &message).await {
+            Ok(completion) => completion,
+            Err(fail_error) => {
+                warn!(
+                    dag_id,
+                    error = %fail_error,
+                    "Failed to re-fail DAG after an unsuccessful retry"
+                );
+                None
+            }
+        };
+        DagRetryError::Refailed {
+            error,
+            completion: completion.map(Box::new),
+        }
     }
 
     /// Reconcile durable job results and unmaterialized ready steps before workers resume.
@@ -1088,81 +1533,28 @@ impl DagScheduler {
         Ok((materialized_jobs, complete))
     }
 
+    /// Materialize the ready steps of a DAG that no completion will reach:
+    /// after a retry reset and during startup recovery.
     async fn enqueue_now_ready_steps(&self, dag_id: &str) -> Result<DagJobCompletedUpdate> {
         let dag = self.dag_repository.get_dag(dag_id).await?;
         let dag_def = dag
             .get_dag_definition()
             .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
-        let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
+        let ready = self.dag_repository.list_ready_steps(dag_id).await?;
 
-        // The retry entry point (reset_dag_for_retry) only knows the dag_id,
-        // so the placeholder metadata for jobs created here is recovered from
-        // a sibling step's job row: create_step_job persisted streamer_name /
-        // session_title / platform / session_start_ms in every job's state
-        // JSON. Relying on the dequeue-time backfill
-        // (JobQueue::resolve_job_metadata) instead would lose session_start
-        // whenever the live_sessions row was deleted before the retry.
-        let placeholder_meta = self.recover_placeholder_metadata(&steps).await;
-
-        let mut status_by_step_id = HashMap::<String, String>::with_capacity(steps.len());
-        let mut outputs_by_step_id = HashMap::<String, Vec<String>>::with_capacity(steps.len());
-
-        for step in &steps {
-            status_by_step_id.insert(step.step_id.clone(), step.status.clone());
-            if step.status == DagStepStatus::Completed.as_str() {
-                outputs_by_step_id.insert(step.step_id.clone(), step.get_outputs());
-            }
-        }
-
-        let mut ready = Vec::new();
-
-        for step_exec in steps {
-            if step_exec.job_id.is_some()
-                || !matches!(
-                    step_exec.get_status(),
-                    Some(DagStepStatus::Blocked | DagStepStatus::Pending)
-                )
-            {
-                continue;
-            }
-
-            let depends_on = step_exec.get_depends_on();
-            if depends_on.is_empty() {
-                // Root steps should already have a job created at DAG creation time.
-                continue;
-            }
-
-            let all_deps_complete = depends_on.iter().all(|dep| {
-                status_by_step_id
-                    .get(dep)
-                    .map(|s| s == DagStepStatus::Completed.as_str())
-                    .unwrap_or(false)
-            });
-            if !all_deps_complete {
-                continue;
-            }
-
-            let merged_inputs = {
-                let mut merged = Vec::new();
-                let mut seen = HashSet::<String>::new();
-                for dep in &depends_on {
-                    let Some(dep_outputs) = outputs_by_step_id.get(dep) else {
-                        continue;
-                    };
-                    for out in dep_outputs {
-                        if seen.insert(crate::utils::fs::path_dedup_key(out)) {
-                            merged.push(out.clone());
-                        }
-                    }
-                }
-                merged
-            };
-
-            ready.push(ReadyStep {
-                step: step_exec,
-                merged_inputs,
-            });
-        }
+        // The retry entry point only knows the dag_id, so the placeholder
+        // metadata for jobs created here is recovered from a sibling step's
+        // job row: create_step_job persisted streamer_name / session_title /
+        // platform / session_start_ms in every job's state JSON. Relying on
+        // the dequeue-time backfill (JobQueue::resolve_job_metadata) instead
+        // would lose session_start whenever the live_sessions row was deleted
+        // before the retry.
+        let placeholder_meta = if ready.is_empty() {
+            JobStateMeta::default()
+        } else {
+            let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
+            self.recover_placeholder_metadata(&steps).await
+        };
 
         let (new_job_ids, dag) = self
             .materialize_ready_steps(dag, &dag_def, ready, &placeholder_meta)
@@ -1317,13 +1709,15 @@ mod tests {
             .unwrap();
         assert_eq!(update.new_job_ids.len(), 1);
         assert!(update.completion.is_none());
+        // One row fetch decides readiness inside the transaction; the only
+        // other read is the DAG reload for the completion check.
         let statements = trace.statements();
         assert_eq!(
             statements
                 .iter()
                 .filter(|sql| sql.starts_with("SELECT "))
                 .count(),
-            3,
+            2,
             "{statements:?}"
         );
         assert_eq!(
@@ -2208,16 +2602,16 @@ mod tests {
             .await
             .unwrap();
 
-        let update = scheduler
-            .reset_dag_for_retry(&created.dag_id)
-            .await
-            .unwrap();
-        assert!(update.new_job_ids.is_empty());
+        let update = scheduler.retry_dag(&created.dag_id, || {}).await.unwrap();
+        assert!(update.job_ids.is_empty());
+        assert_eq!(update.retried_steps, 1);
         assert!(
             update
-                .completion
-                .is_some_and(|completion| completion.succeeded)
+                .completions
+                .iter()
+                .all(|completion| completion.succeeded)
         );
+        assert_eq!(update.completions.len(), 1);
         let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Completed));
         assert_eq!(
@@ -3130,6 +3524,498 @@ mod tests {
                 .step_awaits_job(&step_id("A"), &job_of("A"))
                 .await
                 .unwrap()
+        );
+    }
+
+    /// The worker's failure entry point. A retryable failure with budget left
+    /// is recorded on the job row with the retry time, scheduled, and leaves
+    /// the step PROCESSING; once the budget is spent it reaches the workflow.
+    /// A kind that cannot succeed again, a job row that could not be written,
+    /// and a retry that could not be recorded all fail the step instead; a
+    /// report for a settled step is ignored.
+    #[tokio::test]
+    async fn job_attempt_failure_is_retried_or_applied_by_kind_budget_and_persistence() {
+        use crate::database::models::StepRetryPolicy;
+        use crate::database::repositories::JobRepository as _;
+
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
+        let scheduler = DagScheduler::new(queue.clone(), dag_repo.clone(), job_repo.clone());
+        let retrying = |id: &str| {
+            DagStep::new(id, PipelineStep::inline("noop", serde_json::json!({}))).with_retry(
+                StepRetryPolicy {
+                    max_attempts: 2,
+                    backoff_secs: 30,
+                },
+            )
+        };
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "attempt failures",
+                    vec![
+                        retrying("A"),
+                        retrying("B"),
+                        retrying("C"),
+                        retrying("E"),
+                        retrying("F"),
+                        DagStep::with_dependencies(
+                            "D",
+                            PipelineStep::inline("noop", serde_json::json!({})),
+                            vec!["A".to_string()],
+                        ),
+                    ],
+                ),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
+        let step_id = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id == id)
+                .unwrap()
+                .id
+                .clone()
+        };
+        let job_of = |id: &str| {
+            steps
+                .iter()
+                .find(|step| step.step_id == id)
+                .unwrap()
+                .job_id
+                .clone()
+                .unwrap()
+        };
+        let record = |job_id: String| {
+            let queue = queue.clone();
+            move |message: String| async move {
+                queue
+                    .fail_with_step_info(&job_id, &message, Some("noop"), None, None, &[])
+                    .await
+            }
+        };
+        fn attempt(job_id: &str, retry_count: i32, kind: StepFailureKind) -> FailedStepAttempt<'_> {
+            FailedStepAttempt {
+                job_id,
+                retry_count,
+                error: "boom",
+                kind,
+            }
+        }
+
+        // A: budget left, so the attempt is recorded and a retry scheduled.
+        let job_a = job_of("A");
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("A"),
+                attempt(&job_a, 0, StepFailureKind::ProcessorError),
+                record(job_a.clone()),
+            )
+            .await
+            .unwrap();
+        let StepFailureOutcome::Retried(planned) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!((planned.next_attempt, planned.max_attempts), (2, 2));
+        let row = job_repo.get_job(&job_a).await.unwrap();
+        assert_eq!(row.status, JobStatus::Failed.as_str());
+        assert_eq!(
+            row.error.as_deref(),
+            Some(planned.describe("boom").as_str()),
+            "the job row carries the retry"
+        );
+        assert_eq!(
+            row.retry_after,
+            Some(planned.retry_after.timestamp_millis())
+        );
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            [
+                "A=PROCESSING",
+                "B=PROCESSING",
+                "C=PROCESSING",
+                "D=BLOCKED",
+                "E=PROCESSING",
+                "F=PROCESSING"
+            ]
+        );
+        assert!(
+            dag_repo
+                .get_dag(&created.dag_id)
+                .await
+                .unwrap()
+                .error
+                .is_none()
+        );
+
+        // The sweeper re-queues A; its next failure spends the budget and
+        // reaches the workflow: D is cancelled while the siblings keep running.
+        queue.retry_job(&job_a).await.unwrap();
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("A"),
+                attempt(&job_a, 1, StepFailureKind::ProcessorError),
+                record(job_a.clone()),
+            )
+            .await
+            .unwrap();
+        let StepFailureOutcome::Failed(update) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(update.cancelled_count, 0, "D had no job");
+        assert!(update.completion.is_none(), "siblings still run");
+        let row = job_repo.get_job(&job_a).await.unwrap();
+        assert_eq!(row.error.as_deref(), Some("boom"));
+        assert!(row.retry_after.is_none());
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Processing));
+        assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
+
+        // B: the kind rules out another attempt, budget or not.
+        let job_b = job_of("B");
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("B"),
+                attempt(&job_b, 0, StepFailureKind::NonBatchInput),
+                record(job_b.clone()),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(outcome, StepFailureOutcome::Failed(_)),
+            "{outcome:?}"
+        );
+        let row = job_repo.get_job(&job_b).await.unwrap();
+        assert_eq!(row.error.as_deref(), Some("boom"));
+        assert!(row.retry_after.is_none());
+        // A repeated report for the settled step changes nothing.
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("B"),
+                attempt(&job_b, 0, StepFailureKind::ProcessorError),
+                record(job_b.clone()),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(outcome, StepFailureOutcome::Ignored),
+            "{outcome:?}"
+        );
+
+        // C: the job row was not written as FAILED, so the retry cannot be
+        // recorded and the failure is applied instead.
+        let job_c = job_of("C");
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("C"),
+                attempt(&job_c, 0, StepFailureKind::Timeout),
+                |_message| async { Ok(()) },
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(outcome, StepFailureOutcome::Failed(_)),
+            "{outcome:?}"
+        );
+        let row = job_repo.get_job(&job_c).await.unwrap();
+        assert_eq!(row.status, JobStatus::Pending.as_str());
+        assert!(row.retry_after.is_none());
+
+        // E: the job row could not be written at all.
+        let job_e = job_of("E");
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("E"),
+                attempt(&job_e, 0, StepFailureKind::ProcessorError),
+                |_message| async { Err(Error::Validation("disk full".to_string())) },
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(outcome, StepFailureOutcome::Failed(_)),
+            "{outcome:?}"
+        );
+        assert!(
+            job_repo
+                .get_job(&job_e)
+                .await
+                .unwrap()
+                .retry_after
+                .is_none()
+        );
+
+        // F: the processor never ran; the last active step settles the DAG.
+        let job_f = job_of("F");
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("F"),
+                attempt(&job_f, 0, StepFailureKind::ExecutionStart),
+                record(job_f.clone()),
+            )
+            .await
+            .unwrap();
+        let StepFailureOutcome::Failed(update) = outcome else {
+            panic!("{outcome:?}");
+        };
+        let completion = update.completion.expect("no step is left active");
+        assert!(!completion.succeeded);
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            [
+                "A=FAILED",
+                "B=FAILED",
+                "C=FAILED",
+                "D=CANCELLED",
+                "E=FAILED",
+                "F=FAILED"
+            ]
+        );
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
+        assert_eq!(dag.failed_steps, 5);
+    }
+
+    /// The worker's completion entry point fails a workflow it cannot advance
+    /// from the result, so the DAG settles and the worker still receives a
+    /// completion to forward.
+    #[tokio::test]
+    async fn job_attempt_completion_fails_the_dag_it_cannot_advance() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            job_repo.clone(),
+        );
+        let created = scheduler
+            .create_dag_pipeline(
+                two_step_pipeline("unreadable definition"),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
+        let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
+        // Fan-out to B needs the definition; make it unreadable.
+        sqlx::query("UPDATE dag_execution SET dag_definition = '{' WHERE id = ?")
+            .bind(&created.dag_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let update = scheduler
+            .on_job_attempt_completed(&step_a.id, &["/a.mp4".to_string()], None, None, None, None)
+            .await
+            .unwrap();
+        assert!(update.new_job_ids.is_empty());
+        let completion = update.completion.expect("the failure settles the DAG");
+        assert!(!completion.succeeded);
+        assert_eq!(completion.dag_id, created.dag_id);
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert!(
+            dag.error
+                .as_deref()
+                .unwrap()
+                .starts_with("DAG scheduler error: "),
+            "{:?}",
+            dag.error
+        );
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=COMPLETED", "B=CANCELLED"],
+            "the step's own completion stands; the dependent it could not reach is cancelled"
+        );
+    }
+
+    /// `retry_dag` runs `after_reset` once the rows are reset and before any
+    /// job is restarted; a rejected retry never runs it and leaves the rows
+    /// alone; a retry that breaks down after the reset has run it, re-fails
+    /// the DAG and hands back that failure's completion.
+    #[tokio::test]
+    async fn retry_dag_runs_the_reset_hook_between_reset_and_restart() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
+        let scheduler = DagScheduler::new(queue.clone(), dag_repo.clone(), job_repo.clone());
+        let failed_chain = |name: &str| {
+            let scheduler = &scheduler;
+            let job_repo = &job_repo;
+            let name = name.to_string();
+            async move {
+                let created = scheduler
+                    .create_dag_pipeline(
+                        noop_pipeline(&name, &[("A", &[]), ("B", &["A"])]),
+                        &["/input.flv".to_string()],
+                        DagRunContext::default(),
+                    )
+                    .await
+                    .unwrap();
+                let root = scheduler
+                    .get_dag_steps(&created.dag_id)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .find(|step| step.step_id == "A")
+                    .unwrap();
+                crate::database::repositories::JobRepository::mark_job_failed(
+                    job_repo.as_ref(),
+                    &created.root_job_ids[0],
+                    "boom",
+                )
+                .await
+                .unwrap();
+                let update = scheduler.on_job_failed(&root.id, "boom").await.unwrap();
+                assert!(update.completion.is_some());
+                created
+            }
+        };
+
+        // Rejected before any row changes: the DAG is still running.
+        let running = scheduler
+            .create_dag_pipeline(
+                noop_pipeline("running", &[("A", &[])]),
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let hook_calls = AtomicUsize::new(0);
+        let error = scheduler
+            .retry_dag(&running.dag_id, || {
+                hook_calls.fetch_add(1, Ordering::SeqCst);
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, DagRetryError::Rejected(Error::Validation(message)) if message.contains("not in FAILED or CANCELLED")),
+            "{error:?}"
+        );
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 0);
+
+        // Retried: the hook sees the reset rows before the restart re-queues A.
+        let created = failed_chain("retried").await;
+        let depth_before = queue.depth();
+        let depth_at_hook = AtomicUsize::new(usize::MAX);
+        let update = scheduler
+            .retry_dag(&created.dag_id, || {
+                hook_calls.fetch_add(1, Ordering::SeqCst);
+                depth_at_hook.store(queue.depth(), Ordering::SeqCst);
+            })
+            .await
+            .unwrap();
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            depth_at_hook.load(Ordering::SeqCst),
+            depth_before,
+            "nothing re-queued yet"
+        );
+        assert_eq!(
+            queue.depth(),
+            depth_before + 1,
+            "A was re-queued after the hook"
+        );
+        assert_eq!(
+            (
+                update.retryable_steps,
+                update.retried_steps,
+                update.reconciled_steps
+            ),
+            (2, 2, 0)
+        );
+        assert_eq!(update.job_ids, vec![created.root_job_ids[0].clone()]);
+        assert_eq!(update.restarted_jobs.len(), 1);
+        assert_eq!(update.restarted_jobs[0].id, created.root_job_ids[0]);
+        assert!(update.completions.is_empty());
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=PROCESSING", "B=BLOCKED"]
+        );
+        assert_eq!(
+            job_repo
+                .get_job(&created.root_job_ids[0])
+                .await
+                .unwrap()
+                .status,
+            JobStatus::Pending.as_str()
+        );
+
+        // Refailed: the reset took effect, then fan-out could not read the definition.
+        let created = failed_chain("refailed").await;
+        sqlx::query("UPDATE dag_execution SET dag_definition = '{' WHERE id = ?")
+            .bind(&created.dag_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = scheduler
+            .retry_dag(&created.dag_id, || {
+                hook_calls.fetch_add(1, Ordering::SeqCst);
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 2);
+        let DagRetryError::Refailed { error, completion } = error else {
+            panic!("{error:?}");
+        };
+        assert!(error.to_string().contains("DAG definition"), "{error}");
+        let completion = completion.expect("the re-failed DAG settles");
+        assert!(!completion.succeeded);
+        assert_eq!(completion.dag_id, created.dag_id);
+        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
+        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
+        assert!(
+            dag.error.as_deref().unwrap().starts_with("Retry failed:"),
+            "{:?}",
+            dag.error
+        );
+        assert_eq!(
+            step_statuses(&dag_repo, &created.dag_id).await,
+            ["A=CANCELLED", "B=CANCELLED"],
+            "no step is left PROCESSING"
+        );
+        assert_eq!(
+            job_repo
+                .get_job(&created.root_job_ids[0])
+                .await
+                .unwrap()
+                .status,
+            JobStatus::Failed.as_str(),
+            "the job was never restarted"
         );
     }
 

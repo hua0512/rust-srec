@@ -11,7 +11,8 @@ use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, error, info, warn};
 
 use super::dag_scheduler::{
-    DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
+    DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler, FailedStepAttempt,
+    StepFailureKind, StepFailureOutcome,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
@@ -678,17 +679,6 @@ impl WorkerPool {
     }
 }
 
-/// Which worker-loop path is reporting a failed DAG step job; selects only the
-/// log lines emitted by `handle_dag_job_failure`.
-enum DagFailureKind {
-    /// Multi-input DAG step job routed to a processor without batch support.
-    NonBatchInput,
-    /// `Processor::process` returned an error.
-    ProcessorError,
-    /// `Processor::process` exceeded `WorkerPoolConfig::job_timeout_secs`.
-    Timeout,
-}
-
 /// Everything a worker task needs to run the jobs it claims.
 ///
 /// One is built per worker in [`WorkerPool::start_with_dag_scheduler`]. The worker loop owns
@@ -792,33 +782,16 @@ impl JobRunner {
             );
             error!(job_id = %job.id, dag_step_execution_id = %dag_step_id, "{}", reason);
 
-            if let Err(e) = self
-                .job_queue
-                .fail_with_step_info(
-                    &job.id,
-                    &reason,
-                    Some(processor.name()),
-                    job.execution_info.as_ref().and_then(|i| i.current_step),
-                    job.execution_info.as_ref().and_then(|i| i.total_steps),
-                    &[],
-                )
-                .await
-            {
-                error!(
-                    job_id = %job.id,
-                    error = %e,
-                    "Failed to persist invalid multi-input DAG job failure"
-                );
-            }
-
-            self.emit(PipelineEvent::JobFailed {
-                job_id: job.id.clone(),
+            let facts = JobFacts {
+                id: job.id.clone(),
                 job_type: job.job_type.clone(),
-                error: reason.clone(),
-            });
-
-            // Fail the DAG execution (fail-fast) and notify completion listeners.
-            self.fail_dag_step(dag_step_id, &reason, DagFailureKind::NonBatchInput)
+                processor_name: processor.name(),
+                dag_step_execution_id: Some(dag_step_id.to_string()),
+                current_step: job.execution_info.as_ref().and_then(|i| i.current_step),
+                total_steps: job.execution_info.as_ref().and_then(|i| i.total_steps),
+                retry_count: job.retry_count,
+            };
+            self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[])
                 .await;
 
             return true;
@@ -882,17 +855,35 @@ impl JobRunner {
                 self.job_queue.finalize_cancelled_job(&job.id);
                 return;
             }
-            if let Err(error) = self.job_queue.fail_execution_start(&job.id, &reason).await {
-                error!(job_id = %job.id, %error, "Failed to persist execution-start failure");
-            }
-            self.emit(PipelineEvent::JobFailed {
-                job_id: job.id.clone(),
-                job_type: job.job_type.clone(),
-                error: reason.clone(),
-            });
-            if let Some(dag_step_id) = job.dag_step_execution_id.as_deref() {
-                self.fail_dag_step(dag_step_id, &reason, DagFailureKind::ProcessorError)
-                    .await;
+            let job_id = job.id.clone();
+            let job_type = job.job_type.clone();
+            let persist = |message: String| async move {
+                self.emit(PipelineEvent::JobFailed {
+                    job_id: job_id.clone(),
+                    job_type,
+                    error: message.clone(),
+                });
+                self.job_queue.fail_execution_start(&job_id, &message).await
+            };
+            match (job.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
+                (Some(dag_step_id), Some(scheduler)) => {
+                    let attempt = FailedStepAttempt {
+                        job_id: &job.id,
+                        retry_count: job.retry_count,
+                        error: &reason,
+                        kind: StepFailureKind::ExecutionStart,
+                    };
+                    let outcome = scheduler
+                        .on_job_attempt_failed(dag_step_id, attempt, persist)
+                        .await;
+                    self.report_step_failure(dag_step_id, StepFailureKind::ExecutionStart, outcome)
+                        .await;
+                }
+                _ => {
+                    if let Err(error) = persist(reason).await {
+                        error!(job_id = %job.id, %error, "Failed to persist execution-start failure");
+                    }
+                }
             }
             return;
         }
@@ -1015,7 +1006,7 @@ impl JobRunner {
                 );
             }
             JobOutcome::Failed(e) => {
-                self.finish_failed(&facts, &e.to_string(), DagFailureKind::ProcessorError, &[])
+                self.finish_failed(&facts, &e.to_string(), StepFailureKind::ProcessorError, &[])
                     .await;
             }
             JobOutcome::TimedOut if cancelled => {
@@ -1037,7 +1028,7 @@ impl JobRunner {
                     }
                 };
                 let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
-                self.finish_failed(&facts, &reason, DagFailureKind::Timeout, &[])
+                self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[])
                     .await;
             }
         }
@@ -1151,7 +1142,7 @@ impl JobRunner {
             self.finish_failed(
                 facts,
                 &error,
-                DagFailureKind::ProcessorError,
+                StepFailureKind::ProcessorError,
                 &output.uploads,
             )
             .await;
@@ -1211,7 +1202,7 @@ impl JobRunner {
         };
 
         match scheduler
-            .on_job_completed(
+            .on_job_attempt_completed(
                 dag_step_id,
                 &completed_outputs,
                 input.streamer_name.as_deref(),
@@ -1234,161 +1225,103 @@ impl JobRunner {
                 }
                 self.notify_dag_completion(completion).await;
             }
-            Err(e) => {
-                error!(
-                    "Failed to handle DAG job completion for {}: {}",
-                    dag_step_id, e
-                );
-                if let Ok(completion) = scheduler
-                    .fail_dag_for_step(dag_step_id, &format!("DAG scheduler error: {}", e))
-                    .await
-                {
-                    self.notify_dag_completion(completion).await;
-                }
-            }
+            Err(error) => error!(
+                dag_step_execution_id = %dag_step_id,
+                %error,
+                "Failed to settle the workflow after a step completed"
+            ),
         }
     }
 
-    /// Persist a failed or timed-out job and fail its DAG. Processors own cleanup
-    /// of their staged outputs; persisted artifact paths may belong to earlier attempts.
-    /// `uploads` are the per-file results of a partially failed upload batch.
-    /// Persist a failed attempt. A workflow step with retry budget left is
-    /// scheduled for another attempt instead of failing its workflow: the job
-    /// row is FAILED with the retry time recorded, the step stays PROCESSING,
-    /// and the manager's retry sweeper re-queues the job when it is due. The
-    /// error message says so, since the job list shows it as failed meanwhile.
+    /// Record a failed or timed-out attempt. For a workflow step the scheduler
+    /// decides whether the step gets another attempt or fails, and the job row
+    /// is written with the message it settles on; the worker itself only
+    /// persists and announces. Processors own cleanup of their staged outputs;
+    /// persisted artifact paths may belong to earlier attempts. `uploads` are
+    /// the per-file results of a partially failed upload batch.
     async fn finish_failed(
         &self,
         facts: &JobFacts,
         error: &str,
-        kind: DagFailureKind,
+        kind: StepFailureKind,
         uploads: &[UploadResultItem],
     ) {
-        let planned = match (&kind, facts.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
-            (DagFailureKind::NonBatchInput, _, _) | (_, None, _) | (_, _, None) => None,
-            (_, Some(dag_step_id), Some(scheduler)) => scheduler
-                .plan_step_retry(dag_step_id, facts.retry_count)
+        let persist = |message: String| async move {
+            self.emit(PipelineEvent::JobFailed {
+                job_id: facts.id.clone(),
+                job_type: facts.job_type.clone(),
+                error: message.clone(),
+            });
+            self.job_queue
+                .fail_with_step_info(
+                    &facts.id,
+                    &message,
+                    Some(facts.processor_name),
+                    facts.current_step,
+                    facts.total_steps,
+                    uploads,
+                )
                 .await
-                .unwrap_or_else(|error| {
-                    warn!(job_id = %facts.id, %error, "Could not plan a step retry; failing the step");
-                    None
-                }),
-        };
-        let message = match &planned {
-            Some(planned) => format!(
-                "{error}; attempt {} of {} failed, retrying at {}",
-                planned.next_attempt - 1,
-                planned.max_attempts,
-                planned
-                    .retry_after
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-            ),
-            None => error.to_string(),
         };
 
-        self.emit(PipelineEvent::JobFailed {
-            job_id: facts.id.clone(),
-            job_type: facts.job_type.clone(),
-            error: message.clone(),
-        });
-
-        if let Err(error) = self
-            .job_queue
-            .fail_with_step_info(
-                &facts.id,
-                &message,
-                Some(facts.processor_name),
-                facts.current_step,
-                facts.total_steps,
-                uploads,
-            )
-            .await
-        {
-            error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
-        }
-
-        let Some(dag_step_id) = facts.dag_step_execution_id.as_deref() else {
-            return;
-        };
-        if let Some(planned) = planned {
-            match self
-                .job_queue
-                .schedule_retry(&facts.id, planned.retry_after)
-                .await
-            {
-                Ok(()) => {
-                    info!(
-                        job_id = %facts.id,
-                        dag_step_execution_id = %dag_step_id,
-                        next_attempt = planned.next_attempt,
-                        max_attempts = planned.max_attempts,
-                        retry_after = %planned.retry_after,
-                        "Step failed; automatic retry scheduled"
-                    );
-                    return;
-                }
-                Err(error) => {
-                    // Without the schedule nothing would advance the step, so the
-                    // failure has to reach the workflow after all.
-                    warn!(job_id = %facts.id, %error, "Could not schedule the step retry; failing the step");
+        match (facts.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
+            (Some(dag_step_id), Some(scheduler)) => {
+                let attempt = FailedStepAttempt {
+                    job_id: &facts.id,
+                    retry_count: facts.retry_count,
+                    error,
+                    kind,
+                };
+                let outcome = scheduler
+                    .on_job_attempt_failed(dag_step_id, attempt, persist)
+                    .await;
+                self.report_step_failure(dag_step_id, kind, outcome).await;
+            }
+            _ => {
+                if let Err(error) = persist(error.to_string()).await {
+                    error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
                 }
             }
         }
-        self.fail_dag_step(dag_step_id, &message, kind).await;
     }
 
-    /// Fail-fast for a failed DAG step job: reports the failure to
-    /// `DagScheduler::on_job_failed`, which cancels the steps that depend on it while
-    /// independent branches keep running, and forwards the completion once the DAG has
-    /// settled. No-op when the pool has no scheduler.
-    async fn fail_dag_step(&self, dag_step_id: &str, reason: &str, kind: DagFailureKind) {
-        let Some(scheduler) = &self.dag_scheduler else {
-            return;
-        };
-
-        match scheduler.on_job_failed(dag_step_id, reason).await {
-            Ok(DagJobFailedUpdate {
+    /// Log what the scheduler did with a failed step attempt and forward the
+    /// workflow's completion when the failure settled it.
+    async fn report_step_failure(
+        &self,
+        dag_step_id: &str,
+        kind: StepFailureKind,
+        outcome: crate::Result<StepFailureOutcome>,
+    ) {
+        match outcome {
+            Ok(StepFailureOutcome::Retried(_)) => {}
+            Ok(StepFailureOutcome::Failed(DagJobFailedUpdate {
                 cancelled_count,
                 completion,
-            }) => {
+            })) => {
                 match kind {
-                    DagFailureKind::NonBatchInput => {}
-                    DagFailureKind::ProcessorError => {
-                        info!(
-                            "DAG step {} failed, cancelled {} jobs (fail-fast)",
-                            dag_step_id, cancelled_count
-                        );
-                    }
-                    DagFailureKind::Timeout => {
-                        info!(
-                            "DAG step {} timed out, cancelled {} jobs (fail-fast)",
-                            dag_step_id, cancelled_count
-                        );
-                    }
+                    StepFailureKind::Timeout => info!(
+                        "DAG step {} timed out, cancelled {} jobs (fail-fast)",
+                        dag_step_id, cancelled_count
+                    ),
+                    StepFailureKind::ProcessorError
+                    | StepFailureKind::NonBatchInput
+                    | StepFailureKind::ExecutionStart => info!(
+                        "DAG step {} failed, cancelled {} jobs (fail-fast)",
+                        dag_step_id, cancelled_count
+                    ),
                 }
                 self.notify_dag_completion(completion).await;
             }
-            Err(e) => match kind {
-                DagFailureKind::NonBatchInput => {
-                    error!(
-                        dag_step_execution_id = %dag_step_id,
-                        error = %e,
-                        "Failed to fail DAG for non-batch processor"
-                    );
-                }
-                DagFailureKind::ProcessorError => {
-                    error!(
-                        "Failed to handle DAG job failure for {}: {}",
-                        dag_step_id, e
-                    );
-                }
-                DagFailureKind::Timeout => {
-                    error!(
-                        "Failed to handle DAG job timeout for {}: {}",
-                        dag_step_id, e
-                    );
-                }
-            },
+            Ok(StepFailureOutcome::Ignored) => debug!(
+                dag_step_execution_id = %dag_step_id,
+                "Ignoring the failure of a step that had already settled"
+            ),
+            Err(error) => error!(
+                dag_step_execution_id = %dag_step_id,
+                %error,
+                "Failed to apply a step failure to its workflow"
+            ),
         }
     }
 

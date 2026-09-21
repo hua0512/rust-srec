@@ -477,6 +477,8 @@ Healthy ◄───────────────────────
 
 已移除未使用的 `database::batching`、`config::UpdateCoalescer`、`domain::session` 实体、主播状态修改辅助方法，以及仓库的 `list_active_streamers` / `resume_session` 方法。会话和媒体数据使用 `database::models` 中的持久化模型；磁盘状态分类使用 `HealthChecker::check_disk_space_with_thresholds`。主播仓库保留 `list_streamers`（排除已标记删除的记录）和 `list_all_streamers`（包含这些记录，以便启动时完成退出与清理）。
 
+工作流状态转换统一由 `pipeline::DagScheduler` 决定：Worker 通过 `on_job_attempt_completed` 或 `on_job_attempt_failed` 上报任务结果，由调度器决定该次尝试是重试、失败还是忽略；管理器通过 `retry_dag` 重试工作流，校验、重置、重启和回放都在这一个入口内完成。`DagRepository` 继续持有让每次转换持久化的受保护的事务，并提供 `list_ready_steps` 作为与完成事务共用的唯一就绪规则；其未使用的 `increment_dag_*`、`get_dependency_outputs`、`check_all_dependencies_complete`、`get_processing_job_ids` 和 `get_pending_root_steps` 方法已移除。
+
 ### Actor 终止与唤醒策略
 
 Actor 的邮箱执行、单次检查、可靠反馈、终止决定及在线唤醒决定分别位于独立模块。
