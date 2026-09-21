@@ -2,7 +2,7 @@ use super::*;
 use crate::database::models::{
     DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
     JobExecutionLogDbModel, LiveSessionDbModel, MediaOutputTypeSummary, OutputFilters,
-    PipelinePreset, SessionFilters, SessionSegmentDbModel,
+    PipelinePreset, ReadyStep, SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
 use crate::downloader::DownloadTerminalEvent;
@@ -766,14 +766,6 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn increment_dag_completed(&self, _dag_id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn increment_dag_failed(&self, _dag_id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn list_dags(
         &self,
         _status: Option<&str>,
@@ -888,18 +880,6 @@ impl DagRepository for TestDagRepositoryForRetry {
         Ok(())
     }
 
-    async fn get_dependency_outputs(
-        &self,
-        _dag_id: &str,
-        _step_ids: &[String],
-    ) -> Result<Vec<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn check_all_dependencies_complete(&self, _dag_id: &str, _step_id: &str) -> Result<bool> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn get_dag_stats(
         &self,
         _dag_id: &str,
@@ -907,11 +887,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_processing_job_ids(&self, _dag_id: &str) -> Result<Vec<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_pending_root_steps(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn list_ready_steps(&self, _dag_id: &str) -> Result<Vec<ReadyStep>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -984,14 +960,6 @@ impl DagRepository for TestDagRepository {
         _status: &str,
         _error: Option<&str>,
     ) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn increment_dag_completed(&self, _dag_id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn increment_dag_failed(&self, _dag_id: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1158,18 +1126,6 @@ impl DagRepository for TestDagRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_dependency_outputs(
-        &self,
-        _dag_id: &str,
-        _step_ids: &[String],
-    ) -> Result<Vec<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn check_all_dependencies_complete(&self, _dag_id: &str, _step_id: &str) -> Result<bool> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn get_dag_stats(
         &self,
         _dag_id: &str,
@@ -1177,11 +1133,7 @@ impl DagRepository for TestDagRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn get_processing_job_ids(&self, _dag_id: &str) -> Result<Vec<String>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_pending_root_steps(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+    async fn list_ready_steps(&self, _dag_id: &str) -> Result<Vec<ReadyStep>> {
         unimplemented!("not needed for these tests")
     }
 

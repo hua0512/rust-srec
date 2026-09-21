@@ -516,6 +516,8 @@ The canonical streamer state type is `rust_srec::domain::StreamerState`, includi
 
 Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
 
+Workflow transitions are decided in `pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction; its unused `increment_dag_*`, `get_dependency_outputs`, `check_all_dependencies_complete`, `get_processing_job_ids` and `get_pending_root_steps` methods have been removed.
+
 ### Actor terminal and wake policies
 
 The actor keeps mailbox execution, individual checks, reliable feedback, terminal
