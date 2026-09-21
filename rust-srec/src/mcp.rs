@@ -16,7 +16,7 @@
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     handler::server::router::tool::ToolRouter,
-    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
+    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig},
     service::RequestContext,
     tool_handler,
     transport::streamable_http_server::{
@@ -166,8 +166,8 @@ pub(crate) fn invalid_json_param(param: &str, error: serde_json::Error) -> Error
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SrecMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rust-srec", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "rust-srec live stream recorder control server. Tool groups: \
