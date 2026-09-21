@@ -67,7 +67,7 @@ regex = { version = "1.12.3", default-features = false, features = ["std", "unic
 # Chinese/Japanese word segmentation for danmu word-frequency statistics.
 # `default-dict` (on by default) embeds the dictionary so no runtime file is
 # needed; `tfidf`/`textrank` stay off since only segmentation is used.
-jieba-rs = "0.10.3"
+jieba-rs = "0.11.0"
 futures = "0.3.32"
 chrono = { version = "0.4.44", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
