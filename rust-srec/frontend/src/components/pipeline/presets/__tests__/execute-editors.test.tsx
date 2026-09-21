@@ -1,7 +1,13 @@
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 
 import type { DagStepDefinition, JobPreset } from '@/api/schemas';
@@ -74,9 +80,10 @@ function renderEditor(editor: Editor, config: Record<string, unknown>) {
 }
 
 async function selectMode(name: 'Shell command' | 'Program and arguments') {
-  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Execution mode' }), {
-    key: 'ArrowDown',
-  });
+  const trigger = screen.getByRole('combobox', { name: 'Execution mode' });
+  // Keyboard opening starts on the focused trigger so focus restoration keeps the menu open.
+  act(() => trigger.focus());
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
   fireEvent.click(await screen.findByRole('option', { name }));
 }
 
