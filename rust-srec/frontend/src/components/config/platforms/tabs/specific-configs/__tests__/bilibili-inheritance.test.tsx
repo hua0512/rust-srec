@@ -190,10 +190,10 @@ function renderFields(scope: Scope, quality?: number | null) {
   return { onSave, getValues, isDirty, reset };
 }
 async function selectQuality(label: string) {
-  fireEvent.keyDown(
-    screen.getByRole('combobox', { name: /Preferred Quality/i }),
-    { key: 'ArrowDown' },
-  );
+  const trigger = screen.getByRole('combobox', { name: /Preferred Quality/i });
+  // Keyboard opening starts on the focused trigger so focus restoration keeps the menu open.
+  act(() => trigger.focus());
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
   fireEvent.click(await screen.findByRole('option', { name: label }));
 }
 

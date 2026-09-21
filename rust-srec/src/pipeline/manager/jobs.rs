@@ -138,6 +138,55 @@ where
         self.retry_queued_job(id).await
     }
 
+    /// Re-queue failed step jobs whose automatic retry is due. A retry whose
+    /// step or DAG has settled in the meantime (cancelled, failed by startup
+    /// recovery, deleted) is dropped instead of being run into a dead step.
+    /// Returns the number of jobs re-queued.
+    pub async fn run_due_retries(&self) -> usize {
+        let due = match self.job_queue.list_due_retries(chrono::Utc::now()).await {
+            Ok(due) => due,
+            Err(error) => {
+                warn!(%error, "Failed to list jobs due for an automatic retry");
+                return 0;
+            }
+        };
+        let mut requeued = 0;
+        for job in due {
+            let wanted = match (&self.dag_scheduler, job.dag_step_execution_id.as_deref()) {
+                (Some(scheduler), Some(step_id)) => {
+                    match scheduler.step_awaits_job(step_id, &job.id).await {
+                        Ok(wanted) => wanted,
+                        Err(error) => {
+                            warn!(job_id = %job.id, %error, "Could not check a due retry; leaving it for the next sweep");
+                            continue;
+                        }
+                    }
+                }
+                _ => false,
+            };
+            if !wanted {
+                if let Err(error) = self.job_queue.clear_scheduled_retry(&job.id).await {
+                    warn!(job_id = %job.id, %error, "Failed to drop a stale scheduled retry");
+                }
+                continue;
+            }
+            match self.retry_queued_job(&job.id).await {
+                Ok(retried) => {
+                    info!(
+                        job_id = %job.id,
+                        attempt = retried.retry_count + 1,
+                        "Automatic retry started"
+                    );
+                    requeued += 1;
+                }
+                Err(error) => {
+                    warn!(job_id = %job.id, %error, "Automatic retry could not be started");
+                }
+            }
+        }
+        requeued
+    }
+
     async fn retry_queued_job(&self, id: &str) -> Result<Job> {
         let job = self.job_queue.retry_job(id).await?;
 

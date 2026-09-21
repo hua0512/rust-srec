@@ -755,6 +755,16 @@ function JobDetailsPage() {
                     <div className="font-mono text-sm text-destructive/90 bg-background/50 p-4 rounded-lg border border-destructive/20 selection:bg-destructive/20">
                       {job.error_message}
                     </div>
+                    {job.retry_after && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        <Trans>
+                          Automatic retry scheduled for{' '}
+                          {formatDate(i18n.locale, job.retry_after, {
+                            timeStyle: 'medium',
+                          })}
+                        </Trans>
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>

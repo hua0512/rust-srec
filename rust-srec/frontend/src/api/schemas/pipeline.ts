@@ -93,6 +93,8 @@ export const JobSchema = z.object({
   execution_info: JobExecutionInfoSchema.nullable().optional(),
   duration_secs: z.number().nullable().optional(),
   queue_wait_secs: z.number().nullable().optional(),
+  // Set while a failed workflow step job waits for its automatic retry.
+  retry_after: z.string().nullable().optional(),
 });
 export type Job = z.infer<typeof JobSchema>;
 
@@ -291,10 +293,21 @@ export const DagListResponseSchema = z.object({
 });
 export type DagListResponse = z.infer<typeof DagListResponseSchema>;
 
+export const StepRetryPolicySchema = z.object({
+  // Attempts in total, including the first run; 1 means no retry.
+  max_attempts: z.number().int().min(1),
+  // Wait before the second attempt, doubled per further attempt; the backend
+  // defaults it when omitted.
+  backoff_secs: z.number().int().min(0).optional(),
+});
+export type StepRetryPolicy = z.infer<typeof StepRetryPolicySchema>;
+
 export const DagStepDefinitionSchema = z.object({
   id: z.string(),
   step: PipelineStepSchema,
   depends_on: z.array(z.string()).optional(),
+  retry: StepRetryPolicySchema.optional(),
+  timeout_secs: z.number().int().min(1).optional(),
 });
 export type DagStepDefinition = z.infer<typeof DagStepDefinitionSchema>;
 

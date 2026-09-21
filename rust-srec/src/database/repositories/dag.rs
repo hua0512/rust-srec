@@ -182,7 +182,8 @@ pub trait DagRepository: Send + Sync {
     /// List PROCESSING steps of non-terminal DAGs whose attached job is FAILED or
     /// CANCELLED, or whose job row is gone (`job_id` NULL): the worker's failure
     /// report never reached the scheduler, so nothing will advance or fail the DAG
-    /// unless startup reconciliation does.
+    /// unless startup reconciliation does. A FAILED job with a scheduled
+    /// automatic retry is waiting for the retry sweeper and is not listed.
     async fn list_processing_steps_with_failed_jobs(&self) -> Result<Vec<DagStepExecutionDbModel>>;
 
     /// Complete a ready step that has no job, recording `outputs`, and settle its
@@ -1407,7 +1408,11 @@ impl DagRepository for SqlxDagRepository {
             JOIN dag_execution AS dag ON dag.id = step.dag_id
             LEFT JOIN job ON job.id = step.job_id
             WHERE step.status = 'PROCESSING'
-              AND (step.job_id IS NULL OR job.status IN ('FAILED', 'CANCELLED'))
+              AND (
+                step.job_id IS NULL
+                OR job.status = 'CANCELLED'
+                OR (job.status = 'FAILED' AND job.retry_after IS NULL)
+              )
               AND dag.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
             ORDER BY step.created_at, step.id
             "#,
@@ -2091,6 +2096,42 @@ mod tests {
             repo.list_dag_ids_with_unmaterialized_steps().await.unwrap(),
             vec![dag.id.clone()],
             "D is ready once every dependency completed"
+        );
+    }
+
+    /// A step whose job failed but waits for a scheduled automatic retry is
+    /// the retry sweeper's to advance, not startup reconciliation's.
+    #[tokio::test]
+    async fn stranded_step_query_skips_jobs_with_a_scheduled_retry() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let jobs = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let definition = noop_definition("retrying", &[("A", &[])]);
+        let (_dag, ids) = seed_dag_rows(
+            &pool,
+            &repo,
+            &definition,
+            &[("A", "PROCESSING", Some("job-a"))],
+        )
+        .await;
+        assert_eq!(jobs.mark_job_failed("job-a", "boom").await.unwrap(), 1);
+        assert_eq!(
+            repo.list_processing_steps_with_failed_jobs()
+                .await
+                .unwrap()
+                .iter()
+                .map(|step| step.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![ids["A"].as_str()],
+            "a failed job without a retry is stranded"
+        );
+        assert_eq!(jobs.schedule_job_retry("job-a", i64::MAX).await.unwrap(), 1);
+        assert!(
+            repo.list_processing_steps_with_failed_jobs()
+                .await
+                .unwrap()
+                .is_empty(),
+            "a scheduled retry is not stranded"
         );
     }
 

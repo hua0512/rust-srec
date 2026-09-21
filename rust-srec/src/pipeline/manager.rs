@@ -98,6 +98,8 @@ impl PipelineRuntime {
 const SESSION_COMPLETE_TTL_SECS: u64 = 48 * 60 * 60;
 const SESSION_COMPLETE_CLEANUP_INTERVAL_SECS: u64 = 10 * 60;
 const DAG_COMPLETION_DEDUP_TTL_SECS: u64 = 60 * 60;
+/// How often failed step jobs with a due automatic retry are re-queued.
+const RETRY_SWEEP_INTERVAL_SECS: u64 = 15;
 
 fn parse_trailing_u32(value: &str) -> Option<u32> {
     let bytes = value.as_bytes();
