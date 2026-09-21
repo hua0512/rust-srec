@@ -41,7 +41,10 @@ type PerformRefreshResult =
 export type TokenRefreshResult =
   | { status: 'refreshed'; accessToken: string }
   | { status: 'rejected' }
-  | { status: 'transient' };
+  | { status: 'transient' }
+  // The caller's session changed while it waited. Never retry its request
+  // using credentials from a different sign-in.
+  | { status: 'superseded' };
 
 const RECENT_ROTATION_TTL_MS = 60_000;
 const MAX_MAP_SIZE = 1000;
@@ -88,15 +91,54 @@ function getRecentRotation(refreshToken: string): RefreshOutcome | null {
   return entry.outcome;
 }
 
+function recordRotation(oldRefreshToken: string, outcome: RefreshOutcome) {
+  if (outcome.refreshToken === oldRefreshToken) return;
+
+  const now = Date.now();
+  // Keep every live predecessor pointing at the latest successor. Preserve
+  // its original deadline so reading an old cookie cannot extend its lifetime.
+  for (const entry of recentRotationByOldRefreshToken.values()) {
+    if (
+      entry.expiresAt > now &&
+      entry.outcome.refreshToken === oldRefreshToken
+    ) {
+      entry.outcome = outcome;
+    }
+  }
+  recentRotationByOldRefreshToken.set(oldRefreshToken, {
+    outcome,
+    expiresAt: now + RECENT_ROTATION_TTL_MS,
+  });
+  cleanupRotationMap();
+}
+
+async function latestRotation(
+  outcome: RefreshOutcome,
+): Promise<PerformRefreshResult> {
+  // A cached successor can itself be rotating. Wait for that attempt rather
+  // than write a token the backend is already consuming into another cookie.
+  for (;;) {
+    const recent = getRecentRotation(outcome.refreshToken);
+    if (recent) {
+      outcome = recent;
+      continue;
+    }
+    const pending = inFlightRefreshByRefreshToken.get(outcome.refreshToken);
+    if (!pending) return { status: 'refreshed', outcome };
+    const result = await pending;
+    if (result.status === 'rejected') return result;
+    if (result.status === 'transient') return { status: 'refreshed', outcome };
+    outcome = result.outcome;
+  }
+}
+
 async function applyOutcomeToSession({
   session,
   currentSessionData,
-  oldRefreshToken,
   outcome,
 }: {
-  session: any;
+  session: Awaited<ReturnType<typeof useAppSession>>;
   currentSessionData: SessionData;
-  oldRefreshToken: string;
   outcome: RefreshOutcome;
 }) {
   const userData: SessionData = {
@@ -112,18 +154,7 @@ async function applyOutcomeToSession({
       outcome.mustChangePassword ?? currentSessionData.mustChangePassword,
   };
 
-  // console.log(
-  //   `[TokenRefresh] Applying new tokens to session. Access: ${outcome.accessToken.slice(0, 10)}..., Refresh: ${outcome.refreshToken.slice(0, 10)}...`,
-  // );
   await session.update(userData);
-
-  if (outcome.refreshToken !== oldRefreshToken) {
-    cleanupRotationMap();
-    recentRotationByOldRefreshToken.set(oldRefreshToken, {
-      outcome,
-      expiresAt: Date.now() + RECENT_ROTATION_TTL_MS,
-    });
-  }
 }
 
 /**
@@ -148,38 +179,55 @@ export async function refreshAuthTokenGlobal(): Promise<TokenRefreshResult> {
   const currentRefreshToken = currentData.token.refresh_token;
 
   const recent = getRecentRotation(currentRefreshToken);
+  let result: PerformRefreshResult;
   if (recent) {
-    // console.log(
-    //   `[TokenRefresh] Refresh token was recently rotated (outcome cached). Using new access token: ${recent.accessToken.slice(0, 10)}...`,
-    // );
-    await applyOutcomeToSession({
-      session,
-      currentSessionData: currentData,
-      oldRefreshToken: currentRefreshToken,
-      outcome: recent,
-    });
-    return { status: 'refreshed', accessToken: recent.accessToken };
-  }
-
-  // If a refresh is already in progress for this refresh token, wait for it
-  let refreshPromise = inFlightRefreshByRefreshToken.get(currentRefreshToken);
-  if (refreshPromise) {
-    // console.log(
-    //   `[TokenRefresh] Refresh already in progress for token ${currentRefreshToken.slice(0, 10)}..., waiting...`,
-    // );
+    result = { status: 'refreshed', outcome: recent };
   } else {
-    refreshPromise = performRefresh({
-      refreshToken: currentRefreshToken,
-      fallbackAccessExpiry: currentData.token.expires_in,
-      fallbackRefreshExpiry: currentData.token.refresh_expires_in,
-    });
-    inFlightRefreshByRefreshToken.set(currentRefreshToken, refreshPromise);
-    void refreshPromise.finally(() => {
-      inFlightRefreshByRefreshToken.delete(currentRefreshToken);
-    });
+    let refreshPromise = inFlightRefreshByRefreshToken.get(currentRefreshToken);
+    if (!refreshPromise) {
+      refreshPromise = performRefresh({
+        refreshToken: currentRefreshToken,
+        fallbackAccessExpiry: currentData.token.expires_in,
+        fallbackRefreshExpiry: currentData.token.refresh_expires_in,
+      })
+        .then((result) => {
+          // Publish before releasing the in-flight entry or awaiting any caller's
+          // session write. A failed cookie write must not lose a consumed token.
+          if (result.status === 'refreshed') {
+            recordRotation(currentRefreshToken, result.outcome);
+          }
+          return result;
+        })
+        .finally(() => {
+          inFlightRefreshByRefreshToken.delete(currentRefreshToken);
+        });
+      inFlightRefreshByRefreshToken.set(currentRefreshToken, refreshPromise);
+    }
+    result = await refreshPromise;
   }
 
-  const result = await refreshPromise;
+  if (result.status === 'refreshed') {
+    result = await latestRotation(result.outcome);
+  }
+
+  // Desktop shares one mutable session across calls. The refresh token is a
+  // sign-in/rotation identity: a logout or new login replaces it synchronously.
+  // Independent web requests still persist their own copy of a shared outcome.
+  if (
+    session.data.username !== currentData.username ||
+    session.data.token?.refresh_token !== currentRefreshToken
+  ) {
+    if (
+      result.status === 'refreshed' &&
+      session.data.username === currentData.username &&
+      session.data.token?.refresh_token === result.outcome.refreshToken &&
+      session.data.token.access_token === result.outcome.accessToken
+    ) {
+      // Another waiter already applied this rotation to the shared session.
+      return { status: 'refreshed', accessToken: result.outcome.accessToken };
+    }
+    return { status: 'superseded' };
+  }
 
   if (result.status === 'rejected') {
     await session.clear();
@@ -193,10 +241,15 @@ export async function refreshAuthTokenGlobal(): Promise<TokenRefreshResult> {
   await applyOutcomeToSession({
     session,
     currentSessionData: currentData,
-    oldRefreshToken: currentRefreshToken,
     outcome: result.outcome,
   });
 
+  if (
+    session.data.username !== currentData.username ||
+    session.data.token?.refresh_token !== result.outcome.refreshToken
+  ) {
+    return { status: 'superseded' };
+  }
   return { status: 'refreshed', accessToken: result.outcome.accessToken };
 }
 

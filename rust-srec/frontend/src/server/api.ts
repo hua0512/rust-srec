@@ -128,7 +128,8 @@ export const fetchBackend = async <T = any>(
           // No usable token, so the request is not retried and the original
           // 401 is reported below. Session handling belongs to
           // refreshAuthTokenGlobal, which cleared it for 'rejected' and left
-          // it intact for 'transient'.
+          // it intact for 'transient' or 'superseded'. In particular, an old
+          // request must never be replayed as a newly signed-in user.
           console.log(
             `[API] Refresh ${refresh.status} for retry of ${endpoint}.`,
           );
