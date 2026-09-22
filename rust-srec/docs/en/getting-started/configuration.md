@@ -85,13 +85,18 @@ Which extractor resolves the stream URL is a separate setting from `download_eng
 | `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
 | `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
+| `enable_proxy` | Route traffic through an intermediate server | `false` |
+
+#### Retention
+
+| Setting | Description | Default |
+|---------|-------------|---------|
 | `job_history_retention_days` | Days to keep terminal pipeline/job and upload history; `0` keeps it indefinitely | `30` |
 | `notification_event_log_retention_days` | Days to keep notification events; `0` keeps them indefinitely | `30` |
 | `output_retention_days` | Days to keep outputs from ended sessions; `0` disables automatic cleanup | `0` |
 | `output_retention_delete_files` | `false`: delete output records only; `true`: delete their tracked local files too | `false` |
-| `enable_proxy` | Route traffic through an intermediate server | `false` |
 
-Configure output retention under **Global Settings → Network & System → Retention**. Cleanup runs at startup and every 30 minutes, skips active or recently updated processing and scheduled retries, and defers while processors hold files. File deletion also skips active recording directories and recently modified or shared files; failures keep their records for a later attempt.
+Configure output retention under **Global Settings → Retention**. Cleanup runs at startup and every 30 minutes, skips active or recently updated processing and scheduled retries, and defers while processors hold files. File deletion also skips active recording directories and recently modified or shared files; failures keep their records for a later attempt.
 
 **Records only** leaves the physical files on disk. Once their records are removed, changing to **Delete records and files** cannot delete those untracked files later. This policy covers registered media outputs, not arbitrary files, every pipeline derivative, remote uploads, or session segment history.
 

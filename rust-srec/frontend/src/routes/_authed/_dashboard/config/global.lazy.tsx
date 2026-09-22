@@ -44,6 +44,11 @@ const NetworkSystemCard = lazy(() =>
     default: m.NetworkSystemCard,
   })),
 );
+const RetentionCard = lazy(() =>
+  import('@/components/config/global/retention-card').then((m) => ({
+    default: m.RetentionCard,
+  })),
+);
 const GlobalDanmuStatisticsCard = lazy(() =>
   import('@/components/config/global/danmu-statistics-card').then((m) => ({
     default: m.GlobalDanmuStatisticsCard,
@@ -74,7 +79,8 @@ const SECTIONS: {
   { Card: FileConfigCard, skeletonRows: [5] },
   { Card: ResourceLimitsCard, skeletonRows: [3] },
   { Card: ConcurrencyCard, skeletonRows: [3, 2, 1] },
-  { Card: NetworkSystemCard, skeletonRows: [2, 1, 2] },
+  { Card: NetworkSystemCard, skeletonRows: [2, 2] },
+  { Card: RetentionCard, skeletonRows: [2] },
   // One switch row, a 2x2 numeric grid, then the ignored-words textarea.
   { Card: GlobalDanmuStatisticsCard, skeletonRows: [1, 2, 2, 1] },
   {

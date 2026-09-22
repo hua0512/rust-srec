@@ -637,11 +637,11 @@ msgstr "全部时间"
 msgid "All Types"
 msgstr "所有类型"
 
-#: src/components/config/global/network-system-card.tsx:38
+#: src/components/config/global/network-system-card.tsx:29
 msgid "Allow private stream proxy targets"
 msgstr "允许私有网络流代理目标"
 
-#: src/components/config/global/network-system-card.tsx:262
+#: src/components/config/global/network-system-card.tsx:173
 msgid "Allow Private Stream Proxy Targets"
 msgstr "允许私有网络流代理目标"
 
@@ -1985,7 +1985,7 @@ msgstr "次数"
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "当一场直播的不同发言人数少于此值时，计数保持精确。范围 64–8192。"
 
-#: src/components/config/global/network-system-card.tsx:275
+#: src/components/config/global/network-system-card.tsx:186
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "涵盖局域网转推、摄像头和 tailnet 地址。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
 
@@ -2471,13 +2471,9 @@ msgstr "已确认离线"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:100
+#: src/components/config/global/network-system-card.tsx:91
 msgid "Delay between the re-checks used to confirm a streamer has really gone offline."
 msgstr "用于确认主播确实已下播的复查之间的间隔。"
-
-#: src/components/config/global/network-system-card.tsx:44
-msgid "Delays, proxy, and retention policies."
-msgstr "延迟、代理与保留策略。"
 
 #: src/components/config/engines/engine-card.tsx:195
 #: src/components/config/templates/template-card.tsx:130
@@ -3766,7 +3762,7 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:176
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:182
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
@@ -4716,7 +4712,7 @@ msgstr "24小时交互式时间线选择。"
 msgid "Internal"
 msgstr "内部"
 
-#: src/components/config/global/network-system-card.tsx:67
+#: src/components/config/global/network-system-card.tsx:58
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
@@ -4920,7 +4916,7 @@ msgstr "不勾选则仅删除记录，磁盘上的文件保持原样。"
 msgid "Left"
 msgstr "左侧"
 
-#: src/components/config/global/network-system-card.tsx:265
+#: src/components/config/global/network-system-card.tsx:176
 msgid "Let the player proxy sources on private or local networks."
 msgstr "允许播放器代理位于私有或本地网络上的源。"
 
@@ -5475,9 +5471,13 @@ msgstr "星期一"
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
-#: src/components/config/global/network-system-card.tsx:52
+#: src/components/config/global/network-system-card.tsx:43
 msgid "Monitoring"
 msgstr "监控"
+
+#: src/components/config/global/network-system-card.tsx:35
+msgid "Monitoring intervals and proxy settings."
+msgstr "监测间隔与代理设置。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:210
 #: src/components/streamers/card/use-streamer-status.tsx:219
@@ -5618,7 +5618,7 @@ msgstr "网络"
 msgid "Network & Content"
 msgstr "网络与内容"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:34
 msgid "Network & System"
 msgstr "网络与系统"
 
@@ -6011,7 +6011,7 @@ msgstr "通知事件"
 msgid "Notification language"
 msgstr "通知语言"
 
-#: src/components/config/global/network-system-card.tsx:203
+#: src/components/config/global/retention-card.tsx:65
 msgid "Notification Log Retention"
 msgstr "通知日志保留"
 
@@ -6019,7 +6019,7 @@ msgstr "通知日志保留"
 msgid "Notification permission not granted"
 msgstr "未授予通知权限"
 
-#: src/components/config/global/network-system-card.tsx:206
+#: src/components/config/global/retention-card.tsx:68
 msgid "Notification Retention"
 msgstr "通知保留"
 
@@ -6054,15 +6054,15 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
-#: src/components/config/global/network-system-card.tsx:132
+#: src/components/config/global/network-system-card.tsx:123
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
-#: src/components/config/global/network-system-card.tsx:174
+#: src/components/config/global/retention-card.tsx:39
 msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
 msgstr "在数据库中保留已完成、失败或已取消的任务及工作流执行记录的天数。设置为 0 可无限期保留。"
 
-#: src/components/config/global/network-system-card.tsx:209
+#: src/components/config/global/retention-card.tsx:71
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
@@ -6122,8 +6122,8 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
-#: src/components/config/global/network-system-card.tsx:94
-#: src/components/config/global/network-system-card.tsx:97
+#: src/components/config/global/network-system-card.tsx:85
+#: src/components/config/global/network-system-card.tsx:88
 #: src/components/config/shared/offline-check-card.tsx:46
 msgid "Offline Check"
 msgstr "离线检查"
@@ -6132,11 +6132,11 @@ msgstr "离线检查"
 msgid "Offline Check Interval"
 msgstr "离线检查间隔"
 
-#: src/components/config/global/network-system-card.tsx:129
+#: src/components/config/global/network-system-card.tsx:120
 msgid "Offline Detection"
 msgstr "离线检测"
 
-#: src/components/config/global/network-system-card.tsx:126
+#: src/components/config/global/network-system-card.tsx:117
 #: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
@@ -6273,6 +6273,10 @@ msgstr "已删除产物及其文件"
 #: src/components/config/engines/forms/ffmpeg-form.tsx:169
 msgid "Output Arguments"
 msgstr "输出参数"
+
+#: src/components/config/global/retention-card.tsx:21
+msgid "Output cleanup and history retention."
+msgstr "输出清理与历史记录保留。"
 
 #: src/components/config/shared/output-settings-card.tsx:54
 msgid "Output Configuration"
@@ -6634,8 +6638,8 @@ msgstr "管道完成"
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "处理管道中有失败的处理任务。点击查看详情。"
 
-#: src/components/config/global/network-system-card.tsx:168
-#: src/components/config/global/network-system-card.tsx:171
+#: src/components/config/global/retention-card.tsx:33
+#: src/components/config/global/retention-card.tsx:36
 msgid "Pipeline History Retention"
 msgstr "流水线历史保留期"
 
@@ -7006,7 +7010,7 @@ msgstr "优先级从高到低"
 msgid "Priority low-high"
 msgstr "优先级从低到高"
 
-#: src/components/config/global/network-system-card.tsx:272
+#: src/components/config/global/network-system-card.tsx:183
 msgid "Private Network Access"
 msgstr "私有网络访问"
 
@@ -7095,12 +7099,12 @@ msgstr "保护设置"
 msgid "Protocol Settings"
 msgstr "协议设置"
 
-#: src/components/config/global/network-system-card.tsx:238
+#: src/components/config/global/network-system-card.tsx:149
 #: src/components/config/shared-config-editor.tsx:175
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:246
+#: src/components/config/global/network-system-card.tsx:157
 #: src/components/config/shared/proxy-settings-card.tsx:250
 msgid "Proxy Configuration"
 msgstr "代理配置"
@@ -7603,7 +7607,7 @@ msgstr "恢复启动"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
-#: src/components/config/global/network-system-card.tsx:158
+#: src/components/config/global/retention-card.tsx:20
 msgid "Retention"
 msgstr "保留策略"
 
@@ -8301,7 +8305,7 @@ msgstr "设置"
 msgid "Settings updated"
 msgstr "配置已更新"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:172
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:178
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -8664,8 +8668,8 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
-#: src/components/config/global/network-system-card.tsx:62
-#: src/components/config/global/network-system-card.tsx:65
+#: src/components/config/global/network-system-card.tsx:53
+#: src/components/config/global/network-system-card.tsx:56
 msgid "Streamer Check"
 msgstr "主播检查"
 
@@ -10040,7 +10044,7 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/components/streamers/streamer-editor.tsx:100
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:188
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:194
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "有未保存的更改，确定要离开吗？"
 
