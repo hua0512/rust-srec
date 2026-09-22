@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { resolvePlayerMediaType, type PlayerMediaType } from '@/lib/media';
 import { resolveUrl } from '@/server/functions/parse';
 import { isDesktopBuild } from '@/utils/desktop';
 import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
 import { MpegtsPlaybackController } from './mpegts-playback';
+import {
+  classifyPlaybackError,
+  effectiveConnection,
+  PlaybackConfigurationError,
+  type ConnectionMode,
+  type PlaybackError,
+  type PlaybackStatus,
+} from './playback-state';
 
 type ArtplayerInstance = InstanceType<(typeof import('artplayer'))['default']>;
 type ArtplayerOptions = ConstructorParameters<
@@ -29,7 +36,8 @@ interface SourceRequest {
 
 interface ResolvedSource {
   request: SourceRequest;
-  source: PlaybackSource;
+  source: PlaybackSource | null;
+  error: PlaybackError | null;
 }
 
 interface UseResolvedSourceOptions {
@@ -41,6 +49,8 @@ interface UseResolvedSourceOptions {
 }
 
 export interface UsePlayerPlaybackOptions {
+  connectionMode?: ConnectionMode;
+  sourceUrl?: string;
   url: string;
   headers?: Record<string, string>;
   title?: string;
@@ -57,6 +67,7 @@ export interface UsePlayerPlaybackOptions {
 }
 
 export interface BuildPlaybackUrlOptions extends PlaybackSource {
+  connectionMode?: ConnectionMode;
   desktopBuild: boolean;
   desktopToken: string | null;
   baseUrl: string;
@@ -88,12 +99,17 @@ export function buildPlaybackUrl({
   desktopBuild,
   desktopToken,
   baseUrl,
+  connectionMode = 'auto',
 }: BuildPlaybackUrlOptions): string {
-  if (!headers || Object.keys(headers).length === 0) return url;
+  const hasHeaders = Object.keys(headers ?? {}).length > 0;
+  if (connectionMode === 'direct' && hasHeaders) {
+    throw new PlaybackConfigurationError('headers');
+  }
+  if (effectiveConnection(connectionMode, headers) === 'direct') return url;
 
-  const query = `url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers))}`;
+  const query = `url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers ?? {}))}`;
   if (!desktopBuild) return `/stream-proxy?${query}`;
-  if (!desktopToken) return url;
+  if (!desktopToken) throw new PlaybackConfigurationError('session');
 
   return `${baseUrl.replace(/\/$/, '')}/stream-proxy?${query}&token=${encodeURIComponent(desktopToken)}`;
 }
@@ -117,6 +133,7 @@ function matchesRequest(
 function useResolvedSource(options: UseResolvedSourceOptions): {
   source: PlaybackSource | null;
   resolving: boolean;
+  error: PlaybackError | null;
 } {
   const { url, headers, title, streamData, reloadKey } = options;
   const [resolved, setResolved] = useState<ResolvedSource | null>(null);
@@ -135,34 +152,29 @@ function useResolvedSource(options: UseResolvedSourceOptions): {
     };
 
     const resolve = async () => {
-      let sourceUrl = url;
       try {
         const response = await resolveUrl({
           data: {
             url: title,
             stream_info: streamData,
+            cookies: Object.entries(headers ?? {}).find(
+              ([name]) => name.toLowerCase() === 'cookie',
+            )?.[1],
           },
         });
         if (disposed) return;
-
-        if (response.success && response.stream_info) {
-          sourceUrl = response.stream_info.url || url;
-        } else {
-          console.warn(
-            '[PlayerCard] URL resolution failed, using original:',
-            response.error,
-          );
-          toast.error(
-            `Resolution failed: ${response.error || 'Unknown error'}`,
-          );
+        if (!response.success || !response.stream_info?.url) {
+          setResolved({ request, source: null, error: 'resolution' });
+          return;
         }
-      } catch (error) {
-        if (disposed) return;
-        console.error('[PlayerCard] Resolution error:', error);
-      }
-
-      if (!disposed) {
-        setResolved({ request, source: { url: sourceUrl, headers } });
+        setResolved({
+          request,
+          source: { url: response.stream_info.url, headers },
+          error: null,
+        });
+      } catch {
+        if (!disposed)
+          setResolved({ request, source: null, error: 'resolution' });
       }
     };
 
@@ -173,12 +185,12 @@ function useResolvedSource(options: UseResolvedSourceOptions): {
   }, [url, headers, title, streamData, reloadKey]);
 
   if (!needsResolution) {
-    return { source: { url, headers }, resolving: false };
+    return { source: { url, headers }, resolving: false, error: null };
   }
   if (!matchesRequest(resolved, options)) {
-    return { source: null, resolving: true };
+    return { source: null, resolving: true, error: null };
   }
-  return { source: resolved.source, resolving: false };
+  return { source: resolved.source, resolving: false, error: resolved.error };
 }
 
 export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
@@ -196,6 +208,8 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     isLive,
     mediaDurationSecs,
     mediaFileSizeBytes,
+    sourceUrl,
+    connectionMode = 'auto',
   } = options;
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ArtplayerInstance | null>(null);
@@ -204,8 +218,8 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   const defaultWebFullscreenRef = useRef(defaultWebFullscreen);
   const onVolumeChangeRef = useRef(onVolumeChange);
   const onMuteChangeRef = useRef(onMuteChange);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<PlaybackError | null>(null);
+  const [status, setStatus] = useState<PlaybackStatus>('connecting');
   const [reloadKey, setReloadKey] = useState(0);
 
   volumeRef.current = volume;
@@ -214,37 +228,53 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   onVolumeChangeRef.current = onVolumeChange;
   onMuteChangeRef.current = onMuteChange;
 
-  const { source, resolving } = useResolvedSource({
+  const {
+    source,
+    resolving,
+    error: resolutionError,
+  } = useResolvedSource({
     url,
     headers,
-    title,
+    title: sourceUrl ?? title,
     streamData,
     reloadKey,
   });
   const desktopBuild = isDesktopBuild();
   const desktopToken = desktopBuild ? getDesktopAccessToken() : null;
-  const playUrl = source
-    ? buildPlaybackUrl({
+  const connection = effectiveConnection(
+    connectionMode,
+    source?.headers ?? headers,
+  );
+  let playUrl: string | null = null;
+  let configurationError: PlaybackError | null = null;
+  if (source) {
+    try {
+      playUrl = buildPlaybackUrl({
         ...source,
+        connectionMode,
         desktopBuild,
         desktopToken,
         baseUrl: BASE_URL,
-      })
-    : null;
+      });
+    } catch (error) {
+      configurationError =
+        error instanceof PlaybackConfigurationError ? error.reason : 'unknown';
+    }
+  }
   const resolvedMediaType = source
     ? resolvePlayerMediaType(mediaType, source.url, title)
     : null;
 
   const reload = useCallback(() => {
     setError(null);
-    setLoading(true);
+    setStatus('connecting');
     setReloadKey((current) => current + 1);
   }, []);
 
   useEffect(() => {
     if (!resolving) return;
     setError(null);
-    setLoading(true);
+    setStatus('connecting');
   }, [resolving]);
 
   useEffect(() => {
@@ -290,7 +320,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
 
     const initialize = async () => {
       setError(null);
-      setLoading(true);
+      setStatus('connecting');
 
       try {
         const { default: Artplayer } = await import('artplayer');
@@ -336,8 +366,14 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
                 hls.attachMedia(video);
                 hls.on(Hls.Events.ERROR, (_event, data) => {
                   if (!disposed && data.fatal) {
-                    setError(`HLS Error: ${data.type} - ${data.details}`);
-                    setLoading(false);
+                    setError(
+                      classifyPlaybackError(
+                        data.type,
+                        data.response?.code,
+                        connection === 'proxy',
+                      ),
+                    );
+                    setStatus('ready');
                   }
                 });
               },
@@ -353,9 +389,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           const { default: mpegts } = await import('mpegts.js');
           if (disposed) return;
           if (!mpegts.isSupported()) {
-            throw new Error(
-              'MPEG-TS playback is not supported by this browser',
-            );
+            throw new PlaybackConfigurationError('unsupported');
           }
 
           mpegtsController = new MpegtsPlaybackController(mpegts, {
@@ -364,21 +398,41 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
             durationSecs: mediaDurationSecs,
             fileSizeBytes: mediaFileSizeBytes,
             onLoadingChange: (nextLoading) => {
-              if (!disposed) setLoading(nextLoading);
+              if (!disposed)
+                setStatus(
+                  nextLoading
+                    ? 'buffering'
+                    : playerRef.current?.video.paused
+                      ? 'paused'
+                      : 'playing',
+                );
             },
             onError: ({ type, details, data }) => {
-              console.error('MPEG-TS Error:', { type, details, data });
               if (!disposed) {
-                setError(`MPEG-TS Error: ${type} - ${details}`);
+                const code =
+                  data &&
+                  typeof data === 'object' &&
+                  'code' in data &&
+                  typeof data.code === 'number'
+                    ? data.code
+                    : undefined;
+                setError(
+                  classifyPlaybackError(
+                    `${type} ${details}`,
+                    code,
+                    connection === 'proxy',
+                  ),
+                );
               }
             },
             onStalled: () => {
               if (!disposed) {
-                setError('Playback stalled while seeking. Reload the player.');
+                setError('stalled');
               }
             },
-            onWarning: (message, warning) => {
-              console.warn(`${message}:`, warning);
+            onWarning: (message) => {
+              // Engine error objects may contain signed URLs.
+              console.warn(message);
             },
           });
           options.customType = {
@@ -402,15 +456,24 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           if (defaultWebFullscreenRef.current) {
             createdArt.fullscreenWeb = true;
           }
-          setLoading(false);
-          setError(null);
+          setStatus(createdArt.video.paused ? 'ready' : 'playing');
         });
         createdArt.on('error', (playerError: Error) => {
           if (disposed) return;
           mpegtsController?.cancelSeekRecovery();
-          console.error('Player Error:', playerError);
-          setError(`Player Error: ${playerError.message || 'Unknown error'}`);
-          setLoading(false);
+          const mediaError = createdArt.video.error;
+          setError(
+            (current) =>
+              current ??
+              (mediaError?.code === 4
+                ? 'unsupported'
+                : mediaError?.code === 3
+                  ? 'media'
+                  : mediaError?.code === 2
+                    ? 'network'
+                    : classifyPlaybackError(playerError?.name ?? 'unknown')),
+          );
+          setStatus('ready');
         });
         createdArt.on('video:volumechange', () => {
           onVolumeChangeRef.current?.(createdArt.volume);
@@ -420,6 +483,20 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           if (!mpegtsController?.seek(currentTime)) return;
           setError(null);
         });
+
+        const updateStatus = (nextStatus: PlaybackStatus) => {
+          if (disposed) return;
+          setStatus(nextStatus);
+          if (nextStatus === 'playing') setError(null);
+        };
+        createdArt.on('video:playing', () => updateStatus('playing'));
+        createdArt.on('video:waiting', () => updateStatus('buffering'));
+        createdArt.on('video:stalled', () => {
+          if (!createdArt.video.paused && createdArt.video.readyState < 3)
+            updateStatus('buffering');
+        });
+        createdArt.on('video:pause', () => updateStatus('paused'));
+        createdArt.on('video:ended', () => updateStatus('ended'));
 
         const notifyMpegtsProgress = () => {
           mpegtsController?.notifyMediaProgress();
@@ -432,9 +509,11 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
         destroySession();
         if (disposed) return;
         setError(
-          `Failed to initialize player: ${initializationError instanceof Error ? initializationError.message : 'Unknown error'}`,
+          initializationError instanceof PlaybackConfigurationError
+            ? initializationError.reason
+            : 'unknown',
         );
-        setLoading(false);
+        setStatus('ready');
       }
     };
 
@@ -450,7 +529,24 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     mediaDurationSecs,
     mediaFileSizeBytes,
     reloadKey,
+    connection,
   ]);
 
-  return { containerRef, error, loading, reload };
+  const playbackError = configurationError ?? resolutionError ?? error;
+  const playbackStatus = playbackError
+    ? 'error'
+    : resolving
+      ? 'resolving'
+      : status;
+  const loading = ['resolving', 'connecting', 'buffering'].includes(
+    playbackStatus,
+  );
+  return {
+    containerRef,
+    error: playbackError,
+    loading,
+    reload,
+    status: playbackStatus,
+    connection,
+  };
 }

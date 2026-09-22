@@ -33,7 +33,10 @@ import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
-import { resolvePlayerMediaType } from '@/lib/media';
+import {
+  extractStreams,
+  selectRefreshedStream,
+} from '@/components/player/stream-source';
 
 // Lazy loaded PlayerCard
 const PlayerCard = React.lazy(() =>
@@ -98,7 +101,7 @@ function PlayerPage() {
 
       if (response.success && response.media_info) {
         // Extract first available stream
-        const firstStream = extractFirstStream(response.media_info);
+        const firstStream = extractStreams(response.media_info)[0];
         if (firstStream) {
           const newPlayer: PlayerInstance = {
             id: Date.now().toString(),
@@ -157,7 +160,7 @@ function PlayerPage() {
         }
 
         if (response.success && response.media_info) {
-          const firstStream = extractFirstStream(response.media_info);
+          const firstStream = extractStreams(response.media_info)[0];
           if (firstStream) {
             newPlayers.push({
               id: `${Date.now()}-${index}`,
@@ -212,6 +215,28 @@ function PlayerPage() {
     },
     [],
   );
+
+  const handleRefreshSource = async (player: PlayerInstance) => {
+    const response = await parseUrl({
+      data: { url: player.title, cookies: player.headers?.Cookie },
+    });
+    if (
+      !response.success ||
+      !selectRefreshedStream(response.media_info, player.currentStream)
+    ) {
+      throw new Error('Stream refresh failed');
+    }
+    setPlayers((current) =>
+      current.map((item) => {
+        if (item.id !== player.id) return item;
+        const currentStream = selectRefreshedStream(
+          response.media_info,
+          item.currentStream,
+        );
+        return currentStream ? { ...item, response, currentStream } : item;
+      }),
+    );
+  };
 
   const handleMuteChange = useCallback((playerId: string, muted: boolean) => {
     setPlayers((prev) => {
@@ -271,6 +296,7 @@ function PlayerPage() {
           <PlayerItem
             player={player}
             onRemove={() => handleRemovePlayer(player.id)}
+            onRefreshSource={() => handleRefreshSource(player)}
             onStreamSelect={(stream) => handleStreamChange(player.id, stream)}
             onMuteChange={(muted) => handleMuteChange(player.id, muted)}
             onVolumeChange={(volume) => handleVolumeChange(player.id, volume)}
@@ -449,6 +475,7 @@ function PlayerPage() {
 interface PlayerItemProps {
   player: PlayerInstance;
   onRemove: () => void;
+  onRefreshSource: () => Promise<void>;
   onStreamSelect: (stream: StreamOption) => void;
   onMuteChange: (muted: boolean) => void;
   onVolumeChange: (volume: number) => void;
@@ -458,6 +485,7 @@ interface PlayerItemProps {
 const PlayerItem = React.memo(function PlayerItem({
   player,
   onRemove,
+  onRefreshSource,
   onStreamSelect,
   onMuteChange,
   onVolumeChange,
@@ -466,36 +494,6 @@ const PlayerItem = React.memo(function PlayerItem({
     () => ({ ...player.currentStream.headers, ...player.headers }),
     [player.currentStream.headers, player.headers],
   );
-
-  // Find the raw backend stream object matching the current selection.
-  // We must pass the raw object (with backend field names like stream_format,
-  // media_format) to the resolve endpoint, not the remapped StreamOption.
-  const streamData = React.useMemo(() => {
-    const streams = player.response.media_info?.streams;
-    if (!Array.isArray(streams) || streams.length === 0) return null;
-
-    const selected = player.currentStream;
-
-    // Match by quality + cdn (the identifiers the user selects by)
-    const match = streams.find((s: any) => {
-      const rawQuality = s.quality || s.resolution || 'unknown';
-      const rawCdn =
-        s.cdn || s.server || s.extras?.cdn?.toString() || undefined;
-      return rawQuality === selected.quality && rawCdn === selected.cdn;
-    });
-    if (match) return match;
-
-    // Fallback: match by URL
-    const urlMatch = streams.find(
-      (s: any) => s.url === selected.url || s.src === selected.url,
-    );
-    return urlMatch || streams[0];
-  }, [
-    player.response.media_info?.streams,
-    player.currentStream.quality,
-    player.currentStream.cdn,
-    player.currentStream.url,
-  ]);
 
   return (
     <div className="w-full h-full min-h-[500px]">
@@ -508,11 +506,24 @@ const PlayerItem = React.memo(function PlayerItem({
       >
         <PlayerCard
           url={player.currentStream.url}
-          title={player.title}
+          title={
+            typeof player.response.media_info?.title === 'string' &&
+            player.response.media_info.title.trim()
+              ? player.response.media_info.title
+              : undefined
+          }
+          sourceUrl={player.title}
+          creator={
+            typeof player.response.media_info?.artist === 'string'
+              ? player.response.media_info.artist
+              : undefined
+          }
+          quality={player.currentStream.quality}
+          onRefreshSource={onRefreshSource}
           mediaType={player.currentStream.format}
           isLive={player.response.is_live}
           headers={headers}
-          streamData={streamData}
+          streamData={player.currentStream.data}
           onRemove={onRemove}
           muted={player.muted}
           volume={player.volume}
@@ -532,65 +543,3 @@ const PlayerItem = React.memo(function PlayerItem({
     </div>
   );
 });
-
-// Helper function to extract first available stream from media_info
-function extractFirstStream(mediaInfo: any): StreamOption | null {
-  if (!mediaInfo) return null;
-
-  // Handle array of streams
-  if (Array.isArray(mediaInfo.streams) && mediaInfo.streams.length > 0) {
-    const stream = mediaInfo.streams[0];
-    const extras = stringifyValues({ ...mediaInfo.extras, ...stream.extras });
-    return {
-      url: stream.url || stream.src || '',
-      quality: stream.quality || stream.resolution || 'default',
-      cdn: stream.cdn || stream.server || extras.cdn,
-      format:
-        stream.format ||
-        stream.stream_format ||
-        resolvePlayerMediaType(undefined, stream.url),
-      bitrate: stream.bitrate || stream.bandwidth,
-      headers: { ...mediaInfo.headers, ...stream.headers },
-      extras,
-    };
-  }
-
-  // Handle single stream object
-  if (mediaInfo.url) {
-    const extras = stringifyValues(mediaInfo.extras || {});
-    return {
-      url: mediaInfo.url,
-      quality: mediaInfo.quality || 'default',
-      cdn: mediaInfo.cdn || extras.cdn,
-      format:
-        mediaInfo.format ||
-        mediaInfo.stream_format ||
-        resolvePlayerMediaType(undefined, mediaInfo.url),
-      bitrate: mediaInfo.bitrate,
-      headers: mediaInfo.headers || {},
-      extras,
-    };
-  }
-
-  // Handle string URL
-  if (typeof mediaInfo === 'string') {
-    return {
-      url: mediaInfo,
-      quality: 'default',
-      format: resolvePlayerMediaType(undefined, mediaInfo),
-      extras: {},
-    };
-  }
-
-  return null;
-}
-
-function stringifyValues(obj: Record<string, any>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const key in obj) {
-    if (obj[key] !== undefined && obj[key] !== null) {
-      result[key] = String(obj[key]);
-    }
-  }
-  return result;
-}

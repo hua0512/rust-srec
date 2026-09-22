@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,10 +13,26 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { usePlayerPlayback } from './use-player-playback';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  playbackErrorMessages,
+  playbackStatusMessages,
+  type ConnectionMode,
+} from './playback-state';
 
 export interface PlayerCardProps {
   url: string;
   title?: string;
+  sourceUrl?: string;
+  creator?: string;
+  quality?: string;
+  onRefreshSource?: () => Promise<void>;
   headers?: Record<string, string>;
   streamData?: unknown;
   onRemove?: () => void;
@@ -37,6 +53,10 @@ export interface PlayerCardProps {
 export function PlayerCard({
   url,
   title,
+  sourceUrl,
+  creator,
+  quality,
+  onRefreshSource,
   headers,
   streamData,
   onRemove,
@@ -54,10 +74,24 @@ export function PlayerCard({
   mediaFileSizeBytes,
 }: PlayerCardProps) {
   const { i18n } = useLingui();
-  const { containerRef, error, loading, reload } = usePlayerPlayback({
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const connectionId = useId();
+  const {
+    containerRef,
+    error: playbackError,
+    loading: playbackLoading,
+    reload,
+    status: playbackStatus,
+    connection,
+  } = usePlayerPlayback({
     url,
     headers,
     title,
+    sourceUrl,
+    connectionMode,
     streamData,
     muted,
     volume,
@@ -69,6 +103,39 @@ export function PlayerCard({
     mediaDurationSecs,
     mediaFileSizeBytes,
   });
+
+  useEffect(() => {
+    setRefreshFailed(false);
+  }, [url, streamData]);
+  const error = refreshFailed ? 'resolution' : playbackError;
+  const status = refreshing ? 'resolving' : error ? 'error' : playbackStatus;
+  const loading = refreshing || playbackLoading;
+  const hasHeaders = Object.keys(headers ?? {}).length > 0;
+  const retry = () => {
+    setRefreshFailed(false);
+    reload();
+  };
+  const refreshSource = async () => {
+    if (!onRefreshSource || refreshing) return;
+    setRefreshing(true);
+    setRefreshFailed(false);
+    try {
+      await onRefreshSource();
+    } catch {
+      setRefreshFailed(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  let sourceLabel = '';
+  if (sourceUrl) {
+    try {
+      const source = new URL(sourceUrl);
+      sourceLabel = `${source.host}${source.pathname}`;
+    } catch {
+      sourceLabel = i18n._(msg`Stream source`);
+    }
+  }
 
   return (
     <Card
@@ -82,39 +149,85 @@ export function PlayerCard({
       {/* Hover Glow Effect */}
       <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
 
-      <CardHeader className="relative flex flex-row items-center justify-between gap-4 pb-2 space-y-0 z-10">
-        <div className="flex items-center gap-3 min-w-0">
+      <CardHeader className="relative flex flex-row flex-wrap items-start justify-between gap-3 pb-2 space-y-0 z-10">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <div className="p-2 rounded-xl bg-primary/10 ring-1 ring-inset ring-primary/20 transition-transform duration-500 group-hover:scale-110">
-            <div className="h-4 w-4 bg-primary rounded-full animate-pulse" />
+            <div
+              className={cn(
+                'h-4 w-4 rounded-full',
+                status === 'playing'
+                  ? 'bg-emerald-500'
+                  : error
+                    ? 'bg-destructive'
+                    : 'bg-muted-foreground',
+              )}
+            />
           </div>
           <div className="flex flex-col min-w-0">
             <CardTitle className="text-sm font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
               {title || i18n._(msg`Video Player`)}
             </CardTitle>
+            {(creator || sourceLabel) && (
+              <p
+                className="text-xs text-muted-foreground truncate"
+                title={sourceLabel}
+              >
+                {creator ? `${creator} · ${sourceLabel}` : sourceLabel}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+              <Badge
+                variant={error ? 'destructive' : 'secondary'}
+                className="gap-1"
+                role="status"
+                aria-live="polite"
+              >
+                {loading && !error && (
+                  <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+                )}
+                {i18n._(playbackStatusMessages[status])}
+              </Badge>
+              {isLive && (
+                <Badge variant="outline">
+                  <Trans>LIVE</Trans>
+                </Badge>
+              )}
+              {quality && (
+                <span className="text-muted-foreground">{quality}</span>
+              )}
+              {sourceUrl && (
+                <span className="text-muted-foreground">
+                  {connectionMode === 'auto' && (
+                    <>
+                      <Trans>Auto</Trans>
+                      {' · '}
+                    </>
+                  )}
+                  {connection === 'proxy' ? (
+                    <Trans>Server proxy</Trans>
+                  ) : (
+                    <Trans>Direct</Trans>
+                  )}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {loading && (
-            <Badge
-              variant="secondary"
-              className="gap-1 bg-background/50 backdrop-blur"
-            >
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <Trans>Loading</Trans>
-            </Badge>
-          )}
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-muted-foreground/60 hover:text-primary hover:bg-primary/10 transition-colors rounded-full"
-            onClick={reload}
+            onClick={retry}
+            disabled={refreshing}
+            aria-label={i18n._(msg`Reload Player`)}
             title={i18n._(msg`Reload Player`)}
           >
             <RefreshCcw className="h-4 w-4" />
           </Button>
-          {settingsContent && (
-            <Popover>
+          {(settingsContent || sourceUrl) && (
+            <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
@@ -127,8 +240,77 @@ export function PlayerCard({
               </PopoverTrigger>
               <PopoverContent
                 align="end"
-                className="w-[320px] p-4 backdrop-blur-xl bg-background/80 border-border/40 text-foreground z-[200]"
+                className="w-[320px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto p-4 backdrop-blur-xl bg-background/95 border-border/40 text-foreground z-[200] motion-reduce:animate-none"
               >
+                {sourceUrl && (
+                  <div className="space-y-3 mb-4 pb-4 border-b border-border/40">
+                    <label
+                      htmlFor={connectionId}
+                      className="text-sm font-medium"
+                    >
+                      <Trans>Connection</Trans>
+                    </label>
+                    <Select
+                      value={connectionMode}
+                      onValueChange={(value) => {
+                        setRefreshFailed(false);
+                        setConnectionMode(value as ConnectionMode);
+                      }}
+                      disabled={refreshing}
+                    >
+                      <SelectTrigger
+                        id={connectionId}
+                        aria-describedby={`${connectionId}-help`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-[300]">
+                        <SelectItem value="auto">
+                          <Trans>Auto</Trans>
+                        </SelectItem>
+                        <SelectItem value="direct" disabled={hasHeaders}>
+                          <Trans>Direct</Trans>
+                        </SelectItem>
+                        <SelectItem value="proxy">
+                          <Trans>Server proxy</Trans>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p
+                      id={`${connectionId}-help`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {hasHeaders ? (
+                        <Trans>
+                          This source needs request headers, so Auto uses the
+                          server proxy. Direct is unavailable.
+                        </Trans>
+                      ) : (
+                        <Trans>
+                          Auto connects directly. Choose Server proxy if the
+                          browser cannot load the source.
+                        </Trans>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>
+                        Server proxy relays playback through this app's server.
+                        It does not select an upstream network proxy.
+                      </Trans>
+                    </p>
+                    {onRefreshSource && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={refreshing}
+                        onClick={() => void refreshSource()}
+                      >
+                        <Trans>Refresh stream URL</Trans>
+                      </Button>
+                    )}
+                  </div>
+                )}
                 {settingsContent}
               </PopoverContent>
             </Popover>
@@ -154,13 +336,16 @@ export function PlayerCard({
         )}
       >
         <div ref={containerRef} className="w-full h-full absolute inset-0" />
-        {loading && !error && (
+        {loading && (!error || refreshing) && (
           <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-black/20">
-            <Loader2 className="h-8 w-8 animate-spin text-white/80 drop-shadow" />
+            <Loader2 className="h-8 w-8 animate-spin motion-reduce:animate-none text-white/80 drop-shadow" />
           </div>
         )}
-        {error && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center h-full text-center space-y-3 p-8 bg-black/90">
+        {error && !refreshing && (
+          <div
+            role="alert"
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center h-full text-center space-y-3 p-6 bg-black/90"
+          >
             <div className="p-3 rounded-full bg-destructive/10 text-destructive mb-2">
               <AlertCircle className="h-8 w-8" />
             </div>
@@ -168,8 +353,43 @@ export function PlayerCard({
               <Trans>Playback Error</Trans>
             </p>
             <p className="text-xs text-muted-foreground max-w-[250px]">
-              {error}
+              {i18n._(playbackErrorMessages[error])}
             </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" onClick={retry}>
+                <Trans>Retry</Trans>
+              </Button>
+              {onRefreshSource && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void refreshSource()}
+                >
+                  <Trans>Refresh stream URL</Trans>
+                </Button>
+              )}
+              {sourceUrl && connection === 'direct' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRefreshFailed(false);
+                    setConnectionMode('proxy');
+                  }}
+                >
+                  <Trans>Try server proxy</Trans>
+                </Button>
+              )}
+              {settingsContent && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Trans>Change source</Trans>
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
