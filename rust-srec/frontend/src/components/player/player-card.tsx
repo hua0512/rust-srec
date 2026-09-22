@@ -7,12 +7,20 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { AlertCircle, Loader2, RefreshCcw, Settings2, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Info,
+  Loader2,
+  RefreshCcw,
+  Settings2,
+  X,
+} from 'lucide-react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { usePlayerPlayback } from './use-player-playback';
+import { PlaybackDetails, type SourceMediaDetails } from './playback-details';
 import {
   Select,
   SelectContent,
@@ -32,6 +40,7 @@ export interface PlayerCardProps {
   sourceUrl?: string;
   creator?: string;
   quality?: string;
+  sourceDetails?: SourceMediaDetails;
   onRefreshSource?: () => Promise<void>;
   headers?: Record<string, string>;
   streamData?: unknown;
@@ -56,6 +65,7 @@ export function PlayerCard({
   sourceUrl,
   creator,
   quality,
+  sourceDetails,
   onRefreshSource,
   headers,
   streamData,
@@ -76,6 +86,7 @@ export function PlayerCard({
   const { i18n } = useLingui();
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const connectionId = useId();
@@ -86,7 +97,9 @@ export function PlayerCard({
     reload,
     status: playbackStatus,
     connection,
+    statistics,
   } = usePlayerPlayback({
+    detailsEnabled: detailsOpen,
     url,
     headers,
     title,
@@ -226,6 +239,28 @@ export function PlayerCard({
           >
             <RefreshCcw className="h-4 w-4" />
           </Button>
+          <Popover open={detailsOpen} onOpenChange={setDetailsOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-muted-foreground"
+                aria-label={i18n._(msg`Playback details`)}
+              >
+                <Info className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[320px] max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto z-[200] motion-reduce:animate-none"
+            >
+              <PlaybackDetails
+                statistics={statistics}
+                source={sourceDetails}
+                isLive={isLive}
+              />
+            </PopoverContent>
+          </Popover>
           {(settingsContent || sourceUrl) && (
             <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
               <PopoverTrigger asChild>

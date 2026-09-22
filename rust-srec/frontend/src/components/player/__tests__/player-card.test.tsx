@@ -20,6 +20,7 @@ const playback: ReturnType<typeof usePlayerPlayback> = {
   reload,
   status: 'playing',
   connection: 'direct',
+  statistics: null,
 };
 const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
@@ -100,4 +101,38 @@ it('shows refresh progress and a recoverable error when refreshing fails', async
     ),
   );
   expect(screen.getByRole('alert')).not.toHaveTextContent('secret');
+});
+
+it('separates source metadata from measured playback details and enables sampling on demand', () => {
+  hook.mockReturnValue({
+    ...playback,
+    statistics: {
+      width: 1280,
+      height: 720,
+      bufferSeconds: 3.5,
+      droppedFrames: 0,
+      totalFrames: 240,
+      liveEdgeDistanceSeconds: 5.2,
+    },
+  });
+  render(
+    player({
+      isLive: true,
+      sourceDetails: { codec: 'h264', fps: 60, bitrate: 4_000_000 },
+    }),
+  );
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ detailsEnabled: false }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Playback details' }));
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ detailsEnabled: true }),
+  );
+  expect(screen.getByText('Reported by source')).toBeInTheDocument();
+  expect(screen.getByText('Measured by player')).toBeInTheDocument();
+  expect(screen.getByText('h264')).toBeInTheDocument();
+  expect(screen.getByText('60 fps')).toBeInTheDocument();
+  expect(screen.getByText('1280 \u00d7 720')).toBeInTheDocument();
+  expect(screen.getByText('0 / 240')).toBeInTheDocument();
+  expect(screen.getByText('5.2 s')).toBeInTheDocument();
 });

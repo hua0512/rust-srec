@@ -519,6 +519,7 @@ const PlayerItem = React.memo(function PlayerItem({
               : undefined
           }
           quality={player.currentStream.quality}
+          sourceDetails={player.currentStream}
           onRefreshSource={onRefreshSource}
           mediaType={player.currentStream.format}
           isLive={player.response.is_live}

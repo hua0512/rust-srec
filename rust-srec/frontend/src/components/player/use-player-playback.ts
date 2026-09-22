@@ -6,6 +6,10 @@ import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
 import { MpegtsPlaybackController } from './mpegts-playback';
 import {
+  readPlaybackStatistics,
+  type PlaybackStatistics,
+} from './playback-statistics';
+import {
   classifyPlaybackError,
   effectiveConnection,
   PlaybackConfigurationError,
@@ -49,6 +53,7 @@ interface UseResolvedSourceOptions {
 }
 
 export interface UsePlayerPlaybackOptions {
+  detailsEnabled?: boolean;
   connectionMode?: ConnectionMode;
   sourceUrl?: string;
   url: string;
@@ -210,9 +215,12 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     mediaFileSizeBytes,
     sourceUrl,
     connectionMode = 'auto',
+    detailsEnabled = false,
   } = options;
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ArtplayerInstance | null>(null);
+  const statisticsReader = useRef<(() => PlaybackStatistics) | null>(null);
+  const [statistics, setStatistics] = useState<PlaybackStatistics | null>(null);
   const volumeRef = useRef(volume);
   const mutedRef = useRef(muted);
   const defaultWebFullscreenRef = useRef(defaultWebFullscreen);
@@ -294,6 +302,17 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   }, [defaultWebFullscreen]);
 
   useEffect(() => {
+    if (!detailsEnabled) {
+      setStatistics(null);
+      return;
+    }
+    const sample = () => setStatistics(statisticsReader.current?.() ?? null);
+    sample();
+    const timer = setInterval(sample, 1_000);
+    return () => clearInterval(timer);
+  }, [detailsEnabled]);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container || !playUrl || !resolvedMediaType) return;
 
@@ -303,6 +322,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     let mpegtsController: MpegtsPlaybackController | null = null;
 
     const destroySession = () => {
+      statisticsReader.current = null;
       hls?.destroy();
       hls = null;
       mpegtsController?.destroy();
@@ -321,6 +341,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     const initialize = async () => {
       setError(null);
       setStatus('connecting');
+      setStatistics(null);
 
       try {
         const { default: Artplayer } = await import('artplayer');
@@ -450,6 +471,8 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           return;
         }
         playerRef.current = createdArt;
+        statisticsReader.current = () =>
+          readPlaybackStatistics(createdArt.video, isLive, hls?.latency);
 
         createdArt.on('ready', () => {
           if (disposed) return;
@@ -548,5 +571,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     reload,
     status: playbackStatus,
     connection,
+    statistics:
+      resolving || configurationError || resolutionError ? null : statistics,
   };
 }

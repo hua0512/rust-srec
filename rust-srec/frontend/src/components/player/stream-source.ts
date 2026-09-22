@@ -7,6 +7,8 @@ export interface StreamOption {
   cdn?: string;
   format?: string;
   bitrate?: number;
+  codec?: string;
+  fps?: number;
   headers?: Record<string, string>;
   extras?: Record<string, string>;
 }
@@ -35,6 +37,11 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
           stream.stream_format ||
           resolvePlayerMediaType(undefined, stream.url),
         bitrate: stream.bitrate || stream.bandwidth,
+        codec: typeof stream.codec === 'string' ? stream.codec : undefined,
+        fps:
+          typeof stream.fps === 'number' && Number.isFinite(stream.fps)
+            ? stream.fps
+            : undefined,
         headers: { ...mediaInfo.headers, ...stream.headers },
         extras,
       });
@@ -51,6 +58,11 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
         mediaInfo.stream_format ||
         resolvePlayerMediaType(undefined, mediaInfo.url),
       bitrate: mediaInfo.bitrate,
+      codec: typeof mediaInfo.codec === 'string' ? mediaInfo.codec : undefined,
+      fps:
+        typeof mediaInfo.fps === 'number' && Number.isFinite(mediaInfo.fps)
+          ? mediaInfo.fps
+          : undefined,
       headers: mediaInfo.headers || {},
       extras,
     });

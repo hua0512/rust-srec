@@ -170,11 +170,26 @@ msgstr "{0} at {1}"
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
+#. placeholder {0}: source.fps
+#: src/components/player/playback-details.tsx:44
+msgid "{0} fps"
+msgstr "{0} fps"
+
+#. placeholder {0}: (source.bitrate / 1000).toFixed(0)
+#: src/components/player/playback-details.tsx:56
+msgid "{0} kbps"
+msgstr "{0} kbps"
+
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:248
 msgid "{0} of {1} used"
 msgstr "{0} of {1} used"
+
+#. placeholder {0}: value.toFixed(1)
+#: src/components/player/playback-details.tsx:21
+msgid "{0} s"
+msgstr "{0} s"
 
 #. placeholder {0}: newPlayers.length
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:183
@@ -878,8 +893,8 @@ msgstr "Authentication"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
-#: src/components/player/player-card.tsx:202
-#: src/components/player/player-card.tsx:269
+#: src/components/player/player-card.tsx:215
+#: src/components/player/player-card.tsx:304
 msgid "Auto"
 msgstr "Auto"
 
@@ -887,7 +902,7 @@ msgstr "Auto"
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
 
-#: src/components/player/player-card.tsx:289
+#: src/components/player/player-card.tsx:324
 msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 msgstr "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 
@@ -1144,6 +1159,10 @@ msgstr "BDUSS + STOKEN"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
+#: src/components/player/playback-details.tsx:94
+msgid "Behind live edge"
+msgstr "Behind live edge"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:139
 msgid "best"
 msgstr "best"
@@ -1163,6 +1182,7 @@ msgid "Binary Path"
 msgstr "Binary Path"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:125
+#: src/components/player/playback-details.tsx:50
 msgid "Bitrate"
 msgstr "Bitrate"
 
@@ -1236,6 +1256,10 @@ msgstr "Browser Status"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
+
+#: src/components/player/playback-details.tsx:78
+msgid "Buffered ahead"
+msgstr "Buffered ahead"
 
 #: src/components/player/playback-state.ts:20
 msgid "Buffering"
@@ -1378,7 +1402,7 @@ msgstr "Change Password"
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/components/player/player-card.tsx:389
+#: src/components/player/player-card.tsx:424
 msgid "Change source"
 msgstr "Change source"
 
@@ -1577,6 +1601,7 @@ msgstr "Close"
 msgid "Closest to bitrate"
 msgstr "Closest to bitrate"
 
+#: src/components/player/playback-details.tsx:34
 #: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
@@ -1824,7 +1849,7 @@ msgstr "Connecting"
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/player/player-card.tsx:251
+#: src/components/player/player-card.tsx:286
 msgid "Connection"
 msgstr "Connection"
 
@@ -2751,8 +2776,8 @@ msgstr "Determined from the URL. Platform settings apply automatically."
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/player/player-card.tsx:209
-#: src/components/player/player-card.tsx:272
+#: src/components/player/player-card.tsx:222
+#: src/components/player/player-card.tsx:307
 msgid "Direct"
 msgstr "Direct"
 
@@ -2913,6 +2938,10 @@ msgstr "Downloading..."
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:352
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
+
+#: src/components/player/playback-details.tsx:84
+msgid "Dropped frames"
+msgstr "Dropped frames"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Dual Format"
@@ -4092,6 +4121,10 @@ msgstr "Form"
 msgid "Format"
 msgstr "Format"
 
+#: src/components/player/playback-details.tsx:40
+msgid "Frame rate"
+msgstr "Frame rate"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:665
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
@@ -4992,7 +5025,7 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/player-card.tsx:192
+#: src/components/player/player-card.tsx:205
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
@@ -5024,6 +5057,10 @@ msgstr "Live Preview"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:966
 msgid "Live Refresh Interval (ms)"
 msgstr "Live Refresh Interval (ms)"
+
+#: src/components/player/playback-details.tsx:111
+msgid "Live-edge distance measures how far playback trails the available stream, not the total broadcast delay."
+msgstr "Live-edge distance measures how far playback trails the available stream, not the total broadcast delay."
 
 #. placeholder {0}: i18n._(template.label)
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:38
@@ -5386,6 +5423,10 @@ msgstr "MB"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:685
 msgid "MB/s"
 msgstr "MB/s"
+
+#: src/components/player/playback-details.tsx:66
+msgid "Measured by player"
+msgstr "Measured by player"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:344
 msgid "Media Outputs"
@@ -6816,11 +6857,16 @@ msgstr "Play"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "Playback could not start. Retry, refresh the stream URL, or choose another source."
 
+#: src/components/player/playback-details.tsx:25
+#: src/components/player/player-card.tsx:248
+msgid "Playback details"
+msgstr "Playback details"
+
 #: src/components/player/playback-state.ts:22
 msgid "Playback error"
 msgstr "Playback error"
 
-#: src/components/player/player-card.tsx:353
+#: src/components/player/player-card.tsx:388
 msgid "Playback Error"
 msgstr "Playback Error"
 
@@ -6834,7 +6880,7 @@ msgstr "Playback stalled while seeking. Retry to reload the video."
 msgid "Player"
 msgstr "Player"
 
-#: src/components/player/player-card.tsx:236
+#: src/components/player/player-card.tsx:271
 msgid "Player settings"
 msgstr "Player settings"
 
@@ -7418,8 +7464,8 @@ msgstr "Refresh failed: Manual login required"
 msgid "Refresh status"
 msgstr "Refresh status"
 
-#: src/components/player/player-card.tsx:309
-#: src/components/player/player-card.tsx:368
+#: src/components/player/player-card.tsx:344
+#: src/components/player/player-card.tsx:403
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
 
@@ -7440,8 +7486,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
-#: src/components/player/player-card.tsx:224
-#: src/components/player/player-card.tsx:225
+#: src/components/player/player-card.tsx:237
+#: src/components/player/player-card.tsx:238
 msgid "Reload Player"
 msgstr "Reload Player"
 
@@ -7487,7 +7533,7 @@ msgstr "Remove Input on Success"
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
-#: src/components/player/player-card.tsx:324
+#: src/components/player/player-card.tsx:359
 msgid "Remove player"
 msgstr "Remove player"
 
@@ -7583,6 +7629,10 @@ msgstr "Replace Pipeline Step"
 msgid "Replace Step"
 msgstr "Replace Step"
 
+#: src/components/player/playback-details.tsx:30
+msgid "Reported by source"
+msgstr "Reported by source"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:134
 msgid "Request AAC audio without a video track."
 msgstr "Request AAC audio without a video track."
@@ -7613,6 +7663,7 @@ msgstr "Reset"
 msgid "Reset view"
 msgstr "Reset view"
 
+#: src/components/player/playback-details.tsx:70
 #: src/lib/split-reason.ts:187
 msgid "Resolution"
 msgstr "Resolution"
@@ -7687,7 +7738,7 @@ msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:360
+#: src/components/player/player-card.tsx:395
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "Retry"
@@ -8244,12 +8295,12 @@ msgstr "Server local uses the backend server's timezone. You can also enter an I
 msgid "Server not configured"
 msgstr "Server not configured"
 
-#: src/components/player/player-card.tsx:207
-#: src/components/player/player-card.tsx:275
+#: src/components/player/player-card.tsx:220
+#: src/components/player/player-card.tsx:310
 msgid "Server proxy"
 msgstr "Server proxy"
 
-#: src/components/player/player-card.tsx:296
+#: src/components/player/player-card.tsx:331
 msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 msgstr "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 
@@ -8722,7 +8773,7 @@ msgstr "Stream Password"
 msgid "Stream Player"
 msgstr "Stream Player"
 
-#: src/components/player/player-card.tsx:136
+#: src/components/player/player-card.tsx:149
 msgid "Stream source"
 msgstr "Stream source"
 
@@ -9172,7 +9223,7 @@ msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 
-#: src/components/player/player-card.tsx:284
+#: src/components/player/player-card.tsx:319
 msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 msgstr "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 
@@ -9584,7 +9635,7 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/player/player-card.tsx:380
+#: src/components/player/player-card.tsx:415
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
@@ -9639,6 +9690,10 @@ msgstr "Ultrafast Compression"
 #: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
+
+#: src/components/player/playback-details.tsx:19
+msgid "Unavailable"
+msgstr "Unavailable"
 
 #: src/components/health/health-status-badge.tsx:61
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:641
@@ -9720,6 +9775,10 @@ msgstr "Updated"
 #: src/components/config/global/import-mode-radio-group.tsx:99
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "Updates existing items and creates new ones. Nothing is deleted."
+
+#: src/components/player/playback-details.tsx:104
+msgid "Updates while this panel is open. Some browsers and sources do not report every value."
+msgstr "Updates while this panel is open. Some browsers and sources do not report every value."
 
 #: src/components/streamers/card/upload-indicator.tsx:53
 msgid "upload"
@@ -9939,7 +9998,7 @@ msgstr "Video codec change"
 msgid "Video only"
 msgstr "Video only"
 
-#: src/components/player/player-card.tsx:168
+#: src/components/player/player-card.tsx:181
 msgid "Video Player"
 msgstr "Video Player"
 
