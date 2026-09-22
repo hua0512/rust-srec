@@ -41,7 +41,7 @@ systemd creates all three on every start, owned by the service account, so a fre
 
 Give a recordings tree that will grow past a few hundred gigabytes its own volume, and list that volume under `ReadWritePaths=` instead of nesting it below `/var/lib/rust-srec`. `StateDirectory=` recursively chowns everything under the state directory whenever it finds it owned by another user, and that walk runs during unit start — on a large tree it can outlast the start timeout. A path listed under `ReadWritePaths=` must already exist and be owned by the service account; systemd neither creates nor chowns it.
 
-The recording directory comes from `output_folder` in the database. The standalone backend initializes it from `OUTPUT_DIR` only for a fresh database; later starts preserve the saved value. Discovery uses saved settings and overrides, rather than treating an obsolete `OUTPUT_DIR` as another recording location. Keep explicitly configured `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder. See [Environment Variables](../getting-started/configuration.md#environment-variables).
+The recording directory comes from `output_folder` in the database. The standalone backend initializes it from `OUTPUT_DIR` only for a fresh database; later starts preserve the saved value. Discovery uses saved settings and overrides, rather than treating an obsolete `OUTPUT_DIR` as another recording location. Keep explicitly configured `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder. See [Environment Variables](../reference/environment.md#environment-variables).
 
 ## Output-Root Probes
 

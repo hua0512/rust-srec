@@ -1,271 +1,182 @@
-<script setup>
-import { withBase } from 'vitepress'
-</script>
+# Basic configuration {#configuration}
 
-# Configuration
+Start with a working installation and [one successful recording](./first-recording.md). Set these defaults before adding more streamers.
 
-Rust-Srec uses a **4-layer configuration hierarchy** for flexible control. See [Configuration Layers](../concepts/configuration.md) for detailed architecture.
+## Choose where recordings are saved
 
-## Basic Configuration
+Open **Settings → Global → Output Folder** and choose a writable recording directory. Docker uses `/app/output` inside the container; the Compose file maps it to the host's `OUTPUT_DIR`. A fresh systemd installation uses `/var/lib/rust-srec/output`. Existing installations retain the folder saved in their database.
 
-### Adding Your First Streamer
+Use `{streamer}/%Y-%m-%d` within your output layout to group recordings by streamer and date. Use `%H-%M-%S_{title}` as the filename template. See [filename placeholders](../reference/filenames.md) and [storage paths](../operations/storage.md).
 
-1. Open the frontend at http://localhost:15275
-2. Log in with default credentials:
-   - **Username**: `admin`
-   - **Password**: `admin123!`
-3. Navigate to **Streamers** → **Add Streamer**
-4. Enter:
-   - **Name**: Display name
-   - **URL**: Direct channel URL (e.g., `https://live.bilibili.com/<room-id>`)
-   - **Platform**: Auto-detected from URL
-5. Keep **Enable monitoring** on and click **Create streamer**
+## Choose an engine and recording limits
 
-For a complete success check, follow [Make Your First Recording](./first-recording.md).
+Keep Mesio for the first recording unless the platform requires another engine. Compare compatibility and features in [Recording engines](../concepts/engines.md).
 
-### Global Settings
+Set download concurrency to a value your network and disk can sustain. Use duration or part-size limits to split long recordings. Detailed defaults and units are in the [settings reference](../reference/settings.md).
 
-Access via **Settings** → **Global**. The settings are organized into several categories:
+## Add platform credentials when needed
 
-#### File Configuration
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `record_danmu` | Enable danmaku (live chat) recording | `false` |
-| `danmu_statistics` | How chat activity is summarised per session (see below) | defaults |
-| `auto_thumbnail` | Automatically generate video thumbnails | `true` |
-| `output_folder` | Base directory for recordings (supports templates) | `/app/output` |
-| `output_filename_template` | Filename pattern for recorded files | (see below) |
-| `output_file_format` | Default container format (mp4, flv, etc.) | `flv` |
+Use the relevant [platform guide](../platforms/) to determine whether login or cookies are required. Set credentials at the platform level when several streamers share an account; use a template or streamer override when they need different accounts.
 
-#### Danmu Statistics
+## Reuse settings with templates
 
-Every recording with `record_danmu` on gets a per-session chat summary: totals, an
-activity timeline, the most active chatters, the most frequent words and — where the
-platform reports them — gift rankings. `danmu_statistics` tunes that summary, and can
-be set globally or overridden per platform, per template and per streamer. Any field
-you leave out keeps its default, so `{"top_talkers": 200}` is a complete override.
+Create a template for shared recording settings and assign it to the relevant streamers. A streamer override takes precedence over its template. See [Configuration layers](../concepts/configuration.md) for inheritance rules and when changes take effect.
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `enabled` | Compute the summary at all. Turning it off still records the chat files; it only stops the summary, which stores viewer names, from being computed and saved. | `true` |
-| `top_talkers` | Chatters and gift senders listed per session (1–500) | `100` |
-| `top_words` | Frequent words listed per session (1–500) | `50` |
-| `top_gifts` | Gift names listed per session (1–500) | `20` |
-| `rate_bucket_secs` | Activity-timeline granularity in seconds. Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
-| `talker_capacity` | Distinct chatters tracked (64–8192). While a stream has fewer than this, counts are exact; above it they become close estimates and the session page marks them with `≈`. | `2048` |
-| `word_capacity` | Distinct words tracked (64–8192), same trade-off | `2048` |
-| `gift_capacity` | Distinct gift names tracked | `256` |
-| `extra_stop_words` | Words to exclude from the frequent-words chart, on top of the built-in list | none |
+## Optional recording features
 
-Out-of-range values are clamped rather than rejected, and a reported list is never
-longer than what is tracked.
+- Enable [danmu recording and statistics](../guides/danmu.md) to capture chat.
+- Add [recording schedules](../guides/schedules.md) to limit recording hours.
+- Create a [workflow](../concepts/pipeline.md) for conversion, thumbnails, or uploads.
+- Configure [notifications](../concepts/notifications.md) for recording failures or storage alerts.
 
-#### Resource Limits
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `min_segment_size` | Minimum size before a segment is kept | `1MB` |
-| `max_download_duration_secs` | Max duration before splitting the recording | `0` (disabled) |
-| `max_part_size` | Max size before splitting the recording | `8GB` |
+After changing the setup, verify another recording and confirm its files appear in the expected directory.
 
-#### Concurrency & Performance
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `max_concurrent_downloads` | Max simultaneous recording tasks | `6` |
-| `max_concurrent_uploads` | Max simultaneous upload tasks | `3` |
-| `max_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
-| `max_io_jobs` | Max concurrent I/O-intensive tasks | `8` (0 = Auto) |
-| `download_engine` | Engine used for recording (`ffmpeg`, `mesio`, etc.) | `mesio` |
-| `queue_freshness_threshold` | When a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60 Secs` |
+<div id="basic-configuration" class="legacy-section">
 
-Which extractor resolves the stream URL is a separate setting from `download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](../concepts/configuration.md#engine-and-extractor-selection).
+This section is now in [Make Your First Recording](./first-recording.md).
 
-#### Network & System
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
-| `offline_check_interval` | Interval between checking offline status | `20 Secs` |
-| `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
-| `enable_proxy` | Route traffic through an intermediate server | `false` |
+</div>
 
-#### Retention
+<div id="adding-your-first-streamer" class="legacy-section">
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `job_history_retention_days` | Days to keep terminal pipeline/job and upload history; `0` keeps it indefinitely | `30` |
-| `notification_event_log_retention_days` | Days to keep notification events; `0` keeps them indefinitely | `30` |
-| `output_retention_days` | Days to keep outputs from ended sessions; `0` disables automatic cleanup | `0` |
-| `output_retention_delete_files` | `false`: delete output records only; `true`: delete their tracked local files too | `false` |
+This section is now in [Make Your First Recording](./first-recording.md).
 
-Configure output retention under **Global Settings → Retention**. Cleanup runs at startup and every 30 minutes, skips active or recently updated processing and scheduled retries, and defers while processors hold files. File deletion also skips active recording directories and recently modified or shared files; failures keep their records for a later attempt.
+</div>
 
-**Records only** leaves the physical files on disk. Once their records are removed, changing to **Delete records and files** cannot delete those untracked files later. This policy covers registered media outputs, not arbitrary files, every pipeline derivative, remote uploads, or session segment history.
+<div id="global-settings" class="legacy-section">
 
-#### Pipeline Configuration
-Rust-Srec supports custom pipeline steps (e.g., transcripts, notifications, custom scripts) at different stages:
-- **Per-segment**: Runs for each recorded segment.
-- **Paired Segment**: Runs for video/danmaku pairs.
-- **Session Complete**: Runs when the entire recording session ends.
+This section is now in [Settings reference](../reference/settings.md#global-settings).
 
-::: info Folder Organization
-Set `output_folder` to `{streamer}/%Y-%m-%d` to organize recordings by streamer with date-based subfolders. The `output_filename_template` can then use `%H-%M-%S_{title}` for the filename itself.
-:::
+</div>
 
-## Environment Variables
+<div id="file-configuration" class="legacy-section">
 
-The following environment variables can be configured in your <a :href="withBase('/env.example')" download=".env.example">.env</a> file.
+This section is now in [Settings reference](../reference/settings.md#file-configuration).
 
-### General
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TZ` | Container timezone | `UTC` |
-| `VERSION` | Docker image version tag | `latest` |
+</div>
 
-### Paths
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATA_DIR` | Directory for application data | `./data` |
-| `CONFIG_DIR` | Directory for platform configuration files | `./config` |
-| `OUTPUT_DIR` | Initial recording folder when the standalone backend creates a fresh database; also watched by startup and disk-space health probes. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
-| `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files are stored outside the state directory. See [Installation](./installation.md). | `./logs` |
-| `LOG_MAX_FILE_BYTES` | Maximum bytes per managed log segment, read at startup; integer from 1024 to 1073741824. Oversized records are truncated with a marker. | `16777216` (16 MiB) |
-| `LOG_MAX_FILES` | Maximum managed log segments including the current file, read at startup; integer from 2 to 1024. Use consistent settings for shared `LOG_DIR`; see [retention limits](../operations/monitoring.md#logs). | `16` |
+<div id="danmu-statistics" class="legacy-section">
 
-::: tip Initial and saved recording directories
-The standalone backend initializes a fresh database's `output_folder` from `OUTPUT_DIR`, using `./output` when unset or blank. It resolves relative paths against the startup working directory and saves an absolute path. Docker Compose and the systemd unit provide `/app/output` and `/var/lib/rust-srec/output`, respectively.
+This section is now in [Settings reference](../reference/settings.md#danmu-statistics).
 
-If initial migrations or saving the output folder fail, the next start resumes initialization with the absolute path selected on the first attempt, even if `OUTPUT_DIR` or the working directory changes.
+</div>
 
-Later starts preserve the saved setting. Change it under **Settings** → **Global** → **Output Folder**, with optional overrides per platform, template, and streamer. The resolved path shown by the application is authoritative. An existing binary or system-service installation that still has `/app/output` needs this setting changed to a writable directory.
+<div id="resource-limits" class="legacy-section">
 
-Keep `RUST_SREC_OUTPUT_ROOTS` aligned with the saved folder when explicit boundaries are configured. Discovery uses saved output settings and overrides; a stale `OUTPUT_DIR` value does not add a second probe location after initialization.
-:::
+This section is now in [Settings reference](../reference/settings.md#resource-limits).
 
-### Shutdown
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` | Strict standalone-server shutdown deadline | `30` |
-| `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` | Time reserved inside the deadline for forced process-tree containment; must be greater than zero and less than the total timeout | `2` |
-| `RUST_SREC_CONTAINER_STOP_GRACE_PERIOD` | Docker Compose wait before external SIGKILL; keep longer than the backend deadline | `35s` |
-| `RUST_SREC_RUNTIME_MARKER_PATH` | Dirty-generation marker retained after a forced or crashed runtime | Beside the SQLite database |
+</div>
 
-The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including while startup admission or marker I/O is in progress, and covers the parent process exit as well as worker cleanup. The server first asks its isolated runtime to shut down gracefully; the runtime's own drain budget is derived from these same two values (the timeout minus the force reserve, less a small scheduling margin), so raising the timeout lengthens the phase that actually finalizes recordings. At the start of the force reserve, it terminates the contained process tree if the runtime is still active and exits unsuccessfully. Exit status `124` identifies hard-deadline expiry; `125` means the terminal process-tree termination request itself failed. A worker-local fatal failure fails closed instead of starting an unbounded graceful drain. A retained marker means startup recovery may be required; later clean runs do not clear the earlier unresolved recovery state. The marker does not by itself reconstruct an artifact that was interrupted before it reached SQLite. Remove it only while the backend is stopped and after the interrupted artifacts have been reconciled. Recording engines clamp their own graceful-stop wait to whatever remains of this budget, so a per-engine stop timeout that is longer than the shutdown timeout no longer causes the engine child to be killed mid-finalization. A shutdown that overruns its grace period but still finalizes everything exits cleanly; only work that could not be contained is reported as a crash.
+<div id="concurrency-performance" class="legacy-section">
 
-### Network
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `API_BIND_ADDRESS` | IP address the backend API binds to | `0.0.0.0` |
-| `API_PORT` | External port for the backend API | `12555` |
-| `FRONTEND_PORT` | External port for the web interface | `15275` |
-| `BACKEND_URL` | Internal URL for the frontend to reach the backend | `http://rust-srec:8080` |
-| `HTTP_PROXY` | HTTP proxy server URL | - |
-| `HTTPS_PROXY` | HTTPS proxy server URL | - |
-| `NO_PROXY` | Comma-separated list of hosts to bypass proxy | - |
+This section is now in [Settings reference](../reference/settings.md#concurrency-performance).
 
-### Security & Auth
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `JWT_SECRET` | Secret key for JWT signing (**Required** unless using the local-only opt-out below) | - |
-| `AUTH_DISABLED` | Disable backend authentication for loopback-only local development | `false` |
-| `API_CORS_ORIGINS` | Comma-separated exact browser origins (`scheme://host[:port]`) allowed to call the API cross-origin while authentication is disabled | Local dev server and desktop webview origins |
-| `API_LOGIN_MAX_FAILURES` | Failed logins tolerated per account inside the window | `5` |
-| `API_LOGIN_IP_MAX_FAILURES` | Failed logins tolerated per source address inside the window | `100` |
-| `API_LOGIN_WINDOW_SECS` | Length of the failed-login window, in seconds | `900` (15m) |
-| `JWT_ISSUER` | JWT issuer identifier | `rust-srec` |
-| `JWT_AUDIENCE` | JWT audience identifier | `rust-srec-api` |
-| `SESSION_SECRET` | Frontend session encryption secret (**Required**, min 32 chars) | - |
-| `COOKIE_SECURE` | Set to `true` to force HTTPS-only cookies | (auto) |
-| `MIN_PASSWORD_LENGTH` | Minimum length for user passwords | `8` |
+</div>
 
-The backend refuses to start without a non-empty `JWT_SECRET`. For local development only, authentication can be disabled by setting both `AUTH_DISABLED=true` and `API_BIND_ADDRESS=127.0.0.1` (or `::1`). The backend rejects this opt-out for wildcard, hostname, and non-loopback bind addresses.
+<div id="network-system" class="legacy-section">
 
-While authentication is disabled, only the origins in `API_CORS_ORIGINS` may call the API from a browser; the default list covers `http://localhost:15275`, `http://127.0.0.1:15275`, `http://[::1]:15275`, `tauri://localhost`, and `http://tauri.localhost`. Set the variable to override it — entries must be exact origins with no trailing path, and malformed entries are skipped with a warning at startup. Requests from any other origin are refused with `403`, as are requests whose `Host` header is neither a loopback name nor the configured bind address. With authentication enabled the variable is ignored and any origin may send requests, because every protected route still requires a bearer token.
+This section is now in [Settings reference](../reference/settings.md#network-system).
 
-### Login throttling
+</div>
 
-`POST /api/auth/login` counts failed attempts in a sliding window and answers `429` with a `Retry-After` delay once a budget is spent. Two budgets apply to every attempt:
+<div id="retention" class="legacy-section">
 
-- **Per account** (`API_LOGIN_MAX_FAILURES`, default 5). A successful login clears it immediately.
-- **Per source address** (`API_LOGIN_IP_MAX_FAILURES`, default 100). This limit is higher to allow for shared proxies. The source address is the peer of the TCP connection, and `X-Forwarded-For` is not trusted, so behind the bundled frontend container, nginx, or any other reverse proxy **every login arrives from the proxy's address**. Treat this budget as a cap on password-hashing work, not as a per-user lockout — while it is exhausted, everyone behind that proxy is throttled. Raise it if that matters more to you than the hashing cap; lower it only if browsers reach the backend directly.
+This section is now in [Settings reference](../reference/settings.md#retention).
 
-Both share the window length set by `API_LOGIN_WINDOW_SECS`.
+</div>
 
-### Token Expiration
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ACCESS_TOKEN_EXPIRATION_SECS` | JWT access token lifetime | `3600` (1h) |
-| `REFRESH_TOKEN_EXPIRATION_SECS` | JWT refresh token lifetime | `604800` (7d) |
+<div id="pipeline-configuration" class="legacy-section">
 
-### Browser Notifications (Web Push / VAPID)
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID public key (base64url, unpadded). Leave empty/unset to disable. | - |
-| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID private key (base64url, unpadded). Leave empty/unset to disable. | - |
-| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject (e.g. `mailto:admin@localhost`) | `mailto:admin@localhost` |
+This section is now in [Settings reference](../reference/settings.md#pipeline-configuration).
 
-### Backend Service
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RUST_LOG` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `DATABASE_URL` | SQL database connection string. The value shown is the one the Docker `.env` sets. Left unset the backend falls back to `sqlite:srec.db?mode=rwc`, relative to the working directory; the bundled system service sets `sqlite:///var/lib/rust-srec/rust-srec.db`. The runtime generation marker is derived from this URL and is stored beside the database file. | `sqlite:///app/data/rust-srec.db` (Docker) |
-| `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Affects every notification event — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, credential events. Supported: `en`, `zh-CN`. | `en` |
-| `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
+</div>
 
-The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` uses `/var/lib`. Startup discovery tests a concrete recording directory that resolves to that same key, so it does not require write access to a read-only ancestor. Setting `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` gives the directory its own boundary; the longest matching configured prefix wins. Explicit boundaries are themselves probed and should name writable recording locations. See [output-root probes](../operations/storage.md#output-root-probes) for discovery limits.
+<div id="environment-variables" class="legacy-section">
 
-### Resource Limits (Docker)
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CPU_LIMIT` | Maximum CPUs the container can use | `4` |
-| `MEMORY_LIMIT` | Maximum memory the container can use | `4G` |
-| `CPU_RESERVATION` | Reserved CPUs for the container | `1` |
-| `MEMORY_RESERVATION` | Reserved memory for the container | `512M` |
+This section is now in [Environment Variables](../reference/environment.md#environment-variables).
 
-## Filename Template Variables
+</div>
 
-Rust-Srec supports two types of placeholders in `output_folder` and `output_filename_template`.
+<div id="general" class="legacy-section">
 
-### Curly Brace Variables
-These are replaced with streamer or session specific metadata.
+This section is now in [Environment Variables](../reference/environment.md#general).
 
-| Variable | Description |
-|----------|-------------|
-| `{streamer}` | Streamer display name |
-| `{title}` | Current stream title |
-| `{platform}` | Platform name (e.g., bilibili) |
-| `{session_id}` | Unique ID for the recording session (only in `output_folder`) |
+</div>
 
-### Percent Placeholders (FFmpeg Style)
-These are replaced with date, time, or sequence information.
+<div id="paths" class="legacy-section">
 
-| Variable | Description |
-|----------|-------------|
-| `%Y` | Year (YYYY) |
-| `%m` | Month (01-12) |
-| `%d` | Day (01-31) |
-| `%H` | Hour (00-23) |
-| `%M` | Minute (00-59) |
-| `%S` | Second (00-59) |
-| `%i` | Sequence number for split parts |
-| `%t` | Unix timestamp |
-| `%%` | Literal percent sign |
+This section is now in [Environment Variables](../reference/environment.md#paths).
 
-Example: `{streamer}/%Y-%m-%d/%H-%M-%S_{title}`
+</div>
 
-### Pipeline Destination Placeholders
+<div id="shutdown" class="legacy-section">
 
-Pipeline destination fields such as rclone `destination_root` and copy/move
-`destination` support `{platform}`, `{streamer}`, `{title}`, `{streamer_id}`,
-`{session_id}`, and the same `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%t`, and `%%`
-time tokens. Time tokens render in the server's local time zone.
+This section is now in [Environment Variables](../reference/environment.md#shutdown).
 
-Rclone expands time tokens with the job creation time by default. Set
-`time_anchor` to `session_start` to keep every segment from one live session in
-the folder for the session's start date, even when the stream crosses midnight.
-Copy/move preserves its historical execution-time expansion when `time_anchor`
-is omitted; set it to `job_created` or `session_start` when deterministic
-anchoring is needed.
+</div>
 
-When anchoring by session start, keep `%Y%m%d-%H%M%S` or `%t` in the filename
-template. If multiple sessions send the same basename into one destination
-folder, rclone and filesystem copy/move operations can overwrite or skip files
-depending on the operation and arguments.
+<div id="network" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#network).
+
+</div>
+
+<div id="security-auth" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#security-auth).
+
+</div>
+
+<div id="login-throttling" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#login-throttling).
+
+</div>
+
+<div id="token-expiration" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#token-expiration).
+
+</div>
+
+<div id="browser-notifications-web-push-vapid" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#browser-notifications-web-push-vapid).
+
+</div>
+
+<div id="backend-service" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#backend-service).
+
+</div>
+
+<div id="resource-limits-docker" class="legacy-section">
+
+This section is now in [Environment Variables](../reference/environment.md#resource-limits-docker).
+
+</div>
+
+<div id="filename-template-variables" class="legacy-section">
+
+This section is now in [Filename Template Variables](../reference/filenames.md#filename-template-variables).
+
+</div>
+
+<div id="curly-brace-variables" class="legacy-section">
+
+This section is now in [Filename Template Variables](../reference/filenames.md#curly-brace-variables).
+
+</div>
+
+<div id="percent-placeholders-ffmpeg-style" class="legacy-section">
+
+This section is now in [Filename Template Variables](../reference/filenames.md#percent-placeholders-ffmpeg-style).
+
+</div>
+
+<div id="pipeline-destination-placeholders" class="legacy-section">
+
+This section is now in [Filename Template Variables](../reference/filenames.md#pipeline-destination-placeholders).
+
+</div>

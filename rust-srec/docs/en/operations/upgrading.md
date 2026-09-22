@@ -92,7 +92,7 @@ repair historical invalid configurations.
 New omitted/null timezones mean UTC. Existing TimeBased editor updates that omit
 the member retain the stored zone; explicit null requests UTC. Backup exports now
 use schema `0.1.8` and explicit zones, while older TimeBased backup omissions import
-as local. See [filter timezones](../concepts/configuration.md#filter-timezones-and-boundaries).
+as local. See [filter timezones](../guides/schedules.md#filter-timezones-and-boundaries).
 
 ## Rollback
 

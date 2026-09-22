@@ -44,15 +44,7 @@ A pipeline can still change remote data, just not as part of a deletion the appl
 
 Two narrow cases delete a file without being asked to: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running, and a failed pipeline job's partial outputs are cleaned up. Neither substitutes for a retention policy.
 
-## Concurrent Database Updates
-
-Concurrent deletions of the same media-output record subtract its size from the
-session total once. If updating that total fails, the record deletion rolls back.
-This database guarantee does not make optional filesystem deletion transactional.
-
-Template credential refresh reads and updates the template in one reserved write
-transaction, preserving other configuration edits committed before it. Concurrent
-streamer error increments each return the count produced by their own update.
+Database changes roll back together if a media-record deletion fails. Optional filesystem deletion is not transactional.
 
 ## Auditability Limits
 
@@ -61,3 +53,9 @@ Sessions, pipeline jobs, notification events, and logs are operational tools, no
 ## Decommissioning
 
 Disable streamers, revoke platform and notification credentials, revoke user sessions, stop the service, inventory remote outputs, then erase or archive data according to policy. Neither disabling nor deleting streamers is a purge: recording history and the streamer names stored on it survive a streamer delete, and no delete removes a media file unless it is a media-output delete asked to remove the file too. Include configuration exports and backups; deleting the live database alone is insufficient.
+
+<div id="concurrent-database-updates" class="legacy-section">
+
+This section is now in [Persistence contracts](../development/persistence.md#concurrent-database-updates).
+
+</div>

@@ -1,329 +1,40 @@
-# Configuration
+# Configuration layers {#configuration}
 
-`rust-srec` resolves an effective, per-streamer configuration by merging a 4-layer hierarchy
-stored in the SQLite database.
+Use global settings for defaults, platform settings for one service, templates for groups of streamers, and streamer overrides for exceptions.
 
-This page is a correctness-first reference of how the merge works in the codebase. For deployment
-and step-by-step setup, follow the docs quick start instead:
+## Inheritance
 
-- `../getting-started/configuration.md`
+Settings are applied in this order, from lowest to highest priority:
 
-## The 4-layer hierarchy
+1. Global
+2. Platform
+3. Template, if assigned
+4. Streamer
 
-The effective config is merged in this order (low priority to high priority):
+For example, if the global output format is `flv` and a template sets `mp4`, streamers using that template record as MP4. A streamer that explicitly sets `flv` uses FLV instead. Remove that override to inherit the template again.
 
-1. Global config (`global_config` table)
-2. Platform config (`platform_config` table)
-3. Template config (`template_config` table, optional per streamer)
-4. Streamer overrides (`streamers.streamer_specific_config` JSON)
+## Create and use a template
 
-```mermaid
-flowchart TB
-  G["Layer 1: Global (base defaults)"]
-  P["Layer 2: Platform (per-platform defaults)"]
-  T["Layer 3: Template (reusable bundles)"]
-  S["Layer 4: Streamer (per-streamer JSON overrides)"]
-  M(("MergedConfig"))
+1. Create a template containing the settings shared by a group of streamers.
+2. Assign it when creating or editing each streamer.
+3. Leave fields inherited unless that streamer needs a different value.
+4. Edit the template to update the group. Check the rules below for recordings already in progress.
 
-  G --> P
-  P --> T
-  T --> S
-  S --> M
-```
+A template can also provide platform-specific overrides. Those take precedence over the template's common settings for that platform.
 
-The merge is performed by:
+## Important merge rules
 
-- `MergedConfigBuilder` (applies each layer)
-- `ConfigResolver` (loads DB records and builds `MergedConfig`)
-- `ConfigService` (caches resolved configs and broadcasts updates)
+- A supplied scalar value overrides the lower layer; an omitted value inherits it.
+- A pipeline override replaces the entire pipeline, not individual steps.
+- Empty quality, format, and CDN preference lists retain lower-layer preferences. CDN blacklists are combined.
+- An empty cookie string can override lower-layer recording cookies. Remove the override to inherit credentials rather than entering an empty string.
+- Platform options merge by key and ignore `null` overrides. Engine overrides use JSON Merge Patch, where `null` removes a key.
 
-## What gets produced: `MergedConfig`
+For supported JSON keys, credential-source selection, and examples for API clients, use the [override reference](../reference/configuration-overrides.md). Schedules and daylight-saving behavior are covered in [Recording schedules](../guides/schedules.md).
 
-`MergedConfig` is the resolved configuration the runtime uses for monitoring, downloads, danmu,
-and pipelines.
+## When a change reaches a recording already in progress {#when-a-change-reaches-a-recording-already-in-progress}
 
-Key fields (grouped by concern):
-
-- Output: `output_folder`, `output_filename_template`, `output_file_format`
-- Limits: `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- Danmu: `record_danmu`, `danmu_statistics`
-- Network: `proxy_config`, `cookies`
-- Engine: `download_engine`, `extractor`, `download_retry_policy`, `engines_override`
-- Stream selection: `stream_selection`
-- Pipelines: `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline`
-- Platform extractor options: `platform_extras`
-- Timing: `fetch_delay_ms`, `download_delay_ms`, `offline_check_count`,
-  `offline_check_delay_ms`
-- Session UX: `auto_thumbnail`
-
-Some runtime settings are global-only (not part of `MergedConfig`), such as concurrency
-limits and log filter directives.
-
-## Where each setting is configured
-
-Not every field is available at every layer. The list below reflects what the resolver and
-builder actually read.
-
-- Global-only (base defaults + runtime settings): `auto_thumbnail`, concurrency/job limits,
-  scheduler delays, log filter directives
-- Platform-only: `fetch_delay_ms`, `download_delay_ms`, `platform_specific_config`
-- Template-only: `platform_overrides`, `engines_override`
-- Streamer-only: `streamer_specific_config` (JSON object; see below)
-
-::: tip Column names differ between layers
-Platform and template store `stream_selection_config` (JSON), which becomes
-`MergedConfig.stream_selection`; streamer overrides use the same key `stream_selection_config`.
-The global layer names its engine and extractor defaults `default_download_engine` and
-`default_extractor`, while platform, template and streamer use `download_engine` and
-`extractor`.
-:::
-
-## Merge rules (important details)
-
-The builder is intentionally conservative: most fields are "override if present".
-
-### Scalars: higher layer overrides
-
-For most string/number/bool fields, a higher layer replaces the value when it provides one.
-
-### Offline detection and download failure recovery share one count
-
-`offline_check_count` is the single inherited tolerance for consecutive offline signals. The
-runtime uses the resolved per-streamer value for both:
-
-- consecutive offline status checks before confirming that a streamer has gone offline
-- consecutive download failures before placing the streamer into temporary cooldown
-
-The default is `3`. Download failures apply a minimum threshold of `2`, even when
-`offline_check_count` is set to `1`, to avoid entering cooldown after one transient CDN or
-network failure. Once the threshold is reached, cooldown starts at 60 seconds and doubles after
-each additional consecutive failure, up to one hour. A successful status check or sustained
-download progress clears the accumulated failure state.
-
-`offline_check_delay_ms` controls the interval between offline confirmation checks and the
-related session hysteresis window. It does not control the cooldown duration.
-
-Neither value can resolve below its floor: `offline_check_count` ends up at least `1` and
-`offline_check_delay_ms` at least `1000`. The clamps run on the platform, template and streamer
-layers and once more when the merged config is built, so a below-floor global value is corrected
-before anything reads it.
-
-::: warning Deprecated compatibility formats
-The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
-`effective_offline_check_delay_ms` are deprecated. Persisted `TransientError` events that omit
-`backoff_threshold` are also deprecated. These compatibility formats will be removed in a future
-version. New integrations must use `offline_check_count` and `offline_check_delay_ms`, and include
-`backoff_threshold` in every serialized transient-error event.
-:::
-
-### Cookies: "present wins" (including empty strings)
-
-Cookies are treated as a single optional string. If a higher layer provides `cookies`, it
-overrides lower layers.
-
-::: tip Cookies best practice
-Avoid setting cookies to an empty string. An empty string is still "present" and will override
-lower layers, effectively disabling fallback cookies.
-:::
-
-### Stream selection: merged by `StreamSelectionConfig::merge`
-
-Stream selection is merged with special semantics:
-
-- `preferred_formats`: overrides only if `Some(non_empty_vec)`
-- `preferred_media_formats`, `preferred_qualities`, `preferred_cdns`: override only if non-empty
-- `min_bitrate`, `max_bitrate`: override only if non-zero
-- `blacklisted_cdns`: unioned instead of replaced, so a higher layer can only add exclusions
-
-This allows a template to specify only the parts it cares about without losing platform defaults.
-
-### Pipelines: higher layer replaces the whole pipeline
-
-Pipelines are parsed from JSON into a `DagPipelineDefinition`. When a layer provides a pipeline,
-it replaces the previous pipeline definition as a whole (there is no step-by-step merge).
-
-A template can also carry pipelines inside `platform_overrides[platform_name]`. Those are more
-specific than the template's own top-level `pipeline`, `session_complete_pipeline` and
-`paired_segment_pipeline` fields, so the resolver applies them after the template layer and they
-win over it.
-
-See:
-
-- `./pipeline.md`
-
-### Platform extras: shallow JSON merge, `null` does not override
-
-Platform extractor options are carried via `platform_extras` (a JSON blob) and merged with a
-shallow object merge:
-
-- If both sides are JSON objects, keys from the higher layer overwrite keys from the lower layer.
-- `null` values in the higher layer are ignored (they do not override).
-- If either side is not an object, the higher layer wins.
-
-This is implemented in `platforms_parser::extractor::platform_configs::merge_platform_extras`.
-
-::: tip Clearing a platform_extras key
-`platform_extras` uses a shallow merge and ignores `null` in the overlay. This means a higher
-layer cannot "unset" a lower-layer key via `null`; it can only override with a non-null value.
-:::
-
-## Platform extractor options (`platform_extras`)
-
-`platform_extras` is sourced and merged from these places:
-
-- Platform layer: `platform_config.platform_specific_config`
-- Template layer: `template_config.platform_overrides[platform_name]`
-- Streamer layer: `streamers.streamer_specific_config.platform_extras`
-
-The same merge function is applied each time in layer order.
-
-::: tip About credentials in platform extras
-Platform, template and streamer records may all contain credential-related keys. Each layer is
-stripped of `refresh_token`, `access_token`, `session_cookies`, `last_cookie_check_date` and
-`last_cookie_check_result` before it is merged into `platform_extras`, so extractor config never
-carries credentials.
-:::
-
-## Credentials (`cookies` + `refresh_token`) are resolved separately
-
-The runtime derives a `credential_source` (a sidecar on `ResolvedStreamerContext`) for
-authentication and refresh-token handling. It is intentionally not part of `MergedConfig` and
-must not be exposed via serialized config APIs.
-
-Precedence (highest to lowest):
-
-1. Streamer override: `streamer_specific_config.cookies`
-   (+ optional `streamer_specific_config.refresh_token` / `access_token`)
-2. Template: `template_config.cookies`
-   (+ optional `template_config.platform_overrides[platform].refresh_token` / `access_token`)
-3. Platform: `platform_config.cookies`
-   (+ optional `platform_config.platform_specific_config.refresh_token` / `access_token`)
-
-Unlike `MergedConfig.cookies`, an empty or whitespace-only `cookies` value does **not** claim the
-credential source: that layer is skipped and the next one down is considered. A `refresh_token`
-or `access_token` is only picked up from the layer whose cookies won, so a `refresh_token` on a
-streamer with no streamer-level cookies is ignored.
-
-A platform can also produce a credential source without cookies: for SOOP, a
-`platform_specific_config` carrying `username` and `password` yields a credential source whose
-cookies are minted on first use.
-
-## Streamer overrides: `streamer_specific_config`
-
-`streamer_specific_config` is an untyped JSON object. Unknown keys are ignored.
-
-Supported keys that affect `MergedConfig`:
-
-- `output_folder`, `output_filename_template`, `output_file_format`
-- `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `extractor`,
-  `offline_check_count`, `offline_check_delay_ms`
-- `proxy_config` (JSON object)
-- `stream_selection_config` (JSON object)
-- `download_retry_policy` (JSON object)
-- `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline` (JSON objects)
-- `platform_extras` (JSON object)
-
-Keys used by the credentials subsystem (not part of `MergedConfig`):
-
-- `refresh_token`, `access_token`
-
-Both are read from the same layer whose `cookies` won. They are two of the five keys —
-`refresh_token`, `access_token`, `session_cookies`, `last_cookie_check_date` and
-`last_cookie_check_result` — stripped from every layer before it is merged into
-`platform_extras`.
-
-::: tip Invalid JSON is ignored
-Most JSON fields in platform/template/global records are parsed best-effort. If JSON parsing
-fails, the resolver logs a warning and falls back to defaults or the previous layer. The same
-applies inside `streamer_specific_config`: a key whose value has the wrong shape is skipped and
-the lower layer is inherited, rather than failing the whole resolve.
-
-`platform_extras` is the exception. Its value is taken as-is rather than shape-checked, and the
-merge falls back to "overlay wins" whenever either side is not an object — so a scalar or an
-array there replaces the extras accumulated from the lower layers instead of being skipped.
-:::
-
-## Engine and extractor selection
-
-### `download_engine`
-
-`download_engine` is a string that selects which download engine configuration to use. It can be:
-
-- A built-in engine type string (`ffmpeg`, `streamlink`, `mesio`)
-- A custom engine configuration ID stored in the `engine_configuration` table
-
-An ID that matches neither falls back to the manager's default engine.
-
-### `extractor`
-
-`extractor` selects which extractor resolves the stream URL. It is independent of
-`download_engine`, which only decides how the resolved URL is pulled. Valid values:
-
-- `auto` (the default): dispatch on the URL regex registry
-- `streamlink`: resolve through Streamlink
-
-A layer that stores `NULL` or an empty string expresses no preference and inherits from the layer
-below. An unrecognized name is logged and ignored the same way, so a typo degrades to inheritance
-instead of failing the resolve.
-
-### `engines_override` (template-only)
-
-Templates can provide `engines_override`, a JSON object of:
-
-- `engine_id` -> `override_value`
-
-When a download starts, the Download Manager checks whether there is an override entry for the
-selected engine ID. If so, it:
-
-1. Loads the base engine config (default config for built-in types, DB config for custom IDs)
-2. Applies the override with JSON Merge Patch semantics: nested objects are merged key by key,
-   and a `null` in the override removes that key
-3. Creates a dedicated engine instance for that override, keyed by a hash of the override so its
-   circuit-breaker state stays separate from the un-overridden engine
-
-::: tip `null` means something different here
-`engines_override` removes a key when the override sets it to `null`, whereas `platform_extras`
-ignores `null` in the overlay.
-:::
-
-## Hot reload, cache, and update events
-
-`ConfigService` caches resolved streamer configs in memory:
-
-- TTL: 1 hour (default)
-- Concurrent request deduplication: only one in-flight resolve per streamer
-- Hard resolve timeout: 30 seconds (prevents stuck in-flight entries)
-
-When configs change via API/UI, the service invalidates relevant cache entries and broadcasts a
-`ConfigUpdateEvent` so the scheduler and managers can react.
-
-Typical invalidation patterns:
-
-- `GlobalUpdated`: invalidate all streamers
-- `PlatformUpdated`: invalidate streamers on that platform
-- `TemplateUpdated`: invalidate streamers using that template
-- `StreamerMetadataUpdated`: invalidate that streamer
-- `EngineUpdated`: invalidate all streamers (engine usage is not tracked)
-
-::: tip Prefer templates
-Put shared settings in a template rather than repeating them per streamer. Changing one template
-then re-resolves every streamer assigned to it, instead of requiring an edit per streamer.
-:::
-
-At startup and after global, platform or template changes, resolved offline-check
-settings refresh for up to 16 independent streamers at a time. The runtime event
-handler still finishes each selected batch before processing its next event.
-A failed lookup retains that streamer's previous metadata settings and does not
-stop healthy neighbors from refreshing; streamers already marked for retirement
-remain excluded from the bulk snapshot. This changes refresh scheduling, not
-configuration precedence or persistent recovery acknowledgements.
-
-### When a change reaches a recording already in progress
-
-Invalidating the cache is not the same as changing a download that is already running. Nothing
-below needs a service restart; the difference is only whether the new value applies now or at the
-next download.
+Changes made through the interface or API do not require a service restart, but some settings apply only to the next download.
 
 A running download does pick up:
 
@@ -331,8 +42,8 @@ A running download does pick up:
   the merged config as each segment completes. Clearing a pipeline in configuration does not clear
   it for a session already running — the re-read only replaces a pipeline that is set.
 - `max_concurrent_downloads`, the queue freshness threshold, the GPU probe interval and pipeline
-  worker concurrency, on a `GlobalUpdated` event.
-- A new monitoring interval, which the scheduler pushes to each live streamer actor — but only
+  worker concurrency, when global settings are saved.
+- A new monitoring interval, which is applied to each live streamer — but only
   when `streamer_check_delay_ms`, `offline_check_delay_ms` or `offline_check_count` actually
   changed. A streamer whose check is already due runs that check first and applies the new
   interval afterwards.
@@ -345,52 +56,116 @@ that streamer, not to the next segment of the current one.
 
 A pipeline job that is already queued keeps the DAG definition it was created with.
 
-For the runtime behavior and how these updates route through the system, see:
+<div id="the-4-layer-hierarchy" class="legacy-section">
 
-- `./architecture.md`
+This section is now in [Configuration layers](./configuration.md#inheritance).
 
-## Filter Timezones and Boundaries
+</div>
 
-Monitor checks share immutable filter snapshots, including empty results. Up to 1,024
-streamers are cached and at most 16 repository loads run concurrently; concurrent checks
-for one streamer share one load. A load times out after 10 seconds. Filter order and invalid-row
-skipping remain unchanged, and cancellation or failure releases waiting checks.
+<div id="what-gets-produced-mergedconfig" class="legacy-section">
 
-Successful filter edits invalidate the shared snapshot before scheduling a recheck. Imports,
-streamer deletion and global/lag reconciliation invalidate affected snapshots too. A check that
-already holds a snapshot finishes with that version; a retired load cannot publish over an
-invalidation. External SQL or writers outside the shared runtime may remain unseen for the
-30-second cache TTL; the first subsequent check refreshes expired data.
+This section is now in [Configuration resolution](../development/configuration.md#what-gets-produced-mergedconfig).
 
-Backend `TIME_BASED` and `CRON` filter JSON accept an optional IANA `timezone`, for
-example `"Europe/Madrid"`, or `"local"` for the backend system timezone and its DST
-rules. Matching and next-start/next-stop use that zone consistently.
-An overnight interval belongs to its starting weekday. During a repeated clock
-hour, its start uses the earlier instant and its end uses the later instant;
-overlapping or touching intervals remain continuously matched. A missing local
-boundary advances to the first valid minute within three hours; larger skipped
-date windows are omitted.
+</div>
 
-Omitted or null timezone now means UTC for both rule types. Upgrades preserve
-existing TimeBased omissions by storing explicit `"local"`; existing explicit
-IANA zones and Cron rules keep their meaning. Both filter forms let you choose
-UTC or **Server local**, or enter an IANA name. Server local means the backend
-server's timezone, which may differ from the browser's timezone. The filter cards
-show the effective timezone beside the schedule. Editing preserves the stored
-zone; clearing the timezone control explicitly selects UTC. New filters and
-filter-type changes also start with UTC. Changing the zone keeps the entered
-clock times, interpreting those times in the newly selected zone.
+<div id="where-each-setting-is-configured" class="legacy-section">
 
-For API clients, a same-type TimeBased update that omits the timezone member
-retains its stored value. Send explicit null or `"UTC"` to switch it to UTC.
-Replacing a Cron configuration without a timezone uses UTC.
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#where-each-setting-is-configured).
 
-Backup schema `0.1.8` exports an explicit timezone for both types. Importing a
-TimeBased omission from schema `0.1.7` or earlier retains local-time behavior;
-new-schema omissions mean UTC. `"local"` continues to follow the destination
-server's timezone, as legacy local rules did. Unknown JSON members are retained.
+</div>
 
-Cron matching has minute granularity, including expressions containing
-seconds; stop scans remain bounded to eight days. Parsed cron/regex definitions
-are reused in separate bounded caches; eviction or oversized definitions may
-require recompilation.
+<div id="merge-rules-important-details" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#merge-rules-important-details).
+
+</div>
+
+<div id="scalars-higher-layer-overrides" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#scalars-higher-layer-overrides).
+
+</div>
+
+<div id="offline-detection-and-download-failure-recovery-share-one-count" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count).
+
+</div>
+
+<div id="cookies-present-wins-including-empty-strings" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#cookies-present-wins-including-empty-strings).
+
+</div>
+
+<div id="stream-selection-merged-by-streamselectionconfig-merge" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#stream-selection-merged-by-streamselectionconfig-merge).
+
+</div>
+
+<div id="pipelines-higher-layer-replaces-the-whole-pipeline" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#pipelines-higher-layer-replaces-the-whole-pipeline).
+
+</div>
+
+<div id="platform-extras-shallow-json-merge-null-does-not-override" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#platform-extras-shallow-json-merge-null-does-not-override).
+
+</div>
+
+<div id="platform-extractor-options-platform-extras" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#platform-extractor-options-platform-extras).
+
+</div>
+
+<div id="credentials-cookies-refresh-token-are-resolved-separately" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#credentials-cookies-refresh-token-are-resolved-separately).
+
+</div>
+
+<div id="streamer-overrides-streamer-specific-config" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#streamer-overrides-streamer-specific-config).
+
+</div>
+
+<div id="engine-and-extractor-selection" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#engine-and-extractor-selection).
+
+</div>
+
+<div id="download-engine" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#download-engine).
+
+</div>
+
+<div id="extractor" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#extractor).
+
+</div>
+
+<div id="engines-override-template-only" class="legacy-section">
+
+This section is now in [Configuration overrides](../reference/configuration-overrides.md#engines-override-template-only).
+
+</div>
+
+<div id="hot-reload-cache-and-update-events" class="legacy-section">
+
+This section is now in [Configuration layers](./configuration.md#when-a-change-reaches-a-recording-already-in-progress).
+
+</div>
+
+<div id="filter-timezones-and-boundaries" class="legacy-section">
+
+This section is now in [Recording schedules](../guides/schedules.md#filter-timezones-and-boundaries).
+
+</div>

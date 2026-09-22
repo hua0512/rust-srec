@@ -49,6 +49,8 @@ Rejected imports do not revoke tokens.
 
 An export is useful for migration and source-controlled review after secrets are removed, but it is not a database backup.
 
+Imports apply configuration as one database transaction. Validation or write failures before commit leave it unchanged. A reload warning after commit means the configuration was saved, but runtime refresh needs attention.
+
 ## Consistent Filesystem Backup
 
 For the standard Docker layout:
@@ -69,19 +71,6 @@ With the systemd service the sequence is the same, against the unit's own paths:
 
 Protect `.env`, `/etc/rust-srec/rust-srec.env`, and backup media with the same or stronger controls as the live service. Keep at least one backup outside the host and test its integrity.
 
-## Import Persistence Ownership
-
-Import and ordinary repository writes share the same typed field bindings. Import
-still reserves one SQLite write transaction for all ten configuration domains,
-subscription/filter replacement, email-slot swaps and authentication invalidation.
-Existing IDs and creation times remain stable; caller-selected update times and
-raw JSON are preserved. Extractor settings absent from the backup format retain
-their existing values, and new rows keep the same omitted-column defaults.
-
-Cache invalidation and runtime notifications occur only after commit. A late
-validation or database failure rolls back the import without publishing changes;
-a post-commit reload failure remains a warning about already-committed state.
-
 ## Restore Drill
 
 1. Provision a clean host with enough space and the same pinned Rust-Srec version.
@@ -94,3 +83,9 @@ a post-commit reload failure remains a warning about already-committed state.
 A session can outlive the streamer it was recorded for: `live_sessions.streamer_id` is nullable, and deleting a streamer keeps the session, its media rows, and the streamer name stored on the session. Sessions with no matching streamer in a restored database are expected in that case and are not evidence of a damaged restore.
 
 Record the restore time and the point-in-time loss observed. Those measurements are your actual recovery time and recovery point.
+
+<div id="import-persistence-ownership" class="legacy-section">
+
+This section is now in [Persistence contracts](../development/persistence.md#import-persistence-ownership).
+
+</div>

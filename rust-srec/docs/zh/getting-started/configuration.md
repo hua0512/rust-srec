@@ -1,267 +1,182 @@
-<script setup>
-import { withBase } from 'vitepress'
-</script>
+# 基础配置 {#配置}
 
-# 配置
+安装完成并[成功录制一次](./first-recording.md)后，先设置以下默认值，再添加更多主播。
 
-rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级](../concepts/configuration.md)。
+## 选择录制目录
 
-## 基础配置
+打开**设置 → 全局 → 输出目录**，选择可写的录制目录。Docker 在容器内使用 `/app/output`，Compose 将它映射到宿主机的 `OUTPUT_DIR`。全新 systemd 安装使用 `/var/lib/rust-srec/output`；已有安装保留数据库中保存的目录。
 
-### 添加第一个主播
+在输出目录布局中使用 `{streamer}/%Y-%m-%d`，可按主播和日期分类；文件名模板可使用 `%H-%M-%S_{title}`。详见[文件名占位符](../reference/filenames.md)及[存储路径](../operations/storage.md)。
 
-1. 打开前端 http://localhost:15275
-2. 使用默认凭据登录：
-   - **用户名**：`admin`
-   - **密码**：`admin123!`
-3. 进入 **主播** → **添加主播**
-4. 输入：
-   - **名称**：显示名称
-   - **URL**：直播间直接地址（如 `https://live.bilibili.com/<room-id>`）
-   - **平台**：根据 URL 自动识别
-5. 保持**启用监控**开启，然后点击**创建主播**
+## 选择引擎和录制上限
 
-完整验收流程参见[完成第一次录制](./first-recording.md)。
+首次录制可保留 Mesio，除非平台要求其他引擎。兼容性和功能对比见[录制引擎](../concepts/engines.md)。
 
-### 全局设置
+将下载并发设为网络和磁盘能够持续承受的数量。可通过时长或分段大小限制拆分长录制。默认值和单位见[设置参考](../reference/settings.md)。
 
-通过 **设置** → **全局** 访问。设置项分为以下几类：
+## 按需配置平台凭据
 
-#### 文件配置 (File Configuration)
-| 设置 | 说明 | 默认值 |
-|------|------|--------|
-| `record_danmu` | 启用弹幕录制 | `false` |
-| `danmu_statistics` | 每场直播的弹幕统计方式（见下文） | 默认值 |
-| `auto_thumbnail` | 自动生成视频封面 | `true` |
-| `output_folder` | 录制保存的基础目录（支持模板） | `/app/output` |
-| `output_filename_template` | 录制文件的文件名模板 | (见下文) |
-| `output_file_format` | 默认输出格式 (mp4, flv 等) | `flv` |
+按对应[平台指南](../platforms/)确认是否需要登录或 Cookie。多个主播共用账号时，在平台层配置凭据；需要不同账号时，使用模板或主播覆盖。
 
-#### 弹幕统计
+## 使用模板复用设置
 
-开启 `record_danmu` 的每场录制都会生成弹幕统计摘要：总数、活跃度时间线、最活跃的发言人、
-高频词，以及平台上报礼物时的礼物排行。`danmu_statistics` 用于调整该摘要，可在全局设置，
-也可按平台、模板和主播覆盖。未填写的字段保持默认值，因此 `{"top_talkers": 200}` 就是一份
-完整的覆盖配置。
+为共用的录制设置创建模板，并分配给相关主播。主播覆盖优先于模板。继承规则和修改生效时间见[配置层级](../concepts/configuration.md)。
 
-| 字段 | 说明 | 默认值 |
-|------|------|--------|
-| `enabled` | 是否计算摘要。关闭后仍会录制弹幕文件，只是不再计算和保存包含观众昵称的摘要。 | `true` |
-| `top_talkers` | 每场列出的发言人和礼物赠送者数量（1–500） | `100` |
-| `top_words` | 每场列出的高频词数量（1–500） | `50` |
-| `top_gifts` | 每场列出的礼物名称数量（1–500） | `20` |
-| `rate_bucket_secs` | 活跃度时间线的精度（秒）。超长直播会自动降低精度，因此场次页面会读取实际精度而不是假定。 | `10` |
-| `talker_capacity` | 跟踪的不同发言人数（64–8192）。低于此值时计数精确；超过后为近似值，场次页面会用 `≈` 标注。 | `2048` |
-| `word_capacity` | 跟踪的不同词数（64–8192），取舍相同 | `2048` |
-| `gift_capacity` | 跟踪的不同礼物名称数量 | `256` |
-| `extra_stop_words` | 在内置列表之外，额外从高频词图表中排除的词 | 无 |
+## 可选录制功能
 
-超出范围的值会被收敛到最近的可用值而不是报错，且列出的数量不会超过跟踪的数量。
+- 启用[弹幕录制与统计](../guides/danmu.md)，保存直播聊天。
+- 配置[录制时间安排](../guides/schedules.md)，限制录制时段。
+- 创建[工作流](../concepts/pipeline.md)，执行转换、缩略图或上传。
+- 配置[通知](../concepts/notifications.md)，接收录制失败或存储告警。
 
-#### 资源限制 (Resource Limits)
-| 设置 | 说明 | 默认值 |
-|------|------|--------|
-| `min_segment_size` | 保留分段的最小大小 | `1MB` |
-| `max_download_duration_secs` | 分段的最大时长 | `0` (不限制) |
-| `max_part_size` | 分段的最大大小 | `8GB` |
+修改设置后，再验证一次录制，并确认文件保存在预期目录。
 
-#### 并发与性能 (Concurrency & Performance)
-| 设置 | 说明 | 默认值 |
-|------|------|--------|
-| `max_concurrent_downloads` | 最大同时录制任务数 | `6` |
-| `max_concurrent_uploads` | 最大同时上传任务数 | `3` |
-| `max_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
-| `max_io_jobs` | 最大并发 I/O 密集型任务数 | `8` (0 = Auto / 自动) |
-| `download_engine` | 录制引擎 (`ffmpeg`, `mesio` 等) | `mesio` |
-| `queue_freshness_threshold` | 当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60 秒` |
+<div id="基础配置" class="legacy-section">
 
-由哪个提取器解析流地址是与 `download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](../concepts/configuration.md#引擎与提取器选择)。
+此节内容已移至[完成第一次录制](./first-recording.md).
 
-#### 网络与系统 (Network & System)
-| 设置 | 说明 | 默认值 |
-|------|------|--------|
-| `streamer_check_interval` | 检查主播状态的间隔 | `60 Secs` |
-| `offline_check_interval` | 检查离线状态的间隔 | `20 Secs` |
-| `offline_detection_count` | 确认主播离线所需的连续检查次数。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
-| `enable_proxy` | 通过代理服务器路由流量 | `false` |
+</div>
 
-#### 保留策略 (Retention)
+<div id="添加第一个主播" class="legacy-section">
 
-| 设置 | 说明 | 默认值 |
-|------|------|--------|
-| `job_history_retention_days` | 已结束流水线、任务及上传历史的保留天数；`0` 表示永久保留 | `30` |
-| `notification_event_log_retention_days` | 通知事件的保留天数；`0` 表示永久保留 | `30` |
-| `output_retention_days` | 已结束会话输出的保留天数；`0` 表示禁用自动清理 | `0` |
-| `output_retention_delete_files` | `false`：仅删除输出记录；`true`：同时删除有记录的本地文件 | `false` |
+此节内容已移至[完成第一次录制](./first-recording.md).
 
-在 **全局设置 → 保留策略** 中配置输出保留。清理在启动时及每 30 分钟运行一次，跳过正在运行、最近更新或等待计划重试的处理任务；处理器占用文件时会推迟清理。文件删除还会跳过正在录制的目录以及最近修改或共享的文件，删除失败时保留记录以便后续重试。
+</div>
 
-**仅删除记录** 会保留磁盘上的文件。记录移除后，即使改为 **删除记录和文件**，也无法再自动删除这些失去记录的文件。此策略仅覆盖已登记的媒体输出，不包括任意文件、所有流水线派生文件、远程上传副本或会话分段历史。
+<div id="全局设置" class="legacy-section">
 
-#### 流水线配置 (Pipeline Configuration)
-Rust-Srec 支持在不同阶段添加自定义流水线步骤（如：转码、通知、自定义脚本）：
-- **Per-segment (分段后)**: 在每个视频分段录制完成后立即运行。
-- **Paired Segment (合并对)**: 在视频和弹幕配对后运行。
-- **Session Complete (会话结束)**: 在整个录制会话结束后运行。
+此节内容已移至[设置参考](../reference/settings.md#全局设置).
 
-::: info 目录组织
-将 `output_folder` 设置为 `{streamer}/%Y-%m-%d` 可按主播分类并按日期建立子文件夹。`output_filename_template` 则可使用 `%H-%M-%S_{title}` 作为文件名。
-:::
+</div>
 
-## 环境变量
+<div id="文件配置-file-configuration" class="legacy-section">
 
-你可以在 <a :href="withBase('/env.zh.example')" download=".env.example">.env</a> 文件中配置以下环境变量。
+此节内容已移至[设置参考](../reference/settings.md#文件配置-file-configuration).
 
-### 通用
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `TZ` | 容器时区 | `UTC` (建议 `Asia/Shanghai`) |
-| `VERSION` | Docker 镜像版本标签 | `latest` |
+</div>
 
-### 路径
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `DATA_DIR` | 应用数据目录 | `./data` |
-| `CONFIG_DIR` | 平台配置文件目录 | `./config` |
-| `OUTPUT_DIR` | 独立后端创建全新数据库时的初始录制文件夹，同时供启动和磁盘空间健康探测监视。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
-| `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](./installation.md)。 | `./logs` |
-| `LOG_MAX_FILE_BYTES` | 启动时读取的单个托管日志分段字节上限，整数范围 1024 至 1073741824；超大记录截断并添加标记。 | `16777216`（16 MiB） |
-| `LOG_MAX_FILES` | 启动时读取的托管日志分段数量上限，含当前文件，整数范围 2 至 1024。共享 `LOG_DIR` 的实例应保持设置一致；参见[保留上限](../operations/monitoring.md#日志)。 | `16` |
+<div id="弹幕统计" class="legacy-section">
 
-::: tip 初始录制目录与已保存的录制目录
-独立后端使用 `OUTPUT_DIR` 初始化全新数据库的 `output_folder`，未设置或为空白时使用 `./output`。相对路径按启动工作目录解析并保存为绝对路径。Docker Compose 和 systemd unit 分别提供 `/app/output` 和 `/var/lib/rust-srec/output`。
+此节内容已移至[设置参考](../reference/settings.md#弹幕统计).
 
-如果初始迁移或输出文件夹保存失败，下次启动会使用首次尝试时选定的绝对路径继续初始化，即使 `OUTPUT_DIR` 或工作目录已改变。
+</div>
 
-之后启动时保留已保存的设置。如需更改，请编辑 **设置** → **全局** → **输出文件夹**，也可按平台、模板和主播分别覆盖。应以应用显示的解析后路径为准。已有二进制或系统服务安装若仍使用 `/app/output`，需要将该设置改为可写目录。
+<div id="资源限制-resource-limits" class="legacy-section">
 
-配置显式边界时，请让 `RUST_SREC_OUTPUT_ROOTS` 与已保存的文件夹保持一致。探测发现使用已保存的输出设置和覆盖项；初始化后，过时的 `OUTPUT_DIR` 值不会额外增加一个探测位置。
-:::
+此节内容已移至[设置参考](../reference/settings.md#资源限制-resource-limits).
 
-### 关闭
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` | 独立后端进程的严格关闭期限 | `30` |
-| `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` | 在期限内为强制终止进程树预留的时间；必须大于零且小于总期限 | `2` |
-| `RUST_SREC_CONTAINER_STOP_GRACE_PERIOD` | Docker Compose 发送外部 SIGKILL 前的等待时间；必须长于后端期限 | `35s` |
-| `RUST_SREC_RUNTIME_MARKER_PATH` | 强制终止或崩溃后保留的未清理运行世代标记 | 位于 SQLite 数据库旁边 |
+</div>
 
-父进程观测到 `SIGINT` 或 `SIGTERM` 时立即开始计时，即使此时启动准入或标记 I/O 仍在进行；期限覆盖工作进程清理和父进程退出。服务器会先请求隔离运行时进行优雅关闭；运行时自身的收尾预算也由这两个值推导（超时减去强制预留，再留出少量调度余量），因此调大超时会实际延长录制收尾阶段。进入强制预留阶段时，如果运行时仍在活动，服务器将终止整个受控进程树并以失败状态退出。退出状态 `124` 表示达到硬期限；`125` 表示最终的进程树终止请求本身失败。工作进程内部发生致命故障时会直接失败退出，不会进入无期限的优雅关闭。保留下来的标记表示启动时可能需要恢复；之后的正常关闭不会清除这笔更早的恢复事项。该标记本身不会重建在写入 SQLite 之前被中断的文件。只有在后端已停止且中断的文件已完成核对后，才能删除该标记。录制引擎会把自身的优雅停止等待时间限制在该预算的剩余部分内，因此单个引擎的停止超时即使长于关闭超时，也不会再导致引擎子进程在收尾过程中被强制结束。若关闭超出了宽限期但仍完成了全部收尾，进程仍按正常退出处理；只有无法收束的工作才会被记为崩溃。
+<div id="并发与性能-concurrency-performance" class="legacy-section">
 
-### 网络
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `API_BIND_ADDRESS` | 后端 API 绑定的 IP 地址 | `0.0.0.0` |
-| `API_PORT` | 后端 API 的外部端口 | `12555` |
-| `FRONTEND_PORT` | Web 界面的外部端口 | `15275` |
-| `BACKEND_URL` | 前端访问后端的内部 URL | `http://rust-srec:8080` |
-| `HTTP_PROXY` | HTTP 代理服务器 URL | - |
-| `HTTPS_PROXY` | HTTPS 代理服务器 URL | - |
-| `NO_PROXY` | 绕过代理的主机列表（逗号分隔） | - |
+此节内容已移至[设置参考](../reference/settings.md#并发与性能-concurrency-performance).
 
-### 安全与认证
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `JWT_SECRET` | JWT 签名密钥（**必需**，除非使用下述仅限本地的关闭选项） | - |
-| `AUTH_DISABLED` | 仅在绑定到回环地址的本地开发环境中关闭后端认证 | `false` |
-| `API_CORS_ORIGINS` | 关闭认证时，允许跨域调用 API 的浏览器来源列表（逗号分隔的精确 `scheme://host[:port]`） | 本地开发服务器与桌面端 Webview 来源 |
-| `API_LOGIN_MAX_FAILURES` | 单个账号在窗口内允许的登录失败次数 | `5` |
-| `API_LOGIN_IP_MAX_FAILURES` | 单个来源地址在窗口内允许的登录失败次数 | `100` |
-| `API_LOGIN_WINDOW_SECS` | 登录失败统计窗口长度（秒） | `900`（15 分钟） |
-| `JWT_ISSUER` | JWT 签发者标识 | `rust-srec` |
-| `JWT_AUDIENCE` | JWT 受众标识 | `rust-srec-api` |
-| `SESSION_SECRET` | 前端会话加密密钥 (**必需**, 至少 32 位) | - |
-| `COOKIE_SECURE` | 设置为 `true` 以强制仅 HTTPS Cookie | (自动) |
-| `MIN_PASSWORD_LENGTH` | 用户密码最小长度 | `8` |
+</div>
 
-后端在未配置非空 `JWT_SECRET` 时会拒绝启动。仅在本地开发时，可以同时设置 `AUTH_DISABLED=true` 和 `API_BIND_ADDRESS=127.0.0.1`（或 `::1`）来关闭认证。通配地址、主机名和非回环绑定地址均不能使用此关闭选项。
+<div id="网络与系统-network-system" class="legacy-section">
 
-关闭认证时，只有 `API_CORS_ORIGINS` 中列出的来源可以从浏览器跨域调用 API；默认列表包含 `http://localhost:15275`、`http://127.0.0.1:15275`、`http://[::1]:15275`、`tauri://localhost` 和 `http://tauri.localhost`。设置该变量可覆盖默认值——每一项必须是不带路径的精确来源，格式错误的条目会在启动时记录警告并被忽略。来自其他来源的请求会被拒绝并返回 `403`；`Host` 请求头既不是回环名称也不是所配置绑定地址的请求同样会被拒绝。启用认证时该变量不生效，任何来源都可以发起请求，因为受保护路由仍然需要 Bearer 令牌。
+此节内容已移至[设置参考](../reference/settings.md#网络与系统-network-system).
 
-### 登录限流
+</div>
 
-`POST /api/auth/login` 会在滑动窗口内统计失败次数，配额用尽后返回 `429` 并在 `Retry-After` 中给出等待时间。每次尝试同时受两个配额约束：
+<div id="保留策略-retention" class="legacy-section">
 
-- **按账号**（`API_LOGIN_MAX_FAILURES`，默认 5）。登录成功会立即清零。
-- **按来源地址**（`API_LOGIN_IP_MAX_FAILURES`，默认 100）。这个配额刻意放得很宽：来源地址取自 TCP 连接的对端，且不信任 `X-Forwarded-For`，因此在本项目自带的前端容器、nginx 或任何反向代理之后，**所有登录都来自代理的地址**。请把它理解为对密码哈希开销的上限，而不是针对某个用户的锁定——在配额用尽期间，该代理之后的所有用户都会被限流。如果这一点比哈希开销上限更重要，可以调大；只有在浏览器直连后端时才建议调低。
+此节内容已移至[设置参考](../reference/settings.md#保留策略-retention).
 
-两者共用 `API_LOGIN_WINDOW_SECS` 设置的窗口长度。
+</div>
 
-### 令牌过期
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `ACCESS_TOKEN_EXPIRATION_SECS` | JWT 访问令牌有效期 | `3600` (1h) |
-| `REFRESH_TOKEN_EXPIRATION_SECS` | JWT 刷新令牌有效期 | `604800` (7d) |
+<div id="流水线配置-pipeline-configuration" class="legacy-section">
 
-### 浏览器通知 (Web Push / VAPID)
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID 公钥 (base64url, 无 padding)。留空/不设置则禁用。 | - |
-| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID 私钥 (base64url, 无 padding)。留空/不设置则禁用。 | - |
-| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject（例如 `mailto:admin@localhost`） | `mailto:admin@localhost` |
+此节内容已移至[设置参考](../reference/settings.md#流水线配置-pipeline-configuration).
 
-### 后端服务
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `RUST_LOG` | 日志级别 (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `DATABASE_URL` | SQL 数据库连接字符串。表中所列是 Docker `.env` 设置的值。未设置时后端回退到 `sqlite:srec.db?mode=rwc`，相对工作目录解析；随附的系统服务单元则设为 `sqlite:///var/lib/rust-srec/rust-srec.db`。运行世代标记由该 URL 推导，与数据库文件放在一起。 | `sqlite:///app/data/rust-srec.db`（Docker） |
-| `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。影响所有通知事件——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件。支持：`en`、`zh-CN`。 | `en` |
-| `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的**绝对**路径列表，作为写入门（write gate）的输出根边界。未设置时，写入门会对每个解析后的输出路径取前**两段有名分量**作为默认（例如 `/rec/huya/X/20260415` → `/rec/huya`，`/home/user/recordings/X/20260415` → `/home/user`）。两段是最小安全默认值——它可以避免意外将 `/home/...` 布局下不同用户合并到同一个门键。如果您是 `/rec` 这种单挂载布局，且希望一个挂载点对应一个门键（从而在故障时只收到一条聚合通知、而不是按平台分别通知），请显式设置：`RUST_SREC_OUTPUT_ROOTS=/rec`。 | - |
+</div>
 
-默认规则会把深层路径归入较宽的键：`/var/lib/rust-srec/output` 使用 `/var/lib`。启动发现会测试映射到同一键的具体录制目录，因此不要求对只读祖先目录具有写权限。设置 `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` 可为该目录指定独立边界；最长匹配的显式前缀优先。显式边界本身也会被探测，应指向可写的录制位置。发现范围的限制详见[输出根探测](../operations/storage.md#输出根探测)。
+<div id="环境变量" class="legacy-section">
 
-### 资源限制 (Docker)
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `CPU_LIMIT` | 容器可使用的最大 CPU 核心数 | `4` |
-| `MEMORY_LIMIT` | 容器可使用的最大内存 | `4G` |
-| `CPU_RESERVATION` | 容器保留的 CPU 核心数 | `1` |
-| `MEMORY_RESERVATION` | 容器保留的内存 | `512M` |
+此节内容已移至[环境变量](../reference/environment.md#环境变量).
 
-## 文件名模板变量
+</div>
 
-Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两类占位符。
+<div id="通用" class="legacy-section">
 
-### 大括号变量 (Curly Brace Variables)
-这些变量将被替换为主播或会话相关的元数据。
+此节内容已移至[环境变量](../reference/environment.md#通用).
 
-| 变量 | 说明 |
-|------|------|
-| `{streamer}` | 主播显示名称 |
-| `{title}` | 当前直播标题 |
-| `{platform}` | 平台名称 (如 bilibili) |
-| `{session_id}` | 录制会话的唯一 ID (仅适用于 `output_folder`) |
+</div>
 
-### 百分号占位符 (Percent Placeholders, FFmpeg 风格)
-这些占位符将被替换为日期、时间或序列信息。
+<div id="路径" class="legacy-section">
 
-| 占位符 | 说明 |
-|--------|------|
-| `%Y` | 年份 (YYYY) |
-| `%m` | 月份 (01-12) |
-| `%d` | 日期 (01-31) |
-| `%H` | 小时 (00-23) |
-| `%M` | 分钟 (00-59) |
-| `%S` | 秒数 (00-59) |
-| `%i` | 分段序列号 |
-| `%t` | Unix 时间戳 |
-| `%%` | 字面量百分号 |
+此节内容已移至[环境变量](../reference/environment.md#路径).
 
-示例：`{streamer}/%Y-%m-%d/%H-%M-%S_{title}`
+</div>
 
-### 流水线目标路径占位符
+<div id="关闭" class="legacy-section">
 
-流水线目标路径字段（例如 rclone 的 `destination_root` 和 copy/move 的
-`destination`）支持 `{platform}`、`{streamer}`、`{title}`、`{streamer_id}`、
-`{session_id}`，以及同样的 `%Y`、`%m`、`%d`、`%H`、`%M`、`%S`、`%t`、
-`%%` 时间占位符。时间占位符会按服务器本地时区渲染。
+此节内容已移至[环境变量](../reference/environment.md#关闭).
 
-rclone 默认使用任务创建时间展开时间占位符。将 `time_anchor` 设为
-`session_start` 后，同一场直播的所有分段都会归入直播开始日期对应的文件夹，
-即使直播跨过午夜也不会拆到次日目录。copy/move 在省略 `time_anchor` 时会保留
-历史行为，按执行时刻展开；需要确定性的锚点时可设为 `job_created` 或
-`session_start`。
+</div>
 
-使用会话开始时间作为锚点时，请在文件名模板中保留 `%Y%m%d-%H%M%S` 或 `%t`。
-如果多个会话把相同文件名写入同一个目标目录，rclone 以及本地 copy/move 操作
-可能会根据具体操作和参数覆盖或跳过文件。
+<div id="网络" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#网络).
+
+</div>
+
+<div id="安全与认证" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#安全与认证).
+
+</div>
+
+<div id="登录限流" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#登录限流).
+
+</div>
+
+<div id="令牌过期" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#令牌过期).
+
+</div>
+
+<div id="浏览器通知-web-push-vapid" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#浏览器通知-web-push-vapid).
+
+</div>
+
+<div id="后端服务" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#后端服务).
+
+</div>
+
+<div id="资源限制-docker" class="legacy-section">
+
+此节内容已移至[环境变量](../reference/environment.md#资源限制-docker).
+
+</div>
+
+<div id="文件名模板变量" class="legacy-section">
+
+此节内容已移至[文件名模板变量](../reference/filenames.md#文件名模板变量).
+
+</div>
+
+<div id="大括号变量-curly-brace-variables" class="legacy-section">
+
+此节内容已移至[文件名模板变量](../reference/filenames.md#大括号变量-curly-brace-variables).
+
+</div>
+
+<div id="百分号占位符-percent-placeholders-ffmpeg-风格" class="legacy-section">
+
+此节内容已移至[文件名模板变量](../reference/filenames.md#百分号占位符-percent-placeholders-ffmpeg-风格).
+
+</div>
+
+<div id="流水线目标路径占位符" class="legacy-section">
+
+此节内容已移至[文件名模板变量](../reference/filenames.md#流水线目标路径占位符).
+
+</div>

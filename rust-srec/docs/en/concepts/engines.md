@@ -1,112 +1,8 @@
-# Engines
+# Recording engines {#engines}
 
-Downloaders retrieve video streams from the source. The application supports three downloaders: `Mesio`, `FFMPEG`, and `Streamlink`, each with different features and limitations.
+Use Mesio for a first recording. Select FFmpeg when you need its container or codec compatibility, or Streamlink for its supported download behavior. FFmpeg and Streamlink must be installed on the backend host; the Docker image includes the supported tools.
 
-`Streamlink` can serve two independently configured roles. As a *downloader* it writes the recording, chosen with `download_engine` and described on this page. As an *extractor* it resolves the stream URL before any downloader runs, chosen with `extractor`; see [Engine and extractor selection](./configuration.md#engine-and-extractor-selection). Either can be set without the other.
-
-> [!TIP]
-> For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These pipelines correct or isolate timestamp and stream-structure changes so one bad transition is less likely to make the rest of a recording undecodable. Media that the source never delivered cannot be recovered.
-
-The `FFMPEG` downloader is the compatibility-focused external engine. It is written in C and can download FLV and HLS streams, including non-standard HEVC in FLV/RTMP containers. It does not support multithreaded HLS downloads. Fresh installations select the built-in Mesio engine instance by default; choose FFmpeg explicitly when its container or codec compatibility is required.
-
-> [!NOTE]
-> The FFMPEG version provided in our Docker images is a specialized build from [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds/). This build is optimized for streaming and includes (or has upstreamed) critical patches for smooth integration with `yt-dlp`, such as fixing AAC HLS truncation, supporting long paths on Windows, and decoding non-standard HEVC in FLV containers.
-
-### Recording Filenames and Telemetry
-
-Recording templates expand their configured date tokens, while percent signs in
-streamer names and titles remain literal. For example, a title `Top 5%d` stays
-`Top 5%d`; it does not substitute the day of the month. Startup output-root probes
-use the same literal metadata rules.
-
-FFmpeg recording and Streamlink remuxing require info-level logs and statistics
-to track segments and progress. The backend supplies final `-loglevel info
--stats` options; custom quiet log settings and `-nostats` do not disable this
-telemetry.
-
-### Executable Checks
-
-FFmpeg and Streamlink version checks have a three-second deadline, followed by bounded process cleanup if needed. Engine tests and custom-engine resolution run these checks asynchronously. An executable that cannot be started or does not finish its version check before the deadline is reported unavailable. Synchronous startup initialization waits for the same bounded check.
-
-Missing named engine configurations retain the default-engine fallback. Database access failures, malformed saved settings, and invalid overrides fail resolution instead of silently changing the effective configuration.
-
-### Streamlink FFmpeg Executable
-
-The Streamlink download engine accepts an optional `ffmpeg_path` in its backend
-engine configuration JSON. `binary_path` selects Streamlink itself; `ffmpeg_path`
-selects the separate FFmpeg process that remuxes its output:
-
-```json
-{
-  "binary_path": "streamlink",
-  "ffmpeg_path": "/opt/media-tools/ffmpeg",
-  "quality": "best"
-}
-```
-
-The backend selects the configured `ffmpeg_path` first, then the `FFMPEG_PATH`
-environment variable, then `ffmpeg` from `PATH`. Omit the field or set it to `null`
-to retain the environment/default behavior. Paths containing spaces are passed
-as one executable path, without shell quoting or arguments. The choice is made
-when the engine instance is constructed; an environment change requires a backend
-restart. An explicit path does not inherit settings from any registered FFmpeg
-engine, and a missing executable fails recording startup instead of falling back.
-Empty or whitespace-only strings are explicit executable values, not a request
-for fallback; use omission or `null` to clear the override.
-
-The engine editor exposes **FFmpeg Path** and preserves it when other settings
-change. Clearing the field or choosing **Use environment default** restores the
-environment/default lookup. Enter the path on the backend server without shell
-quotes; path text is preserved exactly.
-
-In a template's Streamlink override, clearing the field or choosing **Use engine
-setting** removes the override and inherits the engine path. **Use environment
-default** instead writes an explicit `null`, clearing the engine path for that
-template so `FFMPEG_PATH` or `ffmpeg` is used.
-
-### Stopping Streamlink Recordings
-
-For an audited Streamlink 8.5.0 installation, stopping a recording requests an
-acquisition stop through a private authenticated control connection. The configured
-CLI, platform plugins, authentication, proxy settings, quality and extra arguments
-remain in use. A bounded loader probe establishes support before the backend adds
-its embedded companion; unchanged executable probes are coalesced and cached.
-Each recording still verifies the companion and its actual reader graph.
-
-| Reader profile | Cooperative drain behavior |
-| --- | --- |
-| Segmented HLS/DASH, including filtering and nested muxers | Stop new acquisition, finish admitted segment/map work, and drain reader buffers and every muxer input to EOF. |
-| HTTP on CPython 3.11/3.14 with requests 2.34.2 and urllib3 2.7.0 | Drain HTTP prefetch, decrypted TLS pending bytes, and identity/gzip/deflate decoder buffers. Opaque transports and other decoders are not included. |
-| TwitCasting websocket with websocket-client 1.9.2 | Finish an admitted receive and its delivery before stopping the next message. |
-| File paths and in-memory BytesIO input | Preserve the current unbuffered file read or all already-acquired in-memory bytes. Arbitrary buffered file objects are not included. |
-
-The companion checks upstream source compatibility rather than trusting version
-text alone. Unsupported old, portable or custom executables retain ordinary
-recording behavior. Unsupported reader graphs also retain their CLI behavior,
-but a requested stop reports `Streamlink cooperative drain incomplete` instead
-of claiming a verified drain. No recording engine feature is disabled to establish
-compatibility.
-
-Stdout forwarding and stderr processing remain alive while producers stop. A
-successful cooperative stop requires actual source EOF, complete pipe forwarding
-and successful external FFmpeg finalization; a control acknowledgement alone is
-insufficient. Hidden Windows processes use the control connection without console
-signals. Internal FFmpeg muxers and validation processes stay hidden, and Windows
-muxer pipes flush accepted bytes before disconnecting.
-
-The attempt's remaining stop deadline bounds these process, forwarding and remux
-phases, with time reserved for FFmpeg finalization. A later shutdown can tighten
-an already-stopping attempt. Required final-event delivery remains owned until its
-consumer accepts it: direct engine integrations must drain the event channel,
-and a stalled consumer is bounded by the worker's overall force cap. Deadline
-expiry still forces contained process-tree termination and can truncate the tail.
-The guarantee covers acquired data and admitted work, not future undiscovered
-segments, upstream corruption or work that exceeds the deadline.
-
-Both subprocess trees remain contained, including descendants left by an exiting
-parent. On macOS, leader-exit races use the remaining containment budget; they do
-not introduce another grace period. This assumes descendants do not deliberately
-escape the process group or Windows Job Object.
+Streamlink can also be an **extractor**, which resolves the stream URL before downloading. Extractor selection and download-engine selection are independent. See [engine and extractor settings](../reference/configuration-overrides.md#engine-and-extractor-selection).
 
 ## 1. Engines Feature List
 
@@ -123,6 +19,8 @@ escape the process group or Windows Job Object.
 |    HLS Consistency Fix   |           ✅ (Recommended)            |                   ❌                    |                   ❌                    |
 |        CPU Usage         |                  Lowest               |                   Low                   |                   Low                   |
 |       Memory Usage       |                  Lowest               |                   Low                   |                 Medium                  |
+
+For Mesio, enable FLV and HLS Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
 
 ## 2. FLV Consistency Fix
 
@@ -163,6 +61,62 @@ Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities
 
 The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate missing media, or transcode codecs. A skipped segment remains an observable gap; the pipeline keeps delivered output ordered and rotates when a detected format change requires a new file.
 
-## 5. Mesio Architecture
+## Streamlink FFmpeg Executable {#streamlink-ffmpeg-executable}
 
-Mesio is an **in-process Rust engine** with a reactor-based HLS downloader and a unified download-session model shared by HLS and FLV. For its architecture and implementation, see [Mesio Engine](./mesio.md).
+The Streamlink download engine accepts an optional `ffmpeg_path` in its backend
+engine configuration JSON. `binary_path` selects Streamlink itself; `ffmpeg_path`
+selects the separate FFmpeg process that remuxes its output:
+
+```json
+{
+  "binary_path": "streamlink",
+  "ffmpeg_path": "/opt/media-tools/ffmpeg",
+  "quality": "best"
+}
+```
+
+The backend selects the configured `ffmpeg_path` first, then the `FFMPEG_PATH`
+environment variable, then `ffmpeg` from `PATH`. Omit the field or set it to `null`
+to retain the environment/default behavior. Paths containing spaces are passed
+as one executable path, without shell quoting or arguments. The choice is made
+when the engine instance is constructed; an environment change requires a backend
+restart. An explicit path does not inherit settings from any registered FFmpeg
+engine, and a missing executable fails recording startup instead of falling back.
+Empty or whitespace-only strings are explicit executable values, not a request
+for fallback; use omission or `null` to clear the override.
+
+The engine editor exposes **FFmpeg Path** and preserves it when other settings
+change. Clearing the field or choosing **Use environment default** restores the
+environment/default lookup. Enter the path on the backend server without shell
+quotes; path text is preserved exactly.
+
+In a template's Streamlink override, clearing the field or choosing **Use engine
+setting** removes the override and inherits the engine path. **Use environment
+default** instead writes an explicit `null`, clearing the engine path for that
+template so `FFMPEG_PATH` or `ffmpeg` is used.
+
+## Executable Checks {#executable-checks}
+
+FFmpeg and Streamlink version checks have a three-second deadline, followed by bounded process cleanup if needed. Engine tests and custom-engine resolution run these checks asynchronously. An executable that cannot be started or does not finish its version check before the deadline is reported unavailable. Synchronous startup initialization waits for the same bounded check.
+
+Missing named engine configurations retain the default-engine fallback. Database access failures, malformed saved settings, and invalid overrides fail resolution instead of silently changing the effective configuration.
+
+## Stopping Streamlink Recordings {#stopping-streamlink-recordings}
+
+Supported Streamlink 8.5.0 readers can stop acquiring new data while buffered data is forwarded to FFmpeg for finalization. This must finish within the recording's stop deadline. Forced stops can truncate the final output.
+
+Old, portable, or custom executables and unsupported readers keep their ordinary recording behavior, but stopping may report `Streamlink cooperative drain incomplete`. See [supported reader profiles and stopping mechanics](../development/engines.md#stopping-streamlink-recordings).
+
+For download-session and media-repair architecture, see [Mesio internals](./mesio.md).
+
+<div id="recording-filenames-and-telemetry" class="legacy-section">
+
+This section is now in [Recording engine internals](../development/engines.md#recording-filenames-and-telemetry).
+
+</div>
+
+<div id="_5-mesio-architecture" class="legacy-section">
+
+This section is now in [Mesio Engine](./mesio.md).
+
+</div>

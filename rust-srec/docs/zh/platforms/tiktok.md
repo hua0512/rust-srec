@@ -29,6 +29,6 @@ https://www.tiktok.com/@{用户名}/live
 
 ::: info
 - **认证**：无需 Cookie。弹幕采集会自动注册临时 `ttwid` 会话；浏览器 Cookie 为可选项。
-- **地区限制**：部分直播间在某些地区不可用。若提示地区限制，请使用代理（见 [Docker 配置](../getting-started/docker.md#proxy)）。
+- **地区限制**：部分直播间在某些地区不可用。若提示地区限制，请使用代理（见 [Docker 配置](../getting-started/docker.md#代理)）。
 - **弹幕**：采集聊天、纯表情消息和礼物。连击礼物只记录一次，取最终数量。
 :::

@@ -1,542 +1,204 @@
-# System Architecture
+# System overview {#system-architecture}
 
-`rust-srec` is an automated stream recorder built around a clear separation of concerns:
-
-- A **control plane** (REST API + configuration + orchestration)
-- A **data plane** (live status detection + downloads + danmu + post-processing)
-- A **persistence layer** (SQLite + filesystem outputs)
-
-It is implemented as a set of long-running Tokio services managed by the runtime `ServiceContainer`.
-
-## High-level topology
+Rust-Srec monitors configured channels, records live video and chat, and runs post-processing workflows. The web interface and API control the same backend.
 
 ```mermaid
-flowchart TB
-  subgraph Clients["Clients"]
-    FE["Web UI"]
-    EXT["External API clients and automation"]
-  end
-
-  subgraph Control["HTTP control plane"]
-    API["Axum API<br/>AppState / optional JWT / OpenAPI"]
-  end
-
-  subgraph Runtime["ServiceContainer-managed Tokio runtime"]
-    CFG["ConfigService<br/>StreamerManager"]
-    SCH["Scheduler actors"]
-    MON["StreamMonitor<br/>filters / outbox"]
-    SESS["SessionLifecycle"]
-    DL["DownloadManager<br/>queue / engines"]
-    DM["DanmuService"]
-    PL["PipelineManager<br/>DAG / workers"]
-    NOTI["NotificationService"]
-    OPS["Health / metrics / maintenance"]
-  end
-
-  subgraph Sources["Streaming platforms"]
-    SRC["Status APIs / media streams / chat WebSockets"]
-  end
-
-  subgraph Storage["Persistence"]
-    DB[("SQLite<br/>config / sessions / jobs / notifications")]
-    FS["Filesystem<br/>recordings / danmu / logs"]
-  end
-
-  FE -->|"HTTP / WebSocket"| API
-  EXT -->|"HTTP / WebSocket"| API
-  API -->|"service and repository handles"| Runtime
-
-  CFG -->|"config events"| SCH
-  SCH -->|"scheduled checks"| MON
-  MON -->|"session commands"| SESS
-  MON -->|"committed live event"| DL
-  DL -->|"successful start enables"| DM
-  DL -->|"video segment events"| PL
-  DM -->|"danmu segment events"| PL
-  SESS -->|"session transitions"| PL
-  SESS -.->|"hysteresis resume"| DL
-  DL -.->|"terminal outcomes"| SESS
-  DL -.->|"download feedback"| SCH
-
-  MON -.->|"monitor events"| NOTI
-  DL -.->|"download events"| NOTI
-  SESS -.->|"session events"| NOTI
-  PL -.->|"job events"| NOTI
-
-  SRC -->|"status data"| MON
-  SRC -->|"media data"| DL
-  SRC -->|"chat data"| DM
-
-  DM --> FS
-  DL --> FS
-  PL --> FS
-  Runtime <--> DB
-  OPS --> DB
-  OPS --> FS
+flowchart LR
+    UI[Web interface or API] --> B[Backend]
+    P[Streaming platforms] --> B
+    B --> DB[(SQLite: configuration and history)]
+    B --> FILES[Recordings and chat files]
+    FILES --> W[Post-processing workflows]
+    B --> N[Notifications]
 ```
 
-Arrows between runtime services show logical event routes. `ServiceContainer` implements that
-wiring with broadcast subscriptions, bounded queues, and handler tasks rather than direct service
-coupling.
+## Recording lifecycle
 
-Three ownership boundaries are important in this topology:
+1. The backend checks a streamer's live status using its effective settings and schedule.
+2. When recording is allowed and capacity is available, a download engine writes video files. Enabled danmu collection writes the matching chat files.
+3. Size or duration limits can split a recording into segments. Segment workflows process completed files; paired workflows wait for video and chat from the same segment.
+4. When the session ends and earlier processing finishes, its session-complete workflow runs.
+5. Notifications report subscribed events. Sessions and outputs remain available in the interface.
 
-- `ServiceContainer` is the composition root and event-wiring layer, not the owner of domain state.
-- `StreamMonitor` detects and filters platform status; `SessionLifecycle` exclusively owns the
-  in-memory session state machine and durable start/end decisions.
-- A live event starts the download path first. Danmu collection starts only after the download
-  manager's `start_with_slot` call returns a real download ID.
+## Deployment and storage
 
-## Runtime root: `ServiceContainer`
+The standard installation uses one backend and one SQLite database. Docker packages the backend and frontend separately; desktop runs its recording services locally. Recorded files live on the filesystem, while the database stores configuration, sessions, jobs, and file records.
 
-The `ServiceContainer` (in `rust-srec/src/services/container.rs`) initializes and connects the runtime services:
+Back up both the database and files. A configuration export is not a recording backup, and deleting a database record does not necessarily delete the file. See [Backup and restore](../operations/backup-restore.md) and [deletion behavior](../operations/data-governance.md#deletion-semantics).
 
-- Initializes repositories and services (DB, config cache, managers)
-- Starts background tasks (scheduler actors, pipeline workers, outbox flushers)
-- Subscribes to event streams and forwards events between services
-- Owns the `CancellationToken` used for graceful shutdown
+## Configure and operate the recorder
 
-It manages service lifecycle, dependencies, and shutdown order.
-
-## Service Container Responsibilities
-
-Container assembly, ordered shutdown, output-root helpers and event decisions live in separate private modules. Initialization still discovers output roots once and shares that snapshot between health registration and startup write probes. The public container API and shutdown deadlines are unchanged.
-
-Startup logs retain database/configuration I/O, engine discovery, awaited initialization phases and overall timings. Individual timings for synchronous wrapper construction and background-task spawning are omitted; those entries did not measure the work later performed by the tasks.
-
-## Core components (what each one actually does)
-
-### `RuntimeCoordinator` (recording startup and cancellation)
-
-The coordinator binds download startup and danmu collection to the session that caused them.
-An Offline event naming an older session stops only that session's work; it cannot select a
-successor by streamer ID. Disable and out-of-schedule events also cancel startup that has
-registered its session token but has not entered the download queue yet.
-
-Startup observes cancellation during configuration, preflight, queue acquisition, freshness
-checks and final admission. Cancelled work releases its reservation and does not start danmu.
-Danmu setup and predecessor handoff also observe session cancellation. Once a collector is
-registered, cancellation waits for its owned cleanup instead of abandoning the readiness wait.
-A resumed Started transition needs both an active lifecycle session and its download payload.
-Queue waits strictly greater than the freshness threshold refresh URLs, headers and extras
-together. Equality uses cached media with the short-wait state guard; missing/offline results
-dequeue, while checker errors preserve the cached media fallback.
-
-### `ConfigService` (configuration + hot reload)
-
-`ConfigService` is the configuration control plane. It loads and merges a 4-level hierarchy:
-
-1. Global defaults
-2. Platform configuration
-3. Template configuration
-4. Streamer-specific overrides
-
-It also caches merged results and broadcasts `ConfigUpdateEvent` so runtime services can respond to
-changes without a restart.
-
-See also: [Configuration](./configuration.md)
-
-### `StreamerManager` (committed metadata snapshots)
-
-SQLite rows are authoritative. `StreamerManager` exposes immutable shared metadata snapshots
-for actor checks and cloned values for administrative consumers. Runtime writers share a
-`CommittedStreamerState` owner: it retains the validated single-writer connection through a
-borrowed immediate transaction, commit, and synchronous metadata/URL-index publication.
-No awaited runtime effect holds that database lease.
-
-Cancellation before commit rolls back the prepared mutation. Once commit begins, supervised
-completion applies the committed snapshot even if the requesting task disappears. State,
-session and outbox changes stay atomic; `RETURNING` supplies the committed streamer fields
-without a post-commit read. Current runtime-only offline-check settings survive publication.
-Admin patches read the current database row, so unrelated credentials/counters are retained,
-and failed URL edits change neither cache index. Merged configuration invalidation shares a
-short mutation boundary with in-flight completion, so an older load cannot repopulate
-credentials after a newer committed write invalidates them.
-
-Imports publish their row snapshots silently and invalidate filter snapshots at commit. Their
-ordered credential, retirement, metadata, channel and global notifications then finish under
-the same task owner after releasing the writer, with one import admission permit bounding
-that runtime work. Post-commit reload failures remain warnings about committed changes.
-
-Important correctness detail: on startup it performs **restart recovery** by resetting any streamers
-left in `Live` back to `NotLive`, so the normal `NotLive → Live` edge can trigger downloads again.
-The actor also applies its first confirmed offline observation even when both states are
-`NotLive`, closing an unfinished database session and publishing its final completion. Failed or
-suppressed application remains pending for another check. A live observation reuses the unfinished
-session, preserving recording continuity across a restart.
-
-### `Scheduler` (actor model orchestration)
-
-The scheduler is a supervisor that manages self-scheduling actors:
-
-- `StreamerActor`: owns the timing and state loop for one streamer
-- `PlatformActor`: coordinates batch detection for batch-capable platforms
-- `Supervisor`: handles actor lifecycle, restart tracking, and shutdown reporting
-
-Actors call into `StreamMonitor` for real status checks; the scheduler also reacts to configuration
-events to spawn/stop actors dynamically.
-
-Before spawning an actor or delivering updated timing, the scheduler resolves the
-Global → Platform → Template → Streamer hierarchy through the shared configuration
-service. It reads current layers independently of the container's metadata refresh,
-so publication order cannot leave an actor using default offline-confirmation
-counts or delays. Updates use the same resolved configuration for delivery and
-restart recovery. Resolution failures retain an existing actor's last good timing;
-new actors are not started with unresolved defaults. Update resolution is bounded
-to eight concurrent lookups and responds to shutdown cancellation.
-Queued crash restarts resolve again when due, including configuration changes
-made during backoff. A failed lookup defers that restart for five seconds instead
-of starting it with the captured old configuration.
-
-Recurring checks sample an interval within ±10% of the configured cadence. An
-unchanged effective interval preserves the pending deadline; a changed interval
-can bring it forward but never postpone an already scheduled check. Smart-wake
-hints, admission/cooldown deadlines, explicit immediate checks and parked/live
-states keep their existing timing authority. Rust callers of `Scheduler::add_streamer`
-now await configuration resolution before actor creation.
-
-Non-recoverable actor errors represent terminal decisions, such as a removed
-streamer. Both timer and mailbox paths stop gracefully and run configured state
-persistence; the supervisor does not restart them. Recoverable task failures and
-panics remain eligible for restart. Ten consecutive crashes exhaust automatic
-restarts even when older crashes have left the 60-second backoff window. The
-window still determines restart delay; explicit failure reset or actor removal
-restores the crash budget.
-
-Download terminal feedback preserves lifecycle authority. Shutdown and
-streamer-disable stops park the actor's local polling without publishing an
-Offline observation: shutdown preserves the session for recovery, and disable
-cleanup owns its session closure. Unknown internal stops resume status checking
-to verify the platform state. Authoritative streamer-offline feedback still
-publishes Offline through the monitor.
-
-### `StreamMonitor` (detect + filter + outbox)
-
-`StreamMonitor` is the data-plane detector. It:
-
-- Resolves platform information and checks live status
-- Applies filters (time/keyword/category, etc.)
-- Delegates session changes to `SessionLifecycle`
-- Emits `MonitorEvent` **via a DB-backed outbox** for consistency
-
-**Outbox pattern:** Monitor events are written in the same DB transaction as state/session updates,
-then a background task flushes the outbox to a Tokio `broadcast` channel. This reduces the chance of
-“state changed but event lost” during crashes or restarts.
-
-### `SessionLifecycle` (single owner of session state)
-
-`SessionLifecycle` owns the recording state machine, including hysteresis and terminal-cause
-classification. Fresh starts and durable ends commit their required database changes before
-broadcasting `Started` or `Ended`. Hysteresis `Ending` and `Resumed` are in-memory transitions: their
-audit rows are best-effort, and the session `end_time` remains unset until the lifecycle reaches
-`Ended`. Download terminal events feed back into this service. `Ended` drives session-complete
-pipelines, danmu cleanup, and download bookkeeping; a resumed `Started` restarts the same session.
-Operations for one streamer share an async lock through database commit, memory changes, and
-transition publication; timer expiry follows the same order and rechecks cancellation before
-claiming a handle. Database end writes only affect active rows, so late events do not rewrite end
-times or duplicate completion events. An explicit offline signal for an older session cannot
-change the state of a newer active session.
-
-An admitted operation owns its admission and streamer lock through completion. Caller cancellation
-can roll back work before COMMIT or the first irreversible memory transition. Once that boundary
-starts, the supervised operation finishes cache publication, session maps, best-effort audit work,
-and required and observer transitions even if the caller disappears. SQL errors during an end leave
-the existing hysteresis handle intact; the lock keeps a resume or timer behind that end attempt.
-A failed timer end retries in the same timer task, releasing admission and the lock between tries.
-Graceful shutdown drains these owners. Forced shutdown observes the hard deadline without aborting
-an in-progress COMMIT; an unfinished operation stays supervised and database pools remain open.
-
-### `DownloadManager` (downloads + engine abstraction)
-
-The download manager owns:
-
-- Concurrency limits (including extra slots for high priority downloads)
-- Failure classification and circuit breakers keyed by engine type, configuration, and optional
-  streamer scope
-- Failure/rejection events and retry-after hints; scheduler actors decide when to check again and
-  re-enter the download-start path
-- Engine abstraction:
-  - External processes: `ffmpeg`, `streamlink`
-  - In-process Rust engine: `mesio`
-
-It emits `DownloadManagerEvent` for lifecycle, segment boundaries, and (optionally) progress.
-
-For persisted session segments, the backend keeps three separate timestamps:
-
-- `created_at`: when the segment started recording
-- `completed_at`: when the segment finished recording
-- `persisted_at`: when the segment metadata row was stored in SQLite
-
-### `DanmuService` (chat capture)
-
-Danmu collection is session-scoped but writes files per segment:
-
-- A websocket connection stays alive for the session
-- Segment boundaries (from download events) open/close danmu files (e.g. XML)
-- Danmu events are forwarded to the pipeline for paired/session coordination
-
-### `PipelineManager` (job queue + DAG + worker pools)
-
-The pipeline manager is the post-processing engine:
-
-- Maintains a DB-backed job queue (with recovery on restart)
-- Executes a DAG pipeline model (fan-in / fan-out)
-- Uses separate worker pools for CPU-bound and IO-bound processors
-- Coordinates multi-stage triggers:
-  - Segment pipelines (single output file)
-  - Paired-segment pipelines (video + danmu for the same segment index)
-  - Session-complete pipelines (once all segments are complete)
-
-See also: [DAG Pipeline](./pipeline.md)
-
-### `NotificationService` (event fan-out)
-
-Notifications subscribe to monitor/download/session/pipeline events and deliver them to configured
-channels (Discord / Email / Gotify / Telegram / Webhook), with retry, circuit breakers, and
-dead-letter persistence. Optional browser Web Push delivery is handled by `WebPushService`.
-
-See also: [Notifications](./notifications.md)
-
-### Repository row writes
-
-Complete job, DAG, step, session, media-output and segment writes share repository-owned
-column bindings on an existing SQLite connection. Callers retain retry, clock and transaction
-ownership. DAG publication inserts unattached steps before atomically attaching root jobs;
-later materialization keeps its separate active-parent and PENDING/BLOCKED guards.
-
-Raw session creation preserves the supplied model, while lifecycle creation builds an active
-session with its initial title. Raw ending remains unconditional; lifecycle ending only changes
-an active row. Media insertion and session-size accounting commit together, and combined segment
-creation joins that transaction. Standalone segment insertion does not add to the session total.
-Stored millisecond values, nullable lifecycle timestamps and omitted schema defaults are preserved.
-
-## Downloader Rust Interfaces
-
-The download manager keeps event contracts in `downloader::manager::events`, acknowledged delivery in `coordination`, engine configuration in `configuration`, and attempt ownership in `attempt`. These implementation modules remain private; public event imports through `downloader` and internal imports through `downloader::manager` are preserved. Runtime shutdown uses `DownloadManager::shutdown_until`, and the active entry retains its queue slot until removal.
-
-The unused pending-download configuration update API and write-only retry override have been removed, along with `stop_all`, `get_downloads_by_status`, `set_high_priority_extra_slots` and the old process-waiter helpers. Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
-
-### FFmpeg recording events
-
-Direct FFmpeg and Streamlink remuxing share segment identity, duration/byte totals,
-progress sampling, output-error classification and final event publication. The
-filesystem byte cache belongs to one segment: after rotation, parsed progress is
-used until that segment has a successful metadata sample. Filesystem sampling
-remains throttled to 500 ms per active segment.
-
-Stderr EOF does not prove the final file is closed. The tracker waits for the
-process owner's exit result before inspecting and publishing the final segment;
-unconfirmed cleanup suppresses that completion. Output-I/O errors remain ordered
-before terminal failure, and exit 228 supplies a disk-full fallback only when
-stderr has not already identified the output error.
-
-Auxiliary settlement retains completed task results across timeout, aborts and
-joins unfinished tasks after unconfirmed cleanup, and lets confirmed cleanup
-finish its final events. FFmpeg's stdin stop command and Streamlink's producer,
-pipe and contained-child shutdown policies remain separate. Streamlink's audited
-companion stops acquisition and drains accepted work, including hidden Windows
-children, within the attempt's remaining process budget. Unsupported readers and
-forced termination report incomplete drain; see [Streamlink stopping](engines.md#stopping-streamlink-recordings).
-
-## Key flows
-
-### Recording lifecycle (end-to-end)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant SCH as Scheduler actors
-  participant MON as StreamMonitor
-  participant SESS as SessionLifecycle
-  participant DB as SQLite
-  participant SC as ServiceContainer handlers
-  participant DL as DownloadManager
-  participant ENG as Selected download engine
-  participant DM as DanmuService
-  participant PL as PipelineManager
-  participant NOTI as NotificationService
-
-  SCH->>MON: check platform status and apply filters
-  MON->>SESS: apply detected session state
-  SESS->>DB: transaction for session, streamer state, audit, and outbox
-  DB-->>SESS: commit
-  SESS-->>SC: SessionTransition::Started
-  MON-->>SC: committed MonitorEvent via outbox flush
-
-  SC->>DL: preflight, queue, and call start_with_slot
-  DL->>ENG: spawn selected engine
-  DL-->>SC: return registered download ID
-  SC->>DM: start collection after start_with_slot succeeds
-  ENG-->>DL: segment started or completed
-  DL-->>SC: DownloadManagerEvent
-  DM-->>SC: DanmuEvent
-  SC->>PL: handle segment events and enqueue DAG jobs
-
-  SC->>SESS: apply download terminal outcome
-  alt authoritative end
-    SESS->>DB: commit durable session end
-    SESS-->>SC: SessionTransition::Ended
-    SC->>PL: handle Ended transition
-  else ambiguous or recoverable outcome
-    SESS-->>SC: SessionTransition::Ending
-    Note over SESS: Hysteresis audit is best-effort
-    alt live status returns within the window
-      SESS-->>SC: Resumed and Started
-      SC->>DL: restart download for the same session
-    else window expires or offline is confirmed
-      SESS->>DB: commit durable session end
-      SESS-->>SC: SessionTransition::Ended
-      SC->>PL: handle Ended transition
-    end
-  end
-  SC-->>NOTI: monitor, download, and session events
-  PL-->>NOTI: PipelineEvent
-```
-
-### API request flow (control plane)
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant C as Client
-  participant A as Axum API
-  participant J as Optional JWT middleware
-  participant S as AppState services
-  participant R as SQLite repository
-
-  C->>A: HTTP request
-  opt JWT is configured and the route is protected
-    A->>J: validate token
-    J-->>A: claims
-  end
-  A->>S: dispatch through AppState
-  S->>R: read/write domain data
-  R-->>S: result
-  S-->>A: response
-  A-->>C: JSON response
-```
-
-Most protected routes use JWT middleware when JWT is configured. The full health and readiness
-handlers validate bearer tokens themselves and return `401` when JWT authentication is not
-configured; liveness remains public. WebSocket, media, and stream-proxy routes use their documented
-query-parameter authentication paths.
-
-## Scheduler State and Backoff
-
-Streamer actors use in-memory scheduling state and the database-backed metadata cache. The unused JSON state-file interfaces (`with_state_path`, `restore_state`, the restored-state constructors, `PersistedActorState`, `PersistedConfig` and `SupervisorConfig.state_dir`) have been removed. Runtime recovery still uses the database and session lifecycle; no actor state files are required.
-
-The unused `StreamerManager::record_error` and `StreamerRepository::record_streamer_error` methods are also removed. Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication now shares the committed writer boundary described above.
-
-### Reliable lifecycle feedback
-
-Recording startup and terminal scheduling feedback use an owned lane, separate from progress broadcasts and persistence acknowledgements. The container wires it during construction; Rust embedders use `Scheduler::connect_download_manager` before starting either service. Each admitted attempt reserves capacity for Started and Terminal before it starts. Admission never waits for the actor to apply a message; terminal feedback is published after the recording slot is released. Actor generations and recording identities fence delayed messages, and a replacement starts with the recording owner's current identity.
-
-The lane retains at most 32 lifecycle envelopes per streamer. Its global budget is 1,024 backlog envelopes plus twice the highest configured total recording concurrency, including high-priority extra slots. Increases grow that budget; decreases preserve outstanding reservations. Full admission returns the retryable `SchedulerFeedbackBusy` error and retains a local recheck request without declaring the streamer offline or disabled. An owned recovery worker coalesces requests while waiting for both capacity pools, leaving lifecycle application free to release reservations; it retries only after capacity recovers. Actor retirement and shutdown cancel this wait. Shared payloads and reservation ownership remain attached while an old actor generation still holds an application message.
-
-Configuration resolution uses at most eight owned workers. Revisions and actor generations reject stale results; the latest desired configuration survives mailbox pressure, and lagged configuration broadcasts trigger reconciliation. Progress remains lossy and throttled. Shutdown stops monitoring before recording drains; remaining feedback receives an explicit stopped/retired/unavailable disposition, and the recording drain also joins the feedback owner.
-
-## Event-driven communication
-
-Most cross-service coordination happens via Tokio `broadcast` channels.
-
-| Stream | Publisher | Typical consumers | Notes |
-|---|---|---|---|
-| `ConfigUpdateEvent` | `ConfigService`, `StreamerManager` | `Scheduler`, `ServiceContainer` | Drives actor changes, runtime reconfiguration, and cleanup |
-| `MonitorEvent` | `StreamMonitor` | `ServiceContainer`, `NotificationService` | Emitted through the DB outbox (best-effort delivery under restarts) |
-| `DownloadManagerEvent` | `DownloadManager` | `Scheduler`, `NotificationService`, `ServiceContainer` handlers | Handlers feed segments to `PipelineManager` and terminal outcomes to `SessionLifecycle` |
-| `SessionTransition` | `SessionLifecycle` | `ServiceContainer` handlers, `NotificationService` | `Ended` drives cleanup and session pipelines; resumed `Started` restarts the same session |
-| `DanmuEvent` | `DanmuService` | `ServiceContainer` handlers | Handlers feed segment pairing to `PipelineManager` and terminal signals to download/session handling |
-| `PipelineEvent` | `PipelineManager` | `NotificationService` | Job lifecycle events for observability |
-
-::: tip About throttling
-`PipelineManager` contains an optional throttling subsystem (`ThrottleController`) that can emit
-events and apply download concurrency adjustments if a `DownloadLimitAdjuster` is wired in.
-:::
-
-### Output-root write gate
-
-The download manager runs an **output-root write gate** (in `downloader::output_root_gate`) that operates at the filesystem boundary, complementing the engine-level circuit breakers that operate at the network/process boundary. It exists so that a single filesystem failure (disk full, stale bind mount, lost permissions) does not cascade into dozens of per-streamer retries that would flood the logs and DB outbox.
-
-```
-Healthy ──(record_failure: pre-start ENOENT / runtime ENOSPC / startup probe)──► Degraded
-                                                                                    │
-                              (mark_healthy: next real ensure_output_dir succeeds)  │
-Healthy ◄───────────────────────────────────────────────────────────────────────────┘
-```
-
-Key properties:
-
-- **Lock-free fast path.** `check()` on a Healthy root is an atomic load plus a `DashMap::get`. No mutex on the hot path, no cost when there are no tracked failures.
-- **Single-flight cooldown via CAS.** When a root is `Degraded`, only one caller per cooldown window (30s default) is allowed through to attempt the real `create_dir_all`. Other concurrent callers fast-reject with the cached error. Mirrors the half-open pattern in `CircuitBreaker`.
-- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate uses actual download attempts to test write access. A single one-shot probe runs at container startup to detect broken mounts before recording starts.
-- **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). All affected streamers leave backoff during that transition.
-- **One notification per transition.** The `Healthy → Degraded` CAS is also what decides which caller emits the critical `output_path_inaccessible` notification, so users see exactly one alert per incident regardless of how many concurrent streamers are affected.
-- **`ENOSPC` is the only mid-stream entry point.** A writer that runs out of space reports the failure to the gate while the recording is still in flight, degrading the root so the next start is throttled. Other write failures — read-only filesystem, lost permissions, a path that disappeared — are classified as file-scoped and stay with the engine's `CircuitBreaker`; they reach the gate through the startup probe, or through the pre-start hook only when they also make its `create_dir_all` fail. An existing but unwritable directory returns `Ok` from `ensure_output_dir`, so the pre-start hook does not see it. The split exists because `OutputRootUnavailable` is exempt from the circuit breaker, so the gate is the only thing throttling a retry for that kind.
-
-Exposed in `/api/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-storage-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#storage-cleanup) for the stale-mount failure mode.
-
-## Service Ownership
-
-Ended-session retention tasks are owned by the session lifecycle. Shutdown cancels
-and joins those tasks without waiting for the retention interval; cleanup never
-removes a newer session's current-session entry. API states share the container's
-repository wrappers and configuration import service. Import construction follows
-runtime coordinator construction, while log archive grants and archive capacity
-remain local to each API state.
-
-## Observability, health, and shutdown
-
-- Logging uses `tracing` with a reloadable filter and log retention cleanup
-- Health endpoints:
-  - `GET /api/health/live` (no auth; suitable for container liveness)
-  - `GET /api/health` and `GET /api/health/ready` require a valid bearer token and return `401` when
-    JWT authentication is not configured
-- Shutdown:
-  - The standalone executable keeps SQLite, sockets, and recording files inside an OS-contained
-    worker process. A dedicated parent thread observes termination signals and arms the absolute
-    shutdown deadline even while startup or async runtime work is blocked. The watchdog remains
-    armed through durable marker updates, terminal diagnostics, and parent process exit.
-  - The `ServiceContainer` performs phased graceful shutdown inside that worker, keeping required
-    event consumers alive until final segment facts are persisted.
-  - `SIGINT` triggers graceful shutdown on all supported platforms; `SIGTERM` is additionally
-    handled on Unix. The parent and the worker both register handlers, so a signal delivered
-    straight to the worker — as `KillMode=control-group` or `pkill` does — runs the same graceful
-    finalization as one relayed over the control pipe. A worker-local critical failure still
-    fail-stops that worker; the parent then contains its descendants and retains recovery state.
-  - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
-    reports that recovery may be required. Earlier unresolved recovery state persists after later clean generations;
-    the marker is a detection mechanism, not artifact replay.
-  - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
-    between, so a restart loop cannot grow it. Startup and exit messages report how many
-    generations still require recovery.
-
-## Backend Rust Interfaces
-
-The canonical streamer state type is `rust_srec::domain::StreamerState`, including `ERROR` and `DISABLED`. Database model constructors and API transition checks use that type. `StreamerState::can_transition_to` remains the transition validator; recording state and error backoff are persisted by the runtime services, not by mutating the configuration-facing `domain::Streamer` entity.
-
-Unused `database::batching` and `config::UpdateCoalescer` APIs, `domain::session` entities, streamer mutation helpers, and repository `list_active_streamers` / `resume_session` methods have been removed. Use the persisted session and media models under `database::models`, and use `HealthChecker::check_disk_space_with_thresholds` for disk classification. The streamer repository keeps both `list_streamers` (excludes rows marked for deletion) and `list_all_streamers` (includes them so startup can finish retirement).
-
-Workflow transitions are decided in `pipeline::DagScheduler`: a worker reports a job outcome through `on_job_attempt_completed` or `on_job_attempt_failed`, which decide between retrying, failing and ignoring the attempt, and the manager retries a workflow through `retry_dag`, which validates, resets, restarts and replays under one entry point. `DagRepository` keeps the guarded transactions that make each transition durable and exposes `list_ready_steps` as the single readiness rule shared with the completion transaction; its unused `increment_dag_*`, `get_dependency_outputs`, `check_all_dependencies_complete`, `get_processing_job_ids` and `get_pending_root_steps` methods have been removed.
-
-### Actor terminal and wake policies
-
-The actor keeps mailbox execution, individual checks, reliable feedback, terminal
-decisions and live wake decisions in separate modules. Batch delegation remains
-available under its existing controls; this decomposition does not enable it.
-Only an explicit streamer-offline terminal policy submits Offline to the monitor.
-Clean completions and user/unknown stops resume verification; shutdown and disable
-park polling. Infrastructure blocks retain their existing persistence and retry
-policy, and feedback acknowledgement still follows effect application.
-
-Explicit check deadlines take precedence over the Live watchdog. For a parked Live
-actor, the earliest watchdog, stale-heartbeat or schedule-boundary wake is then
-bounded below by the failed-watchdog retry floor. Recurring polling retains its
-±10% jitter; smart-wake, admission and immediate deadlines keep their authority.
-
-Rust callers should use `DownloadEndPolicy::Stopped(DownloadStopCause::User)`:
-`UserCancelled` was removed because no caller fulfilled its claimed permanent
-monitoring-stop contract. The wire-level `DownloadStopCause::User` remains.
-`StreamerActor` and `Supervisor` metadata-store constructor parameters now contain
-`Arc<StreamerMetadata>` values. Obtain the shared store from `StreamerManager`;
-actor checks clone an immutable Arc snapshot instead of configuration JSON. Existing
-actor public re-exports and `StatusChecker` borrowed metadata inputs remain intact.
+- [Configuration layers](./configuration.md): defaults, templates, and overrides.
+- [Recording engines](./engines.md): compatibility and engine options.
+- [Workflows](./pipeline.md): processing triggers and file routing.
+- [Monitoring](../operations/monitoring.md): health, logs, and recovery actions.
+
+For service boundaries, event delivery, database transactions, and Rust interfaces, see [Runtime architecture](../development/architecture.md).
+
+<div id="high-level-topology" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#high-level-topology).
+
+</div>
+
+<div id="runtime-root-servicecontainer" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#runtime-root-servicecontainer).
+
+</div>
+
+<div id="service-container-responsibilities" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#service-container-responsibilities).
+
+</div>
+
+<div id="core-components-what-each-one-actually-does" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#core-components-what-each-one-actually-does).
+
+</div>
+
+<div id="runtimecoordinator-recording-startup-and-cancellation" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#runtimecoordinator-recording-startup-and-cancellation).
+
+</div>
+
+<div id="configservice-configuration-hot-reload" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#configservice-configuration-hot-reload).
+
+</div>
+
+<div id="streamermanager-committed-metadata-snapshots" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#streamermanager-committed-metadata-snapshots).
+
+</div>
+
+<div id="scheduler-actor-model-orchestration" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#scheduler-actor-model-orchestration).
+
+</div>
+
+<div id="streammonitor-detect-filter-outbox" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#streammonitor-detect-filter-outbox).
+
+</div>
+
+<div id="sessionlifecycle-single-owner-of-session-state" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#sessionlifecycle-single-owner-of-session-state).
+
+</div>
+
+<div id="downloadmanager-downloads-engine-abstraction" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#downloadmanager-downloads-engine-abstraction).
+
+</div>
+
+<div id="danmuservice-chat-capture" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#danmuservice-chat-capture).
+
+</div>
+
+<div id="pipelinemanager-job-queue-dag-worker-pools" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#pipelinemanager-job-queue-dag-worker-pools).
+
+</div>
+
+<div id="notificationservice-event-fan-out" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#notificationservice-event-fan-out).
+
+</div>
+
+<div id="repository-row-writes" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#repository-row-writes).
+
+</div>
+
+<div id="downloader-rust-interfaces" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#downloader-rust-interfaces).
+
+</div>
+
+<div id="ffmpeg-recording-events" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#ffmpeg-recording-events).
+
+</div>
+
+<div id="key-flows" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#key-flows).
+
+</div>
+
+<div id="recording-lifecycle-end-to-end" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#recording-lifecycle-end-to-end).
+
+</div>
+
+<div id="api-request-flow-control-plane" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#api-request-flow-control-plane).
+
+</div>
+
+<div id="scheduler-state-and-backoff" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#scheduler-state-and-backoff).
+
+</div>
+
+<div id="reliable-lifecycle-feedback" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#reliable-lifecycle-feedback).
+
+</div>
+
+<div id="event-driven-communication" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#event-driven-communication).
+
+</div>
+
+<div id="output-root-write-gate" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#output-root-write-gate).
+
+</div>
+
+<div id="service-ownership" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#service-ownership).
+
+</div>
+
+<div id="observability-health-and-shutdown" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#observability-health-and-shutdown).
+
+</div>
+
+<div id="backend-rust-interfaces" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#backend-rust-interfaces).
+
+</div>
+
+<div id="actor-terminal-and-wake-policies" class="legacy-section">
+
+This section is now in [Runtime architecture](../development/architecture.md#actor-terminal-and-wake-policies).
+
+</div>
