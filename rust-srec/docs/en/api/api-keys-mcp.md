@@ -1,6 +1,6 @@
 # API Keys & MCP
 
-Rust-Srec supports long-lived **API keys** for programmatic access and ships a built-in **MCP (Model Context Protocol) server**, so AI assistants such as Claude and Cursor can query recordings, analyze danmu, and manage configuration with first-class tools.
+Rust-Srec supports long-lived **API keys** for programmatic access and includes an **MCP (Model Context Protocol) server**. Its tools let AI assistants such as Claude and Cursor query recordings, analyze danmu, and manage configuration.
 
 ## API Keys
 
@@ -117,6 +117,6 @@ Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `stream
 ## Security Notes
 
 - Treat API keys like passwords: store them in secret managers, never in shared configs or source control.
-- Prefer `read_only` keys unless the assistant genuinely needs configuration or operational details, and set an expiry for keys used in experiments.
+- Prefer `read_only` keys unless the assistant needs configuration or operational details, and set an expiry for keys used in experiments.
 - Revoke keys immediately when a tool or machine is decommissioned; once revocation completes, stale cache fills cannot authorize later requests.
 - When `AUTH_DISABLED=true` (loopback-only development mode), `/api/mcp` is unauthenticated like the rest of the API.

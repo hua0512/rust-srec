@@ -1,6 +1,6 @@
 # Twitch
 
-[Twitch](https://www.twitch.tv) is the world's leading live streaming platform for gamers.
+[Twitch](https://www.twitch.tv) is a live streaming platform for gaming and other content.
 
 ## URL Format
 

@@ -1,6 +1,6 @@
 # Mesio Engine
 
-Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `Streamlink`, it is not an external program — it runs inside the recorder, which is why it has the lowest CPU and memory footprint of the three engines and supports multithreaded HLS downloads. This page covers how Mesio works under the hood; for a side-by-side comparison of all three engines and their features, see [Engines](./engines.md).
+Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `Streamlink`, it is not an external program — it runs inside the recorder, which is why it has the lowest CPU and memory footprint of the three engines and supports multithreaded HLS downloads. This page covers Mesio's implementation; for a side-by-side comparison of all three engines and their features, see [Engines](./engines.md).
 
 ## Architecture
 
@@ -43,7 +43,7 @@ For HLS, all download state lives in one place — the **Scheduler Reactor**. It
 - **The retry budget**, including transparently retrying a signed URL that expires mid-download against a newer one.
 - **Bounded concurrent fetch tasks**, whose in-flight downloads, decryption work, and output buffers are each capped by explicit memory budgets — so a fast or encrypted stream can no longer grow memory without limit.
 
-Decryption runs on a separate **crypto pool**, off the scheduling loop, so a burst of encrypted segments stays responsive instead of piling up. The **SequenceAssembler** then guarantees ordered output, writes fMP4 init segments before the media that depends on them (avoiding codec-mismatch corruption), and emits explicit gaps instead of silently stalling when segments drop out of the live window.
+Decryption runs on a separate **crypto pool**, off the scheduling loop, so decryption does not block scheduling when many encrypted segments arrive at once. The **SequenceAssembler** then guarantees ordered output, writes fMP4 init segments before the media that depends on them (avoiding codec-mismatch corruption), and emits explicit gaps instead of silently stalling when segments drop out of the live window.
 
 ## Download sessions
 
@@ -63,7 +63,7 @@ The HLS download reactor reports or skips unavailable media according to the con
 Mesio-specific processing options are documented on the [Engines](./engines.md) page:
 
 - [FLV Consistency Fix](./engines.md#_2-flv-consistency-fix) — repair FLV structure and timing, and finalize AMF metadata without moving the file tail.
-- [Raw Data Mode](./engines.md#_3-raw-data-mode) — write stream bytes straight to disk with no packet parsing, for the absolute minimum CPU/memory overhead.
+- [Raw Data Mode](./engines.md#_3-raw-data-mode) — write stream bytes directly to disk without packet parsing to reduce CPU and memory use.
 - [HLS Consistency Fix](./engines.md#_4-hls-consistency-fix-mesio-exclusive) — guard segment structure and rotate output at discontinuities or meaningful stream changes before writing.
 
 > [!NOTE]

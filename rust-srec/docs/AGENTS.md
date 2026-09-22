@@ -7,6 +7,11 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 
 ## STRUCTURE
 - `en/`, `zh/`: Markdown source for English and Chinese documentation.
+- `getting-started/`: Installation, first recording, and basic setup.
+- `guides/` and `concepts/`: User workflows and explanations; existing `concepts/` URLs are retained for compatibility.
+- `reference/`: Settings, environment variables, filename templates, processors, and workflow definitions.
+- `operations/`: Deployment, storage, backup, monitoring, and security procedures.
+- `development/`: Runtime architecture and implementation contracts for contributors.
 - `.vitepress/`: VitePress engine, configuration, and theme.
   - `config.mts`: Central source of truth for sidebar, navbar, and locale routing.
 - `public/`: Static assets (logos, diagrams, sample configuration files).
@@ -14,7 +19,9 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 ## WHERE TO LOOK
 - `.vitepress/config.mts`: Update this for any sidebar or navigation changes.
 - `en/getting-started/`: Core installation, Docker, and setup guides.
-- `en/concepts/`: High-level architecture, pipeline, and notification logic.
+- `en/guides/`, `en/concepts/`: Recording, configuration inheritance, workflows, and notifications.
+- `en/reference/`: Detailed field and processor lookup.
+- `en/development/`: Internal service, persistence, and execution contracts.
 - `public/`: Place images and shared assets here.
 
 ## CONVENTIONS / ANTI-PATTERNS
@@ -22,6 +29,8 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - **Toolchain**: Use Node from the repo-root `.nvmrc` and pnpm from this directory's `package.json`.
 - **Sidebars**: Add new navigable pages to the appropriate locale's `sidebar` in `config.mts`. Auxiliary or intentionally unlisted pages need no sidebar entry.
 - **Assets**: Reference assets in `public/` using root-relative paths (e.g., `/stream-rec.svg`).
+- **Audience**: Keep implementation ownership, synchronization, and Rust APIs in `development/`. User guides retain observable behavior, configuration choices, failure recovery, and data-loss constraints. Describe current behavior; keep refactoring history in release notes.
+- **Moved sections**: Update internal links to the new destination and preserve old fragment IDs. A `legacy-section` block is visible only when its ID is targeted; its link must lead to the exact replacement section.
 - **Dead Links**: Backend-managed links (e.g., `/api/docs`) are ignored via `ignoreDeadLinks` in config.
 
 ## COMMANDS

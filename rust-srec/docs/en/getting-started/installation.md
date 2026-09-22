@@ -25,7 +25,7 @@ When the standalone backend creates a fresh database, it initializes the recordi
 
 ## systemd Service (Linux)
 
-The repository ships `rust-srec/rust-srec.service`, a hardened unit that runs the pre-built backend binary as a system service. It supervises the backend only; deploy the frontend separately or use Docker for a complete browser installation.
+The repository includes `rust-srec/rust-srec.service`, a hardened unit that runs the pre-built backend binary as a system service. It supervises the backend only; deploy the frontend separately or use Docker for a complete browser installation.
 
 ### Install
 
@@ -76,7 +76,7 @@ curl http://localhost:12555/api/health/live
 
 Fresh databases use the unit's `OUTPUT_DIR=/var/lib/rust-srec/output` as their recording folder. Existing databases keep their saved `output_folder`, including an older `/app/output` default. For those installations, set **Settings → Global → Output Folder** to `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`; `ProtectSystem=strict` does not make `/app/output` writable.
 
-Keep `RUST_SREC_OUTPUT_ROOTS` in step with that value, or the output-root write gate reports the service degraded. The unit ships both pointing at `/var/lib/rust-srec/output`.
+Keep `RUST_SREC_OUTPUT_ROOTS` consistent with that value, or the output-root write gate reports the service degraded. The unit sets both to `/var/lib/rust-srec/output`.
 
 Give a collection that grows past a few hundred GB its own volume and list it under `ReadWritePaths=` rather than nesting it inside `/var/lib/rust-srec`. Every `ReadWritePaths=` entry must already exist — `ProtectSystem=strict` fails the unit with `226/NAMESPACE` on a missing path — and systemd does not chown them, so create them owned by `rust-srec`.
 

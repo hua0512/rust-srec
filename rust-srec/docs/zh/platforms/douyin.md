@@ -1,6 +1,6 @@
 # 抖音
 
-[抖音](https://www.douyin.com) 是中国领先的短视频和直播平台。
+[抖音](https://www.douyin.com) 是中国的短视频和直播平台。
 
 ## URL 格式
 

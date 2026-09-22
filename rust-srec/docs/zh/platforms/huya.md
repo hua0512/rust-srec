@@ -1,6 +1,6 @@
 # 虎牙
 
-[虎牙](https://www.huya.com) 是中国领先的游戏直播平台。
+[虎牙](https://www.huya.com) 是中国的游戏直播平台。
 
 ## URL 格式
 

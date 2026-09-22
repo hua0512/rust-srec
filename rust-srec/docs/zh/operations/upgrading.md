@@ -87,7 +87,7 @@ docker compose --profile autoupdate up -d
 
 新建规则省略时区或设为 null 时使用 UTC。现有 TimeBased 编辑请求省略该成员时保留
 已存储时区；显式 null 表示 UTC。备份导出使用 `0.1.8` 格式及显式时区，旧版备份中
-省略时区的 TimeBased 规则按本地时间导入。详见[过滤器时区](../concepts/configuration.md#过滤器时区与边界)。
+省略时区的 TimeBased 规则按本地时间导入。详见[过滤器时区](../guides/schedules.md#过滤器时区与边界)。
 
 ## 回滚
 

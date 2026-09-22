@@ -41,7 +41,7 @@
 
 如果录制目录会增长到几百 GB 以上，请给它单独的卷，并在 `ReadWritePaths=` 中列出，而不要嵌套在 `/var/lib/rust-srec` 之下。只要 `StateDirectory=` 发现状态目录属于其他用户，就会递归修改其下全部文件的属主，而这一步发生在单元启动过程中——目录树很大时，这次遍历可能超过启动超时。列在 `ReadWritePaths=` 中的路径必须事先存在并归服务账号所有，systemd 既不会创建它，也不会修改它的属主。
 
-录制目录取自数据库中的 `output_folder`。独立后端仅在创建全新数据库时用 `OUTPUT_DIR` 初始化它，之后启动时会保留已保存的值。发现过程使用已保存的设置和覆盖项，不会把过时的 `OUTPUT_DIR` 当成额外录制位置。请让显式配置的 `RUST_SREC_OUTPUT_ROOTS` 与已保存的文件夹保持一致。参见[环境变量](../getting-started/configuration.md#环境变量)。
+录制目录取自数据库中的 `output_folder`。独立后端仅在创建全新数据库时用 `OUTPUT_DIR` 初始化它，之后启动时会保留已保存的值。发现过程使用已保存的设置和覆盖项，不会把过时的 `OUTPUT_DIR` 当成额外录制位置。请让显式配置的 `RUST_SREC_OUTPUT_ROOTS` 与已保存的文件夹保持一致。参见[环境变量](../reference/environment.md#环境变量)。
 
 ## 输出根探测
 

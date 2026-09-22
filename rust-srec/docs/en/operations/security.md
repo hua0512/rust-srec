@@ -8,7 +8,7 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 - Generate unique, random `JWT_SECRET` and `SESSION_SECRET` values of at least 32 characters. Rotating `JWT_SECRET` invalidates access tokens; plan the change as an outage for API clients.
 - Access tokens are short-lived. Refresh tokens are rotating session credentials and must be protected like passwords.
 - `AUTH_DISABLED=true` is only a local development escape hatch. The backend accepts it only with a loopback bind address; do not build production procedures around it. In that mode requests are refused unless their `Origin` is in the `API_CORS_ORIGINS` allowlist (or matches the request's own `Host`), and unless the `Host` is a loopback name or the configured bind address — the latter is what stops a DNS-rebinding page from reaching the unauthenticated API. Widen the allowlist only for origins you control.
-- Repeated failed logins are throttled per account (5 failures per 15 minutes by default) and, much more loosely, per source address; a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash. The source address is the TCP peer and `X-Forwarded-For` is not trusted, so behind the bundled frontend or any reverse proxy every login is attributed to the proxy — do not rely on the per-address budget to isolate clients. See [Configuration](../getting-started/configuration.md#login-throttling).
+- Repeated failed logins are throttled per account (5 failures per 15 minutes by default) and, much more loosely, per source address; a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash. The source address is the TCP peer and `X-Forwarded-For` is not trusted, so behind the bundled frontend or any reverse proxy every login is attributed to the proxy — do not rely on the per-address budget to isolate clients. See [Configuration](../reference/environment.md#login-throttling).
 - Tokens carry role names and exports include user accounts, but the route layer does not enforce a per-role authorization policy, and there is no identity-provider integration. See [Scope and Limits](./support.md#scope-and-limits).
 
 Login attempts for unknown users perform the same bounded Argon2 verification
@@ -128,6 +128,6 @@ Full API credentials can select tool executables and config paths. Treat that ac
 
 ## Vulnerability Handling
 
-Do not report suspected vulnerabilities in a public issue. Use [GitHub private vulnerability reporting](https://github.com/hua0512/rust-srec/security/advisories/new) and include the affected version, impact, and a minimal reproduction with secrets removed. Security fixes target `main` and ship in a subsequent release.
+Do not report suspected vulnerabilities in a public issue. Use [GitHub private vulnerability reporting](https://github.com/hua0512/rust-srec/security/advisories/new) and include the affected version, impact, and a minimal reproduction with secrets removed. Security fixes are applied to `main` and included in a subsequent release.
 
 For operational evidence and limitations, also read [Data Governance](./data-governance.md) and [Support and Versions](./support.md).

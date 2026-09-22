@@ -48,7 +48,7 @@ When danmaku is enabled for the streamer:
 - **Not supported**: sending chat, enter notices, hearts, follow/share notices.
 
 ::: info
-- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path, and integrity tokens do not unlock a higher public rendition. Browser-reported 1080p HEVC, when present, is not available through this API.
+- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path, and integrity tokens do not provide access to a higher-quality public stream. Browser-reported 1080p HEVC, when present, is not available through this API.
 - **Authentication**: Cookies and OAuth are not required for recording or receiving chat.
 - **Network**: If integrity token minting is blocked, disable **Mint Integrity Token** and retry.
 :::

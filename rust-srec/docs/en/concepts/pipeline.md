@@ -1,25 +1,30 @@
-# DAG Pipeline
+# Create a workflow {#dag-pipeline}
 
-rust-srec uses a **Directed Acyclic Graph (DAG)** system for post-processing workflows.
+A workflow connects processing steps with dependencies. A job preset stores the settings for one step; a workflow (pipeline preset) stores the steps and their connections.
 
-## What is a DAG Pipeline?
+## Example: MP4 recording and thumbnail
 
-A DAG pipeline defines a series of processing steps with dependencies. Steps run in parallel when possible, but respect dependency order.
+Start with a successful recording and make sure FFmpeg is available to the backend.
+
+1. Open **Workflows** and choose **Create Workflow**. Name it `MP4 and thumbnail`.
+2. Add a `remux` step, set the output format to `mp4`, and leave source removal disabled for this first test.
+3. Add a `thumbnail` step and make it depend on `remux`. Select a timestamp and image width.
+4. Save the workflow, then assign it to a streamer or template's **Segment Pipeline**.
+5. Record a video segment. Inspect the workflow in **Pipeline Jobs** and confirm that the converted video and thumbnail exist before enabling uploads or deletion.
 
 ```mermaid
 flowchart LR
-    subgraph DAG["Example DAG Pipeline"]
-        R[Recording] --> REMUX[Remux to MP4]
-        REMUX --> THUMB[Generate thumbnail]
-        REMUX --> UPLOAD[Upload]
-        THUMB --> UPLOAD
-        UPLOAD --> CLEANUP[Cleanup]
-    end
+    VIDEO[Completed video segment] --> REMUX[Remux to MP4]
+    REMUX --> THUMB[Extract thumbnail]
 ```
+
+The thumbnail step receives the converted video and outputs only the thumbnail. To add an upload that receives both files, make it depend on both steps, as shown under [Data routing](#data-routing).
+
+Choose the trigger to match your inputs: a segment trigger can also receive chat files when danmu recording is enabled. Use matching processors or a paired/session workflow as needed. See the [processor reference](../reference/processors.md) for each processor's input requirements.
 
 ## Pipeline Triggers
 
-The power of rust-srec lies in its automated trigger mechanism. You can trigger pipelines at different stages:
+Pipelines can run automatically at three stages:
 
 ### 1. Segment Pipeline
 - **Trigger**: When a single video segment (`.flv`, `.ts`) or danmaku file (`.xml`, `.json`) finishes downloading.
@@ -39,127 +44,6 @@ The power of rust-srec lies in its automated trigger mechanism. You can trigger 
 ::: tip Reliability note
 If danmaku finishes before the final video file is ready, rust-srec waits before starting the session-complete pipeline. This keeps final jobs such as merge, upload, or cleanup from running with missing video inputs.
 :::
-
-## Built-in Processors
-
-Each pipeline step is executed by a specialized processor:
-
-| Processor ID | Function | Core Parameters |
-|--------------|----------|-----------------|
-| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec` |
-| `danmaku_factory` | Danmaku conversion | `output_format` (ass) |
-| `ass_burnin` | Hard-burn subtitles into video | Processor preset configuration |
-| `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
-| `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
-| `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
-| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
-| `copy_move` | Copies or moves local files | Destination and operation settings |
-| `metadata` | Writes metadata (nfo, json) | - |
-| `delete` | Automatically cleans up files | - |
-| `execute` | Runs a program or custom shell command | `program`, `args` or `command`, `scan_output_dir`, `scan_extension` |
-
-### Execute (`execute`)
-
-In the preset editor or a workflow step's configuration dialog, choose **Shell command** or **Program and arguments** under **Execution mode**. Existing shell commands open in shell mode without conversion. Switching modes clears the previous command or program and arguments; the output scan settings are shared and retained.
-
-In program mode, enter the executable in **Program** and use **Add argument** for each argument in order. Each box holds one complete argument, including spaces, quotes, line breaks, or an empty string. Remove a box to omit that argument; leaving it blank passes an empty argument. Saving includes only the selected mode's fields.
-
-Use `program` and `args` to run an executable directly, without a shell:
-
-```json
-{
-  "program": "ffmpeg",
-  "args": ["-nostdin", "-n", "-i", "{input}", "-c", "copy", "/recordings/converted/{streamer}_%Y%m%d_%H%M%S.mp4"],
-  "scan_output_dir": "/recordings/converted",
-  "scan_extension": "mp4"
-}
-```
-
-Workflow steps receive no output paths, so `{output}`, `{outputN}` and `{outputs_json}` are empty there. Name the file in the arguments and set `scan_output_dir` (which accepts the same placeholders) so the file is handed to the next step: files that were not in the directory before the command started and were modified after it started are the step's outputs. Without a scan directory the inputs pass through unchanged. The step's size metrics and its list of succeeded inputs cover every input it received and every output it detected, and a scan directory that cannot be read fails the step instead of reporting no outputs.
-
-`program` is a fixed executable name on `PATH` or an executable path; it does not expand placeholders. Each `args` entry is one argument, including an empty string. Arguments support the same file, metadata, JSON-array, and time placeholders as `command`. In paired-segment and session-complete pipelines, `{manifest_json}` expands to the JSON session pairing (which danmu file belongs to which video, per segment); elsewhere it expands to `null`. Inserted values stay literal: quotes, spaces, shell operators, environment-variable references, and further placeholder text are not interpreted. Do not add shell quotes around an argument. The called program still interprets its own options.
-
-Omitting `args` passes no arguments. Use either `program` with optional `args`, or `command`; combining them fails the step. On Windows, `program` rejects `.bat` and `.cmd` files because Windows would run them through a shell. Use `command` for batch scripts. Both modes retain output-directory scanning, pipeline output handling, timeouts, and process cleanup.
-
-Shell syntax follows the server's operating system, regardless of the browser's operating system. For example, `ffmpeg -nostdin -n -i {input} -c copy {input}.mp4` uses a fixed native executable with placeholder arguments and works with the supported template grammar on both platforms, when FFmpeg is installed on the server.
-
-Command templates without recognized placeholders retain their existing shell behavior. With placeholders, the compiler accepts a bounded grammar and passes substituted data through process-local bindings. Placeholders may appear in ordinary argument words or file redirect targets; the command name must be fixed. Unknown and out-of-range placeholders remain literal. A bare empty value contributes no word, while existing quotes retain an empty argument. Empty redirect targets fail before launch.
-
-| Value-bearing templates | Accepted structure |
-| --- | --- |
-| POSIX | Bare, single-quoted and double-quoted argument fragments; `;`, LF newlines, `&&`, `||`, pipes, `<`, `>`, `>>`, and literal descriptor duplication such as `2>&1` |
-| Windows | Fixed native executable names/paths; quoted or bare argument fragments; `&`, `&&`, `||`, file redirects and literal descriptor duplication. Literal-only `echo` and `ver` stages may accompany native commands. |
-
-Templates with placeholders reject command substitution, arithmetic, parameter expansion, here-documents, command groups, assignment prefixes, command-name expansion (including POSIX brace forms) and nested shell wrappers before launch.
-
-Windows additionally rejects pipes, multiline templates, batch scripts, builtin stages with placeholders, literal `%`/`!`/`^` characters in the template, control characters in substituted words, and ambiguous literal quote/backslash combinations. These template-character restrictions apply inside quotes too; put that data in `args` or a placeholder value.
-
-Windows assembles each complete argument before applying the backslash-quote encoding used by common C-style and Shell32 parsers. Programs with custom argument parsers must accept that encoding; follow the called program's argument or data-interface requirements. Redirect filenames use separate rules and cannot contain a double quote.
-
-Fixed Windows native paths accept 8.3 aliases such as `RUNNER~1` and literal brackets. Wildcard executable names and extended `\\?\` namespace paths remain unsupported. Value-bearing Windows commands are checked before launch against cmd's 8,191 UTF-16-unit limit: each inherited binding, the generated command and a conservative expanded command must fit, with 32 units reserved for the launcher. Large JSON arrays may therefore require `program`/`args` or a file data interface.
-
-Use `program` and `args`, or a fixed script with a documented argument/data interface, for unsupported forms. Do not place untrusted values into that program's code or expression arguments: the called program still interprets its own options.
-
-### Archives (`compression`)
-
-The `compression` processor bundles its input files into a single archive. It does not re-encode media; the files go in as they are.
-
-| Key | Description | Default |
-|-----|-------------|---------|
-| `format` | `zip` or `targz` (gzipped tar) | `zip` |
-| `compression_level` | `0`–`9`. `0` skips compression — stored entries for `zip`, an uncompressed gzip stream for `targz` — which is the sensible choice for already-compressed video. A value above `9` fails the step rather than being clamped. | `6` |
-| `output_path` | Archive to write. When omitted, it is derived from the first input: same directory, same name, with the input's extension replaced by the format's, so `/rec/video.flv` produces `/rec/video.zip`. | derived |
-| `overwrite` | Replace an existing archive at that path. With `false`, the step fails instead. | `true` |
-| `preserve_paths` | Store each input under its full path inside the archive, minus the leading separator: `/srv/recordings/x/a.mp4` becomes the entry `srv/recordings/x/a.mp4`. The paths are not made relative to a common base. With `false`, every entry is a bare filename at the archive root. | `false` |
-
-The processor accepts a batch, so a step that receives several files from its dependencies produces one archive containing all of them. Its output is the archive path only — the inputs are not deleted, and a `delete` step depending on it removes the archive, not the sources.
-
-Two inputs that would be stored under the same entry name, typically the same file name from two folders with `preserve_paths` off, are rejected before any archive is written. Enable `preserve_paths` or rename one of them.
-
-ZIP entries are always written with ZIP64 sizes, so a single recording larger than 4 GiB archives correctly. The cost is 40 bytes per entry, and the archives still open with ordinary ZIP tools.
-
-### Baidu Netdisk (`baidupcs`)
-
-The `baidupcs` processor uploads recordings to Baidu Netdisk through the external [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) CLI (bundled in the Docker image; install it separately for bare-metal setups and point `BAIDUPCS_PATH` at it if it is not on `PATH`).
-
-- **Login**: open any `baidupcs` preset in the web UI and use the account card to log in with a pasted cookie string (recommended) or BDUSS + STOKEN. Credentials are handed to BaiduPCS-Go and the session persists in its config directory (`BAIDUPCS_GO_CONFIG_DIR`); the same card shows the active account and quota. Enable **Remember for automatic re-login** to also store the credentials server-side (plaintext, like platform cookies): upload jobs then log in again by themselves when the session turns out to be expired — checked before the first attempt and once more before a retry. When a replayed login is rejected (typically because the stored session token was invalidated by a password change), a high-priority `baidupcs_relogin_failed` notification fires and further attempts pause for an hour, so dead credentials produce one alert instead of a failed Baidu call per job. Logging out forgets the stored credentials.
-- **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
-- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file lands directly under the destination folder. Files that Baidu rejects outright (an illegal name, a file over the size limit, an unreadable file or an exhausted quota) are recorded as failed and are not re-sent by later attempts. A large batch is uploaded through several BaiduPCS-Go invocations so the command line stays within the platform limit, and the login check that precedes an upload is not written to the job log.
-- **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
-
-Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
-with an isolated copy of its standard `pcs_config.json`. This avoids exposing
-cookies, BDUSS or STOKEN in process arguments. The CLI's history path is blocked
-inside that private directory, so login commands are not saved to history. A
-successful result updates only the active account and selected UID in the original
-config; rejected logins leave it unchanged. External changes observed when the
-original bytes are checked before commit cause the update to be refused. External
-CLI/config writers do not share the backend lock and must not run concurrently.
-
-Custom binaries must support the same no-argument command interface, `env`
-config-directory report and standard account-config format. Incompatible binaries
-return an error; credentials are never retried through command-line flags. Login
-subprocesses keep a 60-second deadline, including stdin delivery, with up to five
-seconds for forced cleanup. A cancelled request retains the account lock until
-cleanup completes. Do not include line breaks or NUL characters in pasted credentials.
-
-## Restart recovery of danmu segments
-
-Recovery associates a stored XML output with the stored video segment whose path
-has the same name with its extension replaced by `.xml`. The stored paths must
-match; recovery does not infer an index from title digits or media-output IDs.
-If no segment matches, or different segment indices produce the same XML path,
-the XML output is skipped with a warning. Keep original video/XML path records
-consistent when restoring a database; unmatched historical files are not
-automatically assigned to a segment or replayed through paired processing.
-
-## Presets System
-
-To improve efficiency, the system provides two types of presets:
-
-- **Job Preset**: A configuration template for a single step (e.g., "1080p Thumbnail Extraction").
-- **Pipeline Preset**: A full DAG workflow definition (e.g., "Bilibili Standard Recording Flow").
 
 ## Data Routing
 
@@ -198,9 +82,7 @@ flowchart LR
 
 In this graph, `rclone` still waits for `thumbnail` because both `remux` and `thumbnail` are direct dependencies. The extra `remux -> rclone` edge routes the video; it does not make the upload start early.
 
-## Advanced Features
-
-### Parallelism & Dependencies (Fan-in / Fan-out)
+## Parallelism & Dependencies (Fan-in / Fan-out) {#parallelism-dependencies-fan-in-fan-out}
 
 - **Fan-out**: One step routes its outputs to multiple downstream steps. Those steps may run concurrently if all their other dependencies and worker capacity allow it.
 - **Fan-in**: One step has multiple direct dependencies. It waits for all of them and receives their merged outputs.
@@ -209,7 +91,7 @@ Fan-out describes graph routing, not a guarantee of simultaneous execution.
 
 When a worker becomes free, a step that continues a workflow already in progress is claimed before the first step of a new workflow at the same priority, and within that order the oldest job goes first. A busy queue therefore finishes workflows instead of leaving many half done.
 
-### Automatic Cleanup
+## Automatic Cleanup {#automatic-cleanup}
 A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
 
 Do **not** place a `delete` step after a `remux`/transcode step: it would delete the converted result, because that is what the transcode produced. To delete the original source after converting, enable **Remove Input on Success** (`remove_input_on_success`) on the transcode step instead.
@@ -217,224 +99,119 @@ Do **not** place a `delete` step after a `remux`/transcode step: it would delete
 A step that removes its inputs (`delete`, an `rclone` or `copy_move` step in `move` mode, or a `baidupcs` step with **Delete local files after upload**) must not share a parent with another step that still reads the same files, because fan-out runs both at once. Such a workflow is rejected when it is saved or validated, with a message naming the steps involved; make the removing step depend on the other reader, directly or through other steps, so it runs after it. Root steps all read the pipeline's inputs and count as sharing one parent. Removal driven by a processor option, such as **Remove Input on Success**, happens only after that step has succeeded, so beside a reader it is reported as a warning when the workflow is validated or saved and logged when it runs: whichever sibling finishes first decides whether the other still finds its file. Saving a workflow also checks that every preset and workflow it names exists and that every processor is available, instead of failing when the next recording finishes.
 
 ::: tip Performance Tip
-Re-encoding (like `ass_burnin`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
+Re-encoding (such as `ass_burnin`) is CPU-intensive. Limit concurrency in `cpu_pool` to avoid system load that could disrupt downloads.
 :::
 
-## Key Concepts
+## Error handling {#error-handling}
 
-### Steps
+When a step fails, dependent steps are cancelled; independent branches can finish. The workflow is marked failed after running steps stop. Retry the workflow to restart failed and cancelled steps without repeating completed steps.
 
-Each step performs a single processing task:
+Partial file failures fail the step and identify the affected inputs. Already-published files remain on disk and in the job history. Check per-file results before manually repeating uploads or moves.
 
-| Step Type | Description |
-|-----------|-------------|
-| `remux` | Convert to different container (e.g., FLV → MP4) |
-| `thumbnail` | Extract thumbnail image |
-| `rclone` | Upload to cloud storage |
-| `delete` | Delete files produced by its direct dependencies |
-| `preset` | Run one step from a job preset with exactly this name. A name matching no preset is treated as a processor id instead, so `{"type": "preset", "name": "thumbnail"}` still runs the `thumbnail` processor with its defaults. |
-| `workflow` | Expand the pipeline preset with exactly this name as a sub-DAG. A name matching no pipeline preset fails the pipeline. |
-| `inline` | Run a processor with configuration embedded in the DAG |
+Automatic per-step retries keep dependent steps waiting until retries are exhausted. Cancelling the workflow cancels pending retries. See [retry counts and timeouts](../reference/workflows.md#per-step-retries-and-timeouts).
 
-### Dependencies
+If processing is interrupted, restart recovery resumes unfinished work. Stored video/chat paths must still identify the original segments; unmatched chat files are skipped with a warning. See [recovery details](../development/pipeline.md#restart-recovery-of-danmu-segments).
 
-Steps can depend on other steps:
+Use [Workflow reference](../reference/workflows.md) for JSON definitions, execution states, and API cancellation. Processor options for Execute, archives, and Baidu Netdisk are in [Processor reference](../reference/processors.md).
 
-```mermaid
-flowchart LR
-    A[Step A] --> C[Step C]
-    B[Step B] --> C
-    C --> D[Step D]
-```
+<div id="what-is-a-dag-pipeline" class="legacy-section">
 
-- **Fan-out**: One step is a direct dependency of multiple downstream steps
-- **Fan-in**: One step waits for multiple direct dependencies and merges their outputs
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-### Execution States
+</div>
 
-```mermaid
-stateDiagram-v2
-    [*] --> Pending
-    Pending --> Processing: Start
-    Processing --> Completed: Success
-    Processing --> Failed: Error
-    Failed --> Processing: Retry
-    Completed --> [*]
-    Failed --> [*]
-```
+<div id="presets-system" class="legacy-section">
 
-## DAG Definition
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-```json
-{
-  "name": "Post-Process",
-  "steps": [
-    {
-      "id": "remux",
-      "step": {"type": "preset", "name": "remux"},
-      "depends_on": []
-    },
-    {
-      "id": "thumbnail",
-      "step": {"type": "preset", "name": "thumbnail"},
-      "depends_on": ["remux"]
-    },
-    {
-      "id": "upload",
-      "step": {"type": "preset", "name": "upload"},
-      "depends_on": ["remux", "thumbnail"]
-    },
-    {
-      "id": "cleanup",
-      "step": {"type": "preset", "name": "delete_source"},
-      "depends_on": ["upload"]
-    }
-  ]
-}
-```
+</div>
 
-A step can also use an inline processor instead of a job preset:
+<div id="advanced-features" class="legacy-section">
 
-```json
-{
-  "id": "thumbnail",
-  "step": {
-    "type": "inline",
-    "processor": "thumbnail",
-    "config": {
-      "timestamp_secs": 10,
-      "width": 640,
-      "quality": 2
-    }
-  },
-  "depends_on": ["remux"]
-}
-```
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-## Pipeline Presets
+</div>
 
-Save DAG definitions as reusable presets:
+<div id="key-concepts" class="legacy-section">
 
-1. Create preset via API or UI
-2. Assign preset to streamers or templates
-3. Preset runs automatically after recording completes
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-## Error Handling
+</div>
 
-Paired-segment and session-complete pipelines receive their video inputs
-first, followed by their danmaku inputs. Session-complete inputs are ordered by
-segment index; paired inputs retain their collected order. Which danmaku file
-belongs to which video is recorded per segment as the pipeline's session
-pairing, stored with the pipeline itself and available to every step, including
-after a restart or retry. Subtitle conversion and burn-in pair within a segment
-only: a segment without a danmaku file leaves its own video without subtitles
-and does not shift the pairing of later segments. A subtitle is burned into one
-video per job; a second copy of the same recording in the same job is passed
-through with a note. No file is written next to the recordings; `_inputs.json` files left by earlier versions are unused and can
-be deleted.
+<div id="dependencies" class="legacy-section">
 
-Normal completion and restart recovery collect leaf outputs in DAG definition
-order, keeping the first occurrence of each path with case folding on Windows
-and macOS.
-Missing leaf records or malformed output arrays leave recovery incomplete while
-preserving the valid outputs. Completing a step twice does not create another
-downstream job or increment the DAG's completed-step count again.
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
-30 seconds per wait, including extreme configured values. Retry counts keep
-their configured meaning. FFmpeg progress timestamps exposed as `out_time_ms`
-are milliseconds for both supported upstream timestamp keys.
+</div>
 
-Staged outputs with overwrite disabled use native no-replace publication on
-Windows, Linux and macOS, so a filesystem without hard links can still publish
-without overwriting a competing file. Systems that support neither no-replace
-publication nor hard links return an error. Temporary-file cleanup after an
-abandoned processor runs off the async worker and is best effort; a normal
-publication waits for its commit or rollback. Subtitle and font paths support
-apostrophes and filtergraph delimiters without extra user escaping.
+<div id="pipeline-presets" class="legacy-section">
 
-- **Fail-fast**: When a step fails, only the steps that depend on it, directly
-  or through other steps, are cancelled. Steps on independent branches keep
-  running and finish normally; the workflow stays in progress, with the failure
-  recorded as its error, until no step is running, and is then marked failed.
-  A retry re-runs only the failed and cancelled steps.
-- **Retry**: Failed steps can be retried manually or automatically. A retry
-  checks every job it will restart before changing anything; if restarting
-  breaks down part-way, the workflow is failed again with the retry error and
-  stays retryable. A workflow whose cancelled step never received a job can be
-  retried too. At startup, a running step whose job had already failed or been
-  cancelled fails its workflow so it can be retried.
-- **Logs**: Each step maintains execution logs for debugging
+This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
 
-Retries and restart recovery retain the job's earlier step timings, log counters,
-file-size metadata and produced-artifact history. Starting another attempt does
-not duplicate earlier log entries. The current processor is saved before it runs;
-if that write fails or stored execution metadata is invalid, processing stops and
-the failure is reported without replacing the original metadata. Completion and
-failure updates also preserve additional stored execution-metadata fields.
+</div>
 
-Produced-artifact history can include files published by earlier attempts. A later
-failure does not delete those files. Processors manage their own staged temporary
-outputs, with the cleanup limits described above.
+<div id="built-in-processors" class="legacy-section">
 
-### Per-step retries and timeouts
+This section is now in [Processor reference](../reference/processors.md#built-in-processors).
 
-A workflow step can carry its own retry budget and timeout in its definition:
+</div>
 
-```json
-{
-  "id": "upload",
-  "step": {"type": "preset", "name": "upload"},
-  "depends_on": ["remux"],
-  "retry": {"max_attempts": 3, "backoff_secs": 60},
-  "timeout_secs": 7200
-}
-```
+<div id="execute-execute" class="legacy-section">
 
-- `retry.max_attempts` counts the first run, so `3` allows two automatic retries; `1`, or no `retry`, means none. `retry.backoff_secs` (default 60) is the wait before the second attempt; it doubles for each further attempt and is capped at six hours.
-- `timeout_secs` limits one attempt of that step's job and replaces the worker pool's default timeout for it.
+This section is now in [Processor reference](../reference/processors.md#execute-execute).
 
-When an attempt fails or times out with attempts left, the job is shown as failed with the time of the next attempt in its error message and in `retry_after`, the step keeps waiting and the workflow stays in progress; nothing downstream is cancelled. The retry starts within about fifteen seconds of its time, also after a restart. A job whose inputs the processor cannot take at all is not retried. Once the budget is spent the failure reaches the workflow as described above, and the manual retry remains available. Cancelling the workflow drops a pending retry. The step dialog of the workflow editor exposes both settings under **Retries and timeout**.
+</div>
 
-### Processor Result Contracts
+<div id="archives-compression" class="legacy-section">
 
-Media processors share output planning, sequential execution and single-file skip
-result construction. Unary audio, metadata, thumbnail and remux jobs use the first
-output override; their batch jobs require one override per input or none. ASS and
-DanmakuFactory instead map strictly against selected video/XML inputs. Naming and
-empty-string policies remain processor-specific.
+This section is now in [Processor reference](../reference/processors.md#archives-compression).
 
-Audio, metadata, thumbnail and remux use staged publication through the shared
-driver: every output of a job is written to a temporary file and the whole batch
-is published together, so a failure or cancellation part-way through a batch
-publishes nothing, and one item's output can never overwrite another item's input.
-ASS retains its artifact-matching loop and the same staged publication. Source
-deletion remains after successful publication, and skipped sources remain.
-Outputs, succeeded/skipped inputs and logs retain their input order and existing
-metadata shapes. Batch jobs report the summed input and output sizes of the
-items they processed.
+</div>
 
-A processor that reports some of its inputs as failed fails the job, and a workflow
-step with it, even when the remaining inputs were processed. The error names each
-failed input. What was published stays on disk and in the job's produced-file
-history, so a retry resumes past it. An rclone move or BaiduPCS upload that
-fails part-way records each file's own result instead of marking every file
-failed. Copy and move steps refuse two inputs that would land on the same
-destination name, and a thumbnail step takes the first frame of a recording
-shorter than the requested timestamp.
+<div id="baidu-netdisk-baidupcs" class="legacy-section">
 
-Path mechanisms share filesystem resolution while preserving separate policies:
-ASS command spelling remains lexical; remux resolves existing relative command
-paths and uses best-effort, Windows/macOS case-folded comparisons. Staged output
-validation checks native identity (including hard links), resolves nonexistent
-leaves through their parents, and propagates I/O errors. Transfer processors still
-capture sizes before sources can be consumed and treat only confirmed absence as
-an earlier completed transfer.
+This section is now in [Processor reference](../reference/processors.md#baidu-netdisk-baidupcs).
 
-### Cancelling a Running Pipeline
+</div>
 
-`DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the id names a DAG execution, the whole DAG is stood down: in-flight step jobs are cancelled and the DAG itself reaches a terminal cancelled state instead of staying in processing, so the session that is waiting on it stops waiting and the pipeline no longer reappears as in-flight after a restart.
+<div id="restart-recovery-of-danmu-segments" class="legacy-section">
 
-A cancelled DAG can be retried afterwards. Retry re-runs the steps that ended failed or cancelled; steps that had already completed are not repeated.
+This section is now in [Pipeline execution contracts](../development/pipeline.md#restart-recovery-of-danmu-segments).
 
-The request is idempotent: an id that matches no pipeline, and a DAG that is already in a terminal state, both answer with `cancelled_count: 0` rather than an error.
+</div>
+
+<div id="processor-result-contracts" class="legacy-section">
+
+This section is now in [Pipeline execution contracts](../development/pipeline.md#processor-result-contracts).
+
+</div>
+
+<div id="steps" class="legacy-section">
+
+This section is now in [Workflow reference](../reference/workflows.md#steps).
+
+</div>
+
+<div id="execution-states" class="legacy-section">
+
+This section is now in [Workflow reference](../reference/workflows.md#execution-states).
+
+</div>
+
+<div id="dag-definition" class="legacy-section">
+
+This section is now in [Workflow reference](../reference/workflows.md#dag-definition).
+
+</div>
+
+<div id="per-step-retries-and-timeouts" class="legacy-section">
+
+This section is now in [Workflow reference](../reference/workflows.md#per-step-retries-and-timeouts).
+
+</div>
+
+<div id="cancelling-a-running-pipeline" class="legacy-section">
+
+This section is now in [Workflow reference](../reference/workflows.md#cancelling-a-running-pipeline).
+
+</div>

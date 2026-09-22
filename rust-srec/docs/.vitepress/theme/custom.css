@@ -101,6 +101,19 @@ h6 {
   letter-spacing: 0;
 }
 
+/* Show a moved section's destination only when a reader opens its old bookmark. */
+.vp-doc .legacy-section {
+  display: none;
+}
+
+.vp-doc .legacy-section:target {
+  display: block;
+  margin: 1rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 3px solid var(--vp-c-brand-1);
+  background: var(--vp-c-bg-soft);
+}
+
 /* Smooth Scrolling */
 html {
   scroll-behavior: smooth;

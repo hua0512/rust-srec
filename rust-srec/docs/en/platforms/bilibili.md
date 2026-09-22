@@ -1,6 +1,6 @@
 # Bilibili
 
-[Bilibili](https://www.bilibili.com) is China's leading video and live streaming platform.
+[Bilibili](https://www.bilibili.com) is a Chinese video and live streaming platform.
 
 ## URL Format
 

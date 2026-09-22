@@ -12,6 +12,16 @@ flowchart LR
   E --> B[Browser or desktop notification]
 ```
 
+## Configure an External Channel
+
+1. Open **Notifications** and select **Add Channel**.
+2. Choose Webhook, Telegram, Gotify, or Email and enter a recognizable channel name.
+3. Set **Minimum Priority**, message language, and **Enabled**.
+4. Save the channel, then use its test action. A saved channel is not proven until the receiver gets the test.
+5. Open the subscription manager and select the event types that should be sent to that channel.
+
+Channel settings and subscriptions are separate. Creating a destination without subscribing it to events does not make it receive every event automatically.
+
 ## Available Destinations
 
 | Destination | v0.5 web interface | Requirements |
@@ -26,18 +36,6 @@ flowchart LR
 | Desktop notification | Desktop build only | Operating-system notification permission |
 
 Discord is therefore a backend capability with a web-interface limitation, not a generally selectable v0.5 UI channel.
-
-## Configure an External Channel
-
-Email channels reuse SMTP connections for successive messages. Each configuration replacement owns a separate connection pool; deliveries already admitted against the previous configuration retain their original channel. Disabled or priority-filtered messages do not initialize SMTP transport. Email delivery remains immediate: the obsolete `batch_window_secs` setting is ignored in stored JSON and is no longer part of the Rust `EmailConfig` interface.
-
-1. Open **Notifications** and select **Add Channel**.
-2. Choose Webhook, Telegram, Gotify, or Email and enter a recognizable channel name.
-3. Set **Minimum Priority**, message language, and **Enabled**.
-4. Save the channel, then use its test action. A saved channel is not proven until the receiver gets the test.
-5. Open the subscription manager and select the event types that should be sent to that channel.
-
-Channel settings and subscriptions are separate. Creating a destination without subscribing it to events does not make it receive every event automatically.
 
 ## Priority
 
@@ -57,8 +55,6 @@ A channel filters events below its minimum. The API also accepts the legacy labe
 ## Language
 
 Each external channel can follow the server language or override it with `en` or `zh-CN`. `RUST_SREC_LOCALE` sets the default for backend-rendered messages. This is independent of the language selected by a user in the web interface.
-
-For each delivery attempt, the backend reads the server language once and shares rendered title/body text between channels using the same effective language. A retry takes a new language snapshot. Channel-specific escaping, email MIME parts and Telegram entities are applied afterward.
 
 ## Telegram Formatting
 
@@ -82,42 +78,29 @@ Then open **Notifications**, enable Web Push for the current browser, grant brow
 
 ## Delivery Behavior
 
-External channel delivery retries transient failures with backoff and uses a circuit breaker for repeatedly failing channels. Exhausted deliveries are dead-lettered and notification events remain available in the event history according to the configured retention period.
+Transient external-channel failures retry with backoff. Repeated failures temporarily pause a channel; exhausted deliveries are retained as failures. These mechanisms do not guarantee delivery. Test a channel after changing its settings and use a second destination for critical events.
 
-Database channel reloads publish channels and subscriptions together. A channel keeps its circuit-breaker history while its database ID stays loaded, including name, destination, credential, and subscription edits. Removal or disabling ends that generation; re-adding starts a fresh breaker. Notifications already admitted, including their retries, continue using the channel instance selected before the reload. A repository read failure preserves the loaded registry.
+When the ordinary notification queue is full, the oldest pending notification and its retries are removed. A zero queue limit disables ordinary delivery. An already-running send can still finish. Notifications already accepted before a channel edit continue using the original destination; failed reloads retain the loaded configuration.
 
-These mechanisms reduce transient loss but do not create an end-to-end delivery guarantee. Monitor the receiving service, use the channel test after configuration changes, and configure a second destination for critical events.
+Web Push uses a separate 2,048-event queue. When full or unavailable, it drops new events at every priority, including critical. Drops are counted by `notification_stats.web_push_dropped` and are not replayed. Event history and external channels continue independently. Oversized push payloads fail before sending; shutdown attempts to send queued events within its time limit.
 
-Web Push uses a 2,048-event FIFO queue and normal worker batches of up to 64 events. When the queue is full, the newest event is dropped at every priority, including critical. A missing or closed worker and service shutdown also reject new push events. The `notification_stats.web_push_dropped` counter records these admission failures, with rate-limited warning logs. Event-history persistence and external channel delivery continue independently; dropped push events are not replayed. Shutdown attempts to flush admitted events within the existing background-task shutdown budget, but admission does not guarantee delivery.
+Email delivery is immediate; the old `batch_window_secs` setting is ignored. For channel implementations and delivery-worker contracts, see [Notification internals](../development/notifications.md).
 
 ## Critical Storage Events
 
 - `out_of_space` indicates that the disk threshold has been crossed.
-- `output_path_inaccessible` means the [output-root write gate](./architecture.md#output-root-write-gate) has blocked new recording work because a tracked root cannot be written.
+- `output_path_inaccessible` means the [output-root write gate](../development/architecture.md#output-root-write-gate) has blocked new recording work because a tracked root cannot be written.
 
 Freeing genuine disk exhaustion can recover automatically after the next probe. A stale Docker bind mount may require a container restart; see [Storage and Capacity](../operations/storage.md).
 
-## Queue and Web Push Delivery
+<div id="queue-and-web-push-delivery" class="legacy-section">
 
-Ordinary channel delivery serializes queue admission and evicts the oldest pending
-notification at capacity, cancelling its scheduled retries. A zero queue limit
-disables ordinary channel admission; event logging and Web Push remain independent.
-An already-running send may finish after eviction. Open circuit breakers do not
-consume delivery attempts, and retries respect the cooldown even when the failure
-that opened the breaker has just occurred.
+This section is now in [Notification System](./notifications.md#delivery-behavior).
 
-Web Push clears persisted throttling state on successful delivery, including the
-first HTTP attempt. Stale-subscription deletion is reported only after SQLite
-confirms it. Both normal and abbreviated JSON payloads must fit the byte limit;
-oversized metadata fails before an HTTP request is sent.
+</div>
 
-## Backend Notification Interfaces
+<div id="backend-notification-interfaces" class="legacy-section">
 
-Channel registry/reload operations, source-event mappings, delivery/retries and the
-Web Push queue/worker each have a dedicated module. The public event catalog and
-localized rendering methods remain available through `notification::events`.
-Custom Rust channels can keep implementing `NotificationChannel::send`; the new
-optional `send_rendered` method receives a `RenderedEvent` for integrations that
-want to reuse the shared title/body. Direct built-in sends use the same filtering
-and payload construction as queued delivery. The default `test` method follows
-normal delivery filtering.
+This section is now in [Notification internals](../development/notifications.md#backend-notification-interfaces).
+
+</div>

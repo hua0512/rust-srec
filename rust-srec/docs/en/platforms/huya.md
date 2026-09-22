@@ -1,6 +1,6 @@
 # Huya
 
-[Huya](https://www.huya.com) (虎牙) is a leading Chinese game streaming platform.
+[Huya](https://www.huya.com) (虎牙) is a Chinese game streaming platform.
 
 ## URL Format
 
