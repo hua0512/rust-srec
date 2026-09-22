@@ -722,21 +722,6 @@ impl AudioTagUtils {
         const PACKET_TYPE_MASK: u8 = 0x0F;
         AudioPacketType::try_from(byte & PACKET_TYPE_MASK)
     }
-
-    // /// Attempts to get the FourCC for *enhanced* (ExHeader) formats.
-    // /// This requires reading beyond the first byte and skipping potential ModEx/Multitrack headers.
-    // /// Returns None if the format is legacy or if FourCC cannot be determined quickly.
-    // /// WARNING: This is less efficient than other methods and might fail on complex headers.
-    // pub fn try_get_four_cc(&self) -> io::Result<Option<AudioFourCC>> {
-    //     if self.is_legacy()? {
-    //         return Ok(None);
-    //     }
-    //     // Need to implement logic similar to the start of AudioData::demux
-    //     // to skip ModEx/Multitrack and read the u32 FourCC.
-    //     // This adds complexity and reads more bytes.
-    //     // For simplicity, this is omitted here. Use full demux for reliable FourCC.
-    //      Err(io::Error::new(io::ErrorKind::Unsupported, "Quick FourCC extraction not implemented yet, use full demux"))
-    // }
 }
 
 impl fmt::Display for AudioData {

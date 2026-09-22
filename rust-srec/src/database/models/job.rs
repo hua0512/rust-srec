@@ -83,18 +83,6 @@ impl JobFilters {
         self
     }
 
-    /// Filter by job type.
-    pub fn with_job_type(mut self, job_type: impl Into<String>) -> Self {
-        self.job_type = Some(job_type.into());
-        self
-    }
-
-    /// Filter by multiple job types.
-    pub fn with_job_types(mut self, job_types: Vec<String>) -> Self {
-        self.job_types = Some(job_types);
-        self
-    }
-
     /// Filter by search query.
     pub fn with_search(mut self, search: impl Into<String>) -> Self {
         self.search = Some(search.into());
@@ -542,30 +530,6 @@ pub enum PipelineStep {
 }
 
 impl PipelineStep {
-    /// Get the preset name if this is a Preset variant.
-    pub fn as_preset(&self) -> Option<&str> {
-        match self {
-            Self::Preset { name } => Some(name),
-            _ => None,
-        }
-    }
-
-    /// Get the workflow name if this is a Workflow variant.
-    pub fn as_workflow(&self) -> Option<&str> {
-        match self {
-            Self::Workflow { name } => Some(name),
-            _ => None,
-        }
-    }
-
-    /// Get the processor and config if this is an Inline variant.
-    pub fn as_inline(&self) -> Option<(&str, &serde_json::Value)> {
-        match self {
-            Self::Inline { processor, config } => Some((processor, config)),
-            _ => None,
-        }
-    }
-
     /// Create a new Preset step.
     pub fn preset(name: impl Into<String>) -> Self {
         Self::Preset { name: name.into() }
@@ -603,11 +567,6 @@ impl PipelineDefinition {
     /// Pipeline steps should be explicitly provided or configured per-streamer.
     pub fn default_pipeline() -> Self {
         Self { steps: vec![] }
-    }
-
-    /// Get the first step in the pipeline.
-    pub fn first_step(&self) -> Option<&PipelineStep> {
-        self.steps.first()
     }
 
     /// Check if the pipeline is empty.

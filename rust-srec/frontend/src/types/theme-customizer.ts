@@ -17,23 +17,6 @@ export interface ColorTheme {
   preset: ThemeCustomizerPreset;
 }
 
-export interface SidebarVariant {
-  name: string;
-  value: 'sidebar' | 'floating' | 'inset';
-  description: string;
-}
-
-export interface SidebarCollapsibleOption {
-  name: string;
-  value: 'offcanvas' | 'icon' | 'none';
-  description: string;
-}
-
-export interface SidebarSideOption {
-  name: string;
-  value: 'left' | 'right';
-}
-
 export interface RadiusOption {
   name: string;
   value: string;

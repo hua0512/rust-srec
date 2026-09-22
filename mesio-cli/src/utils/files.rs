@@ -1,24 +1,4 @@
-use std::path::Path;
-
 use crate::error::AppError;
-
-/// Creates all directories in the given path, including parent directories if they don't exist.
-///
-/// # Arguments
-///
-/// * `path` - The path to create directories for
-///
-/// # Returns
-///
-/// * `Ok(())` if directories were created successfully
-/// * `Err(AppError::Io)` if there was an I/O error creating the directories
-#[inline]
-pub async fn create_dirs(path: &Path) -> Result<(), AppError> {
-    tokio::fs::create_dir_all(path)
-        .await
-        .map_err(AppError::Io)?;
-    Ok(())
-}
 
 /// Extracts a filename from a URL, removing the file extension and truncating if too long.
 ///

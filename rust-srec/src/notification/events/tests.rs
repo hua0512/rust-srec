@@ -57,18 +57,6 @@ fn test_notification_priority_from_int() {
 }
 
 #[test]
-fn test_notification_priority_int_roundtrip() {
-    for p in [
-        NotificationPriority::Low,
-        NotificationPriority::Normal,
-        NotificationPriority::High,
-        NotificationPriority::Critical,
-    ] {
-        assert_eq!(NotificationPriority::from_int(p.as_int()), Some(p));
-    }
-}
-
-#[test]
 fn test_stream_online_event() {
     let event = NotificationEvent::StreamOnline {
         streamer_id: "123".to_string(),

@@ -154,13 +154,7 @@ impl CheckHistoryWriter {
     /// never `await` on send — that would couple polling cadence to DB
     /// latency.
     pub fn record(&self, record: CheckRecord) {
-        self.record_arc(Arc::new(record));
-    }
-
-    /// Internal variant for the test module that wants to verify
-    /// drop-on-full behavior without re-wrapping in Arc each call.
-    fn record_arc(&self, record: Arc<CheckRecord>) {
-        match self.tx.try_send(record) {
+        match self.tx.try_send(Arc::new(record)) {
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(record)) => {
                 warn!(

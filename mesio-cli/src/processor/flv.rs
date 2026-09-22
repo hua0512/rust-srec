@@ -3,7 +3,7 @@ use crate::output::provider::OutputFormat;
 use crate::processor::generic::{
     process_pipe_stream, process_pipe_stream_with_processing, process_stream,
 };
-use crate::utils::{create_dirs, expand_name_url, format_bytes, spans};
+use crate::utils::{expand_name_url, format_bytes, spans};
 use crate::{config::ProgramConfig, error::AppError};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
@@ -70,7 +70,7 @@ pub async fn process_file(
 
     // Only create output directory for file mode
     if !is_pipe_mode {
-        create_dirs(output_dir).await?;
+        tokio::fs::create_dir_all(output_dir).await?;
     }
 
     let base_name = input_path
@@ -210,7 +210,7 @@ pub async fn process_flv_stream(
 
     // Only create output directory for file mode
     if !is_pipe_mode {
-        create_dirs(output_dir).await?;
+        tokio::fs::create_dir_all(output_dir).await?;
     }
 
     let start_time = Instant::now();

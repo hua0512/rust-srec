@@ -121,7 +121,7 @@ fn parse_stsd_bytes(data: &Bytes, start: usize, end: usize, info: &mut InitSegme
                 if inner_offset < parsed.size {
                     let inner_start = offset + inner_offset;
                     let inner_end = parsed.end;
-                    info.av1c_data = find_box_bytes(data, inner_start, inner_end, b"av1C");
+                    info.av1c_data = find_first_box_payload(data, inner_start, inner_end, *b"av1C");
                 }
             }
             b"avc1" | b"avc3" => {
@@ -130,7 +130,7 @@ fn parse_stsd_bytes(data: &Bytes, start: usize, end: usize, info: &mut InitSegme
                 if inner_offset < parsed.size {
                     let inner_start = offset + inner_offset;
                     let inner_end = parsed.end;
-                    info.avcc_data = find_box_bytes(data, inner_start, inner_end, b"avcC");
+                    info.avcc_data = find_first_box_payload(data, inner_start, inner_end, *b"avcC");
                 }
             }
             b"hvc1" | b"hev1" => {
@@ -139,7 +139,7 @@ fn parse_stsd_bytes(data: &Bytes, start: usize, end: usize, info: &mut InitSegme
                 if inner_offset < parsed.size {
                     let inner_start = offset + inner_offset;
                     let inner_end = parsed.end;
-                    info.hvcc_data = find_box_bytes(data, inner_start, inner_end, b"hvcC");
+                    info.hvcc_data = find_first_box_payload(data, inner_start, inner_end, *b"hvcC");
                 }
             }
             b"mp4a" => {
@@ -159,10 +159,6 @@ fn parse_stsd_bytes(data: &Bytes, start: usize, end: usize, info: &mut InitSegme
 
         offset = parsed.end;
     }
-}
-
-fn find_box_bytes(data: &Bytes, start: usize, end: usize, target: &[u8; 4]) -> Option<Bytes> {
-    find_first_box_payload(data, start, end, *target)
 }
 
 fn fourcc_to_string(fourcc: &[u8; 4]) -> String {

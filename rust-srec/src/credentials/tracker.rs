@@ -153,9 +153,7 @@ pub struct RefreshFailureTracker {
 #[derive(Clone)]
 struct FailureRecord {
     count: u32,
-    first_failure: DateTime<Utc>,
     last_failure: DateTime<Utc>,
-    last_error: String,
 }
 
 impl RefreshFailureTracker {
@@ -178,7 +176,7 @@ impl RefreshFailureTracker {
 
     fn prune_if_needed(&self) {
         // Keep failure history for a while, but avoid unbounded growth.
-        // This is best-effort and runs at most once per day.
+        // This is best-effort and runs at most once per hour.
         let now = Utc::now();
         let prune_key = Self::prune_key(now);
 
@@ -201,7 +199,7 @@ impl RefreshFailureTracker {
     }
 
     /// Record a failure and return the updated count.
-    pub fn record_failure(&self, scope: &CredentialScope, error: &str) -> u32 {
+    pub fn record_failure(&self, scope: &CredentialScope) -> u32 {
         self.prune_if_needed();
 
         let key = scope.cache_key();
@@ -210,19 +208,15 @@ impl RefreshFailureTracker {
         let ttl = Self::failure_ttl();
         let mut entry = self.failures.entry(key).or_insert(FailureRecord {
             count: 0,
-            first_failure: now,
             last_failure: now,
-            last_error: String::new(),
         });
 
         if now - entry.last_failure > ttl {
             entry.count = 0;
-            entry.first_failure = now;
         }
 
         entry.count += 1;
         entry.last_failure = now;
-        entry.last_error = error.to_string();
 
         entry.count
     }
@@ -256,34 +250,6 @@ impl RefreshFailureTracker {
         }
     }
 
-    /// Get failure information for a scope.
-    pub fn get_failure_info(&self, scope: &CredentialScope) -> Option<FailureInfo> {
-        self.prune_if_needed();
-
-        let key = scope.cache_key();
-        let now = Utc::now();
-        let ttl = Self::failure_ttl();
-
-        if let Some(record) = self.failures.get(&key) {
-            let expired = now - record.last_failure > ttl;
-            let info = FailureInfo {
-                count: record.count,
-                first_failure: record.first_failure,
-                last_failure: record.last_failure,
-                last_error: record.last_error.clone(),
-            };
-            drop(record);
-            if expired {
-                self.failures.remove(&key);
-                None
-            } else {
-                Some(info)
-            }
-        } else {
-            None
-        }
-    }
-
     /// Clear all tracked failures.
     pub fn clear_all(&self) {
         self.failures.clear();
@@ -294,19 +260,6 @@ impl Default for RefreshFailureTracker {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Information about failures for a credential scope.
-#[derive(Debug, Clone)]
-pub struct FailureInfo {
-    /// Number of consecutive failures.
-    pub count: u32,
-    /// Time of first failure in this sequence.
-    pub first_failure: DateTime<Utc>,
-    /// Time of most recent failure.
-    pub last_failure: DateTime<Utc>,
-    /// Error message from last failure.
-    pub last_error: String,
 }
 
 #[cfg(test)]
@@ -401,10 +354,10 @@ mod tests {
 
         assert_eq!(tracker.failure_count(&scope), 0);
 
-        tracker.record_failure(&scope, "Network error");
+        tracker.record_failure(&scope);
         assert_eq!(tracker.failure_count(&scope), 1);
 
-        tracker.record_failure(&scope, "Network error again");
+        tracker.record_failure(&scope);
         assert_eq!(tracker.failure_count(&scope), 2);
 
         // Clear on success
@@ -426,13 +379,11 @@ mod tests {
             key,
             FailureRecord {
                 count: 3,
-                first_failure: now - chrono::Duration::hours(7),
                 last_failure: now - chrono::Duration::hours(7),
-                last_error: "old".to_string(),
             },
         );
 
-        assert_eq!(tracker.record_failure(&scope, "new error"), 1);
+        assert_eq!(tracker.record_failure(&scope), 1);
         assert_eq!(tracker.failure_count(&scope), 1);
     }
 }

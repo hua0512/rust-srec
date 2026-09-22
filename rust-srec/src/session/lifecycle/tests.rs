@@ -458,38 +458,6 @@ async fn on_offline_detected_ends_session_and_emits_ended() {
 }
 
 #[tokio::test]
-async fn on_download_terminal_cancelled_is_noop() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle(pool);
-
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let mut rx = lifecycle.subscribe();
-
-    let event = DownloadTerminalEvent::Cancelled {
-        download_id: "dl-1".into(),
-        streamer_id: STREAMER_ID.into(),
-        streamer_name: "Test".into(),
-        session_id: started.session_id().to_string(),
-        cause: crate::downloader::DownloadStopCause::User,
-    };
-    lifecycle.on_download_terminal(&event).await.unwrap();
-
-    // The control-plane stop owner applies cancellation policy, so the
-    // download terminal itself leaves the session unchanged.
-    assert!(
-        lifecycle.is_session_active(started.session_id()),
-        "Cancelled must leave session in Recording state"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "Cancelled must not emit SessionTransition"
-    );
-}
-
-#[tokio::test]
 async fn on_download_terminal_is_idempotent() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);

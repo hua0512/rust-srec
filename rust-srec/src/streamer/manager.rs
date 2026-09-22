@@ -754,13 +754,6 @@ where
         self.get_filtered(|metadata| metadata.is_active())
     }
 
-    /// Get streamers by priority level.
-    ///
-    /// Returns streamers sorted by priority (High first).
-    pub fn get_by_priority(&self, priority: Priority) -> Vec<StreamerMetadata> {
-        self.get_filtered(|metadata| metadata.priority == priority)
-    }
-
     /// Get streamers by platform.
     pub fn get_by_platform(&self, platform_id: &str) -> Vec<StreamerMetadata> {
         self.get_filtered(|metadata| metadata.platform_config_id == platform_id)
@@ -784,13 +777,6 @@ where
             .iter()
             .filter(|entry| entry.template_config_id.as_deref() == Some(template_id))
             .count()
-    }
-
-    /// Get streamers sorted by priority (High first, then Normal, then Low).
-    pub fn get_all_sorted_by_priority(&self) -> Vec<StreamerMetadata> {
-        let mut streamers: Vec<_> = self.get_all();
-        streamers.sort_by_key(|s| std::cmp::Reverse(s.priority));
-        streamers
     }
 
     // ========== Error Handling with Exponential Backoff ==========

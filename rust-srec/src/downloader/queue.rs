@@ -178,15 +178,13 @@ impl SlotGuard {
     /// Convert this guard into an `ActiveSlot` whose lifetime is
     /// managed by the caller (typically via insertion into the
     /// download manager's `active_downloads` map). After this, drop
-    /// is a no-op; the caller MUST call [`ActiveSlot::release`] (or
-    /// drop the `ActiveSlot`) to return the capacity.
+    /// is a no-op; dropping the `ActiveSlot` returns the capacity.
     pub fn into_active(mut self) -> ActiveSlot {
         self.armed = false;
         ActiveSlot {
             queue: self.queue.clone(),
             priority: self.priority,
             session_id: self.session_id.clone(),
-            released: false,
         }
     }
 }
@@ -207,27 +205,12 @@ pub struct ActiveSlot {
     queue: Arc<DownloadQueue>,
     priority: Priority,
     session_id: String,
-    released: bool,
-}
-
-impl ActiveSlot {
-    /// Explicitly release the slot. Subsequent drops are no-ops.
-    pub fn release(mut self) {
-        if !self.released {
-            self.released = true;
-            self.queue
-                .release_owned_slot(self.priority, &self.session_id);
-        }
-    }
 }
 
 impl Drop for ActiveSlot {
     fn drop(&mut self) {
-        if !self.released {
-            self.released = true;
-            self.queue
-                .release_owned_slot(self.priority, &self.session_id);
-        }
+        self.queue
+            .release_owned_slot(self.priority, &self.session_id);
     }
 }
 
@@ -236,7 +219,6 @@ impl std::fmt::Debug for ActiveSlot {
         f.debug_struct("ActiveSlot")
             .field("priority", &self.priority)
             .field("session_id", &self.session_id)
-            .field("released", &self.released)
             .finish()
     }
 }
@@ -1089,11 +1071,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Attempt another acquire with the same session_id — this is
-        // expected to fail at the active-set level, but our pending
-        // dedup only catches in-flight pending. The active dedup is
-        // the manager's responsibility; we test the pending case by
-        // acquiring under saturation:
         let q2 = q.clone();
         let h_first = tokio::spawn(async move {
             q2.acquire(

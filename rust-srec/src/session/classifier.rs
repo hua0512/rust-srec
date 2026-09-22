@@ -65,9 +65,8 @@ pub struct OfflineClassifier {
 }
 
 impl OfflineClassifier {
-    /// Construct a classifier with the [`Default`] window/threshold,
-    /// matching `SchedulerConfig::default`. Provided as a thin shim for
-    /// call sites that don't have the scheduler config in scope, mostly tests.
+    /// Construct a classifier with the [`Default`] 60-second window and
+    /// two-failure threshold.
     pub fn new() -> Self {
         Self::default()
     }

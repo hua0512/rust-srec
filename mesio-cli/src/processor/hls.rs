@@ -2,11 +2,7 @@ use crate::output::pipe_hls_strategy::PipeHlsStrategy;
 use crate::output::provider::OutputFormat;
 use crate::processor::generic::process_pipe_stream;
 use crate::utils::spans;
-use crate::{
-    config::ProgramConfig,
-    error::AppError,
-    utils::{create_dirs, expand_name_url},
-};
+use crate::{config::ProgramConfig, error::AppError, utils::expand_name_url};
 use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
@@ -35,7 +31,7 @@ pub async fn process_hls_stream(
 
     // Only create output directory for file mode
     if !is_pipe_mode {
-        create_dirs(output_dir).await?;
+        tokio::fs::create_dir_all(output_dir).await?;
     }
 
     let start_time = Instant::now();

@@ -2,27 +2,19 @@
 //!
 //! This module contains common utility functions and structs for testing FLV processing components.
 //! These utilities help create consistent test environments and reduce code duplication across tests.
-#[cfg(test)]
 use amf0::Amf0Value;
-#[cfg(test)]
 use bytes::Bytes;
-#[cfg(test)]
 use flv::data::FlvData;
-#[cfg(test)]
 use flv::header::FlvHeader;
-#[cfg(test)]
 use flv::tag::{FlvTag, FlvTagType};
-#[cfg(test)]
 use std::borrow::Cow;
 
 /// Create a standard FLV header for testing
-#[cfg(test)]
 pub fn create_test_header() -> FlvData {
     FlvData::Header(FlvHeader::new(true, true))
 }
 
 /// Create a generic FlvTag for testing
-#[cfg(test)]
 pub fn create_test_tag(tag_type: FlvTagType, timestamp: u32, data: Vec<u8>) -> FlvData {
     FlvData::Tag(FlvTag::new(
         timestamp,
@@ -34,7 +26,6 @@ pub fn create_test_tag(tag_type: FlvTagType, timestamp: u32, data: Vec<u8>) -> F
 }
 
 /// Create a video tag with specified timestamp and keyframe flag
-#[cfg(test)]
 pub fn create_video_tag(timestamp: u32, is_keyframe: bool) -> FlvData {
     // First byte: 4 bits frame type (1=keyframe, 2=inter), 4 bits codec id (7=AVC)
     let frame_type = if is_keyframe { 1 } else { 2 };
@@ -43,7 +34,6 @@ pub fn create_video_tag(timestamp: u32, is_keyframe: bool) -> FlvData {
 }
 
 /// Create a video tag with specified size (for testing size limits)
-#[cfg(test)]
 pub fn create_video_tag_with_size(timestamp: u32, is_keyframe: bool, size: usize) -> FlvData {
     let frame_type = if is_keyframe { 1 } else { 2 };
     let first_byte = (frame_type << 4) | 7; // AVC codec
@@ -57,7 +47,6 @@ pub fn create_video_tag_with_size(timestamp: u32, is_keyframe: bool, size: usize
 }
 
 /// Create an audio tag with specified timestamp
-#[cfg(test)]
 pub fn create_audio_tag(timestamp: u32) -> FlvData {
     create_test_tag(
         FlvTagType::Audio,
@@ -67,7 +56,6 @@ pub fn create_audio_tag(timestamp: u32) -> FlvData {
 }
 
 /// Create a script data (metadata) tag
-#[cfg(test)]
 pub fn create_script_tag(timestamp: u32, with_keyframes: bool) -> FlvData {
     let mut properties = vec![
         (Cow::Borrowed("duration"), Amf0Value::Number(120.5)),
@@ -110,7 +98,6 @@ pub fn create_script_tag(timestamp: u32, with_keyframes: bool) -> FlvData {
 }
 
 /// Create a video sequence header with specified version
-#[cfg(test)]
 pub fn create_video_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
         0x17, // Keyframe (1) + AVC (7)
@@ -123,7 +110,6 @@ pub fn create_video_sequence_header(timestamp: u32, version: u8) -> FlvData {
 }
 
 /// Create an audio sequence header with specified version
-#[cfg(test)]
 pub fn create_audio_sequence_header(timestamp: u32, version: u8) -> FlvData {
     let data = vec![
         0xAF,    // Audio format 10 (AAC) + sample rate 3 (44kHz) + sample size 1 (16-bit) + stereo
@@ -135,7 +121,6 @@ pub fn create_audio_sequence_header(timestamp: u32, version: u8) -> FlvData {
 }
 
 /// Extract timestamps from processed items
-#[cfg(test)]
 pub fn extract_timestamps(items: &[FlvData]) -> Vec<u32> {
     items
         .iter()
@@ -147,7 +132,6 @@ pub fn extract_timestamps(items: &[FlvData]) -> Vec<u32> {
 }
 
 /// Print tag information for debugging
-#[cfg(test)]
 pub fn print_tags(items: &[FlvData]) {
     println!("Tag sequence:");
     for (i, item) in items.iter().enumerate() {

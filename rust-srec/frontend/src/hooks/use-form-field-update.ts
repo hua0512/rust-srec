@@ -7,42 +7,6 @@ interface UseFormFieldUpdateOptions {
   shouldValidate?: boolean;
 }
 
-const DEFAULT_OPTIONS: UseFormFieldUpdateOptions = {
-  shouldDirty: true,
-  shouldTouch: true,
-  shouldValidate: true,
-};
-
-/**
- * Hook that provides a memoized function to update form fields with consistent options.
- * Reduces duplication of the "form.setValue with shouldDirty/shouldTouch/shouldValidate" pattern.
- *
- * @example
- * ```tsx
- * const updateField = useFormFieldUpdate(form);
- * // Later...
- * updateField('fieldName', newValue);
- * ```
- */
-export function useFormFieldUpdate<TFieldValues extends FieldValues>(
-  form: UseFormReturn<TFieldValues>,
-  options: UseFormFieldUpdateOptions = DEFAULT_OPTIONS,
-) {
-  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-
-  const updateField = useCallback(
-    <TFieldName extends Path<TFieldValues>>(
-      name: TFieldName,
-      value: PathValue<TFieldValues, TFieldName>,
-    ) => {
-      form.setValue(name, value, mergedOptions);
-    },
-    [form, mergedOptions],
-  );
-
-  return updateField;
-}
-
 /**
  * Hook for managing nested object state synced with a form field.
  * Useful for complex objects like RetryPolicy that need individual field updates.

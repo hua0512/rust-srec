@@ -5,7 +5,7 @@
 //!
 //! Send a test webhook:
 //!   $env:WEBHOOK_SECRET="dev-secret"
-//!   curl -X POST http://127.0.0.1:3000/webhook -H "content-type: application/json" -H "x-webhook-secret: dev-secret" -d "{\"event\":\"ping\"}"
+//!   curl -X POST http://127.0.0.1:12333/webhook -H "content-type: application/json" -H "x-webhook-secret: dev-secret" -d "{\"event\":\"ping\"}"
 
 use std::net::SocketAddr;
 use std::sync::Arc;
