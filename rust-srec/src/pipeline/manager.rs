@@ -306,6 +306,10 @@ where
     CR: ConfigRepository + Send + Sync + 'static,
     SR: StreamerRepository + Send + Sync + 'static,
 {
+    pub(crate) fn output_files_gate(&self) -> Arc<tokio::sync::RwLock<()>> {
+        self.job_queue.output_files_gate.clone()
+    }
+
     /// Adjust CPU/IO worker pool concurrency at runtime.
     ///
     /// Notes:

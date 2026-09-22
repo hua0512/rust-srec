@@ -13,15 +13,7 @@ import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import {
-  Activity,
-  Bell,
-  Database,
-  History,
-  Network,
-  ShieldAlert,
-  Timer,
-} from 'lucide-react';
+import { Activity, Database, Network, ShieldAlert, Timer } from 'lucide-react';
 import { ProxyConfigSettings } from '../shared/proxy-settings-card';
 import { FlagFormField } from '@/components/ui/flag-form-field';
 import {
@@ -40,7 +32,7 @@ export const NetworkSystemCard = memo(() => {
   return (
     <SettingsCard
       title={<Trans>Network & System</Trans>}
-      description={<Trans>Delays, proxy, and retention policies.</Trans>}
+      description={<Trans>Monitoring intervals and proxy settings.</Trans>}
       icon={Network}
       iconColor="text-purple-500"
       iconBgColor="bg-purple-500/10"
@@ -141,85 +133,6 @@ export const NetworkSystemCard = memo(() => {
                       type="number"
                       {...field}
                       onChange={(e) => field.onChange(Number(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        </section>
-
-        <Separator />
-
-        <section className="space-y-4">
-          <ConfigSectionHeading icon={History} accent="indigo">
-            <Trans>Retention</Trans>
-          </ConfigSectionHeading>
-
-          <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
-            <FormField
-              name="job_history_retention_days"
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel>
-                    <Trans>Pipeline History Retention</Trans>
-                    <FieldInfo
-                      icon={<History className="h-4 w-4" />}
-                      title={<Trans>Pipeline History Retention</Trans>}
-                      theme="violet"
-                    >
-                      <Trans>
-                        Number of days to keep completed, failed, or cancelled
-                        jobs and workflow executions. Set to 0 to retain them
-                        indefinitely.
-                      </Trans>
-                    </FieldInfo>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <InputWithUnit
-                      unitType="duration"
-                      value={(field.value ?? 0) * 86400}
-                      onChange={(val) =>
-                        field.onChange(
-                          val !== null ? Math.round(val / 86400) : 0,
-                        )
-                      }
-                      placeholder="0"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              name="notification_event_log_retention_days"
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel>
-                    <Trans>Notification Log Retention</Trans>
-                    <FieldInfo
-                      icon={<Bell className="h-4 w-4" />}
-                      title={<Trans>Notification Retention</Trans>}
-                      theme="rose"
-                    >
-                      <Trans>
-                        Number of days to keep the notification event log. Set
-                        to 0 to retain events indefinitely.
-                      </Trans>
-                    </FieldInfo>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <InputWithUnit
-                      unitType="duration"
-                      value={(field.value ?? 0) * 86400}
-                      onChange={(val) =>
-                        field.onChange(
-                          val !== null ? Math.round(val / 86400) : 0,
-                        )
-                      }
-                      placeholder="0"
                     />
                   </FormControl>
                   <FormMessage />

@@ -68,6 +68,12 @@ pub(crate) async fn write_global(
         model.notification_event_log_retention_days,
         true,
     )?;
+    row.field("output_retention_days", model.output_retention_days, true)?;
+    row.field(
+        "output_retention_delete_files",
+        model.output_retention_delete_files,
+        true,
+    )?;
     row.field("pipeline", &model.pipeline, true)?;
     row.field(
         "session_complete_pipeline",

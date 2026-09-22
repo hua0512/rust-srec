@@ -597,22 +597,7 @@ impl SessionRepository for SqlxSessionRepository {
         retry_on_sqlite_busy("delete_media_output", || async {
             let mut tx = begin_immediate(&self.write_pool).await?;
 
-            // Only the transaction that removed the row owns its size adjustment.
-            let (session_id, size_bytes): (String, i64) = sqlx::query_as(
-                "DELETE FROM media_outputs WHERE id = ? RETURNING session_id, size_bytes",
-            )
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| Error::not_found("MediaOutput", id))?;
-
-            sqlx::query(
-                "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
-            )
-            .bind(size_bytes)
-            .bind(&session_id)
-            .execute(&mut *tx)
-            .await?;
+            super::session_tx::SessionTxOps::delete_media_output(&mut tx, id).await?;
 
             tx.commit().await?;
             Ok(())

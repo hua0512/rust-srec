@@ -20,6 +20,29 @@ pub(super) mod writes;
 pub struct SessionTxOps;
 
 impl SessionTxOps {
+    /// Remove an output and adjust its session size in the caller's transaction.
+    /// Shared by manual deletion and automatic retention; only the transaction
+    /// that removed the row owns its size adjustment.
+    pub(crate) async fn delete_media_output(tx: &mut SqliteConnection, id: &str) -> Result<()> {
+        let (session_id, size_bytes): (String, i64) = sqlx::query_as(
+            "DELETE FROM media_outputs WHERE id = ? RETURNING session_id, size_bytes",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| crate::Error::not_found("MediaOutput", id))?;
+
+        sqlx::query(
+            "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+        )
+        .bind(size_bytes)
+        .bind(&session_id)
+        .execute(&mut *tx)
+        .await?;
+
+        Ok(())
+    }
+
     /// Get the most recent session for a streamer.
     pub async fn get_last_session(
         tx: &mut SqliteConnection,

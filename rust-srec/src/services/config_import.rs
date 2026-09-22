@@ -584,6 +584,9 @@ fn validate_import(
     RetentionDays::try_from(config.global_config.notification_event_log_retention_days)
         .map_err(|error| validation_error(error.to_string()))?;
 
+    RetentionDays::try_from(config.global_config.output_retention_days)
+        .map_err(|error| validation_error(error.to_string()))?;
+
     validate_non_empty("global output_folder", &config.global_config.output_folder)?;
     validate_non_empty(
         "global output_filename_template",
@@ -1298,6 +1301,8 @@ fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> Global
     model.max_concurrent_io_jobs = source.max_concurrent_io_jobs;
     model.job_history_retention_days = source.job_history_retention_days;
     model.notification_event_log_retention_days = source.notification_event_log_retention_days;
+    model.output_retention_days = source.output_retention_days;
+    model.output_retention_delete_files = source.output_retention_delete_files;
     model.pipeline = source.pipeline.clone().map(db_json);
     model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
     model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
@@ -1818,6 +1823,8 @@ mod tests {
                 max_concurrent_io_jobs: global.max_concurrent_io_jobs,
                 job_history_retention_days: global.job_history_retention_days,
                 notification_event_log_retention_days: global.notification_event_log_retention_days,
+                output_retention_days: global.output_retention_days,
+                output_retention_delete_files: global.output_retention_delete_files,
                 pipeline: None,
                 session_complete_pipeline: None,
                 paired_segment_pipeline: None,
@@ -2164,7 +2171,9 @@ mod tests {
         .await
         .unwrap();
 
-        let config = import_config(&global);
+        let mut config = import_config(&global);
+        config.global_config.output_retention_days = 14;
+        config.global_config.output_retention_delete_files = true;
         let mut tx = begin_immediate(&pool).await.unwrap();
         let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
         snapshot
@@ -2174,6 +2183,13 @@ mod tests {
             .await
             .unwrap();
         tx.commit().await.unwrap();
+        let retention: (i32, bool) = sqlx::query_as(
+            "SELECT output_retention_days, output_retention_delete_files FROM global_config",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(retention, (14, true));
 
         let user_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE id = ?")
             .bind(&user.id)

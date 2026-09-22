@@ -109,6 +109,8 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub notification_event_log_retention_days: i32,
+    pub output_retention_days: i32,
+    pub output_retention_delete_files: bool,
     /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
@@ -178,6 +180,8 @@ impl Default for GlobalConfigDbModel {
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
             notification_event_log_retention_days: 30,
+            output_retention_days: 0,
+            output_retention_delete_files: false,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,

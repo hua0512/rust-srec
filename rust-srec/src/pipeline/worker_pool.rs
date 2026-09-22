@@ -833,6 +833,7 @@ impl JobRunner {
 
     /// Run one job through its processor and record the terminal state it reached.
     async fn execute_job(&self, mut job: Job, processor: &Arc<dyn Processor>) {
+        let _output_lease = self.job_queue.output_files_gate.read().await;
         let Some(job_token) = self.job_queue.get_cancellation_token(&job.id).await else {
             info!(job_id = %job.id, "Skipping withdrawn job");
             return;

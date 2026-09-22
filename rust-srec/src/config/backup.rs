@@ -195,6 +195,10 @@ pub struct GlobalConfigExport {
     pub job_history_retention_days: i32,
     #[serde(default = "default_notification_event_log_retention_days")]
     pub notification_event_log_retention_days: i32,
+    #[serde(default)]
+    pub output_retention_days: i32,
+    #[serde(default)]
+    pub output_retention_delete_files: bool,
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
     pub paired_segment_pipeline: Option<serde_json::Value>,

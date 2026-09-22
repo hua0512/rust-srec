@@ -268,6 +268,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             job_history_retention_days: global_config.job_history_retention_days,
             notification_event_log_retention_days: global_config
                 .notification_event_log_retention_days,
+            output_retention_days: global_config.output_retention_days,
+            output_retention_delete_files: global_config.output_retention_delete_files,
             pipeline: global_config.pipeline.map(parse_db_config),
             session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
             paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
@@ -641,6 +643,8 @@ mod tests {
             max_concurrent_io_jobs: 0,
             job_history_retention_days: 0,
             notification_event_log_retention_days: 0,
+            output_retention_days: 0,
+            output_retention_delete_files: false,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
@@ -693,6 +697,8 @@ mod tests {
         });
 
         let export: GlobalConfigExport = serde_json::from_value(json).unwrap();
+        assert_eq!(export.output_retention_days, 0);
+        assert!(!export.output_retention_delete_files);
         assert_eq!(
             export.log_filter_directive.as_deref(),
             Some("rust_srec=debug")

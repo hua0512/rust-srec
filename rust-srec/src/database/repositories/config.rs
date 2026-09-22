@@ -16,6 +16,7 @@ use crate::{Error, Result};
 
 fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
     for (field, days) in [
+        ("output_retention_days", config.output_retention_days),
         (
             "job_history_retention_days",
             config.job_history_retention_days,

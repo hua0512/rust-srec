@@ -32,6 +32,8 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
   notification_event_log_retention_days: z.number().int().min(0),
+  output_retention_days: z.number().int().min(0).max(2147483647).default(0),
+  output_retention_delete_files: z.boolean().default(false),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -110,6 +112,8 @@ export const GlobalConfigFormSchema = z.object({
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
   notification_event_log_retention_days: z.number().int().min(0),
+  output_retention_days: z.number().int().min(0).max(2147483647).default(0),
+  output_retention_delete_files: z.boolean().default(false),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -150,6 +154,8 @@ export const GlobalConfigWriteSchema = z.object({
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
   notification_event_log_retention_days: z.number().int().min(0),
+  output_retention_days: z.number().int().min(0).max(2147483647),
+  output_retention_delete_files: z.boolean(),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().optional(),
 

@@ -3,7 +3,7 @@
 //! These helpers provide consistent error context (operation + path) and
 //! reduce duplicated `create_dir_all` / parent-directory checks.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{Error, Result};
 
@@ -57,4 +57,27 @@ pub fn path_dedup_key(path: &str) -> String {
     } else {
         path.to_owned()
     }
+}
+
+/// Turn a stored `media_outputs.file_path` into a path usable by the std/tokio APIs.
+///
+/// Windows note: some parts of the pipeline/tooling may emit extended-length paths
+/// like `\\?\C:\...`. While this is valid for Win32 APIs, it can be a portability
+/// footgun across libraries and runtimes. Normalize it to a regular path when possible.
+///
+/// Shared by media serving, manual deletion, and periodic output retention.
+pub fn normalize_media_path(file_path: &str) -> PathBuf {
+    let path = PathBuf::from(file_path);
+    if cfg!(windows)
+        && let Some(s) = path.to_str()
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            // `\\?\UNC\server\share\...` -> `\\server\share\...`
+            return PathBuf::from(format!(r"\\{}", rest));
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            // `\\?\C:\...` -> `C:\...`
+            return PathBuf::from(rest);
+        }
+    }
+    path
 }

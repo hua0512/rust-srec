@@ -78,6 +78,8 @@ function globalConfigWithoutToggles() {
     max_concurrent_io_jobs: 1,
     job_history_retention_days: 30,
     notification_event_log_retention_days: 30,
+    output_retention_days: 0,
+    output_retention_delete_files: false,
     log_filter_directive: 'info',
     pipeline_cpu_job_timeout_secs: 1,
     pipeline_io_job_timeout_secs: 1,
@@ -88,6 +90,22 @@ function globalConfigWithoutToggles() {
 }
 
 describe('server function request paths', () => {
+  it.each([false, true])(
+    'saves output retention with delete-files set to %s',
+    async (deleteFiles) => {
+      const data = {
+        ...globalConfigWithoutToggles(),
+        output_retention_days: 14,
+        output_retention_delete_files: deleteFiles,
+      };
+      const body = JSON.parse(
+        await requestedBody(() => updateGlobalConfig({ data })),
+      );
+      expect(body.output_retention_days).toBe(14);
+      expect(body.output_retention_delete_files).toBe(deleteFiles);
+    },
+  );
+
   it.each([
     ['getStreamer', () => getStreamer({ data: ID }), `/streamers/${ID}`],
     [
