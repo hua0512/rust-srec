@@ -12,17 +12,9 @@ import { Separator } from '@/components/ui/separator';
 import { CheckCircle2, Radio, Server, Video } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
-import { resolvePlayerMediaType } from '@/lib/media';
 
-export interface StreamOption {
-  url: string;
-  quality?: string;
-  cdn?: string;
-  format?: string;
-  bitrate?: number;
-  headers?: Record<string, string>;
-  extras?: Record<string, string>;
-}
+import { extractStreams, type StreamOption } from './stream-source';
+export type { StreamOption } from './stream-source';
 
 export interface StreamInfoCardProps {
   mediaInfo: any;
@@ -248,57 +240,4 @@ export function StreamInfoCard({
       {content}
     </Card>
   );
-}
-
-// Helper function to extract all stream options from media_info
-function extractStreams(mediaInfo: any): StreamOption[] {
-  const streams: StreamOption[] = [];
-
-  if (!mediaInfo) return streams;
-
-  // Handle different possible structures
-  if (Array.isArray(mediaInfo.streams)) {
-    mediaInfo.streams.forEach((stream: any) => {
-      const extras = stringifyValues({ ...mediaInfo.extras, ...stream.extras });
-      streams.push({
-        url: stream.url || stream.src || '',
-        quality: stream.quality || stream.resolution || 'unknown',
-        cdn: stream.cdn || stream.server || extras.cdn,
-        format:
-          stream.format ||
-          stream.stream_format ||
-          resolvePlayerMediaType(undefined, stream.url),
-        bitrate: stream.bitrate || stream.bandwidth,
-        headers: { ...mediaInfo.headers, ...stream.headers },
-        extras,
-      });
-    });
-  } else if (mediaInfo.url) {
-    // Single stream
-    const extras = stringifyValues(mediaInfo.extras || {});
-    streams.push({
-      url: mediaInfo.url,
-      quality: mediaInfo.quality || 'default',
-      cdn: mediaInfo.cdn || extras.cdn,
-      format:
-        mediaInfo.format ||
-        mediaInfo.stream_format ||
-        resolvePlayerMediaType(undefined, mediaInfo.url),
-      bitrate: mediaInfo.bitrate,
-      headers: mediaInfo.headers || {},
-      extras,
-    });
-  }
-
-  return streams.filter((s) => s.url);
-}
-
-function stringifyValues(obj: Record<string, any>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const key in obj) {
-    if (obj[key] !== undefined && obj[key] !== null) {
-      result[key] = String(obj[key]);
-    }
-  }
-  return result;
 }

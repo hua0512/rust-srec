@@ -177,7 +177,7 @@ msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:183
 msgid "{0} stream(s) added successfully"
 msgstr "成功添加 {0} 个流"
 
@@ -374,6 +374,10 @@ msgstr "权限"
 msgid "Access level"
 msgstr "权限级别"
 
+#: src/components/player/playback-state.ts:26
+msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
+msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应用登录已过期，请重新登录。"
+
 #: src/components/streamers/card/use-streamer-status.tsx:173
 #: src/components/streamers/card/use-streamer-status.tsx:182
 msgid "Account Not Found"
@@ -421,7 +425,7 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:408
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
@@ -530,8 +534,8 @@ msgstr "添加 rclone 参数"
 msgid "Add Step"
 msgstr "添加步骤"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:391
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:423
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:417
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:449
 msgid "Add Stream"
 msgstr "添加流"
 
@@ -874,12 +878,18 @@ msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
+#: src/components/player/player-card.tsx:202
+#: src/components/player/player-card.tsx:269
 msgid "Auto"
 msgstr "自动"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Auto (Default)"
 msgstr "自动（默认）"
+
+#: src/components/player/player-card.tsx:289
+msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
+msgstr "自动模式使用直连。如果浏览器无法加载直播源，请选择服务器代理。"
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:339
 msgid "Auto Layout"
@@ -1118,7 +1128,7 @@ msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "Batch parse error: {0}"
 msgstr "批量解析失败：{0}"
 
@@ -1226,6 +1236,10 @@ msgstr "浏览器状态"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
+
+#: src/components/player/playback-state.ts:20
+msgid "Buffering"
+msgstr "缓冲中"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
@@ -1363,6 +1377,10 @@ msgstr "修改密码"
 #: src/routes/_authed/change-password.lazy.tsx:129
 msgid "Change Password Required"
 msgstr "需要修改密码"
+
+#: src/components/player/player-card.tsx:389
+msgid "Change source"
+msgstr "切换直播源"
 
 #: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
@@ -1798,9 +1816,17 @@ msgstr "连接超时 (ms)"
 msgid "Connected"
 msgstr "已连接"
 
+#: src/components/player/playback-state.ts:16
+msgid "Connecting"
+msgstr "连接中"
+
 #: src/components/connection-status-indicator.tsx:28
 msgid "Connecting..."
 msgstr "连接中..."
+
+#: src/components/player/player-card.tsx:251
+msgid "Connection"
+msgstr "连接方式"
 
 #: src/components/connection-status-indicator.tsx:38
 msgid "Connection Error"
@@ -2725,6 +2751,11 @@ msgstr "根据链接自动识别，并自动应用该平台的设置。"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
+#: src/components/player/player-card.tsx:209
+#: src/components/player/player-card.tsx:272
+msgid "Direct"
+msgstr "直连"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。通过上方账号卡片登录时，会话也会保存到这里配置的目录。"
@@ -3110,6 +3141,7 @@ msgstr "弹幕关闭时结束录制"
 msgid "End Time"
 msgstr "结束时间"
 
+#: src/components/player/playback-state.ts:21
 #: src/components/sessions/overview-tab.tsx:230
 msgid "Ended"
 msgstr "已结束"
@@ -3186,7 +3218,7 @@ msgstr "输入唯一名称"
 msgid "Enter a URL above"
 msgstr "请在上方输入链接"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:426
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:452
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
@@ -3347,8 +3379,8 @@ msgstr "执行时间（默认）"
 msgid "Executions"
 msgstr "执行记录"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:259
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:322
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:284
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:348
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
@@ -3687,7 +3719,7 @@ msgstr "加载工作流列表失败：{0}"
 msgid "Failed to parse danmu file"
 msgstr "弹幕文件解析失败"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:123
 msgid "Failed to parse URL"
 msgstr "解析 URL 失败"
 
@@ -4580,7 +4612,7 @@ msgstr "忽略低于此比特率的流。"
 msgid "Ignored words"
 msgstr "忽略的词"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:327
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:353
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
@@ -4960,8 +4992,9 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/stream-info-card.tsx:89
-#: src/components/player/stream-info-card.tsx:109
+#: src/components/player/player-card.tsx:192
+#: src/components/player/stream-info-card.tsx:81
+#: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
@@ -4998,8 +5031,8 @@ msgid "Loaded template: {0}"
 msgstr "已加载模板：{0}"
 
 #: src/components/player/player-card.tsx:104
-msgid "Loading"
-msgstr "加载中"
+#~ msgid "Loading"
+#~ msgstr "加载中"
 
 #: src/components/danmu/danmu-viewer.tsx:241
 msgid "Loading Danmu"
@@ -5850,11 +5883,11 @@ msgstr "未配置平台"
 msgid "No platforms found"
 msgstr "未找到平台"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
 msgid "No playable stream found in response"
 msgstr "响应中未找到可播放的流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:192
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
@@ -6437,7 +6470,7 @@ msgstr "配对分段处理管道"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:308
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:334
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
 
@@ -6446,7 +6479,7 @@ msgid "Parse Batch"
 msgstr "批量解析"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
 msgid "Parse error: {0}"
 msgstr "解析失败：{0}"
 
@@ -6458,7 +6491,7 @@ msgstr "解析模式"
 msgid "Parse Stream"
 msgstr "解析流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:357
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:383
 msgid "Parsing Stream..."
 msgstr "正在解析流..."
 
@@ -6529,6 +6562,10 @@ msgstr "路径变量"
 #: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "暂停"
+
+#: src/components/player/playback-state.ts:19
+msgid "Paused"
+msgstr "已暂停"
 
 #: src/components/sessions/danmu-stats-panel.tsx:451
 msgid "Peak / min"
@@ -6775,9 +6812,21 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
-#: src/components/player/player-card.tsx:168
+#: src/components/player/playback-state.ts:37
+msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
+msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
+
+#: src/components/player/playback-state.ts:22
+msgid "Playback error"
+msgstr "播放错误"
+
+#: src/components/player/player-card.tsx:353
 msgid "Playback Error"
 msgstr "播放错误"
+
+#: src/components/player/playback-state.ts:36
+msgid "Playback stalled while seeking. Retry to reload the video."
+msgstr "跳转时播放停滞。请重试以重新加载视频。"
 
 #: src/components/layout/site-header.tsx:39
 #: src/components/sidebar/navbar.tsx:33
@@ -6785,9 +6834,13 @@ msgstr "播放错误"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:123
+#: src/components/player/player-card.tsx:236
 msgid "Player settings"
 msgstr "播放器设置"
+
+#: src/components/player/playback-state.ts:18
+msgid "Playing"
+msgstr "播放中"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 msgid "Playlist"
@@ -6826,7 +6879,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:386
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
@@ -7126,7 +7179,7 @@ msgid "QR Login"
 msgstr "扫码登录"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:134
-#: src/components/player/stream-info-card.tsx:171
+#: src/components/player/stream-info-card.tsx:163
 msgid "Quality"
 msgstr "质量"
 
@@ -7244,7 +7297,11 @@ msgstr "只读密钥可以查看会话、弹幕、处理管道汇总和通知事
 msgid "Ready"
 msgstr "就绪"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:379
+#: src/components/player/playback-state.ts:17
+msgid "Ready to play"
+msgstr "就绪，等待播放"
+
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:405
 msgid "Ready to Watch"
 msgstr "准备观看"
 
@@ -7361,6 +7418,11 @@ msgstr "刷新失败：需要手动登录"
 msgid "Refresh status"
 msgstr "刷新状态"
 
+#: src/components/player/player-card.tsx:309
+#: src/components/player/player-card.tsx:368
+msgid "Refresh stream URL"
+msgstr "刷新直播地址"
+
 #: src/components/filters/filter-types.ts:54
 msgid "Regex"
 msgstr "正则表达式"
@@ -7378,7 +7440,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/player/player-card.tsx:112
+#: src/components/player/player-card.tsx:224
+#: src/components/player/player-card.tsx:225
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -7424,7 +7487,7 @@ msgstr "成功后移除输入"
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:142
+#: src/components/player/player-card.tsx:324
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -7562,6 +7625,10 @@ msgstr "分辨率（缩放）"
 msgid "Resolution change"
 msgstr "分辨率变化"
 
+#: src/components/player/playback-state.ts:15
+msgid "Resolving stream"
+msgstr "解析直播中"
+
 #: src/components/config/global/resource-limits-card.tsx:21
 msgid "Resource Limits"
 msgstr "资源限制"
@@ -7620,6 +7687,7 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
+#: src/components/player/player-card.tsx:360
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "重试"
@@ -8176,6 +8244,15 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
+#: src/components/player/player-card.tsx:207
+#: src/components/player/player-card.tsx:275
+msgid "Server proxy"
+msgstr "服务器代理"
+
+#: src/components/player/player-card.tsx:296
+msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
+
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
@@ -8358,6 +8435,10 @@ msgstr "侧边栏布局"
 msgid "Sign In"
 msgstr "登录"
 
+#: src/components/player/playback-state.ts:35
+msgid "Sign in to the server before using the stream proxy."
+msgstr "使用直播代理前，请先登录服务器。"
+
 #: src/components/sidebar/user-menu.tsx:139
 msgid "Sign out"
 msgstr "退出登录"
@@ -8418,7 +8499,7 @@ msgstr "跳过互动玩法"
 msgid "Skipped"
 msgstr "已跳过"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:188
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
@@ -8451,7 +8532,7 @@ msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受�
 msgid "Sort by"
 msgstr "排序方式"
 
-#: src/components/player/stream-info-card.tsx:127
+#: src/components/player/stream-info-card.tsx:119
 msgid "Source"
 msgstr "来源"
 
@@ -8621,12 +8702,12 @@ msgstr "已下播"
 msgid "Stream online"
 msgstr "开播"
 
-#: src/components/player/stream-info-card.tsx:83
-#: src/components/player/stream-info-card.tsx:103
+#: src/components/player/stream-info-card.tsx:75
+#: src/components/player/stream-info-card.tsx:95
 msgid "Stream Options"
 msgstr "流选项"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:115
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:118
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
@@ -8637,9 +8718,13 @@ msgstr "流解析成功"
 msgid "Stream Password"
 msgstr "直播密码"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:331
 msgid "Stream Player"
 msgstr "流播放器"
+
+#: src/components/player/player-card.tsx:136
+msgid "Stream source"
+msgstr "直播源"
 
 #: src/components/config/engines/forms/mesio-form.tsx:64
 msgid "Stream Splitting Strategy"
@@ -8963,6 +9048,10 @@ msgstr "测试通知"
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
+#: src/components/player/playback-state.ts:31
+msgid "The browser could not decode this stream. Choose another quality or format."
+msgstr "浏览器无法解码此直播流。请选择其他画质或格式。"
+
 #: src/components/config/global/backup-restore-card.tsx:326
 msgid "The configuration has been successfully processed. Here is a summary of the changes:"
 msgstr "配置已成功处理。以下是更改摘要："
@@ -8990,6 +9079,26 @@ msgstr "你要访问的页面不存在。"
 #: src/components/streamers/card/use-streamer-status.tsx:186
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
+
+#: src/components/player/playback-state.ts:28
+msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
+msgstr "服务器拒绝了此直播源。请检查地址；如果是本地源，请同时检查私有网络访问设置。"
+
+#: src/components/player/playback-state.ts:30
+msgid "The stream could not be loaded. Check the connection, retry, or try the server proxy when using Direct."
+msgstr "无法加载直播流。请检查连接并重试；如果当前使用直连，可尝试服务器代理。"
+
+#: src/components/player/playback-state.ts:27
+msgid "The stream is no longer available at this address. Refresh the stream URL or choose another source."
+msgstr "此地址的直播流已不可用。请刷新直播地址或切换直播源。"
+
+#: src/components/player/playback-state.ts:33
+msgid "The stream URL could not be refreshed. Retry or check the source credentials."
+msgstr "无法刷新直播地址。请重试或检查源站凭据。"
+
+#: src/components/player/playback-state.ts:29
+msgid "The streaming source could not be reached through the server. Retry or choose another source."
+msgstr "服务器无法连接直播源。请重试或切换直播源。"
 
 #: src/components/config/engines/engine-editor.tsx:261
 msgid "The underlying tool used for downloading."
@@ -9043,6 +9152,10 @@ msgstr "这是默认预设，描述无法修改。"
 msgid "This job is a workflow step, so it restarts together with the rest of the workflow."
 msgstr "此处理任务是工作流中的一个步骤，将与工作流的其余部分一同重新开始。"
 
+#: src/components/player/playback-state.ts:32
+msgid "This media format is not supported by your browser. Choose another format or browser."
+msgstr "浏览器不支持此媒体格式。请选择其他格式或使用其他浏览器。"
+
 #: src/components/config/shared/pipeline-tabs-section.tsx:98
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
@@ -9054,6 +9167,14 @@ msgstr "这会从录制的文件列表中移除 {countLabel}。此操作无法�
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:566
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API 密钥将其添加到 Claude、Cursor 或任何 MCP 客户端，让助手查看录制、分析弹幕并管理配置。"
+
+#: src/components/player/playback-state.ts:34
+msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
+msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
+
+#: src/components/player/player-card.tsx:284
+msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
+msgstr "此直播源需要请求头，因此自动模式使用服务器代理，无法使用直连。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:393
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
@@ -9067,7 +9188,7 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "此 STOKEN 不含大写字母，很可能取错了值。请从网盘页面 Cookie 中复制 STOKEN，而不是 bdstoken。"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:98
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
@@ -9463,6 +9584,10 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
+#: src/components/player/player-card.tsx:380
+msgid "Try server proxy"
+msgstr "尝试服务器代理"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
@@ -9550,8 +9675,8 @@ msgstr "未知的引擎类型：{engineType}"
 
 #: src/components/notifications/events/payload-preview.tsx:56
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "Unknown error"
 msgstr "未知错误"
 
@@ -9814,7 +9939,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:92
+#: src/components/player/player-card.tsx:168
 msgid "Video Player"
 msgstr "视频播放器"
 

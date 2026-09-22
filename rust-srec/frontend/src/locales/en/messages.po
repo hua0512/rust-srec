@@ -177,7 +177,7 @@ msgid "{0} of {1} used"
 msgstr "{0} of {1} used"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:183
 msgid "{0} stream(s) added successfully"
 msgstr "{0} stream(s) added successfully"
 
@@ -374,6 +374,10 @@ msgstr "Access"
 msgid "Access level"
 msgstr "Access level"
 
+#: src/components/player/playback-state.ts:26
+msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
+msgstr "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
+
 #: src/components/streamers/card/use-streamer-status.tsx:173
 #: src/components/streamers/card/use-streamer-status.tsx:182
 msgid "Account Not Found"
@@ -421,7 +425,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:408
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
@@ -530,8 +534,8 @@ msgstr "Add rclone argument"
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:391
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:423
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:417
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:449
 msgid "Add Stream"
 msgstr "Add Stream"
 
@@ -874,12 +878,18 @@ msgstr "Authentication"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
+#: src/components/player/player-card.tsx:202
+#: src/components/player/player-card.tsx:269
 msgid "Auto"
 msgstr "Auto"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
+
+#: src/components/player/player-card.tsx:289
+msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
+msgstr "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:339
 msgid "Auto Layout"
@@ -1118,7 +1128,7 @@ msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
@@ -1226,6 +1236,10 @@ msgstr "Browser Status"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
+
+#: src/components/player/playback-state.ts:20
+msgid "Buffering"
+msgstr "Buffering"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
@@ -1363,6 +1377,10 @@ msgstr "Change Password"
 #: src/routes/_authed/change-password.lazy.tsx:129
 msgid "Change Password Required"
 msgstr "Change Password Required"
+
+#: src/components/player/player-card.tsx:389
+msgid "Change source"
+msgstr "Change source"
 
 #: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
@@ -1798,9 +1816,17 @@ msgstr "Connect Timeout (ms)"
 msgid "Connected"
 msgstr "Connected"
 
+#: src/components/player/playback-state.ts:16
+msgid "Connecting"
+msgstr "Connecting"
+
 #: src/components/connection-status-indicator.tsx:28
 msgid "Connecting..."
 msgstr "Connecting..."
+
+#: src/components/player/player-card.tsx:251
+msgid "Connection"
+msgstr "Connection"
 
 #: src/components/connection-status-indicator.tsx:38
 msgid "Connection Error"
@@ -2725,6 +2751,11 @@ msgstr "Determined from the URL. Platform settings apply automatically."
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
+#: src/components/player/player-card.tsx:209
+#: src/components/player/player-card.tsx:272
+msgid "Direct"
+msgstr "Direct"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:615
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
@@ -3110,6 +3141,7 @@ msgstr "End Stream On Danmu Close"
 msgid "End Time"
 msgstr "End Time"
 
+#: src/components/player/playback-state.ts:21
 #: src/components/sessions/overview-tab.tsx:230
 msgid "Ended"
 msgstr "Ended"
@@ -3186,7 +3218,7 @@ msgstr "Enter a unique name"
 msgid "Enter a URL above"
 msgstr "Enter a URL above"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:426
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:452
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -3347,8 +3379,8 @@ msgstr "Execution time (default)"
 msgid "Executions"
 msgstr "Executions"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:259
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:322
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:284
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:348
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -3687,7 +3719,7 @@ msgstr "Failed to load workflows: {0}"
 msgid "Failed to parse danmu file"
 msgstr "Failed to parse danmu file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:123
 msgid "Failed to parse URL"
 msgstr "Failed to parse URL"
 
@@ -4580,7 +4612,7 @@ msgstr "Ignore streams below this bitrate."
 msgid "Ignored words"
 msgstr "Ignored words"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:327
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:353
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -4960,8 +4992,9 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/stream-info-card.tsx:89
-#: src/components/player/stream-info-card.tsx:109
+#: src/components/player/player-card.tsx:192
+#: src/components/player/stream-info-card.tsx:81
+#: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
@@ -4998,8 +5031,8 @@ msgid "Loaded template: {0}"
 msgstr "Loaded template: {0}"
 
 #: src/components/player/player-card.tsx:104
-msgid "Loading"
-msgstr "Loading"
+#~ msgid "Loading"
+#~ msgstr "Loading"
 
 #: src/components/danmu/danmu-viewer.tsx:241
 msgid "Loading Danmu"
@@ -5850,11 +5883,11 @@ msgstr "No platforms configured"
 msgid "No platforms found"
 msgstr "No platforms found"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
 msgid "No playable stream found in response"
 msgstr "No playable stream found in response"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:192
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
@@ -6437,7 +6470,7 @@ msgstr "Paired Segment Pipeline"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:308
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:334
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
@@ -6446,7 +6479,7 @@ msgid "Parse Batch"
 msgstr "Parse Batch"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
 
@@ -6458,7 +6491,7 @@ msgstr "Parse Mode"
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:357
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:383
 msgid "Parsing Stream..."
 msgstr "Parsing Stream..."
 
@@ -6529,6 +6562,10 @@ msgstr "Path Variables"
 #: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "Pause"
+
+#: src/components/player/playback-state.ts:19
+msgid "Paused"
+msgstr "Paused"
 
 #: src/components/sessions/danmu-stats-panel.tsx:451
 msgid "Peak / min"
@@ -6775,9 +6812,21 @@ msgstr "Platforms"
 msgid "Play"
 msgstr "Play"
 
-#: src/components/player/player-card.tsx:168
+#: src/components/player/playback-state.ts:37
+msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
+msgstr "Playback could not start. Retry, refresh the stream URL, or choose another source."
+
+#: src/components/player/playback-state.ts:22
+msgid "Playback error"
+msgstr "Playback error"
+
+#: src/components/player/player-card.tsx:353
 msgid "Playback Error"
 msgstr "Playback Error"
+
+#: src/components/player/playback-state.ts:36
+msgid "Playback stalled while seeking. Retry to reload the video."
+msgstr "Playback stalled while seeking. Retry to reload the video."
 
 #: src/components/layout/site-header.tsx:39
 #: src/components/sidebar/navbar.tsx:33
@@ -6785,9 +6834,13 @@ msgstr "Playback Error"
 msgid "Player"
 msgstr "Player"
 
-#: src/components/player/player-card.tsx:123
+#: src/components/player/player-card.tsx:236
 msgid "Player settings"
 msgstr "Player settings"
+
+#: src/components/player/playback-state.ts:18
+msgid "Playing"
+msgstr "Playing"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1664
 msgid "Playlist"
@@ -6826,7 +6879,7 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:386
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
@@ -7126,7 +7179,7 @@ msgid "QR Login"
 msgstr "QR Login"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:134
-#: src/components/player/stream-info-card.tsx:171
+#: src/components/player/stream-info-card.tsx:163
 msgid "Quality"
 msgstr "Quality"
 
@@ -7244,7 +7297,11 @@ msgstr "Read-only keys can inspect sessions, danmu, pipeline totals, and notific
 msgid "Ready"
 msgstr "Ready"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:379
+#: src/components/player/playback-state.ts:17
+msgid "Ready to play"
+msgstr "Ready to play"
+
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:405
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -7361,6 +7418,11 @@ msgstr "Refresh failed: Manual login required"
 msgid "Refresh status"
 msgstr "Refresh status"
 
+#: src/components/player/player-card.tsx:309
+#: src/components/player/player-card.tsx:368
+msgid "Refresh stream URL"
+msgstr "Refresh stream URL"
+
 #: src/components/filters/filter-types.ts:54
 msgid "Regex"
 msgstr "Regex"
@@ -7378,7 +7440,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
-#: src/components/player/player-card.tsx:112
+#: src/components/player/player-card.tsx:224
+#: src/components/player/player-card.tsx:225
 msgid "Reload Player"
 msgstr "Reload Player"
 
@@ -7424,7 +7487,7 @@ msgstr "Remove Input on Success"
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
-#: src/components/player/player-card.tsx:142
+#: src/components/player/player-card.tsx:324
 msgid "Remove player"
 msgstr "Remove player"
 
@@ -7562,6 +7625,10 @@ msgstr "Resolution (Scale)"
 msgid "Resolution change"
 msgstr "Resolution change"
 
+#: src/components/player/playback-state.ts:15
+msgid "Resolving stream"
+msgstr "Resolving stream"
+
 #: src/components/config/global/resource-limits-card.tsx:21
 msgid "Resource Limits"
 msgstr "Resource Limits"
@@ -7620,6 +7687,7 @@ msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
+#: src/components/player/player-card.tsx:360
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "Retry"
@@ -8176,6 +8244,15 @@ msgstr "Server local uses the backend server's timezone. You can also enter an I
 msgid "Server not configured"
 msgstr "Server not configured"
 
+#: src/components/player/player-card.tsx:207
+#: src/components/player/player-card.tsx:275
+msgid "Server proxy"
+msgstr "Server proxy"
+
+#: src/components/player/player-card.tsx:296
+msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+msgstr "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
@@ -8358,6 +8435,10 @@ msgstr "Sidebar Layout"
 msgid "Sign In"
 msgstr "Sign In"
 
+#: src/components/player/playback-state.ts:35
+msgid "Sign in to the server before using the stream proxy."
+msgstr "Sign in to the server before using the stream proxy."
+
 #: src/components/sidebar/user-menu.tsx:139
 msgid "Sign out"
 msgstr "Sign out"
@@ -8418,7 +8499,7 @@ msgstr "Skip Interactive Games"
 msgid "Skipped"
 msgstr "Skipped"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:188
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
@@ -8451,7 +8532,7 @@ msgstr "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer 
 msgid "Sort by"
 msgstr "Sort by"
 
-#: src/components/player/stream-info-card.tsx:127
+#: src/components/player/stream-info-card.tsx:119
 msgid "Source"
 msgstr "Source"
 
@@ -8621,12 +8702,12 @@ msgstr "Stream offline"
 msgid "Stream online"
 msgstr "Stream online"
 
-#: src/components/player/stream-info-card.tsx:83
-#: src/components/player/stream-info-card.tsx:103
+#: src/components/player/stream-info-card.tsx:75
+#: src/components/player/stream-info-card.tsx:95
 msgid "Stream Options"
 msgstr "Stream Options"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:115
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:118
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
@@ -8637,9 +8718,13 @@ msgstr "Stream parsed successfully"
 msgid "Stream Password"
 msgstr "Stream Password"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:331
 msgid "Stream Player"
 msgstr "Stream Player"
+
+#: src/components/player/player-card.tsx:136
+msgid "Stream source"
+msgstr "Stream source"
 
 #: src/components/config/engines/forms/mesio-form.tsx:64
 msgid "Stream Splitting Strategy"
@@ -8963,6 +9048,10 @@ msgstr "Test Notification"
 msgid "Test notification sent"
 msgstr "Test notification sent"
 
+#: src/components/player/playback-state.ts:31
+msgid "The browser could not decode this stream. Choose another quality or format."
+msgstr "The browser could not decode this stream. Choose another quality or format."
+
 #: src/components/config/global/backup-restore-card.tsx:326
 msgid "The configuration has been successfully processed. Here is a summary of the changes:"
 msgstr "The configuration has been successfully processed. Here is a summary of the changes:"
@@ -8990,6 +9079,26 @@ msgstr "The page you are looking for does not exist."
 #: src/components/streamers/card/use-streamer-status.tsx:186
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
+
+#: src/components/player/playback-state.ts:28
+msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
+msgstr "The server rejected this source. Check the URL and, for local sources, the private network access setting."
+
+#: src/components/player/playback-state.ts:30
+msgid "The stream could not be loaded. Check the connection, retry, or try the server proxy when using Direct."
+msgstr "The stream could not be loaded. Check the connection, retry, or try the server proxy when using Direct."
+
+#: src/components/player/playback-state.ts:27
+msgid "The stream is no longer available at this address. Refresh the stream URL or choose another source."
+msgstr "The stream is no longer available at this address. Refresh the stream URL or choose another source."
+
+#: src/components/player/playback-state.ts:33
+msgid "The stream URL could not be refreshed. Retry or check the source credentials."
+msgstr "The stream URL could not be refreshed. Retry or check the source credentials."
+
+#: src/components/player/playback-state.ts:29
+msgid "The streaming source could not be reached through the server. Retry or choose another source."
+msgstr "The streaming source could not be reached through the server. Retry or choose another source."
 
 #: src/components/config/engines/engine-editor.tsx:261
 msgid "The underlying tool used for downloading."
@@ -9043,6 +9152,10 @@ msgstr "This is a default preset. Description cannot be modified."
 msgid "This job is a workflow step, so it restarts together with the rest of the workflow."
 msgstr "This job is a workflow step, so it restarts together with the rest of the workflow."
 
+#: src/components/player/playback-state.ts:32
+msgid "This media format is not supported by your browser. Choose another format or browser."
+msgstr "This media format is not supported by your browser. Choose another format or browser."
+
 #: src/components/config/shared/pipeline-tabs-section.tsx:98
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
@@ -9054,6 +9167,14 @@ msgstr "This removes {countLabel} from the recording's file list. This action ca
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:566
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
+
+#: src/components/player/playback-state.ts:34
+msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
+msgstr "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
+
+#: src/components/player/player-card.tsx:284
+msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
+msgstr "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:393
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
@@ -9067,7 +9188,7 @@ msgstr "This step is linked to the preset <0>{presetName}</0>."
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:98
 msgid "This stream is already active"
 msgstr "This stream is already active"
 
@@ -9463,6 +9584,10 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
+#: src/components/player/player-card.tsx:380
+msgid "Try server proxy"
+msgstr "Try server proxy"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
@@ -9550,8 +9675,8 @@ msgstr "Unknown engine type: {engineType}"
 
 #: src/components/notifications/events/payload-preview.tsx:56
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "Unknown error"
 msgstr "Unknown error"
 
@@ -9814,7 +9939,7 @@ msgstr "Video codec change"
 msgid "Video only"
 msgstr "Video only"
 
-#: src/components/player/player-card.tsx:92
+#: src/components/player/player-card.tsx:168
 msgid "Video Player"
 msgstr "Video Player"
 
