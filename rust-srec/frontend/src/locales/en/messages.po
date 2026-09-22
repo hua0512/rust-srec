@@ -656,6 +656,10 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
+#: src/components/player/playback-presets.ts:10
+msgid "Allow more startup buffering. Playback may start later and add delay."
+msgstr "Allow more startup buffering. Playback may start later and add delay."
+
 #: src/components/config/global/network-system-card.tsx:29
 msgid "Allow private stream proxy targets"
 msgstr "Allow private stream proxy targets"
@@ -893,8 +897,8 @@ msgstr "Authentication"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
-#: src/components/player/player-card.tsx:215
-#: src/components/player/player-card.tsx:304
+#: src/components/player/player-card.tsx:224
+#: src/components/player/player-card.tsx:313
 msgid "Auto"
 msgstr "Auto"
 
@@ -902,7 +906,7 @@ msgstr "Auto"
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
 
-#: src/components/player/player-card.tsx:324
+#: src/components/player/player-card.tsx:333
 msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 msgstr "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 
@@ -1098,6 +1102,10 @@ msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the bi
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
+#: src/components/player/player-card.tsx:381
+msgid "Balanced"
+msgstr "Balanced"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:399
 msgid "Bandwidth"
 msgstr "Bandwidth"
@@ -1265,6 +1273,10 @@ msgstr "Buffered ahead"
 msgid "Buffering"
 msgstr "Buffering"
 
+#: src/components/player/player-card.tsx:395
+msgid "Buffering presets are unavailable for this playback path."
+msgstr "Buffering presets are unavailable for this playback path."
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
 msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
@@ -1402,13 +1414,17 @@ msgstr "Change Password"
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/components/player/player-card.tsx:424
+#: src/components/player/player-card.tsx:487
 msgid "Change source"
 msgstr "Change source"
 
 #: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
 msgstr "Changing Password..."
+
+#: src/components/player/player-card.tsx:403
+msgid "Changing this preference restarts this live player. The source and network still determine the actual delay."
+msgstr "Changing this preference restarts this live player. The source and network still determine the actual delay."
 
 #: src/components/notifications/channel-form.tsx:373
 msgid "Channel"
@@ -1849,7 +1865,7 @@ msgstr "Connecting"
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/player/player-card.tsx:286
+#: src/components/player/player-card.tsx:295
 msgid "Connection"
 msgstr "Connection"
 
@@ -2776,8 +2792,8 @@ msgstr "Determined from the URL. Platform settings apply automatically."
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/player/player-card.tsx:222
-#: src/components/player/player-card.tsx:307
+#: src/components/player/player-card.tsx:231
+#: src/components/player/player-card.tsx:316
 msgid "Direct"
 msgstr "Direct"
 
@@ -5025,7 +5041,7 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/player-card.tsx:205
+#: src/components/player/player-card.tsx:214
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
@@ -5206,6 +5222,10 @@ msgstr "Low"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Low (80)"
 msgstr "Low (80)"
+
+#: src/components/player/player-card.tsx:378
+msgid "Low latency"
+msgstr "Low latency"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
@@ -6858,7 +6878,7 @@ msgid "Playback could not start. Retry, refresh the stream URL, or choose anothe
 msgstr "Playback could not start. Retry, refresh the stream URL, or choose another source."
 
 #: src/components/player/playback-details.tsx:25
-#: src/components/player/player-card.tsx:248
+#: src/components/player/player-card.tsx:257
 msgid "Playback details"
 msgstr "Playback details"
 
@@ -6866,9 +6886,13 @@ msgstr "Playback details"
 msgid "Playback error"
 msgstr "Playback error"
 
-#: src/components/player/player-card.tsx:388
+#: src/components/player/player-card.tsx:451
 msgid "Playback Error"
 msgstr "Playback Error"
+
+#: src/components/player/player-card.tsx:361
+msgid "Playback preference"
+msgstr "Playback preference"
 
 #: src/components/player/playback-state.ts:36
 msgid "Playback stalled while seeking. Retry to reload the video."
@@ -6880,7 +6904,7 @@ msgstr "Playback stalled while seeking. Retry to reload the video."
 msgid "Player"
 msgstr "Player"
 
-#: src/components/player/player-card.tsx:271
+#: src/components/player/player-card.tsx:280
 msgid "Player settings"
 msgstr "Player settings"
 
@@ -7464,8 +7488,8 @@ msgstr "Refresh failed: Manual login required"
 msgid "Refresh status"
 msgstr "Refresh status"
 
-#: src/components/player/player-card.tsx:344
-#: src/components/player/player-card.tsx:403
+#: src/components/player/player-card.tsx:353
+#: src/components/player/player-card.tsx:466
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
 
@@ -7486,8 +7510,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
-#: src/components/player/player-card.tsx:237
-#: src/components/player/player-card.tsx:238
+#: src/components/player/player-card.tsx:246
+#: src/components/player/player-card.tsx:247
 msgid "Reload Player"
 msgstr "Reload Player"
 
@@ -7533,7 +7557,7 @@ msgstr "Remove Input on Success"
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
-#: src/components/player/player-card.tsx:359
+#: src/components/player/player-card.tsx:422
 msgid "Remove player"
 msgstr "Remove player"
 
@@ -7738,7 +7762,7 @@ msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:395
+#: src/components/player/player-card.tsx:458
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "Retry"
@@ -8295,12 +8319,12 @@ msgstr "Server local uses the backend server's timezone. You can also enter an I
 msgid "Server not configured"
 msgstr "Server not configured"
 
-#: src/components/player/player-card.tsx:220
-#: src/components/player/player-card.tsx:310
+#: src/components/player/player-card.tsx:229
+#: src/components/player/player-card.tsx:319
 msgid "Server proxy"
 msgstr "Server proxy"
 
-#: src/components/player/player-card.tsx:331
+#: src/components/player/player-card.tsx:340
 msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 msgstr "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 
@@ -8558,6 +8582,10 @@ msgstr "Skipped {skippedCount} duplicate stream(s)"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
+#: src/components/player/player-card.tsx:384
+msgid "Smooth playback"
+msgstr "Smooth playback"
+
 #: src/components/notifications/forms/email-form.tsx:42
 msgid "SMTP Host"
 msgstr "SMTP Host"
@@ -8677,6 +8705,10 @@ msgstr "State"
 msgid "Status"
 msgstr "Status"
 
+#: src/components/player/playback-presets.ts:8
+msgid "Stay closer to live. Network interruptions may cause more buffering."
+msgstr "Stay closer to live. Network interruptions may cause more buffering."
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:193
 msgid "Stem (Filename Match)"
 msgstr "Stem (Filename Match)"
@@ -8773,7 +8805,7 @@ msgstr "Stream Password"
 msgid "Stream Player"
 msgstr "Stream Player"
 
-#: src/components/player/player-card.tsx:149
+#: src/components/player/player-card.tsx:158
 msgid "Stream source"
 msgstr "Stream source"
 
@@ -9223,7 +9255,7 @@ msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 
-#: src/components/player/player-card.tsx:319
+#: src/components/player/player-card.tsx:328
 msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 msgstr "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 
@@ -9635,7 +9667,7 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/player/player-card.tsx:415
+#: src/components/player/player-card.tsx:478
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
@@ -9895,6 +9927,10 @@ msgstr "Use stream start time to keep a midnight-crossing stream in one dated fo
 msgid "Use System Proxy"
 msgstr "Use System Proxy"
 
+#: src/components/player/playback-presets.ts:9
+msgid "Use the player's default balance of buffering and delay."
+msgstr "Use the player's default balance of buffering and delay."
+
 #: src/components/notifications/forms/email-form.tsx:179
 msgid "Use TLS"
 msgstr "Use TLS"
@@ -9998,7 +10034,7 @@ msgstr "Video codec change"
 msgid "Video only"
 msgstr "Video only"
 
-#: src/components/player/player-card.tsx:181
+#: src/components/player/player-card.tsx:190
 msgid "Video Player"
 msgstr "Video Player"
 

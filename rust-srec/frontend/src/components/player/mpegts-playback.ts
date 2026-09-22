@@ -1,3 +1,5 @@
+import { mpegtsPlaybackConfig, type PlaybackPreset } from './playback-presets';
+
 type MpegtsModule = (typeof import('mpegts.js'))['default'];
 type MpegtsPlayer = ReturnType<MpegtsModule['createPlayer']>;
 
@@ -20,6 +22,7 @@ export interface MpegtsPlaybackError {
 }
 
 export interface MpegtsPlaybackOptions {
+  playbackPreset?: PlaybackPreset;
   mediaType: 'flv' | 'mpegts';
   isLive: boolean;
   durationSecs?: number | null;
@@ -177,6 +180,10 @@ export class MpegtsPlaybackController {
           : undefined,
       },
       {
+        ...mpegtsPlaybackConfig(
+          this.options.isLive,
+          this.options.playbackPreset ?? 'balanced',
+        ),
         isLive: this.options.isLive,
         // Starting from the preceding IDR frame avoids Chromium showing the
         // requested timestamp before its decoder can produce a picture.
