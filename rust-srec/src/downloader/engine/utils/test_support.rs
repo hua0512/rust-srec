@@ -255,13 +255,14 @@ pub(crate) async fn assert_recording_stop(
         .await
         .expect("stop remains bounded")
         .unwrap();
-    // Streamlink now shares the already-expired attempt deadline with reaping.
+    // Streamlink shares the attempt deadline with reaping, including when that
+    // deadline expires during the graceful wait.
     // An immediate OS acknowledgement is valid; otherwise only this precise
     // deadline failure is permitted, and final segment publication is forbidden.
     // Direct FFmpeg retains its existing fixture contract.
-    let expired_streamlink_unconfirmed = if handle.engine_type
+    let deadline_streamlink_unconfirmed = if handle.engine_type
         == crate::downloader::engine::EngineType::Streamlink
-        && matches!(case, StopCase::Expired)
+        && matches!(case, StopCase::Expired | StopCase::ExpiresWhileWaiting)
         && let Err(error) = &result
     {
         assert!(matches!(
@@ -286,7 +287,7 @@ pub(crate) async fn assert_recording_stop(
     } else {
         false
     };
-    let unconfirmed = fixture.unconfirmed || expired_streamlink_unconfirmed;
+    let unconfirmed = fixture.unconfirmed || deadline_streamlink_unconfirmed;
     assert_eq!(result.is_err(), unconfirmed, "{case:?}: {result:?}");
     let mut events = Vec::new();
     while let Ok(event) = rx.try_recv() {
