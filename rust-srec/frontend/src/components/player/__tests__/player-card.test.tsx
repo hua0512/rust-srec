@@ -74,9 +74,10 @@ it('disables direct playback for sources needing request headers', () => {
   render(player({ headers: { Referer: 'https://source.example' } }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   expect(screen.getByText(/Direct is unavailable/)).toBeInTheDocument();
-  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
-  expect(screen.getByRole('option', { name: 'Direct' })).toHaveAttribute(
-    'data-disabled',
+  expect(screen.getByRole('radio', { name: 'Direct' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('radio', { name: 'Server proxy' }));
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ connectionMode: 'proxy' }),
   );
 });
 
@@ -129,6 +130,9 @@ it('separates source metadata from measured playback details and enables samplin
   expect(hook).toHaveBeenLastCalledWith(
     expect.objectContaining({ detailsEnabled: true }),
   );
+  expect(
+    screen.getByRole('region', { name: 'Playback details' }),
+  ).toBeInTheDocument();
   expect(screen.getByText('Reported by source')).toBeInTheDocument();
   expect(screen.getByText('Measured by player')).toBeInTheDocument();
   expect(screen.getByText('h264')).toBeInTheDocument();
@@ -136,30 +140,40 @@ it('separates source metadata from measured playback details and enables samplin
   expect(screen.getByText('1280 \u00d7 720')).toBeInTheDocument();
   expect(screen.getByText('0 / 240')).toBeInTheDocument();
   expect(screen.getByText('5.2 s')).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Close playback details' }),
+  );
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ detailsEnabled: false }),
+  );
 });
 
 it('lets supported live players choose a playback preference', () => {
   hook.mockReturnValue({ ...playback, supportsLivePresets: true });
   render(player({ isLive: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  const select = screen.getByRole('combobox', { name: 'Playback preference' });
-  expect(select).toHaveTextContent('Balanced');
-  fireEvent.keyDown(select, { key: 'ArrowDown' });
-  fireEvent.click(screen.getByRole('option', { name: 'Smooth playback' }));
+  const latency = screen.getByRole('radiogroup', { name: 'Latency' });
+  expect(screen.getByRole('radio', { name: 'Balanced' })).toBeChecked();
+  fireEvent.click(screen.getByRole('radio', { name: 'Smooth' }));
   expect(hook).toHaveBeenLastCalledWith(
     expect.objectContaining({ playbackPreset: 'smooth' }),
   );
-  expect(
-    screen.getByText(/Changing this preference restarts/),
-  ).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('radio', { name: 'Smooth' }), {
+    key: 'ArrowRight',
+  });
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ playbackPreset: 'low-latency' }),
+  );
+  expect(latency).toHaveAccessibleDescription(/restarts the player/);
 });
 
 it('explains unsupported live buffering and hides live preferences for recordings', () => {
   const view = render(player({ isLive: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  expect(
-    screen.getByRole('combobox', { name: 'Playback preference' }),
-  ).toBeDisabled();
+  for (const option of screen.getAllByRole('radio', {
+    name: /Low|Balanced|Smooth/,
+  }))
+    expect(option).toBeDisabled();
   expect(
     screen.getByText(
       'Buffering presets are unavailable for this playback path.',
@@ -167,6 +181,25 @@ it('explains unsupported live buffering and hides live preferences for recording
   ).toBeInTheDocument();
   view.rerender(player({ isLive: false }));
   expect(
-    screen.queryByRole('combobox', { name: 'Playback preference' }),
+    screen.queryByRole('radiogroup', { name: 'Latency' }),
   ).not.toBeInTheDocument();
+});
+
+it('groups stream selection and playback settings into tabs', () => {
+  render(player({ settingsContent: <div>Source selector</div> }));
+  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
+  expect(screen.getByText('Source selector')).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Playback' }));
+  expect(
+    screen.getByRole('radiogroup', { name: 'Connection' }),
+  ).toBeInTheDocument();
+});
+
+it('only shows a visible status chip for transitional states', () => {
+  const view = render(player());
+  expect(screen.getByRole('status')).toHaveClass('sr-only');
+  hook.mockReturnValue({ ...playback, status: 'buffering', loading: true });
+  view.rerender(player());
+  expect(screen.getByRole('status')).not.toHaveClass('sr-only');
+  expect(screen.getByRole('status')).toHaveTextContent('Buffering');
 });

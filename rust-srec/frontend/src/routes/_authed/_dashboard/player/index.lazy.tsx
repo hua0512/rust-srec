@@ -534,7 +534,6 @@ const PlayerItem = React.memo(function PlayerItem({
               mediaInfo={player.response.media_info}
               selectedStream={player.currentStream}
               onStreamSelect={onStreamSelect}
-              isLive={player.response.is_live}
             />
           }
         />

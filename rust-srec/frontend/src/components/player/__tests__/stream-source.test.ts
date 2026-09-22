@@ -1,4 +1,9 @@
-import { extractStreams, selectRefreshedStream } from '../stream-source';
+import {
+  extractStreams,
+  selectRefreshedStream,
+  selectStreamLevel,
+  streamLevelOptions,
+} from '../stream-source';
 import { classifyPlaybackError } from '../playback-state';
 
 describe('stream selection across refreshes', () => {
@@ -58,6 +63,68 @@ describe('stream selection across refreshes', () => {
     const selected = extractStreams(options)[0]!;
     expect(selected.data).toBe(deferred);
     expect(selectRefreshedStream(options, selected)?.data).toBe(deferred);
+  });
+});
+
+describe('multi-CDN, multi-quality selection', () => {
+  // Shaped like Bilibili: each protocol lists codecs and containers, each
+  // served from several CDNs at several qualities.
+  const media = {
+    streams: [
+      ['flv', 'flv', 'avc', 'cn-gotcha01', '原画'],
+      ['flv', 'flv', 'avc', 'cn-gotcha01', '蓝光'],
+      ['flv', 'flv', 'avc', 'cn-hk-eq', '原画'],
+      ['hls', 'ts', 'avc', 'cn-gotcha01', '原画'],
+      ['hls', 'fmp4', 'avc', 'cn-gotcha01', '原画'],
+      ['hls', 'fmp4', 'hevc', 'cn-gotcha01', '原画'],
+      ['hls', 'fmp4', 'hevc', 'cn-gotcha01', '蓝光'],
+      ['hls', 'fmp4', 'hevc', 'cn-hk-eq', '蓝光'],
+    ].map(([stream_format, media_format, codec, cdn, quality], index) => ({
+      url: `https://media.example/${index}`,
+      stream_format,
+      media_format,
+      codec,
+      quality,
+      extras: { cdn },
+    })),
+  };
+  const streams = extractStreams(media);
+  const values = (
+    selected: (typeof streams)[number],
+    level: Parameters<typeof streamLevelOptions>[2],
+  ) => streamLevelOptions(streams, selected, level).map(({ value }) => value);
+
+  it('offers each level only within the selected outer levels', () => {
+    const hevc = streams[5];
+    expect(values(hevc, 'format')).toEqual(['flv', 'hls']);
+    expect(values(hevc, 'cdn')).toEqual(['cn-gotcha01', 'cn-hk-eq']);
+    expect(values(hevc, 'quality')).toEqual(['原画', '蓝光']);
+    // Same format, CDN and quality still leave codec/container variants.
+    expect(values(hevc, 'variant')).toEqual([
+      'avc/ts',
+      'avc/fmp4',
+      'hevc/fmp4',
+    ]);
+    expect(values(streams[0], 'variant')).toEqual(['avc/flv']);
+  });
+
+  it('keeps the quality and codec when switching CDN or format', () => {
+    expect(selectStreamLevel(streams, streams[6], 'cdn', 'cn-hk-eq')).toBe(
+      streams[7],
+    );
+    expect(selectStreamLevel(streams, streams[1], 'format', 'hls')).toBe(
+      streams[6],
+    );
+    // A CDN without the current quality falls back to its first stream.
+    expect(selectStreamLevel(streams, streams[1], 'cdn', 'cn-hk-eq')).toBe(
+      streams[2],
+    );
+  });
+
+  it('keeps the codec and container across refreshes', () => {
+    expect(selectRefreshedStream(media, { ...streams[5], url: 'old' })).toEqual(
+      streams[5],
+    );
   });
 });
 
