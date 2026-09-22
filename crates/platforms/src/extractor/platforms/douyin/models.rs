@@ -43,6 +43,7 @@ pub(crate) struct DouyinPcData<'a> {
     #[serde(borrow)]
     pub id_str: &'a str,
     pub status: i32,
+    pub finish_time: Option<i64>,
     pub title: String,
     #[serde(borrow)]
     pub cover: Option<DouyinCover<'a>>,

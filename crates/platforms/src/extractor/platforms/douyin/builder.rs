@@ -668,7 +668,8 @@ impl<'a> DouyinRequest<'a> {
         data: &DouyinPcData,
         user: &DouyinUserInfo,
     ) -> Result<MediaInfo, ExtractorError> {
-        let is_live = data.status == 2;
+        // Reflow rooms can keep status=2 and playable streams after the broadcast ends.
+        let is_live = data.status == 2 && !data.finish_time.is_some_and(|time| time > 0);
 
         let title = &data.title;
         let artist = &user.nickname;
@@ -697,7 +698,20 @@ impl<'a> DouyinRequest<'a> {
             .stream_url
             .as_ref()
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
-        let streams = self.extract_streams(stream_url)?;
+        let mut streams = self.extract_streams(stream_url)?;
+        let had_streams = !streams.is_empty();
+        // Filter after extraction so SDK, double-screen, origin, and legacy URLs
+        // all pass the same replay guard, even when finish_time is absent.
+        streams.retain(|stream| {
+            !stream.url.is_empty()
+                && !url::Url::parse(&stream.url).is_ok_and(|url| {
+                    url.query_pairs()
+                        .any(|(key, value)| key == "rtm_expr_tag" && value == "reflow_room_info")
+                })
+        });
+        if had_streams && streams.is_empty() {
+            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
+        }
         let mut extras = FxHashMap::default();
         if let Some(id) = self
             .id_str
@@ -1142,6 +1156,8 @@ impl PlatformExtractor for Douyin {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use crate::extractor::default::default_client;
     use crate::extractor::platform_extractor::PlatformExtractor;
     use crate::extractor::platforms::douyin::builder::{
@@ -1150,8 +1166,240 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
     use crate::media::formats::{MediaFormat, StreamFormat};
+    use crate::media::media_info::MediaInfo;
 
     const TEST_URL: &str = "https://live.douyin.com/PenguinVal";
+
+    const LIVE_FLV: &str = "https://example.com/stream_or4.flv?token=test";
+    const LIVE_HLS: &str = "https://example.com/stream.m3u8?token=test";
+    const REPLAY_FLV: &str = "https://example.com/stream_or4.flv?rtm_expr_tag=reflow_room_info";
+    const REPLAY_HLS: &str = "https://example.com/stream.m3u8?rtm_expr_tag=reflow_room_info";
+
+    #[derive(Clone, Copy, Debug)]
+    enum StreamSource {
+        Legacy,
+        Sdk,
+        DoubleScreen,
+        Origin,
+        DoubleScreenOrigin,
+    }
+
+    const STREAM_SOURCES: [StreamSource; 5] = [
+        StreamSource::Legacy,
+        StreamSource::Sdk,
+        StreamSource::DoubleScreen,
+        StreamSource::Origin,
+        StreamSource::DoubleScreenOrigin,
+    ];
+
+    fn room_fixture(source: StreamSource, flv: &str, hls: &str) -> Value {
+        let quality = json!({
+            "name": "Origin", "sdk_key": "origin", "v_codec": "h264",
+            "resolution": "1920x1080", "level": 0, "v_bit_rate": 8000000,
+            "additional_content": "", "fps": 30, "disable": 0
+        });
+        let main = json!({
+            "flv": flv, "hls": hls, "cmaf": "", "dash": "", "lls": "",
+            "tsl": "", "tile": "", "http_ts": "", "ll_hls": "",
+            "sdk_params": "", "enableEncryption": false
+        });
+        let mut stream_data = json!({"data": {"origin": {"main": main}}});
+        if matches!(
+            source,
+            StreamSource::Origin | StreamSource::DoubleScreenOrigin
+        ) {
+            let mut audio_main = main.clone();
+            audio_main["flv"] = json!(format!("{flv}&only_audio=1"));
+            audio_main["hls"] = json!("");
+            stream_data["data"]["ao"] = json!({"main": audio_main});
+        }
+        let empty_pull_data = json!({
+            "options": {"default_quality": quality, "qualities": [quality]},
+            "stream_data": "{}"
+        });
+        let mut pull_data = empty_pull_data.clone();
+        pull_data["stream_data"] = json!(stream_data.to_string());
+        let mut room = json!({
+            "id_str": "room_123", "status": 2, "title": "Test Room",
+            "cover": {"url_list": ["https://example.com/cover.jpg"]},
+            "stream_url": {
+                "flv_pull_url": {}, "hls_pull_url_map": {}, "hls_pull_url": "",
+                "default_resolution": "origin", "stream_orientation": 0,
+                "live_core_sdk_data": {"pull_data": empty_pull_data}, "pull_datas": {},
+                "extra": {
+                    "height": 1080, "width": 1920, "fps": 30, "max_bitrate": 8000000,
+                    "min_bitrate": 0, "default_bitrate": 8000000, "bitrate_adapt_strategy": 0,
+                    "anchor_interact_profile": 0, "audience_interact_profile": 0,
+                    "hardware_encode": false, "video_profile": 0, "h265_enable": false,
+                    "gop_sec": 2, "bframe_enable": false, "roi": false,
+                    "sw_roi": false, "bytevc1_enable": false
+                }
+            }
+        });
+        match source {
+            StreamSource::Legacy => {
+                room["stream_url"]["flv_pull_url"] = json!({"origin": flv});
+                room["stream_url"]["hls_pull_url_map"] = json!({"origin": hls});
+            }
+            StreamSource::Sdk | StreamSource::Origin => {
+                room["stream_url"]["live_core_sdk_data"]["pull_data"] = pull_data;
+            }
+            StreamSource::DoubleScreen | StreamSource::DoubleScreenOrigin => {
+                room["stream_url"]["pull_datas"] = json!({"main": pull_data});
+            }
+        }
+        room
+    }
+
+    fn parse_room_fixture(room: Value, mobile: bool, source: StreamSource) -> MediaInfo {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None)
+            .force_origin_quality(matches!(
+                source,
+                StreamSource::Origin | StreamSource::DoubleScreenOrigin
+            ));
+        let mut request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
+        let mut response = json!({"data": {"user": {
+            "id_str": "123", "sec_uid": "sec_123", "nickname": "Test User",
+            "avatar_thumb": {"url_list": ["https://example.com/avatar.jpg"]}
+        }}});
+        if mobile {
+            response["data"]["room"] = room;
+            request.parse_app_response(&response.to_string()).unwrap()
+        } else {
+            response["data"]["data"] = json!([room]);
+            request.parse_pc_response(&response.to_string()).unwrap()
+        }
+    }
+
+    #[test]
+    fn test_finished_room_is_offline_despite_live_status_and_streams() {
+        for mobile in [false, true] {
+            let mut room = room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS);
+            room["finish_time"] = json!(1787737453_i64);
+            let info = parse_room_fixture(room, mobile, StreamSource::Sdk);
+            assert!(!info.is_live);
+            assert!(info.streams.is_empty());
+            assert_eq!(info.title, "Test Room");
+            assert_eq!(info.artist, "Test User");
+            assert_eq!(
+                info.cover_url.as_deref(),
+                Some("https://example.com/cover.jpg")
+            );
+        }
+    }
+
+    #[test]
+    fn test_live_room_with_missing_null_or_zero_finish_time() {
+        for mobile in [false, true] {
+            for source in STREAM_SOURCES {
+                for finish_time in [None, Some(Value::Null), Some(json!(0))] {
+                    let mut room = room_fixture(source, LIVE_FLV, LIVE_HLS);
+                    if let Some(finish_time) = finish_time {
+                        room["finish_time"] = finish_time;
+                    }
+                    let info = parse_room_fixture(room, mobile, source);
+                    assert!(info.is_live, "mobile={mobile}, source={source:?}");
+                    assert!(info.streams.iter().any(|stream| stream.url == LIVE_FLV));
+                    assert!(info.streams.iter().any(|stream| stream.url == LIVE_HLS));
+                    if matches!(
+                        source,
+                        StreamSource::Origin | StreamSource::DoubleScreenOrigin
+                    ) {
+                        assert_eq!(info.streams[0].url, LIVE_FLV);
+                        assert_eq!(info.streams[0].priority, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_replay_only_streams_are_offline_across_extraction_paths() {
+        for mobile in [false, true] {
+            for source in STREAM_SOURCES {
+                for finish_time in [None, Some(json!(0))] {
+                    let mut room = room_fixture(source, REPLAY_FLV, REPLAY_HLS);
+                    if let Some(finish_time) = finish_time {
+                        room["finish_time"] = finish_time;
+                    }
+                    let info = parse_room_fixture(room, mobile, source);
+                    assert!(!info.is_live, "mobile={mobile}, source={source:?}");
+                    assert!(info.streams.is_empty());
+                    assert_eq!(info.title, "Test Room");
+                    assert_eq!(info.artist, "Test User");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_mixed_replay_and_live_streams_keep_only_live_candidates() {
+        for mobile in [false, true] {
+            for source in STREAM_SOURCES {
+                for (flv, hls, expected) in [
+                    (REPLAY_FLV, LIVE_HLS, LIVE_HLS),
+                    (LIVE_FLV, REPLAY_HLS, LIVE_FLV),
+                ] {
+                    let info = parse_room_fixture(room_fixture(source, flv, hls), mobile, source);
+                    assert!(info.is_live, "mobile={mobile}, source={source:?}");
+                    assert!(!info.streams.is_empty());
+                    assert!(info.streams.iter().all(|stream| {
+                        stream.url == expected || stream.url == format!("{expected}&only_audio=1")
+                    }));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_empty_legacy_urls_do_not_keep_replay_room_live() {
+        for mobile in [false, true] {
+            for (flv, hls) in [(REPLAY_FLV, ""), ("", REPLAY_HLS)] {
+                let info = parse_room_fixture(
+                    room_fixture(StreamSource::Legacy, flv, hls),
+                    mobile,
+                    StreamSource::Legacy,
+                );
+                assert!(!info.is_live);
+                assert!(info.streams.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn test_replay_marker_matches_decoded_query_parameter() {
+        for (url, expected_live) in [
+            (
+                "https://example.com/stream.flv?rtm_expr_tag=reflow%5Froom%5Finfo",
+                false,
+            ),
+            (
+                "https://example.com/stream.flv?rtm_expr_tag=live&rtm_expr_tag=reflow_room_info",
+                false,
+            ),
+            (
+                "https://example.com/stream.flv?rtm_expr_tag=reflow_room_info_extra",
+                true,
+            ),
+            (
+                "https://example.com/stream.flv?other_rtm_expr_tag=reflow_room_info",
+                true,
+            ),
+            (
+                "https://example.com/stream.flv?note=rtm_expr_tag%3Dreflow_room_info",
+                true,
+            ),
+        ] {
+            let info = parse_room_fixture(
+                room_fixture(StreamSource::Legacy, url, url),
+                true,
+                StreamSource::Legacy,
+            );
+            assert_eq!(info.is_live, expected_live, "{url}");
+            assert_eq!(info.streams.is_empty(), !expected_live, "{url}");
+        }
+    }
 
     #[tokio::test]
     #[ignore]
