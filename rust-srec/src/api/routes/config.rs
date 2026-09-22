@@ -132,6 +132,10 @@ fn validate_global_config_request(request: &UpdateGlobalConfigRequest) -> ApiRes
         "notification_event_log_retention_days",
         request.notification_event_log_retention_days.as_ref(),
     )?;
+    validate_optional_retention_days(
+        "output_retention_days",
+        request.output_retention_days.as_ref(),
+    )?;
     // The GPU monitor constructs an Instant directly, unlike pipeline timeouts,
     // whose timer API handles durations beyond the host's representable range.
     if let Some(seconds) = request
@@ -192,6 +196,9 @@ pub fn router() -> Router<AppState> {
 
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
 fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<GlobalConfigResponse> {
+    let output_retention_days = RetentionDays::try_from(config.output_retention_days)
+        .map_err(|_| ApiError::internal("Stored output retention configuration is invalid"))?
+        .as_u32();
     let job_history_retention_days = RetentionDays::try_from(config.job_history_retention_days)
         .map_err(|_| ApiError::internal("Stored job retention configuration is invalid"))?
         .as_u32();
@@ -223,6 +230,8 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<Globa
         danmu_statistics: config.danmu_statistics,
         job_history_retention_days,
         notification_event_log_retention_days,
+        output_retention_days,
+        output_retention_delete_files: config.output_retention_delete_files,
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
@@ -333,6 +342,8 @@ pub async fn update_global_config(
         offline_check_count: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
         job_history_retention_days: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
         notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        output_retention_days: |v: serde_json::Value| v.as_i64().and_then(|n| i32::try_from(n).ok()),
+        output_retention_delete_files: |v: bool| Some(v),
         default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
         // The request's Option<Value> treats JSON null like omission.
         default_extractor: |v: serde_json::Value| v.as_str().map(String::from),
@@ -682,6 +693,7 @@ mod tests {
             ("offline_check_delay_ms", 1, i64::MAX),
             ("offline_check_count", 1, i64::from(i32::MAX)),
             ("job_history_retention_days", 0, i64::from(i32::MAX)),
+            ("output_retention_days", 0, i64::from(i32::MAX)),
             (
                 "notification_event_log_retention_days",
                 0,
@@ -832,12 +844,16 @@ mod tests {
         let Json(response) = update_global_config(
             State(state.clone()),
             Json(global_request(json!({
-                "default_extractor": "streamlink"
+                "default_extractor": "streamlink",
+                "output_retention_days": 14,
+                "output_retention_delete_files": true
             }))),
         )
         .await
         .unwrap();
         assert_eq!(response.default_extractor.as_deref(), Some("streamlink"));
+        assert_eq!(response.output_retention_days, 14);
+        assert!(response.output_retention_delete_files);
         let before = state.config_service.get_global_config().await.unwrap();
         let request = global_request(json!({
             "output_folder": null,
@@ -871,6 +887,8 @@ mod tests {
             before.output_filename_template
         );
         assert_eq!(after.default_extractor, before.default_extractor);
+        assert_eq!(after.output_retention_days, 14);
+        assert!(after.output_retention_delete_files);
         assert_eq!(
             (
                 after.min_segment_size_bytes,
@@ -1090,6 +1108,8 @@ mod tests {
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
             notification_event_log_retention_days: 30,
+            output_retention_days: 0,
+            output_retention_delete_files: false,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,

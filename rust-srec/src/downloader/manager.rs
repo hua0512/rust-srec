@@ -878,6 +878,47 @@ impl DownloadManager {
         Some(guard)
     }
 
+    /// Call with maintenance admission held so no new output directory can enter.
+    /// Engines can rotate to a new filename before publishing a segment event,
+    /// so the last reported filename alone cannot identify every active writer.
+    pub(crate) async fn output_directory_in_use(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::Result<bool> {
+        let directories: Vec<_> = self
+            .active_downloads
+            .iter()
+            .map(|entry| entry.handle.config.read().output_dir.clone())
+            .collect();
+        if directories.is_empty() {
+            return Ok(false);
+        }
+        let absolute = std::path::absolute(path)
+            .map_err(|error| crate::Error::io_path("absolute", path, error))?;
+        let parent = absolute
+            .parent()
+            .ok_or_else(|| crate::Error::config("Output file has no parent directory"))?;
+        let parent = tokio::fs::canonicalize(parent)
+            .await
+            .map_err(|error| crate::Error::io_path("canonicalize", parent, error))?;
+        for directory in directories {
+            let canonical = tokio::fs::canonicalize(&directory)
+                .await
+                .map_err(|error| crate::Error::io_path("canonicalize", &directory, error))?;
+            let in_use = if cfg!(windows) {
+                std::path::PathBuf::from(parent.to_string_lossy().to_lowercase()).starts_with(
+                    std::path::PathBuf::from(canonical.to_string_lossy().to_lowercase()),
+                )
+            } else {
+                parent.starts_with(canonical)
+            };
+            if in_use {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// Snapshot of currently-pending acquires (downloads that emitted
     /// [`DownloadProgressEvent::DownloadQueued`] but have not yet
     /// transitioned to [`DownloadProgressEvent::DownloadStarted`]).

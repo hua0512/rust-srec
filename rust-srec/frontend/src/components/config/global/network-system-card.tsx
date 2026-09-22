@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { OutputRetentionFields } from './output-retention-fields';
 import { SettingsCard } from '../settings-card';
 import {
   FormControl,
@@ -158,6 +159,7 @@ export const NetworkSystemCard = memo(() => {
           </ConfigSectionHeading>
 
           <div className="grid grid-cols-1 gap-6 @md:grid-cols-2">
+            <OutputRetentionFields />
             <FormField
               name="job_history_retention_days"
               render={({ field }) => (

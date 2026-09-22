@@ -1,7 +1,6 @@
 //! Media routes.
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
 
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, Request, State};
@@ -104,29 +103,7 @@ fn percent_encode_attr_char(value: &str) -> String {
     encoded
 }
 
-/// Turn a stored `media_outputs.file_path` into a path usable by the std/tokio APIs.
-///
-/// Windows note: some parts of the pipeline/tooling may emit extended-length paths
-/// like `\\?\C:\...`. While this is valid for Win32 APIs, it can be a portability
-/// footgun across libraries and runtimes. Normalize it to a regular path when possible.
-///
-/// Shared by [`get_media_content`] and the media output deletion in
-/// [`crate::api::routes::pipeline::jobs`] so both resolve a stored path identically.
-pub(crate) fn normalize_media_path(file_path: &str) -> PathBuf {
-    let path = PathBuf::from(file_path);
-    if cfg!(windows)
-        && let Some(s) = path.to_str()
-    {
-        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-            // `\\?\UNC\server\share\...` -> `\\server\share\...`
-            return PathBuf::from(format!(r"\\{}", rest));
-        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-            // `\\?\C:\...` -> `C:\...`
-            return PathBuf::from(rest);
-        }
-    }
-    path
-}
+pub(crate) use crate::utils::fs::normalize_media_path;
 
 #[utoipa::path(
     get,

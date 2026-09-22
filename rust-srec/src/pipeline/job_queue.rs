@@ -631,6 +631,8 @@ enum FailureMetadata {
 
 /// The job queue service.
 pub struct JobQueue {
+    /// Workers hold a read lease through execution and cleanup. Retention takes an exclusive lease.
+    pub(crate) output_files_gate: Arc<tokio::sync::RwLock<()>>,
     /// Configuration.
     config: JobQueueConfig,
     /// Current queue depth (approximate).
@@ -712,6 +714,7 @@ impl JobQueue {
 
         Self {
             config,
+            output_files_gate: Arc::new(tokio::sync::RwLock::new(())),
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
             job_repository: repository,

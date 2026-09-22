@@ -4,6 +4,8 @@
 //! that can block readers, such as vacuuming and WAL truncation, remain gated
 //! by the configured maintenance window.
 
+mod outputs;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -83,6 +85,8 @@ impl Default for MaintenanceConfig {
 struct MaintenancePolicy {
     job_history_days: i32,
     notification_event_log_days: i32,
+    output_days: i32,
+    output_delete_files: bool,
 }
 
 /// Failure recorded for one maintenance task.
@@ -95,6 +99,8 @@ pub struct MaintenanceFailure {
 /// Counts and failures produced by one lightweight maintenance sweep.
 #[derive(Debug, Default)]
 pub struct MaintenanceReport {
+    pub outputs_deleted: u64,
+    pub output_files_deleted: u64,
     pub jobs_deleted: u64,
     pub dags_deleted: u64,
     pub upload_records_deleted: u64,
@@ -130,6 +136,8 @@ impl MaintenanceReport {
     fn log(&self, elapsed: Duration) {
         info!(
             elapsed_ms = elapsed.as_millis(),
+            outputs_deleted = self.outputs_deleted,
+            output_files_deleted = self.output_files_deleted,
             jobs_deleted = self.jobs_deleted,
             dags_deleted = self.dags_deleted,
             upload_records_deleted = self.upload_records_deleted,
@@ -177,16 +185,20 @@ impl MaintenanceRepository {
     }
 
     async fn load_policy(&self) -> Result<MaintenancePolicy> {
-        let (job_days, event_days): (i32, i32) = sqlx::query_as(
-            "SELECT job_history_retention_days, notification_event_log_retention_days \
+        let (job_days, event_days, output_days, output_delete_files): (i32, i32, i32, bool) =
+            sqlx::query_as(
+                "SELECT job_history_retention_days, notification_event_log_retention_days, \
+             output_retention_days, output_retention_delete_files \
              FROM global_config LIMIT 1",
-        )
-        .fetch_one(&self.pool)
-        .await?;
+            )
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(MaintenancePolicy {
             job_history_days: job_days,
             notification_event_log_days: event_days,
+            output_days,
+            output_delete_files,
         })
     }
 
@@ -203,7 +215,7 @@ impl MaintenanceRepository {
                     let result = sqlx::query(
                         "DELETE FROM job WHERE id IN (\
                         SELECT j.id FROM job j \
-                        WHERE j.status IN (?, ?, ?) AND j.updated_at < ? \
+                        WHERE j.status IN (?, ?, ?) AND j.updated_at < ? AND j.retry_after IS NULL \
                           AND NOT EXISTS (\
                             SELECT 1 FROM dag_step_execution s \
                             JOIN dag_execution d ON d.id = s.dag_id \
@@ -258,7 +270,7 @@ impl MaintenanceRepository {
                             SELECT 1 FROM dag_step_execution s \
                             JOIN job j ON j.id = s.job_id \
                             WHERE s.dag_id = d.id \
-                              AND (j.status NOT IN (?, ?, ?) OR j.updated_at >= ?)\
+                              AND (j.status NOT IN (?, ?, ?) OR j.updated_at >= ? OR j.retry_after IS NOT NULL)\
                           ) \
                         ORDER BY d.updated_at ASC LIMIT ?\
                         )",
@@ -465,6 +477,7 @@ pub struct MaintenanceScheduler {
     repository: MaintenanceRepository,
     config: MaintenanceConfig,
     download_manager: Weak<DownloadManager>,
+    output_files_gate: Option<Arc<tokio::sync::RwLock<()>>>,
 }
 
 impl MaintenanceScheduler {
@@ -482,6 +495,7 @@ impl MaintenanceScheduler {
             repository,
             config,
             download_manager: Weak::new(),
+            output_files_gate: None,
         }
     }
 
@@ -489,6 +503,11 @@ impl MaintenanceScheduler {
     /// is skipped; lightweight retention remains available independently.
     pub fn with_download_manager(mut self, download_manager: Weak<DownloadManager>) -> Self {
         self.download_manager = download_manager;
+        self
+    }
+
+    pub(crate) fn with_output_files_gate(mut self, gate: Arc<tokio::sync::RwLock<()>>) -> Self {
+        self.output_files_gate = Some(gate);
         self
     }
 
@@ -548,6 +567,25 @@ impl MaintenanceScheduler {
                 value.notification_event_log_days,
             )
         });
+
+        // Inspect output dependencies before pruning diagnostic job/DAG history.
+        if let Some(policy) = policy
+            && let Some(cutoff) = report
+                .parse_retention(
+                    "output_retention_policy",
+                    "output_retention_days",
+                    policy.output_days,
+                )
+                .and_then(|value| value.cutoff_ms(now_ms))
+        {
+            self.prune_outputs(
+                cutoff,
+                policy.output_delete_files,
+                cancellation,
+                &mut report,
+            )
+            .await;
+        }
 
         if let Some(cutoff) = job_retention.and_then(|value| value.cutoff_ms(now_ms)) {
             match self
@@ -896,6 +934,8 @@ fn available_space_for_path(path: &Path) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    mod output_retention;
+
     use super::*;
     use crate::database::models::{
         ChannelType, DagExecutionDbModel, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
@@ -1083,11 +1123,10 @@ mod tests {
         crate::database::run_migrations(&pool)
             .await
             .expect("migrations");
-        let scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            write_pool.clone(),
-            config,
-        ));
+        let scheduler = Arc::new(
+            MaintenanceScheduler::new(pool.clone(), write_pool.clone(), config)
+                .with_output_files_gate(Arc::new(tokio::sync::RwLock::new(()))),
+        );
         TestDatabase {
             config_repository: SqlxConfigRepository::new(pool.clone(), write_pool.clone()),
             dag_repository: SqlxDagRepository::new(pool.clone(), write_pool.clone()),

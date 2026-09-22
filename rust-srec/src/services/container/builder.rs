@@ -423,7 +423,8 @@ impl ServiceContainer {
         let maintenance_config = MaintenanceConfig::default();
         let maintenance_scheduler = Arc::new(
             MaintenanceScheduler::new(pool.clone(), write_pool.clone(), maintenance_config)
-                .with_download_manager(Arc::downgrade(&download_manager)),
+                .with_download_manager(Arc::downgrade(&download_manager))
+                .with_output_files_gate(pipeline_manager.output_files_gate()),
         );
 
         let scheduler_config = crate::scheduler::SchedulerConfig {
