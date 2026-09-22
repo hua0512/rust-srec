@@ -128,6 +128,6 @@ Full API credentials can select tool executables and config paths. Treat that ac
 
 ## Vulnerability Handling
 
-Do not report suspected vulnerabilities in a public issue. Use [GitHub private vulnerability reporting](https://github.com/hua0512/rust-srec/security/advisories/new) and include the affected version, impact, and a minimal reproduction with secrets removed. Security fixes target `main` and ship in a subsequent release.
+Do not report suspected vulnerabilities in a public issue. Use [GitHub private vulnerability reporting](https://github.com/hua0512/rust-srec/security/advisories/new) and include the affected version, impact, and a minimal reproduction with secrets removed. Security fixes are applied to `main` and included in a subsequent release.
 
 For operational evidence and limitations, also read [Data Governance](./data-governance.md) and [Support and Versions](./support.md).

@@ -89,14 +89,14 @@ Three ownership boundaries are important in this topology:
 
 ## Runtime root: `ServiceContainer`
 
-The `ServiceContainer` (in `rust-srec/src/services/container.rs`) wires everything together:
+The `ServiceContainer` (in `rust-srec/src/services/container.rs`) initializes and connects the runtime services:
 
 - Initializes repositories and services (DB, config cache, managers)
 - Starts background tasks (scheduler actors, pipeline workers, outbox flushers)
 - Subscribes to event streams and forwards events between services
 - Owns the `CancellationToken` used for graceful shutdown
 
-This gives the project one clear place to reason about lifecycle, dependencies, and shutdown order.
+It manages service lifecycle, dependencies, and shutdown order.
 
 ## Service Container Responsibilities
 
@@ -468,8 +468,8 @@ Key properties:
 
 - **Lock-free fast path.** `check()` on a Healthy root is an atomic load plus a `DashMap::get`. No mutex on the hot path, no cost when there are no tracked failures.
 - **Single-flight cooldown via CAS.** When a root is `Degraded`, only one caller per cooldown window (30s default) is allowed through to attempt the real `create_dir_all`. Other concurrent callers fast-reject with the cached error. Mirrors the half-open pattern in `CircuitBreaker`.
-- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate piggybacks on actual download attempts. A single one-shot probe runs at container startup to surface broken mounts from second zero.
-- **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). The whole affected fleet cascades out of backoff on the same tick.
+- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate uses actual download attempts to test write access. A single one-shot probe runs at container startup to detect broken mounts before recording starts.
+- **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). All affected streamers leave backoff during that transition.
 - **One notification per transition.** The `Healthy → Degraded` CAS is also what decides which caller emits the critical `output_path_inaccessible` notification, so users see exactly one alert per incident regardless of how many concurrent streamers are affected.
 - **`ENOSPC` is the only mid-stream entry point.** A writer that runs out of space reports the failure to the gate while the recording is still in flight, degrading the root so the next start is throttled. Other write failures — read-only filesystem, lost permissions, a path that disappeared — are classified as file-scoped and stay with the engine's `CircuitBreaker`; they reach the gate through the startup probe, or through the pre-start hook only when they also make its `create_dir_all` fail. An existing but unwritable directory returns `Ok` from `ensure_output_dir`, so the pre-start hook does not see it. The split exists because `OutputRootUnavailable` is exempt from the circuit breaker, so the gate is the only thing throttling a retry for that kind.
 
@@ -504,11 +504,11 @@ remain local to each API state.
     finalization as one relayed over the control pipe. A worker-local critical failure still
     fail-stops that worker; the parent then contains its descendants and retains recovery state.
   - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
-    reports that recovery may be required. Earlier recovery debt survives later clean generations;
+    reports that recovery may be required. Earlier unresolved recovery state persists after later clean generations;
     the marker is a detection mechanism, not artifact replay.
   - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
     between, so a restart loop cannot grow it. Startup and exit messages report how many
-    generations still owe recovery.
+    generations still require recovery.
 
 ## Backend Rust Interfaces
 

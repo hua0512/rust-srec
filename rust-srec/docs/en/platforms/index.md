@@ -44,4 +44,4 @@ You can use the built-in player to inspect available stream details for any live
 1. Go to the **Sidebar**.
 2. Click on the **Player** option.
 3. In the player view, you can see all available **Formats** (FLV, HLS), **CDNs**, and **Qualities**.
-4. This helps you verify if your current configuration (like cookies) is correctly working to unlock higher qualities or different formats.
+4. Check whether your configuration, including cookies, provides access to the expected qualities and formats.

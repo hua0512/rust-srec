@@ -19,7 +19,7 @@ flowchart LR
 
 ## Pipeline Triggers
 
-The power of rust-srec lies in its automated trigger mechanism. You can trigger pipelines at different stages:
+Pipelines can run automatically at three stages:
 
 ### 1. Segment Pipeline
 - **Trigger**: When a single video segment (`.flv`, `.ts`) or danmaku file (`.xml`, `.json`) finishes downloading.
@@ -125,7 +125,7 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 
 - **Login**: open any `baidupcs` preset in the web UI and use the account card to log in with a pasted cookie string (recommended) or BDUSS + STOKEN. Credentials are handed to BaiduPCS-Go and the session persists in its config directory (`BAIDUPCS_GO_CONFIG_DIR`); the same card shows the active account and quota. Enable **Remember for automatic re-login** to also store the credentials server-side (plaintext, like platform cookies): upload jobs then log in again by themselves when the session turns out to be expired — checked before the first attempt and once more before a retry. When a replayed login is rejected (typically because the stored session token was invalidated by a password change), a high-priority `baidupcs_relogin_failed` notification fires and further attempts pause for an hour, so dead credentials produce one alert instead of a failed Baidu call per job. Logging out forgets the stored credentials.
 - **Destination**: `destination_root` supports the usual `{streamer}`/`{title}`/time placeholders and always resolves to an absolute Netdisk path. Missing folders are created during upload.
-- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retrying after a partial failure is cheap. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file lands directly under the destination folder. Files that Baidu rejects outright (an illegal name, a file over the size limit, an unreadable file or an exhausted quota) are recorded as failed and are not re-sent by later attempts. A large batch is uploaded through several BaiduPCS-Go invocations so the command line stays within the platform limit, and the login check that precedes an upload is not written to the job log.
+- **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retries avoid uploading files whose results are already confirmed. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file is uploaded directly to the destination folder. Files that Baidu rejects outright (an illegal name, a file over the size limit, an unreadable file or an exhausted quota) are recorded as failed and are not re-sent by later attempts. A large batch is uploaded through several BaiduPCS-Go invocations so the command line stays within the platform limit, and the login check that precedes an upload is not written to the job log.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active.
 
 Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
@@ -156,7 +156,7 @@ automatically assigned to a segment or replayed through paired processing.
 
 ## Presets System
 
-To improve efficiency, the system provides two types of presets:
+The system provides two types of reusable presets:
 
 - **Job Preset**: A configuration template for a single step (e.g., "1080p Thumbnail Extraction").
 - **Pipeline Preset**: A full DAG workflow definition (e.g., "Bilibili Standard Recording Flow").
@@ -217,7 +217,7 @@ Do **not** place a `delete` step after a `remux`/transcode step: it would delete
 A step that removes its inputs (`delete`, an `rclone` or `copy_move` step in `move` mode, or a `baidupcs` step with **Delete local files after upload**) must not share a parent with another step that still reads the same files, because fan-out runs both at once. Such a workflow is rejected when it is saved or validated, with a message naming the steps involved; make the removing step depend on the other reader, directly or through other steps, so it runs after it. Root steps all read the pipeline's inputs and count as sharing one parent. Removal driven by a processor option, such as **Remove Input on Success**, happens only after that step has succeeded, so beside a reader it is reported as a warning when the workflow is validated or saved and logged when it runs: whichever sibling finishes first decides whether the other still finds its file. Saving a workflow also checks that every preset and workflow it names exists and that every processor is available, instead of failing when the next recording finishes.
 
 ::: tip Performance Tip
-Re-encoding (like `ass_burnin`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
+Re-encoding (such as `ass_burnin`) is CPU-intensive. Limit concurrency in `cpu_pool` to avoid system load that could disrupt downloads.
 :::
 
 ## Key Concepts
@@ -419,7 +419,7 @@ step with it, even when the remaining inputs were processed. The error names eac
 failed input. What was published stays on disk and in the job's produced-file
 history, so a retry resumes past it. An rclone move or BaiduPCS upload that
 fails part-way records each file's own result instead of marking every file
-failed. Copy and move steps refuse two inputs that would land on the same
+failed. Copy and move steps refuse two inputs that would use the same
 destination name, and a thumbnail step takes the first frame of a recording
 shorter than the requested timestamp.
 
@@ -433,7 +433,7 @@ an earlier completed transfer.
 
 ### Cancelling a Running Pipeline
 
-`DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the id names a DAG execution, the whole DAG is stood down: in-flight step jobs are cancelled and the DAG itself reaches a terminal cancelled state instead of staying in processing, so the session that is waiting on it stops waiting and the pipeline no longer reappears as in-flight after a restart.
+`DELETE /api/pipeline/{pipeline_id}` cancels a pipeline. When the ID names a DAG execution, it cancels the running step jobs and marks the DAG as cancelled. The session stops waiting for that DAG, and the pipeline remains cancelled after a restart.
 
 A cancelled DAG can be retried afterwards. Retry re-runs the steps that ended failed or cancelled; steps that had already completed are not repeated.
 

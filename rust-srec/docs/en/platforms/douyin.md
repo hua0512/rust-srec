@@ -1,6 +1,6 @@
 # Douyin
 
-[Douyin](https://www.douyin.com) (抖音) is China's leading short video and live streaming platform.
+[Douyin](https://www.douyin.com) (抖音) is a Chinese short video and live streaming platform.
 
 ## URL Format
 

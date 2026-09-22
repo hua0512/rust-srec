@@ -31,7 +31,7 @@ features:
     details: Set task and download concurrency limits to match the capacity of your host
   - icon: 🔄
     title: DAG Pipeline
-    details: Powerful post-processing with directed acyclic graph workflows
+    details: Post-processing with directed acyclic graph workflows
   - icon: 🎯
     title: Flexible Configuration
     details: 4-layer config hierarchy for fine-grained control

@@ -1,6 +1,6 @@
 # Twitch
 
-[Twitch](https://www.twitch.tv) 是全球领先的游戏直播平台。
+[Twitch](https://www.twitch.tv) 是提供游戏等内容的直播平台。
 
 ## URL 格式
 

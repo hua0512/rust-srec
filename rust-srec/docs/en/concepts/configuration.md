@@ -56,7 +56,7 @@ Key fields (grouped by concern):
   `offline_check_delay_ms`
 - Session UX: `auto_thumbnail`
 
-Some knobs are global-only runtime settings (not part of `MergedConfig`), such as concurrency
+Some runtime settings are global-only (not part of `MergedConfig`), such as concurrency
 limits and log filter directives.
 
 ## Where each setting is configured
@@ -64,7 +64,7 @@ limits and log filter directives.
 Not every field is available at every layer. The list below reflects what the resolver and
 builder actually read.
 
-- Global-only (base defaults + runtime knobs): `auto_thumbnail`, concurrency/job limits,
+- Global-only (base defaults + runtime settings): `auto_thumbnail`, concurrency/job limits,
   scheduler delays, log filter directives
 - Platform-only: `fetch_delay_ms`, `download_delay_ms`, `platform_specific_config`
 - Template-only: `platform_overrides`, `engines_override`

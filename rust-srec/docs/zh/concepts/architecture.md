@@ -434,8 +434,8 @@ Healthy ◄───────────────────────
 
 - **无锁热路径**。在 Healthy 状态下，`check()` 只做一次原子加载加一次 `DashMap::get`，没有互斥锁，也没有空跑成本。
 - **基于 CAS 的单飞冷却**。当根处于 `Degraded` 时，每个冷却窗口（默认 30 秒）只允许一个调用方通过，去尝试真实的 `create_dir_all`；其他并发调用方以缓存的错误快速拒绝。这借鉴了 `CircuitBreaker` 的 half-open 模式。
-- **没有后台探测任务**。真实的 `ensure_output_dir` 调用本身就是探测——写入门复用实际的下载尝试作为探测信号。容器启动时会运行一次有界的一次性探测，以便在第一秒就发现已经坏掉的挂载点。
-- **恢复钩子**。在 `Degraded → Healthy` 的切换时，写入门会清除所有因它而退避的主播的 `consecutive_error_count`、`disabled_until` 和 `last_error`（通过 `"output-root blocked:"` 前缀过滤）。受影响的主播整队会在同一次监视周期内恢复。
+- **没有后台探测任务**。真实的 `ensure_output_dir` 调用本身就是探测——写入门复用实际的下载尝试作为探测信号。容器启动时会运行一次有界的一次性探测，以便在录制开始前发现失效的挂载点。
+- **恢复钩子**。在 `Degraded → Healthy` 的切换时，写入门会清除所有因它而退避的主播的 `consecutive_error_count`、`disabled_until` 和 `last_error`（通过 `"output-root blocked:"` 前缀过滤）。所有受影响的主播会在这次状态切换时解除退避。
 - **每次状态切换只发出一条通知**。`Healthy → Degraded` 的 CAS 同时也是决定"哪个调用方负责发出 critical 级 `output_path_inaccessible` 通知"的位置——无论有多少并发主播受影响，用户只会看到一条告警。
 - **只有 `ENOSPC` 会在录制途中进入写入门**。写入器写满磁盘时，会在录制仍在进行的过程中把故障上报给写入门，使该根降级，从而对下一次启动进行限流。其他写入失败——文件系统只读、权限丢失、路径消失——会被归类为文件级故障，仍由引擎的 `CircuitBreaker` 处理；它们通过启动探测抵达写入门，只有在同时导致启动前钩子的 `create_dir_all` 失败时才会经由该钩子抵达。目录已存在但不可写时 `ensure_output_dir` 返回 `Ok`，因此启动前钩子发现不了这种情况。之所以这样划分，是因为 `OutputRootUnavailable` 不计入熔断器，对这一类故障来说写入门是唯一的限流手段。
 

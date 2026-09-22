@@ -1,6 +1,6 @@
 # Bilibili
 
-[Bilibili](https://www.bilibili.com) 是中国领先的视频和直播平台。
+[Bilibili](https://www.bilibili.com) 是中国的视频和直播平台。
 
 ## URL 格式
 

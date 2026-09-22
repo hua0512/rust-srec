@@ -19,7 +19,7 @@ flowchart LR
 
 ## 管道触发器 (Pipeline Triggers)
 
-rust-srec 的强大之处在于其自动化的触发机制。您可以根据需求在不同阶段触发管道：
+管道可以在以下三个阶段自动运行：
 
 ### 1. 分段管道 (Segment Pipeline)
 - **触发时机**：单个视频分段（`.flv`, `.ts`）或弹幕文件（`.xml`, `.json`）下载完成后。

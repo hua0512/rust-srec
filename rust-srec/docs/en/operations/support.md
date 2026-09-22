@@ -13,7 +13,7 @@ These are outside what the project provides today. If you need any of them, plan
 - **Recovery** — no stated RTO or RPO. Your own [restore drill](./backup-restore.md#restore-drill) measures both.
 - **Migrations** — database migrations run at startup and are not reversible.
 
-Security fixes land on `main` and ship in a subsequent release. There are no backports to older tags, so running an older version means running without them.
+Security fixes are applied to `main` and included in a subsequent release. There are no backports to older tags, so running an older version means running without them.
 
 ## Documentation Scope
 

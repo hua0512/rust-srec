@@ -1,8 +1,8 @@
 # Engines
 
-Downloaders are the core of the application. They are responsible for downloading the video stream from the source. The application supports three downloaders: `Mesio`, `FFMPEG`, and `Streamlink`. Each downloader has its own features and limitations.
+Downloaders retrieve video streams from the source. The application supports three downloaders: `Mesio`, `FFMPEG`, and `Streamlink`, each with different features and limitations.
 
-`Streamlink` appears on two independent axes and the names are easy to conflate. As a *downloader* it is the process that writes the recording, chosen with `download_engine` and described on this page. As an *extractor* it is what resolves the stream URL before any downloader runs, chosen with `extractor`; see [Engine and extractor selection](./configuration.md#engine-and-extractor-selection). Either can be set without the other.
+`Streamlink` can serve two independently configured roles. As a *downloader* it writes the recording, chosen with `download_engine` and described on this page. As an *extractor* it resolves the stream URL before any downloader runs, chosen with `extractor`; see [Engine and extractor selection](./configuration.md#engine-and-extractor-selection). Either can be set without the other.
 
 > [!TIP]
 > For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These pipelines correct or isolate timestamp and stream-structure changes so one bad transition is less likely to make the rest of a recording undecodable. Media that the source never delivered cannot be recovered.
@@ -142,11 +142,11 @@ Metadata updates do not rewrite the completed media data. If the available metad
 
 ## 3. Raw Data Mode
 
-Raw Data Mode is a high-performance download mode supported by the **Mesio** engine. In this mode, the engine writes the stream data directly to the disk as it's received from the network, without parsing or processing the internal media packets (headers, frames, metadata).
+In Raw Data Mode, the **Mesio** engine writes stream data directly to disk as it arrives from the network, without parsing or processing media packets (headers, frames, metadata).
 
 ### Key Characteristics:
-- **Maximum Performance**: Since there is no packet parsing or re-muxing, CPU and memory usage are at their absolute minimum.
-- **Zero Overhead**: Ideal for high-bandwidth streams or resource-constrained environments (like low-end NAS or VPS). Only recommended if the network is stable and the CDN/stream source has no data fluctuations (e.g., media headers changing).
+- **Reduced processing**: Skipping packet parsing and re-muxing reduces CPU and memory use.
+- **Use cases**: High-bandwidth streams or resource-constrained environments (such as a low-end NAS or VPS). Use this mode only when the network is stable and the CDN or stream source does not change media headers or other stream structure.
 
 ### Limitations:
 Because the headers and packet structures are not inspected, some advanced features are unavailable when Raw Data Mode is enabled:
@@ -165,4 +165,4 @@ The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate mi
 
 ## 5. Mesio Architecture
 
-Mesio is an **in-process Rust engine** with a reactor-based HLS downloader and a unified download-session model shared by HLS and FLV. For the architecture diagram and a walkthrough of how it works under the hood, see the dedicated [Mesio Engine](./mesio.md) page.
+Mesio is an **in-process Rust engine** with a reactor-based HLS downloader and a unified download-session model shared by HLS and FLV. For its architecture and implementation, see [Mesio Engine](./mesio.md).

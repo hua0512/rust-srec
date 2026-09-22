@@ -31,7 +31,7 @@ features:
     details: 可按主机容量限制任务与下载并发数
   - icon: 🔄
     title: DAG 管道
-    details: 强大的后处理工作流（有向无环图）
+    details: 基于有向无环图的后处理工作流
   - icon: 🎯
     title: 灵活配置
     details: 4 层配置层级，精细化控制
