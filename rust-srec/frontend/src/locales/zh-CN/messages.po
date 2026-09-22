@@ -8325,8 +8325,12 @@ msgid "Server proxy"
 msgstr "服务器代理"
 
 #: src/components/player/player-card.tsx:340
-msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
-msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
+msgid "Server proxy relays playback through this app's server using the source's configured upstream proxy settings."
+msgstr "服务器代理通过本应用的服务器中转播放，并使用该直播源配置的上游代理设置。"
+
+#: src/components/player/player-card.tsx:340
+#~ msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+#~ msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
 
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36

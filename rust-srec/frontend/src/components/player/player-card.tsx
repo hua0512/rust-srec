@@ -338,8 +338,8 @@ export function PlayerCard({
                     </p>
                     <p className="text-xs text-muted-foreground">
                       <Trans>
-                        Server proxy relays playback through this app's server.
-                        It does not select an upstream network proxy.
+                        Server proxy relays playback through this app's server
+                        using the source's configured upstream proxy settings.
                       </Trans>
                     </p>
                     {onRefreshSource && (

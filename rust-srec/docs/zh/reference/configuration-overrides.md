@@ -140,6 +140,16 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 `platform_specific_config` 中配置了 `username` 和 `password` 时会得到一个凭据来源，
 其 cookies 在首次使用时签发。
 
+## 播放器上游代理
+
+选择 **服务器代理** 后，网页和桌面播放使用与 URL 解析相同的有效 `proxy_config`。
+已添加的主播使用其合并配置（包含模板和主播覆盖）；其他直播源 URL 在识别到平台时
+使用平台覆盖，否则使用全局配置。**直连** 由浏览器直接连接，不使用服务器的上游代理。
+
+原始直播源 URL 会随 HLS 播放列表、分片和密钥请求保留，避免 CDN 地址选中不同配置。
+配置更新作用于后续请求；连续的 FLV/MPEG-TS 连接需要重新加载播放器才能切换。
+显式代理地址无效时播放会报错，不会回退到直连。网页播放需要同时升级前端和后端。
+
 ## 主播覆盖：`streamer_specific_config` {#主播覆盖-streamer-specific-config}
 
 `streamer_specific_config` 是一个无类型 JSON 对象，未知的键会被忽略。

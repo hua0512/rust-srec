@@ -1,225 +1,151 @@
 const ensureValidTokenMock = vi.hoisted(() => vi.fn());
+vi.mock('../tokenRefresh', () => ({ ensureValidToken: ensureValidTokenMock }));
+vi.mock('@/utils/env', () => ({ BASE_URL: 'http://backend.example/api/' }));
+import { handleStreamProxyRequest } from '../stream-proxy';
 
-vi.mock('../tokenRefresh', () => ({
-  ensureValidToken: ensureValidTokenMock,
-}));
-
-import {
-  fetchWithValidatedRedirects,
-  handleStreamProxyRequest,
-  parseCustomHeaders,
-  rewriteHlsManifest,
-  validateProxyTarget,
-  type AddressResolver,
-  type UpstreamFetch,
-} from '../stream-proxy';
-
-describe('rewriteHlsManifest', () => {
-  it('proxies playlists, segments, keys, maps, and low-latency parts', () => {
-    const manifest = [
-      '#EXTM3U',
-      '#EXT-X-MEDIA:TYPE=AUDIO,URI="audio/index.m3u8"',
-      '#EXT-X-STREAM-INF:BANDWIDTH=1000',
-      'video/index.m3u8',
-      '#EXT-X-KEY:METHOD=AES-128,URI="../key.bin"',
-      '#EXT-X-MAP:URI = "init.mp4"',
-      '#EXT-X-PART:DURATION=0.333,URI="part.ts"',
-      'segment.ts',
-    ].join('\r\n');
-
-    const rewritten = rewriteHlsManifest(
-      manifest,
-      new URL('https://media.example/live/master.m3u8'),
-      { Cookie: 'session=secret' },
-    );
-
-    expect(rewritten.match(/\/stream-proxy\?/g)).toHaveLength(6);
-    expect(decodeURIComponent(rewritten)).toContain(
-      'url=https://media.example/live/audio/index.m3u8',
-    );
-    expect(decodeURIComponent(rewritten)).toContain(
-      'url=https://media.example/key.bin',
-    );
-    expect(decodeURIComponent(rewritten)).toContain(
-      'headers={"Cookie":"session=secret"}',
-    );
-    expect(rewritten.match(/\r\n/g)).toHaveLength(7);
-    expect(rewritten.endsWith('\n')).toBe(false);
-  });
-
-  it('leaves non-http key schemes untouched', () => {
-    const manifest =
-      '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://license/key"\nsegment.ts\n';
-    const rewritten = rewriteHlsManifest(
-      manifest,
-      new URL('https://media.example/live/index.m3u8'),
-      {},
-    );
-
-    expect(rewritten).toContain('URI="skd://license/key"');
-    expect(rewritten.match(/\/stream-proxy\?/g)).toHaveLength(1);
+const fetchMock = vi.fn<typeof fetch>();
+beforeEach(() => {
+  vi.stubGlobal('fetch', fetchMock);
+  fetchMock.mockReset();
+  ensureValidTokenMock.mockResolvedValue({
+    token: { access_token: 'server-session' },
   });
 });
+afterEach(() => vi.unstubAllGlobals());
 
-describe('parseCustomHeaders', () => {
-  it('accepts well-formed header maps', () => {
-    expect(parseCustomHeaders('{"Referer":"https://source.example/"}')).toEqual(
-      {
-        Referer: 'https://source.example/',
-      },
-    );
-  });
-
-  it.each([
-    ['{"Bad Header":"value"}', 'Invalid header name'],
-    ['{"X-Ok":"bad\\nvalue"}', 'Invalid header value'],
-  ])('rejects malformed headers with a 400 (%s)', (raw, message) => {
-    expect(() => parseCustomHeaders(raw)).toThrow(message);
-    try {
-      parseCustomHeaders(raw);
-    } catch (error) {
-      expect(error).toMatchObject({ status: 400 });
-    }
-  });
-});
-
-describe('validateProxyTarget', () => {
-  const publicResolver: AddressResolver = async () => [
-    { address: '203.0.114.10', family: 4 },
-  ];
-
-  it('allows public http targets', async () => {
-    await expect(
-      validateProxyTarget('https://media.example/live.m3u8', {
-        resolver: publicResolver,
-      }),
-    ).resolves.toHaveProperty('hostname', 'media.example');
-  });
-
-  it.each([
-    'http://127.0.0.1/stream',
-    'http://10.0.0.1/stream',
-    'http://169.254.169.254/latest/meta-data',
-    'http://[::1]/stream',
-    'http://[fd00::1]/stream',
-  ])('rejects non-public literal address %s', async (target) => {
-    await expect(
-      validateProxyTarget(target, { resolver: publicResolver }),
-    ).rejects.toThrow('Target host is not allowed');
-  });
-
-  it('rejects hostnames with any private DNS result', async () => {
-    const resolver: AddressResolver = async () => [
-      { address: '203.0.114.10', family: 4 },
-      { address: '192.168.1.2', family: 4 },
-    ];
-
-    await expect(
-      validateProxyTarget('https://media.example/live.m3u8', { resolver }),
-    ).rejects.toThrow('Target host is not allowed');
-  });
-
-  it.each(['file:///etc/passwd', 'https://user:pass@media.example/stream'])(
-    'rejects unsafe target %s',
-    async (target) => {
-      await expect(
-        validateProxyTarget(target, { resolver: publicResolver }),
-      ).rejects.toThrow();
-    },
+it('requires a web session before contacting the backend', async () => {
+  ensureValidTokenMock.mockResolvedValue(null);
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=https://cdn.example/live',
+    ),
   );
-
-  it('allows private and localhost targets when the operator opted in', async () => {
-    await expect(
-      validateProxyTarget('http://localhost:8080/stream', {
-        allowPrivateTargets: true,
-      }),
-    ).resolves.toHaveProperty('hostname', 'localhost');
-    await expect(
-      validateProxyTarget('http://192.168.1.20/stream', {
-        allowPrivateTargets: true,
-      }),
-    ).resolves.toHaveProperty('hostname', '192.168.1.20');
-    // Scheme and credential checks still apply.
-    await expect(
-      validateProxyTarget('https://user:pass@192.168.1.20/stream', {
-        allowPrivateTargets: true,
-      }),
-    ).rejects.toThrow('URL credentials are not allowed');
-  });
+  expect(response.status).toBe(401);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
-describe('fetchWithValidatedRedirects', () => {
-  const publicResolver: AddressResolver = async () => [
-    { address: '203.0.114.10', family: 4 },
-  ];
-  const signal = new AbortController().signal;
-  const headers = new Headers();
-
-  const redirectResponse = (location: string) =>
-    new Response(null, { status: 302, headers: { location } });
-
-  it('rejects redirect hops that land on private addresses', async () => {
-    const fetchImpl: UpstreamFetch = vi
-      .fn()
-      .mockResolvedValueOnce(redirectResponse('http://192.168.1.5/next'));
-
-    await expect(
-      fetchWithValidatedRedirects(
-        'https://media.example/live.m3u8',
-        headers,
-        signal,
-        { resolver: publicResolver, fetchImpl },
-      ),
-    ).rejects.toThrow('Target host is not allowed');
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+it('forwards identity, source headers and ranges only to the backend, with server-side authentication', async () => {
+  fetchMock.mockResolvedValue(
+    new Response('ab', {
+      status: 206,
+      headers: {
+        'Content-Type': 'video/mp2t',
+        'Content-Range': 'bytes 0-1/3',
+        'Accept-Ranges': 'bytes',
+        'Set-Cookie': 'untrusted=value',
+      },
+    }),
+  );
+  const query = new URLSearchParams({
+    url: 'https://cdn.example/video.ts?signature=abc',
+    source_url: 'https://source.example/channel',
+    headers: '{"Cookie":"source-session"}',
+    token: 'untrusted-token',
+    web: 'false',
   });
-
-  it('resolves relative redirect locations against the current target', async () => {
-    const fetchImpl: UpstreamFetch = vi
-      .fn()
-      .mockResolvedValueOnce(redirectResponse('/moved/master.m3u8'))
-      .mockResolvedValueOnce(new Response('#EXTM3U', { status: 200 }));
-
-    const { response, finalUrl } = await fetchWithValidatedRedirects(
-      'https://media.example/live/master.m3u8',
-      headers,
-      signal,
-      { resolver: publicResolver, fetchImpl },
-    );
-
-    expect(response.status).toBe(200);
-    expect(finalUrl.toString()).toBe('https://media.example/moved/master.m3u8');
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  const request = new Request(`https://app.example/stream-proxy?${query}`, {
+    headers: {
+      Range: 'bytes=0-1',
+      Authorization: 'untrusted',
+      Cookie: 'browser-cookie',
+    },
   });
-
-  it('caps the number of followed redirects', async () => {
-    const fetchImpl: UpstreamFetch = vi
-      .fn()
-      .mockImplementation(async () =>
-        redirectResponse('https://media.example/loop.m3u8'),
-      );
-
-    await expect(
-      fetchWithValidatedRedirects(
-        'https://media.example/live.m3u8',
-        headers,
-        signal,
-        { resolver: publicResolver, fetchImpl },
-      ),
-    ).rejects.toThrow('Too many upstream redirects');
-    expect(fetchImpl).toHaveBeenCalledTimes(6);
-  });
+  const response = await handleStreamProxyRequest(request);
+  const [url, init] = fetchMock.mock.calls[0]!;
+  const backend = new URL(url as string);
+  expect(backend.origin).toBe('http://backend.example');
+  expect(backend.pathname).toBe('/api/stream-proxy');
+  expect(backend.searchParams.get('source_url')).toBe(
+    'https://source.example/channel',
+  );
+  expect(backend.searchParams.get('url')).toBe(query.get('url'));
+  expect(backend.searchParams.get('headers')).toBe(query.get('headers'));
+  expect(backend.searchParams.get('web')).toBe('true');
+  expect(backend.searchParams.has('token')).toBe(false);
+  const headers = new Headers(init!.headers);
+  expect(headers.get('Authorization')).toBe('Bearer server-session');
+  expect(headers.get('Range')).toBe('bytes=0-1');
+  expect(headers.has('Cookie')).toBe(false);
+  expect(init!.redirect).toBe('manual');
+  expect(init!.signal).toBe(request.signal);
+  expect(response.status).toBe(206);
+  expect(response.headers.get('Content-Range')).toBe('bytes 0-1/3');
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  expect(response.headers.has('Set-Cookie')).toBe(false);
+  expect(await response.text()).toBe('ab');
 });
 
-describe('handleStreamProxyRequest', () => {
-  it('requires an authenticated web session before resolving the target', async () => {
-    ensureValidTokenMock.mockResolvedValueOnce(null);
-    const response = await handleStreamProxyRequest(
-      new Request(
-        'https://app.example/stream-proxy?url=http%3A%2F%2F127.0.0.1%2Fprivate',
-      ),
-    );
-
-    expect(response.status).toBe(401);
+it('returns streaming bodies without waiting for the live response to finish', async () => {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+    },
   });
+  fetchMock.mockResolvedValue(new Response(body));
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=https://cdn.example/live',
+    ),
+  );
+  const reader = response.body!.getReader();
+  streamController!.enqueue(new TextEncoder().encode('live chunk'));
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe(
+    'live chunk',
+  );
+  await reader.cancel();
+});
+
+it('preserves backend errors instead of trying direct playback', async () => {
+  fetchMock.mockResolvedValue(
+    new Response('Target host is not allowed', { status: 400 }),
+  );
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=http://127.0.0.1/private',
+    ),
+  );
+  expect(response.status).toBe(400);
+  expect(await response.text()).toBe('Target host is not allowed');
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it('never follows redirects from the authenticated backend', async () => {
+  fetchMock.mockResolvedValue(
+    new Response(null, {
+      status: 302,
+      headers: { Location: 'https://untrusted.example' },
+    }),
+  );
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=https://cdn.example/live',
+    ),
+  );
+  expect(response.status).toBe(502);
+  expect(response.headers.has('Location')).toBe(false);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it('reports cancellation without leaking backend fetch errors', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  fetchMock.mockRejectedValue(
+    new Error('https://backend.example/?token=secret'),
+  );
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=https://cdn.example/live',
+      { signal: controller.signal },
+    ),
+  );
+  expect(response.status).toBe(499);
+  expect(await response.text()).toBe('');
+  const failure = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?url=https://cdn.example/live',
+    ),
+  );
+  expect(failure.status).toBe(502);
+  expect(await failure.text()).not.toContain('secret');
 });
