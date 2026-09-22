@@ -145,6 +145,8 @@
       "max_concurrent_io_jobs",
       "job_history_retention_days",
       "notification_event_log_retention_days",
+      "output_retention_days",
+      "output_retention_delete_files",
       "pipeline",
       "log_filter_directive",
       "session_complete_pipeline",
