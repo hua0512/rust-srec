@@ -276,6 +276,7 @@ fn deadline_cleanup_failure<'a>(mode: &str, error: &'a EngineStartError) -> Opti
         "cooperative-tightened" => {
             "; secondary process error: Streamlink cooperative drain incomplete: producer, stdout forwarding, or remux finalization did not finish naturally"
         }
+        "source-exit-late-stop" | "ffmpeg-exit-late-stop" => "",
         _ => return None,
     };
     let failure = error
@@ -284,6 +285,12 @@ fn deadline_cleanup_failure<'a>(mode: &str, error: &'a EngineStartError) -> Opti
     // Consume the whole message: an auxiliary timeout/panic or unrelated process
     // error must still fail the test, including one after the expected suffix.
     let cleanup = failure.strip_suffix(suffix)?;
+    let cleanup = if mode == "ffmpeg-exit-late-stop" {
+        cleanup
+            .strip_prefix("FFmpeg exited before Streamlink completed; process cleanup error: ")?
+    } else {
+        cleanup
+    };
     let cleanup = cleanup
         .strip_prefix("process cleanup error: ")
         .unwrap_or(cleanup);
@@ -358,6 +365,36 @@ fn deadline_cleanup_allowance_rejects_unrelated_errors() {
             deadline_cleanup_failure("cooperative-handshake-tightened", &error).is_none(),
             "{error:?}"
         );
+    }
+    for (mode, process) in [
+        ("source-exit-late-stop", "ffmpeg"),
+        ("ffmpeg-exit-late-stop", "streamlink"),
+    ] {
+        let prefix = if mode == "ffmpeg-exit-late-stop" {
+            "FFmpeg exited before Streamlink completed; process cleanup error: "
+        } else {
+            ""
+        };
+        let observed = format!(
+            "Streamlink task settlement failed: process cleanup was not confirmed: {prefix}failed to contain {process} before the stop deadline: deadline elapsed while reaping force-terminated child 28702"
+        );
+        let error = EngineStartError::new(DownloadFailureKind::Other, &observed);
+        assert!(deadline_cleanup_failure(mode, &error).is_some());
+        assert!(deadline_cleanup_failure("natural", &error).is_none());
+        for invalid in [
+            format!("{observed}; event reader task failed: panic"),
+            format!("{observed}; secondary process error: unexpected failure"),
+            observed.replace(
+                "deadline elapsed while reaping",
+                "access denied while reaping",
+            ),
+        ] {
+            let error = EngineStartError::new(DownloadFailureKind::Other, invalid);
+            assert!(
+                deadline_cleanup_failure(mode, &error).is_none(),
+                "{error:?}"
+            );
+        }
     }
 }
 
@@ -721,11 +758,16 @@ async fn assert_late_stop(mode: &'static str, branch: &str) {
     let deadline = Instant::now() + SHORT_STOP_BUDGET;
     handle.set_stop_deadline(deadline);
     handle.cancellation_token.cancel();
-    tokio::time::timeout_at(deadline + SETTLEMENT_SLACK, task)
+    let result = tokio::time::timeout_at(deadline + SETTLEMENT_SLACK, task)
         .await
         .expect("an already-active settlement must observe the later attempt deadline")
-        .unwrap()
-        .expect("native fixture descendants must be contained");
+        .unwrap();
+    // A late stop can exhaust the same hard deadline while the OS acknowledges
+    // forced reap. Keep checking the deadline, events, bytes, and descendants.
+    let unconfirmed_failure = result.as_ref().err().map(|error| {
+        deadline_cleanup_failure(mode, error)
+            .unwrap_or_else(|| panic!("unexpected late-stop failure for {mode}: {error:?}"))
+    });
     drop(handle);
     let events = tokio::time::timeout(Duration::from_secs(2), event_task)
         .await
@@ -749,6 +791,24 @@ async fn assert_late_stop(mode: &'static str, branch: &str) {
         .iter()
         .position(|event| matches!(event, SegmentEvent::DownloadFailed { .. }))
         .unwrap();
+    if let Some(expected_failure) = unconfirmed_failure {
+        let expected_kind = if mode == "ffmpeg-exit-late-stop" {
+            DownloadFailureKind::Other
+        } else {
+            DownloadFailureKind::ProcessExit { code: None }
+        };
+        assert!(
+            matches!(&events[terminal], SegmentEvent::DownloadFailed { kind, message }
+                if kind == &expected_kind && message == expected_failure),
+            "the terminal failure must preserve the exact cleanup cause: {events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, SegmentEvent::SegmentCompleted(_))),
+            "unconfirmed cleanup must not publish a final segment: {events:?}"
+        );
+    }
     for (index, event) in events.iter().enumerate() {
         if matches!(event, SegmentEvent::SegmentCompleted(_)) {
             assert!(index < terminal);
@@ -770,8 +830,8 @@ async fn assert_late_stop(mode: &'static str, branch: &str) {
                 .iter()
                 .filter(|event| matches!(event, SegmentEvent::SegmentCompleted(_)))
                 .count(),
-            1,
-            "the accepted final segment remains available despite incomplete shutdown: {events:?}"
+            usize::from(unconfirmed_failure.is_none()),
+            "only confirmed cleanup may publish the accepted final segment: {events:?}"
         );
     }
     assert_descendants_stopped(&fixture).await;
