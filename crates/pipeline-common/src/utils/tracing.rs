@@ -15,10 +15,3 @@ macro_rules! init_test_tracing {
             .try_init();
     };
 }
-
-// Re-export the macro
-#[expect(
-    unused_imports,
-    reason = "public macro re-export is consumed by downstream crates"
-)]
-pub use crate::init_test_tracing;

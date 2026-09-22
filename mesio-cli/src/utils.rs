@@ -6,7 +6,7 @@ pub mod spans;
 mod time;
 
 // Export utility functions
-pub use self::files::{create_dirs, expand_name_url};
+pub use self::files::expand_name_url;
 pub use self::headers::parse_headers;
 pub use self::params::parse_params;
 pub use self::size::format_bytes;

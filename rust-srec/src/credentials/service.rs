@@ -247,9 +247,7 @@ impl CredentialRefreshService {
         // platforms (SOOP) use reauth_extra instead.
         if !source.has_refresh_token() && !source.has_reauth_extra() {
             warn!("Missing refresh_token / reauth credentials - cannot auto-refresh");
-            let _failure_count = self
-                .failure_tracker
-                .record_failure(&source.scope, "Missing refresh token");
+            self.failure_tracker.record_failure(&source.scope);
             return Err(CredentialError::MissingRefreshToken);
         }
 
@@ -320,9 +318,7 @@ impl CredentialRefreshService {
                     );
                 }
 
-                let failure_count = self
-                    .failure_tracker
-                    .record_failure(&source.scope, &e.to_string());
+                let failure_count = self.failure_tracker.record_failure(&source.scope);
 
                 error!(
                     error = %e,

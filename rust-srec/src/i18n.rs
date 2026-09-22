@@ -17,9 +17,8 @@
 //! ## Why a wrapper module
 //!
 //! `rust_i18n::i18n!` reads the YAML files at compile time and needs to be
-//! invoked exactly once per crate, in scope where the `t!` macro will be used.
-//! Centralizing it here means downstream modules just `use crate::i18n::t;`
-//! instead of duplicating the macro invocation or importing `rust_i18n` directly.
+//! invoked once at the crate root. This module re-exports `t!` so downstream
+//! modules can `use crate::i18n::t;`.
 
 // `rust_i18n::i18n!("locales", ...)` is invoked at the crate root in `lib.rs`,
 // not here, because the `t!` macro generates code that resolves `_rust_i18n_t`
@@ -80,10 +79,8 @@ macro_rules! t_str_in {
     };
 }
 
-// Re-export so the `crate::t_str!(...)` form works from any module without
-// an explicit `use`. `#[macro_export]` alone places the macro at the crate
-// root; this re-export keeps the `crate::i18n::t_str` path working too for
-// callers that prefer module-qualified paths.
+// `#[macro_export]` provides the crate-root paths; these re-exports also
+// support module-qualified paths under `crate::i18n`.
 pub use crate::{t_str, t_str_in};
 
 /// The locale currently applied by [`set_locale`].

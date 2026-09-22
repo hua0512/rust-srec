@@ -1170,6 +1170,7 @@ fn test_pipeline_manager_config_default() {
     assert!(!config.throttle.enabled);
     assert_eq!(config.throttle.critical_threshold, 500);
     assert_eq!(config.throttle.warning_threshold, 100);
+    assert!((config.throttle.reduction_factor - 0.5).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -3290,16 +3291,6 @@ fn test_throttle_controller_enabled_with_config() {
     assert!(manager.throttle_controller().is_some());
     assert!(!manager.is_throttled());
     assert!(manager.subscribe_throttle_events().is_some());
-}
-
-#[test]
-fn test_config_includes_throttle_defaults() {
-    let config = PipelineManagerConfig::default();
-
-    assert!(!config.throttle.enabled);
-    assert_eq!(config.throttle.critical_threshold, 500);
-    assert_eq!(config.throttle.warning_threshold, 100);
-    assert!((config.throttle.reduction_factor - 0.5).abs() < f32::EPSILON);
 }
 
 #[tokio::test]

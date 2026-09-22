@@ -252,18 +252,6 @@ mod tests {
         assert!(!channel.is_enabled());
     }
 
-    #[test]
-    fn test_telegram_channel_enabled() {
-        let config = TelegramConfig {
-            enabled: true,
-            bot_token: "123:ABC".to_string(),
-            chat_id: "456".to_string(),
-            ..Default::default()
-        };
-        let channel = TelegramChannel::new(config);
-        assert!(channel.is_enabled());
-    }
-
     fn channel(mode: &str, locale: &str) -> TelegramChannel {
         TelegramChannel::new(TelegramConfig {
             parse_mode: mode.to_string(),

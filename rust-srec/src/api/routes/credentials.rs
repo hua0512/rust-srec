@@ -64,10 +64,8 @@ fn credential_internal_error(error: CredentialError) -> ApiError {
 pub struct CredentialRouteState {
     config_service: std::sync::Arc<CredentialConfigService>,
     credential_service: std::sync::Arc<crate::credentials::CredentialRefreshService>,
-    /// Streamer-scoped credential writes go through the manager rather than a
-    /// `StreamerRepository`: `StreamerManager::partial_update_streamer` rebuilds the whole
-    /// `streamers` row from the manager's metadata cache, so that cache has to carry the
-    /// credentials for them to survive the next streamer edit.
+    /// Streamer-scoped credential writes use the manager's committed publication
+    /// path so runtime metadata and configuration listeners see the updated row.
     streamer_manager: std::sync::Arc<CredentialStreamerManager>,
 }
 

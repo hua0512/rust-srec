@@ -19,11 +19,6 @@ pub async fn ensure_dir_all_with_op(op: &'static str, path: &Path) -> Result<()>
         .map_err(|e| io_error(op, path, e))
 }
 
-/// Ensure a directory exists, creating it (recursively) if needed.
-pub async fn ensure_dir_all(path: &Path) -> Result<()> {
-    ensure_dir_all_with_op("creating directory", path).await
-}
-
 /// Ensure the parent directory of a file path exists.
 pub async fn ensure_parent_dir(path: &Path) -> Result<()> {
     ensure_parent_dir_with_op("creating directory", path).await
@@ -35,11 +30,6 @@ pub async fn ensure_parent_dir_with_op(op: &'static str, path: &Path) -> Result<
         return Ok(());
     };
     ensure_dir_all_with_op(op, parent).await
-}
-
-/// Ensure a directory exists (synchronous variant).
-pub fn ensure_dir_all_sync(path: &Path) -> Result<()> {
-    ensure_dir_all_sync_with_op("creating directory", path)
 }
 
 /// Ensure a directory exists (synchronous variant) with a custom operation label.

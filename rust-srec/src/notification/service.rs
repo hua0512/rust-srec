@@ -660,25 +660,6 @@ mod tests {
         assert!(cb.is_allowed());
     }
 
-    #[test]
-    fn test_calculate_retry_delay() {
-        let config = NotificationServiceConfig {
-            initial_retry_delay_ms: 1000,
-            max_retry_delay_ms: 60000,
-            ..Default::default()
-        };
-        let service = NotificationService::with_config(config);
-
-        let delay1 = service._calculate_retry_delay(0);
-        let delay2 = service._calculate_retry_delay(1);
-        let delay3 = service._calculate_retry_delay(2);
-
-        // Delays should increase (approximately, due to jitter)
-        assert!(delay1.as_millis() >= 750 && delay1.as_millis() <= 1250);
-        assert!(delay2.as_millis() >= 1500 && delay2.as_millis() <= 2500);
-        assert!(delay3.as_millis() >= 3000 && delay3.as_millis() <= 5000);
-    }
-
     #[tokio::test]
     async fn test_notify_disabled() {
         let config = NotificationServiceConfig {

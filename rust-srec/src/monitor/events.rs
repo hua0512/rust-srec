@@ -174,6 +174,7 @@ impl MonitorEvent {
 }
 
 /// Broadcaster for monitor events.
+#[derive(Clone)]
 pub struct MonitorEventBroadcaster {
     sender: broadcast::Sender<MonitorEvent>,
 }
@@ -212,14 +213,6 @@ impl MonitorEventBroadcaster {
 impl Default for MonitorEventBroadcaster {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Clone for MonitorEventBroadcaster {
-    fn clone(&self) -> Self {
-        Self {
-            sender: self.sender.clone(),
-        }
     }
 }
 

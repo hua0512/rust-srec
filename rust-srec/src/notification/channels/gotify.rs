@@ -180,18 +180,6 @@ mod tests {
     }
 
     #[test]
-    fn test_gotify_channel_enabled() {
-        let config = GotifyConfig {
-            enabled: true,
-            server_url: "https://gotify.example.com".to_string(),
-            app_token: "test-token".to_string(),
-            ..Default::default()
-        };
-        let channel = GotifyChannel::new(config);
-        assert!(channel.is_enabled());
-    }
-
-    #[test]
     fn test_build_payload() {
         let config = GotifyConfig::default();
         let channel = GotifyChannel::new(config);

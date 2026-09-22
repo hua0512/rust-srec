@@ -3,7 +3,7 @@
 //! This module provides functionality for collecting live comments (danmu/弹幕)
 //! from streaming platforms during live sessions.
 //!
-//! Core types are re-exported from the `danmaku` crate for reusability.
+//! Core types are re-exported from `platforms_parser::danmaku` for reusability.
 
 // Re-export core types from platforms-parser
 pub use platforms_parser::danmaku::{

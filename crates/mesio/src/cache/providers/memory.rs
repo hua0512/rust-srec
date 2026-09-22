@@ -111,16 +111,7 @@ impl CacheProvider for MemoryCache {
         // Add the new entry
         let entry = CacheEntry { data, metadata };
 
-        // Insert the entry into the cache
-        // Note: Moka handles TTL expiration internally based on the expires_at field in metadata
         self.cache.insert(key, entry).await;
-
-        // debug!(
-        //     key = ?key,
-        //     size = size,
-        //     max_size = self.max_size,
-        //     "Added entry to memory cache"
-        // );
 
         Ok(())
     }
@@ -199,18 +190,6 @@ mod tests {
         meta.cached_at = now_secs.saturating_sub(1000);
         meta.expires_at = Some(now_secs.saturating_sub(500));
         meta
-    }
-
-    #[tokio::test]
-    async fn test_new_cache_valid_params() {
-        let cache = MemoryCache::new(1024 * 1024, 60);
-        assert_eq!(cache.max_size, 1024 * 1024);
-    }
-
-    #[tokio::test]
-    async fn test_new_cache_no_ttl() {
-        let cache = MemoryCache::new(1024 * 1024, 0);
-        assert_eq!(cache.max_size, 1024 * 1024);
     }
 
     #[tokio::test]

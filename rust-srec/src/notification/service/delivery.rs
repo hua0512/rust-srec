@@ -64,14 +64,6 @@ impl NotificationService {
         .await;
     }
 
-    /// Calculate retry delay with exponential backoff and jitter.
-    /// Test-only probe into `calculate_retry_delay_detached`, which is what
-    /// the delivery loop actually calls.
-    #[cfg(test)]
-    pub(super) fn _calculate_retry_delay(&self, attempts: u32) -> Duration {
-        Self::calculate_retry_delay_detached(&self.config, attempts)
-    }
-
     fn spawn_retry_detached(delay: Duration, expected_generation: u64, ctx: Arc<DeliveryContext>) {
         debug!(
             notification_id = ctx.id,
@@ -312,5 +304,28 @@ impl NotificationService {
         };
 
         Self::spawn_retry_detached(delay, expected_generation, ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_retry_delay() {
+        let config = NotificationServiceConfig {
+            initial_retry_delay_ms: 1000,
+            max_retry_delay_ms: 60000,
+            ..Default::default()
+        };
+
+        let delay1 = NotificationService::calculate_retry_delay_detached(&config, 0);
+        let delay2 = NotificationService::calculate_retry_delay_detached(&config, 1);
+        let delay3 = NotificationService::calculate_retry_delay_detached(&config, 2);
+
+        // Delays should increase (approximately, due to jitter)
+        assert!(delay1.as_millis() >= 750 && delay1.as_millis() <= 1250);
+        assert!(delay2.as_millis() >= 1500 && delay2.as_millis() <= 2500);
+        assert!(delay3.as_millis() >= 3000 && delay3.as_millis() <= 5000);
     }
 }

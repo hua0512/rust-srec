@@ -85,7 +85,7 @@ impl StreamerActor {
                 Ok(false)
             }
             StreamerMessage::Stop => {
-                self.handle_stop().await?;
+                info!("StreamerActor {} received Stop", self.id);
                 Ok(true)
             }
             StreamerMessage::GetState(reply) => {
@@ -134,13 +134,6 @@ impl StreamerActor {
 
         self.state
             .reschedule_for_config(&self.config, self.get_error_count());
-
-        Ok(())
-    }
-
-    /// Handle Stop message - prepare for graceful shutdown.
-    pub(super) async fn handle_stop(&mut self) -> Result<(), ActorError> {
-        info!("StreamerActor {} received Stop", self.id);
 
         Ok(())
     }
