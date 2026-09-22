@@ -171,12 +171,12 @@ msgid "{0} Configuration"
 msgstr "{0} 配置"
 
 #. placeholder {0}: source.fps
-#: src/components/player/playback-details.tsx:44
+#: src/components/player/playback-details.tsx:60
 msgid "{0} fps"
 msgstr "{0} 帧/秒"
 
 #. placeholder {0}: (source.bitrate / 1000).toFixed(0)
-#: src/components/player/playback-details.tsx:56
+#: src/components/player/playback-details.tsx:67
 msgid "{0} kbps"
 msgstr "{0} kbps"
 
@@ -187,7 +187,7 @@ msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
 
 #. placeholder {0}: value.toFixed(1)
-#: src/components/player/playback-details.tsx:21
+#: src/components/player/playback-details.tsx:43
 msgid "{0} s"
 msgstr "{0} 秒"
 
@@ -212,7 +212,7 @@ msgstr "{0}小时{1}分"
 msgid "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel # running pipelines}}"
 msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
 
-#: src/components/sessions/danmu-stats-panel.tsx:319
+#: src/components/sessions/danmu-stats-panel.tsx:321
 msgid "{chat} chat · {gift} gift"
 msgstr "{chat} 条弹幕 · {gift} 个礼物"
 
@@ -897,18 +897,13 @@ msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
-#: src/components/player/player-card.tsx:224
-#: src/components/player/player-card.tsx:313
+#: src/components/player/player-card.tsx:222
 msgid "Auto"
 msgstr "自动"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Auto (Default)"
 msgstr "自动（默认）"
-
-#: src/components/player/player-card.tsx:333
-msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
-msgstr "自动模式使用直连。如果浏览器无法加载直播源，请选择服务器代理。"
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:339
 msgid "Auto Layout"
@@ -964,11 +959,11 @@ msgstr "自动为每个会话的第一段生成封面图。"
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
-#: src/components/sessions/danmu-stats-panel.tsx:418
+#: src/components/sessions/danmu-stats-panel.tsx:420
 msgid "avg {averagePerMinute}"
 msgstr "均值 {averagePerMinute}"
 
-#: src/components/sessions/danmu-stats-panel.tsx:457
+#: src/components/sessions/danmu-stats-panel.tsx:459
 msgid "Avg / min"
 msgstr "平均/分钟"
 
@@ -1101,7 +1096,7 @@ msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，�
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
-#: src/components/player/player-card.tsx:381
+#: src/components/player/player-card.tsx:264
 msgid "Balanced"
 msgstr "均衡"
 
@@ -1189,7 +1184,7 @@ msgid "Binary Path"
 msgstr "可执行文件路径"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:125
-#: src/components/player/playback-details.tsx:50
+#: src/components/player/playback-details.tsx:65
 msgid "Bitrate"
 msgstr "比特率"
 
@@ -1264,7 +1259,7 @@ msgstr "浏览器状态"
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
-#: src/components/player/playback-details.tsx:78
+#: src/components/player/playback-details.tsx:85
 msgid "Buffered ahead"
 msgstr "前方缓冲时长"
 
@@ -1272,7 +1267,7 @@ msgstr "前方缓冲时长"
 msgid "Buffering"
 msgstr "缓冲中"
 
-#: src/components/player/player-card.tsx:395
+#: src/components/player/player-card.tsx:250
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "当前播放方式不支持缓冲预设。"
 
@@ -1396,6 +1391,7 @@ msgstr "分类"
 msgid "Cause:"
 msgstr "原因："
 
+#: src/components/player/stream-info-card.tsx:30
 #: src/components/streamers/edit/active-download-card.tsx:99
 #: src/components/streamers/progress-indicator.tsx:142
 msgid "CDN"
@@ -1412,7 +1408,7 @@ msgstr "修改密码"
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/components/player/player-card.tsx:487
+#: src/components/player/player-card.tsx:520
 msgid "Change source"
 msgstr "切换直播源"
 
@@ -1420,9 +1416,9 @@ msgstr "切换直播源"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/player/player-card.tsx:403
-msgid "Changing this preference restarts this live player. The source and network still determine the actual delay."
-msgstr "更改此偏好会重新启动当前直播播放器。实际延迟仍取决于直播源和网络。"
+#: src/components/player/player-card.tsx:247
+msgid "Changing this restarts the player."
+msgstr "更改后会重新启动播放器。"
 
 #: src/components/notifications/channel-form.tsx:373
 msgid "Channel"
@@ -1606,11 +1602,16 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
+#: src/components/player/player-card.tsx:456
+msgid "Close playback details"
+msgstr "关闭播放详情"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:518
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
-#: src/components/player/playback-details.tsx:34
+#: src/components/player/playback-details.tsx:55
+#: src/components/player/stream-info-card.tsx:32
 #: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
@@ -1857,7 +1858,7 @@ msgstr "连接中"
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/player/player-card.tsx:295
+#: src/components/player/player-card.tsx:201
 msgid "Connection"
 msgstr "连接方式"
 
@@ -2036,7 +2037,7 @@ msgstr "无法显示该文件：{message}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:351
 #: src/components/config/engines/forms/mesio-hls-form.tsx:396
-#: src/components/sessions/danmu-stats-panel.tsx:387
+#: src/components/sessions/danmu-stats-panel.tsx:389
 msgid "Count"
 msgstr "次数"
 
@@ -2379,12 +2380,12 @@ msgid "Danmu Service"
 msgstr "弹幕服务"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:174
-#: src/components/sessions/danmu-stats-panel.tsx:172
+#: src/components/sessions/danmu-stats-panel.tsx:174
 #: src/components/sessions/overview-tab.tsx:249
 msgid "Danmu Statistics"
 msgstr "弹幕统计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:223
+#: src/components/sessions/danmu-stats-panel.tsx:225
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
@@ -2393,7 +2394,7 @@ msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
 
-#: src/components/sessions/danmu-stats-panel.tsx:365
+#: src/components/sessions/danmu-stats-panel.tsx:367
 msgid "Danmu/min"
 msgstr "弹幕/分钟"
 
@@ -2462,6 +2463,7 @@ msgstr "默认"
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:85
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:96
+#: src/components/player/stream-info-card.tsx:50
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:660
 msgid "Default"
@@ -2783,8 +2785,7 @@ msgstr "根据链接自动识别，并自动应用该平台的设置。"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/player/player-card.tsx:231
-#: src/components/player/player-card.tsx:316
+#: src/components/player/player-card.tsx:225
 msgid "Direct"
 msgstr "直连"
 
@@ -2946,7 +2947,7 @@ msgstr "下载中..."
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
-#: src/components/player/playback-details.tsx:84
+#: src/components/player/playback-details.tsx:88
 msgid "Dropped frames"
 msgstr "丢帧数"
 
@@ -3695,7 +3696,7 @@ msgstr "导入配置失败"
 msgid "Failed to load content"
 msgstr "内容加载失败"
 
-#: src/components/sessions/danmu-stats-panel.tsx:234
+#: src/components/sessions/danmu-stats-panel.tsx:236
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
@@ -4116,10 +4117,11 @@ msgstr "表单"
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:287
+#: src/components/player/stream-info-card.tsx:29
 msgid "Format"
 msgstr "格式"
 
-#: src/components/player/playback-details.tsx:40
+#: src/components/player/playback-details.tsx:58
 msgid "Frame rate"
 msgstr "帧率"
 
@@ -4233,8 +4235,8 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
-#: src/components/sessions/danmu-stats-panel.tsx:398
-#: src/components/sessions/danmu-stats-panel.tsx:409
+#: src/components/sessions/danmu-stats-panel.tsx:400
+#: src/components/sessions/danmu-stats-panel.tsx:411
 msgid "Gift items"
 msgstr "礼物数"
 
@@ -4487,6 +4489,10 @@ msgstr "小时"
 #: src/components/config/shared/danmu-statistics-card.tsx:177
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
+
+#: src/components/player/player-card.tsx:465
+msgid "How far playback trails the available stream, not the total broadcast delay."
+msgstr "播放进度落后于可用直播流的时长，而不是直播的总延迟。"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:437
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
@@ -4951,6 +4957,7 @@ msgstr "最后错误日志"
 msgid "Last used"
 msgstr "最近使用"
 
+#: src/components/player/player-card.tsx:242
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:234
 msgid "Latency"
 msgstr "延迟"
@@ -5019,8 +5026,7 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/player-card.tsx:214
-#: src/components/player/stream-info-card.tsx:77
+#: src/components/player/player-card.tsx:306
 #: src/components/sessions/session-card.tsx:167
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
@@ -5051,18 +5057,10 @@ msgstr "实时预览"
 msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
 
-#: src/components/player/playback-details.tsx:111
-msgid "Live-edge distance measures how far playback trails the available stream, not the total broadcast delay."
-msgstr "距直播最新位置表示播放位置落后于当前可用直播流的时长，并非完整的直播端到端延迟。"
-
 #. placeholder {0}: i18n._(template.label)
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:33
 msgid "Loaded template: {0}"
 msgstr "已加载模板：{0}"
-
-#: src/components/player/player-card.tsx:104
-#~ msgid "Loading"
-#~ msgstr "加载中"
 
 #: src/components/danmu/danmu-viewer.tsx:240
 msgid "Loading Danmu"
@@ -5184,6 +5182,7 @@ msgstr "循环保护"
 msgid "Lossless Split"
 msgstr "无损分割"
 
+#: src/components/player/player-card.tsx:263
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
@@ -5198,10 +5197,6 @@ msgstr "低"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Low (80)"
 msgstr "流畅 (80)"
-
-#: src/components/player/player-card.tsx:378
-msgid "Low latency"
-msgstr "低延迟"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
@@ -5420,7 +5415,7 @@ msgstr "MB"
 msgid "MB/s"
 msgstr "MB/s"
 
-#: src/components/player/playback-details.tsx:66
+#: src/components/player/playback-details.tsx:77
 msgid "Measured by player"
 msgstr "播放器实测"
 
@@ -5452,7 +5447,7 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/sessions/danmu-stats-panel.tsx:376
+#: src/components/sessions/danmu-stats-panel.tsx:378
 msgid "Messages"
 msgstr "消息数"
 
@@ -5812,8 +5807,8 @@ msgstr "未选择已失败或已取消的流水线"
 msgid "No filters yet"
 msgstr "暂无过滤器"
 
-#: src/components/sessions/danmu-stats-panel.tsx:614
-#: src/components/sessions/danmu-stats-panel.tsx:627
+#: src/components/sessions/danmu-stats-panel.tsx:616
+#: src/components/sessions/danmu-stats-panel.tsx:629
 msgid "No gift data"
 msgstr "暂无礼物数据"
 
@@ -5976,7 +5971,7 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/components/sessions/danmu-stats-panel.tsx:555
+#: src/components/sessions/danmu-stats-panel.tsx:557
 msgid "No talker data"
 msgstr "暂无发言用户数据"
 
@@ -6001,7 +5996,7 @@ msgstr "暂无时间线事件"
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
-#: src/components/sessions/danmu-stats-panel.tsx:593
+#: src/components/sessions/danmu-stats-panel.tsx:595
 msgid "No word data"
 msgstr "暂无词频数据"
 
@@ -6597,7 +6592,7 @@ msgstr "暂停"
 msgid "Paused"
 msgstr "已暂停"
 
-#: src/components/sessions/danmu-stats-panel.tsx:451
+#: src/components/sessions/danmu-stats-panel.tsx:453
 msgid "Peak / min"
 msgstr "峰值/分钟"
 
@@ -6840,12 +6835,17 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
+#: src/components/player/player-card.tsx:408
+msgid "Playback"
+msgstr "播放"
+
 #: src/components/player/playback-state.ts:37
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
 
-#: src/components/player/playback-details.tsx:25
-#: src/components/player/player-card.tsx:257
+#: src/components/player/player-card.tsx:371
+#: src/components/player/player-card.tsx:372
+#: src/components/player/player-card.tsx:449
 msgid "Playback details"
 msgstr "播放详情"
 
@@ -6853,13 +6853,9 @@ msgstr "播放详情"
 msgid "Playback error"
 msgstr "播放错误"
 
-#: src/components/player/player-card.tsx:451
+#: src/components/player/player-card.tsx:483
 msgid "Playback Error"
 msgstr "播放错误"
-
-#: src/components/player/player-card.tsx:361
-msgid "Playback preference"
-msgstr "播放偏好"
 
 #: src/components/player/playback-state.ts:36
 msgid "Playback stalled while seeking. Retry to reload the video."
@@ -6870,7 +6866,8 @@ msgstr "跳转时播放停滞。请重试以重新加载视频。"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:280
+#: src/components/player/player-card.tsx:383
+#: src/components/player/player-card.tsx:384
 msgid "Player settings"
 msgstr "播放器设置"
 
@@ -7214,7 +7211,7 @@ msgid "QR Login"
 msgstr "扫码登录"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:134
-#: src/components/player/stream-info-card.tsx:132
+#: src/components/player/stream-info-card.tsx:31
 msgid "Quality"
 msgstr "质量"
 
@@ -7453,8 +7450,8 @@ msgstr "刷新失败：需要手动登录"
 msgid "Refresh status"
 msgstr "刷新状态"
 
-#: src/components/player/player-card.tsx:353
-#: src/components/player/player-card.tsx:466
+#: src/components/player/player-card.tsx:284
+#: src/components/player/player-card.tsx:499
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
@@ -7475,8 +7472,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/player/player-card.tsx:246
-#: src/components/player/player-card.tsx:247
+#: src/components/player/player-card.tsx:357
+#: src/components/player/player-card.tsx:358
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -7522,7 +7519,8 @@ msgstr "成功后移除输入"
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:422
+#: src/components/player/player-card.tsx:430
+#: src/components/player/player-card.tsx:431
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -7618,7 +7616,7 @@ msgstr "替换管道步骤"
 msgid "Replace Step"
 msgstr "替换步骤"
 
-#: src/components/player/playback-details.tsx:30
+#: src/components/player/playback-details.tsx:52
 msgid "Reported by source"
 msgstr "直播源提供"
 
@@ -7652,7 +7650,7 @@ msgstr "重置"
 msgid "Reset view"
 msgstr "重置视图"
 
-#: src/components/player/playback-details.tsx:70
+#: src/components/player/playback-details.tsx:80
 #: src/lib/split-reason.ts:187
 msgid "Resolution"
 msgstr "分辨率"
@@ -7727,8 +7725,8 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:458
-#: src/components/sessions/danmu-stats-panel.tsx:238
+#: src/components/player/player-card.tsx:491
+#: src/components/sessions/danmu-stats-panel.tsx:240
 msgid "Retry"
 msgstr "重试"
 
@@ -8282,18 +8280,13 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
-#: src/components/player/player-card.tsx:229
-#: src/components/player/player-card.tsx:319
+#: src/components/player/player-card.tsx:231
 msgid "Server proxy"
 msgstr "服务器代理"
 
-#: src/components/player/player-card.tsx:340
-msgid "Server proxy relays playback through this app's server using the source's configured upstream proxy settings."
-msgstr "服务器代理通过本应用的服务器中转播放，并使用该直播源配置的上游代理设置。"
-
-#: src/components/player/player-card.tsx:340
-#~ msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
-#~ msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
+#: src/components/player/player-card.tsx:208
+msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
+msgstr "服务器代理会通过本应用的服务器转发播放，并使用该来源配置的上游代理设置。"
 
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36
@@ -8439,7 +8432,7 @@ msgid "Shell command"
 msgstr "Shell 命令"
 
 #. placeholder {0}: stats.top_talkers.length
-#: src/components/sessions/danmu-stats-panel.tsx:581
+#: src/components/sessions/danmu-stats-panel.tsx:583
 msgid "Show all {0}"
 msgstr "显示全部 {0} 位"
 
@@ -8451,7 +8444,7 @@ msgstr "显示录制下载详情"
 msgid "Show in folder"
 msgstr "在文件夹中显示"
 
-#: src/components/sessions/danmu-stats-panel.tsx:576
+#: src/components/sessions/danmu-stats-panel.tsx:578
 msgid "Show less"
 msgstr "收起"
 
@@ -8547,9 +8540,9 @@ msgstr "跳过了 {skippedCount} 个重复的流"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
-#: src/components/player/player-card.tsx:384
-msgid "Smooth playback"
-msgstr "流畅播放"
+#: src/components/player/player-card.tsx:265
+msgid "Smooth"
+msgstr "流畅"
 
 #: src/components/notifications/forms/email-form.tsx:42
 msgid "SMTP Host"
@@ -8575,10 +8568,6 @@ msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受�
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:641
 msgid "Sort by"
 msgstr "排序方式"
-
-#: src/components/player/stream-info-card.tsx:88
-msgid "Source"
-msgstr "来源"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Space Saver"
@@ -8722,6 +8711,10 @@ msgstr "存储"
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "将这些凭据保存在服务器上（明文，与平台 Cookie 相同），登录会话过期时上传任务可以自行重新登录。退出登录会一并清除。"
 
+#: src/components/player/player-card.tsx:404
+msgid "Stream"
+msgstr "直播流"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Stream Archive"
 msgstr "直播归档"
@@ -8750,10 +8743,6 @@ msgstr "已下播"
 msgid "Stream online"
 msgstr "开播"
 
-#: src/components/player/stream-info-card.tsx:71
-msgid "Stream Options"
-msgstr "流选项"
-
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:118
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
@@ -8769,7 +8758,7 @@ msgstr "直播密码"
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/player/player-card.tsx:158
+#: src/components/player/player-card.tsx:190
 msgid "Stream source"
 msgstr "直播源"
 
@@ -9211,9 +9200,9 @@ msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
 
-#: src/components/player/player-card.tsx:328
-msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
-msgstr "此直播源需要请求头，因此自动模式使用服务器代理，无法使用直连。"
+#: src/components/player/player-card.tsx:204
+msgid "This source needs request headers, so Direct is unavailable."
+msgstr "此来源需要请求头，因此无法使用直连。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:393
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
@@ -9315,7 +9304,7 @@ msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进�
 msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
-#: src/components/sessions/danmu-stats-panel.tsx:477
+#: src/components/sessions/danmu-stats-panel.tsx:479
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:323
 msgid "Timeline"
 msgstr "时间线"
@@ -9419,19 +9408,19 @@ msgstr "保留活跃发言人数量"
 msgid "Top Fixed"
 msgstr "顶部固定"
 
-#: src/components/sessions/danmu-stats-panel.tsx:613
+#: src/components/sessions/danmu-stats-panel.tsx:615
 msgid "Top Gifters"
 msgstr "送礼排行"
 
-#: src/components/sessions/danmu-stats-panel.tsx:626
+#: src/components/sessions/danmu-stats-panel.tsx:628
 msgid "Top Gifts"
 msgstr "热门礼物"
 
-#: src/components/sessions/danmu-stats-panel.tsx:554
+#: src/components/sessions/danmu-stats-panel.tsx:556
 msgid "Top Talkers"
 msgstr "活跃发言用户"
 
-#: src/components/sessions/danmu-stats-panel.tsx:592
+#: src/components/sessions/danmu-stats-panel.tsx:594
 msgid "Top Words"
 msgstr "高频词"
 
@@ -9443,7 +9432,7 @@ msgstr "总计"
 msgid "Total"
 msgstr "总计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:444
+#: src/components/sessions/danmu-stats-panel.tsx:446
 msgid "Total Danmu"
 msgstr "总弹幕数"
 
@@ -9623,7 +9612,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/player/player-card.tsx:478
+#: src/components/player/player-card.tsx:508
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
@@ -9679,16 +9668,12 @@ msgstr "极速压缩"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
-#: src/components/player/playback-details.tsx:19
-msgid "Unavailable"
-msgstr "暂无数据"
-
 #: src/components/health/health-status-badge.tsx:61
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:627
 msgid "Unhealthy"
 msgstr "不健康"
 
-#: src/components/sessions/danmu-stats-panel.tsx:463
+#: src/components/sessions/danmu-stats-panel.tsx:465
 msgid "Unique Chatters"
 msgstr "互动人数"
 
@@ -9763,10 +9748,6 @@ msgstr "已更新"
 #: src/components/config/global/import-mode-radio-group.tsx:99
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
-
-#: src/components/player/playback-details.tsx:104
-msgid "Updates while this panel is open. Some browsers and sources do not report every value."
-msgstr "仅在此面板打开时更新。部分浏览器或直播源不提供所有数据。"
 
 #: src/components/streamers/card/upload-indicator.tsx:53
 msgid "upload"
@@ -9967,6 +9948,10 @@ msgstr "版本"
 msgid "veryfast"
 msgstr "veryfast"
 
+#: src/components/player/player-card.tsx:343
+msgid "via server proxy"
+msgstr "通过服务器代理"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:296
 #: src/lib/media-file-type.ts:36
 msgid "Video"
@@ -9989,7 +9974,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:190
+#: src/components/player/player-card.tsx:301
 msgid "Video Player"
 msgstr "视频播放器"
 
