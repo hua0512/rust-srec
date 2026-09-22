@@ -2543,11 +2543,11 @@ msgstr "删除处理管道？"
 msgid "Delete Preset?"
 msgstr "删除预设？"
 
-#: src/components/config/global/output-retention-fields.tsx:79
+#: src/components/config/global/output-retention-fields.tsx:105
 msgid "Delete records and files"
 msgstr "删除记录和文件"
 
-#: src/components/config/global/output-retention-fields.tsx:76
+#: src/components/config/global/output-retention-fields.tsx:102
 msgid "Delete records only"
 msgstr "仅删除记录"
 
@@ -6316,7 +6316,8 @@ msgstr "输出路径、模板与格式。"
 msgid "Output Pattern (Optional)"
 msgstr "输出文件名模式（可选）"
 
-#: src/components/config/global/output-retention-fields.tsx:32
+#: src/components/config/global/output-retention-fields.tsx:35
+#: src/components/config/global/output-retention-fields.tsx:38
 msgid "Output retention (days)"
 msgstr "输出保留时间（天）"
 
@@ -6585,7 +6586,7 @@ msgstr "按主播"
 msgid "Performance"
 msgstr "性能"
 
-#: src/components/config/global/output-retention-fields.tsx:85
+#: src/components/config/global/output-retention-fields.tsx:76
 msgid "Permanently deletes tracked output files from disk. Files still in use are kept for a later cleanup."
 msgstr "永久删除磁盘上有记录的输出文件。仍在使用的文件将保留至后续清理。"
 
@@ -7438,7 +7439,7 @@ msgstr "移除步骤"
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本，删除后本地将不再保留。除非网盘就是最终存储位置，否则请保持关闭。"
 
-#: src/components/config/global/output-retention-fields.tsx:90
+#: src/components/config/global/output-retention-fields.tsx:81
 msgid "Removes outputs from the library but keeps their files on disk. Once a record is removed, automatic cleanup can no longer delete its file, even if you change this setting later."
 msgstr "从媒体库移除输出记录，但保留磁盘上的文件。记录删除后，即使之后更改此设置，自动清理也无法再删除对应文件。"
 
@@ -8279,7 +8280,7 @@ msgstr "设置录制限制。"
 msgid "Set priority"
 msgstr "设置优先级"
 
-#: src/components/config/global/output-retention-fields.tsx:47
+#: src/components/config/global/output-retention-fields.tsx:41
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "设为 0 可禁用自动清理输出。每 30 分钟清理一次，仅清理已结束且没有正在运行或最近更新的处理任务的会话输出。"
 
@@ -9960,7 +9961,8 @@ msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-s
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
 
-#: src/components/config/global/output-retention-fields.tsx:62
+#: src/components/config/global/output-retention-fields.tsx:69
+#: src/components/config/global/output-retention-fields.tsx:72
 msgid "When outputs expire"
 msgstr "输出过期时"
 

@@ -2543,11 +2543,11 @@ msgstr "Delete Pipeline?"
 msgid "Delete Preset?"
 msgstr "Delete Preset?"
 
-#: src/components/config/global/output-retention-fields.tsx:79
+#: src/components/config/global/output-retention-fields.tsx:105
 msgid "Delete records and files"
 msgstr "Delete records and files"
 
-#: src/components/config/global/output-retention-fields.tsx:76
+#: src/components/config/global/output-retention-fields.tsx:102
 msgid "Delete records only"
 msgstr "Delete records only"
 
@@ -6316,7 +6316,8 @@ msgstr "Output paths, templates, and formats."
 msgid "Output Pattern (Optional)"
 msgstr "Output Pattern (Optional)"
 
-#: src/components/config/global/output-retention-fields.tsx:32
+#: src/components/config/global/output-retention-fields.tsx:35
+#: src/components/config/global/output-retention-fields.tsx:38
 msgid "Output retention (days)"
 msgstr "Output retention (days)"
 
@@ -6585,7 +6586,7 @@ msgstr "Per-Streamer"
 msgid "Performance"
 msgstr "Performance"
 
-#: src/components/config/global/output-retention-fields.tsx:85
+#: src/components/config/global/output-retention-fields.tsx:76
 msgid "Permanently deletes tracked output files from disk. Files still in use are kept for a later cleanup."
 msgstr "Permanently deletes tracked output files from disk. Files still in use are kept for a later cleanup."
 
@@ -7438,7 +7439,7 @@ msgstr "Remove Step"
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 
-#: src/components/config/global/output-retention-fields.tsx:90
+#: src/components/config/global/output-retention-fields.tsx:81
 msgid "Removes outputs from the library but keeps their files on disk. Once a record is removed, automatic cleanup can no longer delete its file, even if you change this setting later."
 msgstr "Removes outputs from the library but keeps their files on disk. Once a record is removed, automatic cleanup can no longer delete its file, even if you change this setting later."
 
@@ -8279,7 +8280,7 @@ msgstr "Set constraints on downloads."
 msgid "Set priority"
 msgstr "Set priority"
 
-#: src/components/config/global/output-retention-fields.tsx:47
+#: src/components/config/global/output-retention-fields.tsx:41
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 
@@ -9960,7 +9961,8 @@ msgstr "When a recording has been waiting in the concurrency queue longer than t
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "When enabled, each VOD segment must complete within this timeout."
 
-#: src/components/config/global/output-retention-fields.tsx:62
+#: src/components/config/global/output-retention-fields.tsx:69
+#: src/components/config/global/output-retention-fields.tsx:72
 msgid "When outputs expire"
 msgstr "When outputs expire"
 
