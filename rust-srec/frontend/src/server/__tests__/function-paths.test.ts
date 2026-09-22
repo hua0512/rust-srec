@@ -398,8 +398,20 @@ describe('server function request bodies', () => {
         ],
       },
     };
-    await expect(
-      requestedBody(() => createPipelinePreset({ data: preset })),
-    ).resolves.toBe(JSON.stringify(preset));
+    const response = {
+      ...preset,
+      id: ID,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    fetchBackendMock.mockResolvedValue(response);
+
+    await expect(createPipelinePreset({ data: preset })).resolves.toEqual(
+      response,
+    );
+    expect(fetchBackendMock).toHaveBeenCalledExactlyOnceWith(
+      '/pipeline/presets',
+      { method: 'POST', body: JSON.stringify(preset) },
+    );
   });
 });
