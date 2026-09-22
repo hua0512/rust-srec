@@ -170,11 +170,26 @@ msgstr "{1} 时为 {0}"
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
+#. placeholder {0}: source.fps
+#: src/components/player/playback-details.tsx:44
+msgid "{0} fps"
+msgstr "{0} 帧/秒"
+
+#. placeholder {0}: (source.bitrate / 1000).toFixed(0)
+#: src/components/player/playback-details.tsx:56
+msgid "{0} kbps"
+msgstr "{0} kbps"
+
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:248
 msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
+
+#. placeholder {0}: value.toFixed(1)
+#: src/components/player/playback-details.tsx:21
+msgid "{0} s"
+msgstr "{0} 秒"
 
 #. placeholder {0}: newPlayers.length
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:183
@@ -878,8 +893,8 @@ msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
-#: src/components/player/player-card.tsx:202
-#: src/components/player/player-card.tsx:269
+#: src/components/player/player-card.tsx:215
+#: src/components/player/player-card.tsx:304
 msgid "Auto"
 msgstr "自动"
 
@@ -887,7 +902,7 @@ msgstr "自动"
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
-#: src/components/player/player-card.tsx:289
+#: src/components/player/player-card.tsx:324
 msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 msgstr "自动模式使用直连。如果浏览器无法加载直播源，请选择服务器代理。"
 
@@ -1144,6 +1159,10 @@ msgstr "BDUSS + STOKEN"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
+#: src/components/player/playback-details.tsx:94
+msgid "Behind live edge"
+msgstr "距直播最新位置"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:139
 msgid "best"
 msgstr "最佳"
@@ -1163,6 +1182,7 @@ msgid "Binary Path"
 msgstr "可执行文件路径"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:125
+#: src/components/player/playback-details.tsx:50
 msgid "Bitrate"
 msgstr "比特率"
 
@@ -1236,6 +1256,10 @@ msgstr "浏览器状态"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1600
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
+
+#: src/components/player/playback-details.tsx:78
+msgid "Buffered ahead"
+msgstr "前方缓冲时长"
 
 #: src/components/player/playback-state.ts:20
 msgid "Buffering"
@@ -1378,7 +1402,7 @@ msgstr "修改密码"
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/components/player/player-card.tsx:389
+#: src/components/player/player-card.tsx:424
 msgid "Change source"
 msgstr "切换直播源"
 
@@ -1577,6 +1601,7 @@ msgstr "关闭"
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
+#: src/components/player/playback-details.tsx:34
 #: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
@@ -1824,7 +1849,7 @@ msgstr "连接中"
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/player/player-card.tsx:251
+#: src/components/player/player-card.tsx:286
 msgid "Connection"
 msgstr "连接方式"
 
@@ -2751,8 +2776,8 @@ msgstr "根据链接自动识别，并自动应用该平台的设置。"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/player/player-card.tsx:209
-#: src/components/player/player-card.tsx:272
+#: src/components/player/player-card.tsx:222
+#: src/components/player/player-card.tsx:307
 msgid "Direct"
 msgstr "直连"
 
@@ -2913,6 +2938,10 @@ msgstr "下载中..."
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:352
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
+
+#: src/components/player/playback-details.tsx:84
+msgid "Dropped frames"
+msgstr "丢帧数"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Dual Format"
@@ -4092,6 +4121,10 @@ msgstr "表单"
 msgid "Format"
 msgstr "格式"
 
+#: src/components/player/playback-details.tsx:40
+msgid "Frame rate"
+msgstr "帧率"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:665
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
@@ -4992,7 +5025,7 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/player-card.tsx:192
+#: src/components/player/player-card.tsx:205
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
@@ -5024,6 +5057,10 @@ msgstr "实时预览"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:966
 msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
+
+#: src/components/player/playback-details.tsx:111
+msgid "Live-edge distance measures how far playback trails the available stream, not the total broadcast delay."
+msgstr "距直播最新位置表示播放位置落后于当前可用直播流的时长，并非完整的直播端到端延迟。"
 
 #. placeholder {0}: i18n._(template.label)
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:38
@@ -5386,6 +5423,10 @@ msgstr "MB"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:685
 msgid "MB/s"
 msgstr "MB/s"
+
+#: src/components/player/playback-details.tsx:66
+msgid "Measured by player"
+msgstr "播放器实测"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:344
 msgid "Media Outputs"
@@ -6816,11 +6857,16 @@ msgstr "播放"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
 
+#: src/components/player/playback-details.tsx:25
+#: src/components/player/player-card.tsx:248
+msgid "Playback details"
+msgstr "播放详情"
+
 #: src/components/player/playback-state.ts:22
 msgid "Playback error"
 msgstr "播放错误"
 
-#: src/components/player/player-card.tsx:353
+#: src/components/player/player-card.tsx:388
 msgid "Playback Error"
 msgstr "播放错误"
 
@@ -6834,7 +6880,7 @@ msgstr "跳转时播放停滞。请重试以重新加载视频。"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:236
+#: src/components/player/player-card.tsx:271
 msgid "Player settings"
 msgstr "播放器设置"
 
@@ -7418,8 +7464,8 @@ msgstr "刷新失败：需要手动登录"
 msgid "Refresh status"
 msgstr "刷新状态"
 
-#: src/components/player/player-card.tsx:309
-#: src/components/player/player-card.tsx:368
+#: src/components/player/player-card.tsx:344
+#: src/components/player/player-card.tsx:403
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
@@ -7440,8 +7486,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/player/player-card.tsx:224
-#: src/components/player/player-card.tsx:225
+#: src/components/player/player-card.tsx:237
+#: src/components/player/player-card.tsx:238
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -7487,7 +7533,7 @@ msgstr "成功后移除输入"
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:324
+#: src/components/player/player-card.tsx:359
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -7583,6 +7629,10 @@ msgstr "替换管道步骤"
 msgid "Replace Step"
 msgstr "替换步骤"
 
+#: src/components/player/playback-details.tsx:30
+msgid "Reported by source"
+msgstr "直播源提供"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:134
 msgid "Request AAC audio without a video track."
 msgstr "请求不含视频轨的 AAC 音频。"
@@ -7613,6 +7663,7 @@ msgstr "重置"
 msgid "Reset view"
 msgstr "重置视图"
 
+#: src/components/player/playback-details.tsx:70
 #: src/lib/split-reason.ts:187
 msgid "Resolution"
 msgstr "分辨率"
@@ -7687,7 +7738,7 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:360
+#: src/components/player/player-card.tsx:395
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "重试"
@@ -8244,12 +8295,12 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
-#: src/components/player/player-card.tsx:207
-#: src/components/player/player-card.tsx:275
+#: src/components/player/player-card.tsx:220
+#: src/components/player/player-card.tsx:310
 msgid "Server proxy"
 msgstr "服务器代理"
 
-#: src/components/player/player-card.tsx:296
+#: src/components/player/player-card.tsx:331
 msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
 
@@ -8722,7 +8773,7 @@ msgstr "直播密码"
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/player/player-card.tsx:136
+#: src/components/player/player-card.tsx:149
 msgid "Stream source"
 msgstr "直播源"
 
@@ -9172,7 +9223,7 @@ msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
 
-#: src/components/player/player-card.tsx:284
+#: src/components/player/player-card.tsx:319
 msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 msgstr "此直播源需要请求头，因此自动模式使用服务器代理，无法使用直连。"
 
@@ -9584,7 +9635,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/player/player-card.tsx:380
+#: src/components/player/player-card.tsx:415
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
@@ -9639,6 +9690,10 @@ msgstr "极速压缩"
 #: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
+
+#: src/components/player/playback-details.tsx:19
+msgid "Unavailable"
+msgstr "暂无数据"
 
 #: src/components/health/health-status-badge.tsx:61
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:641
@@ -9720,6 +9775,10 @@ msgstr "已更新"
 #: src/components/config/global/import-mode-radio-group.tsx:99
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
+
+#: src/components/player/playback-details.tsx:104
+msgid "Updates while this panel is open. Some browsers and sources do not report every value."
+msgstr "仅在此面板打开时更新。部分浏览器或直播源不提供所有数据。"
 
 #: src/components/streamers/card/upload-indicator.tsx:53
 msgid "upload"
@@ -9939,7 +9998,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:168
+#: src/components/player/player-card.tsx:181
 msgid "Video Player"
 msgstr "视频播放器"
 

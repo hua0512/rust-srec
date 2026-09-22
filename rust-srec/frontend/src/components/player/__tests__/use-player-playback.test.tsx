@@ -15,6 +15,15 @@ const artplayerMock = vi.hoisted(() => {
       pause: vi.fn(),
       paused: true,
       readyState: 0,
+      currentTime: 12,
+      videoWidth: 1920,
+      videoHeight: 1080,
+      buffered: { length: 1, start: () => 10, end: () => 16 },
+      seekable: { length: 1, start: () => 0, end: () => 30 },
+      getVideoPlaybackQuality: vi.fn(() => ({
+        droppedVideoFrames: 2,
+        totalVideoFrames: 100,
+      })),
       error: null as { code: number } | null,
     };
     readonly destroy = vi.fn();
@@ -73,6 +82,7 @@ function PlaybackHarness(options: UsePlayerPlaybackOptions) {
       data-loading={String(playback.loading)}
       data-status={playback.status}
       data-connection={playback.connection}
+      data-buffer={playback.statistics?.bufferSeconds ?? ''}
     >
       <button onClick={playback.reload}>Retry</button>
     </div>
@@ -383,4 +393,42 @@ describe('playback feedback and recovery', () => {
       'proxy',
     );
   });
+});
+
+it('samples details only while open without restarting playback and clears the timer on close', async () => {
+  artplayerMock.instances.length = 0;
+  const view = render(<PlaybackHarness {...defaultOptions} />);
+  await waitFor(() => expect(artplayerMock.instances).toHaveLength(1));
+  const player = artplayerMock.instances[0]!;
+  player.video.readyState = 4;
+  expect(player.video.getVideoPlaybackQuality).not.toHaveBeenCalled();
+  vi.useFakeTimers();
+  try {
+    view.rerender(<PlaybackHarness {...defaultOptions} detailsEnabled />);
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-buffer',
+      '4',
+    );
+    expect(player.video.getVideoPlaybackQuality).toHaveBeenCalledOnce();
+    player.video.currentTime = 13;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-buffer',
+      '3',
+    );
+    expect(artplayerMock.instances).toHaveLength(1);
+    view.rerender(<PlaybackHarness {...defaultOptions} />);
+    const reads = player.video.getVideoPlaybackQuality.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(player.video.getVideoPlaybackQuality).toHaveBeenCalledTimes(reads);
+    expect(view.container.firstElementChild).toHaveAttribute('data-buffer', '');
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });
