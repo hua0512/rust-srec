@@ -149,6 +149,20 @@ A platform can also produce a credential source without cookies: for SOOP, a
 `platform_specific_config` carrying `username` and `password` yields a credential source whose
 cookies are minted on first use.
 
+## Player upstream proxy
+
+Choosing **Server proxy** makes web and desktop playback use the same effective
+`proxy_config` as URL extraction. Registered streamers use their merged configuration
+(including template and streamer overrides); other source URLs use the platform
+override when recognized, otherwise the global configuration. **Direct** playback
+connects from the browser and does not use the server's upstream proxy.
+
+The original source URL is retained through HLS playlists, segments, and keys, so a
+CDN URL does not accidentally select different settings. Configuration updates apply
+to subsequent requests; reload a continuous FLV/MPEG-TS stream to change its existing
+connection. Invalid explicit proxy URLs fail playback rather than falling back to
+direct access. The frontend and backend must be upgraded together for web playback.
+
 ## Streamer overrides: `streamer_specific_config` {#streamer-overrides-streamer-specific-config}
 
 `streamer_specific_config` is an untyped JSON object. Unknown keys are ignored.

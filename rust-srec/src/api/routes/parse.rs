@@ -519,7 +519,10 @@ fn extractor_factory_for_proxy(proxy_config: &ProxyConfig) -> ExtractorFactory {
     ExtractorFactory::new(client)
 }
 
-async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> ProxyConfig {
+pub(super) async fn resolve_proxy_config_for_url(
+    state: &ParseRouteState,
+    url: &str,
+) -> ProxyConfig {
     let config_service = &state.config_service;
 
     // Priority 1: streamer merged config (final merged proxy state).
@@ -706,5 +709,72 @@ mod tests {
         .expect("config document is valid JSON");
         assert_eq!(config["cookies"], "SESSDATA=new");
         assert_eq!(config["refresh_token"], "refresh-new");
+    }
+
+    #[tokio::test]
+    async fn stream_proxy_configuration_uses_source_identity_and_current_overrides() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let manager = Arc::new(StreamerManager::new(
+            streamer_repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
+        let state = ParseRouteState {
+            config_service: Arc::new(ConfigService::new(config_repo, streamer_repo.clone())),
+            credential_service: Arc::new(CredentialRefreshService::new(Arc::new(
+                SqlxCredentialStore::new(pool.clone(), pool.clone()),
+            ))),
+            streamer_manager: manager.clone(),
+        };
+        let global_proxy = ProxyConfig::with_url("http://global-proxy.example:8080");
+        let mut global = state.config_service.get_global_config().await.unwrap();
+        global.proxy_config = serde_json::to_string(&global_proxy).unwrap();
+        state
+            .config_service
+            .update_global_config(&global)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_proxy_config_for_url(&state, "https://cdn.example/video").await,
+            global_proxy
+        );
+        let platform_proxy = ProxyConfig::with_url("http://platform-proxy.example:8080");
+        let mut platform = state
+            .config_service
+            .get_platform_config("platform-bilibili")
+            .await
+            .unwrap();
+        platform.proxy_config = Some(serde_json::to_string(&platform_proxy).unwrap());
+        state
+            .config_service
+            .update_platform_config(&platform)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_proxy_config_for_url(&state, STREAMER_URL).await,
+            platform_proxy
+        );
+        let mut streamer = StreamerDbModel::new("Source", STREAMER_URL, "platform-bilibili");
+        streamer.id = STREAMER_ID.to_string();
+        streamer.streamer_specific_config =
+            Some(serde_json::json!({ "proxy_config": ProxyConfig::disabled() }).to_string());
+        streamer_repo.create_streamer(&streamer).await.unwrap();
+        manager.hydrate().await.unwrap();
+        assert_eq!(
+            resolve_proxy_config_for_url(&state, STREAMER_URL).await,
+            ProxyConfig::disabled()
+        );
+        global.proxy_config = serde_json::to_string(&ProxyConfig::disabled()).unwrap();
+        state
+            .config_service
+            .update_global_config(&global)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_proxy_config_for_url(&state, "https://cdn.example/video").await,
+            ProxyConfig::disabled()
+        );
     }
 }

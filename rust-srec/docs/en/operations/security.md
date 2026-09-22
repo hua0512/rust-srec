@@ -91,6 +91,16 @@ Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy do
 
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
 
+Web and desktop playback relays use the backend's source-specific upstream proxy
+configuration. The backend validates each media target and redirect before fetching
+it. Without an upstream proxy configuration, direct connections also check the
+addresses used by the connector. A configured
+upstream proxy is a trusted egress endpoint: it can be on a private network, and it
+controls remote DNS and routing. Restrict access to internal destinations on that
+proxy too; the backend cannot verify a different DNS answer on the proxy's network.
+Upstream proxy credentials stay on the backend. Web playlist links use the browser
+session rather than embedding the backend access token.
+
 Stream proxy and URL parsing share a global configuration snapshot for up to five
 seconds. Application writes and committed imports invalidate it immediately.
 Out-of-band database edits can take five seconds to become visible; expired

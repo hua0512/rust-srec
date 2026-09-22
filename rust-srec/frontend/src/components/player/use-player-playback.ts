@@ -74,6 +74,7 @@ export interface UsePlayerPlaybackOptions {
 }
 
 export interface BuildPlaybackUrlOptions extends PlaybackSource {
+  sourceUrl?: string;
   connectionMode?: ConnectionMode;
   desktopBuild: boolean;
   desktopToken: string | null;
@@ -107,6 +108,7 @@ export function buildPlaybackUrl({
   desktopToken,
   baseUrl,
   connectionMode = 'auto',
+  sourceUrl,
 }: BuildPlaybackUrlOptions): string {
   const hasHeaders = Object.keys(headers ?? {}).length > 0;
   if (connectionMode === 'direct' && hasHeaders) {
@@ -114,7 +116,11 @@ export function buildPlaybackUrl({
   }
   if (effectiveConnection(connectionMode, headers) === 'direct') return url;
 
-  const query = `url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers ?? {}))}`;
+  const query = new URLSearchParams({
+    url,
+    headers: JSON.stringify(headers ?? {}),
+  });
+  if (sourceUrl) query.set('source_url', sourceUrl);
   if (!desktopBuild) return `/stream-proxy?${query}`;
   if (!desktopToken) throw new PlaybackConfigurationError('session');
 
@@ -264,6 +270,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     try {
       playUrl = buildPlaybackUrl({
         ...source,
+        sourceUrl: sourceUrl ?? (streamData ? title : undefined),
         connectionMode,
         desktopBuild,
         desktopToken,

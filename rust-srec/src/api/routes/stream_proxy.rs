@@ -14,14 +14,16 @@ use bytes::{Bytes, BytesMut};
 use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tokio::net::lookup_host;
 
+use super::parse::{ParseRouteState, resolve_proxy_config_for_url};
 use crate::api::auth_service::AuthService;
 use crate::api::cors::CorsPolicy;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+use crate::domain::ProxyConfig;
 
 const MAX_REDIRECTS: usize = 5;
 const MAX_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
@@ -38,6 +40,9 @@ type SharedConfigService = Arc<
 #[derive(Clone)]
 pub struct StreamProxyState {
     auth_service: Option<Arc<AuthService>>,
+    source_config: Option<ParseRouteState>,
+    /// Used only when no application config resolver is available (tests).
+    proxy_config: ProxyConfig,
     /// Source of the `stream_proxy_allow_private_targets` global-config flag,
     /// read per request so UI changes apply without a restart. `None` (tests
     /// only) falls back to `allow_private_targets`.
@@ -52,6 +57,8 @@ impl FromRef<AppState> for StreamProxyState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_service: state.auth_service.clone(),
+            source_config: Some(ParseRouteState::from_ref(state)),
+            proxy_config: ProxyConfig::disabled(),
             config_service: Some(state.config_service.clone()),
             allow_private_targets: false,
             cors: state.cors_policy(),
@@ -59,41 +66,56 @@ impl FromRef<AppState> for StreamProxyState {
     }
 }
 
-fn stream_proxy_client(allow_private_targets: bool) -> ApiResult<&'static reqwest::Client> {
-    // The platforms-parser default client sets a 30s request timeout.
-    // That breaks long-lived streaming responses (e.g. mpegts/flv) and manifests
-    // as `UnrecoverableEarlyEof` after ~30s.
-    //
-    // Two clients because the resolver is fixed at build time: the strict one
-    // enforces `is_public_ip` inside DNS resolution via `PublicAddressResolver`,
-    // while the allow-private one resolves normally.
-    static STRICT_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
-    static PRIVATE_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
-
-    let cell = if allow_private_targets {
-        &PRIVATE_CLIENT
-    } else {
-        &STRICT_CLIENT
-    };
-    let client = cell.get_or_init(|| {
-        crate::utils::http_client::install_rustls_provider();
-        let mut builder = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .tcp_nodelay(true)
-            .pool_max_idle_per_host(20)
-            .redirect(reqwest::redirect::Policy::none());
-        if !allow_private_targets {
-            builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
-        }
-        builder.build().map_err(|e| e.to_string())
-    });
-
-    match client {
-        Ok(client) => Ok(client),
-        Err(_) => Err(ApiError::internal(
-            "Stream proxy HTTP client is unavailable",
-        )),
+fn stream_proxy_client(
+    allow_private_targets: bool,
+    proxy_config: &ProxyConfig,
+) -> ApiResult<reqwest::Client> {
+    // Bound the pool cache: different streamers may have different proxy credentials.
+    // reqwest clients are cheap to clone and old streams keep their own pool alive.
+    type CachedClient = (bool, ProxyConfig, reqwest::Client);
+    static CLIENTS: OnceLock<Mutex<Vec<CachedClient>>> = OnceLock::new();
+    let mut clients = CLIENTS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .map_err(|_| ApiError::internal("Stream proxy HTTP client is unavailable"))?;
+    if let Some((_, _, client)) = clients
+        .iter()
+        .find(|(private, config, _)| *private == allow_private_targets && config == proxy_config)
+    {
+        return Ok(client.clone());
     }
+    crate::utils::http_client::install_rustls_provider();
+    // Never impose a whole-response timeout on continuous FLV/MPEG-TS streams.
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .tcp_nodelay(true)
+        .pool_max_idle_per_host(20)
+        .redirect(reqwest::redirect::Policy::none());
+    let uses_proxy =
+        proxy_config.enabled && (proxy_config.url.is_some() || proxy_config.use_system_proxy);
+    if proxy_config.enabled
+        && let Some(url) = proxy_config.url.as_deref()
+    {
+        // The shared extractor helper falls back to direct on malformed proxy URLs.
+        // Playback must fail closed rather than send media outside the chosen route.
+        reqwest::Proxy::all(url)
+            .map_err(|_| ApiError::bad_request("Invalid upstream proxy configuration"))?;
+    }
+    builder = crate::utils::http_client::apply_proxy_config(builder, proxy_config);
+    if !allow_private_targets && !uses_proxy {
+        builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
+    }
+    // An operator-configured proxy is a trusted egress endpoint and may itself
+    // live on a private network. Target/redirect validation still happens before
+    // every request; remote DNS and routing are enforced by that proxy.
+    let client = builder
+        .build()
+        .map_err(|_| ApiError::internal("Stream proxy HTTP client is unavailable"))?;
+    if clients.len() >= 16 {
+        clients.remove(0);
+    }
+    clients.push((allow_private_targets, proxy_config.clone(), client.clone()));
+    Ok(client)
 }
 
 fn is_public_ipv4(address: Ipv4Addr) -> bool {
@@ -271,31 +293,42 @@ async fn fetch_upstream(
     ))
 }
 
-fn build_proxy_url(target: &url::Url, headers: Option<&str>, token: Option<&str>) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    serializer.append_pair("url", target.as_str());
-    if let Some(headers) = headers {
-        serializer.append_pair("headers", headers);
-    }
-    if let Some(token) = token {
-        serializer.append_pair("token", token);
-    }
-    format!("/api/stream-proxy?{}", serializer.finish())
+#[derive(Clone, Copy, Default)]
+struct RelayContext<'a> {
+    headers: Option<&'a str>,
+    token: Option<&'a str>,
+    source_url: Option<&'a str>,
+    web: bool,
 }
 
-fn proxy_hls_uri(
-    uri: &str,
-    base_url: &url::Url,
-    headers: Option<&str>,
-    token: Option<&str>,
-) -> String {
+fn build_proxy_url(target: &url::Url, context: RelayContext<'_>) -> String {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer.append_pair("url", target.as_str());
+    if let Some(headers) = context.headers {
+        serializer.append_pair("headers", headers);
+    }
+    if let Some(token) = context.token.filter(|_| !context.web) {
+        serializer.append_pair("token", token);
+    }
+    if let Some(source_url) = context.source_url {
+        serializer.append_pair("source_url", source_url);
+    }
+    let path = if context.web {
+        "/stream-proxy"
+    } else {
+        "/api/stream-proxy"
+    };
+    format!("{path}?{}", serializer.finish())
+}
+
+fn proxy_hls_uri(uri: &str, base_url: &url::Url, context: RelayContext<'_>) -> String {
     let Ok(target) = base_url.join(uri) else {
         return uri.to_string();
     };
     if !matches!(target.scheme(), "http" | "https") {
         return uri.to_string();
     }
-    build_proxy_url(&target, headers, token)
+    build_proxy_url(&target, context)
 }
 
 fn find_uri_attribute(line: &str, from: usize) -> Option<(usize, usize)> {
@@ -333,12 +366,7 @@ fn find_uri_attribute(line: &str, from: usize) -> Option<(usize, usize)> {
     None
 }
 
-fn rewrite_uri_attributes(
-    line: &str,
-    base_url: &url::Url,
-    headers: Option<&str>,
-    token: Option<&str>,
-) -> String {
+fn rewrite_uri_attributes(line: &str, base_url: &url::Url, context: RelayContext<'_>) -> String {
     let mut output = String::with_capacity(line.len());
     let mut copied_until = 0;
     let mut search_from = 0;
@@ -348,8 +376,7 @@ fn rewrite_uri_attributes(
         output.push_str(&proxy_hls_uri(
             &line[value_start..value_end],
             base_url,
-            headers,
-            token,
+            context,
         ));
         copied_until = value_end;
         search_from = value_end + 1;
@@ -358,18 +385,13 @@ fn rewrite_uri_attributes(
     output
 }
 
-fn rewrite_hls_line(
-    line: &str,
-    base_url: &url::Url,
-    headers: Option<&str>,
-    token: Option<&str>,
-) -> String {
+fn rewrite_hls_line(line: &str, base_url: &url::Url, context: RelayContext<'_>) -> String {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return line.to_string();
     }
     if trimmed.starts_with('#') {
-        return rewrite_uri_attributes(line, base_url, headers, token);
+        return rewrite_uri_attributes(line, base_url, context);
     }
 
     let start = line.find(trimmed).unwrap_or(0);
@@ -377,17 +399,12 @@ fn rewrite_hls_line(
     format!(
         "{}{}{}",
         &line[..start],
-        proxy_hls_uri(trimmed, base_url, headers, token),
+        proxy_hls_uri(trimmed, base_url, context),
         &line[end..]
     )
 }
 
-fn rewrite_hls_manifest(
-    manifest: &str,
-    base_url: &url::Url,
-    headers: Option<&str>,
-    token: Option<&str>,
-) -> String {
+fn rewrite_hls_manifest(manifest: &str, base_url: &url::Url, context: RelayContext<'_>) -> String {
     let mut output = String::with_capacity(manifest.len());
     for line in manifest.split_inclusive('\n') {
         let (content, newline) = if let Some(content) = line.strip_suffix("\r\n") {
@@ -397,7 +414,7 @@ fn rewrite_hls_manifest(
         } else {
             (line, "")
         };
-        output.push_str(&rewrite_hls_line(content, base_url, headers, token));
+        output.push_str(&rewrite_hls_line(content, base_url, context));
         output.push_str(newline);
     }
     output
@@ -430,6 +447,10 @@ pub struct StreamProxyQuery {
     pub url: String,
     pub headers: Option<String>,
     pub token: Option<String>,
+    pub source_url: Option<String>,
+    /// Web BFF requests cookie-authenticated links without exposing its bearer token.
+    #[serde(default)]
+    pub web: bool,
 }
 
 /// Create the stream proxy router.
@@ -533,8 +554,22 @@ pub async fn stream_proxy_get(
         upstream_headers.insert(reqwest::header::RANGE, value);
     }
 
-    let client = stream_proxy_client(allow_private_targets)?;
-    let upstream = fetch_upstream(client, target, &upstream_headers, allow_private_targets).await?;
+    let source_url = query.source_url.as_deref().unwrap_or(&query.url);
+    let source =
+        url::Url::parse(source_url).map_err(|_| ApiError::bad_request("Invalid source URL"))?;
+    if !matches!(source.scheme(), "http" | "https")
+        || !source.username().is_empty()
+        || source.password().is_some()
+    {
+        return Err(ApiError::bad_request("Invalid source URL"));
+    }
+    let proxy_config = match &state.source_config {
+        Some(config) => resolve_proxy_config_for_url(config, source_url).await,
+        None => state.proxy_config.clone(),
+    };
+    let client = stream_proxy_client(allow_private_targets, &proxy_config)?;
+    let upstream =
+        fetch_upstream(&client, target, &upstream_headers, allow_private_targets).await?;
 
     let status = upstream.status();
     let final_url = upstream.url().clone();
@@ -627,13 +662,25 @@ pub async fn stream_proxy_get(
                     "Upstream HLS manifest is not UTF-8",
                 )
             })?;
-            let rewritten =
-                rewrite_hls_manifest(manifest, &final_url, query.headers.as_deref(), relay_token);
+            let rewritten = rewrite_hls_manifest(
+                manifest,
+                &final_url,
+                RelayContext {
+                    headers: query.headers.as_deref(),
+                    token: relay_token,
+                    source_url: Some(source_url),
+                    web: query.web,
+                },
+            );
             out_headers.remove(axum::http::header::CONTENT_LENGTH);
             out_headers.remove(axum::http::header::CONTENT_RANGE);
             out_headers.remove(axum::http::header::ACCEPT_RANGES);
             out_headers.remove(axum::http::header::ETAG);
             out_headers.remove(axum::http::header::LAST_MODIFIED);
+            out_headers.insert(
+                axum::http::header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
             axum::body::Body::from(rewritten)
         } else {
             axum::body::Body::from(manifest_bytes.freeze())
@@ -704,6 +751,8 @@ mod tests {
     fn test_state(allow_private_targets: bool) -> StreamProxyState {
         StreamProxyState {
             auth_service: None,
+            source_config: None,
+            proxy_config: ProxyConfig::disabled(),
             config_service: None,
             allow_private_targets,
             cors: CorsPolicy::AnyOrigin,
@@ -894,8 +943,12 @@ mod tests {
         let rewritten = rewrite_hls_manifest(
             manifest,
             &base_url,
-            Some(r#"{"Referer":"https://source.example/"}"#),
-            Some("desktop-token"),
+            RelayContext {
+                headers: Some(r#"{"Referer":"https://source.example/"}"#),
+                token: Some("desktop-token"),
+                source_url: Some("https://source.example/channel"),
+                web: false,
+            },
         );
 
         assert_eq!(rewritten.matches("/api/stream-proxy?").count(), 6);
@@ -1033,5 +1086,194 @@ mod tests {
 
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn web_manifest_links_keep_source_identity_without_the_session_token() {
+        let base = url::Url::parse("https://cdn.example/live/master.m3u8").unwrap();
+        let source = "https://live.bilibili.com/1";
+        let output = rewrite_hls_manifest(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\nchild/index.m3u8\nsegment.ts\n",
+            &base,
+            RelayContext {
+                source_url: Some(source),
+                token: Some("backend-session-secret"),
+                web: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(output.matches("/stream-proxy?").count(), 3);
+        assert_eq!(
+            output
+                .matches("source_url=https%3A%2F%2Flive.bilibili.com%2F1")
+                .count(),
+            3
+        );
+        assert!(!output.contains("backend-session-secret"));
+        assert!(!output.contains("token="));
+        assert!(!output.contains("/api/stream-proxy"));
+    }
+
+    async fn proxy_fixture(req: HttpRequest<Body>) -> impl IntoResponse {
+        assert_eq!(
+            req.headers().get(header::PROXY_AUTHORIZATION).unwrap(),
+            "Basic dXNlcjpwYXNz"
+        );
+        assert_eq!(req.uri().host(), Some("8.8.8.8"));
+        if req.uri().path() == "/redirect" {
+            return (
+                StatusCode::FOUND,
+                [(header::LOCATION, "http://127.0.0.1/private")],
+            )
+                .into_response();
+        }
+        if req.uri().path().ends_with(".m3u8") {
+            return (
+                [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
+                "#EXTM3U\nsegment.ts\n",
+            )
+                .into_response();
+        }
+        assert_eq!(req.headers().get(header::RANGE).unwrap(), "bytes=0-1");
+        (
+            StatusCode::PARTIAL_CONTENT,
+            [(header::CONTENT_RANGE, "bytes 0-1/3")],
+            "ab",
+        )
+            .into_response()
+    }
+
+    #[tokio::test]
+    async fn configured_proxy_routes_media_and_still_rejects_private_redirects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, Router::new().fallback(proxy_fixture))
+                .await
+                .unwrap();
+        });
+        let mut state = test_state(false);
+        state.proxy_config =
+            ProxyConfig::with_url(format!("http://{address}")).with_auth("user", "pass");
+        let app = Router::new()
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
+            .with_state(state);
+        let query = build_query(&[
+            ("url", "http://8.8.8.8/live.m3u8"),
+            ("source_url", "https://live.bilibili.com/1"),
+            ("web", "true"),
+            ("token", "backend-secret"),
+        ]);
+        let request = HttpRequest::builder()
+            .uri(format!("/api/stream-proxy?{query}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(5), app.clone().oneshot(request))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "private, no-store"
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), MAX_MANIFEST_BYTES)
+            .await
+            .unwrap();
+        let manifest = std::str::from_utf8(&bytes).unwrap();
+        assert!(!manifest.contains("backend-secret"));
+        let segment = manifest
+            .lines()
+            .find(|line| line.starts_with("/stream-proxy?"))
+            .unwrap();
+        let segment_url = url::Url::parse(&format!("https://app.example{segment}")).unwrap();
+        assert_eq!(
+            segment_url
+                .query_pairs()
+                .find(|(key, _)| key == "source_url")
+                .unwrap()
+                .1,
+            "https://live.bilibili.com/1"
+        );
+        let request = HttpRequest::builder()
+            .uri(format!("/api{segment}&web=true"))
+            .header(header::RANGE, "bytes=0-1")
+            .body(Body::empty())
+            .unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(5), app.clone().oneshot(request))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers().get(header::CONTENT_RANGE).unwrap(),
+            "bytes 0-1/3"
+        );
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap(),
+            "ab"
+        );
+        for target in ["http://127.0.0.1/private", "http://8.8.8.8/redirect"] {
+            let query = build_query(&[("url", target)]);
+            let request = HttpRequest::builder()
+                .uri(format!("/api/stream-proxy?{query}"))
+                .body(Body::empty())
+                .unwrap();
+            let response =
+                tokio::time::timeout(Duration::from_secs(5), app.clone().oneshot(request))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
+    }
+
+    #[test]
+    fn invalid_upstream_proxy_fails_without_falling_back_to_direct() {
+        let error =
+            stream_proxy_client(false, &ProxyConfig::with_url("http://[invalid")).unwrap_err();
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn changed_proxy_configuration_selects_a_new_client_pool() {
+        let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let second = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let first_url = format!("http://{}", first.local_addr().unwrap());
+        let second_url = format!("http://{}", second.local_addr().unwrap());
+        let first_server = tokio::spawn(async move {
+            axum::serve(first, Router::new().fallback(|| async { "first" }))
+                .await
+                .unwrap();
+        });
+        let second_server = tokio::spawn(async move {
+            axum::serve(second, Router::new().fallback(|| async { "second" }))
+                .await
+                .unwrap();
+        });
+        for (url, expected) in [(first_url, "first"), (second_url, "second")] {
+            let client = stream_proxy_client(false, &ProxyConfig::with_url(url)).unwrap();
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                fetch_upstream(
+                    &client,
+                    url::Url::parse("http://8.8.8.8/stream").unwrap(),
+                    &HeaderMap::new(),
+                    false,
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(response.text().await.unwrap(), expected);
+        }
+        first_server.abort();
+        second_server.abort();
+        assert!(first_server.await.unwrap_err().is_cancelled());
+        assert!(second_server.await.unwrap_err().is_cancelled());
     }
 }

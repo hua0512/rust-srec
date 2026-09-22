@@ -8325,8 +8325,12 @@ msgid "Server proxy"
 msgstr "Server proxy"
 
 #: src/components/player/player-card.tsx:340
-msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
-msgstr "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+msgid "Server proxy relays playback through this app's server using the source's configured upstream proxy settings."
+msgstr "Server proxy relays playback through this app's server using the source's configured upstream proxy settings."
+
+#: src/components/player/player-card.tsx:340
+#~ msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
+#~ msgstr "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36

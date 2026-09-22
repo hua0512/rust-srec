@@ -514,3 +514,21 @@ describe('live playback presets', () => {
     );
   });
 });
+
+it.each([false, true])(
+  'keeps source identity in proxied URLs (desktop=%s)',
+  (desktopBuild) => {
+    const sourceUrl = 'https://source.example/channel?room=1';
+    const value = buildPlaybackUrl({
+      url: 'https://cdn.example/live.m3u8',
+      sourceUrl,
+      connectionMode: 'proxy',
+      desktopBuild,
+      desktopToken: 'session',
+      baseUrl: 'http://localhost:12555/api',
+    });
+    expect(
+      new URL(value, 'https://app.example').searchParams.get('source_url'),
+    ).toBe(sourceUrl);
+  },
+);
