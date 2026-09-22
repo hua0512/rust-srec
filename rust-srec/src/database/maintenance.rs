@@ -1108,7 +1108,14 @@ mod tests {
     }
 
     async fn setup_with_config(config: MaintenanceConfig) -> TestDatabase {
-        let directory = tempfile::tempdir().expect("temporary database directory");
+        // macOS temporary paths can have symlinked ancestors, which output
+        // retention deliberately rejects. Give fixtures a physical root.
+        let temp_root = std::env::temp_dir()
+            .canonicalize()
+            .expect("canonical temporary root");
+        // SQLite URLs cannot contain the Windows extended-length path prefix.
+        let temp_root = crate::utils::fs::normalize_media_path(&temp_root.to_string_lossy());
+        let directory = tempfile::tempdir_in(temp_root).expect("temporary database directory");
         let path = directory.path().join("maintenance.db");
         let url = format!(
             "sqlite:{}?mode=rwc",

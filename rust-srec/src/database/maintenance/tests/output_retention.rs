@@ -245,8 +245,8 @@ async fn output_retention_advances_past_failures_and_retries_without_double_acco
     tokio::fs::create_dir(&blocked).await.unwrap();
     let good = output(&database, "b-good").await;
     let report = database.scheduler.run_maintenance_at(NOW).await;
-    assert_eq!(report.outputs_deleted, 1);
-    assert_eq!(report.failures.len(), 1);
+    assert_eq!(report.outputs_deleted, 1, "{:?}", report.failures);
+    assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
     assert!(has_output(&database, "a-blocked").await);
     assert!(!good.exists());
     assert_eq!(
@@ -293,14 +293,9 @@ async fn output_retention_defers_while_a_processor_owns_files() {
     );
     assert!(path.exists());
     drop(lease);
-    assert_eq!(
-        database
-            .scheduler
-            .run_maintenance_at(NOW)
-            .await
-            .outputs_deleted,
-        1
-    );
+    let report = database.scheduler.run_maintenance_at(NOW).await;
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+    assert_eq!(report.outputs_deleted, 1);
 }
 
 #[tokio::test]
