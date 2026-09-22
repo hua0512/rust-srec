@@ -7,10 +7,6 @@ export const LoginRequestSchema = z.object({
   device_info: z.string().optional(),
 });
 
-export const RefreshRequestSchema = z.object({
-  refresh_token: z.string(),
-});
-
 export const LoginResponseSchema = z.object({
   access_token: z.string(),
   refresh_token: z.string(),

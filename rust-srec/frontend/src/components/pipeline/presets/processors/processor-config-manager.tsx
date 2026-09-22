@@ -1,4 +1,4 @@
-import type { Control, FieldValues, UseFormRegister } from 'react-hook-form';
+import type { Control, FieldValues } from 'react-hook-form';
 import { Trans } from '@lingui/react/macro';
 import { Suspense } from 'react';
 import { getProcessorDefinition } from './registry';
@@ -7,7 +7,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface ProcessorConfigManagerProps {
   processorType: string;
   control: Control<FieldValues>;
-  register?: UseFormRegister<FieldValues>;
   pathPrefix?: string;
 }
 

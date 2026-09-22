@@ -4,6 +4,7 @@ import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   JobSchema,
+  JobLogsResponseSchema,
   PipelineStatsSchema,
   MediaOutputSchema,
   MediaOutputSummarySchema,
@@ -11,11 +12,9 @@ import {
   UploadRecordListSchema,
   DagExecutionSchema,
   DagGraphSchema,
-  DagStatsSchema,
   DagListResponseSchema,
   PipelinePresetSchema,
   PipelinePresetListResponseSchema,
-  PipelinePresetPreviewSchema,
   DagPipelineDefinitionSchema,
   CreatePipelinePresetRequestSchema,
   UpdatePipelinePresetRequestSchema,
@@ -61,20 +60,7 @@ export const getPipelineJobLogs = createServerFn({ method: 'GET' })
 
     const path = backendPath`/pipeline/jobs/${data.id}/logs`;
     const json = await fetchBackend(withQuery(path, params));
-    return z
-      .object({
-        items: z.array(
-          z.object({
-            timestamp: z.string(),
-            level: z.string(),
-            message: z.string(),
-          }),
-        ),
-        total: z.number(),
-        limit: z.number(),
-        offset: z.number(),
-      })
-      .parse(json);
+    return JobLogsResponseSchema.parse(json);
   });
 
 export const getPipelineJobProgress = createServerFn({ method: 'GET' })
@@ -141,13 +127,6 @@ export const getDagGraph = createServerFn({ method: 'GET' })
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}/graph`);
     return DagGraphSchema.parse(json);
-  });
-
-export const getDagStats = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    const json = await fetchBackend(backendPath`/pipeline/dag/${id}/stats`);
-    return DagStatsSchema.parse(json);
   });
 
 export const cancelDag = createServerFn({ method: 'POST' })
@@ -247,21 +226,6 @@ export const deletePipelineJob = createServerFn({ method: 'POST' })
     await fetchBackend(backendPath`/pipeline/jobs/${id}`, {
       method: 'DELETE',
     });
-  });
-
-export const cancelPipeline = createServerFn({ method: 'POST' })
-  .validator((pipelineId: string) => parseInput(PathIdSchema, pipelineId))
-  .handler(async ({ data: pipelineId }) => {
-    const json = await fetchBackend(backendPath`/pipeline/dag/${pipelineId}`, {
-      method: 'DELETE',
-    });
-    return z
-      .object({
-        dag_id: z.string(),
-        cancelled_steps: z.number(),
-        message: z.string(),
-      })
-      .parse(json);
   });
 
 export const deletePipeline = createServerFn({ method: 'POST' })
@@ -402,7 +366,6 @@ export const getPipelineOutputSummary = createServerFn({ method: 'GET' })
     return MediaOutputSummarySchema.parse(json);
   });
 
-// Redundant schemas removed - now imported from api/schemas
 export type PipelinePreset = z.infer<typeof PipelinePresetSchema>;
 export type PipelinePresetListResponse = z.infer<
   typeof PipelinePresetListResponseSchema
@@ -503,13 +466,4 @@ export const deletePipelinePreset = createServerFn({ method: 'POST' })
     await fetchBackend(backendPath`/pipeline/presets/${id}`, {
       method: 'DELETE',
     });
-  });
-
-export const previewPipelinePreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    const json = await fetchBackend(
-      backendPath`/pipeline/presets/${id}/preview`,
-    );
-    return PipelinePresetPreviewSchema.parse(json);
   });

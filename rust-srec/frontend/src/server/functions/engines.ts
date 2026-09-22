@@ -70,15 +70,13 @@ export const getEngine = createServerFn({ method: 'GET' })
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateEngineRequestSchema>) =>
-    (() => {
-      const parsed = parseInput(CreateEngineRequestSchema, data);
-      return {
-        ...parsed,
-        config: normalizeConfig(parsed.engine_type, parsed.config),
-      };
-    })(),
-  )
+  .validator((data: z.infer<typeof CreateEngineRequestSchema>) => {
+    const parsed = parseInput(CreateEngineRequestSchema, data);
+    return {
+      ...parsed,
+      config: normalizeConfig(parsed.engine_type, parsed.config),
+    };
+  })
   .handler(async ({ data }) => {
     // Backend expects config as JSON value (will be stringified by backend)
     const json = await fetchBackend('/engines', {

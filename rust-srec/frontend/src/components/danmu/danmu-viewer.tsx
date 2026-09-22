@@ -30,7 +30,6 @@ import { Trans } from '@lingui/react/macro';
 interface DanmuViewerProps {
   url: string;
   title: string;
-  onClose?: () => void;
 }
 
 type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';

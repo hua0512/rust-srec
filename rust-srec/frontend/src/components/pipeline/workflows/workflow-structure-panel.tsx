@@ -58,7 +58,6 @@ export function WorkflowStructurePanel({
       steps={controller.steps}
       onReorder={controller.reorder}
       onRemove={controller.removeStepAt}
-      onUpdate={controller.updateStepAt}
       onEdit={controller.editStep}
       onReplace={controller.replaceStepAt}
     />

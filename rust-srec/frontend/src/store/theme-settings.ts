@@ -15,9 +15,7 @@ export type ThemeSettingsState = {
   setPreset: (preset: string) => void;
   setRadius: (radius: string) => void;
   setOverride: (cssVar: string, value: string) => void;
-  clearOverride: (cssVar: string) => void;
   setImportedTheme: (theme: ImportedTheme | null) => void;
-  setBase: (base: ThemeBase) => void;
   reset: () => void;
 };
 
@@ -64,15 +62,6 @@ export const useThemeSettings = create(
           return { overrides: next };
         });
       },
-      clearOverride: (cssVar) => {
-        const key = normalizeCssVar(cssVar);
-        set((state) => {
-          if (!(key in state.overrides)) return state;
-          const next = { ...state.overrides };
-          delete next[key];
-          return { overrides: next };
-        });
-      },
       setImportedTheme: (theme) =>
         set((state) => ({
           importedTheme: theme,
@@ -82,7 +71,6 @@ export const useThemeSettings = create(
               ? 'preset'
               : state.base,
         })),
-      setBase: (base) => set({ base }),
       reset: () => set(DEFAULT_SETTINGS),
     }),
     {

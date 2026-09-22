@@ -147,12 +147,6 @@ export const deleteStreamer = createServerFn({ method: 'POST' })
     await fetchBackend(backendPath`/streamers/${id}`, { method: 'DELETE' });
   });
 
-export const checkStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    await fetchBackend(backendPath`/streamers/${id}/check`, { method: 'POST' });
-  });
-
 export const extractMetadata = createServerFn({ method: 'POST' })
   .validator((url: string) => parseInput(z.url(), url))
   .handler(async ({ data: url }) => {
@@ -161,19 +155,6 @@ export const extractMetadata = createServerFn({ method: 'POST' })
       body: JSON.stringify({ url }),
     });
     return ExtractMetadataResponseSchema.parse(json);
-  });
-
-/**
- * Clear error state for a streamer.
- * POST /api/streamers/{id}/clear-error
- */
-export const clearStreamerError = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    const json = await fetchBackend(backendPath`/streamers/${id}/clear-error`, {
-      method: 'POST',
-    });
-    return StreamerSchema.parse(json);
   });
 
 /**

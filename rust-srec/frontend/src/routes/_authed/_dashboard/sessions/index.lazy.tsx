@@ -62,7 +62,6 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/sessions/')({
 function SessionsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { user } = Route.useRouteContext();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -569,7 +568,6 @@ function SessionsPage() {
         ) : query.data?.items && query.data.items.length > 0 ? (
           <SessionList
             sessions={query.data.items}
-            token={user?.token?.access_token}
             selectionMode={selectionMode}
             selectedIds={selectedIds}
             onSelectionChange={handleSelectionChange}

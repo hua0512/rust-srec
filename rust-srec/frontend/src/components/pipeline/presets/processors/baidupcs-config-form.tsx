@@ -32,7 +32,6 @@ import {
 import {
   Cloud,
   CloudUpload,
-  HelpCircle,
   Loader2,
   LogIn,
   LogOut,
@@ -46,11 +45,7 @@ import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { FieldHint } from './field-hint';
 import { PLACEHOLDER_TOKENS } from '../../constants';
 import { formatBytes } from '@/lib/format';
 import { getBaiduPcsStatus, baiduPcsLogout } from '@/server/functions/baidupcs';
@@ -58,39 +53,6 @@ import { BaiduPcsLoginDialog } from './baidupcs-login-dialog';
 import { NumberInput } from '@/components/ui/number-input';
 
 type BaiduPcsConfig = z.infer<typeof BaiduPcsConfigSchema>;
-
-/**
- * A small "?" icon next to a form label that reveals richer guidance on
- * hover/focus, matching the rclone form's FieldHint.
- */
-function FieldHint({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={label}
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-primary focus-visible:text-primary focus-visible:outline-none"
-        >
-          <HelpCircle className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        className="max-w-xs space-y-1.5 text-xs leading-relaxed"
-      >
-        {children}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 /**
  * Live BaiduPCS-Go binary + login-session status with login/logout actions.

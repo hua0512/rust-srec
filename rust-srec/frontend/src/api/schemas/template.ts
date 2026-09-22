@@ -96,4 +96,3 @@ export const CreateTemplateRequestSchema = z.object({
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema;
-export const TemplateFormSchema = CreateTemplateRequestSchema;

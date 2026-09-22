@@ -350,7 +350,6 @@ async function performRefresh({
 
   let response: Response;
   try {
-    // console.log(`[TokenRefresh] POST ${url} with token: ${refreshToken.slice(0, 10)}...`);
     // No client-side abort: `/auth/refresh` revokes the old refresh token
     // before it answers, so aborting a slow response would leave this session
     // holding a token the backend has already revoked and the next attempt
@@ -416,9 +415,6 @@ async function performRefresh({
       ? now + json.refresh_expires_in * 1000
       : (fallbackRefreshExpiry ?? now);
 
-  // console.log(
-  //   `[TokenRefresh] Token refreshed successfully. Access expiry: ${new Date(computedAccessExpiry).toLocaleString()}, Refresh expiry: ${new Date(computedRefreshExpiry).toLocaleString()}`,
-  // );
   return {
     status: 'refreshed',
     outcome: {
@@ -445,7 +441,6 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
 
   // Check if we have the minimum required data
   if (!token?.refresh_token || !username) {
-    // console.log(`[TokenRefresh] Missing ${!token?.refresh_token ? 'refresh_token' : ''}${!token?.refresh_token && !username ? ' and ' : ''}${!username ? 'username' : ''} in session.`);
     return null;
   }
 
@@ -454,7 +449,6 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
   // Check if refresh token is expired
   const refreshExpiry = token.refresh_expires_in ?? 0;
   if (now >= refreshExpiry) {
-    // console.log('[TokenRefresh] Refresh token expired, clearing session.');
     await session.clear();
     return null;
   }
@@ -463,9 +457,6 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
   const accessExpiry = token.expires_in ?? 0;
   const buffer = 30000;
   if (now >= accessExpiry - buffer) {
-    // console.log(
-    //   `[TokenRefresh] Access token expired or expiring soon. Now: ${new Date(now).toLocaleString()}, Expiry: ${new Date(accessExpiry).toLocaleString()}, Buffer: ${buffer}ms. Refreshing...`,
-    // );
     const result = await refreshAuthTokenGlobal();
 
     if (result.status === 'rejected') {

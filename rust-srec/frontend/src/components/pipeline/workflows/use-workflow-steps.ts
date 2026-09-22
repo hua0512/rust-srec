@@ -31,7 +31,6 @@ export interface WorkflowStepsController {
   replaceStepById: (id: string) => void;
   replaceStepAt: (index: number) => void;
   selectStep: (step: PipelineStep) => void;
-  updateStepAt: (index: number, step: DagStepDefinition) => void;
   removeStepAt: (index: number) => void;
   removeStepById: (id: string) => void;
   reorder: (steps: DagStepDefinition[]) => void;
@@ -170,7 +169,6 @@ export function useWorkflowSteps({
     replaceStepById,
     replaceStepAt,
     selectStep,
-    updateStepAt,
     removeStepAt,
     removeStepById,
     reorder: onChange,

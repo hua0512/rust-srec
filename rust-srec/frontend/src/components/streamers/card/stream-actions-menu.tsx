@@ -17,14 +17,12 @@ interface StreamActionsMenuProps {
   streamer: z.infer<typeof StreamerSchema>;
   onDelete: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
-  onCheck: (id: string) => void;
 }
 
 export const StreamActionsMenu = ({
   streamer,
   onDelete,
   onToggle,
-  onCheck: _onCheck,
 }: StreamActionsMenuProps) => {
   return (
     <DropdownMenu>
@@ -44,16 +42,6 @@ export const StreamActionsMenu = ({
         <DropdownMenuLabel>
           <Trans>Actions</Trans>
         </DropdownMenuLabel>
-        {/* Hide for a now, as it is not implemented */}
-        {/* <DropdownMenuItem
-          onClick={() => onCheck(streamer.id)}
-          className="cursor-pointer group"
-        >
-          <RefreshCw className="mr-2 h-4 w-4 text-primary group-hover:text-primary" />
-          <span className="group-hover:text-primary transition-colors">
-            <Trans>Check Now</Trans>
-          </span>
-        </DropdownMenuItem> */}
         <DropdownMenuItem
           onClick={() => onToggle(streamer.id, !streamer.enabled)}
           className="cursor-pointer group"

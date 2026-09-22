@@ -21,12 +21,6 @@ export async function registerWebPushServiceWorker(): Promise<ServiceWorkerRegis
   return navigator.serviceWorker.register('/sw.js');
 }
 
-export async function getExistingPushSubscription(
-  registration: ServiceWorkerRegistration,
-): Promise<PushSubscription | null> {
-  return registration.pushManager.getSubscription();
-}
-
 export async function subscribePush(
   registration: ServiceWorkerRegistration,
   vapidPublicKeyB64Url: string,
@@ -36,12 +30,6 @@ export async function subscribePush(
     userVisibleOnly: true,
     applicationServerKey,
   });
-}
-
-export async function unsubscribePush(
-  subscription: PushSubscription,
-): Promise<void> {
-  await subscription.unsubscribe();
 }
 
 export function subscriptionToJson(subscription: PushSubscription): any {

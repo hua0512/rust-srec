@@ -256,19 +256,6 @@ export const DagGraphSchema = z.object({
 });
 export type DagGraph = z.infer<typeof DagGraphSchema>;
 
-export const DagStatsSchema = z.object({
-  dag_id: z.string(),
-  blocked: z.number(),
-  pending: z.number(),
-  processing: z.number(),
-  completed: z.number(),
-  failed: z.number(),
-  cancelled: z.number(),
-  total: z.number(),
-  progress_percent: z.number(),
-});
-export type DagStats = z.infer<typeof DagStatsSchema>;
-
 export const DagSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -339,22 +326,6 @@ export const CreatePipelinePresetRequestSchema = z.object({
 export type CreatePipelinePresetRequest = z.infer<
   typeof CreatePipelinePresetRequestSchema
 >;
-
-export const PipelinePresetPreviewSchema = z.object({
-  preset_id: z.string(),
-  preset_name: z.string(),
-  jobs: z.array(
-    z.object({
-      step_id: z.string(),
-      processor: z.string(),
-      depends_on: z.array(z.string()),
-      is_root: z.boolean(),
-      is_leaf: z.boolean(),
-    }),
-  ),
-  execution_order: z.array(z.string()),
-});
-export type PipelinePresetPreview = z.infer<typeof PipelinePresetPreviewSchema>;
 
 export const UpdatePipelinePresetRequestSchema =
   CreatePipelinePresetRequestSchema;

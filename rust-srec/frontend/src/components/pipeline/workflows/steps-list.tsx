@@ -31,20 +31,12 @@ interface StepsListProps {
   steps: DagStepDefinition[];
   onReorder: (newOrder: DagStepDefinition[]) => void;
   onRemove?: (index: number) => void;
-  onUpdate?: (index: number, newStep: DagStepDefinition) => void;
   onEdit?: (index: number) => void;
   onReplace?: (index: number) => void;
 }
 
 export const StepsList = memo(
-  ({
-    steps,
-    onReorder,
-    onRemove,
-    onUpdate,
-    onEdit,
-    onReplace,
-  }: StepsListProps) => {
+  ({ steps, onReorder, onRemove, onEdit, onReplace }: StepsListProps) => {
     const { i18n } = useLingui();
     const lookup = useReferencedPresets(steps);
     const { presets } = lookup;
@@ -200,7 +192,7 @@ export const StepsList = memo(
                             <Replace className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           </Button>
                         )}
-                        {onUpdate && (
+                        {onEdit && (
                           <Button
                             type="button"
                             variant="ghost"
