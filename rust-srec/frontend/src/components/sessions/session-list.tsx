@@ -8,7 +8,6 @@ type Session = z.infer<typeof SessionSchema>;
 
 interface SessionListProps {
   sessions: Session[];
-  token?: string;
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onSelectionChange?: (id: string, selected: boolean) => void;
@@ -19,7 +18,6 @@ const GRID =
 
 export function SessionList({
   sessions,
-  token,
   selectionMode,
   selectedIds,
   onSelectionChange,
@@ -37,7 +35,6 @@ export function SessionList({
         <motion.div key={session.id} variants={itemVariants}>
           <SessionCard
             session={session}
-            token={token}
             selectionMode={selectionMode}
             isSelected={selectedIds?.has(session.id)}
             onSelectChange={onSelectionChange}

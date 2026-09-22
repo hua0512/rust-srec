@@ -439,7 +439,6 @@ function SessionDetailPage() {
                     playingOutput.file_path.split('/').pop() ??
                     playingOutput.file_path
                   }
-                  onClose={() => setPlayingOutput(null)}
                 />
               ) : (
                 <Suspense

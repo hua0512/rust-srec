@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getMediaDownloadUrl, isSameOriginUrl, safeRedirectPath } from '../url';
+import {
+  getMediaDownloadUrl,
+  getMediaUrl,
+  isSameOriginUrl,
+  safeRedirectPath,
+} from '../url';
 
 // jsdom serves the tests from http://localhost:3000 by default.
 describe('isSameOriginUrl', () => {
@@ -98,5 +103,36 @@ describe('getMediaDownloadUrl', () => {
 
   it('escapes the output id', () => {
     expect(getMediaDownloadUrl('a/b')).toBe('/api/media/a%2Fb/content');
+  });
+});
+
+describe('desktop media URLs', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('prefers the injected desktop origin over configured API bases', () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.stubGlobal('__RUST_SREC_BACKEND_URL__', 'http://127.0.0.1:12555/');
+    vi.stubEnv('API_BASE_URL', 'https://server.example/api');
+    vi.stubEnv('BACKEND_URL', 'https://fallback.example');
+    vi.stubEnv('VITE_API_BASE_URL', 'https://browser.example/api');
+
+    expect(getMediaUrl('/api/media/abc/content', 'tok')).toBe(
+      'http://127.0.0.1:12555/api/media/abc/content?token=tok',
+    );
+    expect(getMediaDownloadUrl('abc', 'tok')).toBe(
+      'http://127.0.0.1:12555/api/media/abc/content?token=tok&download=1',
+    );
+  });
+
+  it('keeps existing query parameters when adding a token', () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.stubGlobal('__RUST_SREC_BACKEND_URL__', 'http://127.0.0.1:12555');
+
+    expect(getMediaUrl('api/media/abc/content?download=1', 'tok')).toBe(
+      'http://127.0.0.1:12555/api/media/abc/content?download=1&token=tok',
+    );
   });
 });

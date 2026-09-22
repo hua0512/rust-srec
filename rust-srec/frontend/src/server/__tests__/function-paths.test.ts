@@ -7,6 +7,7 @@ import { getJobPreset } from '../functions/job';
 import { listLogFiles } from '../functions/logging';
 import { createChannel, getChannel } from '../functions/notifications';
 import {
+  cancelDag,
   createPipelinePreset,
   deletePipelineOutput,
   getPipelineJob,
@@ -90,6 +91,21 @@ function globalConfigWithoutToggles() {
 }
 
 describe('server function request paths', () => {
+  it('cancels a pipeline and returns the cancellation result', async () => {
+    const result = {
+      dag_id: ID,
+      cancelled_steps: 2,
+      message: 'Pipeline cancelled',
+    };
+    fetchBackendMock.mockResolvedValue(result);
+
+    await expect(cancelDag({ data: ID })).resolves.toEqual(result);
+    expect(fetchBackendMock).toHaveBeenCalledExactlyOnceWith(
+      `/pipeline/dag/${ID}`,
+      { method: 'DELETE' },
+    );
+  });
+
   it.each([false, true])(
     'saves output retention with delete-files set to %s',
     async (deleteFiles) => {
@@ -382,8 +398,20 @@ describe('server function request bodies', () => {
         ],
       },
     };
-    await expect(
-      requestedBody(() => createPipelinePreset({ data: preset })),
-    ).resolves.toBe(JSON.stringify(preset));
+    const response = {
+      ...preset,
+      id: ID,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    fetchBackendMock.mockResolvedValue(response);
+
+    await expect(createPipelinePreset({ data: preset })).resolves.toEqual(
+      response,
+    );
+    expect(fetchBackendMock).toHaveBeenCalledExactlyOnceWith(
+      '/pipeline/presets',
+      { method: 'POST', body: JSON.stringify(preset) },
+    );
   });
 });

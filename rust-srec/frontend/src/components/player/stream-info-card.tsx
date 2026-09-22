@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,7 +21,6 @@ export interface StreamInfoCardProps {
   selectedStream: StreamOption | null;
   onStreamSelect: (stream: StreamOption) => void;
   isLive?: boolean;
-  variant?: 'card' | 'minimal';
 }
 
 export function StreamInfoCard({
@@ -29,7 +28,6 @@ export function StreamInfoCard({
   selectedStream,
   onStreamSelect,
   isLive = false,
-  variant = 'card',
 }: StreamInfoCardProps) {
   const streams = extractStreams(mediaInfo);
 
@@ -62,55 +60,26 @@ export function StreamInfoCard({
     ...new Set(streamsForSource.map((s) => s.quality || 'unknown')),
   ];
 
-  const content = (
-    <>
-      {/* Header for minimal mode */}
-      {variant === 'minimal' && (
-        <div className="flex items-center justify-between mb-4 px-1">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
-              <Video className="h-3.5 w-3.5" />
-            </div>
-            <span className="text-sm font-medium text-foreground/90">
-              <Trans>Stream Options</Trans>
-            </span>
+  return (
+    <div className="relative">
+      <div className="flex items-center justify-between mb-4 px-1">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+            <Video className="h-3.5 w-3.5" />
           </div>
-          {isLive && (
-            <Badge variant="destructive" className="gap-1.5 shadow-sm h-6">
-              <Radio className="h-3 w-3 animate-pulse" />
-              <Trans>LIVE</Trans>
-            </Badge>
-          )}
+          <span className="text-sm font-medium text-foreground/90">
+            <Trans>Stream Options</Trans>
+          </span>
         </div>
-      )}
-
-      {variant === 'card' && (
-        <CardHeader className="pb-4 relative z-10">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
-                <Video className="h-4 w-4" />
-              </div>
-              <span className="text-foreground/90">
-                <Trans>Stream Options</Trans>
-              </span>
-            </CardTitle>
-            {isLive && (
-              <Badge variant="destructive" className="gap-1.5 shadow-sm">
-                <Radio className="h-3 w-3 animate-pulse" />
-                <Trans>LIVE</Trans>
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
-      )}
-
-      <CardContent
-        className={cn(
-          'space-y-6 relative z-10',
-          variant === 'minimal' ? 'p-1' : '',
+        {isLive && (
+          <Badge variant="destructive" className="gap-1.5 shadow-sm h-6">
+            <Radio className="h-3 w-3 animate-pulse" />
+            <Trans>LIVE</Trans>
+          </Badge>
         )}
-      >
+      </div>
+
+      <CardContent className="space-y-6 relative z-10 p-1">
         {/* Source/CDN Selection - Primary selector */}
         {sources.length >= 1 && (
           <div className="space-y-3">
@@ -227,17 +196,6 @@ export function StreamInfoCard({
           </div>
         )}
       </CardContent>
-    </>
-  );
-
-  if (variant === 'minimal') {
-    return <div className="relative">{content}</div>;
-  }
-
-  return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:shadow-xl hover:shadow-primary/5 group overflow-hidden bg-gradient-to-br from-background/90 to-background/50 backdrop-blur-xl border-border/40 hover:border-primary/20">
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-      {content}
-    </Card>
+    </div>
   );
 }

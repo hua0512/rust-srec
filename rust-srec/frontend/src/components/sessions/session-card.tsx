@@ -44,7 +44,6 @@ type Session = z.infer<typeof SessionSchema>;
 
 interface SessionCardProps {
   session: Session;
-  token?: string;
   selectionMode?: boolean;
   isSelected?: boolean;
   onSelectChange?: (id: string, selected: boolean) => void;

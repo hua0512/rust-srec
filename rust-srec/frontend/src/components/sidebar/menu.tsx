@@ -164,11 +164,6 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                         <CollapseMenuButton
                           icon={Icon}
                           label={label}
-                          active={
-                            active === undefined
-                              ? pathname.startsWith(href)
-                              : active
-                          }
                           submenus={submenus}
                           isOpen={isOpen}
                         />

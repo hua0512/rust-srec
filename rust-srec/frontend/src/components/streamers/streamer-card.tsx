@@ -19,7 +19,6 @@ interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;
   onDelete: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
-  onCheck: (id: string) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
   onSelectionChange?: (id: string, selected: boolean) => void;
@@ -30,7 +29,6 @@ export const StreamerCard = memo(
     streamer,
     onDelete,
     onToggle,
-    onCheck,
     selectionMode = false,
     isSelected = false,
     onSelectionChange,
@@ -112,7 +110,6 @@ export const StreamerCard = memo(
                     streamer={streamer}
                     onDelete={onDelete}
                     onToggle={onToggle}
-                    onCheck={onCheck}
                   />
                 )}
               </div>

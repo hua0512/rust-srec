@@ -37,12 +37,10 @@ import {
   setBrowserNotificationsEnabled,
 } from '@/lib/notification-state';
 import {
-  getExistingPushSubscription,
   isWebPushSupported,
   registerWebPushServiceWorker,
   subscribePush,
   subscriptionToJson,
-  unsubscribePush,
 } from '@/lib/web-push';
 import {
   initDesktopNotificationsBridge,
@@ -119,7 +117,7 @@ function NotificationsPage() {
     void (async () => {
       try {
         const reg = await registerWebPushServiceWorker();
-        const sub = await getExistingPushSubscription(reg);
+        const sub = await reg.pushManager.getSubscription();
         setWebPushEnabled(!!sub);
 
         if (sub) {
@@ -188,16 +186,13 @@ function NotificationsPage() {
     if (webPushEnabled) {
       try {
         const reg = await registerWebPushServiceWorker();
-        const sub = await getExistingPushSubscription(reg);
+        const sub = await reg.pushManager.getSubscription();
         if (sub) {
           await subscribeWebPush({
             data: {
               subscription: subscriptionToJson(sub),
               min_priority: priority,
             },
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ['web-push', 'subscriptions'],
           });
           toast.success(i18n._(msg`Web Push priority updated`));
         }
@@ -221,15 +216,12 @@ function NotificationsPage() {
     if (!checked) {
       try {
         const reg = await registerWebPushServiceWorker();
-        const sub = await getExistingPushSubscription(reg);
+        const sub = await reg.pushManager.getSubscription();
         if (sub) {
           await unsubscribeWebPush({ data: { endpoint: sub.endpoint } });
-          await unsubscribePush(sub);
+          await sub.unsubscribe();
         }
         setWebPushEnabled(false);
-        void queryClient.invalidateQueries({
-          queryKey: ['web-push', 'subscriptions'],
-        });
         toast.message(i18n._(msg`Web Push disabled for this browser`));
       } catch (e: any) {
         toast.error(e?.message || i18n._(msg`Failed to disable Web Push`));
@@ -255,7 +247,7 @@ function NotificationsPage() {
     try {
       const { public_key } = await getWebPushPublicKey();
       const reg = await registerWebPushServiceWorker();
-      let sub = await getExistingPushSubscription(reg);
+      let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         sub = await subscribePush(reg, public_key);
       }
@@ -268,9 +260,6 @@ function NotificationsPage() {
       });
 
       setWebPushEnabled(true);
-      void queryClient.invalidateQueries({
-        queryKey: ['web-push', 'subscriptions'],
-      });
       toast.success(i18n._(msg`Web Push enabled for this browser`));
     } catch (e: any) {
       toast.error(e?.message || i18n._(msg`Failed to enable Web Push`));

@@ -479,7 +479,6 @@ interface PlayerItemProps {
   onStreamSelect: (stream: StreamOption) => void;
   onMuteChange: (muted: boolean) => void;
   onVolumeChange: (volume: number) => void;
-  contentClassName?: string;
 }
 
 const PlayerItem = React.memo(function PlayerItem({
@@ -536,7 +535,6 @@ const PlayerItem = React.memo(function PlayerItem({
               selectedStream={player.currentStream}
               onStreamSelect={onStreamSelect}
               isLive={player.response.is_live}
-              variant="minimal"
             />
           }
         />

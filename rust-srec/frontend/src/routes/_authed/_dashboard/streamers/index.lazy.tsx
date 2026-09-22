@@ -10,7 +10,6 @@ import { useMemo, useEffect, useCallback } from 'react';
 import {
   listStreamers,
   deleteStreamer,
-  checkStreamer,
   updateStreamer,
   listPlatformConfigs,
   batchUpdateStreamers,
@@ -336,13 +335,6 @@ function StreamersPage() {
       toast.error(error.message || i18n._(msg`Failed to delete streamer`)),
   });
 
-  const checkMutation = useMutation({
-    mutationFn: (id: string) => checkStreamer({ data: id }),
-    onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
-    onError: (error: any) =>
-      toast.error(error.message || i18n._(msg`Failed to trigger check`)),
-  });
-
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       updateStreamer({ data: { id, data: { enabled } } }),
@@ -410,7 +402,6 @@ function StreamersPage() {
   // recreate these callbacks each render and defeat StreamerCard's memo).
   const deleteMutate = deleteMutation.mutate;
   const toggleMutate = toggleMutation.mutate;
-  const checkMutate = checkMutation.mutate;
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -426,11 +417,6 @@ function StreamersPage() {
   const handleToggle = useCallback(
     (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
     [toggleMutate],
-  );
-
-  const handleCheck = useCallback(
-    (id: string) => checkMutate(id),
-    [checkMutate],
   );
 
   if (isError) {
@@ -803,7 +789,6 @@ function StreamersPage() {
                     onSelectionChange={handleSelectionChange}
                     onDelete={handleDelete}
                     onToggle={handleToggle}
-                    onCheck={handleCheck}
                   />
                 </motion.div>
               ))}

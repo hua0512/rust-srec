@@ -29,7 +29,6 @@ import {
   Move,
   RefreshCw,
   Gauge,
-  HelpCircle,
   Activity,
   Layers,
   Timer,
@@ -39,50 +38,11 @@ import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { FieldHint } from './field-hint';
 import { PLACEHOLDER_TOKENS } from '../../constants';
 import { NumberInput } from '@/components/ui/number-input';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
-
-/**
- * A small "?" icon next to a form label that reveals richer guidance
- * (examples, recommended values, gotchas) on hover/focus. Use alongside
- * a brief always-visible `<FormDescription>` so the inline text stays
- * scannable.
- */
-function FieldHint({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={label}
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:text-primary focus-visible:text-primary focus-visible:outline-none"
-        >
-          <HelpCircle className="h-3.5 w-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        className="max-w-xs space-y-1.5 text-xs leading-relaxed"
-      >
-        {children}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 /**
  * Subtle subsection heading inside a Card. Used to group related form

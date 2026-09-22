@@ -4,12 +4,7 @@ import { Trans } from '@lingui/react/macro';
 import { PRESET_TEMPLATES } from '../preset-templates';
 import { ProcessorConfigManager } from '../processors/processor-config-manager';
 import { motion } from 'motion/react';
-import type {
-  Control,
-  FieldValues,
-  UseFormRegister,
-  UseFormReturn,
-} from 'react-hook-form';
+import type { Control, FieldValues, UseFormReturn } from 'react-hook-form';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -112,7 +107,6 @@ export function PresetConfigForm({
             // surrounding form is not expressible here, so the control crosses the boundary
             // under the base form type.
             control={form.control as unknown as Control<FieldValues>}
-            register={form.register as unknown as UseFormRegister<FieldValues>}
             pathPrefix="config"
           />
         </CardContent>

@@ -3,7 +3,6 @@ import {
   getPipelineStats,
   listStreamers,
   deleteStreamer,
-  checkStreamer,
   updateStreamer,
 } from '@/server/functions';
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -131,13 +130,6 @@ function Dashboard() {
     },
   });
 
-  const checkMutation = useMutation({
-    mutationFn: (id: string) => checkStreamer({ data: id }),
-    onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
-    onError: (error) =>
-      toast.error(error.message || i18n._(msg`Failed to trigger check`)),
-  });
-
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       updateStreamer({ data: { id, data: { enabled } } }),
@@ -163,11 +155,6 @@ function Dashboard() {
   const handleToggle = useCallback(
     (id: string, enabled: boolean) => toggleMutation.mutate({ id, enabled }),
     [toggleMutation],
-  );
-
-  const handleCheck = useCallback(
-    (id: string) => checkMutation.mutate(id),
-    [checkMutation],
   );
 
   const dbComponent = useMemo(
@@ -423,7 +410,6 @@ function Dashboard() {
                     streamer={streamer}
                     onDelete={handleDelete}
                     onToggle={handleToggle}
-                    onCheck={handleCheck}
                   />
                 </div>
               ))}

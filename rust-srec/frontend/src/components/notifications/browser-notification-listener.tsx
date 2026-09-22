@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { listEvents } from '@/server/functions/notifications';
@@ -77,9 +77,7 @@ export function BrowserNotificationListener() {
     return onNotificationStateChanged(sync);
   }, [isSupported]);
 
-  const shouldPoll = useMemo(() => {
-    return isSupported && enabled && permission === 'granted';
-  }, [enabled, isSupported, permission]);
+  const shouldPoll = isSupported && enabled && permission === 'granted';
 
   const { data: events } = useQuery({
     queryKey: ['notification-events', 'browser', 'critical'],

@@ -56,7 +56,6 @@ describe('StreamerCard selection mode', () => {
         onSelectionChange={onSelectionChange}
         onDelete={vi.fn()}
         onToggle={vi.fn()}
-        onCheck={vi.fn()}
       />,
     );
 
@@ -74,7 +73,6 @@ describe('StreamerCard selection mode', () => {
         onSelectionChange={onSelectionChange}
         onDelete={vi.fn()}
         onToggle={vi.fn()}
-        onCheck={vi.fn()}
       />,
     );
 
@@ -88,7 +86,6 @@ describe('StreamerCard selection mode', () => {
         streamer={streamer}
         onDelete={vi.fn()}
         onToggle={vi.fn()}
-        onCheck={vi.fn()}
       />,
     );
 

@@ -15,13 +15,6 @@ function SafeFragment({ children }: WrapperProps): ReactNode {
   return children;
 }
 
-export type ValidateRouter<TRouter extends AnyRouter> =
-  NonNullable<TRouter['options']['context']> extends {
-    i18n: I18n;
-  }
-    ? TRouter
-    : never;
-
 export function routerWithLingui<TRouter extends AnyRouter>(
   router: TRouter,
   i18n: I18n,
