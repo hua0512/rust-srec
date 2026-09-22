@@ -36,6 +36,10 @@ const artplayerMock = vi.hoisted(() => {
       this.volume = typeof options.volume === 'number' ? options.volume : 0.5;
       this.muted = typeof options.muted === 'boolean' ? options.muted : false;
       instances.push(this);
+      const customTypes = options.customType as
+        | Record<string, (video: unknown, url: unknown) => void>
+        | undefined;
+      customTypes?.[options.type as string]?.(this.video, options.url);
     }
 
     on(event: string, handler: EventHandler) {
@@ -52,6 +56,25 @@ const artplayerMock = vi.hoisted(() => {
   const instances: MockArtplayer[] = [];
   return { MockArtplayer, instances };
 });
+
+const hlsMock = vi.hoisted(() => {
+  const instances: MockHls[] = [];
+  const support = { value: true };
+  class MockHls {
+    static isSupported = () => support.value;
+    static Events = { ERROR: 'error' };
+    readonly loadSource = vi.fn();
+    readonly attachMedia = vi.fn();
+    readonly on = vi.fn();
+    readonly destroy = vi.fn();
+    readonly latency = 4;
+    constructor(readonly config: Record<string, unknown>) {
+      instances.push(this);
+    }
+  }
+  return { MockHls, instances, support };
+});
+vi.mock('hls.js', () => ({ default: hlsMock.MockHls }));
 
 const resolveUrlMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
@@ -83,6 +106,7 @@ function PlaybackHarness(options: UsePlayerPlaybackOptions) {
       data-status={playback.status}
       data-connection={playback.connection}
       data-buffer={playback.statistics?.bufferSeconds ?? ''}
+      data-presets={String(playback.supportsLivePresets)}
     >
       <button onClick={playback.reload}>Retry</button>
     </div>
@@ -431,4 +455,62 @@ it('samples details only while open without restarting playback and clears the t
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe('live playback presets', () => {
+  beforeEach(() => {
+    artplayerMock.instances.length = 0;
+    hlsMock.instances.length = 0;
+    hlsMock.support.value = true;
+  });
+
+  it('applies a changed live preset to a new HLS engine and preserves audio preferences', async () => {
+    const options = {
+      ...defaultOptions,
+      url: 'https://media.example/live.m3u8',
+      mediaType: 'hls',
+      isLive: true,
+      volume: 0.8,
+      muted: true,
+    };
+    const view = render(<PlaybackHarness {...options} />);
+    await waitFor(() => expect(hlsMock.instances).toHaveLength(1));
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-presets',
+      'true',
+    );
+    expect(hlsMock.instances[0]!.config.lowLatencyMode).toBe(true);
+    view.rerender(<PlaybackHarness {...options} playbackPreset="smooth" />);
+    await waitFor(() => expect(hlsMock.instances).toHaveLength(2));
+    expect(hlsMock.instances[0]!.destroy).toHaveBeenCalledOnce();
+    expect(hlsMock.instances[1]!.config.lowLatencyMode).toBe(false);
+    expect(artplayerMock.instances[1]!.volume).toBe(0.8);
+    expect(artplayerMock.instances[1]!.muted).toBe(true);
+  });
+
+  it('does not restart or apply live tuning to a recording', async () => {
+    const view = render(<PlaybackHarness {...defaultOptions} />);
+    await waitFor(() => expect(artplayerMock.instances).toHaveLength(1));
+    view.rerender(
+      <PlaybackHarness {...defaultOptions} playbackPreset="low-latency" />,
+    );
+    expect(artplayerMock.instances).toHaveLength(1);
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-presets',
+      'false',
+    );
+  });
+
+  it('does not advertise preset support for native HLS playback', async () => {
+    hlsMock.support.value = false;
+    const view = render(
+      <PlaybackHarness {...defaultOptions} mediaType="hls" isLive />,
+    );
+    await waitFor(() => expect(artplayerMock.instances).toHaveLength(1));
+    expect(hlsMock.instances).toHaveLength(0);
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-presets',
+      'false',
+    );
+  });
 });

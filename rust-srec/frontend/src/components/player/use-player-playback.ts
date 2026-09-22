@@ -5,6 +5,7 @@ import { isDesktopBuild } from '@/utils/desktop';
 import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
 import { MpegtsPlaybackController } from './mpegts-playback';
+import { hlsPlaybackConfig, type PlaybackPreset } from './playback-presets';
 import {
   readPlaybackStatistics,
   type PlaybackStatistics,
@@ -53,6 +54,7 @@ interface UseResolvedSourceOptions {
 }
 
 export interface UsePlayerPlaybackOptions {
+  playbackPreset?: PlaybackPreset;
   detailsEnabled?: boolean;
   connectionMode?: ConnectionMode;
   sourceUrl?: string;
@@ -216,7 +218,10 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     sourceUrl,
     connectionMode = 'auto',
     detailsEnabled = false,
+    playbackPreset = 'balanced',
   } = options;
+  const activePreset = isLive ? playbackPreset : 'balanced';
+  const [supportsLivePresets, setSupportsLivePresets] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ArtplayerInstance | null>(null);
   const statisticsReader = useRef<(() => PlaybackStatistics) | null>(null);
@@ -342,6 +347,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
       setError(null);
       setStatus('connecting');
       setStatistics(null);
+      setSupportsLivePresets(false);
 
       try {
         const { default: Artplayer } = await import('artplayer');
@@ -377,12 +383,10 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           if (disposed) return;
 
           if (Hls.isSupported()) {
+            setSupportsLivePresets(isLive);
             options.customType = {
               m3u8: (video: HTMLVideoElement, sourceUrl: string) => {
-                hls = new Hls({
-                  enableWorker: true,
-                  lowLatencyMode: isLive,
-                });
+                hls = new Hls(hlsPlaybackConfig(isLive, activePreset));
                 hls.loadSource(sourceUrl);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -413,7 +417,9 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
             throw new PlaybackConfigurationError('unsupported');
           }
 
+          setSupportsLivePresets(isLive);
           mpegtsController = new MpegtsPlaybackController(mpegts, {
+            playbackPreset: activePreset,
             mediaType: mpegtsType,
             isLive,
             durationSecs: mediaDurationSecs,
@@ -553,6 +559,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     mediaFileSizeBytes,
     reloadKey,
     connection,
+    activePreset,
   ]);
 
   const playbackError = configurationError ?? resolutionError ?? error;
@@ -571,6 +578,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
     reload,
     status: playbackStatus,
     connection,
+    supportsLivePresets: isLive && supportsLivePresets,
     statistics:
       resolving || configurationError || resolutionError ? null : statistics,
   };

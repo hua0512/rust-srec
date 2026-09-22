@@ -130,3 +130,43 @@ describe('MpegtsPlaybackController', () => {
     vi.useRealTimers();
   });
 });
+
+it.each(['flv', 'mpegts'] as const)(
+  'applies low-latency tuning to live %s without altering seek configuration',
+  (mediaType) => {
+    const player = {
+      on: vi.fn(),
+      attachMediaElement: vi.fn(),
+      load: vi.fn(),
+      unload: vi.fn(),
+      detachMediaElement: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const createPlayer = vi.fn(() => player);
+    const mpegts = {
+      createPlayer,
+      Events: { ERROR: 'error' },
+    } as unknown as ConstructorParameters<typeof MpegtsPlaybackController>[0];
+    const controller = new MpegtsPlaybackController(mpegts, {
+      mediaType,
+      isLive: true,
+      playbackPreset: 'low-latency',
+      onLoadingChange: vi.fn(),
+      onError: vi.fn(),
+      onStalled: vi.fn(),
+      onWarning: vi.fn(),
+    });
+    controller.attach({} as HTMLVideoElement, 'https://media.example/live');
+    expect(createPlayer).toHaveBeenCalledWith(
+      expect.objectContaining({ isLive: true }),
+      expect.objectContaining({
+        enableStashBuffer: false,
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyChasingOnPaused: false,
+        accurateSeek: false,
+      }),
+    );
+    expect(controller.seek(15)).toBe(false);
+    controller.destroy();
+  },
+);

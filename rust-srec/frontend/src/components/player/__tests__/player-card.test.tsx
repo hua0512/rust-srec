@@ -21,6 +21,7 @@ const playback: ReturnType<typeof usePlayerPlayback> = {
   status: 'playing',
   connection: 'direct',
   statistics: null,
+  supportsLivePresets: false,
 };
 const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
@@ -135,4 +136,37 @@ it('separates source metadata from measured playback details and enables samplin
   expect(screen.getByText('1280 \u00d7 720')).toBeInTheDocument();
   expect(screen.getByText('0 / 240')).toBeInTheDocument();
   expect(screen.getByText('5.2 s')).toBeInTheDocument();
+});
+
+it('lets supported live players choose a playback preference', () => {
+  hook.mockReturnValue({ ...playback, supportsLivePresets: true });
+  render(player({ isLive: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
+  const select = screen.getByRole('combobox', { name: 'Playback preference' });
+  expect(select).toHaveTextContent('Balanced');
+  fireEvent.keyDown(select, { key: 'ArrowDown' });
+  fireEvent.click(screen.getByRole('option', { name: 'Smooth playback' }));
+  expect(hook).toHaveBeenLastCalledWith(
+    expect.objectContaining({ playbackPreset: 'smooth' }),
+  );
+  expect(
+    screen.getByText(/Changing this preference restarts/),
+  ).toBeInTheDocument();
+});
+
+it('explains unsupported live buffering and hides live preferences for recordings', () => {
+  const view = render(player({ isLive: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
+  expect(
+    screen.getByRole('combobox', { name: 'Playback preference' }),
+  ).toBeDisabled();
+  expect(
+    screen.getByText(
+      'Buffering presets are unavailable for this playback path.',
+    ),
+  ).toBeInTheDocument();
+  view.rerender(player({ isLive: false }));
+  expect(
+    screen.queryByRole('combobox', { name: 'Playback preference' }),
+  ).not.toBeInTheDocument();
 });

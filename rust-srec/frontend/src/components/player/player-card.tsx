@@ -20,6 +20,10 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { usePlayerPlayback } from './use-player-playback';
+import {
+  playbackPresetMessages,
+  type PlaybackPreset,
+} from './playback-presets';
 import { PlaybackDetails, type SourceMediaDetails } from './playback-details';
 import {
   Select,
@@ -85,11 +89,14 @@ export function PlayerCard({
 }: PlayerCardProps) {
   const { i18n } = useLingui();
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
+  const [playbackPreset, setPlaybackPreset] =
+    useState<PlaybackPreset>('balanced');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const connectionId = useId();
+  const presetId = useId();
   const {
     containerRef,
     error: playbackError,
@@ -98,7 +105,9 @@ export function PlayerCard({
     status: playbackStatus,
     connection,
     statistics,
+    supportsLivePresets,
   } = usePlayerPlayback({
+    playbackPreset,
     detailsEnabled: detailsOpen,
     url,
     headers,
@@ -261,7 +270,7 @@ export function PlayerCard({
               />
             </PopoverContent>
           </Popover>
-          {(settingsContent || sourceUrl) && (
+          {(settingsContent || sourceUrl || isLive) && (
             <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -343,6 +352,60 @@ export function PlayerCard({
                       >
                         <Trans>Refresh stream URL</Trans>
                       </Button>
+                    )}
+                  </div>
+                )}
+                {isLive && (
+                  <div className="space-y-3 mb-4 pb-4 border-b border-border/40">
+                    <label htmlFor={presetId} className="text-sm font-medium">
+                      <Trans>Playback preference</Trans>
+                    </label>
+                    <Select
+                      value={playbackPreset}
+                      onValueChange={(value) =>
+                        setPlaybackPreset(value as PlaybackPreset)
+                      }
+                      disabled={!supportsLivePresets || refreshing}
+                    >
+                      <SelectTrigger
+                        id={presetId}
+                        aria-describedby={`${presetId}-help`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="z-[300]">
+                        <SelectItem value="low-latency">
+                          <Trans>Low latency</Trans>
+                        </SelectItem>
+                        <SelectItem value="balanced">
+                          <Trans>Balanced</Trans>
+                        </SelectItem>
+                        <SelectItem value="smooth">
+                          <Trans>Smooth playback</Trans>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p
+                      id={`${presetId}-help`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {supportsLivePresets ? (
+                        i18n._(playbackPresetMessages[playbackPreset])
+                      ) : (
+                        <Trans>
+                          Buffering presets are unavailable for this playback
+                          path.
+                        </Trans>
+                      )}
+                    </p>
+                    {supportsLivePresets && (
+                      <p className="text-xs text-muted-foreground">
+                        <Trans>
+                          Changing this preference restarts this live player.
+                          The source and network still determine the actual
+                          delay.
+                        </Trans>
+                      </p>
                     )}
                   </div>
                 )}

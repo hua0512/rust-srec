@@ -656,6 +656,10 @@ msgstr "全部时间"
 msgid "All Types"
 msgstr "所有类型"
 
+#: src/components/player/playback-presets.ts:10
+msgid "Allow more startup buffering. Playback may start later and add delay."
+msgstr "允许更多启动缓冲，可能延后开始播放并增加延迟。"
+
 #: src/components/config/global/network-system-card.tsx:29
 msgid "Allow private stream proxy targets"
 msgstr "允许私有网络流代理目标"
@@ -893,8 +897,8 @@ msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
-#: src/components/player/player-card.tsx:215
-#: src/components/player/player-card.tsx:304
+#: src/components/player/player-card.tsx:224
+#: src/components/player/player-card.tsx:313
 msgid "Auto"
 msgstr "自动"
 
@@ -902,7 +906,7 @@ msgstr "自动"
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
-#: src/components/player/player-card.tsx:324
+#: src/components/player/player-card.tsx:333
 msgid "Auto connects directly. Choose Server proxy if the browser cannot load the source."
 msgstr "自动模式使用直连。如果浏览器无法加载直播源，请选择服务器代理。"
 
@@ -1098,6 +1102,10 @@ msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，�
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
+#: src/components/player/player-card.tsx:381
+msgid "Balanced"
+msgstr "均衡"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:399
 msgid "Bandwidth"
 msgstr "带宽"
@@ -1265,6 +1273,10 @@ msgstr "前方缓冲时长"
 msgid "Buffering"
 msgstr "缓冲中"
 
+#: src/components/player/player-card.tsx:395
+msgid "Buffering presets are unavailable for this playback path."
+msgstr "当前播放方式不支持缓冲预设。"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。按分段配对，支持批量处理。"
@@ -1402,13 +1414,17 @@ msgstr "修改密码"
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/components/player/player-card.tsx:424
+#: src/components/player/player-card.tsx:487
 msgid "Change source"
 msgstr "切换直播源"
 
 #: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
 msgstr "正在修改密码..."
+
+#: src/components/player/player-card.tsx:403
+msgid "Changing this preference restarts this live player. The source and network still determine the actual delay."
+msgstr "更改此偏好会重新启动当前直播播放器。实际延迟仍取决于直播源和网络。"
 
 #: src/components/notifications/channel-form.tsx:373
 msgid "Channel"
@@ -1849,7 +1865,7 @@ msgstr "连接中"
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/player/player-card.tsx:286
+#: src/components/player/player-card.tsx:295
 msgid "Connection"
 msgstr "连接方式"
 
@@ -2776,8 +2792,8 @@ msgstr "根据链接自动识别，并自动应用该平台的设置。"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/player/player-card.tsx:222
-#: src/components/player/player-card.tsx:307
+#: src/components/player/player-card.tsx:231
+#: src/components/player/player-card.tsx:316
 msgid "Direct"
 msgstr "直连"
 
@@ -5025,7 +5041,7 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/player-card.tsx:205
+#: src/components/player/player-card.tsx:214
 #: src/components/player/stream-info-card.tsx:81
 #: src/components/player/stream-info-card.tsx:101
 #: src/components/sessions/session-card.tsx:168
@@ -5206,6 +5222,10 @@ msgstr "低"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Low (80)"
 msgstr "流畅 (80)"
+
+#: src/components/player/player-card.tsx:378
+msgid "Low latency"
+msgstr "低延迟"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
@@ -6858,7 +6878,7 @@ msgid "Playback could not start. Retry, refresh the stream URL, or choose anothe
 msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
 
 #: src/components/player/playback-details.tsx:25
-#: src/components/player/player-card.tsx:248
+#: src/components/player/player-card.tsx:257
 msgid "Playback details"
 msgstr "播放详情"
 
@@ -6866,9 +6886,13 @@ msgstr "播放详情"
 msgid "Playback error"
 msgstr "播放错误"
 
-#: src/components/player/player-card.tsx:388
+#: src/components/player/player-card.tsx:451
 msgid "Playback Error"
 msgstr "播放错误"
+
+#: src/components/player/player-card.tsx:361
+msgid "Playback preference"
+msgstr "播放偏好"
 
 #: src/components/player/playback-state.ts:36
 msgid "Playback stalled while seeking. Retry to reload the video."
@@ -6880,7 +6904,7 @@ msgstr "跳转时播放停滞。请重试以重新加载视频。"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:271
+#: src/components/player/player-card.tsx:280
 msgid "Player settings"
 msgstr "播放器设置"
 
@@ -7464,8 +7488,8 @@ msgstr "刷新失败：需要手动登录"
 msgid "Refresh status"
 msgstr "刷新状态"
 
-#: src/components/player/player-card.tsx:344
-#: src/components/player/player-card.tsx:403
+#: src/components/player/player-card.tsx:353
+#: src/components/player/player-card.tsx:466
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
@@ -7486,8 +7510,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/player/player-card.tsx:237
-#: src/components/player/player-card.tsx:238
+#: src/components/player/player-card.tsx:246
+#: src/components/player/player-card.tsx:247
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -7533,7 +7557,7 @@ msgstr "成功后移除输入"
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:359
+#: src/components/player/player-card.tsx:422
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -7738,7 +7762,7 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:395
+#: src/components/player/player-card.tsx:458
 #: src/components/sessions/danmu-stats-panel.tsx:238
 msgid "Retry"
 msgstr "重试"
@@ -8295,12 +8319,12 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
-#: src/components/player/player-card.tsx:220
-#: src/components/player/player-card.tsx:310
+#: src/components/player/player-card.tsx:229
+#: src/components/player/player-card.tsx:319
 msgid "Server proxy"
 msgstr "服务器代理"
 
-#: src/components/player/player-card.tsx:331
+#: src/components/player/player-card.tsx:340
 msgid "Server proxy relays playback through this app's server. It does not select an upstream network proxy."
 msgstr "服务器代理通过本应用的服务器中转播放流量，不用于选择上游网络代理。"
 
@@ -8558,6 +8582,10 @@ msgstr "跳过了 {skippedCount} 个重复的流"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
+#: src/components/player/player-card.tsx:384
+msgid "Smooth playback"
+msgstr "流畅播放"
+
 #: src/components/notifications/forms/email-form.tsx:42
 msgid "SMTP Host"
 msgstr "SMTP 主机"
@@ -8677,6 +8705,10 @@ msgstr "状态"
 msgid "Status"
 msgstr "状态"
 
+#: src/components/player/playback-presets.ts:8
+msgid "Stay closer to live. Network interruptions may cause more buffering."
+msgstr "尽量接近直播最新位置，网络中断时可能更频繁地缓冲。"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:193
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
@@ -8773,7 +8805,7 @@ msgstr "直播密码"
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/player/player-card.tsx:149
+#: src/components/player/player-card.tsx:158
 msgid "Stream source"
 msgstr "直播源"
 
@@ -9223,7 +9255,7 @@ msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
 
-#: src/components/player/player-card.tsx:319
+#: src/components/player/player-card.tsx:328
 msgid "This source needs request headers, so Auto uses the server proxy. Direct is unavailable."
 msgstr "此直播源需要请求头，因此自动模式使用服务器代理，无法使用直连。"
 
@@ -9635,7 +9667,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/player/player-card.tsx:415
+#: src/components/player/player-card.tsx:478
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
@@ -9895,6 +9927,10 @@ msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
+#: src/components/player/playback-presets.ts:9
+msgid "Use the player's default balance of buffering and delay."
+msgstr "使用播放器默认的缓冲与延迟平衡设置。"
+
 #: src/components/notifications/forms/email-form.tsx:179
 msgid "Use TLS"
 msgstr "启用 TLS"
@@ -9998,7 +10034,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:181
+#: src/components/player/player-card.tsx:190
 msgid "Video Player"
 msgstr "视频播放器"
 
