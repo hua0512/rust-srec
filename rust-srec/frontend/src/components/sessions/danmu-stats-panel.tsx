@@ -31,6 +31,7 @@ import {
   ReferenceLine,
   XAxis,
   YAxis,
+  type YAxisTickContentProps,
 } from 'recharts';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -66,7 +67,7 @@ const MAX_GAP_FILL_POINTS = 2000;
 const AREA_MARGIN = { top: 8, right: 8, left: 0, bottom: 8 } as const;
 const BAR_MARGIN = { top: 4, right: 8, left: 0, bottom: 4 } as const;
 const BAR_RADIUS_H: [number, number, number, number] = [0, 4, 4, 0];
-const TICK_SM = { fontSize: 12 };
+const RANK_TICK_MARGIN = 8;
 const ACTIVE_DOT = { r: 4, strokeWidth: 0 };
 const CURSOR_STYLE = {
   stroke: 'var(--color-count)',
@@ -80,6 +81,7 @@ const CURSOR_STYLE = {
 const CHART_TOOLTIP = (
   <ChartTooltipContent
     indicator="dot"
+    className="max-w-[min(20rem,calc(100vw-2rem))] [overflow-wrap:anywhere]"
     formatter={(value, _name, item) => {
       const formatted = Number(value).toLocaleString();
       const error = (item as { payload?: { error?: number } })?.payload?.error;
@@ -683,6 +685,31 @@ const RankBarChart = memo(function RankBarChart({
   // One bar per row means an unbounded list becomes an unbounded SVG; the
   // backend returns up to 100 talkers, so tall lists scroll instead.
   const scrolls = maxHeight != null && height > maxHeight;
+  const renderCategoryTick = useCallback(
+    ({ x, y, payload }: YAxisTickContentProps) => {
+      const label = String(payload.value ?? '');
+      const width = yAxisWidth - RANK_TICK_MARGIN;
+
+      // Axis width reserves space but does not constrain SVG text. Let the
+      // browser ellipsize within that space without splitting emoji or wrapping.
+      return (
+        <foreignObject
+          x={Number(x) - width}
+          y={Number(y) - 10}
+          width={width}
+          height={20}
+        >
+          <div
+            className="truncate text-right text-xs leading-5 text-muted-foreground"
+            title={label}
+          >
+            {label}
+          </div>
+        </foreignObject>
+      );
+    },
+    [yAxisWidth],
+  );
 
   return (
     <motion.div
@@ -707,9 +734,10 @@ const RankBarChart = memo(function RankBarChart({
                 type="category"
                 tickLine={false}
                 axisLine={false}
-                tickMargin={8}
+                tickMargin={RANK_TICK_MARGIN}
+                tickSize={0}
                 width={yAxisWidth}
-                tick={TICK_SM}
+                tick={renderCategoryTick}
               />
               <XAxis type="number" hide />
               <ChartTooltip cursor={false} content={CHART_TOOLTIP} />
