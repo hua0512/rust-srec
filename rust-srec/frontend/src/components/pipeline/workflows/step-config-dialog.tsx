@@ -10,7 +10,10 @@ import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
-import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
+import {
+  getProcessorDefaultConfig,
+  getProcessorDefinition,
+} from '@/components/pipeline/presets/processors/registry';
 import {
   buildPresetProcessorMap,
   getTransformDependencyIds,
@@ -155,19 +158,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const formValues = useMemo(() => {
     if (!step) return {};
 
-    // Get default values from schema if available
-    let baseConfig = {};
-    if (processorDef?.schema) {
-      try {
-        const result = processorDef.schema.safeParse({});
-        if (result.success) {
-          baseConfig = result.data;
-        }
-      } catch (e) {
-        console.error('Failed to parse default values:', e);
-        // Fallback to empty if unexpected error
-      }
-    }
+    const baseConfig = getProcessorDefaultConfig(processorDef) ?? {};
 
     const getSafeConfig = (config: any) => {
       if (!config) return {};
@@ -254,15 +245,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     return getProcessorDefinition(presetDetail.processor);
   }, [presetDetail]);
 
-  const presetDefaults = useMemo(() => {
-    if (!presetProcessorDef) return {};
-    try {
-      const result = presetProcessorDef.schema.safeParse({});
-      return result.success ? result.data : {};
-    } catch {
-      return {};
-    }
-  }, [presetProcessorDef]);
+  const presetDefaults = useMemo(
+    () => getProcessorDefaultConfig(presetProcessorDef) ?? {},
+    [presetProcessorDef],
+  );
 
   // Form for displaying the preset config (read-only)
   const presetForm = useForm({

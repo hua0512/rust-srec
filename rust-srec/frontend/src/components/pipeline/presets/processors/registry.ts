@@ -139,3 +139,15 @@ export const getProcessorDefinition = (
 ): ProcessorDefinition | undefined => {
   return PROCESSOR_REGISTRY[processorName];
 };
+
+/**
+ * The config a processor runs with when nothing is set: every schema default
+ * applied to an empty object. `undefined` without a definition or when the
+ * schema cannot be satisfied without user input.
+ */
+export function getProcessorDefaultConfig(
+  definition: ProcessorDefinition | null | undefined,
+): Record<string, unknown> | undefined {
+  const result = definition?.schema.safeParse({});
+  return result?.success ? result.data : undefined;
+}
