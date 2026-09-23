@@ -50,4 +50,62 @@ describe('PayloadPreview', () => {
     expect(screen.getByText('DURACION:')).toBeInTheDocument();
     expect(screen.getByText('TAMANO:')).toBeInTheDocument();
   });
+
+  it('reads any event variant, not only a hand-listed set', () => {
+    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    renderWith(
+      i18n,
+      <PayloadPreview
+        payload={JSON.stringify({
+          OutputPathInaccessible: {
+            path: '/rec',
+            error_kind: 'permission_denied',
+            timestamp: '2026-01-01T00:00:00Z',
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('/rec')).toBeInTheDocument();
+    expect(screen.getByText('permission_denied')).toBeInTheDocument();
+  });
+
+  it('falls back to the message when an event has no error field', () => {
+    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    renderWith(
+      i18n,
+      <PayloadPreview
+        payload={JSON.stringify({
+          BaiduPcsReloginFailed: {
+            config_dir: '/data/baidupcs',
+            message: 'login expired',
+            timestamp: '2026-01-01T00:00:00Z',
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('login expired')).toBeInTheDocument();
+  });
+
+  it('unwraps credential events nested under `event`', () => {
+    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    renderWith(
+      i18n,
+      <PayloadPreview
+        payload={JSON.stringify({
+          Credential: {
+            event: {
+              type: 'refresh_failed',
+              platform: 'bilibili',
+              error: 'cookie expired',
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('bilibili')).toBeInTheDocument();
+    expect(screen.getByText('cookie expired')).toBeInTheDocument();
+  });
 });

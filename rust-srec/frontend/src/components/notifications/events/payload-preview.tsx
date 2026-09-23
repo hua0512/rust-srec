@@ -10,31 +10,12 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
 
   try {
     const parsed = JSON.parse(payload);
-    const inner =
-      parsed.StreamOnline ||
-      parsed.StreamOffline ||
-      parsed.DownloadStarted ||
-      parsed.DownloadCompleted ||
-      parsed.DownloadError ||
-      parsed.SegmentStarted ||
-      parsed.SegmentCompleted ||
-      parsed.DownloadCancelled ||
-      parsed.DownloadRejected ||
-      parsed.ConfigUpdated ||
-      parsed.PipelineStarted ||
-      parsed.PipelineCompleted ||
-      parsed.PipelineFailed ||
-      parsed.PipelineCancelled ||
-      parsed.FatalError ||
-      parsed.OutOfSpace ||
-      parsed.PipelineQueueWarning ||
-      parsed.PipelineQueueCritical ||
-      parsed.SystemStartup ||
-      parsed.SystemShutdown ||
-      (parsed.Credential && parsed.Credential.event) ||
-      {};
-
+    // The payload is the backend's externally tagged event: `{ Variant: { ...fields } }`.
+    // Credential events nest one level deeper, under `event`.
     const variant = Object.keys(parsed)[0];
+    const body = variant ? parsed[variant] : undefined;
+    const inner =
+      (variant === 'Credential' ? body?.event : body) ?? ({} as any);
     const fields: {
       label: MessageDescriptor;
       value: string | number;
@@ -46,14 +27,12 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     if (inner.streamer_name)
       fields.push({ label: msg`Streamer`, value: inner.streamer_name });
     if (inner.job_type) fields.push({ label: msg`Job`, value: inner.job_type });
-    if (inner.error_type || inner.error) {
+    const error =
+      inner.error_type || inner.error || inner.error_kind || inner.message;
+    if (error) {
       fields.push({
         label: msg`Error`,
-        value:
-          inner.error_type ||
-          inner.error ||
-          inner.reason ||
-          i18n._(msg`Unknown error`),
+        value: error,
         color: 'text-destructive font-medium',
         fullWidth: true,
       });
