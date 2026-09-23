@@ -356,7 +356,7 @@ msgstr "90 天"
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:633
+#: src/components/pipeline/workflows/step-config-dialog.tsx:624
 msgid "A unique ID used by other steps to reference this one."
 msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 
@@ -455,7 +455,7 @@ msgstr "添加覆盖项以自定义特定平台的行为。"
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:859
+#: src/components/pipeline/workflows/step-config-dialog.tsx:850
 msgid "Add anyway"
 msgstr "仍然添加"
 
@@ -821,7 +821,7 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:719
+#: src/components/pipeline/workflows/step-config-dialog.tsx:710
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
@@ -1302,8 +1302,8 @@ msgstr "缓存"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:793
-#: src/components/pipeline/workflows/step-config-dialog.tsx:851
+#: src/components/pipeline/workflows/step-config-dialog.tsx:784
+#: src/components/pipeline/workflows/step-config-dialog.tsx:842
 #: src/components/pipeline/workflows/workflow-card.tsx:120
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:228
@@ -1735,7 +1735,7 @@ msgstr "配置路径（可选）"
 
 #: src/components/notifications/channel-form.tsx:439
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
-#: src/components/pipeline/workflows/step-config-dialog.tsx:464
+#: src/components/pipeline/workflows/step-config-dialog.tsx:470
 #: src/components/pipeline/workflows/workflow-editor.tsx:193
 #: src/lib/menu-list.ts:114
 msgid "Configuration"
@@ -1754,7 +1754,7 @@ msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
 #: src/components/config/engines/engine-card.tsx:204
-#: src/components/pipeline/workflows/step-config-dialog.tsx:366
+#: src/components/pipeline/workflows/step-config-dialog.tsx:372
 msgid "Configure"
 msgstr "配置"
 
@@ -2007,7 +2007,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "Could not load presets: {0}"
 msgstr "无法加载预设：{0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:504
+#: src/components/pipeline/workflows/step-config-dialog.tsx:501
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
@@ -2318,7 +2318,7 @@ msgstr "自定义应用主题和侧边栏布局。"
 msgid "Cutoff"
 msgstr "阈值"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:587
+#: src/components/pipeline/workflows/step-config-dialog.tsx:578
 msgid "DAG Configuration"
 msgstr "DAG 配置"
 
@@ -2484,7 +2484,7 @@ msgstr "默认值：{value}"
 msgid "Default: Dolby Vision (30000)"
 msgstr "默认：杜比视界 (30000)"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:590
+#: src/components/pipeline/workflows/step-config-dialog.tsx:581
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
@@ -2622,7 +2622,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:826
+#: src/components/pipeline/workflows/step-config-dialog.tsx:817
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
@@ -2673,7 +2673,7 @@ msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全
 msgid "Delivery Policy"
 msgstr "投递策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:641
+#: src/components/pipeline/workflows/step-config-dialog.tsx:632
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
@@ -2735,7 +2735,7 @@ msgstr "目标根目录"
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:806
+#: src/components/pipeline/workflows/step-config-dialog.tsx:797
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -3023,7 +3023,7 @@ msgstr "例如 我喜欢的主播"
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:615
+#: src/components/pipeline/workflows/step-config-dialog.tsx:606
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
@@ -4029,7 +4029,7 @@ msgstr "服务器上的固定可执行文件名称或路径。仅在参数中展
 msgid "Floating"
 msgstr "悬浮"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:434
+#: src/components/pipeline/workflows/step-config-dialog.tsx:440
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
 
@@ -4938,7 +4938,7 @@ msgstr "延迟"
 msgid "Launch Pipeline"
 msgstr "启动处理流程"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:770
+#: src/components/pipeline/workflows/step-config-dialog.tsx:761
 msgid "Leave attempts empty or at 1 for no automatic retry; the backoff doubles after each failed attempt. Leave the timeout empty to use the worker pool default."
 msgstr "尝试次数留空或填 1 表示不自动重试；退避时间在每次失败后翻倍。超时留空则使用 Worker 池的默认值。"
 
@@ -5050,7 +5050,7 @@ msgstr "正在加载更多..."
 msgid "Loading older logs..."
 msgstr "正在加载历史日志..."
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:454
+#: src/components/pipeline/workflows/step-config-dialog.tsx:460
 msgid "Loading preset details..."
 msgstr "正在加载预设详情..."
 
@@ -5484,7 +5484,7 @@ msgstr "上传时 BaiduPCS-Go 会自动创建不存在的文件夹。"
 msgid "Missing presets: {0}"
 msgstr "缺失的预设：{0}"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:389
+#: src/components/pipeline/workflows/step-config-dialog.tsx:395
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
 
@@ -5722,7 +5722,7 @@ msgstr "未检测到更改"
 msgid "No configuration available for this processor."
 msgstr "此处理器没有可用配置。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:563
+#: src/components/pipeline/workflows/step-config-dialog.tsx:554
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
@@ -5829,7 +5829,7 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:694
+#: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -5886,7 +5886,7 @@ msgstr "响应中未找到可播放的流"
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:521
+#: src/components/pipeline/workflows/step-config-dialog.tsx:518
 msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
@@ -6882,7 +6882,7 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:764
+#: src/components/pipeline/workflows/step-config-dialog.tsx:755
 msgid "pool default"
 msgstr "池默认值"
 
@@ -6966,7 +6966,7 @@ msgstr "预设详情"
 msgid "Preset not found"
 msgstr "未找到预设"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:362
+#: src/components/pipeline/workflows/step-config-dialog.tsx:368
 msgid "Preset Step"
 msgstr "预设步骤"
 
@@ -7687,7 +7687,7 @@ msgstr "将在…后恢复"
 msgid "Retention"
 msgstr "保留策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:711
+#: src/components/pipeline/workflows/step-config-dialog.tsx:702
 msgid "Retries and timeout"
 msgstr "重试与超时"
 
@@ -7705,7 +7705,7 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:737
+#: src/components/pipeline/workflows/step-config-dialog.tsx:728
 msgid "Retry backoff (seconds)"
 msgstr "重试退避（秒）"
 
@@ -7873,7 +7873,7 @@ msgstr "星期六"
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:273
 #: src/components/notifications/channel-form.tsx:460
-#: src/components/shared/save-fab.tsx:100
+#: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:305
 msgid "Save changes"
 msgstr "保存更改"
@@ -7882,7 +7882,7 @@ msgstr "保存更改"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:814
+#: src/components/pipeline/workflows/step-config-dialog.tsx:805
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
@@ -7891,7 +7891,7 @@ msgstr "保存更改"
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:824
+#: src/components/pipeline/workflows/step-config-dialog.tsx:815
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
@@ -7900,7 +7900,7 @@ msgid "Save Workflow"
 msgstr "保存工作流"
 
 #: src/components/filters/FilterDialog.tsx:270
-#: src/components/shared/save-fab.tsx:98
+#: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "保存中"
 
@@ -8205,7 +8205,7 @@ msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:702
+#: src/components/pipeline/workflows/step-config-dialog.tsx:693
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
@@ -8521,7 +8521,7 @@ msgstr "SMTP 主机"
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:831
+#: src/components/pipeline/workflows/step-config-dialog.tsx:822
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结果，仍要保存吗？"
 
@@ -8636,19 +8636,19 @@ msgstr "尽量接近直播最新位置，网络中断时可能更频繁地缓冲
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:427
+#: src/components/pipeline/workflows/step-config-dialog.tsx:433
 msgid "Step Configuration"
 msgstr "步骤配置"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:626
+#: src/components/pipeline/workflows/step-config-dialog.tsx:617
 msgid "Step ID is required."
 msgstr "步骤 ID 不能为空。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:628
+#: src/components/pipeline/workflows/step-config-dialog.tsx:619
 msgid "Step ID must be unique."
 msgstr "步骤 ID 必须唯一。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:601
+#: src/components/pipeline/workflows/step-config-dialog.tsx:592
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
@@ -8907,8 +8907,8 @@ msgstr "抑制冗余头部以减少播放器微卡顿"
 msgid "Switch language"
 msgstr "切换语言"
 
-#: src/components/sidebar/mode-toggle.tsx:39
-#: src/components/sidebar/mode-toggle.tsx:44
+#: src/components/sidebar/mode-toggle.tsx:37
+#: src/components/sidebar/mode-toggle.tsx:42
 msgid "Switch Theme"
 msgstr "切换主题"
 
@@ -9123,11 +9123,11 @@ msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:836
+#: src/components/pipeline/workflows/step-config-dialog.tsx:827
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的结果文件，而不是原始录制文件。若要在转码后删除原始文件，请在转码步骤上启用“成功后移除输入”。仍要添加此删除步骤吗？"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:401
+#: src/components/pipeline/workflows/step-config-dialog.tsx:407
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -9171,11 +9171,11 @@ msgstr "此直播源需要自定义请求头。请使用自动模式或服务器
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "此来源需要请求头，因此无法使用直连。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:379
+#: src/components/pipeline/workflows/step-config-dialog.tsx:385
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
 msgstr "此步骤是一个子工作流：<0>{workflowName}</0>。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:384
+#: src/components/pipeline/workflows/step-config-dialog.tsx:390
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 
@@ -9288,7 +9288,7 @@ msgid "Timeout (s)"
 msgstr "超时（秒）"
 
 #: src/components/notifications/forms/webhook-form.tsx:144
-#: src/components/pipeline/workflows/step-config-dialog.tsx:755
+#: src/components/pipeline/workflows/step-config-dialog.tsx:746
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -10123,7 +10123,7 @@ msgstr "未找到工作流"
 msgid "Workflow retry initiated"
 msgstr "已开始重试工作流"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:360
+#: src/components/pipeline/workflows/step-config-dialog.tsx:366
 msgid "Workflow Step"
 msgstr "工作流步骤"
 

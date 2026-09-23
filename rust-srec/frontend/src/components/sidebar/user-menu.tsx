@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/tooltip';
 
 interface UserMenuProps {
-  isOpen: boolean | undefined;
+  isOpen: boolean;
 }
 
 /**
@@ -51,7 +51,7 @@ export const UserMenu = React.memo(function UserMenu({
                 variant="ghost"
                 className={cn(
                   'w-full h-12 mt-5 gap-0 transition-all duration-200 group overflow-hidden rounded-xl',
-                  isOpen === false
+                  !isOpen
                     ? 'justify-center px-0'
                     : 'justify-start px-2.5 hover:bg-accent/60',
                 )}
@@ -67,7 +67,7 @@ export const UserMenu = React.memo(function UserMenu({
                 <div
                   className={cn(
                     'items-center gap-2 min-w-0 transition-all duration-300',
-                    isOpen === false
+                    !isOpen
                       ? 'opacity-0 w-0 pointer-events-none hidden'
                       : 'flex flex-1 opacity-100 ml-3',
                   )}
@@ -87,13 +87,11 @@ export const UserMenu = React.memo(function UserMenu({
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          {isOpen === false && (
-            <TooltipContent side="right">{username}</TooltipContent>
-          )}
+          {!isOpen && <TooltipContent side="right">{username}</TooltipContent>}
         </Tooltip>
         <DropdownMenuContent
           side="top"
-          align={isOpen === false ? 'center' : 'start'}
+          align={!isOpen ? 'center' : 'start'}
           className="w-60 p-1.5 rounded-xl border-border/50 bg-background/95 backdrop-blur-xl shadow-2xl"
         >
           <DropdownMenuLabel className="p-2 font-normal">

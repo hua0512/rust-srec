@@ -1,10 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { createServerFn } from '@/server/createServerFn';
-import { ensureValidToken } from '@/server/tokenRefresh';
-
-const checkAuth = createServerFn({ method: 'GET' }).handler(async () => {
-  return await ensureValidToken();
-});
+import { sessionQueryOptions } from '@/api/session';
 
 export const Route = createFileRoute('/_public/login')({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
@@ -13,8 +8,10 @@ export const Route = createFileRoute('/_public/login')({
         typeof search.redirect === 'string' ? search.redirect : undefined,
     };
   },
-  beforeLoad: async () => {
-    const user = await checkAuth();
+  beforeLoad: async ({ context }) => {
+    // Same cached check as the `/_authed` guard; a signed-out result is never
+    // reused, so reaching this page after a sign-out always re-checks.
+    const user = await context.queryClient.fetchQuery(sessionQueryOptions);
     if (user && !user.mustChangePassword) {
       throw redirect({ to: '/dashboard' });
     }

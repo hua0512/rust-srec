@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 interface SidebarToggleProps {
-  isOpen: boolean | undefined;
-  setIsOpen?: () => void;
+  isOpen: boolean;
+  setIsOpen: () => void;
   side?: 'left' | 'right';
 }
 
@@ -24,7 +24,7 @@ export const SidebarToggle = React.memo(function SidebarToggle({
       className={cn('hidden md:block absolute top-[12px] z-20', placementClass)}
     >
       <Button
-        onClick={() => setIsOpen?.()}
+        onClick={() => setIsOpen()}
         className="rounded-md w-8 h-8"
         variant="outline"
         size="icon"
@@ -32,11 +32,11 @@ export const SidebarToggle = React.memo(function SidebarToggle({
         <Icon
           className={cn(
             'h-4 w-4 transition-transform ease-in-out duration-700',
-            isOpen === false ? 'rotate-180' : 'rotate-0',
+            !isOpen ? 'rotate-180' : 'rotate-0',
           )}
         />
         <span className="sr-only">
-          {isOpen === false ? (
+          {!isOpen ? (
             <Trans>Expand sidebar</Trans>
           ) : (
             <Trans>Collapse sidebar</Trans>

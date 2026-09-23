@@ -35,7 +35,7 @@ interface CollapseMenuButtonProps {
   icon: LucideIcon;
   label: string;
   submenus: Submenu[];
-  isOpen: boolean | undefined;
+  isOpen: boolean;
 }
 
 export const CollapseMenuButton = memo(function CollapseMenuButton({
@@ -80,14 +80,12 @@ export const CollapseMenuButton = memo(function CollapseMenuButton({
           <p className="truncate font-medium transition-all duration-300 opacity-100 translate-x-0 w-auto">
             {label}
           </p>
-          {isOpen && (
-            <div className="ml-auto transition-all duration-300 translate-x-0 opacity-100">
-              <ChevronDown
-                size={16}
-                className="transition-transform duration-200 opacity-60"
-              />
-            </div>
-          )}
+          <div className="ml-auto transition-all duration-300 translate-x-0 opacity-100">
+            <ChevronDown
+              size={16}
+              className="transition-transform duration-200 opacity-60"
+            />
+          </div>
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">

@@ -22,6 +22,28 @@ import {
 import { usePresetByName, useReferencedPresets } from './preset-lookup';
 import { PresetLookupStatus } from './preset-lookup-status';
 import { getStepIdError, getStepName } from './step-operations';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input as UiInput } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 /**
  * Turns the retry and timeout inputs into the optional step fields: attempts
@@ -54,28 +76,12 @@ function stepPolicyFromInputs(
   }
   return policy;
 }
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input as UiInput } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+
+const PROCESSOR_FORM_FALLBACK = (
+  <div className="flex items-center justify-center py-8">
+    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+  </div>
+);
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -476,22 +482,13 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                               event.stopPropagation();
                             }}
                           >
-                            {(() => {
-                              const Def = getProcessorDefinition(
-                                presetDetail.processor,
-                              );
-                              return Def ? (
-                                <Suspense
-                                  fallback={
-                                    <div className="flex items-center justify-center py-8">
-                                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                    </div>
-                                  }
-                                >
-                                  <Def.component control={presetForm.control} />
-                                </Suspense>
-                              ) : null;
-                            })()}
+                            {presetProcessorDef && (
+                              <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
+                                <presetProcessorDef.component
+                                  control={presetForm.control}
+                                />
+                              </Suspense>
+                            )}
                           </form>
                         </Form>
                       </div>
@@ -547,13 +544,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                         }}
                         className="contents"
                       >
-                        <Suspense
-                          fallback={
-                            <div className="flex items-center justify-center py-8">
-                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                            </div>
-                          }
-                        >
+                        <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
                           <processorDef.component control={form.control} />
                         </Suspense>
                       </form>
