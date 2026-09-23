@@ -5,7 +5,7 @@ import { getEngine } from '../functions/engines';
 import { createFilter, deleteFilter, updateFilter } from '../functions/filters';
 import { getJobPreset } from '../functions/job';
 import { listLogFiles } from '../functions/logging';
-import { createChannel, getChannel } from '../functions/notifications';
+import { createChannel } from '../functions/notifications';
 import {
   cancelDag,
   createPipelinePreset,
@@ -14,11 +14,7 @@ import {
   listPipelinePresets,
 } from '../functions/pipeline';
 import { getSession } from '../functions/sessions';
-import {
-  getStreamer,
-  updateStreamer,
-  updateStreamerPriority,
-} from '../functions/streamers';
+import { getStreamer, updateStreamer } from '../functions/streamers';
 
 const fetchBackendMock = vi.hoisted(() => vi.fn());
 
@@ -134,11 +130,6 @@ describe('server function request paths', () => {
       () => deleteFilter({ data: { streamerId: ID, filterId: 'f1' } }),
       `/streamers/${ID}/filters/f1`,
     ],
-    [
-      'getChannel',
-      () => getChannel({ data: ID }),
-      `/notifications/channels/${ID}`,
-    ],
     ['getTemplate', () => getTemplate({ data: ID }), `/templates/${ID}`],
     ['getSession', () => getSession({ data: ID }), `/sessions/${ID}`],
     ['getJobPreset', () => getJobPreset({ data: ID }), `/job/presets/${ID}`],
@@ -235,14 +226,6 @@ describe('server function identifier validation', () => {
     fetchBackendMock.mockClear();
     await expectNoRequest(() =>
       deleteFilter({ data: { streamerId: ID, filterId: '' } }),
-    );
-  });
-
-  it('rejects a priority update with no priority', async () => {
-    await expectNoRequest(() =>
-      updateStreamerPriority({
-        data: { id: ID, priority: undefined as never },
-      }),
     );
   });
 

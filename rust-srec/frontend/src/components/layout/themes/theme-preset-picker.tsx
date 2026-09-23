@@ -35,12 +35,10 @@ export function ThemePresetPicker({
   themes,
   value,
   onValueChange,
-  showLabels = true,
 }: {
   themes: ColorTheme[];
   value: string | null;
   onValueChange: (value: string) => void;
-  showLabels?: boolean;
 }) {
   return (
     <div className="flex flex-wrap gap-3">
@@ -57,7 +55,7 @@ export function ThemePresetPicker({
             aria-pressed={selected}
             className={cn(
               'group relative flex items-center justify-center gap-2 rounded-full transition-all hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              showLabels ? 'h-10 pr-4 pl-1' : 'h-10 w-10',
+              'h-10 pr-4 pl-1',
               selected && 'ring-2 ring-primary ring-offset-2 scale-110',
             )}
           >
@@ -67,9 +65,7 @@ export function ThemePresetPicker({
                 <Check className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white mix-blend-difference pointer-events-none" />
               ) : null}
             </span>
-            {showLabels ? (
-              <span className="text-sm font-medium">{theme.name}</span>
-            ) : null}
+            <span className="text-sm font-medium">{theme.name}</span>
           </button>
         );
       })}

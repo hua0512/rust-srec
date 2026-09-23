@@ -77,7 +77,7 @@ describe('ThemeProvider', () => {
     expect(document.documentElement).not.toHaveClass('light');
   });
 
-  it('falls back to defaultTheme when localStorage is empty', () => {
+  it('falls back to the default mode when localStorage is empty', () => {
     // Default is 'system'. With matchMedia returning matches: false (light),
     // the resolved class should be 'light'.
     render(

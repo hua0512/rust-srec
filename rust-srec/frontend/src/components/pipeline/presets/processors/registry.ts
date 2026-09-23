@@ -56,7 +56,7 @@ export interface ProcessorDefinition {
   label: MessageDescriptor;
 }
 
-export const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
+const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
   remux: {
     schema: RemuxConfigSchema,
     component: RemuxConfigForm,

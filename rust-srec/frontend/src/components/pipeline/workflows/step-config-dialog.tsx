@@ -25,7 +25,7 @@ import { getStepIdError } from './step-operations';
  * of 1 or less (or blank) mean no retry policy, a blank timeout means the
  * worker pool default, and a blank backoff leaves the backend default.
  */
-export function stepPolicyFromInputs(
+function stepPolicyFromInputs(
   attempts: string,
   backoffSecs: string,
   timeoutSecs: string,
@@ -97,7 +97,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const isPreset = step?.type === 'preset';
   const presetName = isPreset ? step.name : null;
   const isWorkflow = step?.type === 'workflow';
-  const workflowName = isWorkflow ? (step as any).name : null;
+  const workflowName = isWorkflow ? step.name : null;
   // Processor of the preset at the moment handleDetach ran. `isDetached` is derived from it, so
   // once the user is editing a detached copy the form and performSave no longer depend on
   // `presetDetail` — a refetch that stops resolving the preset cannot swap the processor or turn

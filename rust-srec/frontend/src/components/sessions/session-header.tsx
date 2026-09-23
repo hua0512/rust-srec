@@ -12,7 +12,6 @@ const STATUS_CONFIG: Record<
   {
     icon: any;
     color: string;
-    badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
     animate?: boolean;
     gradient: string;
     borderColor: string;
@@ -22,7 +21,6 @@ const STATUS_CONFIG: Record<
   LIVE: {
     icon: Radio,
     color: 'text-red-500',
-    badgeVariant: 'default',
     animate: true,
     gradient: 'from-red-500/20 to-red-500/5',
     borderColor: 'border-red-500/20',
@@ -31,7 +29,6 @@ const STATUS_CONFIG: Record<
   OFFLINE: {
     icon: CheckCircle2,
     color: 'text-muted-foreground',
-    badgeVariant: 'secondary',
     gradient: 'from-gray-500/20 to-gray-500/5',
     borderColor: 'border-gray-500/20',
     label: msg`OFFLINE`,

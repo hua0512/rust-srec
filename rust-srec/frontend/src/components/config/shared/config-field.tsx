@@ -64,8 +64,8 @@ export const CONFIG_DESCRIPTION =
 /**
  * The "what does this do?" hint beside a field label.
  *
- * The Tooltip / TooltipContent / StatusInfoTooltip stack underneath is spelled out 27 times
- * across the configuration cards; this is that stack, once.
+ * Wraps the Tooltip / TooltipContent / StatusInfoTooltip stack so configuration cards don't
+ * each spell it out.
  */
 export function FieldInfo({
   icon,

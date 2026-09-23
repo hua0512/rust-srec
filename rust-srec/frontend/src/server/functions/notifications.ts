@@ -42,13 +42,6 @@ export const listChannels = createServerFn({ method: 'GET' }).handler(
   },
 );
 
-export const getChannel = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    const json = await fetchBackend(backendPath`/notifications/channels/${id}`);
-    return NotificationChannelSchema.parse(json);
-  });
-
 export const createChannel = createServerFn({ method: 'POST' })
   .validator((data: z.infer<typeof CreateChannelRequestSchema>) =>
     parseInput(CreateChannelSchema, data),

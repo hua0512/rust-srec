@@ -5,7 +5,7 @@ import { DagStepDefinition } from '@/api/schemas';
 // depends_on, so a `delete` step depending on one of these receives the produced file and would
 // delete the converted result, not the original recording. The transcode family exposes
 // `remove_input_on_success` to delete the source in place instead.
-export const TRANSFORM_PROCESSORS = new Set([
+const TRANSFORM_PROCESSORS = new Set([
   'remux',
   'transcode',
   'convert',
@@ -28,7 +28,7 @@ export function buildPresetProcessorMap(
 
 // Resolve a step to its processor: inline steps carry it directly; preset steps are looked up in
 // the name -> processor map; workflow steps expand into their own steps later and are skipped.
-export function resolveStepProcessor(
+function resolveStepProcessor(
   step: DagStepDefinition | null | undefined,
   presetProcessorByName: Map<string, string>,
 ): string | null {

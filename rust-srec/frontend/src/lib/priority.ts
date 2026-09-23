@@ -6,12 +6,6 @@ export const PRIORITY_NORMAL = 5;
 export const PRIORITY_HIGH = 8;
 export const PRIORITY_CRITICAL = 10;
 
-export type PriorityLevel =
-  | typeof PRIORITY_LOW
-  | typeof PRIORITY_NORMAL
-  | typeof PRIORITY_HIGH
-  | typeof PRIORITY_CRITICAL;
-
 /**
  * The four bands a numeric priority falls into. Shared by `priorityLabel` and
  * `PRIORITY_OPTIONS` so the word shown on a badge always matches the one in the select.

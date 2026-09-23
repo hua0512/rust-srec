@@ -4,8 +4,7 @@ import {
   COOKIE_KEY_MODE,
   COOKIE_MAX_AGE,
   DEFAULT_MODE,
-  MODES,
-  type Mode,
+  isMode,
 } from '@/lib/theme-config';
 
 export const themeMiddleware = createMiddleware({ type: 'request' }).server(
@@ -13,9 +12,7 @@ export const themeMiddleware = createMiddleware({ type: 'request' }).server(
     const cookie = parse(request.headers.get('cookie') ?? '');
     const rawMode = cookie[COOKIE_KEY_MODE];
 
-    const mode: Mode = MODES.includes(rawMode as Mode)
-      ? (rawMode as Mode)
-      : DEFAULT_MODE;
+    const mode = isMode(rawMode) ? rawMode : DEFAULT_MODE;
 
     const result = await next({
       context: {

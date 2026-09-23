@@ -120,7 +120,7 @@ export const createStreamer = createServerFn({ method: 'POST' })
     return StreamerSchema.parse(json);
   });
 
-export const updateStreamer = createServerFn({ method: 'POST' }) // Using POST to support non-GET, commonly patch is used but server fn usually distinguishes mainly GET/POST
+export const updateStreamer = createServerFn({ method: 'POST' })
   .validator(
     (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
@@ -155,25 +155,6 @@ export const extractMetadata = createServerFn({ method: 'POST' })
       body: JSON.stringify({ url }),
     });
     return ExtractMetadataResponseSchema.parse(json);
-  });
-
-/**
- * Update streamer priority.
- * PATCH /api/streamers/{id}/priority
- */
-export const updateStreamerPriority = createServerFn({ method: 'POST' })
-  .validator((d: { id: string; priority: z.infer<typeof PrioritySchema> }) => ({
-    id: parseInput(PathIdSchema, d.id),
-    // The endpoint sets the priority outright, so a missing value has to fail
-    // here rather than resolve to the schema's default.
-    priority: parseInput(PrioritySchema.removeDefault(), d.priority),
-  }))
-  .handler(async ({ data: { id, priority } }) => {
-    const json = await fetchBackend(backendPath`/streamers/${id}/priority`, {
-      method: 'PATCH',
-      body: JSON.stringify({ priority }),
-    });
-    return StreamerSchema.parse(json);
   });
 
 // One row of the streamer's per-poll check history. Mirrors
@@ -214,7 +195,7 @@ export const StreamerCheckHistoryEntrySchema = z.object({
   viewer_count: z.number().nullable().optional(),
 });
 
-export const StreamerCheckHistoryResponseSchema = z.object({
+const StreamerCheckHistoryResponseSchema = z.object({
   items: z.array(StreamerCheckHistoryEntrySchema),
 });
 

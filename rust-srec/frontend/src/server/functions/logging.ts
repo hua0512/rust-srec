@@ -34,9 +34,6 @@ export const updateLoggingFilter = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend('/logging', {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(data),
     });
     return LoggingConfigResponseSchema.parse(json);
@@ -74,13 +71,11 @@ export const listLogFiles = createServerFn({ method: 'GET' })
     return LogFilesResponseSchema.parse(json);
   });
 
-/** Build an authenticated download token for system logs with optional date range. */
+/** Fetch a single-use token for downloading the system log archive. */
 export const getLogsDownloadUrl = createServerFn({ method: 'GET' }).handler(
   async () => {
     // Ask the backend for a single-use archive token
     const json = await fetchBackend('/logging/archive-token');
-    const parsed = ArchiveTokenResponseSchema.parse(json);
-
-    return { token: parsed.token, expires_at: parsed.expires_at };
+    return ArchiveTokenResponseSchema.parse(json);
   },
 );

@@ -27,7 +27,7 @@ import { Edit, MoreHorizontal, Trash, Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import type { PipelinePreset } from '@/server/functions/pipeline';
+import type { PipelinePreset } from '@/api/schemas';
 import {
   getStepBadgeColor,
   getStepIcon,

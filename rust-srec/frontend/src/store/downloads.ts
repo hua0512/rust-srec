@@ -149,7 +149,6 @@ interface DownloadStoreState {
 
   // Selectors
   getDownloadsByStreamer: (streamerId: string) => DownloadView[];
-  hasActiveDownload: (streamerId: string) => boolean;
   getQueuedForStreamer: (streamerId: string) => QueuedEntry | undefined;
 }
 
@@ -341,9 +340,6 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
     }
     return result;
   },
-
-  hasActiveDownload: (streamerId) =>
-    get().getDownloadsByStreamer(streamerId).length > 0,
 
   getQueuedForStreamer: (streamerId) => get().queuedByStreamer.get(streamerId),
 }));

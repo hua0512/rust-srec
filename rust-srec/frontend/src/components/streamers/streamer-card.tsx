@@ -121,7 +121,7 @@ export const StreamerCard = memo(
 
               {/* Download progress indicator */}
               {activeDownload && (
-                <ProgressIndicator progress={activeDownload} compact />
+                <ProgressIndicator progress={activeDownload} />
               )}
             </div>
           </div>

@@ -6,14 +6,10 @@ import {
   ParseUrlResponseSchema,
   ResolveUrlRequestSchema,
   ResolveUrlResponseSchema,
+  type ParseUrlRequest,
+  type ResolveUrlRequest,
 } from '../../api/schemas';
 import { z } from 'zod';
-
-// Re-export types from schemas for convenience
-export type ParseUrlRequest = z.infer<typeof ParseUrlRequestSchema>;
-export type ParseUrlResponse = z.infer<typeof ParseUrlResponseSchema>;
-export type ResolveUrlRequest = z.infer<typeof ResolveUrlRequestSchema>;
-export type ResolveUrlResponse = z.infer<typeof ResolveUrlResponseSchema>;
 
 /**
  * Parse a single URL to extract media info

@@ -24,7 +24,7 @@ export function isLocaleValid(locale: string): locale is Locale {
 /**
  * Map base languages to supported locales.
  */
-export const languageToLocaleMap: Record<string, Locale> = {
+const languageToLocaleMap: Record<string, Locale> = {
   en: 'en',
   zh: 'zh-CN',
 };

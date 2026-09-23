@@ -113,7 +113,6 @@ export const listTemplates = createServerFn({ method: 'GET' }).handler(
       limit: z.number(),
       offset: z.number(),
     });
-    // Endpoints logic extracted .items, duplicating that here
     const response = PaginatedTemplatesSchema.parse(json);
     return response.items;
   },
@@ -148,10 +147,9 @@ export const createTemplate = createServerFn({ method: 'POST' })
     parseInput(TemplateWriteSchema, data),
   )
   .handler(async ({ data }) => {
-    const payload = data;
     const json = await fetchBackend('/templates', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
     return TemplateSchema.parse(json);
   });
@@ -164,10 +162,9 @@ export const updateTemplate = createServerFn({ method: 'POST' })
     }),
   )
   .handler(async ({ data: { id, data } }) => {
-    const payload = data;
     const json = await fetchBackend(backendPath`/templates/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(data),
     });
     return TemplateSchema.parse(json);
   });

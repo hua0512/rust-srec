@@ -35,7 +35,7 @@ import React from 'react';
  * built-in preset names (`compress_hq`, `audio_mp3`, `nvenc_av1_fast`, ...),
  * which is what a workflow step stores when it references a preset.
  */
-export const STEP_ICONS: Record<string, React.ElementType> = {
+const STEP_ICONS: Record<string, React.ElementType> = {
   remux: FileVideo,
   thumbnail: ImageIcon,
   upload: Upload,
@@ -204,7 +204,7 @@ export const DEFAULT_STEP_COLOR: StepColorVariants = {
  * Resolves a step's colours from its processor name, falling back to its
  * preset category and then to a matching preset-name prefix.
  */
-export function getStepColorVariants(
+function getStepColorVariants(
   processor: string,
   category?: string,
 ): StepColorVariants {
@@ -236,7 +236,7 @@ export function getStepIcon(processor: string): React.ElementType {
 }
 
 // Platform Constants
-export const PLATFORM_ICONS: Record<string, React.ElementType> = {
+const PLATFORM_ICONS: Record<string, React.ElementType> = {
   bilibili: SiBilibili,
   douyin: SiTiktok, // Douyin is the Chinese TikTok; Simple Icons has no separate douyin slug
   tiktok: SiTiktok,
@@ -254,7 +254,7 @@ export const PLATFORM_ICONS: Record<string, React.ElementType> = {
   bigo: Radio,
 };
 
-export const PLATFORM_COLORS: Record<string, string> = {
+const PLATFORM_COLORS: Record<string, string> = {
   bilibili: 'bg-pink-500/10 text-pink-500 border-pink-500/20',
   douyin: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
   douyu: 'bg-orange-500/10 text-orange-500 border-orange-500/20',

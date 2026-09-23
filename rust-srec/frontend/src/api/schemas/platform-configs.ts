@@ -82,7 +82,7 @@ export const TwitchConfigSchema = z
   .strict();
 
 // TikTok platform-specific configuration
-export const TikTokApiModeValues = ['auto', 'web', 'html'] as const;
+const TikTokApiModeValues = ['auto', 'web', 'html'] as const;
 
 export const TikTokConfigSchema = z
   .object({

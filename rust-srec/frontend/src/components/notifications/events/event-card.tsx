@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Globe, Activity, Link2 } from 'lucide-react';
@@ -11,13 +11,12 @@ import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
 import { formatRelativeTime } from '@/lib/date-utils';
 
-export const getPriorityStyles = (priority: number) => {
+const getPriorityStyles = (priority: number) => {
   if (priority >= 10) {
     // Critical
     return {
       bg: 'bg-destructive/5 dark:bg-destructive/10',
       border: 'border-destructive/20 group-hover:border-destructive/40',
-      text: 'text-destructive',
       badge: 'bg-destructive/10 text-destructive border-destructive/20',
       icon: 'bg-destructive/10 text-destructive',
       glow: 'group-hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]',
@@ -28,7 +27,6 @@ export const getPriorityStyles = (priority: number) => {
     return {
       bg: 'bg-orange-500/5 dark:bg-orange-500/10',
       border: 'border-orange-500/20 group-hover:border-orange-500/40',
-      text: 'text-orange-600 dark:text-orange-400',
       badge:
         'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
       icon: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
@@ -40,7 +38,6 @@ export const getPriorityStyles = (priority: number) => {
     return {
       bg: 'bg-blue-500/5 dark:bg-blue-500/10',
       border: 'border-blue-500/20 group-hover:border-blue-500/40',
-      text: 'text-blue-600 dark:text-blue-400',
       badge:
         'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
       icon: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
@@ -52,7 +49,6 @@ export const getPriorityStyles = (priority: number) => {
     return {
       bg: 'bg-slate-500/5 dark:bg-slate-500/10',
       border: 'border-slate-500/20 group-hover:border-slate-500/40',
-      text: 'text-slate-600 dark:text-slate-400',
       badge:
         'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
       icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
@@ -79,10 +75,7 @@ interface EventCardProps {
 
 export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
   const { i18n } = useLingui();
-  const styles = useMemo(
-    () => getPriorityStyles(event.priority),
-    [event.priority],
-  );
+  const styles = getPriorityStyles(event.priority);
   const displayTitle = i18n._(eventTypeLabel(event.event_type));
 
   return (

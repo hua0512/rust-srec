@@ -366,11 +366,6 @@ export const getPipelineOutputSummary = createServerFn({ method: 'GET' })
     return MediaOutputSummarySchema.parse(json);
   });
 
-export type PipelinePreset = z.infer<typeof PipelinePresetSchema>;
-export type PipelinePresetListResponse = z.infer<
-  typeof PipelinePresetListResponseSchema
->;
-
 // Filter parameters for pipeline presets
 export interface PipelinePresetFilters {
   search?: string;

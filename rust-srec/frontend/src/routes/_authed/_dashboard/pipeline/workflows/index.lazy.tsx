@@ -11,8 +11,8 @@ import { useMemo } from 'react';
 import {
   listPipelinePresets,
   deletePipelinePreset,
-  type PipelinePreset,
 } from '@/server/functions/pipeline';
+import type { PipelinePreset } from '@/api/schemas';
 
 import { Button } from '@/components/ui/button';
 import { Plus, Workflow } from 'lucide-react';

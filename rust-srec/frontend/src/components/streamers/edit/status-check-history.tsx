@@ -338,10 +338,9 @@ function streamSummary(s: StreamSummary): string {
     .join(' · ');
 }
 
-/** Two summaries are the same stream when their compact representations
- *  match — the selected descriptor and its position in the candidate list
- *  are produced from the same source data, so a string equality on the
- *  visible fields is sufficient and stable across (de)serialization. */
+/** Two summaries are the same stream when their identifying fields match.
+ *  The selected descriptor and the candidate list come from the same source
+ *  data, so field equality is stable across (de)serialization. */
 function isSameStream(
   a: StreamSummary,
   b: StreamSummary | null | undefined,
@@ -400,7 +399,7 @@ function outcomeAriaName(
  * Per-outcome bar appearance. Color tokens follow the rest of the dashboard
  * (emerald = live, amber = filtered, red = error). Heights skew the eye
  * toward anomalies — short gray bars for offline polls, tall colored bars
- * everywhere else, matching the screenshot's visual rhythm.
+ * everywhere else.
  */
 function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
   color: string;

@@ -92,7 +92,6 @@ export const deleteSessions = createServerFn({ method: 'POST' })
   .handler(async ({ data: ids }) => {
     const json = await fetchBackend('/sessions/batch-delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
     return json as { deleted: number };
