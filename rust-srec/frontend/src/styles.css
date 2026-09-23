@@ -320,6 +320,22 @@ html {
   }
 }
 
+/* Notification badge (transitions.dev "Notification badge"): the wrapper
+   slides in from below-left while the dot pops open; closing collapses the
+   dot with a shorter, non-overshooting curve. */
+@keyframes rs-notification-badge-slide-in {
+  from {
+    transform: translate(
+      var(--rs-notification-badge-offset-x),
+      var(--rs-notification-badge-offset-y)
+    );
+  }
+
+  to {
+    transform: translate(0, 0);
+  }
+}
+
 @keyframes rs-dashboard-grid-enter {
   from {
     opacity: 0;
@@ -370,6 +386,62 @@ html {
   animation: rs-notification-ping 2s ease-in-out infinite;
 }
 
+.rs-notification-badge {
+  --rs-notification-badge-slide-dur: 260ms;
+  --rs-notification-badge-pop-dur: 500ms;
+  --rs-notification-badge-pop-close-dur: 180ms;
+  --rs-notification-badge-fade-dur: 400ms;
+  --rs-notification-badge-fade-close-dur: 180ms;
+  --rs-notification-badge-blur: 2px;
+  --rs-notification-badge-offset-x: -8.2px;
+  --rs-notification-badge-offset-y: 12.4px;
+  --rs-notification-badge-slide-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --rs-notification-badge-pop-ease: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --rs-notification-badge-close-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  pointer-events: none;
+  will-change: transform;
+}
+
+.rs-notification-badge[data-open='true'][data-entering] {
+  animation: rs-notification-badge-slide-in
+    var(--rs-notification-badge-slide-dur)
+    var(--rs-notification-badge-slide-ease);
+}
+
+.rs-notification-badge-dot {
+  transform-origin: center;
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    transform var(--rs-notification-badge-pop-dur)
+      var(--rs-notification-badge-pop-ease),
+    opacity var(--rs-notification-badge-fade-dur)
+      var(--rs-notification-badge-pop-ease),
+    filter var(--rs-notification-badge-pop-dur)
+      var(--rs-notification-badge-pop-ease);
+  will-change: transform, opacity, filter;
+}
+
+.rs-notification-badge[data-open='false'] .rs-notification-badge-dot {
+  transform: scale(0);
+  opacity: 0;
+  filter: blur(var(--rs-notification-badge-blur));
+  transition:
+    transform var(--rs-notification-badge-pop-close-dur)
+      var(--rs-notification-badge-close-ease),
+    opacity var(--rs-notification-badge-fade-close-dur)
+      var(--rs-notification-badge-close-ease),
+    filter var(--rs-notification-badge-pop-close-dur)
+      var(--rs-notification-badge-close-ease);
+}
+
+/* No point pinging an invisible dot. */
+.rs-notification-badge[data-open='false'] .rs-notification-ping {
+  animation-play-state: paused;
+}
+
 .rs-dashboard-grid {
   animation: rs-dashboard-grid-enter 300ms ease-out both;
 }
@@ -406,10 +478,15 @@ html {
   .rs-tooltip-status-dot,
   .rs-tooltip-status-label,
   .rs-notification-ping,
+  .rs-notification-badge,
   .rs-dashboard-grid,
   .rs-dashboard-grid-item,
   .rs-dashboard-empty-enter {
     animation: none;
+  }
+
+  .rs-notification-badge-dot {
+    transition: none !important;
   }
 }
 

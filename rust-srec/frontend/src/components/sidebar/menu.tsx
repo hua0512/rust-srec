@@ -28,7 +28,11 @@ interface MenuItemProps {
   icon: LucideIcon;
   isActive: boolean;
   isOpen: boolean;
+  /** `undefined` renders no badge; a boolean animates it in/out. */
   showDot?: boolean;
+  /** Play the slide-in; only set when the dot has just turned on. */
+  dotEntering?: boolean;
+  onDotEntered?: () => void;
 }
 
 const MenuItem = React.memo(function MenuItem({
@@ -38,6 +42,8 @@ const MenuItem = React.memo(function MenuItem({
   isActive,
   isOpen,
   showDot,
+  dotEntering,
+  onDotEntered,
 }: MenuItemProps) {
   return (
     <div className="w-full">
@@ -65,11 +71,22 @@ const MenuItem = React.memo(function MenuItem({
                 )}
               >
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-                {showDot && (
-                  <div className="absolute -top-1 -right-1 flex items-center justify-center">
-                    <div className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
-                    <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
-                  </div>
+                {showDot !== undefined && (
+                  <span
+                    aria-hidden
+                    data-open={showDot}
+                    data-entering={dotEntering || undefined}
+                    className="rs-notification-badge absolute -top-1 -right-1"
+                    onAnimationEnd={(e) => {
+                      // The ping's animationend bubbles up from the child.
+                      if (e.target === e.currentTarget) onDotEntered?.();
+                    }}
+                  >
+                    <span className="rs-notification-badge-dot flex items-center justify-center">
+                      <span className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
+                      <span className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
+                    </span>
+                  </span>
                 )}
               </span>
               <p
@@ -101,7 +118,23 @@ function MenuComponent({ isOpen, className }: MenuProps) {
     [pathname, i18n],
   );
 
-  const { hasCriticalDot } = useNotificationDot();
+  const { hasCriticalDot, isPending } = useNotificationDot();
+  // No badge until the first fetch settles, so a dot that is already on at
+  // page load (or when the mobile sheet mounts) just appears.
+  const dot = isPending ? undefined : hasCriticalDot;
+
+  // The menu remounts its items whenever the sidebar toggles, which would
+  // replay a mount-time slide-in. Instead, slide only when the dot turns on
+  // while this menu is mounted, and keep the flag until the slide finishes
+  // so an unrelated re-render can't cut it short. Derived during render: an
+  // effect would paint the dot in place for a frame before it slides.
+  const [prevDot, setPrevDot] = React.useState(dot);
+  const [dotEntering, setDotEntering] = React.useState(false);
+  if (dot !== prevDot) {
+    setPrevDot(dot);
+    setDotEntering(prevDot === false && dot === true);
+  }
+  const handleDotEntered = React.useCallback(() => setDotEntering(false), []);
 
   return (
     <ScrollArea className={cn('[&>div>div[style]]:!block', className)}>
@@ -150,7 +183,11 @@ function MenuComponent({ isOpen, className }: MenuProps) {
                             : active
                         }
                         isOpen={isOpen}
-                        showDot={href === '/notifications' && !!hasCriticalDot}
+                        {...(href === '/notifications' && {
+                          showDot: dot,
+                          dotEntering,
+                          onDotEntered: handleDotEntered,
+                        })}
                       />
                     ) : (
                       <div className="w-full" key={menuIndex}>

@@ -7,7 +7,7 @@ import { getLastSeenCriticalMs } from '@/lib/notification-state';
  * Returns true if there are critical events in the last 7 days that haven't been seen.
  */
 export function useNotificationDot() {
-  const { data: hasCriticalDot, isLoading } = useQuery({
+  const { data: hasCriticalDot, isPending } = useQuery({
     queryKey: ['notification-critical-dot'],
     queryFn: async () => {
       if (typeof window === 'undefined') return false;
@@ -32,6 +32,6 @@ export function useNotificationDot() {
 
   return {
     hasCriticalDot: !!hasCriticalDot,
-    isLoading,
+    isPending,
   };
 }

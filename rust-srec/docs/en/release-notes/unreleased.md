@@ -137,6 +137,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Added a sidebar account menu for API keys, account settings, password changes, and sign-out.
 - Fixed log file download errors appearing untranslated or blank.
 - The preset editor now offers **Reset to defaults** for every processor, and asks before replacing a configuration you have edited.
+- The sidebar notification dot now animates in when a new critical event arrives and fades out once it has been seen.
 
 ## Monitoring and maintenance
 
