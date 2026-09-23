@@ -50,7 +50,7 @@ export function isPasswordChangeRequiredError(error: unknown): boolean {
  * `instanceof BackendApiError` check is always false for an error raised inside
  * a server function, because only the own properties survive serialization.
  */
-export function isBackendStatus(error: unknown, status: number): boolean {
+function isBackendStatus(error: unknown, status: number): boolean {
   if (!(error instanceof Error)) return false;
   return (error as Partial<BackendApiError>).status === status;
 }

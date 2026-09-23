@@ -178,9 +178,3 @@ export class DanmuStreamParser {
     this.activeComment = null;
   }
 }
-
-export function parseDanmuXml(text: string): DanmuComment[] {
-  const parser = new DanmuStreamParser();
-  parser.write(text);
-  return parser.finish();
-}

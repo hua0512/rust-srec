@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
  * `theme` follows the active theme's primary colour and is the default for new surfaces. The
  * fixed hues exist because the per-platform pages use them to tell their sections apart.
  */
-export type ConfigAccent = 'theme' | 'indigo' | 'emerald' | 'sky';
+type ConfigAccent = 'theme' | 'indigo' | 'emerald' | 'sky';
 
 const ACCENT_TEXT: Record<ConfigAccent, string> = {
   theme: 'text-primary',

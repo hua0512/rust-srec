@@ -1,21 +1,9 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import { Lock } from 'lucide-react';
-import {
-  ConfigFieldLabel,
-  ConfigSectionHeading,
-  CONFIG_DESCRIPTION,
-} from '@/components/config/shared/config-field';
-import { configPath } from '@/components/config/shared/form-path';
+import { SecretFieldSection } from './secret-field-section';
 
 interface TwitcastingConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -29,42 +17,19 @@ export function TwitcastingConfigFields<TFieldValues extends FieldValues>({
 }: TwitcastingConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
-    <div className="space-y-12">
-      {/* Protection Settings Section */}
-      <section className="space-y-6">
-        <ConfigSectionHeading icon={Lock} accent="indigo">
-          <Trans>Protection Settings</Trans>
-        </ConfigSectionHeading>
-
-        <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'password')}
-            render={({ field }) => (
-              <FormItem className="space-y-4">
-                <ConfigFieldLabel accent="indigo">
-                  <Trans>Stream Password</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="password"
-                    {...field}
-                    value={field.value || ''}
-                    className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all font-mono text-xs shadow-sm"
-                    placeholder={i18n._(msg`Password...`)}
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Required if the stream is password-protected by the
-                    broadcaster.
-                  </Trans>
-                </FormDescription>
-              </FormItem>
-            )}
-          />
-        </div>
-      </section>
-    </div>
+    <SecretFieldSection
+      form={form}
+      fieldName={fieldName}
+      optionKey="password"
+      icon={Lock}
+      heading={<Trans>Protection Settings</Trans>}
+      label={<Trans>Stream Password</Trans>}
+      placeholder={i18n._(msg`Password...`)}
+      description={
+        <Trans>
+          Required if the stream is password-protected by the broadcaster.
+        </Trans>
+      }
+    />
   );
 }

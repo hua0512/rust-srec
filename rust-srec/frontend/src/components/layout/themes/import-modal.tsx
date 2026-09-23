@@ -17,6 +17,19 @@ interface ImportModalProps {
   onImport: (theme: ImportedTheme) => void;
 }
 
+/** Collects the `--name: value;` declarations inside the first block matching `block`. */
+function readVariables(css: string, block: RegExp): Record<string, string> {
+  const variables: Record<string, string> = {};
+  const content = css.match(block)?.[1];
+  if (!content) return variables;
+  for (const [, variable, value] of content.matchAll(
+    /--([^:]+):\s*([^;]+);/g,
+  )) {
+    variables[variable.trim()] = value.trim();
+  }
+  return variables;
+}
+
 export function ImportModal({
   open,
   onOpenChange,
@@ -25,50 +38,23 @@ export function ImportModal({
   const [importText, setImportText] = React.useState('');
 
   const processImport = () => {
+    const cssText = importText.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove comments
+    const theme: ImportedTheme = {
+      light: readVariables(cssText, /:root\s*\{([^}]+)\}/),
+      dark: readVariables(cssText, /\.dark\s*\{([^}]+)\}/),
+    };
+
     try {
-      if (!importText.trim()) {
-        console.error('No CSS content provided');
-        return;
-      }
-
-      // Parse CSS content into light and dark theme variables
-      const lightTheme: Record<string, string> = {};
-      const darkTheme: Record<string, string> = {};
-
-      // Split CSS into sections
-      const cssText = importText.replace(/\/\*[\s\S]*?\*\//g, ''); // Remove comments
-
-      // Extract :root section (light theme)
-      const rootMatch = cssText.match(/:root\s*\{([^}]+)\}/);
-      if (rootMatch) {
-        const rootContent = rootMatch[1];
-        const variableMatches = rootContent.matchAll(/--([^:]+):\s*([^;]+);/g);
-        for (const match of variableMatches) {
-          const [, variable, value] = match;
-          lightTheme[variable.trim()] = value.trim();
-        }
-      }
-
-      // Extract .dark section (dark theme)
-      const darkMatch = cssText.match(/\.dark\s*\{([^}]+)\}/);
-      if (darkMatch) {
-        const darkContent = darkMatch[1];
-        const variableMatches = darkContent.matchAll(/--([^:]+):\s*([^;]+);/g);
-        for (const match of variableMatches) {
-          const [, variable, value] = match;
-          darkTheme[variable.trim()] = value.trim();
-        }
-      }
-
-      // Store the imported theme
-      const importedThemeData = { light: lightTheme, dark: darkTheme };
-      onImport(importedThemeData);
-
-      onOpenChange(false);
-      setImportText('');
+      onImport(theme);
     } catch (error) {
+      // Persisting the theme can fail, e.g. when storage is full; keep the
+      // dialog open with the text so nothing is lost.
       console.error('Error importing theme:', error);
+      return;
     }
+
+    onOpenChange(false);
+    setImportText('');
   };
 
   return (
@@ -91,7 +77,7 @@ export function ImportModal({
         <div className="space-y-4">
           <div className="space-y-2">
             <Textarea
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-h-[400px] min-h-[300px] font-mono text-sm text-foreground overflow-y-auto resize-none"
+              className="shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-h-[400px] min-h-[300px] font-mono text-sm text-foreground overflow-y-auto resize-none"
               placeholder={`:root {
   --background: 0 0% 100%;
   --foreground: oklch(0.52 0.13 144.17);

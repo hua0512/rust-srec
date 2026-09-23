@@ -880,7 +880,7 @@ msgid "Auth Type"
 msgstr "Auth Type"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
 #: src/components/config/shared/network-settings-card.tsx:157
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
@@ -1288,10 +1288,10 @@ msgstr "Cache"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:259
-#: src/components/layout/themes/import-modal.tsx:117
+#: src/components/filters/FilterDialog.tsx:257
+#: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:455
+#: src/components/notifications/channel-form.tsx:454
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
@@ -1411,7 +1411,7 @@ msgstr "Changing Password..."
 msgid "Changing this restarts the player."
 msgstr "Changing this restarts the player."
 
-#: src/components/notifications/channel-form.tsx:373
+#: src/components/notifications/channel-form.tsx:372
 msgid "Channel"
 msgstr "Channel"
 
@@ -1419,7 +1419,7 @@ msgstr "Channel"
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "Channel buffer size multiplier for processed segments."
 
-#: src/components/notifications/channel-form.tsx:275
+#: src/components/notifications/channel-form.tsx:274
 msgid "Channel created"
 msgstr "Channel created"
 
@@ -1427,7 +1427,7 @@ msgstr "Channel created"
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
-#: src/components/notifications/channel-form.tsx:289
+#: src/components/notifications/channel-form.tsx:288
 msgid "Channel updated"
 msgstr "Channel updated"
 
@@ -1521,7 +1521,7 @@ msgstr "Choose how this streamer handles proxy connections."
 msgid "Choose timezone"
 msgstr "Choose timezone"
 
-#: src/components/filters/FilterDialog.tsx:214
+#: src/components/filters/FilterDialog.tsx:212
 msgid "Choose when this streamer should be recorded."
 msgstr "Choose when this streamer should be recorded."
 
@@ -1621,7 +1621,7 @@ msgstr "Collapsible"
 msgid "Collect statistics"
 msgstr "Collect statistics"
 
-#: src/components/notifications/channel-form.tsx:477
+#: src/components/notifications/channel-form.tsx:476
 msgid "Coming soon"
 msgstr "Coming soon"
 
@@ -1733,7 +1733,7 @@ msgstr "Config Directory help"
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
-#: src/components/notifications/channel-form.tsx:439
+#: src/components/notifications/channel-form.tsx:438
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:470
 #: src/components/pipeline/workflows/workflow-editor.tsx:193
@@ -1800,7 +1800,7 @@ msgstr "Configure Settings"
 msgid "Configure Step"
 msgstr "Configure Step"
 
-#: src/components/notifications/channel-form.tsx:357
+#: src/components/notifications/channel-form.tsx:356
 msgid "Configure where and how you receive notifications."
 msgstr "Configure where and how you receive notifications."
 
@@ -2076,7 +2076,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create API key"
 msgstr "Create API key"
 
-#: src/components/notifications/channel-form.tsx:462
+#: src/components/notifications/channel-form.tsx:461
 msgid "Create channel"
 msgstr "Create channel"
 
@@ -2092,7 +2092,7 @@ msgstr "Create engine"
 msgid "Create Engine"
 msgstr "Create Engine"
 
-#: src/components/filters/FilterDialog.tsx:275
+#: src/components/filters/FilterDialog.tsx:273
 msgid "Create filter"
 msgstr "Create filter"
 
@@ -2501,7 +2501,7 @@ msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "Definitive Offline"
 
-#: src/components/health/health-status-badge.tsx:48
+#: src/components/health/health-status-badge.tsx:47
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:619
 msgid "Degraded"
 msgstr "Degraded"
@@ -3045,7 +3045,7 @@ msgstr "Each box is one argument, in order. Empty arguments, spaces, quotes and 
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/notifications/channel-form.tsx:351
+#: src/components/notifications/channel-form.tsx:350
 msgid "Edit channel"
 msgstr "Edit channel"
 
@@ -3054,7 +3054,7 @@ msgid "Edit Engine"
 msgstr "Edit Engine"
 
 #: src/components/filters/FilterCard.tsx:203
-#: src/components/filters/FilterDialog.tsx:208
+#: src/components/filters/FilterDialog.tsx:206
 msgid "Edit filter"
 msgstr "Edit filter"
 
@@ -3401,7 +3401,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
-#: src/components/ui/flag-form-field.tsx:54
+#: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
 msgstr "Experimental"
 
@@ -3550,11 +3550,11 @@ msgstr "Failed to copy destination"
 msgid "Failed to create API key"
 msgstr "Failed to create API key"
 
-#: src/components/notifications/channel-form.tsx:282
+#: src/components/notifications/channel-form.tsx:281
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
-#: src/components/filters/FilterDialog.tsx:153
+#: src/components/filters/FilterDialog.tsx:151
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
@@ -3770,11 +3770,11 @@ msgstr "Failed to revoke API key"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/components/notifications/channel-form.tsx:296
+#: src/components/notifications/channel-form.tsx:295
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/components/filters/FilterDialog.tsx:168
+#: src/components/filters/FilterDialog.tsx:166
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
@@ -3946,7 +3946,7 @@ msgstr "Filter"
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
 
-#: src/components/filters/FilterDialog.tsx:146
+#: src/components/filters/FilterDialog.tsx:144
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
@@ -3966,7 +3966,7 @@ msgstr "Filter Interactive Games"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
 
-#: src/components/filters/FilterDialog.tsx:235
+#: src/components/filters/FilterDialog.tsx:233
 msgid "Filter Type"
 msgstr "Filter Type"
 
@@ -3975,7 +3975,7 @@ msgstr "Filter Type"
 msgid "Filter Type"
 msgstr "Filter Type"
 
-#: src/components/filters/FilterDialog.tsx:161
+#: src/components/filters/FilterDialog.tsx:159
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
@@ -4353,7 +4353,7 @@ msgstr "Header Value"
 msgid "Health"
 msgstr "Health"
 
-#: src/components/health/health-status-badge.tsx:35
+#: src/components/health/health-status-badge.tsx:34
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:617
 msgid "Healthy"
 msgstr "Healthy"
@@ -4631,7 +4631,7 @@ msgstr "Import"
 msgid "Import Configuration"
 msgstr "Import Configuration"
 
-#: src/components/layout/themes/import-modal.tsx:79
+#: src/components/layout/themes/import-modal.tsx:65
 msgid "Import Custom CSS"
 msgstr "Import Custom CSS"
 
@@ -4643,7 +4643,7 @@ msgstr "Import Strategy"
 msgid "Import Successful"
 msgstr "Import Successful"
 
-#: src/components/layout/themes/import-modal.tsx:124
+#: src/components/layout/themes/import-modal.tsx:110
 msgid "Import Theme"
 msgstr "Import Theme"
 
@@ -5590,7 +5590,7 @@ msgstr "Multiplier for exponential backoff."
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
-#: src/components/notifications/channel-form.tsx:387
+#: src/components/notifications/channel-form.tsx:386
 msgid "My Channel"
 msgstr "My Channel"
 
@@ -5598,7 +5598,7 @@ msgstr "My Channel"
 msgid "My Template"
 msgstr "My Template"
 
-#: src/components/notifications/channel-form.tsx:382
+#: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
@@ -5665,7 +5665,7 @@ msgstr "New"
 msgid "NEW"
 msgstr "NEW"
 
-#: src/components/notifications/channel-form.tsx:353
+#: src/components/notifications/channel-form.tsx:352
 msgid "New notification channel"
 msgstr "New notification channel"
 
@@ -5681,7 +5681,7 @@ msgstr "New password (min 8 chars)"
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/components/filters/FilterDialog.tsx:210
+#: src/components/filters/FilterDialog.tsx:208
 msgid "New recording filter"
 msgstr "New recording filter"
 
@@ -6124,7 +6124,7 @@ msgstr "NVENC HEVC Fast"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC High Quality"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:23
 msgid "OAuth Token"
 msgstr "OAuth Token"
 
@@ -6514,7 +6514,7 @@ msgstr "Password changed successfully. Please login with your new password."
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:119
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
 msgstr "Password..."
 
@@ -6526,7 +6526,7 @@ msgstr "Past"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "Paste a channel link. Everything else can wait."
 
-#: src/components/layout/themes/import-modal.tsx:82
+#: src/components/layout/themes/import-modal.tsx:68
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 
@@ -7138,7 +7138,7 @@ msgid "Progress:"
 msgstr "Progress:"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:37
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "Protection Settings"
 
@@ -7600,7 +7600,7 @@ msgstr "Request timeout duration"
 msgid "Require Subtitles"
 msgstr "Require Subtitles"
 
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:29
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
@@ -7872,8 +7872,8 @@ msgid "Saturday"
 msgstr "Saturday"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:273
-#: src/components/notifications/channel-form.tsx:460
+#: src/components/filters/FilterDialog.tsx:271
+#: src/components/notifications/channel-form.tsx:459
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:305
 msgid "Save changes"
@@ -7900,7 +7900,7 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/filters/FilterDialog.tsx:270
+#: src/components/filters/FilterDialog.tsx:268
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "Saving"
@@ -8211,7 +8211,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:236
-#: src/components/notifications/channel-form.tsx:413
+#: src/components/notifications/channel-form.tsx:412
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
 msgstr "Select type"
@@ -8374,7 +8374,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:242
+#: src/components/filters/FilterDialog.tsx:240
 #: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
@@ -8720,7 +8720,7 @@ msgstr "Stream parsed successfully"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:47
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:101
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:110
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
 msgid "Stream Password"
 msgstr "Stream Password"
 
@@ -9591,7 +9591,7 @@ msgstr "Tuesday"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:27
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
@@ -9603,7 +9603,7 @@ msgstr "Twitch Proxy Playlist"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
-#: src/components/notifications/channel-form.tsx:403
+#: src/components/notifications/channel-form.tsx:402
 msgid "Type"
 msgstr "Type"
 
@@ -9631,7 +9631,7 @@ msgstr "Ultrafast Compression"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
-#: src/components/health/health-status-badge.tsx:61
+#: src/components/health/health-status-badge.tsx:60
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:621
 msgid "Unhealthy"
 msgstr "Unhealthy"

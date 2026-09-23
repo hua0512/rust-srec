@@ -1,4 +1,4 @@
-import { setupI18n, type I18n } from '@lingui/core';
+import type { I18n } from '@lingui/core';
 
 export const locales = ['en', 'zh-CN'] as const;
 export type Locale = (typeof locales)[number];
@@ -53,10 +53,4 @@ export async function dynamicActivate(i18n: I18n, locale: Locale) {
   // The path depends on where this file is relative to locales
   const { messages } = await import(`../../locales/${locale}/messages.ts`);
   i18n.loadAndActivate({ locale, messages });
-}
-
-export function createI18nInstance() {
-  const i18n = setupI18n();
-  // We don't load messages here, we let the middleware or components do it
-  return i18n;
 }

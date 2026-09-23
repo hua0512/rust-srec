@@ -1,11 +1,12 @@
 import { createMiddleware } from '@tanstack/react-start';
 import { getLocaleFromRequest } from './i18n.server';
-import { createI18nInstance, dynamicActivate } from './i18n';
+import { setupI18n } from '@lingui/core';
+import { dynamicActivate } from './i18n';
 
 export const linguiMiddleware = createMiddleware({ type: 'request' }).server(
   async ({ request, next }) => {
     const { locale, headers } = getLocaleFromRequest(request);
-    const i18n = createI18nInstance();
+    const i18n = setupI18n();
 
     // Pre-load the locale for SSR
     await dynamicActivate(i18n, locale);

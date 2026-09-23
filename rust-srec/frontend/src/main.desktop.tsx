@@ -3,6 +3,7 @@ import './styles.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
+import { setupI18n } from '@lingui/core';
 
 import { isTauriRuntime } from '@/utils/tauri';
 
@@ -14,7 +15,6 @@ import {
 } from './desktop/fatal-screen';
 import { getRouter } from './router.desktop';
 import {
-  createI18nInstance,
   defaultLocale,
   dynamicActivate,
   getPreferredLocale,
@@ -91,7 +91,7 @@ async function bootstrap() {
     return;
   }
 
-  const i18n = createI18nInstance();
+  const i18n = setupI18n();
   const locale = await resolveInitialLocale();
 
   if (import.meta.env.DEV) {

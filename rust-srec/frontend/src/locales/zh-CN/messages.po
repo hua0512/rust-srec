@@ -880,7 +880,7 @@ msgid "Auth Type"
 msgstr "认证类型"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
 #: src/components/config/shared/network-settings-card.tsx:157
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
@@ -1288,10 +1288,10 @@ msgstr "缓存"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:259
-#: src/components/layout/themes/import-modal.tsx:117
+#: src/components/filters/FilterDialog.tsx:257
+#: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:226
-#: src/components/notifications/channel-form.tsx:455
+#: src/components/notifications/channel-form.tsx:454
 #: src/components/notifications/subscription-manager.tsx:470
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
@@ -1411,7 +1411,7 @@ msgstr "正在修改密码..."
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
-#: src/components/notifications/channel-form.tsx:373
+#: src/components/notifications/channel-form.tsx:372
 msgid "Channel"
 msgstr "渠道"
 
@@ -1419,7 +1419,7 @@ msgstr "渠道"
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
-#: src/components/notifications/channel-form.tsx:275
+#: src/components/notifications/channel-form.tsx:274
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -1427,7 +1427,7 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:289
+#: src/components/notifications/channel-form.tsx:288
 msgid "Channel updated"
 msgstr "渠道已更新"
 
@@ -1521,7 +1521,7 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose timezone"
 msgstr "选择时区"
 
-#: src/components/filters/FilterDialog.tsx:214
+#: src/components/filters/FilterDialog.tsx:212
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
@@ -1621,7 +1621,7 @@ msgstr "折叠方式"
 msgid "Collect statistics"
 msgstr "收集统计"
 
-#: src/components/notifications/channel-form.tsx:477
+#: src/components/notifications/channel-form.tsx:476
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -1733,7 +1733,7 @@ msgstr "配置目录说明"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:439
+#: src/components/notifications/channel-form.tsx:438
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:470
 #: src/components/pipeline/workflows/workflow-editor.tsx:193
@@ -1800,7 +1800,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:357
+#: src/components/notifications/channel-form.tsx:356
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -2076,7 +2076,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
-#: src/components/notifications/channel-form.tsx:462
+#: src/components/notifications/channel-form.tsx:461
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -2092,7 +2092,7 @@ msgstr "创建引擎"
 msgid "Create Engine"
 msgstr "创建引擎"
 
-#: src/components/filters/FilterDialog.tsx:275
+#: src/components/filters/FilterDialog.tsx:273
 msgid "Create filter"
 msgstr "创建过滤器"
 
@@ -2501,7 +2501,7 @@ msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "已确认离线"
 
-#: src/components/health/health-status-badge.tsx:48
+#: src/components/health/health-status-badge.tsx:47
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:619
 msgid "Degraded"
 msgstr "降级"
@@ -3045,7 +3045,7 @@ msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/notifications/channel-form.tsx:351
+#: src/components/notifications/channel-form.tsx:350
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -3054,7 +3054,7 @@ msgid "Edit Engine"
 msgstr "编辑引擎"
 
 #: src/components/filters/FilterCard.tsx:203
-#: src/components/filters/FilterDialog.tsx:208
+#: src/components/filters/FilterDialog.tsx:206
 msgid "Edit filter"
 msgstr "编辑过滤器"
 
@@ -3401,7 +3401,7 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
-#: src/components/ui/flag-form-field.tsx:54
+#: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
 msgstr "实验性"
 
@@ -3550,11 +3550,11 @@ msgstr "复制目标路径失败"
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
-#: src/components/notifications/channel-form.tsx:282
+#: src/components/notifications/channel-form.tsx:281
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:153
+#: src/components/filters/FilterDialog.tsx:151
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
@@ -3770,11 +3770,11 @@ msgstr "吊销 API 密钥失败"
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
-#: src/components/notifications/channel-form.tsx:296
+#: src/components/notifications/channel-form.tsx:295
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:168
+#: src/components/filters/FilterDialog.tsx:166
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
@@ -3946,7 +3946,7 @@ msgstr "筛选"
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
-#: src/components/filters/FilterDialog.tsx:146
+#: src/components/filters/FilterDialog.tsx:144
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
@@ -3966,7 +3966,7 @@ msgstr "过滤互动玩法"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
 
-#: src/components/filters/FilterDialog.tsx:235
+#: src/components/filters/FilterDialog.tsx:233
 msgid "Filter Type"
 msgstr "过滤器类型"
 
@@ -3975,7 +3975,7 @@ msgstr "过滤器类型"
 msgid "Filter Type"
 msgstr "过滤器类型"
 
-#: src/components/filters/FilterDialog.tsx:161
+#: src/components/filters/FilterDialog.tsx:159
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
@@ -4353,7 +4353,7 @@ msgstr "Header 值"
 msgid "Health"
 msgstr "健康"
 
-#: src/components/health/health-status-badge.tsx:35
+#: src/components/health/health-status-badge.tsx:34
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:617
 msgid "Healthy"
 msgstr "正常"
@@ -4631,7 +4631,7 @@ msgstr "导入"
 msgid "Import Configuration"
 msgstr "导入配置"
 
-#: src/components/layout/themes/import-modal.tsx:79
+#: src/components/layout/themes/import-modal.tsx:65
 msgid "Import Custom CSS"
 msgstr "导入自定义 CSS"
 
@@ -4643,7 +4643,7 @@ msgstr "导入策略"
 msgid "Import Successful"
 msgstr "导入成功"
 
-#: src/components/layout/themes/import-modal.tsx:124
+#: src/components/layout/themes/import-modal.tsx:110
 msgid "Import Theme"
 msgstr "导入主题"
 
@@ -5590,7 +5590,7 @@ msgstr "指数退避的倍率。"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:387
+#: src/components/notifications/channel-form.tsx:386
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -5598,7 +5598,7 @@ msgstr "我的渠道"
 msgid "My Template"
 msgstr "我的模板"
 
-#: src/components/notifications/channel-form.tsx:382
+#: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
@@ -5665,7 +5665,7 @@ msgstr "新建"
 msgid "NEW"
 msgstr "新"
 
-#: src/components/notifications/channel-form.tsx:353
+#: src/components/notifications/channel-form.tsx:352
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -5681,7 +5681,7 @@ msgstr "新密码（至少 8 个字符）"
 msgid "New Preset Name"
 msgstr "新预设名称"
 
-#: src/components/filters/FilterDialog.tsx:210
+#: src/components/filters/FilterDialog.tsx:208
 msgid "New recording filter"
 msgstr "新建录制过滤器"
 
@@ -6124,7 +6124,7 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:23
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
@@ -6514,7 +6514,7 @@ msgstr "密码修改成功。请使用新密码登录。"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:119
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
 msgstr "密码…"
 
@@ -6526,7 +6526,7 @@ msgstr "过去"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "先粘贴频道链接，其他设置稍后再填。"
 
-#: src/components/layout/themes/import-modal.tsx:82
+#: src/components/layout/themes/import-modal.tsx:68
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "在下方粘贴你的 CSS 主题。请同时包含 <0>:root</0>（浅色模式）和 <1>.dark</1>（深色模式）部分，并使用 <2>--primary</2>、<3>--background</3> 等 CSS 变量。主题会在浅色和深色模式之间自动切换。"
 
@@ -7138,7 +7138,7 @@ msgid "Progress:"
 msgstr "进度："
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:37
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "保护设置"
 
@@ -7600,7 +7600,7 @@ msgstr "请求超时时长"
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:29
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
@@ -7872,8 +7872,8 @@ msgid "Saturday"
 msgstr "星期六"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:273
-#: src/components/notifications/channel-form.tsx:460
+#: src/components/filters/FilterDialog.tsx:271
+#: src/components/notifications/channel-form.tsx:459
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:305
 msgid "Save changes"
@@ -7900,7 +7900,7 @@ msgstr "删除检查尚未完成，仍要保存吗？"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/filters/FilterDialog.tsx:270
+#: src/components/filters/FilterDialog.tsx:268
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "保存中"
@@ -8211,7 +8211,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:236
-#: src/components/notifications/channel-form.tsx:413
+#: src/components/notifications/channel-form.tsx:412
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
 msgstr "选择类型"
@@ -8374,7 +8374,7 @@ msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:242
+#: src/components/filters/FilterDialog.tsx:240
 #: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
@@ -8720,7 +8720,7 @@ msgstr "流解析成功"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:47
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:101
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:110
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
 msgid "Stream Password"
 msgstr "直播密码"
 
@@ -9591,7 +9591,7 @@ msgstr "星期二"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:27
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
@@ -9603,7 +9603,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:403
+#: src/components/notifications/channel-form.tsx:402
 msgid "Type"
 msgstr "类型"
 
@@ -9631,7 +9631,7 @@ msgstr "极速压缩"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
-#: src/components/health/health-status-badge.tsx:61
+#: src/components/health/health-status-badge.tsx:60
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:621
 msgid "Unhealthy"
 msgstr "不健康"

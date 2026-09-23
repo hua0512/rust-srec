@@ -69,7 +69,7 @@ const STEP_ICONS: Record<string, React.ElementType> = {
  * (turning `bg-blue-500` into `border-blue-500`, for example) yields classes
  * that never reach the stylesheet.
  */
-export type StepColorVariants = {
+type StepColorVariants = {
   /** Gradient surface used by the workflow editor's step rows. */
   gradient: string;
   /** Solid tinted chip used by compact step badges and preset tiles. */

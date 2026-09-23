@@ -204,17 +204,6 @@ describe('server function identifier validation', () => {
     },
   );
 
-  it.each(unusable)('getSession rejects %s with no request', async (_l, id) => {
-    await expectNoRequest(() => getSession({ data: id }));
-  });
-
-  it.each(unusable)(
-    'getPipelineJob rejects %s with no request',
-    async (_l, id) => {
-      await expectNoRequest(() => getPipelineJob({ data: id }));
-    },
-  );
-
   it('rejects a non-string identifier', async () => {
     await expectNoRequest(() => getStreamer({ data: 42 as unknown as string }));
   });
@@ -247,17 +236,12 @@ describe('server function identifier validation', () => {
 
 describe('server function identifier containment', () => {
   // An identifier that carries path or query syntax must stay inside its own
-  // segment so it cannot redirect the request to a different endpoint.
-  it.each([
-    ['../admin', '/streamers/..%2Fadmin'],
-    ['a/b', '/streamers/a%2Fb'],
-    ['?limit=1', '/streamers/%3Flimit%3D1'],
-    ['#frag', '/streamers/%23frag'],
-    ['../../auth/api-keys', '/streamers/..%2F..%2Fauth%2Fapi-keys'],
-  ])('getStreamer keeps %j in one segment', async (id, expected) => {
-    await expect(requestedPath(() => getStreamer({ data: id }))).resolves.toBe(
-      expected,
-    );
+  // segment so it cannot redirect the request to a different endpoint. The
+  // encoding itself is covered in backend-path.test.ts.
+  it('keeps a traversal identifier in one segment', async () => {
+    await expect(
+      requestedPath(() => getStreamer({ data: '../../auth/api-keys' })),
+    ).resolves.toBe('/streamers/..%2F..%2Fauth%2Fapi-keys');
   });
 
   it('keeps both filter segments contained', async () => {

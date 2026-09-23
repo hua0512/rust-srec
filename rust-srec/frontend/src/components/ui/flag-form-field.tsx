@@ -8,6 +8,7 @@ import {
 } from './form';
 import { Badge } from './badge';
 import { Switch } from './switch';
+import { SETTING_ROW_CLASS } from './switch-card';
 import { Trans } from '@lingui/react/macro';
 
 type FlagFormFieldProps = {
@@ -43,7 +44,7 @@ export function FlagFormField({
     <FormField
       name={controlPrefix ? `${controlPrefix}.${fieldName}` : fieldName}
       render={({ field }) => (
-        <FormItem className="flex flex-row items-center justify-between gap-4 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm">
+        <FormItem className={SETTING_ROW_CLASS}>
           <div className="min-w-0 space-y-1">
             <FormLabel>
               <div className={'flex flex-row items-center gap-x-2'}>

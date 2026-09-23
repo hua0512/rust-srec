@@ -42,7 +42,7 @@ export interface SharedConfigPaths<T extends FieldValues> {
   offlineCheck?: string;
 }
 
-export type ConfigTabType =
+type ConfigTabType =
   | 'filters'
   | 'output'
   | 'network'

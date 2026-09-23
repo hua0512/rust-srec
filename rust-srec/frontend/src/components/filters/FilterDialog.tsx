@@ -32,10 +32,8 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
-// Union of all possible configs for the form state
-const FormSchema = CreateFilterRequestSchema;
-type FormInput = z.input<typeof FormSchema>;
-type FormOutput = z.infer<typeof FormSchema>;
+type FormInput = z.input<typeof CreateFilterRequestSchema>;
+type FormOutput = z.infer<typeof CreateFilterRequestSchema>;
 /** Union of the per-type config shapes the form can hold. */
 type FilterConfigInput = FormInput['config'];
 
@@ -59,7 +57,7 @@ export function FilterDialog({
   const isEditing = !!filterToEdit;
 
   const form = useForm<FormInput, any, FormOutput>({
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(CreateFilterRequestSchema),
     defaultValues: {
       filter_type: 'KEYWORD',
       config: { include: [], exclude: [] },

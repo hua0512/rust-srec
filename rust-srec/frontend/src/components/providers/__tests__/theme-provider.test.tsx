@@ -34,7 +34,7 @@ function mockSystemDark(dark: boolean) {
     }
   }
 
-  return { mql, fireChange };
+  return { fireChange };
 }
 
 /** Wrapper that provides ThemeProvider for renderHook. */
@@ -97,6 +97,7 @@ describe('ThemeProvider', () => {
 
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement).not.toHaveClass('light');
+    expect(document.documentElement.style.colorScheme).toBe('dark');
     expect(localStorage.getItem('theme')).toBe('dark');
   });
 
@@ -112,6 +113,7 @@ describe('ThemeProvider', () => {
 
     expect(document.documentElement).toHaveClass('light');
     expect(document.documentElement).not.toHaveClass('dark');
+    expect(document.documentElement.style.colorScheme).toBe('light');
     expect(localStorage.getItem('theme')).toBe('light');
   });
 
@@ -174,16 +176,6 @@ describe('ThemeProvider', () => {
 
     expect(result.current.mode).toBe('light');
     expect(result.current.resolvedMode).toBe('light');
-  });
-
-  it('sets color-scheme CSS property on documentElement', () => {
-    const { result } = renderHook(() => useTheme(), { wrapper });
-
-    act(() => result.current.setMode('dark'));
-    expect(document.documentElement.style.colorScheme).toBe('dark');
-
-    act(() => result.current.setMode('light'));
-    expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
   it('falls back to the default mode when localStorage holds a garbage value', () => {

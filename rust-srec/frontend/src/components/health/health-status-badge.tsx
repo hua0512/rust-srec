@@ -8,10 +8,8 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
-export type HealthStatus = string;
-
 interface HealthStatusBadgeProps {
-  status: HealthStatus;
+  status: string;
   className?: string;
 }
 

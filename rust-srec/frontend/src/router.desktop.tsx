@@ -2,13 +2,12 @@ import {
   createHashHistory,
   createRouter as createTanStackRouter,
 } from '@tanstack/react-router';
-import type { I18n } from '@lingui/core';
+import { setupI18n, type I18n } from '@lingui/core';
 
 import { routeTree } from './routeTree.gen';
 import { DefaultCatchBoundary } from './components/default-catch-boundary';
 import { NotFound } from './components/not-found';
 import * as TanstackQuery from './integrations/tanstack-query/root-provider';
-import { createI18nInstance } from './integrations/lingui/i18n';
 import { routerWithLingui } from './integrations/lingui/router-plugin';
 import { registerPasswordChangeRedirect } from './lib/password-change-redirect';
 import type { Mode } from '@/lib/theme-config';
@@ -16,7 +15,7 @@ import { DEFAULT_SIDEBAR_OPEN } from '@/lib/sidebar-cookie';
 
 export function getRouter(i18n?: I18n) {
   const rqContext = TanstackQuery.getContext();
-  const resolvedI18n = i18n ?? createI18nInstance();
+  const resolvedI18n = i18n ?? setupI18n();
   const history = createHashHistory();
 
   const router = routerWithLingui(

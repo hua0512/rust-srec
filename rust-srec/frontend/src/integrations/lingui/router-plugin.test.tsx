@@ -1,11 +1,11 @@
 import type { AnyRouter } from '@tanstack/react-router';
 
-import { createI18nInstance } from './i18n';
+import { setupI18n } from '@lingui/core';
 import { routerWithLingui } from './router-plugin';
 
 describe('routerWithLingui', () => {
   it('dehydrates only the active locale', async () => {
-    const i18n = createI18nInstance();
+    const i18n = setupI18n();
     i18n.loadAndActivate({ locale: 'en', messages: {} });
     const router = {
       isServer: true,
@@ -24,7 +24,7 @@ describe('routerWithLingui', () => {
   });
 
   it('loads and activates the dehydrated locale before hydration completes', async () => {
-    const i18n = createI18nInstance();
+    const i18n = setupI18n();
     const router = {
       isServer: false,
       options: {

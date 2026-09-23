@@ -73,23 +73,6 @@ function DashboardLayout() {
     }
   }, []);
 
-  // One-time reconciliation: if there was no cookie but localStorage has
-  // a preference, adopt it and write a cookie for future loads.
-  React.useEffect(() => {
-    if (readSidebarCookie(document.cookie) !== undefined) return;
-
-    try {
-      const raw = localStorage.getItem('sidebar');
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { state?: { isOpen?: boolean } };
-      if (typeof parsed?.state?.isOpen === 'boolean') {
-        setSidebarOpen(parsed.state.isOpen);
-      }
-    } catch {
-      // ignore
-    }
-  }, [setSidebarOpen]);
-
   const sidebar = (
     <AppSidebar
       variant={config.variant}
