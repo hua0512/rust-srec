@@ -21,10 +21,7 @@ export interface StatusConfigItem {
   glow: string;
 }
 
-export const STATUS_CONFIG: Record<
-  DagStatus | DagStepStatus,
-  StatusConfigItem
-> = {
+const STATUS_CONFIG: Record<DagStatus | DagStepStatus, StatusConfigItem> = {
   PENDING: {
     icon: Clock,
     textColor: 'text-muted-foreground',

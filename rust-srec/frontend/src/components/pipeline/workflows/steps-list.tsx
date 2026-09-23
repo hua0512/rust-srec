@@ -1,5 +1,5 @@
 import { motion, Reorder, AnimatePresence } from 'motion/react';
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import {
   X,
   Workflow,
@@ -21,10 +21,10 @@ import {
   getJobPresetName,
 } from '@/components/pipeline/presets/default-presets-i18n';
 import {
-  buildPresetProcessorMap,
-  getDeleteAfterTransformStepIds,
-} from './delete-warning';
-import { findPresetByName, useReferencedPresets } from './preset-lookup';
+  findPresetByName,
+  useDeleteAfterTransformWarnings,
+} from './preset-lookup';
+import { getStepName } from './step-operations';
 import { PresetLookupStatus } from './preset-lookup-status';
 
 interface StepsListProps {
@@ -38,16 +38,8 @@ interface StepsListProps {
 export const StepsList = memo(
   ({ steps, onReorder, onRemove, onEdit, onReplace }: StepsListProps) => {
     const { i18n } = useLingui();
-    const lookup = useReferencedPresets(steps);
+    const { lookup, warnedStepIds } = useDeleteAfterTransformWarnings(steps);
     const { presets } = lookup;
-
-    // Flag delete steps wired after a transform step: they would delete the converted artifact
-    // produced by that step, not the original recording.
-    const warnedStepIds = useMemo(
-      () =>
-        getDeleteAfterTransformStepIds(steps, buildPresetProcessorMap(presets)),
-      [steps, presets],
-    );
 
     return (
       <div className="rounded-2xl border border-dashed border-border/60 bg-muted/5 min-h-[120px] p-4 sm:p-6 h-full flex flex-col relative">
@@ -62,8 +54,7 @@ export const StepsList = memo(
             <AnimatePresence mode="popLayout">
               {steps.map((dagStep, index) => {
                 const { step, id } = dagStep;
-                const stepName =
-                  step.type === 'inline' ? step.processor : step.name;
+                const stepName = getStepName(step);
                 const presetInfo =
                   step.type === 'preset'
                     ? findPresetByName(presets, step.name)

@@ -87,5 +87,3 @@ export function TagInput({
     </div>
   );
 }
-
-export { TagInput as TagInputComponent };

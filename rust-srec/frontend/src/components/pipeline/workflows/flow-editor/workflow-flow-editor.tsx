@@ -26,12 +26,8 @@ import { Button } from '@/components/ui/button';
 import { LayoutGrid } from 'lucide-react';
 import { getInitialNodePosition, getLayoutedElements } from './layout';
 import { Trans } from '@lingui/react/macro';
-import {
-  buildPresetProcessorMap,
-  getDeleteAfterTransformStepIds,
-} from '../delete-warning';
 import { removeStep } from '../step-operations';
-import { useReferencedPresets } from '../preset-lookup';
+import { useDeleteAfterTransformWarnings } from '../preset-lookup';
 import { PresetLookupStatus } from '../preset-lookup-status';
 
 const nodeTypes = {
@@ -88,17 +84,7 @@ const WorkflowFlowEditorInner = memo(
       [steps],
     );
 
-    // Flag delete nodes wired after a transform step: they would delete the converted artifact
-    // produced by that step, not the original recording.
-    const lookup = useReferencedPresets(steps);
-    const presetProcessorByName = useMemo(
-      () => buildPresetProcessorMap(lookup.presets),
-      [lookup.presets],
-    );
-    const warnedStepIds = useMemo(
-      () => getDeleteAfterTransformStepIds(steps, presetProcessorByName),
-      [steps, presetProcessorByName],
-    );
+    const { lookup, warnedStepIds } = useDeleteAfterTransformWarnings(steps);
 
     // Memoized remove handler to avoid creating new functions on every render
     const handleRemoveStep = useCallback(

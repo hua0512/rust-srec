@@ -14,7 +14,12 @@ import {
 } from '@/components/ui/tooltip';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { dynamicActivate, Locale } from '@/integrations/lingui/i18n';
+import {
+  dynamicActivate,
+  Locale,
+  localeNativeNames,
+  locales,
+} from '@/integrations/lingui/i18n';
 import { updateLocale } from '@/server/functions/locale';
 import { useRouter } from '@tanstack/react-router';
 
@@ -55,12 +60,11 @@ export function LanguageSwitcher() {
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => changeLocale('en')}>
-          English
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => changeLocale('zh-CN')}>
-          中文 (简体)
-        </DropdownMenuItem>
+        {locales.map((locale) => (
+          <DropdownMenuItem key={locale} onClick={() => changeLocale(locale)}>
+            {localeNativeNames[locale]}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

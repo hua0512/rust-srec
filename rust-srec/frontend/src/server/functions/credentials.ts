@@ -22,36 +22,33 @@ function templatePlatformQuery(platform?: string): URLSearchParams {
   return params;
 }
 
+/** The credential source for a scope, or `null` when the scope has none (404). */
+async function fetchCredentialSource(path: string) {
+  try {
+    const json = await fetchBackend(path);
+    return CredentialSourceResponseSchema.parse(json);
+  } catch (e) {
+    if (e instanceof BackendApiError && e.status === 404) {
+      return null;
+    }
+    throw e;
+  }
+}
+
 export const getStreamerCredentialSource = createServerFn({ method: 'GET' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    try {
-      const json = await fetchBackend(
-        backendPath`/credentials/streamers/${id}/source`,
-      );
-      return CredentialSourceResponseSchema.parse(json);
-    } catch (e) {
-      if (e instanceof BackendApiError && e.status === 404) {
-        return null;
-      }
-      throw e;
-    }
+    return fetchCredentialSource(
+      backendPath`/credentials/streamers/${id}/source`,
+    );
   });
 
 export const getPlatformCredentialSource = createServerFn({ method: 'GET' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    try {
-      const json = await fetchBackend(
-        backendPath`/credentials/platforms/${id}/source`,
-      );
-      return CredentialSourceResponseSchema.parse(json);
-    } catch (e) {
-      if (e instanceof BackendApiError && e.status === 404) {
-        return null;
-      }
-      throw e;
-    }
+    return fetchCredentialSource(
+      backendPath`/credentials/platforms/${id}/source`,
+    );
   });
 
 export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
@@ -60,20 +57,12 @@ export const getTemplateCredentialSource = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const { id, platform } = data;
-    try {
-      const json = await fetchBackend(
-        withQuery(
-          backendPath`/credentials/templates/${id}/source`,
-          templatePlatformQuery(platform),
-        ),
-      );
-      return CredentialSourceResponseSchema.parse(json);
-    } catch (e) {
-      if (e instanceof BackendApiError && e.status === 404) {
-        return null;
-      }
-      throw e;
-    }
+    return fetchCredentialSource(
+      withQuery(
+        backendPath`/credentials/templates/${id}/source`,
+        templatePlatformQuery(platform),
+      ),
+    );
   });
 
 export const refreshStreamerCredentials = createServerFn({ method: 'POST' })

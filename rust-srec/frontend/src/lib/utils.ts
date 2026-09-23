@@ -69,5 +69,3 @@ export function getProxiedUrl(url: string | null | undefined) {
 
   return url;
 }
-
-export { formatBytes, formatDuration } from './format';

@@ -1,4 +1,5 @@
 import type { Edge, Node, XYPosition } from '@xyflow/react';
+import { computeNodeLevels } from '../../graph-levels';
 
 const LEVEL_SPACING = 350;
 const NODE_SPACING = 200;
@@ -261,38 +262,12 @@ export function getInitialNodePosition(
 }
 
 export function getLayoutedElements(nodes: Node[], edges: Edge[]) {
-  const levels: Record<string, number> = {};
-  const nodeMap: Record<string, Node> = {};
   const originalOrder = new Map<string, number>();
-  nodes.forEach((node, index) => {
-    nodeMap[node.id] = node;
-    originalOrder.set(node.id, index);
-  });
-
-  const getLevel = (id: string, visiting = new Set<string>()): number => {
-    if (levels[id] !== undefined) return levels[id];
-    if (visiting.has(id)) return 0;
-
-    const nextVisiting = new Set(visiting);
-    nextVisiting.add(id);
-
-    const incoming = edges.filter(
-      (edge) => edge.target === id && nodeMap[edge.source],
-    );
-    if (incoming.length === 0) {
-      levels[id] = 0;
-      return 0;
-    }
-
-    const maxLevel = Math.max(
-      ...incoming.map((edge) => getLevel(edge.source, nextVisiting)),
-      -1,
-    );
-    levels[id] = maxLevel + 1;
-    return levels[id];
-  };
-
-  nodes.forEach((n) => getLevel(n.id));
+  nodes.forEach((node, index) => originalOrder.set(node.id, index));
+  const levels = computeNodeLevels(
+    nodes.map((node) => node.id),
+    edges,
+  );
 
   const nodesByLevel: Node[][] = [];
   nodes.forEach((node) => {

@@ -78,3 +78,12 @@ export function withQuery(path: string, params: URLSearchParams): string {
   const query = params.toString();
   return query ? `${path}?${query}` : path;
 }
+
+/** Sets whichever of `limit` / `offset` the caller supplied. */
+export function setPagination(
+  params: URLSearchParams,
+  page: { limit?: number; offset?: number },
+): void {
+  if (page.limit !== undefined) params.set('limit', String(page.limit));
+  if (page.offset !== undefined) params.set('offset', String(page.offset));
+}

@@ -13,6 +13,26 @@ export const prettyJson = (payload?: string) => {
   }
 };
 
+function KeyLabel({ name, shrink }: { name: string; shrink?: boolean }) {
+  return (
+    <>
+      <span
+        className={cn(
+          'text-violet-500 dark:text-violet-400 text-sm font-mono',
+          shrink && 'shrink-0',
+        )}
+      >
+        "{name}"
+      </span>
+      <span
+        className={cn('text-muted-foreground text-sm', shrink && 'shrink-0')}
+      >
+        :
+      </span>
+    </>
+  );
+}
+
 interface JsonNodeProps {
   value: unknown;
   depth: number;
@@ -26,14 +46,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
   if (value === null) {
     return (
       <div style={{ paddingLeft: indent }} className="flex items-center gap-1">
-        {keyName && (
-          <>
-            <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-              "{keyName}"
-            </span>
-            <span className="text-muted-foreground text-sm">:</span>
-          </>
-        )}
+        {keyName && <KeyLabel name={keyName} />}
         <span className="text-orange-600 dark:text-orange-400 text-sm font-mono italic">
           null
         </span>
@@ -44,14 +57,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
   if (typeof value === 'boolean') {
     return (
       <div style={{ paddingLeft: indent }} className="flex items-center gap-1">
-        {keyName && (
-          <>
-            <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-              "{keyName}"
-            </span>
-            <span className="text-muted-foreground text-sm">:</span>
-          </>
-        )}
+        {keyName && <KeyLabel name={keyName} />}
         <span className="text-orange-600 dark:text-orange-400 text-sm font-mono">
           {value ? 'true' : 'false'}
         </span>
@@ -62,14 +68,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
   if (typeof value === 'number') {
     return (
       <div style={{ paddingLeft: indent }} className="flex items-center gap-1">
-        {keyName && (
-          <>
-            <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-              "{keyName}"
-            </span>
-            <span className="text-muted-foreground text-sm">:</span>
-          </>
-        )}
+        {keyName && <KeyLabel name={keyName} />}
         <span className="text-cyan-600 dark:text-cyan-400 text-sm font-mono">
           {value}
         </span>
@@ -86,14 +85,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
 
     return (
       <div style={{ paddingLeft: indent }} className="flex items-start gap-1">
-        {keyName && (
-          <>
-            <span className="text-violet-500 dark:text-violet-400 text-sm font-mono shrink-0">
-              "{keyName}"
-            </span>
-            <span className="text-muted-foreground text-sm shrink-0">:</span>
-          </>
-        )}
+        {keyName && <KeyLabel name={keyName} shrink />}
         <span
           className={cn(
             'text-sm font-mono break-all',
@@ -119,14 +111,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
           style={{ paddingLeft: indent }}
           className="flex items-center gap-1"
         >
-          {keyName && (
-            <>
-              <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-                "{keyName}"
-              </span>
-              <span className="text-muted-foreground text-sm">:</span>
-            </>
-          )}
+          {keyName && <KeyLabel name={keyName} />}
           <span className="text-muted-foreground text-sm font-mono">[]</span>
         </div>
       );
@@ -138,14 +123,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
           style={{ paddingLeft: indent }}
           className="flex items-center gap-1"
         >
-          {keyName && (
-            <>
-              <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-                "{keyName}"
-              </span>
-              <span className="text-muted-foreground text-sm">:</span>
-            </>
-          )}
+          {keyName && <KeyLabel name={keyName} />}
           <span className="text-muted-foreground text-sm font-mono">[</span>
           <span className="text-muted-foreground/60 text-xs ml-1">
             {t(
@@ -171,14 +149,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
           style={{ paddingLeft: indent }}
           className="flex items-center gap-1"
         >
-          {keyName && (
-            <>
-              <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-                "{keyName}"
-              </span>
-              <span className="text-muted-foreground text-sm">:</span>
-            </>
-          )}
+          {keyName && <KeyLabel name={keyName} />}
           <span className="text-muted-foreground text-sm font-mono">
             {'{}'}
           </span>
@@ -192,14 +163,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
           style={{ paddingLeft: indent }}
           className="flex items-center gap-1"
         >
-          {keyName && (
-            <>
-              <span className="text-violet-500 dark:text-violet-400 text-sm font-mono">
-                "{keyName}"
-              </span>
-              <span className="text-muted-foreground text-sm">:</span>
-            </>
-          )}
+          {keyName && <KeyLabel name={keyName} />}
           <span className="text-muted-foreground text-sm font-mono">{'{'}</span>
         </div>
         {entries.map(([k, v]) => (

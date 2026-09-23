@@ -5,7 +5,11 @@ import {
   DownloadRetryPolicyObjectSchema,
   PrioritySchema,
 } from './common';
-import { DagPipelineDefinitionSchema } from './pipeline';
+import {
+  BatchIdsSchema,
+  DagPipelineDefinitionSchema,
+  withUniqueIds,
+} from './pipeline';
 import {
   AllPlatformConfigsSchema,
   ExtractorSelectionSchema,
@@ -218,36 +222,20 @@ export const BatchStreamerActionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('set_priority'),
-    priority: z.enum(['HIGH', 'NORMAL', 'LOW']),
+    priority: PrioritySchema.removeDefault(),
   }),
   z.object({ type: z.literal('delete') }),
 ]);
 
 export type BatchStreamerAction = z.infer<typeof BatchStreamerActionSchema>;
 
-export const BatchStreamerRequestSchema = z
-  .object({
-    ids: z.array(z.string().min(1)).min(1).max(100),
+export const BatchStreamerRequestSchema = withUniqueIds(
+  z.object({
+    ids: BatchIdsSchema,
     action: BatchStreamerActionSchema,
-  })
-  .refine((data) => new Set(data.ids).size === data.ids.length, {
-    message: 'Streamer IDs must be unique',
-    path: ['ids'],
-  });
-
-export const BatchStreamerResponseSchema = z.object({
-  requested: z.number(),
-  succeeded: z.number(),
-  failed: z.number(),
-  results: z.array(
-    z.object({
-      id: z.string(),
-      success: z.boolean(),
-      code: z.string().optional(),
-      error: z.string().optional(),
-    }),
-  ),
-});
+  }),
+  'Streamer IDs must be unique',
+);
 
 // Form schema without preprocessors for proper type inference with react-hook-form
 export const StreamerFormSchema = z.object({

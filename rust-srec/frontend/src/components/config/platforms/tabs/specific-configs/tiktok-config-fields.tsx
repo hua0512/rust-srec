@@ -21,6 +21,8 @@ import { Zap } from 'lucide-react';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -58,10 +60,10 @@ export function TikTokConfigFields<TFieldValues extends FieldValues>({
                     onValueChange={field.onChange}
                     value={field.value || 'auto'}
                   >
-                    <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
+                    <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue placeholder={i18n._(msg`Select API Mode`)} />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="auto">
                         <Trans>Auto</Trans>{' '}
                         <span className="text-muted-foreground ml-2 text-xs">

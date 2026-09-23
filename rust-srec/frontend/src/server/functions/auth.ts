@@ -34,7 +34,6 @@ export const loginFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       const json = await authClient.post('auth/login', { json: data }).json();
-      // console.log(`[Auth] Login successful for user: ${data.username}. Parsing response...`);
       const parsed = LoginResponseSchema.parse(json);
       const session = await useAppSession();
 
@@ -49,7 +48,6 @@ export const loginFn = createServerFn({ method: 'POST' })
         roles: parsed.roles,
         mustChangePassword: parsed.must_change_password,
       };
-      // console.log(`[Auth] Updating session for ${data.username}. Access expiry: ${new Date(userData.token.expires_in).toLocaleString()}`);
       await session.update(userData);
 
       // Do not leak refresh token back to the browser; return a sanitized view.

@@ -27,7 +27,7 @@ import { Edit, MoreHorizontal, Trash, Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import type { PipelinePreset } from '@/server/functions/pipeline';
+import type { PipelinePreset } from '@/api/schemas';
 import {
   getStepBadgeColor,
   getStepIcon,
@@ -37,6 +37,7 @@ import {
   getPipelinePresetDescription,
   getPipelinePresetName,
 } from '../presets/default-presets-i18n';
+import { getStepName } from './step-operations';
 
 interface WorkflowCardProps {
   workflow: PipelinePreset;
@@ -141,8 +142,7 @@ export function WorkflowCard({
         <div className="flex items-center gap-2 flex-wrap">
           {steps.map((dagStep, index) => {
             const { step, id } = dagStep;
-            const stepName =
-              step.type === 'inline' ? step.processor : step.name;
+            const stepName = getStepName(step);
             const StepIcon = getStepIcon(stepName);
             const badgeColor = getStepBadgeColor(stepName);
             const isInline = step.type === 'inline';

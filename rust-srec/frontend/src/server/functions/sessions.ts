@@ -1,7 +1,12 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { backendPath, PathIdSchema, withQuery } from '../backend-path';
+import {
+  backendPath,
+  PathIdSchema,
+  withQuery,
+  setPagination,
+} from '../backend-path';
 import {
   SessionDanmuStatisticsSchema,
   SessionSchema,
@@ -92,7 +97,6 @@ export const deleteSessions = createServerFn({ method: 'POST' })
   .handler(async ({ data: ids }) => {
     const json = await fetchBackend('/sessions/batch-delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
     return json as { deleted: number };
@@ -106,8 +110,7 @@ export const listSessionSegments = createServerFn({ method: 'GET' })
   }))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+    setPagination(params, data);
 
     const path = backendPath`/sessions/${data.session_id}/segments`;
     const json = await fetchBackend(withQuery(path, params));

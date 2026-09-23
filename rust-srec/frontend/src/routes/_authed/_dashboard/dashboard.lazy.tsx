@@ -228,21 +228,13 @@ function Dashboard() {
                         <div
                           className={cn(
                             'h-4 w-4 rounded-full',
-                            health.status === 'healthy'
-                              ? 'bg-green-500'
-                              : health.status === 'degraded'
-                                ? 'bg-yellow-500'
-                                : 'bg-red-500',
+                            statusDotClass(health.status),
                           )}
                         />
                         <div
                           className={cn(
                             'absolute inset-0 rounded-full animate-ping opacity-75',
-                            health.status === 'healthy'
-                              ? 'bg-green-500'
-                              : health.status === 'degraded'
-                                ? 'bg-yellow-500'
-                                : 'bg-red-500',
+                            statusDotClass(health.status),
                           )}
                         />
                       </div>
@@ -503,11 +495,7 @@ const ComponentStatusCard = memo(
               <span
                 className={cn(
                   'relative inline-flex rounded-full h-3 w-3',
-                  isHealthy
-                    ? 'bg-green-500'
-                    : component.status === 'degraded'
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500',
+                  statusDotClass(component.status),
                 )}
               ></span>
             </div>
@@ -616,6 +604,12 @@ const StatCard = memo(
 );
 
 StatCard.displayName = 'StatCard';
+
+function statusDotClass(status: string) {
+  if (status === 'healthy') return 'bg-green-500';
+  if (status === 'degraded') return 'bg-yellow-500';
+  return 'bg-red-500';
+}
 
 function getStatusLabel(status: string, i18n: I18n) {
   switch (status.toLowerCase()) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import {
   createStepId,
+  getStepName,
   removeStep,
   replaceStep,
   updateStep,
@@ -36,10 +37,6 @@ export interface WorkflowStepsController {
   reorder: (steps: DagStepDefinition[]) => void;
 }
 
-function stepName(step: PipelineStep): string {
-  return step.type === 'inline' ? step.processor : step.name;
-}
-
 /**
  * Owns the editing state shared by the workflow editors: which step the configuration dialog is
  * on, whether the step library is open and which step it is replacing. The steps themselves stay
@@ -54,7 +51,7 @@ export function useWorkflowSteps({
   const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
 
   const usedStepNames = useMemo(
-    () => steps.map((step) => stepName(step.step)),
+    () => steps.map((step) => getStepName(step.step)),
     [steps],
   );
 

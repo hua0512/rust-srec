@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { minPriorityLabel } from '@/lib/priority';
 import { useNotificationDot } from '@/hooks/use-notification-dot';
 import { isTauriRuntime } from '@/utils/tauri';
 import {
@@ -320,13 +321,9 @@ function NotificationsPage() {
     return i18n._(msg`Permission required`);
   }, [i18n, webPushKeyQuery.isError, webPushPermission, webPushSupported]);
 
-  const desktopMinPriorityLabel = useMemo(() => {
-    const p = desktopNotificationsConfig?.minPriority ?? 5;
-    if (p >= 10) return i18n._(msg`Critical Only`);
-    if (p >= 7) return i18n._(msg`High+`);
-    if (p >= 4) return i18n._(msg`Normal+`);
-    return i18n._(msg`All`);
-  }, [desktopNotificationsConfig?.minPriority, i18n]);
+  const desktopMinPriorityLabel = i18n._(
+    minPriorityLabel(desktopNotificationsConfig?.minPriority ?? 5),
+  );
 
   const desktopConfiguredEventsText = useMemo(() => {
     const selected = desktopNotificationsConfig?.eventTypes?.length ?? 0;

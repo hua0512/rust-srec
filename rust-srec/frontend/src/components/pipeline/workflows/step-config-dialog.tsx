@@ -10,7 +10,10 @@ import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
-import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
+import {
+  getProcessorDefaultConfig,
+  getProcessorDefinition,
+} from '@/components/pipeline/presets/processors/registry';
 import {
   buildPresetProcessorMap,
   getTransformDependencyIds,
@@ -18,14 +21,14 @@ import {
 } from './delete-warning';
 import { usePresetByName, useReferencedPresets } from './preset-lookup';
 import { PresetLookupStatus } from './preset-lookup-status';
-import { getStepIdError } from './step-operations';
+import { getStepIdError, getStepName } from './step-operations';
 
 /**
  * Turns the retry and timeout inputs into the optional step fields: attempts
  * of 1 or less (or blank) mean no retry policy, a blank timeout means the
  * worker pool default, and a blank backoff leaves the backend default.
  */
-export function stepPolicyFromInputs(
+function stepPolicyFromInputs(
   attempts: string,
   backoffSecs: string,
   timeoutSecs: string,
@@ -97,7 +100,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const isPreset = step?.type === 'preset';
   const presetName = isPreset ? step.name : null;
   const isWorkflow = step?.type === 'workflow';
-  const workflowName = isWorkflow ? (step as any).name : null;
+  const workflowName = isWorkflow ? step.name : null;
   // Processor of the preset at the moment handleDetach ran. `isDetached` is derived from it, so
   // once the user is editing a detached copy the form and performSave no longer depend on
   // `presetDetail` — a refetch that stops resolving the preset cannot swap the processor or turn
@@ -155,19 +158,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const formValues = useMemo(() => {
     if (!step) return {};
 
-    // Get default values from schema if available
-    let baseConfig = {};
-    if (processorDef?.schema) {
-      try {
-        const result = processorDef.schema.safeParse({});
-        if (result.success) {
-          baseConfig = result.data;
-        }
-      } catch (e) {
-        console.error('Failed to parse default values:', e);
-        // Fallback to empty if unexpected error
-      }
-    }
+    const baseConfig = getProcessorDefaultConfig(processorDef) ?? {};
 
     const getSafeConfig = (config: any) => {
       if (!config) return {};
@@ -254,15 +245,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     return getProcessorDefinition(presetDetail.processor);
   }, [presetDetail]);
 
-  const presetDefaults = useMemo(() => {
-    if (!presetProcessorDef) return {};
-    try {
-      const result = presetProcessorDef.schema.safeParse({});
-      return result.success ? result.data : {};
-    } catch {
-      return {};
-    }
-  }, [presetProcessorDef]);
+  const presetDefaults = useMemo(
+    () => getProcessorDefaultConfig(presetProcessorDef) ?? {},
+    [presetProcessorDef],
+  );
 
   // Form for displaying the preset config (read-only)
   const presetForm = useForm({
@@ -696,9 +682,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                         {otherId}
                                       </span>
                                       <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                        {otherStep.step.type === 'inline'
-                                          ? otherStep.step.processor
-                                          : otherStep.step.name}
+                                        {getStepName(otherStep.step)}
                                       </span>
                                     </label>
                                   </div>

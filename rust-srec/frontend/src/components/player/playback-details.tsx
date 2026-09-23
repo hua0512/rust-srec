@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Trans } from '@lingui/react/macro';
+import { formatBitrate } from '@/lib/format';
 import type { PlaybackStatistics } from './playback-statistics';
 
 export interface SourceMediaDetails {
@@ -63,11 +64,9 @@ export function PlaybackDetails({
               )}
             </Row>
             <Row label={<Trans>Bitrate</Trans>}>
-              {positive(source.bitrate) ? (
-                <Trans>{(source.bitrate / 1000).toFixed(0)} kbps</Trans>
-              ) : (
-                unavailable
-              )}
+              {positive(source.bitrate)
+                ? formatBitrate(source.bitrate)
+                : unavailable}
             </Row>
           </dl>
         </section>

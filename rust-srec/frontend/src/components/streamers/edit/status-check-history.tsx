@@ -18,6 +18,7 @@ import {
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
 import { formatDate } from '@/lib/datetime';
+import { formatBitrate } from '@/lib/format';
 
 /**
  * Number of bar slots rendered. Matches the screenshot's "HISTORY (60PTS)"
@@ -331,17 +332,16 @@ function streamSummary(s: StreamSummary): string {
   return [
     s.quality,
     s.media_format,
-    s.bitrate ? `${Math.round(s.bitrate / 1000)} kbps` : null,
+    formatBitrate(s.bitrate),
     s.codec ? `${s.codec}${s.fps ? `@${s.fps}` : ''}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 }
 
-/** Two summaries are the same stream when their compact representations
- *  match — the selected descriptor and its position in the candidate list
- *  are produced from the same source data, so a string equality on the
- *  visible fields is sufficient and stable across (de)serialization. */
+/** Two summaries are the same stream when their identifying fields match.
+ *  The selected descriptor and the candidate list come from the same source
+ *  data, so field equality is stable across (de)serialization. */
 function isSameStream(
   a: StreamSummary,
   b: StreamSummary | null | undefined,
@@ -400,7 +400,7 @@ function outcomeAriaName(
  * Per-outcome bar appearance. Color tokens follow the rest of the dashboard
  * (emerald = live, amber = filtered, red = error). Heights skew the eye
  * toward anomalies — short gray bars for offline polls, tall colored bars
- * everywhere else, matching the screenshot's visual rhythm.
+ * everywhere else.
  */
 function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
   color: string;

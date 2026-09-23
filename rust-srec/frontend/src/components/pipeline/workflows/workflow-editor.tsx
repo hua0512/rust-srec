@@ -27,7 +27,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 
-import type { PipelinePreset } from '@/server/functions/pipeline';
+import type { PipelinePreset } from '@/api/schemas';
 import { validateDagDefinition } from '@/server/functions/pipeline';
 import { reportValidation } from './validation-feedback';
 import { toast } from 'sonner';

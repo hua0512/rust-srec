@@ -1,5 +1,4 @@
 import {
-  DaysOfWeekSchema,
   FilterSchema,
   TimeBasedFilterConfigSchema,
   KeywordFilterConfigSchema,
@@ -8,7 +7,6 @@ import {
   type FilterType,
   normalizeFilterConfigForType,
 } from '../../api/schemas';
-import type { MessageDescriptor } from '@lingui/core';
 import { z } from 'zod';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -18,7 +16,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
-import { filterTypeMeta } from './filter-types';
+import { DAYS, filterTypeMeta } from './filter-types';
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -27,28 +25,6 @@ interface FilterCardProps {
   onEdit: (filter: Filter) => void;
   onDelete: (filterId: string) => void;
 }
-
-/**
- * Day initials for the time-window summary.
- *
- * Two pairs collide in English (Tuesday/Thursday, Saturday/Sunday), so each carries a `context`
- * to keep them separate message ids and independently translatable.
- */
-const DAY_INITIALS: {
-  id: z.infer<typeof DaysOfWeekSchema>;
-  label: MessageDescriptor;
-}[] = [
-  { id: 'Monday', label: msg({ message: 'M', context: 'Monday initial' }) },
-  { id: 'Tuesday', label: msg({ message: 'T', context: 'Tuesday initial' }) },
-  {
-    id: 'Wednesday',
-    label: msg({ message: 'W', context: 'Wednesday initial' }),
-  },
-  { id: 'Thursday', label: msg({ message: 'T', context: 'Thursday initial' }) },
-  { id: 'Friday', label: msg({ message: 'F', context: 'Friday initial' }) },
-  { id: 'Saturday', label: msg({ message: 'S', context: 'Saturday initial' }) },
-  { id: 'Sunday', label: msg({ message: 'S', context: 'Sunday initial' }) },
-];
 
 export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
   const { i18n } = useLingui();
@@ -70,7 +46,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
         return (
           <div className="space-y-3">
             <div className="flex gap-1">
-              {DAY_INITIALS.map((day) => {
+              {DAYS.map((day) => {
                 const isActive = days_of_week.includes(day.id);
                 return (
                   <span

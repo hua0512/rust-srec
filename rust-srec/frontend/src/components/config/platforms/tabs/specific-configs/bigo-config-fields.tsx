@@ -15,6 +15,7 @@ import { Lock, Shield } from 'lucide-react';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_DESCRIPTION,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -54,7 +55,7 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
                     placeholder={i18n._(msg`Password...`)}
                   />
                 </FormControl>
-                <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Default password for password-protected rooms. Can be
                     overridden per streamer with ?pwd= in the URL.

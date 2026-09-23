@@ -30,10 +30,6 @@ function createUpload(overrides: Partial<UploadView> = {}): UploadView {
 }
 
 describe('UploadIndicator', () => {
-  it('uses the activated provider locale for plural messages', () => {
-    expect(() => renderIndicator([createUpload()])).not.toThrow();
-  });
-
   it('shows progress for a single upload', () => {
     renderIndicator([createUpload({ percent: 26.3 })]);
 

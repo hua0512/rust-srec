@@ -334,9 +334,6 @@ importers:
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
-      undici:
-        specifier: ^8.10.2
-        version: 8.10.2
       zod:
         specifier: ^4.6.5
         version: 4.6.5

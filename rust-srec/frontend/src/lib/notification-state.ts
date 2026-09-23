@@ -1,10 +1,10 @@
-export const NOTIFICATION_LAST_SEEN_CRITICAL_MS_KEY =
+const NOTIFICATION_LAST_SEEN_CRITICAL_MS_KEY =
   'rust-srec.notifications.lastSeenCriticalMs';
 
-export const BROWSER_NOTIFICATIONS_ENABLED_KEY =
+const BROWSER_NOTIFICATIONS_ENABLED_KEY =
   'rust-srec.notifications.browser.enabled';
 
-export const BROWSER_NOTIFICATIONS_LAST_NOTIFIED_CRITICAL_MS_KEY =
+const BROWSER_NOTIFICATIONS_LAST_NOTIFIED_CRITICAL_MS_KEY =
   'rust-srec.notifications.browser.lastNotifiedCriticalMs';
 
 const NOTIFICATION_STATE_CHANGED_EVENT = 'rust-srec.notifications.stateChanged';

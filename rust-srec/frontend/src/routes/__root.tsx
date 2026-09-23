@@ -140,31 +140,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const { theme } = Route.useRouteContext();
   const serverMode = theme.mode === 'system' ? 'light' : theme.mode;
 
-  useEffect(() => {
-    if (!isDesktop) return;
-
-    let unlisten: (() => void) | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const { initDesktopLaunchListener } = await import('@/desktop/launch');
-      if (cancelled) return;
-
-      unlisten = await initDesktopLaunchListener((payload) => {
-        window.dispatchEvent(
-          new CustomEvent('rust-srec:launch', {
-            detail: payload,
-          }),
-        );
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [isDesktop]);
-
   if (isDesktop) {
     return (
       <div className="min-h-dvh">

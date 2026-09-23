@@ -8,11 +8,8 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
-import {
-  parseUrl,
-  parseUrlBatch,
-  type ParseUrlResponse,
-} from '@/server/functions';
+import { parseUrl, parseUrlBatch } from '@/server/functions';
+import type { ParseUrlResponse } from '@/api/schemas';
 import { UrlInputForm } from '@/components/player/url-input-form';
 import { Button } from '@/components/ui/button';
 import {

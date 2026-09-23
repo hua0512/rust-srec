@@ -94,7 +94,7 @@ const MenuItem = React.memo(function MenuItem({
   );
 });
 
-export function MenuComponent({ isOpen, className }: MenuProps) {
+function MenuComponent({ isOpen, className }: MenuProps) {
   const { i18n } = useLingui();
   const pathname = useLocation({
     select: (location) => location.pathname,

@@ -21,6 +21,8 @@ import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-strea
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_DESCRIPTION,
+  CONFIG_SELECT_CONTENT,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -99,7 +101,7 @@ export function BilibiliConfigFields<TFieldValues extends FieldValues>({
                         </SelectValue>
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="default">{defaultLabel}</SelectItem>
                       {QUALITY_OPTIONS.map((option) => (
                         <SelectItem
@@ -116,7 +118,7 @@ export function BilibiliConfigFields<TFieldValues extends FieldValues>({
                       )}
                     </SelectContent>
                   </Select>
-                  <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       Select the highest quality level you want to attempt
                       capturing.

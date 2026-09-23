@@ -95,7 +95,7 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-nvenc-av1-hq': msg`High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+.`,
 };
 
-export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
+const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
   'pipeline-standard': msg`Standard`,
   'pipeline-archive': msg`Archive to Cloud`,
   'pipeline-hq-archive': msg`High Quality Archive`,
@@ -112,7 +112,7 @@ export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
   'pipeline-nvenc-hq-archive': msg`GPU HQ Archive`,
 };
 
-export const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
+const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
   'pipeline-standard': msg`Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.`,
   'pipeline-archive': msg`Compress video for storage, upload to cloud, then delete local file to save space.`,
   'pipeline-hq-archive': msg`Maximum quality compression with HEVC, then upload to cloud storage.`,

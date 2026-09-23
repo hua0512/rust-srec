@@ -13,9 +13,7 @@ export interface SidebarContextValue {
   updateConfig: (config: Partial<SidebarConfig>) => void;
 }
 
-export const SidebarContext = React.createContext<SidebarContextValue | null>(
-  null,
-);
+const SidebarContext = React.createContext<SidebarContextValue | null>(null);
 
 export function SidebarConfigProvider({
   children,

@@ -23,7 +23,6 @@ const themeStyles: Record<
   TooltipColorTheme,
   {
     headerGradient: string;
-    headerBorder: string;
     iconBg: string;
     iconColor: string;
     ring: string;
@@ -33,7 +32,6 @@ const themeStyles: Record<
   amber: {
     headerGradient:
       'from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/10',
-    headerBorder: 'border-amber-500/10',
     iconBg: 'bg-amber-500/10',
     iconColor: 'text-amber-600',
     ring: 'ring-amber-500/20',
@@ -42,7 +40,6 @@ const themeStyles: Record<
   orange: {
     headerGradient:
       'from-orange-500/10 via-orange-500/5 to-transparent border-orange-500/10',
-    headerBorder: 'border-orange-500/10',
     iconBg: 'bg-orange-500/10',
     iconColor: 'text-orange-600',
     ring: 'ring-orange-500/20',
@@ -51,7 +48,6 @@ const themeStyles: Record<
   red: {
     headerGradient:
       'from-red-500/10 via-red-500/5 to-transparent border-red-500/10',
-    headerBorder: 'border-red-500/10',
     iconBg: 'bg-red-500/10',
     iconColor: 'text-red-600',
     ring: 'ring-red-500/20',
@@ -60,7 +56,6 @@ const themeStyles: Record<
   violet: {
     headerGradient:
       'from-violet-500/10 via-violet-500/5 to-transparent border-violet-500/10',
-    headerBorder: 'border-violet-500/10',
     iconBg: 'bg-violet-500/10',
     iconColor: 'text-violet-600',
     ring: 'ring-violet-500/20',
@@ -69,7 +64,6 @@ const themeStyles: Record<
   blue: {
     headerGradient:
       'from-blue-500/10 via-blue-500/5 to-transparent border-blue-500/10',
-    headerBorder: 'border-blue-500/10',
     iconBg: 'bg-blue-500/10',
     iconColor: 'text-blue-600',
     ring: 'ring-blue-500/20',
@@ -78,7 +72,6 @@ const themeStyles: Record<
   slate: {
     headerGradient:
       'from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/10',
-    headerBorder: 'border-slate-500/10',
     iconBg: 'bg-slate-500/10',
     iconColor: 'text-slate-600 dark:text-slate-400',
     ring: 'ring-slate-500/20',
@@ -87,7 +80,6 @@ const themeStyles: Record<
   rose: {
     headerGradient:
       'from-rose-500/10 via-rose-500/5 to-transparent border-rose-500/10',
-    headerBorder: 'border-rose-500/10',
     iconBg: 'bg-rose-500/10',
     iconColor: 'text-rose-600',
     ring: 'ring-rose-500/20',
@@ -115,7 +107,6 @@ export function StatusInfoTooltip({
       style={
         {
           '--tooltip-theme-color': `var(--${colorName}-500, currentColor)`,
-          '--tooltip-theme-bg': `var(--${colorName}-500-10, color-mix(in srgb, currentColor 10%, transparent))`,
         } as React.CSSProperties
       }
     >

@@ -4,8 +4,8 @@ import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
 import { formatDate } from '@/lib/datetime';
+import { formatBytes, formatDuration } from '@/lib/format';
 
 interface RecentSessionsListProps {
   sessions: any[];
@@ -91,7 +91,7 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                   <Clock className="w-3 h-3" />
                   <span>
                     {session.duration_secs
-                      ? `${Math.floor(session.duration_secs / 60)}m`
+                      ? formatDuration(session.duration_secs)
                       : '-'}
                   </span>
                 </div>
@@ -99,9 +99,7 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                   <HardDrive className="w-3 h-3" />
                   <span>
                     {session.total_size_bytes
-                      ? (session.total_size_bytes / 1024 / 1024).toFixed(1) +
-                        ' ' +
-                        i18n._(msg`MB`)
+                      ? formatBytes(session.total_size_bytes)
                       : '-'}
                   </span>
                 </div>

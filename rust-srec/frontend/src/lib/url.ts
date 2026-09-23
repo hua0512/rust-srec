@@ -1,3 +1,5 @@
+import { getBaseUrl } from '@/utils/env';
+
 /**
  * Constructs a full URL for a media resource, handling base URLs and authentication tokens.
  * Uses relative paths to avoid SSR/client hydration mismatches.
@@ -6,8 +8,6 @@
  * @param token The authentication token to append as a query parameter.
  * @returns The fully constructed URL, or null if the path is invalid.
  */
-import { getBaseUrl } from '@/utils/env';
-
 export function getMediaUrl(
   path: string | null | undefined,
   token?: string,

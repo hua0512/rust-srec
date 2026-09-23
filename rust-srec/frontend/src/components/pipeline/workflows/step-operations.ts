@@ -1,10 +1,15 @@
 import type { DagStepDefinition, PipelineStep } from '@/api/schemas';
 
+/** The processor of an inline step, otherwise the preset or workflow it references. */
+export function getStepName(step: PipelineStep): string {
+  return step.type === 'inline' ? step.processor : step.name;
+}
+
 export function createStepId(
   step: PipelineStep,
   steps: DagStepDefinition[],
 ): string {
-  const base = step.type === 'inline' ? step.processor : step.name;
+  const base = getStepName(step);
   const existingIds = new Set(steps.map((candidate) => candidate.id));
   let suffix = steps.length;
 

@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 
 import type { NotificationEventTypeInfo } from '@/api/schemas/notifications';
 import { eventTypeLabel } from '@/lib/notification-event-types';
+import { MIN_PRIORITY_OPTIONS } from '@/lib/priority';
 import type { DesktopNotificationConfig } from '@/desktop/desktop-notifications';
 
 interface DesktopChannelDialogProps {
@@ -46,13 +47,6 @@ export function DesktopChannelDialog({
   onTest,
 }: DesktopChannelDialogProps) {
   const { i18n } = useLingui();
-
-  const priorityLabel = (p: number) => {
-    if (p >= 10) return i18n._(msg`Critical Only`);
-    if (p >= 7) return i18n._(msg`High+`);
-    if (p >= 4) return i18n._(msg`Normal+`);
-    return i18n._(msg`All`);
-  };
 
   const toggleEventType = (eventType: string, checked: boolean) => {
     const current = new Set(config.eventTypes);
@@ -144,18 +138,15 @@ export function DesktopChannelDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="10" className="text-[10px]">
-                    {priorityLabel(10)}
-                  </SelectItem>
-                  <SelectItem value="8" className="text-[10px]">
-                    {priorityLabel(8)}
-                  </SelectItem>
-                  <SelectItem value="5" className="text-[10px]">
-                    {priorityLabel(5)}
-                  </SelectItem>
-                  <SelectItem value="2" className="text-[10px]">
-                    {priorityLabel(2)}
-                  </SelectItem>
+                  {MIN_PRIORITY_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      className="text-[10px]"
+                    >
+                      {i18n._(option.label)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

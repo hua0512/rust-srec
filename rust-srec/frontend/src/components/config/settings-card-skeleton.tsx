@@ -67,7 +67,7 @@ export function SettingsCardSkeleton({
 }
 
 /** One label-over-control pair, at the heights `FormItem` gives them. */
-export function SettingsFieldSkeleton() {
+function SettingsFieldSkeleton() {
   return (
     <div className="space-y-2">
       <Skeleton className="h-3.5 w-28" />
