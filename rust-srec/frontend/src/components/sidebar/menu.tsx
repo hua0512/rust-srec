@@ -15,11 +15,10 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-  TooltipProvider,
 } from '@/components/ui/tooltip';
 
 interface MenuProps {
-  isOpen: boolean | undefined;
+  isOpen: boolean;
   className?: string;
 }
 
@@ -28,7 +27,7 @@ interface MenuItemProps {
   label: string;
   icon: LucideIcon;
   isActive: boolean;
-  isOpen: boolean | undefined;
+  isOpen: boolean;
   showDot?: boolean;
 }
 
@@ -48,7 +47,7 @@ const MenuItem = React.memo(function MenuItem({
             variant="ghost"
             className={cn(
               'w-full h-11 mb-1 transition-all duration-200 group relative overflow-hidden',
-              isOpen === false ? 'justify-center' : 'justify-start px-4',
+              !isOpen ? 'justify-center' : 'justify-start px-4',
               isActive
                 ? 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary shadow-sm shadow-primary/5'
                 : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
@@ -62,7 +61,7 @@ const MenuItem = React.memo(function MenuItem({
               <span
                 className={cn(
                   'relative transition-transform duration-200 group-hover:scale-110 shrink-0',
-                  isOpen === false ? '' : 'mr-4',
+                  !isOpen ? '' : 'mr-4',
                 )}
               >
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
@@ -76,7 +75,7 @@ const MenuItem = React.memo(function MenuItem({
               <p
                 className={cn(
                   'truncate font-medium transition-all duration-300',
-                  isOpen === false
+                  !isOpen
                     ? 'opacity-0 w-0 pointer-events-none'
                     : 'opacity-100 translate-x-0 w-auto',
                 )}
@@ -86,9 +85,7 @@ const MenuItem = React.memo(function MenuItem({
             </Link>
           </Button>
         </TooltipTrigger>
-        {isOpen === false && (
-          <TooltipContent side="right">{label}</TooltipContent>
-        )}
+        {!isOpen && <TooltipContent side="right">{label}</TooltipContent>}
       </Tooltip>
     </div>
   );
@@ -112,24 +109,20 @@ function MenuComponent({ isOpen, className }: MenuProps) {
         <ul
           className={cn(
             'flex flex-col min-h-[calc(100vh-48px-36px-16px-32px)] lg:min-h-[calc(100vh-32px-40px-32px)] items-start space-y-1',
-            isOpen === false ? 'px-1' : 'px-0',
+            !isOpen ? 'px-1' : 'px-0',
           )}
         >
-          <TooltipProvider
-            key={isOpen ? 'open' : 'closed'}
-            disableHoverableContent
-            delayDuration={100}
-          >
+          <React.Fragment key={isOpen ? 'open' : 'closed'}>
             {menuList.map(({ groupLabel, menus }, index) => (
               <li
                 className={cn('w-full', groupLabel ? 'pt-6' : '')}
                 key={index}
               >
-                {(isOpen && groupLabel) || isOpen === undefined ? (
+                {isOpen && groupLabel ? (
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 px-4 pb-3 max-w-[248px] truncate">
                     {groupLabel}
                   </p>
-                ) : !isOpen && isOpen !== undefined && groupLabel ? (
+                ) : !isOpen && groupLabel ? (
                   <Tooltip delayDuration={100}>
                     <TooltipTrigger className="w-full">
                       <div className="w-full flex justify-center items-center py-2">
@@ -173,7 +166,7 @@ function MenuComponent({ isOpen, className }: MenuProps) {
               </li>
             ))}
             <UserMenu isOpen={isOpen} />
-          </TooltipProvider>
+          </React.Fragment>
         </ul>
       </nav>
     </ScrollArea>

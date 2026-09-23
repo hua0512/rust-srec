@@ -94,7 +94,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 ## Notifications
 
 - Fixed missing pipeline started, completed, and failed notifications.
-- Fixed event history previews showing only the event name for output-path, GPU, and Baidu Netdisk re-login alerts. They now show the affected path or error.
+- Fixed event history previews showing only the event name for output-path, GPU, and Baidu Netdisk re-login alerts. They now show the affected path or error. Rejected downloads, invalid credentials, and shutdowns also show their reason.
 - Email delivery now reuses SMTP connections. Channel reloads retain the original destination for already-admitted deliveries and preserve failure history for channels that remain loaded.
 - Fixed queue capacity handling, cancellation of evicted retries, and retention of failed deliveries from configuration-defined channels. Successful channels are not sent duplicate notifications during retries.
 - Fixed Web Push backoff persistence and payload-size checks. Full or unavailable queues drop new events at every priority, count the drops, and do not replay them. Event history and other channels remain independent. See [delivery limits](../concepts/notifications.md#delivery-behavior).

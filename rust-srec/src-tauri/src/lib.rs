@@ -469,23 +469,15 @@ struct DesktopBackendState {
     /// Published by the boot task; read by the exit path through
     /// `wait_for_boot_settled`.
     boot_phase: tokio::sync::watch::Receiver<BootPhase>,
-    latest_launch: std::sync::Mutex<LaunchArgsPayload>,
 
     data_dir: PathBuf,
     log_dir: PathBuf,
     desktop_notifications: std::sync::Mutex<DesktopNotificationConfig>,
 }
 
-#[derive(Clone, Serialize)]
-struct LaunchArgsPayload {
-    args: Vec<String>,
-    cwd: String,
-}
-
 impl DesktopBackendState {
     fn new(
         instance_lock: backend::RuntimeLease,
-        initial_launch: LaunchArgsPayload,
         data_dir: PathBuf,
         log_dir: PathBuf,
         desktop_notifications: DesktopNotificationConfig,
@@ -501,7 +493,6 @@ impl DesktopBackendState {
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
             boot_phase,
-            latest_launch: std::sync::Mutex::new(initial_launch),
 
             data_dir,
             log_dir,
@@ -527,22 +518,6 @@ impl DesktopBackendState {
             .lock()
             .map(|p| p.clone())
             .unwrap_or_default()
-    }
-
-    fn update_launch(&self, payload: LaunchArgsPayload) {
-        if let Ok(mut lock) = self.latest_launch.lock() {
-            *lock = payload;
-        }
-    }
-
-    fn current_launch(&self) -> LaunchArgsPayload {
-        self.latest_launch
-            .lock()
-            .map(|p| p.clone())
-            .unwrap_or(LaunchArgsPayload {
-                args: Vec::new(),
-                cwd: String::new(),
-            })
     }
 
     fn set_container(&self, container: Arc<backend::ServiceContainer>) {
@@ -599,14 +574,11 @@ fn emit_boot_progress(app: &tauri::AppHandle, status: &str, progress: f32) {
 
 fn build_init_script(
     backend_url: &str,
-    launch: &LaunchArgsPayload,
     boot_error: Option<&BootFailurePayload>,
     desktop_notifications: &DesktopNotificationConfig,
 ) -> String {
     let backend_url_json =
         serde_json::to_string(backend_url).unwrap_or_else(|_| "\"\"".to_string());
-    let launch_args_json = serde_json::to_string(&launch.args).unwrap_or_else(|_| "[]".to_string());
-    let launch_cwd_json = serde_json::to_string(&launch.cwd).unwrap_or_else(|_| "\"\"".to_string());
     let boot_error_json = match boot_error {
         Some(error) => serde_json::to_string(error).unwrap_or_else(|_| "null".to_string()),
         None => "null".to_string(),
@@ -617,8 +589,6 @@ fn build_init_script(
 
     format!(
         "globalThis.__RUST_SREC_BACKEND_URL__ = {backend_url_json};\
- globalThis.__RUST_SREC_LAUNCH_ARGS__ = {launch_args_json};\
- globalThis.__RUST_SREC_LAUNCH_CWD__ = {launch_cwd_json};\
  globalThis.__RUST_SREC_BOOT_ERROR__ = {boot_error_json};\
  globalThis.__RUST_SREC_DESKTOP_NOTIFICATIONS__ = {desktop_notifications_json};"
     )
@@ -638,7 +608,6 @@ async fn show_boot_error_window(app_handle: &tauri::AppHandle, failure: BootFail
         // flash before it closes.
         return;
     }
-    let launch = state.current_launch();
     let desktop_notifications = state.desktop_notifications();
 
     let webview_url = if tauri::is_dev() {
@@ -650,7 +619,7 @@ async fn show_boot_error_window(app_handle: &tauri::AppHandle, failure: BootFail
         tauri::WebviewUrl::App("index.desktop.html".into())
     };
 
-    let init_script = build_init_script("", &launch, Some(&failure), &desktop_notifications);
+    let init_script = build_init_script("", Some(&failure), &desktop_notifications);
 
     if app_handle.get_webview_window("main").is_none() {
         match tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
@@ -1117,9 +1086,8 @@ async fn run_desktop_backend_init(
     }
 
     let backend_url = format!("http://{}", backend_addr);
-    let launch = state.current_launch();
     let desktop_notifications = state.desktop_notifications();
-    let init_script = build_init_script(&backend_url, &launch, None, &desktop_notifications);
+    let init_script = build_init_script(&backend_url, None, &desktop_notifications);
 
     let webview_url = if tauri::is_dev() {
         tauri::WebviewUrl::External(
@@ -1320,37 +1288,16 @@ fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let launch_args: Vec<String> = std::env::args().collect();
-    let launch_cwd = std::env::current_dir()
-        .ok()
-        .and_then(|p| p.to_str().map(ToString::to_string))
-        .unwrap_or_default();
-
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(state) = app.try_state::<DesktopBackendState>() {
-                state.update_launch(LaunchArgsPayload {
-                    args: _argv.clone(),
-                    cwd: _cwd.clone(),
-                });
-            }
-
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-
-            let _ = app.emit(
-                "rust-srec://single-instance",
-                LaunchArgsPayload {
-                    args: _argv,
-                    cwd: _cwd,
-                },
-            );
         }));
         builder = builder.plugin(tauri_plugin_notification::init());
         builder = builder.plugin(tauri_plugin_opener::init());
@@ -1415,10 +1362,6 @@ pub fn run() {
 
             app.manage(DesktopBackendState::new(
                 instance_lock,
-                LaunchArgsPayload {
-                    args: launch_args.clone(),
-                    cwd: launch_cwd.clone(),
-                },
                 data_dir.clone(),
                 log_dir.clone(),
                 desktop_notifications,
@@ -1438,12 +1381,7 @@ pub fn run() {
 
             let splash_init = {
                 let state = app.state::<DesktopBackendState>();
-                build_init_script(
-                    "",
-                    &state.current_launch(),
-                    None,
-                    &state.desktop_notifications(),
-                )
+                build_init_script("", None, &state.desktop_notifications())
             };
 
             let splash_window = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
