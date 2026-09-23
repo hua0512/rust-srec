@@ -3,6 +3,7 @@ import { Cpu, Film, Gauge, Server, type LucideIcon } from 'lucide-react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
+import { formatBitrate } from '@/lib/format';
 
 import { OptionGroup, SettingsSection } from './option-group';
 import {
@@ -31,10 +32,6 @@ const levelSections: Record<
   quality: { title: msg`Quality`, icon: Gauge },
   variant: { title: msg`Codec`, icon: Cpu },
 };
-
-function formatBitrate(bitrate: number | undefined) {
-  return bitrate ? `${(bitrate / 1000).toFixed(0)} kbps` : undefined;
-}
 
 export function StreamInfoCard({
   mediaInfo,

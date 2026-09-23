@@ -104,6 +104,16 @@ export function formatSpeed(
 }
 
 /**
+ * Format a stream bitrate in bits per second as whole kilobits (e.g., "2500 kbps").
+ * Returns undefined for a missing or zero bitrate.
+ */
+export function formatBitrate(
+  bitsPerSec: number | null | undefined,
+): string | undefined {
+  return bitsPerSec ? `${Math.round(bitsPerSec / 1000)} kbps` : undefined;
+}
+
+/**
  * Final path component of a file path, handling both `/` and `\` separators.
  * Returns the input unchanged when it contains no separator.
  */

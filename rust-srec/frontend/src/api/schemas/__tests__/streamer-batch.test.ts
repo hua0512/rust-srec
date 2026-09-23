@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  BatchStreamerRequestSchema,
-  BatchStreamerResponseSchema,
-} from '../streamer';
+import { BatchStreamerRequestSchema } from '../streamer';
 
 describe('BatchStreamerRequestSchema', () => {
   it.each([
@@ -40,26 +37,5 @@ describe('BatchStreamerRequestSchema', () => {
         action: { type: 'delete' },
       }).success,
     ).toBe(false);
-  });
-});
-
-describe('BatchStreamerResponseSchema', () => {
-  it('accepts partial-success results', () => {
-    expect(
-      BatchStreamerResponseSchema.safeParse({
-        requested: 2,
-        succeeded: 1,
-        failed: 1,
-        results: [
-          { id: 'streamer-1', success: true },
-          {
-            id: 'streamer-2',
-            success: false,
-            code: 'NOT_FOUND',
-            error: 'Streamer not found',
-          },
-        ],
-      }).success,
-    ).toBe(true);
   });
 });

@@ -370,30 +370,37 @@ export const BatchDagActionSchema = z.discriminatedUnion('type', [
 ]);
 export type BatchDagAction = z.infer<typeof BatchDagActionSchema>;
 
-// `max(100)` matches MAX_DAG_BATCH_SIZE in the backend, so an oversized selection
-// is rejected before it reaches the network.
-const batchIdsSchema = z.array(z.string().min(1)).min(1).max(100);
+// `max(100)` matches the backend's batch size limits (e.g. MAX_DAG_BATCH_SIZE), so
+// an oversized selection is rejected before it reaches the network.
+export const BatchIdsSchema = z.array(z.string().min(1)).min(1).max(100);
 
-export const BatchDagRequestSchema = z
-  .object({
-    ids: batchIdsSchema,
-    action: BatchDagActionSchema,
-  })
-  .refine((data) => new Set(data.ids).size === data.ids.length, {
-    message: 'Pipeline IDs must be unique',
+/** Rejects repeated IDs, reported against `ids`. */
+export function withUniqueIds<T extends z.ZodType<{ ids: string[] }>>(
+  schema: T,
+  message: string,
+): T {
+  return schema.refine((data) => new Set(data.ids).size === data.ids.length, {
+    message,
     path: ['ids'],
   });
+}
+
+export const BatchDagRequestSchema = withUniqueIds(
+  z.object({
+    ids: BatchIdsSchema,
+    action: BatchDagActionSchema,
+  }),
+  'Pipeline IDs must be unique',
+);
 export type BatchDagRequest = z.infer<typeof BatchDagRequestSchema>;
 
-export const BatchDeleteOutputsRequestSchema = z
-  .object({
-    ids: batchIdsSchema,
+export const BatchDeleteOutputsRequestSchema = withUniqueIds(
+  z.object({
+    ids: BatchIdsSchema,
     delete_file: z.boolean(),
-  })
-  .refine((data) => new Set(data.ids).size === data.ids.length, {
-    message: 'Output IDs must be unique',
-    path: ['ids'],
-  });
+  }),
+  'Output IDs must be unique',
+);
 export type BatchDeleteOutputsRequest = z.infer<
   typeof BatchDeleteOutputsRequestSchema
 >;

@@ -1,7 +1,12 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { backendPath, PathIdSchema, withQuery } from '../backend-path';
+import {
+  backendPath,
+  PathIdSchema,
+  withQuery,
+  setPagination,
+} from '../backend-path';
 import {
   JobSchema,
   JobLogsResponseSchema,
@@ -55,8 +60,7 @@ export const getPipelineJobLogs = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+    setPagination(params, data);
 
     const path = backendPath`/pipeline/jobs/${data.id}/logs`;
     const json = await fetchBackend(withQuery(path, params));
@@ -108,8 +112,7 @@ export const listPipelines = createServerFn({ method: 'GET' })
     if (data.streamer_id) params.set('streamer_id', data.streamer_id);
     if (data.session_id) params.set('session_id', data.session_id);
     if (data.search) params.set('search', data.search);
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+    setPagination(params, data);
 
     const json = await fetchBackend(withQuery('/pipeline/dags', params));
     return DagListResponseSchema.parse(json);
@@ -334,8 +337,7 @@ export const listPipelineOutputs = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const params = pipelineOutputFilterParams(data);
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+    setPagination(params, data);
 
     const json = await fetchBackend(withQuery('/pipeline/outputs', params));
     return z
@@ -384,8 +386,7 @@ export const listPipelinePresets = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.search) params.set('search', data.search);
-    if (data.limit !== undefined) params.set('limit', data.limit.toString());
-    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+    setPagination(params, data);
 
     const json = await fetchBackend(withQuery('/pipeline/presets', params));
     return PipelinePresetListResponseSchema.parse(json);

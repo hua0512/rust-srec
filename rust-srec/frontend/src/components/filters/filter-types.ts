@@ -1,6 +1,8 @@
 import { Calendar, Clock, Regex, Tag, type LucideIcon } from 'lucide-react';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
+import type { z } from 'zod';
+import type { DaysOfWeekSchema } from '@/api/schemas';
 
 export interface FilterTypeMeta {
   value: string;
@@ -63,3 +65,52 @@ export const FILTER_TYPES: FilterTypeMeta[] = [
 export function filterTypeMeta(value: string): FilterTypeMeta | undefined {
   return FILTER_TYPES.find((t) => t.value === value);
 }
+
+/**
+ * `id` is the wire value stored in `config.days_of_week` and must stay English; `label` and
+ * `full` are display only.
+ *
+ * The initials collide in pairs (Tuesday/Thursday, Saturday/Sunday), so each carries a `context`
+ * to keep them separate message ids.
+ */
+export const DAYS: {
+  id: z.infer<typeof DaysOfWeekSchema>;
+  label: MessageDescriptor;
+  full: MessageDescriptor;
+}[] = [
+  {
+    id: 'Monday',
+    label: msg({ message: 'M', context: 'Monday initial' }),
+    full: msg`Monday`,
+  },
+  {
+    id: 'Tuesday',
+    label: msg({ message: 'T', context: 'Tuesday initial' }),
+    full: msg`Tuesday`,
+  },
+  {
+    id: 'Wednesday',
+    label: msg({ message: 'W', context: 'Wednesday initial' }),
+    full: msg`Wednesday`,
+  },
+  {
+    id: 'Thursday',
+    label: msg({ message: 'T', context: 'Thursday initial' }),
+    full: msg`Thursday`,
+  },
+  {
+    id: 'Friday',
+    label: msg({ message: 'F', context: 'Friday initial' }),
+    full: msg`Friday`,
+  },
+  {
+    id: 'Saturday',
+    label: msg({ message: 'S', context: 'Saturday initial' }),
+    full: msg`Saturday`,
+  },
+  {
+    id: 'Sunday',
+    label: msg({ message: 'S', context: 'Sunday initial' }),
+    full: msg`Sunday`,
+  },
+];

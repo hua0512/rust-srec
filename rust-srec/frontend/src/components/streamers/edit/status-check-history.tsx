@@ -18,6 +18,7 @@ import {
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
 import { formatDate } from '@/lib/datetime';
+import { formatBitrate } from '@/lib/format';
 
 /**
  * Number of bar slots rendered. Matches the screenshot's "HISTORY (60PTS)"
@@ -331,7 +332,7 @@ function streamSummary(s: StreamSummary): string {
   return [
     s.quality,
     s.media_format,
-    s.bitrate ? `${Math.round(s.bitrate / 1000)} kbps` : null,
+    formatBitrate(s.bitrate),
     s.codec ? `${s.codec}${s.fps ? `@${s.fps}` : ''}` : null,
   ]
     .filter(Boolean)

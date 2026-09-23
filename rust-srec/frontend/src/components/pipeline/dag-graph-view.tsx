@@ -7,6 +7,7 @@ import { Maximize2, Minimize2, Move } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';
+import { computeNodeLevels } from './graph-levels';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
@@ -35,30 +36,12 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
   // Simple layering algorithm
   const layout = useMemo(() => {
     const { nodes, edges } = graph;
-    const levels: Record<string, number> = {};
     const nodeMap: Record<string, DagGraphNode> = {};
     nodes.forEach((n) => (nodeMap[n.id] = n));
-
-    const getLevel = (id: string, visited = new Set<string>()): number => {
-      if (levels[id] !== undefined) return levels[id];
-      if (visited.has(id)) return 0; // Cycle safety
-      visited.add(id);
-
-      const incoming = edges.filter((e) => e.to === id);
-      if (incoming.length === 0) {
-        levels[id] = 0;
-        return 0;
-      }
-
-      const maxLevel = Math.max(
-        ...incoming.map((e) => getLevel(e.from, visited)),
-        -1,
-      );
-      levels[id] = maxLevel + 1;
-      return levels[id];
-    };
-
-    nodes.forEach((n) => getLevel(n.id));
+    const levels = computeNodeLevels(
+      nodes.map((n) => n.id),
+      edges.map((e) => ({ source: e.from, target: e.to })),
+    );
 
     const nodesByLevel: DagGraphNode[][] = [];
     Object.entries(levels).forEach(([id, level]) => {

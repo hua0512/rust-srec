@@ -9,7 +9,7 @@ import {
   ExtractMetadataResponseSchema,
   PrioritySchema,
   BatchStreamerRequestSchema,
-  BatchStreamerResponseSchema,
+  BatchResponseSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
@@ -23,7 +23,7 @@ const StreamerFiltersSchema = z.object({
   template: z.string().optional(),
   templateUnassigned: z.boolean().optional(),
   state: z.string().optional(),
-  priority: z.enum(['HIGH', 'NORMAL', 'LOW']).optional(),
+  priority: PrioritySchema.removeDefault().optional(),
   sortBy: z.enum(['name', 'priority', 'state', 'updated_at']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
 });
@@ -92,7 +92,7 @@ export const batchUpdateStreamers = createServerFn({ method: 'POST' })
       method: 'POST',
       body: JSON.stringify(data),
     });
-    return BatchStreamerResponseSchema.parse(json);
+    return BatchResponseSchema.parse(json);
   });
 
 export const getStreamer = createServerFn({ method: 'GET' })

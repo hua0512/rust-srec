@@ -16,7 +16,7 @@ import {
 import { SwitchCard } from '@/components/ui/switch-card';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { PRIORITY_NORMAL, priorityOptions } from '@/lib/priority';
+import { PRIORITY_NORMAL, PRIORITY_OPTIONS } from '@/lib/priority';
 import { locales, localeNativeNames } from '@/integrations/lingui/i18n';
 
 /**
@@ -85,7 +85,7 @@ export function MinPriorityField({
               </SelectTrigger>
             </FormControl>
             <SelectContent className={CONFIG_SELECT_CONTENT}>
-              {priorityOptions().map((opt) => (
+              {PRIORITY_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {i18n._(opt.label)}
                 </SelectItem>

@@ -18,9 +18,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
+import { MIN_PRIORITY_OPTIONS } from '@/lib/priority';
 
 interface BrowserChannelDialogProps {
   open: boolean;
@@ -146,18 +146,15 @@ export function BrowserChannelDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="10" className="text-[10px]">
-                      {i18n._(msg`Critical Only`)}
-                    </SelectItem>
-                    <SelectItem value="8" className="text-[10px]">
-                      {i18n._(msg`High+`)}
-                    </SelectItem>
-                    <SelectItem value="5" className="text-[10px]">
-                      {i18n._(msg`Normal+`)}
-                    </SelectItem>
-                    <SelectItem value="2" className="text-[10px]">
-                      {i18n._(msg`All`)}
-                    </SelectItem>
+                    {MIN_PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="text-[10px]"
+                      >
+                        {i18n._(option.label)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

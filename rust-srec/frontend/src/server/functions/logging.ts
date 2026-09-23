@@ -1,7 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { withQuery } from '../backend-path';
+import { withQuery, setPagination } from '../backend-path';
 import {
   LoggingConfigResponseSchema,
   UpdateLogFilterRequestSchema,
@@ -64,8 +64,7 @@ export const listLogFiles = createServerFn({ method: 'GET' })
     const params = new URLSearchParams();
     if (data.from) params.set('from', data.from);
     if (data.to) params.set('to', data.to);
-    if (data.limit) params.set('limit', String(data.limit));
-    if (data.offset) params.set('offset', String(data.offset));
+    setPagination(params, data);
 
     const json = await fetchBackend(withQuery('/logging/files', params));
     return LogFilesResponseSchema.parse(json);

@@ -26,21 +26,22 @@ function normalizeConfig(engineType: string, config: Record<string, unknown>) {
   }
 }
 
+// The backend may send `config` as a JSON string or as an already-decoded object.
+function parseEngine(json: unknown) {
+  const raw = json as any;
+  const config =
+    typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
+  return EngineConfigSchema.parse({ ...raw, config });
+}
+
 export const listEngines = createServerFn({ method: 'GET' }).handler(
   async () => {
     const json = await fetchBackend('/engines');
     const rawEngines = z.array(z.any()).parse(json);
 
-    // Parse config from JSON string to structured object
     return rawEngines.map((raw: any) => {
       try {
-        const config =
-          typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
-
-        return EngineConfigSchema.parse({
-          ...raw,
-          config,
-        });
+        return parseEngine(raw);
       } catch (e) {
         console.error('Failed to parse engine config:', e);
         // Return with default config if parsing fails
@@ -57,16 +58,7 @@ export const getEngine = createServerFn({ method: 'GET' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/engines/${id}`);
-    const raw = json as any;
-
-    // Parse config from JSON string to structured object
-    const config =
-      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
-
-    return EngineConfigSchema.parse({
-      ...raw,
-      config,
-    });
+    return parseEngine(json);
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
@@ -84,14 +76,7 @@ export const createEngine = createServerFn({ method: 'POST' })
       body: JSON.stringify(data),
     });
 
-    const raw = json as any;
-    const config =
-      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
-
-    return EngineConfigSchema.parse({
-      ...raw,
-      config,
-    });
+    return parseEngine(json);
   });
 
 export const updateEngine = createServerFn({ method: 'POST' })
@@ -117,14 +102,7 @@ export const updateEngine = createServerFn({ method: 'POST' })
       body: JSON.stringify(data),
     });
 
-    const raw = json as any;
-    const config =
-      typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
-
-    return EngineConfigSchema.parse({
-      ...raw,
-      config,
-    });
+    return parseEngine(json);
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })

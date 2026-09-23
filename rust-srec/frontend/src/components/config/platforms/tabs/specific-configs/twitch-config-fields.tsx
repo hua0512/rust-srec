@@ -11,6 +11,7 @@ import { Key } from 'lucide-react';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_DESCRIPTION,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -51,7 +52,7 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
                     placeholder="oauth:..."
                   />
                 </FormControl>
-                <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Twitch OAuth token for subscriber-only and high-quality
                     streams.

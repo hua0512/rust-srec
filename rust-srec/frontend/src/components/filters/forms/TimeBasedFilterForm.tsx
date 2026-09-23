@@ -37,51 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useMemo } from 'react';
 import { TimezoneField } from './TimezoneField';
-
-/**
- * `id` is the wire value stored in `config.days_of_week` and must stay English; `label` and
- * `full` are display only.
- *
- * The initials collide in pairs (Tuesday/Thursday, Saturday/Sunday), so each carries a `context`
- * to keep them separate message ids, matching `DAY_INITIALS` in `FilterCard`.
- */
-const DAYS = [
-  {
-    id: 'Monday',
-    label: msg({ message: 'M', context: 'Monday initial' }),
-    full: msg`Monday`,
-  },
-  {
-    id: 'Tuesday',
-    label: msg({ message: 'T', context: 'Tuesday initial' }),
-    full: msg`Tuesday`,
-  },
-  {
-    id: 'Wednesday',
-    label: msg({ message: 'W', context: 'Wednesday initial' }),
-    full: msg`Wednesday`,
-  },
-  {
-    id: 'Thursday',
-    label: msg({ message: 'T', context: 'Thursday initial' }),
-    full: msg`Thursday`,
-  },
-  {
-    id: 'Friday',
-    label: msg({ message: 'F', context: 'Friday initial' }),
-    full: msg`Friday`,
-  },
-  {
-    id: 'Saturday',
-    label: msg({ message: 'S', context: 'Saturday initial' }),
-    full: msg`Saturday`,
-  },
-  {
-    id: 'Sunday',
-    label: msg({ message: 'S', context: 'Sunday initial' }),
-    full: msg`Sunday`,
-  },
-];
+import { DAYS } from '../filter-types';
 
 const TIME_PRESETS = [
   { label: msg`Full Day`, start: '00:00:00', end: '23:59:59' },

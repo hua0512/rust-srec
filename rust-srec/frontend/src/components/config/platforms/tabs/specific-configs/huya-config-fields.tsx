@@ -22,6 +22,8 @@ import { HuyaPlatformValues } from '@/api/schemas/platform-configs';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -73,10 +75,10 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
                     onValueChange={field.onChange}
                     value={field.value || 'WEB'}
                   >
-                    <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
+                    <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue placeholder={i18n._(msg`Select API Mode`)} />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="WEB">
                         <Trans>WEB</Trans>{' '}
                         <span className="text-muted-foreground ml-2 text-xs">
@@ -122,12 +124,12 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
                     onValueChange={field.onChange}
                     value={field.value || 'huya_pc_exe'}
                   >
-                    <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
+                    <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue
                         placeholder={i18n._(msg`Select Client Type`)}
                       />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       {HuyaPlatformValues.map((value) => (
                         <SelectItem key={value} value={value}>
                           {HUYA_PLATFORM_LABELS[value]}

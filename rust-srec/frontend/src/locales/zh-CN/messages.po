@@ -105,7 +105,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, other {# 个文件}}"
 
 #. placeholder {0}: value.length
-#: src/components/shared/json-viewer.tsx:151
+#: src/components/shared/json-viewer.tsx:127
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, other {# 项}}"
 
@@ -139,7 +139,7 @@ msgstr "{0, plural, other {已选 # 项}}"
 #. placeholder {0}: steps.length
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:323
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:370
-#: src/components/pipeline/workflows/workflow-card.tsx:73
+#: src/components/pipeline/workflows/workflow-card.tsx:74
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
 
@@ -161,7 +161,7 @@ msgstr "{0} / {1, plural, other {# 条}}"
 
 #. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
 #. placeholder {1}: formatDate(i18n.locale, new Date(entry.checked_at), { timeStyle: 'short' })
-#: src/components/streamers/edit/status-check-history.tsx:162
+#: src/components/streamers/edit/status-check-history.tsx:163
 msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
@@ -171,14 +171,9 @@ msgid "{0} Configuration"
 msgstr "{0} 配置"
 
 #. placeholder {0}: source.fps
-#: src/components/player/playback-details.tsx:60
+#: src/components/player/playback-details.tsx:61
 msgid "{0} fps"
 msgstr "{0} 帧/秒"
-
-#. placeholder {0}: (source.bitrate / 1000).toFixed(0)
-#: src/components/player/playback-details.tsx:67
-msgid "{0} kbps"
-msgstr "{0} kbps"
 
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
@@ -187,7 +182,7 @@ msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
 
 #. placeholder {0}: value.toFixed(1)
-#: src/components/player/playback-details.tsx:43
+#: src/components/player/playback-details.tsx:44
 msgid "{0} s"
 msgstr "{0} 秒"
 
@@ -204,7 +199,7 @@ msgstr "{0}/{1, plural, other {# 个步骤}}"
 
 #. placeholder {0}: duration.hours
 #. placeholder {1}: duration.minutes
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:391
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:347
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
@@ -221,15 +216,15 @@ msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
 
 #: src/components/health/storage-usage-card.tsx:146
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:297
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:289
 msgid "{free} free"
 msgstr "剩余 {free}"
 
-#: src/components/streamers/edit/status-check-history.tsx:475
+#: src/components/streamers/edit/status-check-history.tsx:476
 msgid "{hours}h"
 msgstr "{hours} 小时"
 
-#: src/components/streamers/edit/status-check-history.tsx:473
+#: src/components/streamers/edit/status-check-history.tsx:474
 msgid "{minutes}m"
 msgstr "{minutes} 分钟"
 
@@ -241,7 +236,7 @@ msgstr "{retryableCount, plural, other {重试 # 个失败或已取消的流水�
 msgid "{runningCount} of them are still running and will be cancelled first."
 msgstr "其中 {runningCount} 个仍在运行，将先被取消。"
 
-#: src/components/streamers/edit/status-check-history.tsx:471
+#: src/components/streamers/edit/status-check-history.tsx:472
 msgid "{seconds}s"
 msgstr "{seconds} 秒"
 
@@ -325,7 +320,7 @@ msgstr "128k"
 msgid "2"
 msgstr "2"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:296
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:252
 msgid "24-hour timeline"
 msgstr "24 小时时间线"
 
@@ -341,7 +336,7 @@ msgstr "404"
 msgid "44100"
 msgstr "44100"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:37
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
@@ -408,11 +403,11 @@ msgstr "操作"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:222
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:464
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:461
 msgid "Active"
 msgstr "启用"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:173
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:129
 msgid "Active Days"
 msgstr "生效日期"
 
@@ -420,7 +415,7 @@ msgstr "生效日期"
 msgid "Active Download"
 msgstr "正在录制"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:379
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:371
 msgid "Active Recordings"
 msgstr "正在录制"
 
@@ -460,7 +455,7 @@ msgstr "添加覆盖项以自定义特定平台的行为。"
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:861
+#: src/components/pipeline/workflows/step-config-dialog.tsx:859
 msgid "Add anyway"
 msgstr "仍然添加"
 
@@ -480,7 +475,7 @@ msgstr "至少添加一个步骤"
 msgid "Add BaiduPCS-Go argument"
 msgstr "添加 BaiduPCS-Go 参数"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:395
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:392
 msgid "Add Channel"
 msgstr "添加渠道"
 
@@ -595,7 +590,7 @@ msgstr "高级配置"
 msgid "Advanced Options"
 msgstr "高级选项"
 
-#: src/components/filters/filter-types.ts:46
+#: src/components/filters/filter-types.ts:48
 msgid "Advanced scheduling"
 msgstr "高级排程"
 
@@ -604,7 +599,7 @@ msgid "Advanced Settings"
 msgstr "高级设置"
 
 #. placeholder {0}: dagStep.depends_on.join(', ')
-#: src/components/pipeline/workflows/steps-list.tsx:171
+#: src/components/pipeline/workflows/steps-list.tsx:162
 msgid "AFTER: {0}"
 msgstr "在: {0} 之后"
 
@@ -616,11 +611,9 @@ msgstr "专辑"
 msgid "Alerts when disk space is running low."
 msgstr "磁盘空间不足时发出警报。"
 
-#: src/components/notifications/browser-channel-dialog.tsx:159
-#: src/components/notifications/desktop-channel-dialog.tsx:54
 #: src/components/pipeline/workflows/step-library.tsx:314
+#: src/lib/priority.ts:48
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:163
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:383
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:252
@@ -630,7 +623,7 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:95
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
 msgctxt "day-of-week preset"
 msgid "All"
 msgstr "全部"
@@ -710,7 +703,7 @@ msgstr "API 密钥已吊销"
 msgid "API Keys"
 msgstr "API 密钥"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:102
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:104
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
@@ -718,7 +711,7 @@ msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协�
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:72
 msgid "API Settings"
 msgstr "API 设置"
 
@@ -828,7 +821,7 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:721
+#: src/components/pipeline/workflows/step-config-dialog.tsx:719
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
@@ -886,15 +879,15 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:34
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:32
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:33
 #: src/components/config/shared/network-settings-card.tsx:157
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:66
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
 #: src/components/player/player-card.tsx:222
 msgid "Auto"
 msgstr "自动"
@@ -903,7 +896,7 @@ msgstr "自动"
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:339
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:325
 msgid "Auto Layout"
 msgstr "自动布局"
 
@@ -915,7 +908,7 @@ msgstr "自动重新登录"
 msgid "Auto Thumbnail"
 msgstr "自动封面"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:83
 msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 msgstr "自动模式优先使用无需签名的 Web API，失败时回退到解析直播页面。直播页面更容易触发风控检测。"
 
@@ -969,7 +962,7 @@ msgstr "平均/分钟"
 msgid "Avg. Duration"
 msgstr "平均时长"
 
-#: src/components/streamers/edit/status-check-history.tsx:453
+#: src/components/streamers/edit/status-check-history.tsx:454
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
@@ -1158,7 +1151,7 @@ msgstr "BDUSS + STOKEN"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/player/playback-details.tsx:94
+#: src/components/player/playback-details.tsx:93
 msgid "Behind live edge"
 msgstr "距直播最新位置"
 
@@ -1181,7 +1174,7 @@ msgid "Binary Path"
 msgstr "可执行文件路径"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:125
-#: src/components/player/playback-details.tsx:65
+#: src/components/player/playback-details.tsx:66
 msgid "Bitrate"
 msgstr "比特率"
 
@@ -1193,15 +1186,15 @@ msgstr "CDN黑名单"
 msgid "Blocked"
 msgstr "已阻止"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:318
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:319
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "Blu-ray (400)"
 msgstr "蓝光 (400)"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
 msgid "Blu-ray Dolby (401)"
 msgstr "蓝光杜比 (401)"
 
@@ -1244,11 +1237,11 @@ msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
 #: src/components/notifications/browser-channel-dialog.tsx:64
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:473
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:470
 msgid "Browser Notifications"
 msgstr "浏览器通知"
 
-#: src/components/notifications/browser-channel-dialog.tsx:169
+#: src/components/notifications/browser-channel-dialog.tsx:166
 msgid "Browser Status"
 msgstr "浏览器状态"
 
@@ -1256,7 +1249,7 @@ msgstr "浏览器状态"
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
-#: src/components/player/playback-details.tsx:85
+#: src/components/player/playback-details.tsx:84
 msgid "Buffered ahead"
 msgstr "前方缓冲时长"
 
@@ -1309,9 +1302,9 @@ msgstr "缓存"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:152
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:235
-#: src/components/pipeline/workflows/step-config-dialog.tsx:795
-#: src/components/pipeline/workflows/step-config-dialog.tsx:853
-#: src/components/pipeline/workflows/workflow-card.tsx:119
+#: src/components/pipeline/workflows/step-config-dialog.tsx:793
+#: src/components/pipeline/workflows/step-config-dialog.tsx:851
+#: src/components/pipeline/workflows/workflow-card.tsx:120
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:228
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
@@ -1389,7 +1382,7 @@ msgstr "分类"
 msgid "Cause:"
 msgstr "原因："
 
-#: src/components/player/stream-info-card.tsx:30
+#: src/components/player/stream-info-card.tsx:31
 #: src/components/streamers/edit/active-download-card.tsx:90
 #: src/components/streamers/progress-indicator.tsx:91
 msgid "CDN"
@@ -1430,7 +1423,7 @@ msgstr "已处理分段的通道缓冲倍数。"
 msgid "Channel created"
 msgstr "渠道已创建"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:272
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:273
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
@@ -1442,7 +1435,7 @@ msgstr "渠道已更新"
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:368
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:365
 msgid "channels"
 msgstr "个渠道"
 
@@ -1472,7 +1465,7 @@ msgstr "跟踪发言人数"
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢且有大量小文件，可适当调高。"
 
-#: src/components/streamers/edit/status-check-history.tsx:284
+#: src/components/streamers/edit/status-check-history.tsx:285
 msgid "Check duration"
 msgstr "检查耗时"
 
@@ -1543,7 +1536,7 @@ msgid "Cleanup"
 msgstr "清理"
 
 #: src/components/logging/log-viewer.tsx:433
-#: src/components/notifications/desktop-channel-dialog.tsx:182
+#: src/components/notifications/desktop-channel-dialog.tsx:173
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:244
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:597
 msgid "Clear"
@@ -1566,11 +1559,11 @@ msgstr "清空字段会继承引擎设置。"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:145
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:147
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "用于流认证签名的客户端平台类型。不同平台使用不同的签名方式。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:118
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:120
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
@@ -1595,8 +1588,8 @@ msgid "Cloning..."
 msgstr "正在克隆..."
 
 #: src/components/config/global/backup-restore-card.tsx:500
-#: src/components/notifications/browser-channel-dialog.tsx:203
-#: src/components/notifications/desktop-channel-dialog.tsx:236
+#: src/components/notifications/browser-channel-dialog.tsx:200
+#: src/components/notifications/desktop-channel-dialog.tsx:227
 msgid "Close"
 msgstr "关闭"
 
@@ -1608,8 +1601,8 @@ msgstr "关闭播放详情"
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
-#: src/components/player/playback-details.tsx:55
-#: src/components/player/stream-info-card.tsx:32
+#: src/components/player/playback-details.tsx:56
+#: src/components/player/stream-info-card.tsx:33
 #: src/lib/__tests__/split-reason.test.tsx:11
 #: src/lib/split-reason.ts:151
 #: src/lib/split-reason.ts:205
@@ -1657,7 +1650,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
 #: src/components/pipeline/status-config.ts:103
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:348
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:340
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:297
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:723
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:100
@@ -1670,7 +1663,7 @@ msgctxt "terminal-cause"
 msgid "Completed"
 msgstr "下载断开"
 
-#: src/components/filters/filter-types.ts:55
+#: src/components/filters/filter-types.ts:57
 msgid "Complex patterns"
 msgstr "复杂模式"
 
@@ -1789,7 +1782,7 @@ msgstr "配置如何在此浏览器中以及通过系统推送通知接收警报
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:83
+#: src/components/notifications/desktop-channel-dialog.tsx:77
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
 
@@ -1797,13 +1790,13 @@ msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知
 msgid "Configure proxy strategies and connection details."
 msgstr "配置代理策略和连接详情。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:540
 msgid "Configure Settings"
 msgstr "配置设置"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:110
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:111
-#: src/components/pipeline/workflows/steps-list.tsx:205
+#: src/components/pipeline/workflows/steps-list.tsx:196
 msgid "Configure Step"
 msgstr "配置步骤"
 
@@ -1811,7 +1804,7 @@ msgstr "配置步骤"
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:498
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:495
 msgid "Configured Events"
 msgstr "已配置的事件"
 
@@ -2236,9 +2229,7 @@ msgstr "处理队列已满时发出严重警报。"
 msgid "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
 msgstr "录制输出文件系统无法写入、录制无法继续时的严重告警。"
 
-#: src/components/notifications/browser-channel-dialog.tsx:150
-#: src/components/notifications/desktop-channel-dialog.tsx:51
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:325
+#: src/lib/priority.ts:45
 msgid "Critical Only"
 msgstr "仅限严重"
 
@@ -2246,7 +2237,7 @@ msgstr "仅限严重"
 msgid "Critical system errors or streamer failures."
 msgstr "严重的系统错误或主播故障。"
 
-#: src/components/filters/filter-types.ts:45
+#: src/components/filters/filter-types.ts:47
 msgid "Cron"
 msgstr "Cron"
 
@@ -2273,7 +2264,7 @@ msgstr "当前密码"
 msgid "Custom"
 msgstr "自定义"
 
-#: src/components/pipeline/workflows/steps-list.tsx:118
+#: src/components/pipeline/workflows/steps-list.tsx:109
 msgid "Custom Config"
 msgstr "自定义配置"
 
@@ -2399,7 +2390,7 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:277
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:269
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:355
 msgid "Database"
 msgstr "数据库"
@@ -2446,10 +2437,10 @@ msgstr "默认"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:228
 #: src/components/config/engines/forms/mesio-hls-form.tsx:328
 #: src/components/config/engines/forms/mesio-hls-form.tsx:509
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:136
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
-#: src/components/player/stream-info-card.tsx:50
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:138
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
+#: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:660
 msgid "Default"
@@ -2467,11 +2458,11 @@ msgstr "默认引擎"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:123
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:59
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -2491,7 +2482,7 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: {value}"
 msgstr "默认值：{value}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
 msgid "Default: Dolby Vision (30000)"
 msgstr "默认：杜比视界 (30000)"
 
@@ -2513,7 +2504,7 @@ msgid "Definitive Offline"
 msgstr "已确认离线"
 
 #: src/components/health/health-status-badge.tsx:48
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:625
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:619
 msgid "Degraded"
 msgstr "降级"
 
@@ -2535,8 +2526,8 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:135
 #: src/components/pipeline/presets/preset-card.tsx:158
-#: src/components/pipeline/workflows/workflow-card.tsx:102
-#: src/components/pipeline/workflows/workflow-card.tsx:125
+#: src/components/pipeline/workflows/workflow-card.tsx:103
+#: src/components/pipeline/workflows/workflow-card.tsx:126
 #: src/components/sessions/session-card.tsx:287
 #: src/components/streamers/card/stream-actions-menu.tsx:89
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
@@ -2556,7 +2547,7 @@ msgstr "删除引擎"
 msgid "Delete File"
 msgstr "删除文件"
 
-#: src/components/filters/FilterCard.tsx:239
+#: src/components/filters/FilterCard.tsx:215
 msgid "Delete filter"
 msgstr "删除过滤器"
 
@@ -2633,7 +2624,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:828
+#: src/components/pipeline/workflows/step-config-dialog.tsx:826
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
@@ -2645,7 +2636,7 @@ msgstr "确定删除该引擎吗？"
 msgid "Delete with files"
 msgstr "连同文件一起删除"
 
-#: src/components/pipeline/workflows/workflow-card.tsx:108
+#: src/components/pipeline/workflows/workflow-card.tsx:109
 msgid "Delete Workflow?"
 msgstr "删除工作流？"
 
@@ -2709,12 +2700,12 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:79
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:471
+#: src/components/notifications/desktop-channel-dialog.tsx:73
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:468
 msgid "Desktop Notifications"
 msgstr "桌面通知"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:120
+#: src/components/notifications/desktop-channel-dialog.tsx:114
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
@@ -2746,7 +2737,7 @@ msgstr "目标根目录"
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:808
+#: src/components/pipeline/workflows/step-config-dialog.tsx:806
 msgid "Detach & Edit"
 msgstr "分离并编辑"
 
@@ -2803,9 +2794,9 @@ msgstr "禁用所选"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:50
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:491
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:523
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:520
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:530
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:99
 msgid "Disabled"
 msgstr "已禁用"
@@ -2820,7 +2811,7 @@ msgstr "已断开"
 msgid "Discontinuity"
 msgstr "不连续"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:293
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:285
 msgid "Disk"
 msgstr "磁盘"
 
@@ -2828,7 +2819,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
 
@@ -2901,7 +2892,7 @@ msgstr "下载引擎（mesio）"
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:285
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:277
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:356
 msgid "Download Manager"
 msgstr "下载管理"
@@ -2928,11 +2919,11 @@ msgstr "正在下载 {0}"
 msgid "Downloading..."
 msgstr "下载中..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:352
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:338
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
-#: src/components/player/playback-details.tsx:88
+#: src/components/player/playback-details.tsx:87
 msgid "Dropped frames"
 msgstr "丢帧数"
 
@@ -3051,7 +3042,7 @@ msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号
 #: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
-#: src/components/pipeline/workflows/workflow-card.tsx:94
+#: src/components/pipeline/workflows/workflow-card.tsx:95
 #: src/components/streamers/card/stream-actions-menu.tsx:79
 msgid "Edit"
 msgstr "编辑"
@@ -3064,7 +3055,7 @@ msgstr "编辑渠道"
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
-#: src/components/filters/FilterCard.tsx:227
+#: src/components/filters/FilterCard.tsx:203
 #: src/components/filters/FilterDialog.tsx:208
 msgid "Edit filter"
 msgstr "编辑过滤器"
@@ -3087,7 +3078,7 @@ msgstr "编辑模式"
 msgid "Effective Scope"
 msgstr "生效范围"
 
-#: src/components/filters/FilterCard.tsx:180
+#: src/components/filters/FilterCard.tsx:156
 msgid "Empty pattern"
 msgstr "表达式为空"
 
@@ -3126,11 +3117,11 @@ msgid "Enable selected"
 msgstr "启用所选"
 
 #: src/components/config/shared/record-danmu-card.tsx:100
-#: src/components/notifications/desktop-channel-dialog.tsx:103
+#: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:490
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:522
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:532
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:487
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:519
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:529
 msgid "Enabled"
 msgstr "启用"
 
@@ -3146,7 +3137,7 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:405
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:361
 msgid "End"
 msgstr "结束"
 
@@ -3307,7 +3298,7 @@ msgstr "加载模板失败"
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
-#: src/components/streamers/edit/status-check-history.tsx:278
+#: src/components/streamers/edit/status-check-history.tsx:279
 msgid "Error:"
 msgstr "错误："
 
@@ -3319,12 +3310,12 @@ msgstr "预计剩余时间"
 msgid "Event Type"
 msgstr "事件类型"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:166
+#: src/components/notifications/desktop-channel-dialog.tsx:157
 msgid "Event Types"
 msgstr "事件类型"
 
 #: src/components/layout/site-header.tsx:38
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:373
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:370
 msgid "Events"
 msgstr "事件"
 
@@ -3336,8 +3327,8 @@ msgstr "示例："
 msgid "Exceptional states"
 msgstr "异常状态"
 
-#: src/components/filters/FilterCard.tsx:130
-#: src/components/filters/FilterCard.tsx:163
+#: src/components/filters/FilterCard.tsx:106
+#: src/components/filters/FilterCard.tsx:139
 #: src/components/filters/forms/RegexFilterForm.tsx:56
 msgid "Exclude"
 msgstr "排除"
@@ -3480,15 +3471,15 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:69
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:56
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
 msgid "Extraction Settings"
 msgstr "提取设置"
 
@@ -3496,15 +3487,14 @@ msgstr "提取设置"
 msgid "ey..."
 msgstr "ey..."
 
-#: src/components/filters/FilterCard.tsx:48
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:71
+#: src/components/filters/filter-types.ts:103
 msgctxt "Friday initial"
 msgid "F"
 msgstr "五"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:359
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:351
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:467
 msgid "Failed"
@@ -3593,7 +3583,7 @@ msgstr "创建模板失败：{0}"
 msgid "Failed to create workflow: {0}"
 msgstr "创建工作流失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:278
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:279
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
@@ -3649,7 +3639,7 @@ msgstr "删除模板失败：{0}"
 msgid "Failed to delete workflow: {0}"
 msgstr "删除工作流失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:227
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:228
 msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
@@ -3661,7 +3651,7 @@ msgstr "下载文件失败"
 msgid "Failed to download logs"
 msgstr "下载日志失败"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:265
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:266
 msgid "Failed to enable Web Push"
 msgstr "启用 Web 推送失败"
 
@@ -3777,7 +3767,7 @@ msgstr "重试工作流失败"
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:288
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:289
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
@@ -3803,7 +3793,7 @@ msgstr "更新平台失败：{0}"
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:200
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:201
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
@@ -3859,8 +3849,8 @@ msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
-#: src/components/streamers/edit/status-check-history.tsx:373
-#: src/components/streamers/edit/status-check-history.tsx:394
+#: src/components/streamers/edit/status-check-history.tsx:374
+#: src/components/streamers/edit/status-check-history.tsx:395
 #: src/lib/notification-event-types.ts:33
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:119
 msgid "Fatal error"
@@ -3870,7 +3860,7 @@ msgstr "致命错误"
 msgid "Fatal Error"
 msgstr "严重错误"
 
-#: src/components/streamers/edit/status-check-history.tsx:272
+#: src/components/streamers/edit/status-check-history.tsx:273
 msgid "Fatal:"
 msgstr "致命："
 
@@ -3953,7 +3943,7 @@ msgstr "小于此值的文件仍以单线程传输。示例：<0>250M</0>、<1>1
 msgid "Filter"
 msgstr "筛选"
 
-#: src/components/filters/filter-types.ts:28
+#: src/components/filters/filter-types.ts:30
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
@@ -3994,12 +3984,12 @@ msgstr "过滤器更新成功"
 msgid "Filter Window Size"
 msgstr "过滤窗口大小"
 
-#: src/components/streamers/edit/status-check-history.tsx:369
-#: src/components/streamers/edit/status-check-history.tsx:390
+#: src/components/streamers/edit/status-check-history.tsx:370
+#: src/components/streamers/edit/status-check-history.tsx:391
 msgid "Filtered"
 msgstr "已过滤"
 
-#: src/components/streamers/edit/status-check-history.tsx:266
+#: src/components/streamers/edit/status-check-history.tsx:267
 msgid "Filtered:"
 msgstr "过滤原因："
 
@@ -4077,8 +4067,8 @@ msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:56
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:170
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:172
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:100
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -4086,7 +4076,7 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:173
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:175
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
@@ -4102,11 +4092,11 @@ msgstr "表单"
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:287
-#: src/components/player/stream-info-card.tsx:29
+#: src/components/player/stream-info-card.tsx:30
 msgid "Format"
 msgstr "格式"
 
-#: src/components/player/playback-details.tsx:58
+#: src/components/player/playback-details.tsx:59
 msgid "Frame rate"
 msgstr "帧率"
 
@@ -4122,7 +4112,7 @@ msgstr "录像写入的各磁盘的剩余空间。"
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:72
+#: src/components/filters/filter-types.ts:104
 msgid "Friday"
 msgstr "星期五"
 
@@ -4144,7 +4134,7 @@ msgstr "完全访问"
 msgid "Full access — all data and configuration"
 msgstr "完全访问 — 所有数据和配置"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:87
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:43
 msgid "Full Day"
 msgstr "全天"
 
@@ -4340,7 +4330,7 @@ msgstr "硬件加速"
 msgid "HD"
 msgstr "高清"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
 msgid "HD (150)"
 msgstr "高清 (150)"
 
@@ -4365,7 +4355,7 @@ msgid "Health"
 msgstr "健康"
 
 #: src/components/health/health-status-badge.tsx:35
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:623
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:617
 msgid "Healthy"
 msgstr "正常"
 
@@ -4423,10 +4413,8 @@ msgstr "高质量 MP3"
 msgid "High-priority slot waiting (concurrency limit reached)"
 msgstr "高优先级槽位等待中（已达到并发限制）"
 
-#: src/components/notifications/browser-channel-dialog.tsx:153
-#: src/components/notifications/desktop-channel-dialog.tsx:52
+#: src/lib/priority.ts:46
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:172
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:326
 msgid "High+"
 msgstr "高+"
 
@@ -4438,7 +4426,7 @@ msgstr "数值越高，在高速网络下越快，但对远端和本机 CPU 的�
 msgid "Highest bitrate"
 msgstr "最高码率"
 
-#: src/components/streamers/edit/status-check-history.tsx:88
+#: src/components/streamers/edit/status-check-history.tsx:89
 msgid "History"
 msgstr "历史"
 
@@ -4463,7 +4451,7 @@ msgstr "主页"
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:311
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:267
 msgid "Hour {hour}"
 msgstr "{hour} 点"
 
@@ -4615,7 +4603,7 @@ msgstr "启用后，将忽略匹配此模式的流。"
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
 
-#: src/components/filters/FilterCard.tsx:173
+#: src/components/filters/FilterCard.tsx:149
 msgid "Ignore case"
 msgstr "忽略大小写"
 
@@ -4668,12 +4656,12 @@ msgstr "正在导入..."
 msgid "In progress"
 msgstr "进行中"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:465
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:462
 msgid "Inactive"
 msgstr "未激活"
 
-#: src/components/filters/FilterCard.tsx:123
-#: src/components/filters/FilterCard.tsx:165
+#: src/components/filters/FilterCard.tsx:99
+#: src/components/filters/FilterCard.tsx:141
 msgid "Include"
 msgstr "包含"
 
@@ -4685,7 +4673,7 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
@@ -4717,7 +4705,7 @@ msgstr "初始获取超时（ms）"
 msgid "inline"
 msgstr "内联"
 
-#: src/components/pipeline/workflows/steps-list.tsx:142
+#: src/components/pipeline/workflows/steps-list.tsx:133
 msgid "Inline: {stepName}"
 msgstr "内联：{stepName}"
 
@@ -4755,11 +4743,11 @@ msgstr "检查中"
 msgid "Interact"
 msgstr "查看详情"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:257
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:213
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:477
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:474
 msgid "Internal"
 msgstr "内部"
 
@@ -4909,7 +4897,7 @@ msgstr "密钥重试延迟（毫秒）"
 msgid "Key Timeout (ms)"
 msgstr "密钥超时（毫秒）"
 
-#: src/components/filters/filter-types.ts:27
+#: src/components/filters/filter-types.ts:29
 msgid "Keyword"
 msgstr "关键字"
 
@@ -4926,7 +4914,7 @@ msgid "Last Check"
 msgstr "最后检查"
 
 #. placeholder {0}: formatAgo(ago, i18n)
-#: src/components/streamers/edit/status-check-history.tsx:462
+#: src/components/streamers/edit/status-check-history.tsx:463
 msgid "Last check {0} ago"
 msgstr "上次检查于 {0} 前"
 
@@ -4951,7 +4939,7 @@ msgstr "延迟"
 msgid "Launch Pipeline"
 msgstr "启动处理流程"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:772
+#: src/components/pipeline/workflows/step-config-dialog.tsx:770
 msgid "Leave attempts empty or at 1 for no automatic retry; the backoff doubles after each failed attempt. Leave the timeout empty to use the worker pool default."
 msgstr "尝试次数留空或填 1 表示不自动重试；退避时间在每次失败后翻倍。超时留空则使用 Worker 池的默认值。"
 
@@ -5002,9 +4990,9 @@ msgstr "列表"
 #: src/components/streamers/card/use-streamer-status.tsx:40
 #: src/components/streamers/card/use-streamer-status.tsx:314
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
-#: src/components/streamers/edit/status-check-history.tsx:365
-#: src/components/streamers/edit/status-check-history.tsx:386
-#: src/components/streamers/edit/status-check-history.tsx:443
+#: src/components/streamers/edit/status-check-history.tsx:366
+#: src/components/streamers/edit/status-check-history.tsx:387
+#: src/components/streamers/edit/status-check-history.tsx:444
 #: src/components/streamers/edit/streamer-header.tsx:66
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
@@ -5021,16 +5009,16 @@ msgstr "直播中"
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:75
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:77
 msgid "Live page HTML"
 msgstr "直播页 HTML"
 
 #: src/components/notifications/browser-channel-dialog.tsx:82
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:518
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:515
 msgid "Live Polling"
 msgstr "实时轮询"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:105
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:106
 msgid "Live polling notifications enabled"
 msgstr "实时轮询通知已启用"
 
@@ -5080,7 +5068,7 @@ msgstr "正在加载预设..."
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
-#: src/components/streamers/edit/status-check-history.tsx:136
+#: src/components/streamers/edit/status-check-history.tsx:137
 msgid "Loading…"
 msgstr "加载中…"
 
@@ -5174,7 +5162,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 msgid "Low (80)"
 msgstr "流畅 (80)"
 
@@ -5186,7 +5174,7 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:46
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
 
@@ -5194,8 +5182,7 @@ msgstr "最低画质 (0)"
 msgid "Lowest bitrate"
 msgstr "最低码率"
 
-#: src/components/filters/FilterCard.tsx:41
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:51
+#: src/components/filters/filter-types.ts:83
 msgctxt "Monday initial"
 msgid "M"
 msgstr "一"
@@ -5224,7 +5211,7 @@ msgstr "管理存储路径和文件格式。"
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:359
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
@@ -5384,7 +5371,6 @@ msgstr "最大重试尝试次数。"
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:104
 #: src/components/ui/input-with-unit.tsx:29
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:533
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:544
@@ -5395,7 +5381,7 @@ msgstr "MB"
 msgid "MB/s"
 msgstr "MB/s"
 
-#: src/components/player/playback-details.tsx:77
+#: src/components/player/playback-details.tsx:76
 msgid "Measured by player"
 msgstr "播放器实测"
 
@@ -5460,7 +5446,7 @@ msgstr "最小比特率（bps）"
 msgid "Min Interval (ms)"
 msgstr "最小间隔（毫秒）"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:506
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:503
 msgid "Min Priority"
 msgstr "最低优先级"
 
@@ -5473,7 +5459,7 @@ msgstr "最小分段大小"
 msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:132
+#: src/components/notifications/desktop-channel-dialog.tsx:126
 #: src/components/notifications/forms/channel-delivery-fields.tsx:72
 msgid "Minimum Priority"
 msgstr "最低优先级"
@@ -5482,7 +5468,7 @@ msgstr "最低优先级"
 msgid "Mins"
 msgstr "分钟"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:83
 msgid "Mint Integrity Token"
 msgstr "签发完整性 token"
 
@@ -5507,7 +5493,7 @@ msgstr "修改此处理步骤的参数。"
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:52
+#: src/components/filters/filter-types.ts:84
 msgid "Monday"
 msgstr "星期一"
 
@@ -5545,7 +5531,7 @@ msgstr "更多筛选"
 msgid "More pages"
 msgstr "更多页面"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:89
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:45
 msgid "Morning"
 msgstr "上午"
 
@@ -5569,7 +5555,7 @@ msgstr "将文件移动到其他位置，并移除原始文件。"
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
 msgid "MP"
 msgstr "MP"
 
@@ -5642,7 +5628,7 @@ msgstr "名称 Z-A"
 msgid "name@example.com"
 msgstr "name@example.com"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:109
+#: src/components/notifications/desktop-channel-dialog.tsx:103
 msgid "Native"
 msgstr "原生"
 
@@ -5713,11 +5699,11 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:90
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:46
 msgid "Night"
 msgstr "夜间"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:425
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:417
 msgid "No active recordings"
 msgstr "暂无正在录制"
 
@@ -5803,7 +5789,7 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
-#: src/components/filters/FilterCard.tsx:114
+#: src/components/filters/FilterCard.tsx:90
 msgid "No keywords set"
 msgstr "未设置关键字"
 
@@ -5844,7 +5830,7 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:696
+#: src/components/pipeline/workflows/step-config-dialog.tsx:694
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
@@ -5918,7 +5904,7 @@ msgstr "暂无预设"
 msgid "No preview generated"
 msgstr "未生成预览"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:114
+#: src/components/streamers/edit/recent-sessions-list.tsx:112
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
 
@@ -5938,7 +5924,7 @@ msgstr "未选择运行中的流水线"
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
-#: src/components/pipeline/workflows/steps-list.tsx:241
+#: src/components/pipeline/workflows/steps-list.tsx:232
 msgid "No Steps Added"
 msgstr "未添加步骤"
 
@@ -6014,14 +6000,12 @@ msgctxt "priority"
 msgid "Normal"
 msgstr "普通"
 
-#: src/components/notifications/browser-channel-dialog.tsx:156
-#: src/components/notifications/desktop-channel-dialog.tsx:53
+#: src/lib/priority.ts:47
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:178
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:327
 msgid "Normal+"
 msgstr "普通+"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:470
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:462
 msgid "Not available"
 msgstr "不可用"
 
@@ -6041,7 +6025,7 @@ msgstr "未安装"
 msgid "Not logged in"
 msgstr "未登录"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:316
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:317
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
@@ -6058,7 +6042,7 @@ msgstr "通知语言"
 msgid "Notification Log Retention"
 msgstr "通知日志保留"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:243
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:244
 msgid "Notification permission not granted"
 msgstr "未授予通知权限"
 
@@ -6072,7 +6056,7 @@ msgstr "通知服务"
 
 #: src/components/layout/site-header.tsx:37
 #: src/lib/menu-list.ts:119
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:359
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:356
 msgid "Notifications"
 msgstr "通知"
 
@@ -6080,7 +6064,7 @@ msgstr "通知"
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
-#: src/components/streamers/edit/status-check-history.tsx:140
+#: src/components/streamers/edit/status-check-history.tsx:141
 msgid "Now"
 msgstr "现在"
 
@@ -6108,8 +6092,8 @@ msgstr "在数据库中保留已完成、失败或已取消的任务及工作流
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:91
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
@@ -6141,7 +6125,7 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:43
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
@@ -6153,8 +6137,8 @@ msgstr "侧滑"
 #: src/components/streamers/card/use-streamer-status.tsx:384
 #: src/components/streamers/card/use-streamer-status.tsx:393
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
-#: src/components/streamers/edit/status-check-history.tsx:367
-#: src/components/streamers/edit/status-check-history.tsx:388
+#: src/components/streamers/edit/status-check-history.tsx:368
+#: src/components/streamers/edit/status-check-history.tsx:389
 #: src/components/streamers/edit/streamer-header.tsx:68
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
 msgid "Offline"
@@ -6207,7 +6191,7 @@ msgstr "进行中"
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:101
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:103
 msgid "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
 msgstr "当 TikTok 提供原画流时只保留原画，忽略其他画质。"
 
@@ -6225,7 +6209,7 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:206
 #: src/components/pipeline/outputs/output-card.tsx:219
 #: src/components/pipeline/presets/preset-card.tsx:116
-#: src/components/pipeline/workflows/workflow-card.tsx:88
+#: src/components/pipeline/workflows/workflow-card.tsx:89
 #: src/components/sessions/session-card.tsx:245
 #: src/components/streamers/card/stream-actions-menu.tsx:37
 msgid "Open menu"
@@ -6271,7 +6255,7 @@ msgstr "选项"
 msgid "Order this streamer is checked in."
 msgstr "该主播的检查优先顺序。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
 msgid "Original (10000)"
 msgstr "原画 (10000)"
 
@@ -6509,7 +6493,7 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:74
 #: src/components/config/shared/proxy-settings-card.tsx:204
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
@@ -6528,14 +6512,14 @@ msgstr "请修改密码"
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:82
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:118
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:119
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:54
 msgid "Password..."
 msgstr "密码…"
 
-#: src/components/streamers/edit/status-check-history.tsx:132
+#: src/components/streamers/edit/status-check-history.tsx:133
 msgid "Past"
 msgstr "过去"
 
@@ -6589,7 +6573,7 @@ msgstr "待确认"
 msgid "Pending Error Clears"
 msgstr "待清除错误"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:326
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:318
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
@@ -6635,7 +6619,7 @@ msgstr "性能"
 msgid "Permanently deletes tracked output files from disk. Files still in use are kept for a later cleanup."
 msgstr "永久删除磁盘上有记录的输出文件。仍在使用的文件将保留至后续清理。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:321
 msgid "Permission required"
 msgstr "需要权限"
 
@@ -6687,7 +6671,7 @@ msgstr "流水线历史保留期"
 msgid "Pipeline is already completed or cancelled"
 msgstr "该处理管道已结束或已取消"
 
-#: src/components/pipeline/workflows/steps-list.tsx:244
+#: src/components/pipeline/workflows/steps-list.tsx:235
 msgid "Pipeline is empty."
 msgstr "处理管道为空。"
 
@@ -6741,7 +6725,7 @@ msgstr "管道队列严重积压"
 msgid "Pipeline started"
 msgstr "管道开始"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:312
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:304
 msgid "Pipeline Statistics"
 msgstr "处理管道统计"
 
@@ -6899,7 +6883,7 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:766
+#: src/components/pipeline/workflows/step-config-dialog.tsx:764
 msgid "pool default"
 msgstr "池默认值"
 
@@ -6919,7 +6903,7 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:430
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:386
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
@@ -6947,7 +6931,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -6995,8 +6979,8 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:190
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:269
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:146
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:225
 #: src/components/layout/site-header.tsx:50
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:219
@@ -7040,7 +7024,7 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:88
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:44
 msgid "Prime Time"
 msgstr "黄金时段"
 
@@ -7107,7 +7091,7 @@ msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
 #: src/components/pipeline/status-config.ts:101
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:337
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:329
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:95
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:451
 msgid "Processing"
@@ -7154,12 +7138,12 @@ msgstr "进度"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:36
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:37
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:36
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:61
 msgid "Protocol Settings"
 msgstr "协议设置"
 
@@ -7190,7 +7174,7 @@ msgid "QR Login"
 msgstr "扫码登录"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:134
-#: src/components/player/stream-info-card.tsx:31
+#: src/components/player/stream-info-card.tsx:32
 msgid "Quality"
 msgstr "质量"
 
@@ -7206,7 +7190,7 @@ msgstr "质量控制"
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:159
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:161
 msgid "Quality Settings"
 msgstr "画质设置"
 
@@ -7303,7 +7287,7 @@ msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notifica
 msgstr "只读密钥可以查看会话、弹幕、处理管道汇总和通知事件。配置及其他敏感工具需要完全访问密钥。"
 
 #: src/components/config/engines/engine-card.tsx:74
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:319
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
 msgid "Ready"
 msgstr "就绪"
 
@@ -7433,7 +7417,7 @@ msgstr "刷新状态"
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
-#: src/components/filters/filter-types.ts:54
+#: src/components/filters/filter-types.ts:56
 msgid "Regex"
 msgstr "正则表达式"
 
@@ -7508,8 +7492,8 @@ msgstr "成功后移除源文件"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:124
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:125
-#: src/components/pipeline/workflows/steps-list.tsx:220
-#: src/components/pipeline/workflows/steps-list.tsx:221
+#: src/components/pipeline/workflows/steps-list.tsx:211
+#: src/components/pipeline/workflows/steps-list.tsx:212
 msgid "Remove Step"
 msgstr "移除步骤"
 
@@ -7597,11 +7581,11 @@ msgstr "替换管道步骤"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:95
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:96
-#: src/components/pipeline/workflows/steps-list.tsx:190
+#: src/components/pipeline/workflows/steps-list.tsx:181
 msgid "Replace Step"
 msgstr "替换步骤"
 
-#: src/components/player/playback-details.tsx:52
+#: src/components/player/playback-details.tsx:53
 msgid "Reported by source"
 msgstr "直播源提供"
 
@@ -7617,7 +7601,7 @@ msgstr "请求超时时长"
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:58
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
@@ -7635,11 +7619,11 @@ msgstr "重置"
 msgid "Reset to defaults"
 msgstr "恢复默认值"
 
-#: src/components/pipeline/dag-graph-view.tsx:135
+#: src/components/pipeline/dag-graph-view.tsx:118
 msgid "Reset view"
 msgstr "重置视图"
 
-#: src/components/player/playback-details.tsx:80
+#: src/components/player/playback-details.tsx:79
 #: src/lib/split-reason.ts:187
 msgid "Resolution"
 msgstr "分辨率"
@@ -7705,7 +7689,7 @@ msgstr "将在…后恢复"
 msgid "Retention"
 msgstr "保留策略"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:713
+#: src/components/pipeline/workflows/step-config-dialog.tsx:711
 msgid "Retries and timeout"
 msgstr "重试与超时"
 
@@ -7723,7 +7707,7 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:739
+#: src/components/pipeline/workflows/step-config-dialog.tsx:737
 msgid "Retry backoff (seconds)"
 msgstr "重试退避（秒）"
 
@@ -7849,14 +7833,12 @@ msgstr "Rust-Srec"
 msgid "RUST-SREC PRO VIEWER"
 msgstr "RUST-SREC 专业查看器"
 
-#: src/components/filters/FilterCard.tsx:49
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:76
+#: src/components/filters/filter-types.ts:108
 msgctxt "Saturday initial"
 msgid "S"
 msgstr "六"
 
-#: src/components/filters/FilterCard.tsx:50
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
+#: src/components/filters/filter-types.ts:113
 msgctxt "Sunday initial"
 msgid "S"
 msgstr "日"
@@ -7886,7 +7868,7 @@ msgstr "清理后的会话标题"
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:77
+#: src/components/filters/filter-types.ts:109
 msgid "Saturday"
 msgstr "星期六"
 
@@ -7902,7 +7884,7 @@ msgstr "保存更改"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
-#: src/components/pipeline/workflows/step-config-dialog.tsx:816
+#: src/components/pipeline/workflows/step-config-dialog.tsx:814
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
@@ -7911,7 +7893,7 @@ msgstr "保存更改"
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:826
+#: src/components/pipeline/workflows/step-config-dialog.tsx:824
 msgid "Save with incomplete delete checks?"
 msgstr "删除检查尚未完成，仍要保存吗？"
 
@@ -7951,7 +7933,7 @@ msgstr "使用哔哩哔哩移动端 App 扫码"
 msgid "Scanned! Please confirm on your phone"
 msgstr "已扫描！请在手机上确认"
 
-#: src/components/filters/filter-types.ts:37
+#: src/components/filters/filter-types.ts:39
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
@@ -8113,7 +8095,7 @@ msgstr "选择会话"
 msgid "Select a streamer"
 msgstr "选择主播"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:182
+#: src/components/notifications/desktop-channel-dialog.tsx:173
 #: src/components/notifications/subscription-manager.tsx:373
 msgid "Select All"
 msgstr "全选"
@@ -8122,8 +8104,8 @@ msgstr "全选"
 msgid "Select an engine"
 msgstr "选择引擎"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:79
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:64
 msgid "Select API Mode"
 msgstr "选择 API 模式"
 
@@ -8135,7 +8117,7 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:129
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
@@ -8212,7 +8194,7 @@ msgstr "选择主播"
 msgid "Select template"
 msgstr "选择模板"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:176
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:132
 msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
@@ -8221,11 +8203,11 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:120
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:122
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:704
+#: src/components/pipeline/workflows/step-config-dialog.tsx:702
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
@@ -8239,16 +8221,16 @@ msgstr "选择类型"
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
-#: src/components/streamers/edit/status-check-history.tsx:254
+#: src/components/streamers/edit/status-check-history.tsx:255
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:442
 msgid "Selected"
 msgstr "已选择"
 
-#: src/components/streamers/edit/status-check-history.tsx:313
+#: src/components/streamers/edit/status-check-history.tsx:314
 msgid "Selected stream"
 msgstr "已选择的流"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:85
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:86
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启；仅在你所在网络签发失败时关闭。"
 
@@ -8256,7 +8238,7 @@ msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启�
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
-#: src/components/filters/FilterCard.tsx:253
+#: src/components/filters/FilterCard.tsx:229
 #: src/components/filters/forms/TimezoneField.tsx:24
 msgid "Server local"
 msgstr "服务器本地"
@@ -8265,7 +8247,7 @@ msgstr "服务器本地"
 msgid "Server local uses the backend server's timezone. You can also enter an IANA name such as Europe/Berlin. Clearing selects UTC."
 msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berlin 等 IANA 时区名称。清空将选择 UTC。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:317
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:318
 msgid "Server not configured"
 msgstr "服务器未配置"
 
@@ -8541,7 +8523,7 @@ msgstr "SMTP 主机"
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:833
+#: src/components/pipeline/workflows/step-config-dialog.tsx:831
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
 msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结果，仍要保存吗？"
 
@@ -8549,8 +8531,8 @@ msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:57
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:86
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:87
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
 
@@ -8612,7 +8594,7 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:369
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:325
 msgid "Start"
 msgstr "开始"
 
@@ -8641,7 +8623,7 @@ msgstr "状态"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:497
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:486
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:483
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:450
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:151
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:228
@@ -8736,10 +8718,10 @@ msgstr "开播"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:46
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:109
-#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:47
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:101
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:46
 msgid "Stream Password"
 msgstr "直播密码"
 
@@ -8783,7 +8765,7 @@ msgstr "主播"
 msgid "Streamer Check"
 msgstr "主播检查"
 
-#: src/components/streamers/edit/status-check-history.tsx:107
+#: src/components/streamers/edit/status-check-history.tsx:108
 msgid "Streamer check history"
 msgstr "主播检查历史"
 
@@ -8840,7 +8822,7 @@ msgstr "主播更新成功"
 msgid "Streamers"
 msgstr "主播"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:428
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:420
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
@@ -8860,8 +8842,8 @@ msgstr "流数"
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
-#: src/components/streamers/edit/status-check-history.tsx:228
-#: src/components/streamers/edit/status-check-history.tsx:247
+#: src/components/streamers/edit/status-check-history.tsx:229
+#: src/components/streamers/edit/status-check-history.tsx:248
 msgid "Streams extracted"
 msgstr "已提取流"
 
@@ -8905,7 +8887,7 @@ msgstr "已成功处理 {0} 个流水线"
 msgid "Successfully processed {0} streamers"
 msgstr "成功处理 {0} 个主播"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:82
+#: src/components/filters/filter-types.ts:114
 msgid "Sunday"
 msgstr "星期日"
 
@@ -8922,8 +8904,8 @@ msgstr "支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间占位
 msgid "Suppress redundant headers to reduce player micro-stutter"
 msgstr "抑制冗余头部以减少播放器微卡顿"
 
-#: src/components/language-switcher.tsx:47
-#: src/components/language-switcher.tsx:53
+#: src/components/language-switcher.tsx:52
+#: src/components/language-switcher.tsx:58
 msgid "Switch language"
 msgstr "切换语言"
 
@@ -8970,14 +8952,12 @@ msgstr "系统状态"
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
-#: src/components/filters/FilterCard.tsx:47
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:66
+#: src/components/filters/filter-types.ts:98
 msgctxt "Thursday initial"
 msgid "T"
 msgstr "四"
 
-#: src/components/filters/FilterCard.tsx:42
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:56
+#: src/components/filters/filter-types.ts:88
 msgctxt "Tuesday initial"
 msgid "T"
 msgstr "二"
@@ -9054,7 +9034,7 @@ msgstr "暂时禁用"
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:233
+#: src/components/notifications/desktop-channel-dialog.tsx:224
 msgid "Test"
 msgstr "测试"
 
@@ -9062,7 +9042,7 @@ msgstr "测试"
 msgid "Test Notification"
 msgstr "测试通知"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:285
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:286
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
@@ -9136,16 +9116,16 @@ msgstr "主题模式"
 msgid "Theme Preset"
 msgstr "主题预设"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:220
+#: src/components/notifications/desktop-channel-dialog.tsx:211
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道通知（Discord/电子邮件/Webhook）。"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
-#: src/components/pipeline/workflows/steps-list.tsx:149
+#: src/components/pipeline/workflows/steps-list.tsx:140
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/workflows/step-config-dialog.tsx:838
+#: src/components/pipeline/workflows/step-config-dialog.tsx:836
 msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
 msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的结果文件，而不是原始录制文件。若要在转码后删除原始文件，请在转码步骤上启用“成功后移除输入”。仍要添加此删除步骤吗？"
 
@@ -9153,11 +9133,11 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:433
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:389
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
 msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
 
-#: src/components/filters/FilterCard.tsx:267
+#: src/components/filters/FilterCard.tsx:243
 msgid "This filter's settings could not be read."
 msgstr "无法读取该过滤器的设置。"
 
@@ -9244,7 +9224,7 @@ msgid "This will permanently delete the preset \"{0}\". Pipelines using this pre
 msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处理管道可能会失败。"
 
 #. placeholder {0}: workflow.name
-#: src/components/pipeline/workflows/workflow-card.tsx:111
+#: src/components/pipeline/workflows/workflow-card.tsx:112
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
 
@@ -9263,11 +9243,11 @@ msgstr "缩略图"
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:67
+#: src/components/filters/filter-types.ts:99
 msgid "Thursday"
 msgstr "星期四"
 
-#: src/components/filters/filter-types.ts:36
+#: src/components/filters/filter-types.ts:38
 msgid "Time Based"
 msgstr "基于时间"
 
@@ -9279,7 +9259,7 @@ msgstr "截图时间偏移"
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:254
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
 msgid "Time Range"
 msgstr "时间范围"
 
@@ -9310,7 +9290,7 @@ msgid "Timeout (s)"
 msgstr "超时（秒）"
 
 #: src/components/notifications/forms/webhook-form.tsx:144
-#: src/components/pipeline/workflows/step-config-dialog.tsx:757
+#: src/components/pipeline/workflows/step-config-dialog.tsx:755
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -9334,7 +9314,7 @@ msgstr "时间戳"
 msgid "Timezone"
 msgstr "时区"
 
-#: src/components/filters/FilterCard.tsx:257
+#: src/components/filters/FilterCard.tsx:233
 msgid "Timezone: {label}"
 msgstr "时区：{label}"
 
@@ -9468,8 +9448,8 @@ msgstr "传输数"
 msgid "Transfers help"
 msgstr "传输数帮助"
 
-#: src/components/streamers/edit/status-check-history.tsx:371
-#: src/components/streamers/edit/status-check-history.tsx:392
+#: src/components/streamers/edit/status-check-history.tsx:372
+#: src/components/streamers/edit/status-check-history.tsx:393
 msgid "Transient error"
 msgstr "瞬时错误"
 
@@ -9604,7 +9584,7 @@ msgstr "尝试服务器代理"
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:57
+#: src/components/filters/filter-types.ts:89
 msgid "Tuesday"
 msgstr "星期二"
 
@@ -9612,7 +9592,7 @@ msgstr "星期二"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
@@ -9636,7 +9616,7 @@ msgstr "输入内容..."
 msgid "UI: {UI_BUILD}"
 msgstr "界面：{UI_BUILD}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Ultra (250)"
 msgstr "超清 (250)"
 
@@ -9653,7 +9633,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
 #: src/components/health/health-status-badge.tsx:61
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:627
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:621
 msgid "Unhealthy"
 msgstr "不健康"
 
@@ -9673,7 +9653,7 @@ msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:629
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:623
 msgid "Unknown"
 msgstr "未知"
 
@@ -9696,7 +9676,7 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/filters/FilterCard.tsx:191
+#: src/components/filters/FilterCard.tsx:167
 msgid "Unknown filter type"
 msgstr "未知的过滤器类型"
 
@@ -9725,7 +9705,7 @@ msgid "UPDATE"
 msgstr "更新"
 
 #: src/components/config/global/backup-restore-card.tsx:92
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:545
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:533
 msgid "Updated"
 msgstr "已更新"
 
@@ -9805,7 +9785,7 @@ msgid "Uptime"
 msgstr "运行时间"
 
 #. placeholder {0}: formatLocalizedDuration( health.uptime_secs, i18n.locale, )
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:261
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:253
 msgid "Uptime <0>{0}</0>"
 msgstr "运行时间 <0>{0}</0>"
 
@@ -9866,7 +9846,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:45
 #: src/components/config/shared/proxy-settings-card.tsx:185
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
@@ -9966,11 +9946,11 @@ msgstr "视频播放器"
 msgid "Video Settings"
 msgstr "视频设置"
 
-#: src/components/pipeline/dag-graph-view.tsx:283
+#: src/components/pipeline/dag-graph-view.tsx:266
 msgid "View"
 msgstr "查看"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:389
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:381
 msgid "View All"
 msgstr "查看全部"
 
@@ -10000,8 +9980,7 @@ msgstr "点播缺口策略"
 msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
 
-#: src/components/filters/FilterCard.tsx:45
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:61
+#: src/components/filters/filter-types.ts:93
 msgctxt "Wednesday initial"
 msgid "W"
 msgstr "三"
@@ -10034,11 +10013,11 @@ msgstr "处理队列过长时发出警告。"
 msgid "Watch"
 msgstr "观看"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:74
 msgid "Web API"
 msgstr "Web API"
 
@@ -10047,31 +10026,31 @@ msgid "Web Optimize"
 msgstr "网页优化"
 
 #: src/components/notifications/browser-channel-dialog.tsx:119
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:528
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:525
 msgid "Web Push"
 msgstr "Web 推送"
 
-#: src/components/notifications/browser-channel-dialog.tsx:191
+#: src/components/notifications/browser-channel-dialog.tsx:188
 msgid "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
 msgstr "Web 推送允许你在关闭浏览器时也能接收通知。它需要浏览器权限和有效的服务器密钥。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:225
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:226
 msgid "Web Push disabled for this browser"
 msgstr "已为此浏览器禁用 Web 推送"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:263
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:264
 msgid "Web Push enabled for this browser"
 msgstr "已为此浏览器启用 Web 推送"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:212
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:213
 msgid "Web Push is not configured on the server"
 msgstr "服务器未配置 Web 推送"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:207
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:208
 msgid "Web Push is not supported in this browser"
 msgstr "此浏览器不支持 Web 推送"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:197
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:198
 msgid "Web Push priority updated"
 msgstr "Web 推送优先级已更新"
 
@@ -10081,7 +10060,7 @@ msgstr "Web 推送优先级已更新"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:62
+#: src/components/filters/filter-types.ts:94
 msgid "Wednesday"
 msgstr "星期三"
 
@@ -10089,11 +10068,11 @@ msgstr "星期三"
 msgid "Week"
 msgstr "本周"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:98
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:54
 msgid "Weekdays"
 msgstr "工作日"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:99
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:55
 msgid "Weekends"
 msgstr "周末"
 
@@ -10170,7 +10149,7 @@ msgstr "工作流"
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
 msgid "WUP"
 msgstr "WUP"
 
@@ -10207,10 +10186,10 @@ msgstr "YYYY-MM-DD"
 msgid "ZIP Archive"
 msgstr "ZIP 归档"
 
-#: src/components/pipeline/dag-graph-view.tsx:117
+#: src/components/pipeline/dag-graph-view.tsx:100
 msgid "Zoom in"
 msgstr "放大"
 
-#: src/components/pipeline/dag-graph-view.tsx:126
+#: src/components/pipeline/dag-graph-view.tsx:109
 msgid "Zoom out"
 msgstr "缩小"

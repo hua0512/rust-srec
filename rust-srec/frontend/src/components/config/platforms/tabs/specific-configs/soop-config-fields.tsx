@@ -13,6 +13,7 @@ import { Key, Lock } from 'lucide-react';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_DESCRIPTION,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 
@@ -53,7 +54,7 @@ export function SoopConfigFields<TFieldValues extends FieldValues>({
                     placeholder="example_user"
                   />
                 </FormControl>
-                <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     SOOP account used to watch login-required (e.g. 19+)
                     broadcasts. Prefer cookies for permanently restricted
@@ -82,7 +83,7 @@ export function SoopConfigFields<TFieldValues extends FieldValues>({
                     placeholder={i18n._(msg`Password...`)}
                   />
                 </FormControl>
-                <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     SOOP account used to watch login-required (e.g. 19+)
                     broadcasts. Prefer cookies for permanently restricted
@@ -118,7 +119,7 @@ export function SoopConfigFields<TFieldValues extends FieldValues>({
                   placeholder={i18n._(msg`Password...`)}
                 />
               </FormControl>
-              <FormDescription className="text-[11px] font-medium pt-1 px-1 text-muted-foreground/80">
+              <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
                   Default password for password-protected rooms (can be
                   overridden per-streamer with ?pwd= in the URL).

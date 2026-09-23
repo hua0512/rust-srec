@@ -67,7 +67,9 @@ const emptyStringToNull = z
   .union([z.string(), z.null(), z.undefined()])
   .transform((val) => (val === '' ? null : val));
 
-const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
+// Write-side shape shared by platform configs and templates, which carry the
+// same override fields.
+const OVERRIDE_WRITE_FIELDS = {
   // Transform empty strings to null for text fields
   cookies: emptyStringToNull,
   output_folder: emptyStringToNull,
@@ -82,6 +84,10 @@ const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),
   paired_segment_pipeline: jsonToString.optional(),
+};
+
+const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
+  ...OVERRIDE_WRITE_FIELDS,
   platform_specific_config: jsonToString.optional(),
 });
 
@@ -125,22 +131,9 @@ export const getTemplate = createServerFn({ method: 'GET' })
     return TemplateSchema.parse(json);
   });
 
-const TemplateWriteSchema = CreateTemplateRequestSchema.extend({
-  // Transform empty strings to null for text fields
-  cookies: emptyStringToNull,
-  output_folder: emptyStringToNull,
-  output_filename_template: emptyStringToNull,
-  download_engine: emptyStringToNull,
-  output_file_format: emptyStringToNull,
-
-  stream_selection_config: jsonToString.optional(),
-  download_retry_policy: jsonToString.optional(),
-  danmu_statistics: jsonToString.optional(),
-  proxy_config: jsonToString.optional(),
-  pipeline: jsonToString.optional(),
-  session_complete_pipeline: jsonToString.optional(),
-  paired_segment_pipeline: jsonToString.optional(),
-});
+const TemplateWriteSchema = CreateTemplateRequestSchema.extend(
+  OVERRIDE_WRITE_FIELDS,
+);
 
 export const createTemplate = createServerFn({ method: 'POST' })
   .validator((data: z.input<typeof CreateTemplateRequestSchema>) =>

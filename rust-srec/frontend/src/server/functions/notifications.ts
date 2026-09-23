@@ -1,7 +1,12 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import { fetchBackend } from '../api';
-import { backendPath, PathIdSchema, withQuery } from '../backend-path';
+import {
+  backendPath,
+  PathIdSchema,
+  withQuery,
+  setPagination,
+} from '../backend-path';
 import {
   NotificationChannelSchema,
   CreateChannelRequestSchema,
@@ -137,8 +142,7 @@ export const listEvents = createServerFn({ method: 'GET' })
   )
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
-    if (data.limit) params.set('limit', String(data.limit));
-    if (data.offset) params.set('offset', String(data.offset));
+    setPagination(params, data);
     if (data.event_type) params.set('event_type', data.event_type);
     if (data.streamer_id) params.set('streamer_id', data.streamer_id);
     if (data.search) params.set('search', data.search);

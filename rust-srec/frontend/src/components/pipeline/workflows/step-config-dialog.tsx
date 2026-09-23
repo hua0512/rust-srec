@@ -21,7 +21,7 @@ import {
 } from './delete-warning';
 import { usePresetByName, useReferencedPresets } from './preset-lookup';
 import { PresetLookupStatus } from './preset-lookup-status';
-import { getStepIdError } from './step-operations';
+import { getStepIdError, getStepName } from './step-operations';
 
 /**
  * Turns the retry and timeout inputs into the optional step fields: attempts
@@ -682,9 +682,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                                         {otherId}
                                       </span>
                                       <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                        {otherStep.step.type === 'inline'
-                                          ? otherStep.step.processor
-                                          : otherStep.step.name}
+                                        {getStepName(otherStep.step)}
                                       </span>
                                     </label>
                                   </div>

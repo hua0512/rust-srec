@@ -1,6 +1,11 @@
+import { useMemo } from 'react';
 import { queryOptions, useQueries, useQuery } from '@tanstack/react-query';
 import type { DagStepDefinition } from '@/api/schemas';
 import { listJobPresets } from '@/server/functions/job';
+import {
+  buildPresetProcessorMap,
+  getDeleteAfterTransformStepIds,
+} from './delete-warning';
 
 // Pick the preset whose name equals `name`. Preset names are unique, and the backend resolves a
 // `preset` step by exact name, so anything else is a different preset with a different processor.
@@ -60,4 +65,19 @@ export function useReferencedPresets(
       ),
     }),
   });
+}
+
+// Resolves the referenced presets and flags delete steps wired after a transform step: they
+// would delete the converted artifact produced by that step, not the original recording.
+export function useDeleteAfterTransformWarnings(steps: DagStepDefinition[]) {
+  const lookup = useReferencedPresets(steps);
+  const warnedStepIds = useMemo(
+    () =>
+      getDeleteAfterTransformStepIds(
+        steps,
+        buildPresetProcessorMap(lookup.presets),
+      ),
+    [steps, lookup.presets],
+  );
+  return { lookup, warnedStepIds };
 }
