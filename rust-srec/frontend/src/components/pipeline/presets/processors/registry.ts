@@ -87,16 +87,6 @@ const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     component: CompressionConfigForm,
     label: msg`Compression / Archive`,
   },
-  copy: {
-    schema: CopyMoveConfigSchema,
-    component: CopyMoveConfigForm,
-    label: msg`Copy / Move`,
-  },
-  move: {
-    schema: CopyMoveConfigSchema,
-    component: CopyMoveConfigForm,
-    label: msg`Copy / Move`,
-  },
   delete: {
     schema: DeleteConfigSchema,
     component: DeleteConfigForm,
@@ -122,11 +112,6 @@ const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
     component: AssBurninConfigForm,
     label: msg`ASS Burn-in`,
   },
-  upload: {
-    schema: RcloneConfigSchema,
-    component: RcloneConfigForm,
-    label: msg`Rclone Transfer`,
-  },
   copy_move: {
     schema: CopyMoveConfigSchema,
     component: CopyMoveConfigForm,
@@ -134,10 +119,34 @@ const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
   },
 };
 
+/**
+ * Alternate names the backend also accepts for a processor (each processor's
+ * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
+ * through the API or an import may use them.
+ */
+const PROCESSOR_ALIASES: Record<string, string> = {
+  transcode: 'remux',
+  convert: 'remux',
+  upload: 'rclone',
+  extract_audio: 'audio_extract',
+  compress: 'compression',
+  archive: 'compression',
+  cleanup: 'delete',
+  embed_metadata: 'metadata',
+  command: 'execute',
+  danmu_to_ass: 'danmaku_factory',
+  danmu: 'danmaku_factory',
+  burn_ass: 'ass_burnin',
+  burn_subtitles: 'ass_burnin',
+};
+
 export const getProcessorDefinition = (
   processorName: string,
 ): ProcessorDefinition | undefined => {
-  return PROCESSOR_REGISTRY[processorName];
+  return (
+    PROCESSOR_REGISTRY[processorName] ??
+    PROCESSOR_REGISTRY[PROCESSOR_ALIASES[processorName]]
+  );
 };
 
 /**
