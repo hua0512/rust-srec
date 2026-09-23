@@ -105,7 +105,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
 #. placeholder {0}: value.length
-#: src/components/shared/json-viewer.tsx:127
+#: src/components/shared/json-viewer.tsx:129
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
 
@@ -1228,7 +1228,7 @@ msgstr "Brand Colors"
 msgid "Break"
 msgstr "Break"
 
-#: src/components/logging/log-file-browser.tsx:174
+#: src/components/logging/log-file-browser.tsx:159
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "Browse and download application log files. Filter by date range or download all."
 
@@ -1372,7 +1372,7 @@ msgstr "Capture Settings"
 msgid "Case Insensitive"
 msgstr "Case Insensitive"
 
-#: src/components/notifications/events/payload-preview.tsx:65
+#: src/components/notifications/events/payload-preview.tsx:44
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
 msgid "Category"
 msgstr "Category"
@@ -1542,7 +1542,7 @@ msgstr "Cleanup"
 msgid "Clear"
 msgstr "Clear"
 
-#: src/components/logging/log-file-browser.tsx:232
+#: src/components/logging/log-file-browser.tsx:217
 msgid "Clear date range"
 msgstr "Clear date range"
 
@@ -2409,7 +2409,7 @@ msgstr "Date"
 msgid "Date placeholder anchor"
 msgstr "Date placeholder anchor"
 
-#: src/components/logging/log-file-browser.tsx:271
+#: src/components/logging/log-file-browser.tsx:256
 msgid "Date range:"
 msgstr "Date range:"
 
@@ -2855,7 +2855,7 @@ msgid "Download"
 msgstr "Download"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:346
+#: src/components/logging/log-file-browser.tsx:331
 msgid "Download {0}"
 msgstr "Download {0}"
 
@@ -2863,7 +2863,7 @@ msgstr "Download {0}"
 msgid "Download activity looks healthy"
 msgstr "Download activity looks healthy"
 
-#: src/components/logging/log-file-browser.tsx:249
+#: src/components/logging/log-file-browser.tsx:234
 msgid "Download All"
 msgstr "Download All"
 
@@ -2911,11 +2911,11 @@ msgid "Downloading"
 msgstr "Downloading"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:145
+#: src/components/logging/log-file-browser.tsx:132
 msgid "Downloading {0}"
 msgstr "Downloading {0}"
 
-#: src/components/logging/log-file-browser.tsx:112
+#: src/components/logging/log-file-browser.tsx:118
 msgid "Downloading..."
 msgstr "Downloading..."
 
@@ -2932,7 +2932,7 @@ msgid "Dual Format"
 msgstr "Dual Format"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:80
+#: src/components/notifications/events/payload-preview.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:135
 #: src/components/streamers/progress-indicator.tsx:77
@@ -3245,7 +3245,7 @@ msgstr "Enter keywords to include..."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/notifications/events/payload-preview.tsx:51
+#: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
@@ -3643,11 +3643,12 @@ msgstr "Failed to delete workflow: {0}"
 msgid "Failed to disable Web Push"
 msgstr "Failed to disable Web Push"
 
-#: src/components/logging/log-file-browser.tsx:149
+#: src/components/logging/__tests__/log-file-browser.test.tsx:33
+#: src/components/logging/log-file-browser.tsx:134
 msgid "Failed to download file"
 msgstr "Failed to download file"
 
-#: src/components/logging/log-file-browser.tsx:118
+#: src/components/logging/log-file-browser.tsx:121
 msgid "Failed to download logs"
 msgstr "Failed to download logs"
 
@@ -3931,7 +3932,7 @@ msgstr "Filename pattern (e.g., thumb.jpg)"
 msgid "Filename Template"
 msgstr "Filename Template"
 
-#: src/components/logging/log-file-browser.tsx:169
+#: src/components/logging/log-file-browser.tsx:154
 msgid "files"
 msgstr "files"
 
@@ -4787,7 +4788,7 @@ msgstr "Isolation level for tracking identifiers. Global is usually best."
 msgid "Jitter"
 msgstr "Jitter"
 
-#: src/components/notifications/events/payload-preview.tsx:48
+#: src/components/notifications/events/payload-preview.tsx:29
 msgid "Job"
 msgstr "Job"
 
@@ -5076,7 +5077,7 @@ msgstr "Loading…"
 msgid "Local Archive"
 msgstr "Local Archive"
 
-#: src/components/logging/log-file-browser.tsx:166
+#: src/components/logging/log-file-browser.tsx:151
 msgid "Log Files"
 msgstr "Log Files"
 
@@ -5798,7 +5799,7 @@ msgstr "No keywords set"
 msgid "No limit"
 msgstr "No limit"
 
-#: src/components/logging/log-file-browser.tsx:306
+#: src/components/logging/log-file-browser.tsx:291
 msgid "No log files found"
 msgstr "No log files found"
 
@@ -6531,7 +6532,7 @@ msgstr "Paste a channel link. Everything else can wait."
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 
-#: src/components/notifications/events/payload-preview.tsx:71
+#: src/components/notifications/events/payload-preview.tsx:50
 msgid "Path"
 msgstr "Path"
 
@@ -6741,7 +6742,7 @@ msgstr "Pipeline Timeouts"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/components/notifications/events/payload-preview.tsx:67
+#: src/components/notifications/events/payload-preview.tsx:46
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:501
 msgid "Platform"
@@ -8137,7 +8138,7 @@ msgstr "Select current page"
 msgid "Select date anchor"
 msgstr "Select date anchor"
 
-#: src/components/logging/log-file-browser.tsx:203
+#: src/components/logging/log-file-browser.tsx:188
 msgid "Select date range"
 msgstr "Select date range"
 
@@ -8466,7 +8467,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:90
+#: src/components/notifications/events/payload-preview.tsx:69
 #: src/components/streamers/edit/active-download-card.tsx:124
 msgid "Size"
 msgstr "Size"
@@ -8751,7 +8752,7 @@ msgstr "Stream structure change"
 msgid "Stream URL"
 msgstr "Stream URL"
 
-#: src/components/notifications/events/payload-preview.tsx:47
+#: src/components/notifications/events/payload-preview.tsx:28
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:239
 msgid "Streamer"
 msgstr "Streamer"
@@ -9326,7 +9327,7 @@ msgstr "Timing & Delays"
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 
-#: src/components/notifications/events/payload-preview.tsx:63
+#: src/components/notifications/events/payload-preview.tsx:42
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:213
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:218
 msgid "Title"
@@ -9408,7 +9409,7 @@ msgstr "Total Danmu"
 msgid "Total Size"
 msgstr "Total Size"
 
-#: src/components/logging/log-file-browser.tsx:263
+#: src/components/logging/log-file-browser.tsx:248
 msgid "Total size:"
 msgstr "Total size:"
 
@@ -9537,7 +9538,7 @@ msgstr "Triggered when video and danmu are available"
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
-#: src/components/logging/log-file-browser.tsx:310
+#: src/components/logging/log-file-browser.tsx:295
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 
@@ -9665,7 +9666,6 @@ msgstr "Unknown Engine ID: {engineId}"
 msgid "Unknown engine type: {engineType}"
 msgstr "Unknown engine type: {engineType}"
 
-#: src/components/notifications/events/payload-preview.tsx:56
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
@@ -9904,7 +9904,7 @@ msgid "Verify Output"
 msgstr "Verify Output"
 
 #: src/components/config/engines/engine-card.tsx:143
-#: src/components/notifications/events/payload-preview.tsx:96
+#: src/components/notifications/events/payload-preview.tsx:75
 msgid "Version"
 msgstr "Version"
 

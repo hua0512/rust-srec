@@ -105,7 +105,7 @@ msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, other {# 个文件}}"
 
 #. placeholder {0}: value.length
-#: src/components/shared/json-viewer.tsx:127
+#: src/components/shared/json-viewer.tsx:129
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, other {# 项}}"
 
@@ -1228,7 +1228,7 @@ msgstr "品牌颜色"
 msgid "Break"
 msgstr "中断"
 
-#: src/components/logging/log-file-browser.tsx:174
+#: src/components/logging/log-file-browser.tsx:159
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
 
@@ -1372,7 +1372,7 @@ msgstr "采集设置"
 msgid "Case Insensitive"
 msgstr "不区分大小写"
 
-#: src/components/notifications/events/payload-preview.tsx:65
+#: src/components/notifications/events/payload-preview.tsx:44
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
 msgid "Category"
 msgstr "分类"
@@ -1542,7 +1542,7 @@ msgstr "清理"
 msgid "Clear"
 msgstr "清空"
 
-#: src/components/logging/log-file-browser.tsx:232
+#: src/components/logging/log-file-browser.tsx:217
 msgid "Clear date range"
 msgstr "清除日期范围"
 
@@ -2409,7 +2409,7 @@ msgstr "日期"
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
-#: src/components/logging/log-file-browser.tsx:271
+#: src/components/logging/log-file-browser.tsx:256
 msgid "Date range:"
 msgstr "日期范围："
 
@@ -2855,7 +2855,7 @@ msgid "Download"
 msgstr "下载"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:346
+#: src/components/logging/log-file-browser.tsx:331
 msgid "Download {0}"
 msgstr "下载 {0}"
 
@@ -2863,7 +2863,7 @@ msgstr "下载 {0}"
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
-#: src/components/logging/log-file-browser.tsx:249
+#: src/components/logging/log-file-browser.tsx:234
 msgid "Download All"
 msgstr "下载全部"
 
@@ -2911,11 +2911,11 @@ msgid "Downloading"
 msgstr "下载中"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:145
+#: src/components/logging/log-file-browser.tsx:132
 msgid "Downloading {0}"
 msgstr "正在下载 {0}"
 
-#: src/components/logging/log-file-browser.tsx:112
+#: src/components/logging/log-file-browser.tsx:118
 msgid "Downloading..."
 msgstr "下载中..."
 
@@ -2932,7 +2932,7 @@ msgid "Dual Format"
 msgstr "双格式输出"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:80
+#: src/components/notifications/events/payload-preview.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:135
 #: src/components/streamers/progress-indicator.tsx:77
@@ -3245,7 +3245,7 @@ msgstr "输入要包含的关键词..."
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/notifications/events/payload-preview.tsx:51
+#: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
@@ -3643,11 +3643,12 @@ msgstr "删除工作流失败：{0}"
 msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
-#: src/components/logging/log-file-browser.tsx:149
+#: src/components/logging/__tests__/log-file-browser.test.tsx:33
+#: src/components/logging/log-file-browser.tsx:134
 msgid "Failed to download file"
 msgstr "下载文件失败"
 
-#: src/components/logging/log-file-browser.tsx:118
+#: src/components/logging/log-file-browser.tsx:121
 msgid "Failed to download logs"
 msgstr "下载日志失败"
 
@@ -3931,7 +3932,7 @@ msgstr "文件名模式（例如 thumb.jpg）"
 msgid "Filename Template"
 msgstr "文件名模板"
 
-#: src/components/logging/log-file-browser.tsx:169
+#: src/components/logging/log-file-browser.tsx:154
 msgid "files"
 msgstr "文件"
 
@@ -4787,7 +4788,7 @@ msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 msgid "Jitter"
 msgstr "抖动"
 
-#: src/components/notifications/events/payload-preview.tsx:48
+#: src/components/notifications/events/payload-preview.tsx:29
 msgid "Job"
 msgstr "任务"
 
@@ -5076,7 +5077,7 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/components/logging/log-file-browser.tsx:166
+#: src/components/logging/log-file-browser.tsx:151
 msgid "Log Files"
 msgstr "日志文件"
 
@@ -5798,7 +5799,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-file-browser.tsx:306
+#: src/components/logging/log-file-browser.tsx:291
 msgid "No log files found"
 msgstr "未找到日志文件"
 
@@ -6531,7 +6532,7 @@ msgstr "先粘贴频道链接，其他设置稍后再填。"
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "在下方粘贴你的 CSS 主题。请同时包含 <0>:root</0>（浅色模式）和 <1>.dark</1>（深色模式）部分，并使用 <2>--primary</2>、<3>--background</3> 等 CSS 变量。主题会在浅色和深色模式之间自动切换。"
 
-#: src/components/notifications/events/payload-preview.tsx:71
+#: src/components/notifications/events/payload-preview.tsx:50
 msgid "Path"
 msgstr "路径"
 
@@ -6741,7 +6742,7 @@ msgstr "流水线超时"
 msgid "pipelines"
 msgstr "处理管道"
 
-#: src/components/notifications/events/payload-preview.tsx:67
+#: src/components/notifications/events/payload-preview.tsx:46
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:501
 msgid "Platform"
@@ -8137,7 +8138,7 @@ msgstr "选择当前页"
 msgid "Select date anchor"
 msgstr "选择日期锚点"
 
-#: src/components/logging/log-file-browser.tsx:203
+#: src/components/logging/log-file-browser.tsx:188
 msgid "Select date range"
 msgstr "选择日期范围"
 
@@ -8466,7 +8467,7 @@ msgid "Single URL"
 msgstr "单个 URL"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:90
+#: src/components/notifications/events/payload-preview.tsx:69
 #: src/components/streamers/edit/active-download-card.tsx:124
 msgid "Size"
 msgstr "大小"
@@ -8751,7 +8752,7 @@ msgstr "流结构变化"
 msgid "Stream URL"
 msgstr "直播链接"
 
-#: src/components/notifications/events/payload-preview.tsx:47
+#: src/components/notifications/events/payload-preview.tsx:28
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:239
 msgid "Streamer"
 msgstr "主播"
@@ -9326,7 +9327,7 @@ msgstr "时间与延迟"
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "提示：1 Mbit/s ≈ 0.125M（将比特数除以 8）。"
 
-#: src/components/notifications/events/payload-preview.tsx:63
+#: src/components/notifications/events/payload-preview.tsx:42
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:213
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:218
 msgid "Title"
@@ -9408,7 +9409,7 @@ msgstr "总弹幕数"
 msgid "Total Size"
 msgstr "总大小"
 
-#: src/components/logging/log-file-browser.tsx:263
+#: src/components/logging/log-file-browser.tsx:248
 msgid "Total size:"
 msgstr "总大小："
 
@@ -9537,7 +9538,7 @@ msgstr "当视频和弹幕可用时触发"
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
-#: src/components/logging/log-file-browser.tsx:310
+#: src/components/logging/log-file-browser.tsx:295
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
@@ -9665,7 +9666,6 @@ msgstr "未知引擎 ID：{engineId}"
 msgid "Unknown engine type: {engineType}"
 msgstr "未知的引擎类型：{engineType}"
 
-#: src/components/notifications/events/payload-preview.tsx:56
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
@@ -9904,7 +9904,7 @@ msgid "Verify Output"
 msgstr "验证输出"
 
 #: src/components/config/engines/engine-card.tsx:143
-#: src/components/notifications/events/payload-preview.tsx:96
+#: src/components/notifications/events/payload-preview.tsx:75
 msgid "Version"
 msgstr "版本"
 

@@ -53,6 +53,33 @@ const SHORT_DATE: Intl.DateTimeFormatOptions = {
   day: '2-digit',
 };
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/**
+ * Streams the log archive for a date range to disk via a token-authenticated
+ * anchor navigation, so the browser writes the zip body directly instead of
+ * buffering it in the JS heap. The download attribute keeps an error response
+ * as a file download instead of navigating the app to the raw error body.
+ */
+async function startArchiveDownload(from?: string, to?: string) {
+  const { token } = await getLogsDownloadUrl();
+
+  const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+  const url = new URL(`${base}/logging/archive`, window.location.origin);
+  url.searchParams.set('token', token);
+  if (from) url.searchParams.set('from', from);
+  if (to) url.searchParams.set('to', to);
+
+  const link = document.createElement('a');
+  link.href = url.toString();
+  link.download = '';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 export function LogFileBrowser() {
   const { i18n } = useLingui();
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -84,69 +111,27 @@ export function LogFileBrowser() {
   // Download all logs as an archive
   const handleDownloadArchive = useCallback(async () => {
     setIsDownloadingArchive(true);
-
     try {
-      // Get download token
-      const { token } = await getLogsDownloadUrl();
-
-      const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-      const url = new URL(`${base}/logging/archive`, window.location.origin);
-      url.searchParams.set('token', token);
-      if (fromDate) url.searchParams.set('from', fromDate);
-      if (toDate) url.searchParams.set('to', toDate);
-
-      // Stream to disk via a token-authenticated anchor navigation, matching
-      // handleDownloadFile; the browser writes the zip response body directly
-      // instead of buffering the whole archive in the JS heap. The download
-      // attribute keeps an error response as a file download instead of
-      // navigating the app to the raw error body.
-      const link = document.createElement('a');
-      link.href = url.toString();
-      link.download = '';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
+      await startArchiveDownload(fromDate, toDate);
       // Anchor downloads do not expose response or completion status. The
       // browser download UI owns progress after navigation is dispatched.
       toast.info(i18n._(msg`Downloading...`));
     } catch (error: unknown) {
       console.error('Download failed:', error);
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : i18n._(msg`Failed to download logs`);
-      toast.error(errorMessage);
+      toast.error(errorMessage(error, i18n._(msg`Failed to download logs`)));
     } finally {
       setIsDownloadingArchive(false);
     }
   }, [fromDate, toDate, i18n]);
 
-  // Download individual log file
+  // A single day's file is the archive for that day.
   const handleDownloadFile = useCallback(
     async (file: LogFileInfo) => {
       try {
-        // For individual files, we use the same archive endpoint but with specific date
-        const { token } = await getLogsDownloadUrl();
-
-        const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-        const url = new URL(`${base}/logging/archive`, window.location.origin);
-        url.searchParams.set('token', token);
-        url.searchParams.set('from', file.date);
-        url.searchParams.set('to', file.date);
-
-        const link = document.createElement('a');
-        link.href = url.toString();
-        link.download = '';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
+        await startArchiveDownload(file.date, file.date);
         toast.success(i18n._(msg`Downloading ${file.filename}`));
       } catch (error: unknown) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Failed to download file';
-        toast.error(errorMessage || i18n._(msg`Failed to download file`));
+        toast.error(errorMessage(error, i18n._(msg`Failed to download file`)));
       }
     },
     [i18n],
