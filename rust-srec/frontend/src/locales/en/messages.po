@@ -804,7 +804,7 @@ msgid "Artist"
 msgstr "Artist"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:87
-#: src/components/pipeline/presets/processors/registry.ts:123
+#: src/components/pipeline/presets/processors/registry.ts:113
 msgid "ASS Burn-in"
 msgstr "ASS Burn-in"
 
@@ -1946,9 +1946,7 @@ msgid "Copy (Stream Copy)"
 msgstr "Copy (Stream Copy)"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:68
-#: src/components/pipeline/presets/processors/registry.ts:93
-#: src/components/pipeline/presets/processors/registry.ts:98
-#: src/components/pipeline/presets/processors/registry.ts:133
+#: src/components/pipeline/presets/processors/registry.ts:118
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
@@ -2334,7 +2332,7 @@ msgid "Danmaku"
 msgstr "Danmaku"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
-#: src/components/pipeline/presets/processors/registry.ts:118
+#: src/components/pipeline/presets/processors/registry.ts:108
 msgid "Danmaku to ASS"
 msgstr "Danmaku to ASS"
 
@@ -2543,7 +2541,7 @@ msgstr "Delete Channel?"
 msgid "Delete engine"
 msgstr "Delete engine"
 
-#: src/components/pipeline/presets/processors/registry.ts:103
+#: src/components/pipeline/presets/processors/registry.ts:93
 msgid "Delete File"
 msgstr "Delete File"
 
@@ -3359,7 +3357,7 @@ msgstr "Execute"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:24
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
-#: src/components/pipeline/presets/processors/registry.ts:113
+#: src/components/pipeline/presets/processors/registry.ts:103
 msgid "Execute Command"
 msgstr "Execute Command"
 
@@ -5423,7 +5421,7 @@ msgstr "Messages"
 msgid "Metadata"
 msgstr "Metadata"
 
-#: src/components/pipeline/presets/processors/registry.ts:108
+#: src/components/pipeline/presets/processors/registry.ts:98
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
@@ -7267,7 +7265,6 @@ msgid "Rclone Executable"
 msgstr "Rclone Executable"
 
 #: src/components/pipeline/presets/processors/registry.ts:68
-#: src/components/pipeline/presets/processors/registry.ts:128
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 

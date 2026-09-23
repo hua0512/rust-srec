@@ -67,6 +67,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Fixed subtitle burn-in dropping unprocessed videos when passthrough is disabled. Batch jobs report combined file sizes, and FFmpeg progress timestamps consistently use milliseconds.
 - Fixed execute output scanning to expand folder placeholders and include only newly created files modified after command start. Unreadable scan directories fail the step. Workflow execute steps do not receive an `{output}` path.
 - Fixed workflow editors to preserve dependencies when steps are renamed and reject empty or duplicate IDs. Presets resolve by exact name; missing presets are reported instead of substituting an unrelated preset.
+- Fixed workflow steps that use an alternate processor name, such as `transcode` or `upload`, showing no settings or label in the web interface.
 
 ## Danmu
 
