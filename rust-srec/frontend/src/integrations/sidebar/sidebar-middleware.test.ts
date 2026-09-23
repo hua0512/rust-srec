@@ -23,13 +23,9 @@ async function runWith(cookie?: string) {
 describe('sidebarMiddleware', () => {
   it('hands the stored state to the router so the server renders it', async () => {
     await expect(runWith(`${SIDEBAR_COOKIE_KEY}=false`)).resolves.toBe(false);
-    await expect(
-      runWith(`theme_mode=dark; ${SIDEBAR_COOKIE_KEY}=true`),
-    ).resolves.toBe(true);
   });
 
   it('falls back to expanded for a visitor with no stored state', async () => {
     await expect(runWith()).resolves.toBe(true);
-    await expect(runWith('theme_mode=dark')).resolves.toBe(true);
   });
 });

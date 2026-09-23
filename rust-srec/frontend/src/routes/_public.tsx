@@ -1,9 +1,5 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 
-export const Route = createFileRoute('/_public')({
-  component: PublicLayout,
-});
-
-function PublicLayout() {
-  return <Outlet />;
-}
+// A pathless layout with no component renders its children through the
+// router's default <Outlet />.
+export const Route = createFileRoute('/_public')({});

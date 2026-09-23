@@ -35,7 +35,7 @@ export interface DownloadState {
   metrics: DownloadMetrics;
 }
 
-export interface DownloadView {
+export interface Download {
   downloadId: string;
 
   // Meta
@@ -56,8 +56,6 @@ export interface DownloadView {
   mediaDurationSecs: number;
   playbackRatio: number;
 }
-
-export type Download = DownloadView;
 
 // Streamers parked on the concurrency queue: live but waiting for a
 // download slot. Surfaced on the streamer card as a "Queued" badge.
@@ -96,7 +94,7 @@ function emptyMetrics(downloadId: string): DownloadMetrics {
   };
 }
 
-function toView(meta: DownloadMeta, metrics: DownloadMetrics): DownloadView {
+function toView(meta: DownloadMeta, metrics: DownloadMetrics): Download {
   const downloadId = meta.downloadId || metrics.downloadId;
   return {
     downloadId,
@@ -121,7 +119,7 @@ function toView(meta: DownloadMeta, metrics: DownloadMetrics): DownloadView {
 interface DownloadStoreState {
   metaById: Map<string, DownloadMeta>;
   metricsById: Map<string, DownloadMetrics>;
-  viewsById: Map<string, DownloadView>;
+  viewsById: Map<string, Download>;
   // Download IDs that have received a terminal event, keyed to the
   // wall-clock ms of that event. Used to ignore out-of-order metrics/meta
   // that arrive after termination. Cleared on snapshot/clearAll; entries
@@ -148,7 +146,7 @@ interface DownloadStoreState {
   clearAll: () => void;
 
   // Selectors
-  getDownloadsByStreamer: (streamerId: string) => DownloadView[];
+  getDownloadsByStreamer: (streamerId: string) => Download[];
   getQueuedForStreamer: (streamerId: string) => QueuedEntry | undefined;
 }
 
@@ -332,7 +330,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   getDownloadsByStreamer: (streamerId) => {
     const viewsById = get().viewsById;
-    const result: DownloadView[] = [];
+    const result: Download[] = [];
     for (const view of viewsById.values()) {
       if (view.streamerId === streamerId) {
         result.push(view);

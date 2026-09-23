@@ -2,7 +2,6 @@ import {
   BackendApiError,
   DAG_ALREADY_TERMINAL_CODE,
   hasErrorCode,
-  isBackendStatus,
   isDagAlreadyTerminalError,
   isNotFoundError,
   isPasswordChangeRequiredError,
@@ -89,12 +88,6 @@ describe('isNotFoundError', () => {
     expect(isNotFoundError(new Error('Network request failed'))).toBe(false);
     expect(isNotFoundError(undefined)).toBe(false);
     expect(isNotFoundError({ status: 404 })).toBe(false);
-  });
-
-  it('shares its matching with isBackendStatus', () => {
-    const error = rethrownAcrossBoundary(422, {});
-    expect(isBackendStatus(error, 422)).toBe(true);
-    expect(isBackendStatus(error, 404)).toBe(false);
   });
 });
 

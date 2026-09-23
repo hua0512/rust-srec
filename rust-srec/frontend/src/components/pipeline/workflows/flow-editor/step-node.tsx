@@ -21,7 +21,7 @@ import {
 import { getProcessorDefinition } from '../../presets/processors/registry';
 import { msg } from '@lingui/core/macro';
 
-export type StepNodeData = {
+type StepNodeData = {
   step: DagStepDefinition['step'];
   id: string;
   onEdit?: (id: string) => void;

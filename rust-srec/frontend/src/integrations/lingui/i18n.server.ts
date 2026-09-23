@@ -3,7 +3,6 @@ import {
   defaultLocale,
   getPreferredLocale,
   isLocaleValid,
-  Locale,
   localeStorageKey,
 } from './i18n';
 
@@ -14,7 +13,7 @@ export function getLocaleFromRequest(request: Request) {
 
   if (isLocaleValid(queryLocale)) {
     return {
-      locale: queryLocale as Locale,
+      locale: queryLocale,
       headers: [
         {
           key: 'Set-Cookie',
@@ -31,7 +30,7 @@ export function getLocaleFromRequest(request: Request) {
   const cookie = parse(headers.get('cookie') ?? '');
   const savedLocale = cookie[localeStorageKey];
   if (savedLocale && isLocaleValid(savedLocale)) {
-    return { locale: savedLocale as Locale };
+    return { locale: savedLocale };
   }
 
   const acceptedLanguages = headers.get('accept-language')?.split(',') ?? [];

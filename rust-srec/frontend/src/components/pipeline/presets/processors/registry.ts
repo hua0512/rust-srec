@@ -50,7 +50,7 @@ import { ProcessorConfigFormProps } from './common-props';
 import { msg } from '@lingui/core/macro';
 import { type MessageDescriptor } from '@lingui/core';
 
-export interface ProcessorDefinition {
+interface ProcessorDefinition {
   schema: z.ZodType<any>;
   component: ComponentType<ProcessorConfigFormProps<any>>;
   label: MessageDescriptor;

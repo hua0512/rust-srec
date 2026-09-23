@@ -42,7 +42,7 @@ import { CONFIG_SELECT_CONTENT } from './config-field';
 // --- Inner Component (User's UI) ---
 type ProxyConfig = z.infer<typeof ProxyConfigObjectSchema>;
 
-export interface ProxyConfigSettingsProps {
+interface ProxyConfigSettingsProps {
   value: string | ProxyConfig | null | undefined;
   onChange: (value: string | ProxyConfig | null) => void;
   outputFormat?: 'json' | 'object';

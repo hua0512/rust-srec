@@ -1,19 +1,7 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
 import { Key } from 'lucide-react';
-import {
-  ConfigFieldLabel,
-  ConfigSectionHeading,
-  CONFIG_DESCRIPTION,
-} from '@/components/config/shared/config-field';
-import { configPath } from '@/components/config/shared/form-path';
+import { SecretFieldSection } from './secret-field-section';
 
 interface TwitchConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -26,43 +14,20 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
   fieldName,
 }: TwitchConfigFieldsProps<TFieldValues>) {
   return (
-    <div className="space-y-12">
-      {/* Authentication Section */}
-      <section className="space-y-6">
-        <ConfigSectionHeading icon={Key} accent="indigo">
-          <Trans>Authentication</Trans>
-        </ConfigSectionHeading>
-
-        <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'oauth_token')}
-            render={({ field }) => (
-              <FormItem className="space-y-4">
-                <ConfigFieldLabel accent="indigo">
-                  <Trans>OAuth Token</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="password"
-                    autoComplete="off"
-                    {...field}
-                    value={field.value || ''}
-                    className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all font-mono text-xs shadow-sm"
-                    placeholder="oauth:..."
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Twitch OAuth token for subscriber-only and high-quality
-                    streams.
-                  </Trans>
-                </FormDescription>
-              </FormItem>
-            )}
-          />
-        </div>
-      </section>
-    </div>
+    <SecretFieldSection
+      form={form}
+      fieldName={fieldName}
+      optionKey="oauth_token"
+      icon={Key}
+      heading={<Trans>Authentication</Trans>}
+      label={<Trans>OAuth Token</Trans>}
+      placeholder="oauth:..."
+      autoComplete="off"
+      description={
+        <Trans>
+          Twitch OAuth token for subscriber-only and high-quality streams.
+        </Trans>
+      }
+    />
   );
 }

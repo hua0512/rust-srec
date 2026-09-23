@@ -2,15 +2,11 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 
-interface DashboardCardProps extends React.ComponentProps<typeof Card> {
-  children: React.ReactNode;
-}
-
 export function DashboardCard({
   className,
   children,
   ...props
-}: DashboardCardProps) {
+}: React.ComponentProps<typeof Card>) {
   return (
     <Card
       className={cn(

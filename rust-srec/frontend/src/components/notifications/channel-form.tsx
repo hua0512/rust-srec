@@ -59,7 +59,6 @@ interface ChannelFormProps {
 }
 
 // Use the discriminated union schema from API schemas
-type FormData = ChannelFormData;
 
 /**
  * Starting settings for each channel type, matching the defaults on the schemas in
@@ -117,8 +116,8 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!channel;
 
-  const form = useForm<FormData>({
-    resolver: zodResolver(ChannelFormSchema) as Resolver<FormData>,
+  const form = useForm<ChannelFormData>({
+    resolver: zodResolver(ChannelFormSchema) as Resolver<ChannelFormData>,
     defaultValues: {
       name: '',
       channel_type: 'Webhook',
@@ -296,7 +295,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       toast.error(err.message || i18n._(msg`Failed to update channel`)),
   });
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = (data: ChannelFormData) => {
     let finalSettings: any = { ...data.settings };
 
     // Transform headers array to object for Webhook

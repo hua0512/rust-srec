@@ -3,6 +3,10 @@ import { FormControl, FormItem, FormLabel } from './form';
 import { Switch } from './switch';
 import { cn } from '@/lib/utils';
 
+/** The bordered label-and-control row shared by switch-style settings. */
+export const SETTING_ROW_CLASS =
+  'flex flex-row items-center justify-between gap-4 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm';
+
 export interface SwitchCardProps {
   label: React.ReactNode;
   description?: React.ReactNode;
@@ -22,13 +26,7 @@ const SwitchCard = React.forwardRef<HTMLDivElement, SwitchCardProps>(
     ref,
   ) => {
     return (
-      <FormItem
-        ref={ref}
-        className={cn(
-          'flex flex-row items-center justify-between gap-4 rounded-xl border border-border/50 bg-background/50 px-4 py-3 shadow-sm',
-          className,
-        )}
-      >
+      <FormItem ref={ref} className={cn(SETTING_ROW_CLASS, className)}>
         <div className="space-y-0.5">
           <FormLabel className={disabled ? 'text-muted-foreground' : ''}>
             {label}

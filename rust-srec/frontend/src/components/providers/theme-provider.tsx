@@ -75,6 +75,14 @@ function writeCookie(key: string, value: string): void {
 // Provider
 // ---------------------------------------------------------------------------
 
+function applyToDOM(resolved: ResolvedMode) {
+  const el = document.documentElement;
+
+  el.classList.remove('light', 'dark');
+  el.classList.add(resolved);
+  el.style.colorScheme = resolved;
+}
+
 export function ThemeProvider({ children, serverMode }: ThemeProviderProps) {
   const [mode, setModeState] = useState<Mode>(() =>
     // With SSR (serverMode set, web build) the first client render must match
@@ -86,18 +94,6 @@ export function ThemeProvider({ children, serverMode }: ThemeProviderProps) {
   const [systemTheme, setSystemTheme] = useState<ResolvedMode>(getSystemTheme);
 
   const resolvedMode: ResolvedMode = mode === 'system' ? systemTheme : mode;
-
-  // --------------------------------------------------
-  // Apply theme to <html>
-  // --------------------------------------------------
-
-  const applyToDOM = useCallback((resolved: ResolvedMode) => {
-    const el = document.documentElement;
-
-    el.classList.remove('light', 'dark');
-    el.classList.add(resolved);
-    el.style.colorScheme = resolved;
-  }, []);
 
   // --------------------------------------------------
   // Post-hydration reconciliation (SSR path only)
@@ -127,24 +123,21 @@ export function ThemeProvider({ children, serverMode }: ThemeProviderProps) {
   // cookie-value write that the reconcile effect above supersedes.
   useIsomorphicLayoutEffect(() => {
     applyToDOM(resolvedMode);
-  }, [resolvedMode, applyToDOM]);
+  }, [resolvedMode]);
 
   // --------------------------------------------------
   // Setter: update state + persist
   // --------------------------------------------------
 
-  const setMode = useCallback(
-    (next: Mode) => {
-      setModeState(next);
-      // Mutate <html> synchronously so a document.startViewTransition callback
-      // wrapping setMode (use-circular-transition.ts) captures the new theme
-      // without depending on when React flushes the applyToDOM effect.
-      applyToDOM(next === 'system' ? getSystemTheme() : next);
-      writeStorage(STORAGE_KEY_MODE, next);
-      writeCookie(COOKIE_KEY_MODE, next);
-    },
-    [applyToDOM],
-  );
+  const setMode = useCallback((next: Mode) => {
+    setModeState(next);
+    // Mutate <html> synchronously so a document.startViewTransition callback
+    // wrapping setMode (use-circular-transition.ts) captures the new theme
+    // without depending on when React flushes the applyToDOM effect.
+    applyToDOM(next === 'system' ? getSystemTheme() : next);
+    writeStorage(STORAGE_KEY_MODE, next);
+    writeCookie(COOKIE_KEY_MODE, next);
+  }, []);
 
   // --------------------------------------------------
   // OS preference listener

@@ -14,7 +14,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useInView } from '@/lib/hooks/use-in-view';
+import { useInView } from '@/hooks/use-in-view';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

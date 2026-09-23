@@ -1,9 +1,16 @@
 import {
   DanmuStreamParser,
   normalizeDanmuTimestamp,
-  parseDanmuXml,
+  type DanmuComment,
 } from './danmu-parser';
 import { formatDanmuOffset } from './danmu-viewer';
+
+/** Parses a whole document in one write, as a single-chunk stream would. */
+function parseDanmuXml(text: string): DanmuComment[] {
+  const parser = new DanmuStreamParser();
+  parser.write(text);
+  return parser.finish();
+}
 
 describe('parseDanmuXml', () => {
   it('parses rust-srec timestamps and username attributes', () => {
