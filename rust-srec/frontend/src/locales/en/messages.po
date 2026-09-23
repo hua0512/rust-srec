@@ -697,7 +697,7 @@ msgstr "API key created"
 msgid "API key revoked"
 msgstr "API key revoked"
 
-#: src/components/sidebar/user-menu.tsx:122
+#: src/components/sidebar/user-menu.tsx:120
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
 msgid "API Keys"
@@ -1372,7 +1372,7 @@ msgstr "Capture Settings"
 msgid "Case Insensitive"
 msgstr "Case Insensitive"
 
-#: src/components/notifications/events/payload-preview.tsx:44
+#: src/components/notifications/events/payload-preview.tsx:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
 msgid "Category"
 msgstr "Category"
@@ -1389,7 +1389,7 @@ msgid "CDN"
 msgstr "CDN"
 
 #: src/components/layout/site-header.tsx:34
-#: src/components/sidebar/user-menu.tsx:128
+#: src/components/sidebar/user-menu.tsx:126
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:278
 msgid "Change Password"
@@ -2930,7 +2930,7 @@ msgid "Dual Format"
 msgstr "Dual Format"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:61
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:135
 #: src/components/streamers/progress-indicator.tsx:77
@@ -6530,7 +6530,7 @@ msgstr "Paste a channel link. Everything else can wait."
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 
-#: src/components/notifications/events/payload-preview.tsx:50
+#: src/components/notifications/events/payload-preview.tsx:52
 msgid "Path"
 msgstr "Path"
 
@@ -6740,7 +6740,7 @@ msgstr "Pipeline Timeouts"
 msgid "pipelines"
 msgstr "pipelines"
 
-#: src/components/notifications/events/payload-preview.tsx:46
+#: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:501
 msgid "Platform"
@@ -7309,6 +7309,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
+#: src/components/notifications/events/payload-preview.tsx:41
 #: src/components/streamers/card/use-streamer-status.tsx:223
 msgid "Reason"
 msgstr "Reason"
@@ -8441,7 +8442,7 @@ msgstr "Sign In"
 msgid "Sign in to the server before using the stream proxy."
 msgstr "Sign in to the server before using the stream proxy."
 
-#: src/components/sidebar/user-menu.tsx:139
+#: src/components/sidebar/user-menu.tsx:137
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -8464,7 +8465,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:69
+#: src/components/notifications/events/payload-preview.tsx:71
 #: src/components/streamers/edit/active-download-card.tsx:124
 msgid "Size"
 msgstr "Size"
@@ -9324,7 +9325,7 @@ msgstr "Timing & Delays"
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 
-#: src/components/notifications/events/payload-preview.tsx:42
+#: src/components/notifications/events/payload-preview.tsx:44
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:213
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:218
 msgid "Title"
@@ -9901,7 +9902,7 @@ msgid "Verify Output"
 msgstr "Verify Output"
 
 #: src/components/config/engines/engine-card.tsx:143
-#: src/components/notifications/events/payload-preview.tsx:75
+#: src/components/notifications/events/payload-preview.tsx:77
 msgid "Version"
 msgstr "Version"
 

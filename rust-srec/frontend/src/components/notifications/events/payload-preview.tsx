@@ -37,6 +37,8 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
         fullWidth: true,
       });
     }
+    if (inner.reason)
+      fields.push({ label: msg`Reason`, value: inner.reason, fullWidth: true });
 
     if (inner.title)
       fields.push({ label: msg`Title`, value: inner.title, fullWidth: true });

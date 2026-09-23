@@ -108,4 +108,46 @@ describe('PayloadPreview', () => {
     expect(screen.getByText('bilibili')).toBeInTheDocument();
     expect(screen.getByText('cookie expired')).toBeInTheDocument();
   });
+
+  it('shows why a download was rejected', () => {
+    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    renderWith(
+      i18n,
+      <PayloadPreview
+        payload={JSON.stringify({
+          DownloadRejected: {
+            streamer_id: 's1',
+            streamer_name: 'Streamer One',
+            session_id: 'session-1',
+            reason: 'output root is not writable',
+            timestamp: '2026-01-01T00:00:00Z',
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Reason:')).toBeInTheDocument();
+    expect(screen.getByText('output root is not writable')).toBeInTheDocument();
+    expect(screen.queryByText('Error:')).not.toBeInTheDocument();
+  });
+
+  it('shows why credentials became invalid', () => {
+    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    renderWith(
+      i18n,
+      <PayloadPreview
+        payload={JSON.stringify({
+          Credential: {
+            event: {
+              type: 'invalid',
+              platform: 'bilibili',
+              reason: 'session expired',
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('session expired')).toBeInTheDocument();
+  });
 });
