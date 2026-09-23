@@ -133,6 +133,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Added accessible names to icon buttons and keyboard support for schedule controls and backup import choices.
 - Completed translations for affected dialogs, player controls, cards, counts, validation errors, dates, times, and durations.
 - Added a sidebar account menu for API keys, account settings, password changes, and sign-out.
+- The preset editor now offers **Reset to defaults** for every processor, and asks before replacing a configuration you have edited.
 
 ## Monitoring and maintenance
 
