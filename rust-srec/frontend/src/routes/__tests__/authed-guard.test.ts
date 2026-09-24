@@ -8,7 +8,7 @@ import { Route as LogoutRoute } from '../logout';
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 const logoutFnMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/server/functions', () => ({
+vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
   logoutFn: logoutFnMock,
 }));

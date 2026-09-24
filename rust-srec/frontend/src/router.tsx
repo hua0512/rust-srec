@@ -4,6 +4,7 @@ import { routeTree } from './routeTree.gen';
 import { DefaultCatchBoundary } from './components/default-catch-boundary';
 import { NotFound } from './components/not-found';
 import * as TanstackQuery from './integrations/tanstack-query/root-provider';
+import { routerWithQueryHydration } from './integrations/tanstack-query/router-hydration';
 import { setupI18n } from '@lingui/core';
 import { routerWithLingui } from './integrations/lingui/router-plugin';
 import { registerPasswordChangeRedirect } from './lib/password-change-redirect';
@@ -45,6 +46,7 @@ export function getRouter() {
     },
   );
 
+  routerWithQueryHydration(router, rqContext.queryClient);
   registerPasswordChangeRedirect(router, i18n, rqContext.queryClient);
 
   return router;

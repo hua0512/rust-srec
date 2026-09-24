@@ -20,17 +20,16 @@ import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
-import type { Download } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
 
 interface StreamAvatarInfoProps {
   streamer: z.infer<typeof StreamerSchema>;
-  activeDownload?: Download;
+  hasRecoverySignal: boolean;
 }
 
 export const StreamAvatarInfo = ({
   streamer,
-  activeDownload,
+  hasRecoverySignal,
 }: StreamAvatarInfoProps) => {
   const platform = getPlatformFromUrl(streamer.url);
 
@@ -58,7 +57,7 @@ export const StreamAvatarInfo = ({
     'ERROR',
   ];
   const isStopped = stopStates.includes(streamer.state);
-  const isRecovering = isStreamerRecovering(streamer, activeDownload);
+  const isRecovering = isStreamerRecovering(streamer, hasRecoverySignal);
 
   return (
     <div className="flex items-center gap-3">

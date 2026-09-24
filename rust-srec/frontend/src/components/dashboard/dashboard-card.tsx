@@ -10,7 +10,7 @@ export function DashboardCard({
   return (
     <Card
       className={cn(
-        'bg-white/60 dark:bg-card/40 backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 group overflow-hidden relative',
+        'bg-white/60 dark:bg-card/40 border-black/5 dark:border-white/5 shadow-sm dark:shadow-2xl dark:shadow-black/5 hover:shadow-md dark:hover:shadow-black/10 transition-all duration-300 group overflow-hidden relative',
         className,
       )}
       {...props}

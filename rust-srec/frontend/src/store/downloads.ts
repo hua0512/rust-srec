@@ -139,6 +139,9 @@ interface DownloadStoreState {
   setSnapshot: (downloads: DownloadState[], queued: QueuedEntry[]) => void;
   upsertMeta: (meta: DownloadMeta) => void;
   upsertMetrics: (metrics: DownloadMetrics) => void;
+  // Applies metrics in arrival order as one store update, so a burst of
+  // progress ticks costs subscribers a single re-render.
+  upsertMetricsBatch: (batch: DownloadMetrics[]) => void;
   removeDownload: (downloadId: string) => void;
   setQueued: (entry: QueuedEntry) => void;
   clearQueuedByStreamer: (streamerId: string) => void;
@@ -147,6 +150,7 @@ interface DownloadStoreState {
 
   // Selectors
   getDownloadsByStreamer: (streamerId: string) => Download[];
+  getFirstDownloadByStreamer: (streamerId: string) => Download | undefined;
   getQueuedForStreamer: (streamerId: string) => QueuedEntry | undefined;
 }
 
@@ -235,23 +239,30 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       };
     }),
 
-  upsertMetrics: (metrics) =>
+  upsertMetrics: (metrics) => get().upsertMetricsBatch([metrics]),
+
+  upsertMetricsBatch: (batch) =>
     set((state) => {
-      const id = metrics.downloadId;
-      if (state.terminatedIds.has(id)) return state;
+      let changed = false;
+      for (const metrics of batch) {
+        const id = metrics.downloadId;
+        if (state.terminatedIds.has(id)) continue;
 
-      const existing = state.metricsById.get(id);
-      const newMetrics = { ...(existing ?? emptyMetrics(id)), ...metrics };
-      state.metricsById.set(id, newMetrics);
+        const existing = state.metricsById.get(id);
+        const newMetrics = { ...(existing ?? emptyMetrics(id)), ...metrics };
+        state.metricsById.set(id, newMetrics);
 
-      // Ensure meta exists for join selectors.
-      if (!state.metaById.has(id)) {
-        state.metaById.set(id, emptyMeta(id));
+        // Ensure meta exists for join selectors.
+        if (!state.metaById.has(id)) {
+          state.metaById.set(id, emptyMeta(id));
+        }
+
+        // Update view
+        const meta = state.metaById.get(id)!;
+        state.viewsById.set(id, toView(meta, newMetrics));
+        changed = true;
       }
-
-      // Update view
-      const meta = state.metaById.get(id)!;
-      state.viewsById.set(id, toView(meta, newMetrics));
+      if (!changed) return state;
 
       return {
         metaById: state.metaById,
@@ -337,6 +348,13 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       }
     }
     return result;
+  },
+
+  getFirstDownloadByStreamer: (streamerId) => {
+    for (const view of get().viewsById.values()) {
+      if (view.streamerId === streamerId) return view;
+    }
+    return undefined;
   },
 
   getQueuedForStreamer: (streamerId) => get().queuedByStreamer.get(streamerId),

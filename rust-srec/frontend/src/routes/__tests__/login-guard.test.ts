@@ -6,7 +6,7 @@ import { Route } from '../_public/login';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/server/functions', () => ({
+vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
 }));
 

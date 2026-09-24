@@ -14,7 +14,7 @@ vi.mock('sonner', () => ({
   toast: { warning: toastWarning },
 }));
 
-vi.mock('@/server/functions', () => ({
+vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: vi.fn(),
 }));
 

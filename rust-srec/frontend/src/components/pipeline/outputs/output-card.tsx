@@ -104,7 +104,7 @@ export function OutputCard({
       className={cn(
         // Tighter than the shared Card default (gap-6 py-6): three short rows
         // of metadata otherwise leave most of the card empty.
-        'relative h-full flex flex-col gap-3 py-4 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20',
+        'relative h-full flex flex-col gap-3 py-4 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 border-border/40 hover:border-primary/20',
         selectionMode && 'cursor-pointer select-none',
         isSelected && 'border-primary/50 ring-2 ring-primary',
       )}

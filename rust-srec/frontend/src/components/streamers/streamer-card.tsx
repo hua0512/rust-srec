@@ -14,6 +14,7 @@ import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { Check } from 'lucide-react';
 import { UploadIndicator } from './card/upload-indicator';
+import { hasStrongRecoverySignal } from './card/recovery-state';
 
 interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;
@@ -33,11 +34,16 @@ export const StreamerCard = memo(
     isSelected = false,
     onSelectionChange,
   }: StreamerCardProps) => {
-    // Query downloads for this streamer
-    const downloads = useDownloadStore(
-      useShallow((state) => state.getDownloadsByStreamer(streamer.id)),
+    // The card reads only what changes its layout: which download is shown
+    // and whether it has made enough progress to count as recovered. The
+    // figures that change on every progress tick are read by
+    // ProgressIndicator, so a tick re-renders that alone.
+    const activeDownloadId = useDownloadStore(
+      (state) => state.getFirstDownloadByStreamer(streamer.id)?.downloadId,
     );
-    const activeDownload = downloads?.[0]; // Show first active download
+    const hasRecoverySignal = useDownloadStore((state) =>
+      hasStrongRecoverySignal(state.getFirstDownloadByStreamer(streamer.id)),
+    );
 
     // Surface "queued waiting for slot" state when the streamer is
     // live but no active download has started yet. Cleared by the
@@ -48,11 +54,16 @@ export const StreamerCard = memo(
 
     // Live upload jobs for this streamer, pushed over the WS into the
     // uploads store (separate from the downloads store; see store/uploads.ts).
-    const activeUploads = useUploadStore(
-      useShallow((state) => state.getActiveUploadsByStreamer(streamer.id)),
+    const hasActiveUploads = useUploadStore(
+      (state) => state.getActiveUploadsByStreamer(streamer.id).length > 0,
     );
 
-    const status = useStreamerStatus(streamer, activeDownload, queuedEntry);
+    const status = useStreamerStatus(
+      streamer,
+      activeDownloadId !== undefined,
+      hasRecoverySignal,
+      queuedEntry,
+    );
 
     const toggleSelection = () => {
       if (selectionMode) {
@@ -100,8 +111,8 @@ export const StreamerCard = memo(
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2">
                   <StatusBadge status={status} />
-                  {activeUploads.length > 0 && (
-                    <UploadIndicator uploads={activeUploads} />
+                  {hasActiveUploads && (
+                    <UploadIndicator streamerId={streamer.id} />
                   )}
                 </div>
 
@@ -116,12 +127,12 @@ export const StreamerCard = memo(
 
               <StreamAvatarInfo
                 streamer={streamer}
-                activeDownload={activeDownload}
+                hasRecoverySignal={hasRecoverySignal}
               />
 
               {/* Download progress indicator */}
-              {activeDownload && (
-                <ProgressIndicator progress={activeDownload} />
+              {activeDownloadId !== undefined && (
+                <ProgressIndicator downloadId={activeDownloadId} />
               )}
             </div>
           </div>

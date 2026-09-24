@@ -336,15 +336,20 @@ function PipelineJobsPage() {
     [navigate],
   );
 
-  // Memoize mutation callbacks to prevent child re-renders
+  // Memoize mutation callbacks to prevent child re-renders. They depend on
+  // `mutate`, which is stable, rather than the mutation result object, which
+  // is new on every render.
+  const cancelPipelineMutate = cancelPipelineMutation.mutate;
+  const deletePipelineMutate = deletePipelineMutation.mutate;
+
   const handleCancelPipeline = useCallback(
-    (pipelineId: string) => cancelPipelineMutation.mutate(pipelineId),
-    [cancelPipelineMutation],
+    (pipelineId: string) => cancelPipelineMutate(pipelineId),
+    [cancelPipelineMutate],
   );
 
   const handleDeletePipeline = useCallback(
-    (pipelineId: string) => deletePipelineMutation.mutate(pipelineId),
-    [deletePipelineMutation],
+    (pipelineId: string) => deletePipelineMutate(pipelineId),
+    [deletePipelineMutate],
   );
 
   const handleRetryAllFailed = useCallback(

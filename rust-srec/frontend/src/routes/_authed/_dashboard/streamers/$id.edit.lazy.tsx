@@ -6,7 +6,6 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { Filter as FilterIcon } from 'lucide-react';
-import { useShallow } from 'zustand/react/shallow';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDownloadStore } from '@/store/downloads';
@@ -62,8 +61,10 @@ function EditStreamerPage() {
     queryFn: () => listFilters({ data: id }),
   });
 
-  const downloads = useDownloadStore(
-    useShallow((state) => state.getDownloadsByStreamer(id)),
+  // A boolean, so the page re-renders when recording starts or stops rather
+  // than on every progress tick; ActiveDownloadCard reads the figures.
+  const isRecording = useDownloadStore(
+    (state) => state.getFirstDownloadByStreamer(id) !== undefined,
   );
 
   const updateMutation = useMutation({
@@ -103,8 +104,6 @@ function EditStreamerPage() {
     return <EditStreamerSkeleton />;
   }
 
-  const isRecording = downloads.length > 0;
-
   return (
     <StreamerEditor
       mode="edit"
@@ -121,12 +120,7 @@ function EditStreamerPage() {
       }
       sidebar={
         <>
-          {isRecording && (
-            <ActiveDownloadCard
-              downloads={downloads}
-              isRecording={isRecording}
-            />
-          )}
+          {isRecording && <ActiveDownloadCard streamerId={id} />}
           <StatusCheckHistory streamerId={id} />
           <RecentSessionsList
             sessions={sessions?.items ?? []}

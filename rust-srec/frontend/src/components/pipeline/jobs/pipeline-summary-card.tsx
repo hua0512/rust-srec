@@ -136,7 +136,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
         }
       }}
       className={cn(
-        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl border-border/40 hover:border-primary/20 cursor-pointer',
+        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 border-border/40 hover:border-primary/20 cursor-pointer',
         selectionMode && 'select-none [&_a]:pointer-events-none',
         isSelected && 'border-primary/50 ring-2 ring-primary',
       )}

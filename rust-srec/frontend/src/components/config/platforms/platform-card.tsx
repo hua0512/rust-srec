@@ -39,7 +39,7 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
   const colorClass = getPlatformColor(platform.name);
 
   return (
-    <Card className="h-full flex flex-col border-border/50 bg-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300 hover:border-primary/20 group relative overflow-hidden">
+    <Card className="h-full flex flex-col border-border/50 bg-card/50 shadow-sm hover:shadow-md transition-all duration-300 hover:border-primary/20 group relative overflow-hidden">
       {/* Hover Glow Effect */}
       <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
 

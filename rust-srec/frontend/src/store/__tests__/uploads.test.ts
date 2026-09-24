@@ -71,3 +71,28 @@ describe('useUploadStore', () => {
     expect(useUploadStore.getState().version).toBe(versionBefore);
   });
 });
+
+describe('useUploadStore batched progress', () => {
+  beforeEach(() => {
+    useUploadStore.getState().clearAll();
+  });
+
+  it('applies a batch in arrival order as one update, skipping terminated jobs', () => {
+    const store = useUploadStore.getState();
+    store.upsertStarted(startedInput('job-1'));
+    store.upsertStarted(startedInput('job-2'));
+    store.remove('job-2');
+    const versionBefore = useUploadStore.getState().version;
+
+    store.upsertProgressBatch([
+      { jobId: 'job-1', streamerId: 'streamer-1', percent: 10 },
+      { jobId: 'job-2', streamerId: 'streamer-1', percent: 20 },
+      { jobId: 'job-1', streamerId: 'streamer-1', percent: 30 },
+    ]);
+
+    const state = useUploadStore.getState();
+    expect(state.version).toBe(versionBefore + 1);
+    expect(state.uploadsByJobId.get('job-1')?.percent).toBe(30);
+    expect(state.uploadsByJobId.has('job-2')).toBe(false);
+  });
+});
