@@ -7,15 +7,10 @@ This folder contains the Tauri desktop wrapper for `rust-srec`.
 - Starts the `rust-srec` backend in-process (scheduler + API server).
 - Binds the API server to `127.0.0.1:0` (ephemeral port).
 - Uses a single-instance mechanism so attempting to start the app twice focuses the existing window.
-- When a 2nd instance is attempted, the running instance receives a `rust-srec://single-instance`
-  event with the argv/cwd payload.
-- Uses an exclusive lock file under the app data directory as a safety net to prevent multiple
-  instances from starting against the same SQLite database.
+- Acquires a runtime lease keyed on the SQLite database as a safety net, so neither a second
+  desktop instance nor a standalone `rust-srec` server can start against the same database.
 - Injects the resolved backend base URL into the webview as:
   - `globalThis.__RUST_SREC_BACKEND_URL__ = "http://127.0.0.1:<port>"`
-- Injects initial launch argv/cwd into the webview as:
-  - `globalThis.__RUST_SREC_LAUNCH_ARGS__ = [...]`
-  - `globalThis.__RUST_SREC_LAUNCH_CWD__ = "..."`
 - On first run, if the database output folder is still the docker default (`/app/output`), it is
   updated to a desktop-safe directory under the app data directory.
 - Ensures auth is consistently enabled by generating (and persisting) a per-install `JWT_SECRET`

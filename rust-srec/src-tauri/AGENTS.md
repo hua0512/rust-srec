@@ -6,21 +6,21 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
 - Tauri wrapper for `rust-srec`.
 - Runs backend in-process (scheduler + API server).
 - Binds to `127.0.0.1:0` (ephemeral port).
-- Enforces single-instance with window focusing and `rust-srec://single-instance` events.
-- Injects `__RUST_SREC_BACKEND_URL__`, `__RUST_SREC_LAUNCH_ARGS__`, and `__RUST_SREC_LAUNCH_CWD__` into webview.
+- Enforces single-instance: a second launch focuses the existing window.
+- Injects `__RUST_SREC_BACKEND_URL__`, `__RUST_SREC_BOOT_ERROR__`, and `__RUST_SREC_DESKTOP_NOTIFICATIONS__` into the webview.
 
 ## WHERE TO LOOK
-- `src/main.rs`: Entry point, single-instance setup, lock file management.
-- `src/lib.rs`: App setup, backend initialization, state management, window events.
+- `src/main.rs`: Binary shim calling `rust_srec_desktop_lib::run()`; keep its `windows_subsystem` attribute.
+- `src/lib.rs`: App setup, single-instance plugin, database lease, backend initialization, state management, window events.
 - `src/desktop_notifications.rs`: Native OS notification integration.
 - `tauri.conf.json`: Tauri configuration (capabilities, build settings, beforeDevCommand).
 
 ## CONVENTIONS
-- **In-process backend**: Backend runs in a dedicated thread managed by Tauri.
+- **In-process backend**: Backend tasks run on Tauri's async runtime (`tauri::async_runtime`).
 - **Port management**: Always use ephemeral port `0` for binding; read back resolved port for webview injection.
 - **Persistence**: 
   - `JWT_SECRET` generated and persisted in app data dir if not in env.
-  - Exclusive lock file prevents concurrent access to same SQLite DB.
+  - A `RuntimeLease` keyed on the SQLite database keeps a second backend (desktop or standalone server) off the same DB.
 - **First-run rewrite**: Detect docker-default `/app/output` in DB and rewrite to `<app_data_dir>/output`.
 
 ## ANTI-PATTERNS
