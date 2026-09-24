@@ -15,7 +15,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { isDesktopBuild } from '@/utils/desktop';
-import { buildThemeScriptHTML } from '@/lib/theme-script';
+import { buildThemeScriptHTML, THEME_SCRIPT_ATTRS } from '@/lib/theme-script';
 import type { Mode } from '@/lib/theme-config';
 
 type DevtoolsModules = {
@@ -118,6 +118,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
     scripts: [
       {
+        ...THEME_SCRIPT_ATTRS,
         children: buildThemeScriptHTML(),
       },
     ],

@@ -119,6 +119,18 @@ function themeScript(
 }
 
 /**
+ * Attributes for the <script> element carrying the blocking script on the web
+ * build. Cloudflare Rocket Loader rewrites every script on a proxied page to
+ * run after the window load event — after first paint, which would then show
+ * the cookie-derived mode and the default palette until it replayed this
+ * script. `data-cfasync="false"` is Cloudflare's per-script opt-out; it must be
+ * in the served markup, so it is rendered by the server rather than set later.
+ * Spread it into the head() script entry: as an object-literal key the
+ * hyphenated name trips TypeScript's excess property check.
+ */
+export const THEME_SCRIPT_ATTRS = { 'data-cfasync': 'false' } as const;
+
+/**
  * Build the inline script string for injection into <head>.
  * `cacheId` is overridable so vite.desktop.config.ts can pass the exact value
  * it also sets as the `__THEME_CACHE_ID__` define (they must match, or the

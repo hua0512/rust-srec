@@ -140,6 +140,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - The sidebar notification dot now animates in when a new critical event arrives and fades out once it has been seen.
 - The streamer list now opens with its cards already in place, and the dashboard shows its system and pipeline summaries straight away, instead of placeholders that fill in a few seconds later. The web interface also downloads less when it first loads.
 - Pages showing live recordings use much less processing power while downloads are running, so the interface stays responsive and laptops stay cooler with many recordings in progress.
+- Fixed a brief flash of the wrong colours when opening the web interface behind Cloudflare with Rocket Loader enabled. Your light/dark mode and custom theme now appear from the first frame.
 
 ## Monitoring and maintenance
 
