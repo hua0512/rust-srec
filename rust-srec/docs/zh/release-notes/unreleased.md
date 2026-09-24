@@ -156,7 +156,7 @@
 ## 部署与桌面端
 
 - HTTPS 反向代理传递的协议用于自动设置安全登录 Cookie。`COOKIE_SECURE` 仍可覆盖自动判断；使用明文 HTTP 的生产部署会记录警告。
-- Web 容器改以普通账号而非 `root` 运行应用服务，并为所有响应添加 `X-Content-Type-Options`、`X-Frame-Options` 和 `Referrer-Policy` 响应头；如果反向代理已添加这些响应头，请只保留一处。空闲的实时进度和日志连接可保持一小时，不再一分钟后断开。自行构建镜像时，不再打包 Web 源码目录中遗留的本地数据库文件。
+- Web 容器改以普通账号而非 `root` 运行应用服务，并为所有响应添加 `X-Content-Type-Options`、`X-Frame-Options` 和 `Referrer-Policy` 响应头；如果反向代理已添加这些响应头，请只保留一处。自行构建镜像时，不再打包 Web 源码目录中遗留的本地数据库文件。
 - 新增可选 Watchtower 自动更新，通过 `docker compose --profile autoupdate up -d` 启用，使用无需认证的 `/api/health/idle` 检查。需要可变镜像标签，空闲检查后才开始的录制仍可能中断；自动升级应保留备份。详见[自动更新](../operations/upgrading.md#自动更新-watchtower)。
 - 安装脚本根据系统语言或 `SREC_LANG` 选择中英文，检查下载内容，并在无法安全生成密钥时停止。
 - 修复内置 systemd 单元的权限、状态与日志目录、环境加载和关闭等待。新数据库使用 `/var/lib/rust-srec/output`，已有数据库保留保存的目录。录制文件可由服务账号及其用户组读取。详见 [systemd 安装](../getting-started/installation.md#systemd-服务-linux)。

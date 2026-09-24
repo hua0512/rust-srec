@@ -19,9 +19,8 @@ dist-desktop
 **/*.db-shm
 **/*.db-journal
 
-# Local environment overrides. The image is configured through runtime
-# environment variables, and a local file would silently win over them at
-# build time.
+# Local environment overrides. `pnpm run build` reads them and bakes any
+# VITE_* values they set, such as an API base URL, into the client bundle.
 .env.local
 .env.production
 .env.*.local
