@@ -50,14 +50,14 @@ export const UserMenu = React.memo(function UserMenu({
               <Button
                 variant="ghost"
                 className={cn(
-                  'w-full h-12 mt-5 gap-0 transition-all duration-200 group overflow-hidden rounded-xl',
-                  !isOpen
-                    ? 'justify-center px-0'
-                    : 'justify-start px-2.5 hover:bg-accent/60',
+                  'w-full h-12 mt-5 gap-0 justify-start group/row overflow-hidden rounded-xl transition-[padding,color,background-color] duration-(--sidebar-duration) ease-(--sidebar-ease)',
+                  isOpen
+                    ? 'px-2.5 hover:bg-accent/60'
+                    : 'pl-[calc(var(--sidebar-rail)/2-1.125rem)] pr-0',
                 )}
               >
                 <div className="relative shrink-0">
-                  <Avatar className="size-9 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 shadow-xs transition-all duration-300 group-hover:scale-105 group-hover:shadow-md group-hover:shadow-primary/10 group-hover:border-primary/30">
+                  <Avatar className="size-9 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 shadow-xs transition-all duration-300 group-hover/row:scale-105 group-hover/row:shadow-md group-hover/row:shadow-primary/10 group-hover/row:border-primary/30">
                     <AvatarFallback className="rounded-xl bg-transparent text-primary text-sm font-semibold tracking-wide select-none">
                       {initial}
                     </AvatarFallback>
@@ -66,14 +66,13 @@ export const UserMenu = React.memo(function UserMenu({
                 </div>
                 <div
                   className={cn(
-                    'items-center gap-2 min-w-0 transition-all duration-300',
-                    !isOpen
-                      ? 'opacity-0 w-0 pointer-events-none hidden'
-                      : 'flex flex-1 opacity-100 ml-3',
+                    'flex shrink-0 w-[calc(var(--sidebar-row)-4.25rem)] ml-3 items-center gap-2 transition-opacity duration-(--sidebar-duration) ease-(--sidebar-ease)',
+                    !isOpen &&
+                      'opacity-0 duration-(--sidebar-fade-out) pointer-events-none',
                   )}
                 >
                   <div className="flex flex-col items-start min-w-0">
-                    <span className="truncate text-sm font-medium leading-tight text-foreground/90 group-hover:text-foreground transition-colors">
+                    <span className="truncate text-sm font-medium leading-tight text-foreground/90 group-hover/row:text-foreground transition-colors">
                       {username}
                     </span>
                     {roles && (
@@ -82,7 +81,7 @@ export const UserMenu = React.memo(function UserMenu({
                       </span>
                     )}
                   </div>
-                  <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/70 group-hover:text-muted-foreground transition-colors" />
+                  <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/70 group-hover/row:text-muted-foreground transition-colors" />
                 </div>
               </Button>
             </DropdownMenuTrigger>
