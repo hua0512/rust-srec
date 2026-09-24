@@ -63,7 +63,7 @@
     "lucide-react": "^1.47.0",
     "motion": "^13.4.1",
     "mpegts.js": "^1.8.2",
-    "nitro": "3.0.260903-beta",
+    "nitro": "latest",
     "qrcode.react": "^4.2.0",
     "react": "^19.3.0",
     "react-day-picker": "^10.0.1",
