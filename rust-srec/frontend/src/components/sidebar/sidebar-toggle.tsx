@@ -31,7 +31,7 @@ export const SidebarToggle = React.memo(function SidebarToggle({
       >
         <Icon
           className={cn(
-            'h-4 w-4 transition-transform ease-in-out duration-700',
+            'h-4 w-4 transition-transform duration-(--sidebar-duration) ease-(--sidebar-ease)',
             !isOpen ? 'rotate-180' : 'rotate-0',
           )}
         />
