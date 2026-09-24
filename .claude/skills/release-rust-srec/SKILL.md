@@ -21,8 +21,8 @@ This is the canonical application release procedure. Paths below are relative to
 - **Tags**: use `rust-srec-vX.Y.Z`. Bare `vX.Y.Z` tags are from another lineage; `strev-v*` and `mesio-v*` are separate releases.
 - **Release body**: `.github/workflows/release-rust-srec.yml` publishes `rust-srec/docs/release-notes-body.md` directly.
 
-List application tags with `git tag --list 'rust-srec-v*' --sort=-v:refname` and select the applicable release baseline for the target branch. Review `git log <last-tag>..HEAD`; inspect relevant changes and the previous versioned notes when needed. A nonempty unreleased page at the last tag or a different commit-message style does not prove an item is invalid. Confirm that claims are present in the target release and have not already been announced; resolve unsupported claims before presenting the notes as ready.
+List application tags with `git tag --list 'rust-srec-v*' --sort=-v:refname` and select the applicable release baseline for the target branch. Review `git log <last-tag>..HEAD`; inspect relevant changes and the previous versioned notes when needed. Confirm that claims are present in the target release and have not already been announced; resolve unsupported claims before presenting the notes as ready.
 
-Use an explicitly requested version. Otherwise recommend patch for fixes/reliability/dependency-only changes, minor for new user-facing features, and explain any breaking-change or migration implications using the project's versioning conventions. Do not infer the next version from a historical release-line example.
+Use an explicitly requested version. Otherwise recommend patch for fixes/reliability/dependency-only changes, minor for new user-facing features, and explain any breaking-change or migration implications using the project's versioning conventions.
 
 For a large release, independent drafting/review can be parallelized when delegation is available and authorized. It is optional, with the same evidence and locale checks as a single-agent pass.

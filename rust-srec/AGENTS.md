@@ -11,7 +11,7 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 - `src/pipeline/`: Post-processing DAG logic (segment, session completion).
 - `src/downloader/`: Manager for `ffmpeg`, `streamlink`, and `mesio` engines.
 - `src/database/`: SQLx repositories and models; migrations are in `migrations/`.
-- `src/notification/`: Event-driven system (Discord, Email, Webhooks, Web Push).
+- `src/notification/`: Event-driven notifications; channel implementations live in `channels/`, browser push in `web_push/`.
 - `src/credentials/`: Platform-specific credential/cookie management.
 
 ## WHERE TO LOOK
