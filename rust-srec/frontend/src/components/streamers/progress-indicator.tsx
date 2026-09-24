@@ -4,16 +4,18 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration, formatSpeed } from '../../lib/format';
 import { cn } from '../../lib/utils';
-import type { Download } from '@/store/downloads';
+import { useDownloadStore } from '@/store/downloads';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { StatusInfoTooltip } from '../shared/status-info-tooltip';
 
 interface ProgressIndicatorProps {
-  progress: Download;
+  downloadId: string;
 }
 
-export function ProgressIndicator({ progress }: ProgressIndicatorProps) {
+export function ProgressIndicator({ downloadId }: ProgressIndicatorProps) {
   const { i18n } = useLingui();
+  const progress = useDownloadStore((state) => state.viewsById.get(downloadId));
+  if (!progress) return null;
   const isHealthy = progress.playbackRatio >= 1.0;
   const cdnHost = progress.cdnHost || '';
   const tooltipTheme = isHealthy ? 'blue' : 'orange';

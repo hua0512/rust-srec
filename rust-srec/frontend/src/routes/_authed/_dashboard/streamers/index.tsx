@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { searchParamsValidator } from '@/lib/search-params';
-import { PrioritySchema } from '@/api/schemas';
+import { PrioritySchema } from '@/api/schemas/common';
+import { streamersListQueryOptions } from '@/api/streamers';
+import { awaitOnServer } from '@/lib/route-prefetch';
 
 // Search params schema for URL persistence — keeps filters/search/pagination in
 // the URL so they survive navigation into a streamer detail/edit page and reloads.
@@ -28,4 +30,7 @@ const validateSearch = searchParamsValidator({
 
 export const Route = createFileRoute('/_authed/_dashboard/streamers/')({
   validateSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context: { queryClient }, deps }) =>
+    awaitOnServer(queryClient.prefetchQuery(streamersListQueryOptions(deps))),
 });

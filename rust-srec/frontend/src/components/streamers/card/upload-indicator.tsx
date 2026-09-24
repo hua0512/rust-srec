@@ -9,7 +9,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatBytes, formatSpeed } from '@/lib/format';
-import type { UploadView } from '@/store/uploads';
+import { useShallow } from 'zustand/react/shallow';
+import { useUploadStore } from '@/store/uploads';
 
 /**
  * Pulsing cloud badge on the streamer card while upload job(s) for this
@@ -17,8 +18,11 @@ import type { UploadView } from '@/store/uploads';
  * Presence-only in the card layout — the download ProgressIndicator keeps
  * the card's progress-bar real estate.
  */
-export function UploadIndicator({ uploads }: { uploads: UploadView[] }) {
+export function UploadIndicator({ streamerId }: { streamerId: string }) {
   const { i18n } = useLingui();
+  const uploads = useUploadStore(
+    useShallow((state) => state.getActiveUploadsByStreamer(streamerId)),
+  );
 
   if (uploads.length === 0) return null;
 

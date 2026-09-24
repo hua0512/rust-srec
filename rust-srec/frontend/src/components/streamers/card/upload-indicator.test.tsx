@@ -3,14 +3,17 @@ import { I18nProvider } from '@lingui/react';
 import { render, screen } from '@testing-library/react';
 
 import { UploadIndicator } from './upload-indicator';
-import type { UploadView } from '@/store/uploads';
+import { useUploadStore, type UploadView } from '@/store/uploads';
 
 function renderIndicator(uploads: UploadView[]) {
   const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+  useUploadStore.setState({
+    uploadsByJobId: new Map(uploads.map((upload) => [upload.jobId, upload])),
+  });
 
   return render(
     <I18nProvider i18n={i18n}>
-      <UploadIndicator uploads={uploads} />
+      <UploadIndicator streamerId="streamer-1" />
     </I18nProvider>,
   );
 }
@@ -24,7 +27,7 @@ function createUpload(overrides: Partial<UploadView> = {}): UploadView {
     filesTotal: 2,
     startedAtMs: 1n,
     percent: 50,
-    lastEventAtMs: 1,
+    lastEventAtMs: Date.now(),
     ...overrides,
   };
 }
@@ -39,7 +42,7 @@ describe('UploadIndicator', () => {
   it('shows the upload count when several uploads are active', () => {
     renderIndicator([
       createUpload({ percent: 26.3 }),
-      createUpload({ jobId: 'job-2', percent: 100, lastEventAtMs: 2 }),
+      createUpload({ jobId: 'job-2', percent: 100 }),
     ]);
 
     expect(screen.getByText('2')).toBeInTheDocument();

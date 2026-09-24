@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
-import { getSystemHealth } from '@/server/functions';
+import { getSystemHealth } from '@/server/functions/system';
 
 const UI_BUILD =
   typeof import.meta.env.VITE_UI_BUILD === 'string' &&

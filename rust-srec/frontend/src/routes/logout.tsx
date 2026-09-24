@@ -1,6 +1,6 @@
 import { redirect, createFileRoute } from '@tanstack/react-router';
 
-import { logoutFn } from '@/server/functions';
+import { logoutFn } from '@/server/functions/auth';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';

@@ -16,14 +16,15 @@ import { StreamerSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
-import type { Download, QueuedEntry } from '@/store/downloads';
+import type { QueuedEntry } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
 import { formatDate } from '@/lib/datetime';
 import { formatRelativeTime } from '@/lib/date-utils';
 
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
-  activeDownload?: Download,
+  hasActiveDownload: boolean,
+  hasRecoverySignal: boolean,
   queuedEntry?: QueuedEntry,
 ) {
   const { i18n } = useLingui();
@@ -72,7 +73,7 @@ export function useStreamerStatus(
       'ERROR',
     ];
     const isStopped = stopStates.includes(streamer.state);
-    const isRecovering = isStreamerRecovering(streamer, activeDownload);
+    const isRecovering = isStreamerRecovering(streamer, hasRecoverySignal);
 
     if (isRecovering) {
       return {
@@ -249,7 +250,7 @@ export function useStreamerStatus(
     // download slot to free up. Renders BEFORE the standard LIVE
     // branch so the user sees "why nothing is recording" rather than
     // a bare red Live dot with no progress indicator.
-    if (streamer.state === 'LIVE' && queuedEntry && !activeDownload) {
+    if (streamer.state === 'LIVE' && queuedEntry && !hasActiveDownload) {
       const queuedDate = new Date(Number(queuedEntry.queuedAtMs));
       const queuedDateValid =
         !isNaN(queuedDate.getTime()) && queuedDate.getFullYear() > 1970;
@@ -417,5 +418,5 @@ export function useStreamerStatus(
       pulsing: false,
       tooltip: null,
     };
-  }, [activeDownload, queuedEntry, streamer, i18n, now]);
+  }, [hasActiveDownload, hasRecoverySignal, queuedEntry, streamer, i18n, now]);
 }

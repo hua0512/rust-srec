@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { checkAuthFn } from '@/server/functions';
+import { checkAuthFn } from '@/server/functions/auth';
 
 /**
  * Longest a session check is reused. Short enough that a session revoked on

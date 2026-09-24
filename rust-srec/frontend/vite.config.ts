@@ -44,6 +44,9 @@ export default defineConfig(() => ({
     devtools(),
     previewCacheHeaders(),
     nitro({
+      // Ship .br/.gz next to each asset so the server sends them as-is instead
+      // of leaving compression to a proxy's fast, low-ratio default.
+      compressPublicAssets: { gzip: true, brotli: true },
       routeRules: {
         '/assets/**': {
           headers: {

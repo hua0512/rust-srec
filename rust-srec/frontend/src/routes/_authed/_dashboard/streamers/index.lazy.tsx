@@ -8,7 +8,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useEffect, useCallback } from 'react';
 import {
-  listStreamers,
   deleteStreamer,
   updateStreamer,
   listPlatformConfigs,
@@ -16,6 +15,10 @@ import {
 } from '@/server/functions';
 import type { BatchStreamerAction } from '@/api/schemas';
 import { templatesQueryOptions } from '@/api/templates';
+import {
+  STREAMERS_DEFAULT_PAGE_SIZE,
+  streamersListQueryOptions,
+} from '@/api/streamers';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -105,7 +108,7 @@ function StreamersPage() {
   // Filters/search/pagination live in the URL so they survive navigation into a
   // streamer detail/edit page and reloads. Selection state stays local.
   const page = search.page ?? 1;
-  const pageSize = search.size ?? 24;
+  const pageSize = search.size ?? STREAMERS_DEFAULT_PAGE_SIZE;
   const debouncedSearch = search.q ?? '';
   const platformFilter = search.platform ?? 'all';
   const templateFilter = search.template ?? 'all';
@@ -204,53 +207,7 @@ function StreamersPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: [
-      'streamers',
-      page,
-      pageSize,
-      debouncedSearch,
-      platformFilter,
-      templateFilter,
-      stateFilter,
-      priorityFilter,
-      exceptionalStates,
-      sortOption,
-    ],
-    queryFn: async () => {
-      const platform = platformFilter === 'all' ? undefined : platformFilter;
-      const template =
-        templateFilter === 'all' || templateFilter === '__unassigned__'
-          ? undefined
-          : templateFilter;
-      const state =
-        exceptionalStates.length > 0
-          ? exceptionalStates.join(',')
-          : stateFilter === 'all'
-            ? undefined
-            : stateFilter;
-      const priority = priorityFilter === 'all' ? undefined : priorityFilter;
-      const [sortBy, sortDir] =
-        sortOption === 'default'
-          ? [undefined, undefined]
-          : (sortOption.split('-') as [
-              'name' | 'priority' | 'state' | 'updated',
-              'asc' | 'desc',
-            ]);
-      return listStreamers({
-        data: {
-          page,
-          limit: pageSize,
-          search: debouncedSearch,
-          platform,
-          template,
-          templateUnassigned: templateFilter === '__unassigned__',
-          state,
-          priority,
-          sortBy: sortBy === 'updated' ? 'updated_at' : sortBy,
-          sortDir,
-        },
-      });
-    },
+    ...streamersListQueryOptions(search),
     placeholderData: keepPreviousData,
     // Live download state reaches the cards over the live connection, so this
     // only has to catch changes made elsewhere: the same relaxed interval the
@@ -746,7 +703,10 @@ function StreamersPage() {
 
       {/* Content Content */}
       <div className="p-4 md:px-8 pb-20">
-        <AnimatePresence mode="wait">
+        {/* initial={false}: a list already there on the first render (server
+            rendered, or loaded while hovering the link) shows at once rather
+            than fading in from invisible; later swaps still animate. */}
+        <AnimatePresence mode="wait" initial={false}>
           {isLoading ? (
             <motion.div
               key="loading"

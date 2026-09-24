@@ -7,7 +7,7 @@ import { useSignedOutRedirect } from '../use-signed-out-redirect';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@/server/functions', () => ({
+vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
 }));
 

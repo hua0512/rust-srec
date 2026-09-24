@@ -4,7 +4,9 @@ import type { Download } from '@/store/downloads';
 
 const RECOVERY_PROGRESS_MIN_BYTES = 8n * 1024n * 1024n;
 
-function hasStrongRecoverySignal(activeDownload?: Download | null): boolean {
+export function hasStrongRecoverySignal(
+  activeDownload?: Download | null,
+): boolean {
   if (!activeDownload) {
     return false;
   }
@@ -18,13 +20,13 @@ function hasStrongRecoverySignal(activeDownload?: Download | null): boolean {
 
 export function isStreamerRecovering(
   streamer: z.infer<typeof StreamerSchema>,
-  activeDownload?: Download | null,
+  hasRecoverySignal: boolean,
 ): boolean {
   return (
     (streamer.state === 'LIVE' || streamer.state === 'TEMPORAL_DISABLED') &&
     (streamer.consecutive_error_count > 0 ||
       !!streamer.disabled_until ||
       !!streamer.last_error) &&
-    hasStrongRecoverySignal(activeDownload)
+    hasRecoverySignal
   );
 }

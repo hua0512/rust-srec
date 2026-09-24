@@ -9,7 +9,7 @@ import {
   LoginRequestSchema,
   LoginResponseSchema,
   ChangePasswordRequestSchema,
-} from '../../api/schemas';
+} from '../../api/schemas/auth';
 import { z } from 'zod';
 import ky from 'ky';
 

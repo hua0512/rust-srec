@@ -6,7 +6,7 @@ import { StreamerCard } from '../streamer-card';
 vi.mock('@/store/downloads', () => ({
   useDownloadStore: (selector: (state: unknown) => unknown) =>
     selector({
-      getDownloadsByStreamer: () => [],
+      getFirstDownloadByStreamer: () => undefined,
       getQueuedForStreamer: () => undefined,
     }),
 }));

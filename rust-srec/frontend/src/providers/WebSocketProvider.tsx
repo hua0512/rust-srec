@@ -1,4 +1,4 @@
-import { useCallback, ReactNode } from 'react';
+import { useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import {
   useQuery,
@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
-import { useDownloadStore } from '@/store/downloads';
+import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import type { UploadProgressInput, UploadStartedInput } from '@/store/uploads';
 import type {
@@ -26,7 +26,16 @@ import { WebSocketContext } from './WebSocketContext';
 import {
   StreamerCheckHistoryEntrySchema,
   type StreamerCheckHistoryEntry,
-} from '@/server/functions/streamers';
+} from '@/api/schemas/check-history';
+
+/**
+ * How long progress ticks are held before they reach the stores. Every active
+ * download and upload reports about once a second, each at its own moment, so
+ * applying them one by one re-renders and re-lays-out the page once per
+ * message. Collecting them into one update per window keeps each figure at its
+ * one-second cadence while the page updates only a couple of times a second.
+ */
+export const PROGRESS_FLUSH_MS = 500;
 
 export async function handleUploadTerminal(
   queryClient: QueryClient,
@@ -59,7 +68,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Download store actions
   const setSnapshot = useDownloadStore((state) => state.setSnapshot);
   const upsertMeta = useDownloadStore((state) => state.upsertMeta);
-  const upsertMetrics = useDownloadStore((state) => state.upsertMetrics);
+  const upsertMetricsBatch = useDownloadStore(
+    (state) => state.upsertMetricsBatch,
+  );
   const removeDownload = useDownloadStore((state) => state.removeDownload);
   const setQueued = useDownloadStore((state) => state.setQueued);
   const clearQueuedByStreamer = useDownloadStore(
@@ -75,7 +86,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // re-render download-store subscribers; see store/uploads.ts).
   const setUploadSnapshot = useUploadStore((state) => state.setSnapshot);
   const upsertUploadStarted = useUploadStore((state) => state.upsertStarted);
-  const upsertUploadProgress = useUploadStore((state) => state.upsertProgress);
+  const upsertUploadProgressBatch = useUploadStore(
+    (state) => state.upsertProgressBatch,
+  );
   const removeUpload = useUploadStore((state) => state.remove);
   const clearAllUploads = useUploadStore((state) => state.clearAll);
 
@@ -85,12 +98,59 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // strips for the same streamer (different slot counts) all stay live.
   const queryClient = useQueryClient();
 
+  // Progress ticks waiting for the next flush, in arrival order.
+  const pendingMetricsRef = useRef<DownloadMetrics[]>([]);
+  const pendingUploadProgressRef = useRef<UploadProgressInput[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  const flushProgress = useCallback(() => {
+    if (flushTimerRef.current !== undefined) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    const metrics = pendingMetricsRef.current;
+    const uploads = pendingUploadProgressRef.current;
+    pendingMetricsRef.current = [];
+    pendingUploadProgressRef.current = [];
+    if (metrics.length > 0) upsertMetricsBatch(metrics);
+    if (uploads.length > 0) upsertUploadProgressBatch(uploads);
+  }, [upsertMetricsBatch, upsertUploadProgressBatch]);
+
+  const scheduleProgressFlush = useCallback(() => {
+    if (flushTimerRef.current === undefined) {
+      flushTimerRef.current = setTimeout(flushProgress, PROGRESS_FLUSH_MS);
+    }
+  }, [flushProgress]);
+
+  const dropPendingProgress = useCallback(() => {
+    if (flushTimerRef.current !== undefined) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    pendingMetricsRef.current = [];
+    pendingUploadProgressRef.current = [];
+  }, []);
+
+  useEffect(() => dropPendingProgress, [dropPendingProgress]);
+
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       try {
         const data = new Uint8Array(event.data as ArrayBuffer);
         const message = fromBinary(WsMessageSchema, data);
         // console.debug('[WS] Received message:', message.eventType);
+
+        // Only progress ticks are held back. Any other event first applies
+        // the ticks received before it, so the stores still see every event
+        // in the order the server sent them.
+        if (
+          message.eventType !== EventType.DOWNLOAD_METRICS &&
+          message.eventType !== EventType.UPLOAD_PROGRESS
+        ) {
+          flushProgress();
+        }
 
         switch (message.eventType) {
           case EventType.SNAPSHOT:
@@ -164,7 +224,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.UPLOAD_PROGRESS:
             if (message.payload.case === 'uploadProgress') {
-              upsertUploadProgress(wireUploadProgress(message.payload.value));
+              pendingUploadProgressRef.current.push(
+                wireUploadProgress(message.payload.value),
+              );
+              scheduleProgressFlush();
             }
             break;
 
@@ -212,7 +275,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.DOWNLOAD_METRICS:
             if (message.payload.case === 'downloadMetrics') {
-              upsertMetrics(message.payload.value);
+              pendingMetricsRef.current.push(message.payload.value);
+              scheduleProgressFlush();
             }
             break;
 
@@ -313,15 +377,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     [
       setSnapshot,
       upsertMeta,
-      upsertMetrics,
       removeDownload,
       setQueued,
       clearQueuedByStreamer,
       setUploadSnapshot,
       upsertUploadStarted,
-      upsertUploadProgress,
       removeUpload,
       queryClient,
+      flushProgress,
+      scheduleProgressFlush,
     ],
   );
 
@@ -333,10 +397,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
    * reason.
    */
   const handleDisconnect = useCallback(() => {
+    dropPendingProgress();
     clearAll();
     // Uploads live in their own store and have to be emptied separately.
     clearAllUploads();
-  }, [clearAll, clearAllUploads]);
+  }, [clearAll, clearAllUploads, dropPendingProgress]);
 
   const { send } = useAuthedWebSocket({
     accessToken,

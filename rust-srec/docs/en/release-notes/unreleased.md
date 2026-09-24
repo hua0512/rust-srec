@@ -138,6 +138,8 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Fixed log file download errors appearing untranslated or blank.
 - The preset editor now offers **Reset to defaults** for every processor, and asks before replacing a configuration you have edited.
 - The sidebar notification dot now animates in when a new critical event arrives and fades out once it has been seen.
+- The streamer list now opens with its cards already in place, and the dashboard shows its system and pipeline summaries straight away, instead of placeholders that fill in a few seconds later. The web interface also downloads less when it first loads.
+- Pages showing live recordings use much less processing power while downloads are running, so the interface stays responsive and laptops stay cooler with many recordings in progress.
 
 ## Monitoring and maintenance
 

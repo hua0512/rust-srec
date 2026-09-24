@@ -1,10 +1,4 @@
-import {
-  getSystemHealth,
-  getPipelineStats,
-  listStreamers,
-  deleteStreamer,
-  updateStreamer,
-} from '@/server/functions';
+import { deleteStreamer, updateStreamer } from '@/server/functions';
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardCard } from '@/components/dashboard/dashboard-card';
@@ -28,6 +22,11 @@ import {
   type LinkProps,
 } from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import {
+  liveStreamersQueryOptions,
+  pipelineStatsQueryOptions,
+  systemHealthQueryOptions,
+} from '@/api/dashboard';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -98,20 +97,17 @@ function Dashboard() {
   // other overview pages use. Anything that moves second by second — download
   // and upload progress — arrives over the live connection, not from here.
   const { data: health, isLoading: isHealthLoading } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => getSystemHealth(),
+    ...systemHealthQueryOptions,
     refetchInterval: 10000,
   });
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['pipeline', 'stats'],
-    queryFn: () => getPipelineStats(),
+    ...pipelineStatsQueryOptions,
     refetchInterval: 10000,
   });
 
   const { data: streamers, isLoading: isStreamersLoading } = useQuery({
-    queryKey: ['streamers', 'active'],
-    queryFn: () => listStreamers({ data: { limit: 100, state: 'LIVE' } }),
+    ...liveStreamersQueryOptions,
     refetchInterval: 10000,
   });
 
@@ -141,20 +137,25 @@ function Dashboard() {
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
+  // `mutate` is stable while the mutation result object is not, so the
+  // memoized cards keep their props across polls.
+  const deleteMutate = deleteMutation.mutate;
+  const toggleMutate = toggleMutation.mutate;
+
   const handleDelete = useCallback(
     (id: string) => {
       if (
         confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
       ) {
-        deleteMutation.mutate(id);
+        deleteMutate(id);
       }
     },
-    [deleteMutation, i18n],
+    [deleteMutate, i18n],
   );
 
   const handleToggle = useCallback(
-    (id: string, enabled: boolean) => toggleMutation.mutate({ id, enabled }),
-    [toggleMutation],
+    (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
+    [toggleMutate],
   );
 
   const dbComponent = useMemo(

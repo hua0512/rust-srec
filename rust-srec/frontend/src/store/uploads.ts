@@ -77,6 +77,8 @@ interface UploadStoreState {
   ) => void;
   upsertStarted: (started: UploadStartedInput) => void;
   upsertProgress: (progress: UploadProgressInput) => void;
+  // Applies progress in arrival order as one store update.
+  upsertProgressBatch: (batch: UploadProgressInput[]) => void;
   remove: (jobId: string) => void;
   clearAll: () => void;
 
@@ -129,29 +131,37 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       };
     }),
 
-  upsertProgress: (progress) =>
+  upsertProgress: (progress) => get().upsertProgressBatch([progress]),
+
+  upsertProgressBatch: (batch) =>
     set((state) => {
-      if (state.terminatedIds.has(progress.jobId)) return state;
-      const existing = state.uploadsByJobId.get(progress.jobId);
-      if (existing) {
-        state.uploadsByJobId.set(progress.jobId, {
-          ...existing,
-          ...progress,
-          lastEventAtMs: Date.now(),
-        });
-      } else {
-        // Progress for an unknown job (its STARTED event predates this
-        // connection and no snapshot carried it, e.g. a subscribe-filter
-        // race). Synthesize a minimal entry so the indicator still shows.
-        state.uploadsByJobId.set(progress.jobId, {
-          sessionId: '',
-          uploader: '',
-          filesTotal: 0,
-          startedAtMs: 0n,
-          ...progress,
-          lastEventAtMs: Date.now(),
-        });
+      let changed = false;
+      const now = Date.now();
+      for (const progress of batch) {
+        if (state.terminatedIds.has(progress.jobId)) continue;
+        const existing = state.uploadsByJobId.get(progress.jobId);
+        if (existing) {
+          state.uploadsByJobId.set(progress.jobId, {
+            ...existing,
+            ...progress,
+            lastEventAtMs: now,
+          });
+        } else {
+          // Progress for an unknown job (its STARTED event predates this
+          // connection and no snapshot carried it, e.g. a subscribe-filter
+          // race). Synthesize a minimal entry so the indicator still shows.
+          state.uploadsByJobId.set(progress.jobId, {
+            sessionId: '',
+            uploader: '',
+            filesTotal: 0,
+            startedAtMs: 0n,
+            ...progress,
+            lastEventAtMs: now,
+          });
+        }
+        changed = true;
       }
+      if (!changed) return state;
       return {
         uploadsByJobId: state.uploadsByJobId,
         version: state.version + 1,

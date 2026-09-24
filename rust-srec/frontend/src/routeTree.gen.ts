@@ -19,6 +19,7 @@ import { Route as StreamProxyRouteImport } from './routes/stream-proxy'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/_dashboard'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed/_dashboard/config/route'
+import { Route as AuthedDashboardDashboardRouteImport } from './routes/_authed/_dashboard/dashboard'
 import { Route as AuthedDashboardNotificationsEventsRouteImport } from './routes/_authed/_dashboard/notifications/events'
 import { Route as AuthedDashboardPipelineIndexRouteImport } from './routes/_authed/_dashboard/pipeline/index'
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
@@ -33,9 +34,6 @@ import { Route as AuthedDashboardPipelineWorkflowsIndexRouteImport } from './rou
 
 const AuthedChangePasswordLazyRouteImport = createFileRoute(
   '/_authed/change-password',
-)()
-const AuthedDashboardDashboardLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/dashboard',
 )()
 const AuthedDashboardConfigApiKeysLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/api-keys',
@@ -158,8 +156,8 @@ const AuthedDashboardConfigRouteRoute =
       (d) => d.Route,
     ),
   )
-const AuthedDashboardDashboardLazyRoute =
-  AuthedDashboardDashboardLazyRouteImport.update({
+const AuthedDashboardDashboardRoute =
+  AuthedDashboardDashboardRouteImport.update({
     id: '/dashboard',
     path: '/dashboard',
     getParentRoute: () => AuthedDashboardRoute,
@@ -520,7 +518,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof PublicLoginRoute
   '/change-password': typeof AuthedChangePasswordLazyRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
-  '/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/dashboard': typeof AuthedDashboardDashboardRoute
   '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
@@ -564,7 +562,7 @@ export interface FileRoutesByTo {
   '/login': typeof PublicLoginRoute
   '/change-password': typeof AuthedChangePasswordLazyRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
-  '/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/dashboard': typeof AuthedDashboardDashboardRoute
   '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
@@ -612,7 +610,7 @@ export interface FileRoutesById {
   '/_public/login': typeof PublicLoginRoute
   '/_authed/change-password': typeof AuthedChangePasswordLazyRoute
   '/_authed/_dashboard/config': typeof AuthedDashboardConfigRouteRouteWithChildren
-  '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardRoute
   '/_authed/_dashboard/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/_authed/_dashboard/config/api-keys': typeof AuthedDashboardConfigApiKeysLazyRoute
@@ -864,7 +862,7 @@ declare module '@tanstack/react-router' {
       id: '/_authed/_dashboard/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthedDashboardDashboardLazyRouteImport
+      preLoaderRoute: typeof AuthedDashboardDashboardRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/config/api-keys': {
@@ -1168,7 +1166,7 @@ const AuthedDashboardConfigRouteRouteWithChildren =
 
 interface AuthedDashboardRouteChildren {
   AuthedDashboardConfigRouteRoute: typeof AuthedDashboardConfigRouteRouteWithChildren
-  AuthedDashboardDashboardLazyRoute: typeof AuthedDashboardDashboardLazyRoute
+  AuthedDashboardDashboardRoute: typeof AuthedDashboardDashboardRoute
   AuthedDashboardNotificationsEventsRoute: typeof AuthedDashboardNotificationsEventsRoute
   AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
   AuthedDashboardSessionsSessionIdLazyRoute: typeof AuthedDashboardSessionsSessionIdLazyRoute
@@ -1194,7 +1192,7 @@ interface AuthedDashboardRouteChildren {
 
 const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardConfigRouteRoute: AuthedDashboardConfigRouteRouteWithChildren,
-  AuthedDashboardDashboardLazyRoute: AuthedDashboardDashboardLazyRoute,
+  AuthedDashboardDashboardRoute: AuthedDashboardDashboardRoute,
   AuthedDashboardNotificationsEventsRoute:
     AuthedDashboardNotificationsEventsRoute,
   AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
