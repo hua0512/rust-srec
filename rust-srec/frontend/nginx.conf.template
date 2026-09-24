@@ -24,12 +24,10 @@ server {
     # replace this whole set rather than extend it, so the proxy locations
     # below add none.
     #
-    # Framing is restricted through X-Frame-Options rather than a CSP
-    # `frame-ancestors` directive: the application inlines its hydration
-    # scripts and so cannot carry a complete CSP, and a Content-Security-Policy
-    # header holding a single directive would suggest otherwise.
+    # Framing is left open so dashboards on another port or subdomain can embed
+    # the UI. The session cookie is SameSite=Lax, so a frame on an unrelated
+    # site loads signed out.
     add_header X-Content-Type-Options nosniff always;
-    add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
     # Gzip compression
