@@ -18,6 +18,18 @@ server {
     listen 80;
     server_name localhost;
 
+    # Browser hardening for every response this server produces. `always` also
+    # covers 4xx and 5xx responses, including proxied errors, which nginx
+    # otherwise leaves bare. A location that adds a header of its own would
+    # replace this whole set rather than extend it, so the proxy locations
+    # below add none.
+    #
+    # Framing is left open so dashboards on another port or subdomain can embed
+    # the UI. The session cookie is SameSite=Lax, so a frame on an unrelated
+    # site loads signed out.
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
     # Gzip compression
     gzip on;
     gzip_vary on;

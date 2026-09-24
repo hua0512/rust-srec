@@ -89,6 +89,8 @@ last five minutes, and revalidate their issuing identity when consumed.
 
 Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy does not send `X-Forwarded-Proto: https`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
 
+The bundled frontend container runs its application server under an unprivileged account (nginx still starts as root to bind port 80 and hands request handling to unprivileged workers) and answers every request, error responses included, with `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`. If the reverse proxy in front of it also sends them, set them in one place only. The container does not restrict framing, so dashboards can embed the web interface; to forbid that, add `X-Frame-Options` or a CSP `frame-ancestors` directive at your reverse proxy.
+
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
 
 Web and desktop playback relays use the backend's source-specific upstream proxy

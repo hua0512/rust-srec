@@ -11,3 +11,16 @@ node_modules
 .nuxt
 dist
 dist-desktop
+
+# Local SQLite databases. A development database left anywhere in the build
+# context would otherwise be carried into the build stage by `COPY . .`.
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
+
+# Local environment overrides. `pnpm run build` reads them and bakes any
+# VITE_* values they set, such as an API base URL, into the client bundle.
+.env.local
+.env.production
+.env.*.local

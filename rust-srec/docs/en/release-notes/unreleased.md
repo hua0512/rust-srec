@@ -156,6 +156,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 ## Deployment and desktop
 
 - HTTPS reverse proxies now propagate the scheme used to set secure sign-in cookies. `COOKIE_SECURE` still overrides automatic detection; plain-HTTP production deployments log a warning.
+- The web container now runs its application server as an ordinary account instead of `root` and sends `X-Content-Type-Options` and `Referrer-Policy` headers on every response; if your reverse proxy already adds these, keep them in one place. Self-built images no longer include a local database file left in the web source folder.
 - Added opt-in Watchtower updates through `docker compose --profile autoupdate up -d`, using the new unauthenticated `/api/health/idle` check. Mutable image tags are required. A recording started after the idle check can still be interrupted; keep backups for automatic upgrades. See [automatic updates](../operations/upgrading.md#automatic-updates-watchtower).
 - The installer now selects English or Chinese from the system locale or `SREC_LANG`, checks downloaded content, and stops if secure secret generation fails.
 - Fixed the bundled systemd unit's permissions, state/log directories, environment loading, and shutdown wait. Fresh databases use `/var/lib/rust-srec/output`; existing databases keep their saved folder. Recordings are readable by the service account and group. See [systemd installation](../getting-started/installation.md#systemd-service-linux).
