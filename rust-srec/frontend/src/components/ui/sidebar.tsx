@@ -3,16 +3,10 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { PanelLeftIcon } from 'lucide-react';
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
@@ -169,7 +163,7 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state } = useSidebar();
 
   if (collapsible === 'none') {
     return (
@@ -189,26 +183,9 @@ function Sidebar({
 
   if (isMobile) {
     return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent
-          data-sidebar="sidebar"
-          data-slot="sidebar"
-          data-mobile="true"
-          className="bg-sidebar/80 backdrop-blur-xl text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden border-border/50"
-          style={
-            {
-              '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
-          side={side}
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
-          </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
-        </SheetContent>
-      </Sheet>
+      <SidebarMobile side={side} className={className} {...props}>
+        {children}
+      </SidebarMobile>
     );
   }
 
@@ -257,6 +234,150 @@ function Sidebar({
         </div>
       </div>
     </div>
+  );
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Off-canvas drawer for small screens. It stays mounted once it has rendered,
+ * so opening only flips `data-drawer` and the slide runs on the compositor.
+ *
+ * It avoids a modal dialog primitive on purpose: those set `pointer-events`,
+ * `inert` or a custom property on `<body>`/the page, and each of those is an
+ * inherited style change that recalculates every element of a long page in the
+ * same frame as the tap.
+ */
+function SidebarMobile({
+  side,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<'div'> & { side: 'left' | 'right' }) {
+  const { openMobile, setOpenMobile } = useSidebar();
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
+  // Render the drawer ahead of the first tap while the page is idle.
+  const [mounted, setMounted] = React.useState(openMobile);
+  if (openMobile && !mounted) {
+    setMounted(true);
+  }
+  React.useEffect(() => {
+    if (mounted) return;
+    const mount = () => React.startTransition(() => setMounted(true));
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(mount, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(mount, 500);
+    return () => window.clearTimeout(id);
+  }, [mounted]);
+
+  React.useEffect(() => {
+    const panel = panelRef.current;
+    if (!openMobile || !panel) return;
+
+    const root = document.documentElement;
+    const { overflow, scrollbarGutter } = root.style;
+    // Keep the page width steady when hiding a classic scrollbar.
+    if (window.innerWidth > root.clientWidth) {
+      root.style.scrollbarGutter = 'stable';
+    }
+    root.style.overflow = 'hidden';
+
+    const returnFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    panel.focus({ preventScroll: true });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpenMobile(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        return;
+      }
+      const active = document.activeElement;
+      const inside = active !== panel && panel.contains(active);
+      if (!inside || active === (event.shiftKey ? first : last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      root.style.overflow = overflow;
+      root.style.scrollbarGutter = scrollbarGutter;
+      const active = document.activeElement;
+      if (active === document.body || panel.contains(active)) {
+        returnFocus?.focus({ preventScroll: true });
+      }
+    };
+  }, [openMobile, setOpenMobile]);
+
+  if (!mounted) {
+    return null;
+  }
+
+  // Deliberately not `data-state`: app-wide descendant selectors key on that
+  // attribute, so flipping it re-matches every rule for the whole drawer.
+  const drawer = openMobile ? 'open' : 'closed';
+
+  // Portalled like other overlays so fixed page controls later in the DOM
+  // (e.g. floating action buttons) cannot stack above it.
+  return createPortal(
+    <>
+      <div
+        aria-hidden="true"
+        data-slot="sidebar-overlay"
+        data-drawer={drawer}
+        className="fixed inset-0 z-50 touch-none bg-black/50 data-[drawer=closed]:pointer-events-none data-[drawer=closed]:opacity-0 starting:opacity-0 motion-safe:transition-opacity motion-safe:duration-400 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:data-[drawer=closed]:duration-350"
+        onClick={() => setOpenMobile(false)}
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal={openMobile}
+        aria-label="Sidebar"
+        tabIndex={-1}
+        data-sidebar="sidebar"
+        data-slot="sidebar"
+        data-mobile="true"
+        data-drawer={drawer}
+        data-side={side}
+        className={cn(
+          'bg-sidebar text-sidebar-foreground border-border/50 fixed inset-y-0 z-50 flex h-full w-(--sidebar-width) flex-col shadow-lg outline-hidden data-[drawer=closed]:invisible',
+          // Visible as soon as it opens so it can take focus; hidden only once
+          // the slide-out has finished.
+          'motion-safe:transition-[translate] motion-safe:duration-400 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:data-[drawer=closed]:transition-[translate,visibility] motion-safe:data-[drawer=closed]:duration-350',
+          side === 'left'
+            ? 'left-0 border-r data-[drawer=closed]:-translate-x-full starting:-translate-x-full'
+            : 'right-0 border-l data-[drawer=closed]:translate-x-full starting:translate-x-full',
+          className,
+        )}
+        style={
+          {
+            '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
+          } as React.CSSProperties
+        }
+        {...props}
+      >
+        {children}
+      </div>
+    </>,
+    document.body,
   );
 }
 
