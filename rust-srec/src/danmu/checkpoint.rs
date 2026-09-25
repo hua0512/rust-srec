@@ -17,6 +17,25 @@ use tracing::{debug, warn};
 
 use crate::database::repositories::SessionRepository;
 
+// Keep CPU work bounded across collectors. A cancelled caller leaves only
+// pure codec work behind; its permit stays with that work until it finishes.
+static CHECKPOINT_CPU: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+async fn offload<T: Send + 'static>(
+    work: impl FnOnce() -> std::io::Result<T> + Send + 'static,
+) -> std::io::Result<T> {
+    let permit = CHECKPOINT_CPU
+        .acquire()
+        .await
+        .map_err(std::io::Error::other)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
 /// Compress a checkpoint for storage.
 fn encode(state: &AggregatorState) -> std::io::Result<Vec<u8>> {
     let json = serde_json::to_vec(state)?;
@@ -57,7 +76,7 @@ pub(super) async fn load_or_new(
         }
     };
 
-    let state = match decode(&stored) {
+    let state = match offload(move || decode(&stored)).await {
         Ok(state) => state,
         Err(error) => {
             warn!(session_id, %error, "danmu: discarding unreadable statistics checkpoint");
@@ -91,13 +110,14 @@ pub(super) async fn load_or_new(
 pub(super) async fn save(
     session_repo: Option<&Arc<dyn SessionRepository>>,
     session_id: &str,
-    state: &AggregatorState,
+    state: AggregatorState,
 ) {
     let Some(repo) = session_repo else {
         return;
     };
 
-    let bytes = match encode(state) {
+    let version = i64::from(state.version);
+    let bytes = match offload(move || encode(&state)).await {
         Ok(bytes) => bytes,
         Err(error) => {
             warn!(session_id, %error, "danmu: failed to encode statistics checkpoint");
@@ -106,7 +126,7 @@ pub(super) async fn save(
     };
 
     if let Err(error) = repo
-        .upsert_danmu_aggregator_state(session_id, i64::from(state.version), &bytes)
+        .upsert_danmu_aggregator_state(session_id, version, &bytes)
         .await
     {
         warn!(session_id, %error, "danmu: failed to store statistics checkpoint");
@@ -153,6 +173,45 @@ mod tests {
         let rebuilt = StatisticsAggregator::from_state(restored, StatisticsConfig::default())
             .expect("restored checkpoint loads");
         assert_eq!(rebuilt.total_count(), 2_000);
+    }
+
+    #[tokio::test]
+    async fn offloaded_codec_preserves_checkpoints_and_bounds_cpu_concurrency() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+
+        let original = aggregator_with_messages(2_000).export_state();
+        let expected = serde_json::to_value(&original).unwrap();
+        let encoded = offload(move || encode(&original)).await.unwrap();
+        let decoded = offload(move || decode(&encoded)).await.unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
+        assert!(offload(|| decode(b"invalid checkpoint")).await.is_err());
+
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let async_thread = std::thread::current().id();
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..8 {
+            let active = active.clone();
+            let peak = peak.clone();
+            tasks.spawn(offload(move || {
+                assert_ne!(std::thread::current().id(), async_thread);
+                let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(count, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(5));
+                active.fetch_sub(1, Ordering::SeqCst);
+                Ok(())
+            }));
+        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(result) = tasks.join_next().await {
+                result.unwrap().unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        assert!((1..=2).contains(&peak.load(Ordering::SeqCst)));
+        assert_eq!(active.load(Ordering::SeqCst), 0);
     }
 
     /// The checkpoint is stored compressed because it is far larger than the
