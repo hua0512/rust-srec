@@ -2,6 +2,7 @@ use super::*;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::database::models::DagExecutionDbModel;
+use crate::pipeline::JobFailureOutcome;
 
 const COORDINATOR_RECOVERY_PAGE_LIMIT: u32 = 500;
 
@@ -137,14 +138,14 @@ where
                 "Failing pending job that no worker pool can claim"
             );
 
-            if let Err(e) = self.job_queue.fail(&job.id, &reason).await {
-                *complete = false;
-                warn!(
-                    job_id = %job.id,
-                    error = %e,
-                    "Failed to mark unclaimable job as failed"
-                );
-                continue;
+            match self.job_queue.fail(&job.id, &reason).await {
+                Ok(JobFailureOutcome::Transitioned) => {}
+                Ok(JobFailureOutcome::Unchanged) => continue,
+                Err(e) => {
+                    *complete = false;
+                    warn!(job_id = %job.id, error = %e, "Failed to mark unclaimable job as failed");
+                    continue;
+                }
             }
             failed += 1;
 

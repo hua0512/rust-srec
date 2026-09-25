@@ -14,7 +14,7 @@ use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler, FailedStepAttempt,
     StepFailureKind, StepFailureOutcome,
 };
-use super::job_queue::{Job, JobLogEntry, JobQueue, JobResult};
+use super::job_queue::{Job, JobFailureOutcome, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
 use super::processors::{
     JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, UploadResultItem,
@@ -746,14 +746,15 @@ impl JobRunner {
                 job.job_type,
                 self.processors.iter().map(|p| p.name()).collect::<Vec<_>>()
             );
-            if let Err(error) = self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR).await {
-                error!(job_id = %job.id, %error, "Failed to mark job as failed");
+            match self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR).await {
+                Ok(JobFailureOutcome::Transitioned) => self.emit(PipelineEvent::JobFailed {
+                    job_id: job.id,
+                    job_type: job.job_type,
+                    error: NO_PROCESSOR_ERROR.to_string(),
+                }),
+                Ok(JobFailureOutcome::Unchanged) => {}
+                Err(error) => error!(job_id = %job.id, %error, "Failed to mark job as failed"),
             }
-            self.emit(PipelineEvent::JobFailed {
-                job_id: job.id,
-                job_type: job.job_type,
-                error: NO_PROCESSOR_ERROR.to_string(),
-            });
             return;
         };
 
@@ -859,12 +860,18 @@ impl JobRunner {
             let job_id = job.id.clone();
             let job_type = job.job_type.clone();
             let persist = |message: String| async move {
-                self.emit(PipelineEvent::JobFailed {
-                    job_id: job_id.clone(),
-                    job_type,
-                    error: message.clone(),
-                });
-                self.job_queue.fail_execution_start(&job_id, &message).await
+                let outcome = self
+                    .job_queue
+                    .fail_execution_start(&job_id, &message)
+                    .await?;
+                if outcome == JobFailureOutcome::Transitioned {
+                    self.emit(PipelineEvent::JobFailed {
+                        job_id,
+                        job_type,
+                        error: message,
+                    });
+                }
+                Ok(outcome)
             };
             match (job.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
                 (Some(dag_step_id), Some(scheduler)) => {
@@ -1248,12 +1255,8 @@ impl JobRunner {
         uploads: &[UploadResultItem],
     ) {
         let persist = |message: String| async move {
-            self.emit(PipelineEvent::JobFailed {
-                job_id: facts.id.clone(),
-                job_type: facts.job_type.clone(),
-                error: message.clone(),
-            });
-            self.job_queue
+            let outcome = self
+                .job_queue
                 .fail_with_step_info(
                     &facts.id,
                     &message,
@@ -1262,7 +1265,15 @@ impl JobRunner {
                     facts.total_steps,
                     uploads,
                 )
-                .await
+                .await?;
+            if outcome == JobFailureOutcome::Transitioned {
+                self.emit(PipelineEvent::JobFailed {
+                    job_id: facts.id.clone(),
+                    job_type: facts.job_type.clone(),
+                    error: message,
+                });
+            }
+            Ok(outcome)
         };
 
         match (facts.dag_step_execution_id.as_deref(), &self.dag_scheduler) {
@@ -2428,6 +2439,95 @@ mod tests {
         .await
         .expect("log collector must release its queue even while a helper retains the sink");
         drop(retained);
+    }
+
+    #[tokio::test]
+    async fn late_failures_preserve_terminal_jobs_and_do_not_emit_events() {
+        use crate::database::repositories::SqlxJobRepository;
+
+        for persisted in [false, true] {
+            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                .await
+                .unwrap();
+            crate::database::run_migrations(&pool).await.unwrap();
+            let queue = Arc::new(if persisted {
+                JobQueue::with_repository(
+                    Default::default(),
+                    Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
+                )
+            } else {
+                JobQueue::new()
+            });
+            let (events, mut receiver) = broadcast::channel(8);
+            let runner = observed_runner(queue.clone(), events);
+            for terminal in [
+                JobStatus::Cancelled,
+                JobStatus::Completed,
+                JobStatus::Failed,
+            ] {
+                let job = Job::new("noop", vec!["input.flv".into()], vec![], "", "");
+                queue.enqueue(job.clone()).await.unwrap();
+                queue.dequeue(None).await.unwrap().unwrap();
+                match terminal {
+                    JobStatus::Cancelled => {
+                        queue.cancel_job(&job.id).await.unwrap();
+                    }
+                    JobStatus::Completed => {
+                        queue
+                            .complete(
+                                &job.id,
+                                JobResult {
+                                    outputs: vec!["output.mp4".into()],
+                                    duration_secs: 1.0,
+                                    metadata: None,
+                                    uploads: vec![],
+                                    logs: vec![],
+                                },
+                            )
+                            .await
+                            .unwrap();
+                    }
+                    JobStatus::Failed => {
+                        assert_eq!(
+                            queue.fail(&job.id, "first failure").await.unwrap(),
+                            JobFailureOutcome::Transitioned
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+                let facts = JobFacts {
+                    id: job.id.clone(),
+                    job_type: job.job_type,
+                    processor_name: "noop",
+                    dag_step_execution_id: None,
+                    current_step: None,
+                    total_steps: None,
+                    retry_count: 0,
+                };
+                runner
+                    .finish_failed(&facts, "late failure", StepFailureKind::ProcessorError, &[])
+                    .await;
+                assert!(receiver.try_recv().is_err());
+                assert_eq!(
+                    queue
+                        .fail_execution_start(&job.id, "late startup failure")
+                        .await
+                        .unwrap(),
+                    JobFailureOutcome::Unchanged
+                );
+                let stored = queue.get_job(&job.id).await.unwrap().unwrap();
+                assert_eq!(stored.status, terminal);
+                if terminal == JobStatus::Failed {
+                    assert_eq!(stored.error.as_deref(), Some("first failure"));
+                }
+                if terminal == JobStatus::Completed {
+                    assert_eq!(stored.outputs, ["output.mp4"]);
+                }
+                assert_eq!(queue.depth(), 0);
+                assert!(queue.get_cancellation_token(&job.id).await.is_none());
+            }
+            queue.stop_progress_aggregator().await;
+        }
     }
 
     #[tokio::test]
