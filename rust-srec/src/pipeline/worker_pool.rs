@@ -741,15 +741,30 @@ impl JobRunner {
         F: FnMut() -> Fut,
         Fut: Future<Output = crate::Result<JobFailureOutcome>>,
     {
+        let mut backoff = FailurePersistBackoff::default();
         loop {
             match persist().await {
-                Ok(outcome) => return Ok(outcome),
+                Ok(outcome) => {
+                    if backoff.failures > 0 {
+                        info!(
+                            job_id,
+                            failed_attempts = backoff.failures,
+                            "Persisted job failure after retrying"
+                        );
+                    }
+                    return Ok(outcome);
+                }
                 Err(error @ (crate::Error::DatabaseSqlx(_) | crate::Error::Database(_))) => {
-                    warn!(job_id, %error, "Retrying job failure persistence without rerunning the processor");
+                    let (delay, warn) = backoff.on_failure();
+                    if warn {
+                        warn!(job_id, failed_attempts = backoff.failures, retry_in = ?delay, %error, "Retrying job failure persistence without rerunning the processor");
+                    } else {
+                        debug!(job_id, failed_attempts = backoff.failures, retry_in = ?delay, %error, "Retrying job failure persistence without rerunning the processor");
+                    }
                     tokio::select! {
                         biased;
                         _ = self.shutdown.cancelled() => return Err(error),
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                        _ = tokio::time::sleep(delay) => {},
                     }
                 }
                 Err(error) => return Err(error),
@@ -1504,6 +1519,35 @@ impl LogFlushBackoff {
                 self.next_flush_allowed = tokio::time::Instant::now() + self.delay;
             }
         }
+    }
+}
+
+/// Retry pacing for `JobRunner::persist_failure_with_retry`, which keeps retrying until the
+/// failure is durable or the pool shuts down. A lasting database error (typically a full disk)
+/// is retried with a widening gap and warned about on the first failure, then once per capped
+/// interval.
+#[derive(Default)]
+struct FailurePersistBackoff {
+    delay: std::time::Duration,
+    failures: u32,
+}
+
+impl FailurePersistBackoff {
+    const INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+    const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// Record a failed attempt: how long to wait before the next one, and whether to warn.
+    fn on_failure(&mut self) -> (std::time::Duration, bool) {
+        self.failures = self.failures.saturating_add(1);
+        self.delay = if self.delay.is_zero() {
+            Self::INITIAL_DELAY
+        } else {
+            (self.delay * 2).min(Self::MAX_DELAY)
+        };
+        (
+            self.delay,
+            self.failures == 1 || self.delay == Self::MAX_DELAY,
+        )
     }
 }
 
@@ -2474,6 +2518,29 @@ mod tests {
         .await
         .expect("log collector must release its queue even while a helper retains the sink");
         drop(retained);
+    }
+
+    #[test]
+    fn failure_persist_backoff_widens_to_its_cap_and_rate_limits_warnings() {
+        let mut backoff = FailurePersistBackoff::default();
+        let schedule: Vec<_> = std::iter::repeat_with(|| backoff.on_failure())
+            .take(8)
+            .map(|(delay, warn)| (delay.as_secs(), warn))
+            .collect();
+        assert_eq!(
+            schedule,
+            [
+                (1, true),
+                (2, false),
+                (4, false),
+                (8, false),
+                (16, false),
+                (30, true),
+                (30, true),
+                (30, true),
+            ]
+        );
+        assert_eq!(backoff.failures, 8);
     }
 
     #[tokio::test]
