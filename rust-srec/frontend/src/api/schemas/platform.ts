@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
+  DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
   jsonTextField,
@@ -70,7 +71,7 @@ export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
-  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
+  danmu_statistics: DanmuStatisticsOverrideSchema,
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),

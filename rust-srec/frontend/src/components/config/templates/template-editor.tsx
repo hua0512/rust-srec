@@ -21,6 +21,7 @@ import { GeneralTab } from './tabs/general-tab';
 import { EngineOverridesTab } from './tabs/engine-overrides-tab';
 import { PlatformOverridesTab } from './tabs/platform-overrides-tab';
 import { cn } from '@/lib/utils';
+import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';
 import {
   SharedConfigEditor,
   type SharedConfigEditorProps,
@@ -94,7 +95,7 @@ export function TemplateEditor({
           max_download_duration_secs: template.max_download_duration_secs,
           max_part_size_bytes: template.max_part_size_bytes,
           record_danmu: template.record_danmu,
-          danmu_statistics: template.danmu_statistics,
+          danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
           cookies: template.cookies,
           platform_overrides: template.platform_overrides,
           download_retry_policy: template.download_retry_policy,
@@ -117,7 +118,7 @@ export function TemplateEditor({
           max_download_duration_secs: null,
           max_part_size_bytes: null,
           record_danmu: null,
-          danmu_statistics: null,
+          danmu_statistics: danmuStatisticsFormValue(null),
           cookies: null,
           platform_overrides: null,
           download_retry_policy: null,
@@ -146,7 +147,7 @@ export function TemplateEditor({
         max_download_duration_secs: template.max_download_duration_secs,
         max_part_size_bytes: template.max_part_size_bytes,
         record_danmu: template.record_danmu,
-        danmu_statistics: template.danmu_statistics,
+        danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
         cookies: template.cookies,
         platform_overrides: template.platform_overrides,
         download_retry_policy: template.download_retry_policy,

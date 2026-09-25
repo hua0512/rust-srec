@@ -3,6 +3,7 @@ import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
+  DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
   ProxyConfigObjectSchema,
   jsonTextField,
@@ -86,7 +87,7 @@ export const CreateTemplateRequestSchema = z.object({
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
-  danmu_statistics: DanmuStatisticsObjectSchema.nullable().optional(),
+  danmu_statistics: DanmuStatisticsOverrideSchema,
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),

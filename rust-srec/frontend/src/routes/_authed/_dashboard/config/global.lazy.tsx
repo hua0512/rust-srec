@@ -23,6 +23,7 @@ import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { cn } from '@/lib/utils';
 import { SaveFab } from '@/components/shared/save-fab';
+import { danmuStatisticsFormValue } from '@/components/config/shared/danmu-statistics-value';
 
 const FileConfigCard = lazy(() =>
   import('@/components/config/global/file-config-card').then((m) => ({
@@ -142,26 +143,26 @@ function GlobalConfigPage() {
   return <GlobalConfigForm config={config} />;
 }
 
-function GlobalConfigForm({
-  config,
-}: {
-  config: z.infer<typeof GlobalConfigFormSchema>;
-}) {
+type GlobalConfig = z.infer<typeof GlobalConfigFormSchema>;
+
+function toFormValues(config: GlobalConfig) {
+  return {
+    ...config,
+    danmu_statistics: danmuStatisticsFormValue(config.danmu_statistics),
+    proxy_config: config.proxy_config ?? null,
+    pipeline: config.pipeline ?? null,
+    session_complete_pipeline: config.session_complete_pipeline ?? null,
+    paired_segment_pipeline: config.paired_segment_pipeline ?? null,
+  };
+}
+
+function GlobalConfigForm({ config }: { config: GlobalConfig }) {
   type GlobalConfigFormInput = z.input<typeof GlobalConfigFormSchema>;
   type GlobalConfigFormValues = z.output<typeof GlobalConfigFormSchema>;
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
 
-  const defaultValues = useMemo(
-    () => ({
-      ...config,
-      proxy_config: config.proxy_config ?? null,
-      pipeline: config.pipeline ?? null,
-      session_complete_pipeline: config.session_complete_pipeline ?? null,
-      paired_segment_pipeline: config.paired_segment_pipeline ?? null,
-    }),
-    [config],
-  );
+  const defaultValues = useMemo(() => toFormValues(config), [config]);
 
   // The schema fills several fields in with defaults, so its input type leaves them
   // optional while submit handlers receive the parsed shape.
@@ -174,9 +175,13 @@ function GlobalConfigForm({
 
   const updateMutation = useMutation({
     mutationFn: (data: GlobalConfigFormValues) => updateGlobalConfig({ data }),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast.success(i18n._(msg`Settings updated successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
+      queryClient.setQueryData(['config', 'global'], saved);
+      // Reset explicitly rather than through `values`: a save that leaves the stored config as it
+      // was hands `values` an equal object, which react-hook-form ignores, and the form would stay
+      // dirty after a successful save.
+      form.reset(toFormValues(saved));
     },
     onError: (error: any) => {
       toast.error(error.message || i18n._(msg`Failed to update settings`));
