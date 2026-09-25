@@ -19,7 +19,7 @@ use crate::database::models::{
 use crate::database::repositories::{DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::manifest::PipelineInputManifest;
-use crate::pipeline::{Job, JobQueue, JobStatus};
+use crate::pipeline::{Job, JobFailureOutcome, JobQueue, JobStatus};
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
 
@@ -575,7 +575,7 @@ impl DagScheduler {
     ) -> Result<StepFailureOutcome>
     where
         F: FnOnce(String) -> Fut,
-        Fut: Future<Output = Result<()>>,
+        Fut: Future<Output = Result<JobFailureOutcome>>,
     {
         let planned = if attempt.kind.retryable() {
             self.plan_step_retry(dag_step_execution_id, attempt.retry_count)
@@ -597,10 +597,13 @@ impl DagScheduler {
         };
 
         let recorded = persist_failure(message.clone()).await;
+        if matches!(recorded, Ok(JobFailureOutcome::Unchanged)) {
+            return Ok(StepFailureOutcome::Ignored);
+        }
         if let Err(error) = &recorded {
             error!(job_id = %attempt.job_id, %error, "Failed to persist pipeline job failure");
         }
-        if let (Some(planned), Ok(())) = (planned, &recorded) {
+        if let (Some(planned), Ok(JobFailureOutcome::Transitioned)) = (planned, &recorded) {
             match self
                 .job_queue
                 .schedule_retry(attempt.job_id, planned.retry_after)
@@ -3723,7 +3726,7 @@ mod tests {
             .on_job_attempt_failed(
                 &step_id("C"),
                 attempt(&job_c, 0, StepFailureKind::Timeout),
-                |_message| async { Ok(()) },
+                |_message| async { Ok(JobFailureOutcome::Transitioned) },
             )
             .await
             .unwrap();
@@ -3788,6 +3791,95 @@ mod tests {
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
         assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
         assert_eq!(dag.failed_steps, 5);
+    }
+
+    #[tokio::test]
+    async fn cancelled_attempt_does_not_schedule_retry_or_apply_step_failure() {
+        use crate::database::models::StepRetryPolicy;
+        use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+        use crate::database::test_support::SqlTrace;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+        let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+        let scheduler = DagScheduler::new(queue.clone(), dags.clone(), jobs.clone());
+        let created = scheduler
+            .create_dag_pipeline(
+                DagPipelineDefinition::new(
+                    "cancel race",
+                    vec![
+                        DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({})))
+                            .with_retry(StepRetryPolicy {
+                                max_attempts: 2,
+                                backoff_secs: 1,
+                            }),
+                    ],
+                ),
+                &["input.flv".into()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let trace = std::sync::Mutex::new(None);
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                job.dag_step_execution_id.as_deref().unwrap(),
+                FailedStepAttempt {
+                    job_id: &job.id,
+                    retry_count: 0,
+                    error: "late failure",
+                    kind: StepFailureKind::ProcessorError,
+                },
+                |message| {
+                    let scheduler = &scheduler;
+                    let queue = &queue;
+                    let pool = &pool;
+                    let trace = &trace;
+                    let job_id = &job.id;
+                    let dag_id = &created.dag_id;
+                    async move {
+                        // Cancellation wins after retry planning but before the conditional job update.
+                        scheduler.cancel_dag(dag_id).await.unwrap();
+                        let observer = SqlTrace::install(pool).await;
+                        *trace.lock().unwrap() = Some(observer);
+                        queue
+                            .fail_with_step_info(job_id, &message, Some("noop"), None, None, &[])
+                            .await
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        assert!(matches!(outcome, StepFailureOutcome::Ignored));
+        let statements = trace.lock().unwrap().take().unwrap().statements();
+        assert!(
+            !statements
+                .iter()
+                .any(|sql| sql.starts_with("UPDATE job SET retry_after")),
+            "{statements:?}"
+        );
+        assert!(
+            !statements
+                .iter()
+                .any(|sql| sql.contains("UPDATE dag_step_execution")),
+            "{statements:?}"
+        );
+        assert_eq!(
+            jobs.get_job(&job.id).await.unwrap().get_status(),
+            Some(JobStatus::Cancelled)
+        );
+        assert_eq!(
+            dags.get_dag(&created.dag_id).await.unwrap().get_status(),
+            Some(DagExecutionStatus::Cancelled)
+        );
+        assert_eq!(queue.depth(), 0);
+        assert!(queue.get_cancellation_token(&job.id).await.is_none());
+        queue.stop_progress_aggregator().await;
     }
 
     #[tokio::test]

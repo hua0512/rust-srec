@@ -629,6 +629,14 @@ enum FailureMetadata {
     DatabaseAndCacheLog,
 }
 
+/// Whether this call changed an active job to FAILED.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobFailureOutcome {
+    Transitioned,
+    /// The conditional update lost to another terminal transition (or deletion).
+    Unchanged,
+}
+
 /// The job queue service.
 pub struct JobQueue {
     /// Workers hold a read lease through execution and cleanup. Retention takes an exclusive lease.
@@ -1616,21 +1624,28 @@ impl JobQueue {
         Ok(transitioned)
     }
     /// Mark a job as failed.
-    pub async fn fail(&self, job_id: &str, error: &str) -> Result<()> {
-        self.fail_internal(
-            job_id,
-            error,
-            FailedStep::default(),
-            FailureMetadata::DatabaseLog,
-            &[],
-        )
-        .await?;
-        warn!("Job {} failed: {}", job_id, error);
-        Ok(())
+    pub async fn fail(&self, job_id: &str, error: &str) -> Result<JobFailureOutcome> {
+        let outcome = self
+            .fail_internal(
+                job_id,
+                error,
+                FailedStep::default(),
+                FailureMetadata::DatabaseLog,
+                &[],
+            )
+            .await?;
+        if outcome == JobFailureOutcome::Transitioned {
+            warn!(job_id, error, "Job failed");
+        }
+        Ok(outcome)
     }
 
     /// Fail before processor invocation without rewriting unavailable or invalid metadata.
-    pub async fn fail_execution_start(&self, job_id: &str, error: &str) -> Result<()> {
+    pub async fn fail_execution_start(
+        &self,
+        job_id: &str,
+        error: &str,
+    ) -> Result<JobFailureOutcome> {
         self.fail_internal(
             job_id,
             error,
@@ -1654,24 +1669,27 @@ impl JobQueue {
         step_number: Option<u32>,
         total_steps: Option<u32>,
         uploads: &[UploadResultItem],
-    ) -> Result<()> {
-        self.fail_internal(
-            job_id,
-            error,
-            FailedStep {
-                processor_name,
-                step_number,
-                total_steps,
-            },
-            FailureMetadata::DatabaseAndCacheLog,
-            uploads,
-        )
-        .await?;
-        warn!(
-            "Job {} failed at step {:?}/{:?} (processor: {:?}): {}",
-            job_id, step_number, total_steps, processor_name, error
-        );
-        Ok(())
+    ) -> Result<JobFailureOutcome> {
+        let outcome = self
+            .fail_internal(
+                job_id,
+                error,
+                FailedStep {
+                    processor_name,
+                    step_number,
+                    total_steps,
+                },
+                FailureMetadata::DatabaseAndCacheLog,
+                uploads,
+            )
+            .await?;
+        if outcome == JobFailureOutcome::Transitioned {
+            warn!(
+                job_id,
+                step_number, total_steps, processor_name, error, "Job failed at pipeline step"
+            );
+        }
+        Ok(outcome)
     }
 
     /// Get a job by ID.
@@ -2631,7 +2649,7 @@ impl JobQueue {
         step: FailedStep<'_>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
-    ) -> Result<()> {
+    ) -> Result<JobFailureOutcome> {
         let FailedStep {
             processor_name,
             step_number,
@@ -2656,7 +2674,7 @@ impl JobQueue {
             let updated = repo.mark_job_failed(job_id, error).await?;
             if updated == 0 {
                 self.finalize_cancelled_job(job_id);
-                return Ok(());
+                return Ok(JobFailureOutcome::Unchanged);
             }
             transitioned = true;
 
@@ -2673,8 +2691,8 @@ impl JobQueue {
 
         // Update cache
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            if job.status != JobStatus::Cancelled {
-                transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
+            if matches!(job.status, JobStatus::Pending | JobStatus::Processing) {
+                transitioned = true;
                 job.status = JobStatus::Failed;
                 job.completed_at = Some(Utc::now());
                 job.error = Some(error.to_string());
@@ -2769,7 +2787,11 @@ impl JobQueue {
                 });
             }
         }
-        Ok(())
+        Ok(if transitioned {
+            JobFailureOutcome::Transitioned
+        } else {
+            JobFailureOutcome::Unchanged
+        })
     }
 
     fn filter_cached_job_ids(&self, filters: &JobFilters) -> Vec<String> {
