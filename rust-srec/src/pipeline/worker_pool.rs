@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::broadcast;
@@ -729,6 +730,33 @@ impl JobRunner {
         emit_event(self.event_tx.as_ref(), event);
     }
 
+    /// Keep ownership of the attempt until its failure is durable. Repeating this write
+    /// never invokes the processor again; shutdown leaves an interrupted job for recovery.
+    async fn persist_failure_with_retry<F, Fut>(
+        &self,
+        job_id: &str,
+        mut persist: F,
+    ) -> crate::Result<JobFailureOutcome>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = crate::Result<JobFailureOutcome>>,
+    {
+        loop {
+            match persist().await {
+                Ok(outcome) => return Ok(outcome),
+                Err(error @ (crate::Error::DatabaseSqlx(_) | crate::Error::Database(_))) => {
+                    warn!(job_id, %error, "Retrying job failure persistence without rerunning the processor");
+                    tokio::select! {
+                        biased;
+                        _ = self.shutdown.cancelled() => return Err(error),
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     /// Route `job` to a processor that accepts its type and run it to a terminal state.
     ///
     /// Reaching the no-processor arm means `JobQueue::dequeue`'s type filter and
@@ -746,7 +774,12 @@ impl JobRunner {
                 job.job_type,
                 self.processors.iter().map(|p| p.name()).collect::<Vec<_>>()
             );
-            match self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR).await {
+            match self
+                .persist_failure_with_retry(&job.id, || {
+                    self.job_queue.fail(&job.id, NO_PROCESSOR_ERROR)
+                })
+                .await
+            {
                 Ok(JobFailureOutcome::Transitioned) => self.emit(PipelineEvent::JobFailed {
                     job_id: job.id,
                     job_type: job.job_type,
@@ -815,9 +848,9 @@ impl JobRunner {
             }
             Err(e) => {
                 error!("Failed to split job {}: {}", job.id, e);
+                let reason = format!("Failed to split job: {e}");
                 if let Err(fail_error) = self
-                    .job_queue
-                    .fail(&job.id, &format!("Failed to split job: {}", e))
+                    .persist_failure_with_retry(&job.id, || self.job_queue.fail(&job.id, &reason))
                     .await
                 {
                     error!(
@@ -861,8 +894,9 @@ impl JobRunner {
             let job_type = job.job_type.clone();
             let persist = |message: String| async move {
                 let outcome = self
-                    .job_queue
-                    .fail_execution_start(&job_id, &message)
+                    .persist_failure_with_retry(&job_id, || {
+                        self.job_queue.fail_execution_start(&job_id, &message)
+                    })
                     .await?;
                 if outcome == JobFailureOutcome::Transitioned {
                     self.emit(PipelineEvent::JobFailed {
@@ -1256,15 +1290,16 @@ impl JobRunner {
     ) {
         let persist = |message: String| async move {
             let outcome = self
-                .job_queue
-                .fail_with_step_info(
-                    &facts.id,
-                    &message,
-                    Some(facts.processor_name),
-                    facts.current_step,
-                    facts.total_steps,
-                    uploads,
-                )
+                .persist_failure_with_retry(&facts.id, || {
+                    self.job_queue.fail_with_step_info(
+                        &facts.id,
+                        &message,
+                        Some(facts.processor_name),
+                        facts.current_step,
+                        facts.total_steps,
+                        uploads,
+                    )
+                })
                 .await?;
             if outcome == JobFailureOutcome::Transitioned {
                 self.emit(PipelineEvent::JobFailed {
@@ -2439,6 +2474,177 @@ mod tests {
         .await
         .expect("log collector must release its queue even while a helper retains the sink");
         drop(retained);
+    }
+
+    #[tokio::test]
+    async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdown() {
+        use crate::database::models::{
+            DagExecutionStatus, DagPipelineDefinition, DagStep, DagStepStatus, PipelineStep,
+            StepRetryPolicy,
+        };
+        use crate::database::repositories::{
+            DagRepository, JobRepository, SqlxDagRepository, SqlxJobRepository,
+        };
+        use crate::database::test_support::SqlTrace;
+        use crate::pipeline::dag_scheduler::DagRunContext;
+
+        struct CountedFailure(Arc<AtomicUsize>);
+        #[async_trait]
+        impl Processor for CountedFailure {
+            fn processor_type(&self) -> ProcessorType {
+                ProcessorType::Cpu
+            }
+            fn job_types(&self) -> Vec<&'static str> {
+                vec!["failing"]
+            }
+            fn name(&self) -> &'static str {
+                "failing"
+            }
+            async fn process(
+                &self,
+                _: &ProcessorInput,
+                _: &ProcessorContext,
+            ) -> crate::Result<ProcessorOutput> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(crate::Error::PipelineError("processor failed".into()))
+            }
+        }
+
+        for ending in ["restore", "cancel", "shutdown"] {
+            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                .await
+                .unwrap();
+            crate::database::run_migrations(&pool).await.unwrap();
+            let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+            let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+            let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+            let scheduler = Arc::new(DagScheduler::new(queue.clone(), dags.clone(), jobs.clone()));
+            let created = scheduler
+                .create_dag_pipeline(
+                    DagPipelineDefinition::new(
+                        "failed status write",
+                        vec![
+                            DagStep::new(
+                                "A",
+                                PipelineStep::inline("failing", serde_json::json!({})),
+                            )
+                            .with_retry(StepRetryPolicy {
+                                max_attempts: 2,
+                                backoff_secs: 30,
+                            }),
+                        ],
+                    ),
+                    &["input.flv".into()],
+                    DagRunContext::default(),
+                )
+                .await
+                .unwrap();
+            let job = queue.dequeue(None).await.unwrap().unwrap();
+            let job_id = job.id.clone();
+            let step_id = job.dag_step_execution_id.clone().unwrap();
+            sqlx::query("CREATE TRIGGER reject_failed BEFORE UPDATE OF status ON job WHEN NEW.status = 'FAILED' BEGIN SELECT RAISE(ABORT, 'injected failure'); END").execute(&pool).await.unwrap();
+            let trace = SqlTrace::install(&pool).await;
+            let (events, mut receiver) = broadcast::channel(16);
+            let mut runner = observed_runner(queue.clone(), events);
+            runner.dag_scheduler = Some(scheduler.clone());
+            let runner = Arc::new(runner);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let processor: Arc<dyn Processor> = Arc::new(CountedFailure(calls.clone()));
+            let running = runner.clone();
+            let task = tokio::spawn(async move {
+                running.execute_job(job, &processor).await;
+            });
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !trace
+                    .statements()
+                    .iter()
+                    .any(|sql| sql.starts_with("UPDATE job SET status = ?, completed_at"))
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(!task.is_finished());
+            assert_eq!(
+                jobs.get_job(&job_id).await.unwrap().get_status(),
+                Some(JobStatus::Processing)
+            );
+            assert_eq!(
+                dags.get_step(&step_id).await.unwrap().get_status(),
+                Some(DagStepStatus::Processing)
+            );
+            assert_eq!(
+                dags.get_dag(&created.dag_id).await.unwrap().get_status(),
+                Some(DagExecutionStatus::Processing)
+            );
+            assert_eq!(queue.depth(), 1);
+            while let Ok(event) = receiver.try_recv() {
+                assert!(!matches!(event, PipelineEvent::JobFailed { .. }));
+            }
+
+            match ending {
+                "restore" => {
+                    sqlx::query("DROP TRIGGER reject_failed")
+                        .execute(&pool)
+                        .await
+                        .unwrap();
+                }
+                "cancel" => {
+                    scheduler.cancel_dag(&created.dag_id).await.unwrap();
+                }
+                _ => runner.shutdown.cancel(),
+            }
+            tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
+            let stored = jobs.get_job(&job_id).await.unwrap();
+            let failed_events = std::iter::from_fn(|| receiver.try_recv().ok())
+                .filter(|event| matches!(event, PipelineEvent::JobFailed { .. }))
+                .count();
+            match ending {
+                "restore" => {
+                    assert_eq!(stored.get_status(), Some(JobStatus::Failed));
+                    assert!(stored.retry_after.is_some());
+                    assert_eq!(
+                        dags.get_step(&step_id).await.unwrap().get_status(),
+                        Some(DagStepStatus::Processing)
+                    );
+                    assert_eq!(queue.depth(), 0);
+                    assert!(queue.get_cancellation_token(&job_id).await.is_none());
+                    assert_eq!(failed_events, 1);
+                }
+                "cancel" => {
+                    assert_eq!(stored.get_status(), Some(JobStatus::Cancelled));
+                    assert_eq!(
+                        dags.get_dag(&created.dag_id).await.unwrap().get_status(),
+                        Some(DagExecutionStatus::Cancelled)
+                    );
+                    assert_eq!(queue.depth(), 0);
+                    assert!(queue.get_cancellation_token(&job_id).await.is_none());
+                    assert_eq!(failed_events, 0);
+                }
+                _ => {
+                    assert_eq!(stored.get_status(), Some(JobStatus::Processing));
+                    assert_eq!(
+                        dags.get_step(&step_id).await.unwrap().get_status(),
+                        Some(DagStepStatus::Processing)
+                    );
+                    assert_eq!(failed_events, 0);
+                    sqlx::query("DROP TRIGGER reject_failed")
+                        .execute(&pool)
+                        .await
+                        .unwrap();
+                    assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
+                    assert_eq!(queue.recover_jobs().await.unwrap(), 1);
+                    assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, job_id);
+                }
+            }
+            queue.stop_progress_aggregator().await;
+        }
     }
 
     #[tokio::test]
