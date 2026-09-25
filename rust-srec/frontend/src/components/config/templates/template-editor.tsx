@@ -30,6 +30,58 @@ import { listEngines } from '@/server/functions';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
+function toTemplateFormValues(
+  template?: z.infer<typeof TemplateSchema>,
+): TemplateFormValues {
+  return template
+    ? {
+        name: template.name,
+        output_folder: template.output_folder,
+        output_filename_template: template.output_filename_template,
+        output_file_format: template.output_file_format,
+        min_segment_size_bytes: template.min_segment_size_bytes,
+        max_download_duration_secs: template.max_download_duration_secs,
+        max_part_size_bytes: template.max_part_size_bytes,
+        record_danmu: template.record_danmu,
+        danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
+        cookies: template.cookies,
+        platform_overrides: template.platform_overrides,
+        download_retry_policy: template.download_retry_policy,
+        download_engine: template.download_engine,
+        engines_override: template.engines_override ?? undefined,
+        proxy_config: template.proxy_config,
+        stream_selection_config: template.stream_selection_config,
+        pipeline: template.pipeline,
+        session_complete_pipeline: template.session_complete_pipeline,
+        paired_segment_pipeline: template.paired_segment_pipeline,
+        offline_check_count: template.offline_check_count,
+        offline_check_delay_ms: template.offline_check_delay_ms,
+      }
+    : {
+        name: '',
+        output_folder: null,
+        output_filename_template: null,
+        output_file_format: null,
+        min_segment_size_bytes: null,
+        max_download_duration_secs: null,
+        max_part_size_bytes: null,
+        record_danmu: null,
+        danmu_statistics: danmuStatisticsFormValue(null),
+        cookies: null,
+        platform_overrides: null,
+        download_retry_policy: null,
+        download_engine: null,
+        engines_override: undefined,
+        proxy_config: null,
+        stream_selection_config: null,
+        pipeline: null,
+        session_complete_pipeline: null,
+        paired_segment_pipeline: null,
+        offline_check_count: null,
+        offline_check_delay_ms: null,
+      };
+}
+
 /**
  * The shared editor plus the credential hint taken from the template's platform overrides.
  *
@@ -85,82 +137,14 @@ export function TemplateEditor({
 
   const form = useForm<TemplateFormValues>({
     resolver: zodResolver(UpdateTemplateRequestSchema),
-    defaultValues: template
-      ? {
-          name: template.name,
-          output_folder: template.output_folder,
-          output_filename_template: template.output_filename_template,
-          output_file_format: template.output_file_format,
-          min_segment_size_bytes: template.min_segment_size_bytes,
-          max_download_duration_secs: template.max_download_duration_secs,
-          max_part_size_bytes: template.max_part_size_bytes,
-          record_danmu: template.record_danmu,
-          danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
-          cookies: template.cookies,
-          platform_overrides: template.platform_overrides,
-          download_retry_policy: template.download_retry_policy,
-          download_engine: template.download_engine,
-          engines_override: template.engines_override ?? undefined,
-          proxy_config: template.proxy_config,
-          stream_selection_config: template.stream_selection_config,
-          pipeline: template.pipeline,
-          session_complete_pipeline: template.session_complete_pipeline,
-          paired_segment_pipeline: template.paired_segment_pipeline,
-          offline_check_count: template.offline_check_count,
-          offline_check_delay_ms: template.offline_check_delay_ms,
-        }
-      : {
-          name: '',
-          output_folder: null,
-          output_filename_template: null,
-          output_file_format: null,
-          min_segment_size_bytes: null,
-          max_download_duration_secs: null,
-          max_part_size_bytes: null,
-          record_danmu: null,
-          danmu_statistics: danmuStatisticsFormValue(null),
-          cookies: null,
-          platform_overrides: null,
-          download_retry_policy: null,
-          download_engine: null,
-          engines_override: undefined,
-          proxy_config: null,
-          stream_selection_config: null,
-          pipeline: null,
-          session_complete_pipeline: null,
-          paired_segment_pipeline: null,
-          offline_check_count: null,
-          offline_check_delay_ms: null,
-        },
+    defaultValues: toTemplateFormValues(template),
   });
   const { reset } = form;
 
   // Reset form when template data changes (e.g. after QR login re-fetch)
   useEffect(() => {
     if (template) {
-      reset({
-        name: template.name,
-        output_folder: template.output_folder,
-        output_filename_template: template.output_filename_template,
-        output_file_format: template.output_file_format,
-        min_segment_size_bytes: template.min_segment_size_bytes,
-        max_download_duration_secs: template.max_download_duration_secs,
-        max_part_size_bytes: template.max_part_size_bytes,
-        record_danmu: template.record_danmu,
-        danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
-        cookies: template.cookies,
-        platform_overrides: template.platform_overrides,
-        download_retry_policy: template.download_retry_policy,
-        download_engine: template.download_engine,
-        engines_override: template.engines_override ?? undefined,
-        proxy_config: template.proxy_config,
-        stream_selection_config: template.stream_selection_config,
-        pipeline: template.pipeline,
-        session_complete_pipeline: template.session_complete_pipeline,
-        paired_segment_pipeline: template.paired_segment_pipeline,
-        offline_check_count: template.offline_check_count,
-        offline_check_delay_ms: template.offline_check_delay_ms,
-      });
+      reset(toTemplateFormValues(template));
     }
   }, [template, reset]);
 
