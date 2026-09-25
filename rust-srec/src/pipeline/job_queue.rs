@@ -2303,6 +2303,23 @@ impl JobQueue {
         Ok(total as usize)
     }
 
+    /// Read the current processing count without scanning completed job history.
+    pub async fn count_processing_jobs(&self) -> Result<u64> {
+        if let Some(repo) = &self.job_repository {
+            return repo
+                .count_jobs(&JobFilters {
+                    status: Some(crate::database::models::JobStatus::Processing),
+                    ..Default::default()
+                })
+                .await;
+        }
+        Ok(self
+            .jobs_cache
+            .iter()
+            .filter(|job| job.status == JobStatus::Processing)
+            .count() as u64)
+    }
+
     /// Get job statistics.
     pub async fn get_stats(&self) -> Result<JobStats> {
         if let Some(repo) = &self.job_repository {

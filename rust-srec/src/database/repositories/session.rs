@@ -2,8 +2,9 @@
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, MediaOutputTypeSummary,
-    OutputFilters, Pagination, SessionFilters, SessionSegmentDbModel,
+    DanmuStatisticsDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
+    MediaOutputTypeSummary, OutputFilters, Pagination, SessionFilters, SessionOutputSummary,
+    SessionSegmentDbModel,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -92,6 +93,43 @@ pub trait SessionRepository: Send + Sync {
         }
         Ok(outputs)
     }
+    /// Counts all output types and chooses the earliest thumbnail. Sessions without
+    /// outputs are omitted. SQL storage uses insertion order to break timestamp ties.
+    async fn summarize_session_outputs(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<SessionOutputSummary>> {
+        let mut summaries = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for session_id in session_ids {
+            if !seen.insert(session_id) {
+                continue;
+            }
+            let outputs = self.get_media_outputs_for_session(session_id).await?;
+            if outputs.is_empty() {
+                continue;
+            }
+            summaries.push(SessionOutputSummary {
+                session_id: session_id.clone(),
+                output_count: i64::try_from(outputs.len()).unwrap_or(i64::MAX),
+                thumbnail_id: outputs
+                    .into_iter()
+                    .find(|output| output.file_type == MediaFileType::Thumbnail.as_str())
+                    .map(|output| output.id),
+            });
+        }
+        Ok(summaries)
+    }
+
+    async fn first_thumbnail_id(&self, session_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .get_media_outputs_for_session(session_id)
+            .await?
+            .into_iter()
+            .find(|output| output.file_type == MediaFileType::Thumbnail.as_str())
+            .map(|output| output.id))
+    }
+
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
     async fn delete_media_output(&self, id: &str) -> Result<()>;
 
@@ -491,6 +529,42 @@ impl SessionRepository for SqlxSessionRepository {
             .build_query_as::<MediaOutputDbModel>()
             .fetch_all(&self.pool)
             .await?)
+    }
+
+    async fn summarize_session_outputs(
+        &self,
+        session_ids: &[String],
+    ) -> Result<Vec<SessionOutputSummary>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // The existing (session_id, created_at) index covers the count and
+        // supplies insertion order (rowid) for equal thumbnail timestamps.
+        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT m.session_id, COUNT(*) AS output_count, \
+             (SELECT t.id FROM media_outputs t WHERE t.session_id = m.session_id \
+              AND t.file_type = 'THUMBNAIL' ORDER BY t.created_at, t.rowid LIMIT 1) AS thumbnail_id \
+             FROM media_outputs m WHERE m.session_id IN (",
+        );
+        let mut separated = builder.separated(", ");
+        for id in session_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") GROUP BY m.session_id");
+        Ok(builder
+            .build_query_as::<SessionOutputSummary>()
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    async fn first_thumbnail_id(&self, session_id: &str) -> Result<Option<String>> {
+        Ok(sqlx::query_scalar(
+            "SELECT id FROM media_outputs WHERE session_id = ? AND file_type = 'THUMBNAIL' \
+             ORDER BY created_at, rowid LIMIT 1",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await?)
     }
 
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
@@ -1354,6 +1428,81 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[tokio::test]
+    async fn session_output_projection_preserves_counts_and_thumbnail_selection() {
+        let repo = setup_test_repo().await;
+        let mut empty = LiveSessionDbModel::new("streamer-1");
+        empty.id = "empty".to_string();
+        empty.end_time = Some(1);
+        repo.create_session(&empty).await.unwrap();
+        for (id, kind, created_at) in [
+            ("video", MediaFileType::Video, 0),
+            ("late", MediaFileType::Thumbnail, 20),
+            ("z-first", MediaFileType::Thumbnail, 10),
+            ("a-second", MediaFileType::Thumbnail, 10),
+            ("audio", MediaFileType::Audio, 10),
+            ("danmu", MediaFileType::DanmuXml, 10),
+        ] {
+            let mut output = MediaOutputDbModel::new("session-1", id, kind, 1);
+            output.id = id.to_string();
+            output.created_at = created_at;
+            repo.create_media_output(&output).await.unwrap();
+        }
+        for ids in [
+            vec![],
+            vec!["empty".to_string(), "absent".to_string()],
+            vec![
+                "session-1".to_string(),
+                "session-1".to_string(),
+                "empty".to_string(),
+            ],
+        ] {
+            let summaries = repo.summarize_session_outputs(&ids).await.unwrap();
+            if !ids.iter().any(|id| id == "session-1") {
+                assert!(summaries.is_empty());
+                continue;
+            }
+            assert_eq!(summaries.len(), 1);
+            let rows = repo
+                .get_media_outputs_for_session("session-1")
+                .await
+                .unwrap();
+            assert_eq!(summaries[0].count(), rows.len() as u32);
+            assert_eq!(summaries[0].thumbnail_id.as_deref(), Some("z-first"));
+            assert_eq!(
+                summaries[0].thumbnail_id,
+                rows.iter()
+                    .find(|output| output.file_type == MediaFileType::Thumbnail.as_str())
+                    .map(|output| output.id.clone())
+            );
+        }
+        assert_eq!(
+            repo.first_thumbnail_id("session-1")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("z-first")
+        );
+        assert!(repo.first_thumbnail_id("empty").await.unwrap().is_none());
+        repo.delete_media_output("z-first").await.unwrap();
+        assert_eq!(
+            repo.first_thumbnail_id("session-1")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("a-second")
+        );
+        for id in ["a-second", "late"] {
+            repo.delete_media_output(id).await.unwrap();
+        }
+        let summaries = repo
+            .summarize_session_outputs(&["session-1".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(summaries[0].count(), 3);
+        assert_eq!(summaries[0].thumbnail_id, None);
     }
 
     /// Seeds `session-1` with one output per `MediaFileType` plus a second
