@@ -189,7 +189,8 @@
       "execution_info",
       "duration_secs",
       "queue_wait_secs",
-      "dag_step_execution_id"
+      "dag_step_execution_id",
+      "continuation_rank"
     ]
   },
   "job_execution_logs": {
