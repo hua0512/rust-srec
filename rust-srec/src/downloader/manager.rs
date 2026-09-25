@@ -1040,6 +1040,13 @@ impl DownloadManager {
         self.events.subscribe()
     }
 
+    pub(crate) fn subscribe_shared(
+        &self,
+    ) -> broadcast::Receiver<Arc<crate::utils::shared_event::SharedEvent<DownloadManagerEvent>>>
+    {
+        self.events.subscribe_shared()
+    }
+
     /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
     /// point for rejection events. [`Self::preflight`] routes its circuit-
     /// breaker and output-root rejections through here, and callers that
