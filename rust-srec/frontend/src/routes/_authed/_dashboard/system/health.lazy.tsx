@@ -325,7 +325,7 @@ function MetricCard({
   color?: string;
 }) {
   return (
-    <Card className="border-white/10 bg-background/30 backdrop-blur-xl shadow-xl transition-all hover:bg-background/40 hover:scale-[1.02]">
+    <Card className="border-white/10 bg-background/30 backdrop-blur-xl shadow-xl transition-colors hover:bg-background/40">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}

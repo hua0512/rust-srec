@@ -53,7 +53,7 @@ export function GlassNode({
   return (
     <div
       className={cn(
-        'group relative p-5 rounded-2xl border transition-all duration-500 hover:scale-[1.05] hover:-translate-y-2',
+        'group relative p-5 rounded-2xl border transition-[border-color,box-shadow] duration-500',
         'bg-card backdrop-blur-3xl shadow-xl',
         'border-border/60 hover:border-primary/40',
         glow,
