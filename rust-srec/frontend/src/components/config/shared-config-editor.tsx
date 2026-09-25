@@ -34,8 +34,8 @@ export interface SharedConfigPaths<T extends FieldValues> {
   limits: string;
   // Danmu settings base path (record_danmu)
   danmu: string;
-  // Danmu statistics base path. Omit to skip the card, as a template's per-platform overrides do:
-  // statistics are never resolved from that layer.
+  // Danmu statistics base path. Omit to skip the card for a layer that statistics are not resolved
+  // from.
   danmuStatistics?: string;
   pipeline: Path<T>;
   sessionCompletePipeline?: Path<T>;

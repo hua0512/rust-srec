@@ -70,7 +70,7 @@ msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
 #. placeholder {0}: uploads.length
-#: src/components/streamers/card/upload-indicator.tsx:45
+#: src/components/streamers/card/upload-indicator.tsx:49
 msgid "{0, plural, one {# active upload} other {# active uploads}}"
 msgstr "{0, plural, other {# 个进行中的上传}}"
 
@@ -100,7 +100,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
 #. placeholder {0}: upload.filesTotal
-#: src/components/streamers/card/upload-indicator.tsx:57
+#: src/components/streamers/card/upload-indicator.tsx:61
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, other {# 个文件}}"
 
@@ -216,7 +216,7 @@ msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
 
 #: src/components/health/storage-usage-card.tsx:146
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:289
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:290
 msgid "{free} free"
 msgstr "剩余 {free}"
 
@@ -388,8 +388,8 @@ msgstr "权限级别"
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应用登录已过期，请重新登录。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:173
-#: src/components/streamers/card/use-streamer-status.tsx:182
+#: src/components/streamers/card/use-streamer-status.tsx:174
+#: src/components/streamers/card/use-streamer-status.tsx:183
 msgid "Account Not Found"
 msgstr "账号不存在"
 
@@ -411,11 +411,11 @@ msgstr "启用"
 msgid "Active Days"
 msgstr "生效日期"
 
-#: src/components/streamers/edit/active-download-card.tsx:49
+#: src/components/streamers/edit/active-download-card.tsx:52
 msgid "Active Download"
 msgstr "正在录制"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:371
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:372
 msgid "Active Recordings"
 msgstr "正在录制"
 
@@ -447,7 +447,7 @@ msgstr "添加主播"
 msgid "Add an engine"
 msgstr "添加引擎"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:137
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:133
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "添加覆盖项以自定义特定平台的行为。"
 
@@ -520,7 +520,7 @@ msgid "Add module..."
 msgstr "添加模块..."
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:98
 msgid "Add Override"
 msgstr "添加覆盖项"
 
@@ -549,7 +549,7 @@ msgstr "添加步骤"
 msgid "Add Stream"
 msgstr "添加流"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:822
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:782
 msgid "Add Streamer"
 msgstr "添加主播"
 
@@ -619,7 +619,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:252
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:173
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:452
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "All"
 msgstr "全部"
 
@@ -632,11 +632,11 @@ msgstr "全部"
 msgid "All Levels"
 msgstr "所有级别"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:507
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:464
 msgid "All Platforms"
 msgstr "所有平台"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:540
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:497
 msgid "All Templates"
 msgstr "所有模板"
 
@@ -681,7 +681,7 @@ msgstr "匿名元数据 • UTF-8 格式"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:624
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:581
 msgid "Any priority"
 msgstr "任意优先级"
 
@@ -697,7 +697,7 @@ msgstr "API 密钥已创建"
 msgid "API key revoked"
 msgstr "API 密钥已吊销"
 
-#: src/components/sidebar/user-menu.tsx:120
+#: src/components/sidebar/user-menu.tsx:119
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
 msgid "API Keys"
@@ -777,8 +777,8 @@ msgstr "确定要删除此任务吗？此操作将永久从列表中删除。"
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "确定要删除此会话吗？此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:147
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:409
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:148
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:366
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
@@ -958,7 +958,7 @@ msgstr "均值 {averagePerMinute}"
 msgid "Avg / min"
 msgstr "平均/分钟"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:474
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:479
 msgid "Avg. Duration"
 msgstr "平均时长"
 
@@ -966,9 +966,9 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:172
-#: src/components/config/templates/template-editor.tsx:223
-#: src/components/config/templates/template-editor.tsx:226
+#: src/components/config/platforms/platform-editor.tsx:173
+#: src/components/config/templates/template-editor.tsx:224
+#: src/components/config/templates/template-editor.tsx:227
 msgid "Back"
 msgstr "返回"
 
@@ -1332,7 +1332,7 @@ msgid "Cancel selected"
 msgstr "取消所选"
 
 #: src/components/pipeline/status-config.ts:107
-#: src/components/streamers/card/use-streamer-status.tsx:45
+#: src/components/streamers/card/use-streamer-status.tsx:46
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 msgid "Cancelled"
 msgstr "已取消"
@@ -1383,13 +1383,13 @@ msgid "Cause:"
 msgstr "原因："
 
 #: src/components/player/stream-info-card.tsx:31
-#: src/components/streamers/edit/active-download-card.tsx:90
-#: src/components/streamers/progress-indicator.tsx:91
+#: src/components/streamers/edit/active-download-card.tsx:93
+#: src/components/streamers/progress-indicator.tsx:93
 msgid "CDN"
 msgstr "CDN"
 
 #: src/components/layout/site-header.tsx:34
-#: src/components/sidebar/user-menu.tsx:126
+#: src/components/sidebar/user-menu.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:278
 msgid "Change Password"
@@ -1501,7 +1501,7 @@ msgstr "检查中"
 msgid "Checking link"
 msgstr "检查链接中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:339
+#: src/components/streamers/card/use-streamer-status.tsx:340
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -1538,7 +1538,7 @@ msgstr "清理"
 #: src/components/logging/log-viewer.tsx:433
 #: src/components/notifications/desktop-channel-dialog.tsx:173
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:244
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:597
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:554
 msgid "Clear"
 msgstr "清空"
 
@@ -1650,11 +1650,11 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
 #: src/components/pipeline/status-config.ts:103
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:340
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:341
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:297
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:723
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:100
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:460
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:465
 msgid "Completed"
 msgstr "已完成"
 
@@ -1701,7 +1701,7 @@ msgstr "压缩级别"
 msgid "Concurrency"
 msgstr "并发"
 
-#: src/components/streamers/card/use-streamer-status.tsx:275
+#: src/components/streamers/card/use-streamer-status.tsx:276
 msgid "Concurrency limit reached"
 msgstr "已达到并发限制"
 
@@ -1853,7 +1853,7 @@ msgstr "连接方式"
 msgid "Connection Error"
 msgstr "连接错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:126
+#: src/components/streamers/card/stream-avatar-info.tsx:125
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
@@ -1869,7 +1869,7 @@ msgstr "连接/活动超时"
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "确认离线所需的连续失败检查次数。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:133
+#: src/components/streamers/card/stream-avatar-info.tsx:132
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
@@ -2045,10 +2045,10 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:245
+#: src/components/config/templates/template-editor.tsx:246
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:434
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:439
 msgid "Create"
 msgstr "创建"
 
@@ -2112,7 +2112,7 @@ msgstr "创建新预设"
 msgid "Create New Workflow"
 msgstr "创建新工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:431
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:436
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
@@ -2124,7 +2124,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:197
+#: src/components/config/templates/template-editor.tsx:198
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:203
 msgid "Create Template"
 msgstr "创建模板"
@@ -2344,7 +2344,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:186
+#: src/components/config/shared-config-editor.tsx:189
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -2388,7 +2388,7 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:269
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:270
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:355
 msgid "Database"
 msgstr "数据库"
@@ -2440,7 +2440,7 @@ msgstr "默认"
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:660
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:617
 msgid "Default"
 msgstr "默认"
 
@@ -2501,8 +2501,8 @@ msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "已确认离线"
 
-#: src/components/health/health-status-badge.tsx:47
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:619
+#: src/components/health/health-status-badge.tsx:46
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:620
 msgid "Degraded"
 msgstr "降级"
 
@@ -2791,11 +2791,11 @@ msgstr "禁用所选"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
-#: src/components/streamers/card/use-streamer-status.tsx:50
+#: src/components/streamers/card/use-streamer-status.tsx:51
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:520
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:530
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:99
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:102
 msgid "Disabled"
 msgstr "已禁用"
 
@@ -2809,7 +2809,7 @@ msgstr "已断开"
 msgid "Discontinuity"
 msgstr "不连续"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:285
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:286
 msgid "Disk"
 msgstr "磁盘"
 
@@ -2848,7 +2848,7 @@ msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
 
 #: src/components/sessions/recordings-tab.tsx:190
-#: src/components/streamers/progress-indicator.tsx:66
+#: src/components/streamers/progress-indicator.tsx:68
 msgid "Download"
 msgstr "下载"
 
@@ -2857,7 +2857,7 @@ msgstr "下载"
 msgid "Download {0}"
 msgstr "下载 {0}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:89
+#: src/components/streamers/card/use-streamer-status.tsx:90
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
@@ -2890,7 +2890,7 @@ msgstr "下载引擎（mesio）"
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:277
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:278
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:356
 msgid "Download Manager"
 msgstr "下载管理"
@@ -2904,7 +2904,7 @@ msgstr "录制重试策略"
 msgid "Download started"
 msgstr "下载已开始"
 
-#: src/components/streamers/edit/active-download-card.tsx:55
+#: src/components/streamers/edit/active-download-card.tsx:58
 msgid "Downloading"
 msgstr "下载中"
 
@@ -2932,8 +2932,8 @@ msgstr "双格式输出"
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:61
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
-#: src/components/streamers/edit/active-download-card.tsx:135
-#: src/components/streamers/progress-indicator.tsx:77
+#: src/components/streamers/edit/active-download-card.tsx:138
+#: src/components/streamers/progress-indicator.tsx:79
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:662
 msgid "Duration"
 msgstr "时长"
@@ -3208,7 +3208,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:384
 #: src/components/config/global/backup-restore-card.tsx:389
 #: src/components/config/global/backup-restore-card.tsx:394
-#: src/components/config/templates/template-editor.tsx:287
+#: src/components/config/templates/template-editor.tsx:289
 #: src/components/layout/site-header.tsx:42
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
 msgid "Engines"
@@ -3244,21 +3244,21 @@ msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
 #: src/components/notifications/events/payload-preview.tsx:34
-#: src/components/streamers/card/use-streamer-status.tsx:49
+#: src/components/streamers/card/use-streamer-status.tsx:50
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:60
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:105
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:361
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:366
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:314
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:204
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:126
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:101
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:196
-#: src/components/streamers/card/use-streamer-status.tsx:236
+#: src/components/streamers/card/use-streamer-status.tsx:197
+#: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:751
 msgid "Error Details"
 msgstr "错误详情"
@@ -3284,7 +3284,7 @@ msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
 #. placeholder {0}: (error as any).message
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:426
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:383
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
@@ -3321,7 +3321,7 @@ msgstr "事件"
 msgid "Examples:"
 msgstr "示例："
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:687
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:644
 msgid "Exceptional states"
 msgstr "异常状态"
 
@@ -3492,9 +3492,9 @@ msgstr "五"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:351
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:467
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:472
 msgid "Failed"
 msgstr "失败"
 
@@ -3507,7 +3507,7 @@ msgstr "下载失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
-#: src/hooks/use-streamer-form.ts:107
+#: src/hooks/use-streamer-form.ts:111
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
@@ -3589,7 +3589,7 @@ msgstr "删除渠道失败"
 msgid "Failed to delete engine"
 msgstr "删除引擎失败"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:93
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:94
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -3622,8 +3622,8 @@ msgstr "删除会话失败"
 msgid "Failed to delete sessions"
 msgstr "删除会话失败"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:129
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:335
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:125
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:292
 msgid "Failed to delete streamer"
 msgstr "删除主播失败"
 
@@ -3658,7 +3658,7 @@ msgstr "启用 Web 推送失败"
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
-#: src/hooks/use-streamer-form.ts:103
+#: src/hooks/use-streamer-form.ts:107
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
 
@@ -3689,7 +3689,7 @@ msgid "Failed to load events"
 msgstr "加载事件失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:364
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:369
 msgid "Failed to load jobs: {0}"
 msgstr "加载处理任务列表失败：{0}"
 
@@ -3734,7 +3734,7 @@ msgstr "解析 URL 失败"
 msgid "Failed to process selected pipelines"
 msgstr "处理所选流水线失败"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:387
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:344
 msgid "Failed to process selected streamers"
 msgstr "处理所选主播失败"
 
@@ -3796,13 +3796,13 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:182
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:187
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:141
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:346
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:137
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:303
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
@@ -3851,11 +3851,11 @@ msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取�
 #: src/components/streamers/edit/status-check-history.tsx:374
 #: src/components/streamers/edit/status-check-history.tsx:395
 #: src/lib/notification-event-types.ts:33
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:119
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:122
 msgid "Fatal error"
 msgstr "致命错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:44
+#: src/components/streamers/card/use-streamer-status.tsx:45
 msgid "Fatal Error"
 msgstr "严重错误"
 
@@ -3950,7 +3950,7 @@ msgstr "按标题关键字过滤"
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:87
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:88
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
@@ -3992,8 +3992,8 @@ msgstr "已过滤"
 msgid "Filtered:"
 msgstr "过滤原因："
 
-#: src/components/config/shared-config-editor.tsx:142
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:567
+#: src/components/config/shared-config-editor.tsx:145
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:524
 msgid "Filters"
 msgstr "过滤器"
 
@@ -4158,9 +4158,8 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:220
-#: src/components/config/templates/tabs/platform-override-card.tsx:77
-#: src/components/config/templates/template-editor.tsx:277
+#: src/components/config/platforms/platform-editor.tsx:222
+#: src/components/config/templates/template-editor.tsx:279
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
@@ -4254,16 +4253,16 @@ msgid "Go Back"
 msgstr "返回"
 
 #: src/components/ui/pagination.tsx:99
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:898
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:858
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:884
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:844
 msgid "Go to page {p}"
 msgstr "跳转到第 {p} 页"
 
 #: src/components/ui/pagination.tsx:79
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:864
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:824
 msgid "Go to previous page"
 msgstr "上一页"
 
@@ -4353,8 +4352,8 @@ msgstr "Header 值"
 msgid "Health"
 msgstr "健康"
 
-#: src/components/health/health-status-badge.tsx:34
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:617
+#: src/components/health/health-status-badge.tsx:33
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:618
 msgid "Healthy"
 msgstr "正常"
 
@@ -4371,7 +4370,7 @@ msgstr "隐藏密码"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:180
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:627
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:584
 msgid "High"
 msgstr "高"
 
@@ -4408,7 +4407,7 @@ msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
-#: src/components/streamers/card/use-streamer-status.tsx:271
+#: src/components/streamers/card/use-streamer-status.tsx:272
 msgid "High-priority slot waiting (concurrency limit reached)"
 msgstr "高优先级槽位等待中（已达到并发限制）"
 
@@ -4732,9 +4731,9 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inset"
 msgstr "嵌入"
 
-#: src/components/streamers/card/use-streamer-status.tsx:41
-#: src/components/streamers/card/use-streamer-status.tsx:327
-#: src/components/streamers/card/use-streamer-status.tsx:336
+#: src/components/streamers/card/use-streamer-status.tsx:42
+#: src/components/streamers/card/use-streamer-status.tsx:328
+#: src/components/streamers/card/use-streamer-status.tsx:337
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -4841,7 +4840,7 @@ msgstr "任务超时"
 msgid "Jobs"
 msgstr "处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:557
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:562
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
@@ -4904,7 +4903,7 @@ msgstr "关键字"
 msgid "Language"
 msgstr "语言"
 
-#: src/components/streamers/card/use-streamer-status.tsx:398
+#: src/components/streamers/card/use-streamer-status.tsx:399
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -4917,11 +4916,11 @@ msgstr "最后检查"
 msgid "Last check {0} ago"
 msgstr "上次检查于 {0} 前"
 
-#: src/components/streamers/card/use-streamer-status.tsx:159
+#: src/components/streamers/card/use-streamer-status.tsx:160
 msgid "Last Error"
 msgstr "最后错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:146
+#: src/components/streamers/card/stream-avatar-info.tsx:145
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
@@ -4986,15 +4985,15 @@ msgstr "限制单个文件的传输速率，而非整体总量。"
 msgid "List"
 msgstr "列表"
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
-#: src/components/streamers/card/use-streamer-status.tsx:314
+#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:315
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
 #: src/components/streamers/edit/status-check-history.tsx:366
 #: src/components/streamers/edit/status-check-history.tsx:387
 #: src/components/streamers/edit/status-check-history.tsx:444
 #: src/components/streamers/edit/streamer-header.tsx:66
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:99
 msgid "Live"
 msgstr "直播"
 
@@ -5152,7 +5151,7 @@ msgstr "无损分割"
 #: src/components/player/player-card.tsx:263
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:633
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:590
 msgid "Low"
 msgstr "低"
 
@@ -5218,7 +5217,7 @@ msgstr "管理系统通知发送到哪里"
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:438
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:395
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
@@ -5496,7 +5495,7 @@ msgstr "模块日志级别"
 msgid "Monday"
 msgstr "星期一"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:387
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:392
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
@@ -5508,8 +5507,8 @@ msgstr "监控"
 msgid "Monitoring intervals and proxy settings."
 msgstr "监测间隔与代理设置。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:210
-#: src/components/streamers/card/use-streamer-status.tsx:219
+#: src/components/streamers/card/use-streamer-status.tsx:211
+#: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -5521,8 +5520,8 @@ msgstr "本月"
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:558
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:583
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:515
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:540
 msgid "More filters"
 msgstr "更多筛选"
 
@@ -5607,11 +5606,11 @@ msgstr "我的模板"
 msgid "Name"
 msgstr "名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:666
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:623
 msgid "Name A-Z"
 msgstr "名称 A-Z"
 
-#: src/hooks/use-streamer-form.ts:99
+#: src/hooks/use-streamer-form.ts:103
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
@@ -5619,7 +5618,7 @@ msgstr "名称自动填充成功"
 msgid "Name is required"
 msgstr "必须填写名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:669
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:626
 msgid "Name Z-A"
 msgstr "名称 Z-A"
 
@@ -5639,7 +5638,7 @@ msgstr "原始分辨率缩略图"
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间标记。"
 
-#: src/components/config/shared-config-editor.tsx:164
+#: src/components/config/shared-config-editor.tsx:167
 msgid "Network"
 msgstr "网络"
 
@@ -5702,7 +5701,7 @@ msgstr "下一页"
 msgid "Night"
 msgstr "夜间"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:417
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:418
 msgid "No active recordings"
 msgstr "暂无正在录制"
 
@@ -5746,7 +5745,7 @@ msgstr "未添加自定义标签"
 msgid "No description."
 msgstr "暂无描述。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:151
+#: src/components/streamers/card/stream-avatar-info.tsx:150
 msgid "No detailed error message available"
 msgstr "没有可用的详细错误信息"
 
@@ -5784,7 +5783,7 @@ msgstr "没有输入路径"
 msgid "No issues detected"
 msgstr "未检测到问题"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:548
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:553
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
@@ -5853,15 +5852,15 @@ msgstr "未配置任何参数。"
 msgid "No pipeline DAGs found."
 msgstr "未发现处理管道 DAG。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:550
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:555
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:110
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:106
 msgid "No platform found."
 msgstr "未找到平台。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:134
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:130
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
@@ -5931,7 +5930,7 @@ msgstr "未添加步骤"
 msgid "No steps defined"
 msgstr "未定义步骤"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:808
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:768
 msgid "No streamers found"
 msgstr "未找到主播"
 
@@ -5940,7 +5939,7 @@ msgid "No talker data"
 msgstr "暂无发言用户数据"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:136
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:500
 msgid "No template assigned"
 msgstr "未分配模板"
 
@@ -5990,7 +5989,7 @@ msgstr "无（剥离音频）"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:182
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:587
 msgid "Normal"
 msgstr "正常"
 
@@ -6004,15 +6003,15 @@ msgstr "普通"
 msgid "Normal+"
 msgstr "普通+"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:462
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:463
 msgid "Not available"
 msgstr "不可用"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:123
 msgid "Not found"
 msgstr "未找到"
 
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:47
 msgid "Not Found"
 msgstr "未找到主播"
 
@@ -6132,14 +6131,14 @@ msgstr "OAuth 令牌"
 msgid "Off Canvas"
 msgstr "侧滑"
 
-#: src/components/streamers/card/use-streamer-status.tsx:39
-#: src/components/streamers/card/use-streamer-status.tsx:384
-#: src/components/streamers/card/use-streamer-status.tsx:393
+#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:385
+#: src/components/streamers/card/use-streamer-status.tsx:394
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/status-check-history.tsx:368
 #: src/components/streamers/edit/status-check-history.tsx:389
 #: src/components/streamers/edit/streamer-header.tsx:68
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:100
 msgid "Offline"
 msgstr "离线"
 
@@ -6271,17 +6270,17 @@ msgctxt "terminal-cause"
 msgid "Out of Schedule"
 msgstr "不在计划时间内"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:118
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:121
 msgid "Out of space"
 msgstr "空间不足"
 
-#: src/components/streamers/card/use-streamer-status.tsx:43
+#: src/components/streamers/card/use-streamer-status.tsx:44
 msgid "Out of Space"
 msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1700
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:153
+#: src/components/config/shared-config-editor.tsx:156
 #: src/components/config/templates/template-card.tsx:163
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
@@ -6357,21 +6356,17 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:357
+#: src/components/streamers/card/use-streamer-status.tsx:358
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:222
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:223
 msgid "Overall Health"
 msgstr "总体健康"
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:159
 msgid "Overall system status"
 msgstr "整体系统状态"
-
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:90
-msgid "Override configuration (paths, delays, etc.) for specific platforms."
-msgstr "为特定平台覆盖配置（路径、延迟等）。"
 
 #: src/components/config/shared/output-settings-card.tsx:110
 msgid "Override filename template."
@@ -6392,6 +6387,10 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 #: src/components/config/shared/output-settings-card.tsx:82
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
+
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:86
+msgid "Override pipelines and platform options for specific platforms."
+msgstr "为特定平台覆盖处理管道和平台选项。"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:317
 msgid "Overview"
@@ -6560,7 +6559,7 @@ msgstr "峰值/分钟"
 
 #: src/components/pipeline/status-config.ts:99
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:92
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:445
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:450
 msgid "Pending"
 msgstr "待处理"
 
@@ -6568,15 +6567,15 @@ msgstr "待处理"
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
-#: src/components/streamers/card/use-streamer-status.tsx:100
+#: src/components/streamers/card/use-streamer-status.tsx:101
 msgid "Pending Error Clears"
 msgstr "待清除错误"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:318
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:319
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:572
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:577
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:503
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:364
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:259
@@ -6626,7 +6625,7 @@ msgstr "需要权限"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:197
+#: src/components/config/shared-config-editor.tsx:200
 #: src/components/layout/site-header.tsx:36
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:508
@@ -6687,7 +6686,7 @@ msgid "Pipeline job created successfully"
 msgstr "处理任务创建成功"
 
 #: src/components/sessions/jobs-tab.tsx:36
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:384
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:389
 msgid "Pipeline Jobs"
 msgstr "处理任务"
 
@@ -6724,7 +6723,7 @@ msgstr "管道队列严重积压"
 msgid "Pipeline started"
 msgstr "管道开始"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:304
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:305
 msgid "Pipeline Statistics"
 msgstr "处理管道统计"
 
@@ -6736,13 +6735,13 @@ msgstr "处理管道结构"
 msgid "Pipeline Timeouts"
 msgstr "流水线超时"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:407
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:412
 msgid "pipelines"
 msgstr "处理管道"
 
 #: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:501
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:458
 msgid "Platform"
 msgstr "平台"
 
@@ -6762,15 +6761,15 @@ msgstr "平台名称"
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/streamers/config/streamer-configuration.tsx:51
+#: src/components/streamers/config/streamer-configuration.tsx:52
 msgid "Platform options"
 msgstr "平台选项"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:136
+#: src/components/config/templates/tabs/platform-override-card.tsx:127
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:87
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:83
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
@@ -6787,7 +6786,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:401
-#: src/components/config/templates/template-editor.tsx:297
+#: src/components/config/templates/template-editor.tsx:299
 #: src/components/layout/site-header.tsx:43
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "Platforms"
@@ -6862,7 +6861,7 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/hooks/use-streamer-form.ts:133
+#: src/hooks/use-streamer-form.ts:137
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -7041,7 +7040,7 @@ msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:166
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:605
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:562
 msgid "Priority"
 msgstr "优先级"
 
@@ -7049,11 +7048,11 @@ msgstr "优先级"
 msgid "Priority Filter"
 msgstr "优先级过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:672
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:629
 msgid "Priority high-low"
 msgstr "优先级从高到低"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:675
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:632
 msgid "Priority low-high"
 msgstr "优先级从低到高"
 
@@ -7077,7 +7076,7 @@ msgstr "已处理 {0} 个流水线；{1} 个失败"
 
 #. placeholder {0}: result.succeeded
 #. placeholder {1}: result.failed
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:372
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:329
 msgid "Processed {0} streamers; {1} failed"
 msgstr "已处理 {0} 个主播；{1} 个失败"
 
@@ -7090,9 +7089,9 @@ msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
 #: src/components/pipeline/status-config.ts:101
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:329
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:330
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:95
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:451
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:456
 msgid "Processing"
 msgstr "处理中"
 
@@ -7147,7 +7146,7 @@ msgid "Protocol Settings"
 msgstr "协议设置"
 
 #: src/components/config/global/network-system-card.tsx:149
-#: src/components/config/shared-config-editor.tsx:175
+#: src/components/config/shared-config-editor.tsx:178
 msgid "Proxy"
 msgstr "代理"
 
@@ -7201,11 +7200,11 @@ msgstr "查询参数"
 msgid "Queue"
 msgstr "队列"
 
-#: src/components/streamers/card/use-streamer-status.tsx:258
+#: src/components/streamers/card/use-streamer-status.tsx:259
 msgid "Queued"
 msgstr "排队中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:268
+#: src/components/streamers/card/use-streamer-status.tsx:269
 msgid "Queued for download"
 msgstr "等待下载"
 
@@ -7234,8 +7233,8 @@ msgstr "速率限制"
 msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 429 \"请求过多\" 时较为有用。"
 
-#: src/components/streamers/edit/active-download-card.tsx:151
-#: src/components/streamers/progress-indicator.tsx:83
+#: src/components/streamers/edit/active-download-card.tsx:154
+#: src/components/streamers/progress-indicator.tsx:85
 msgid "Ratio"
 msgstr "比例"
 
@@ -7310,7 +7309,7 @@ msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
 #: src/components/notifications/events/payload-preview.tsx:41
-#: src/components/streamers/card/use-streamer-status.tsx:223
+#: src/components/streamers/card/use-streamer-status.tsx:224
 msgid "Reason"
 msgstr "原因"
 
@@ -7331,7 +7330,7 @@ msgstr "后端持久化的最近通知事件"
 msgid "Recent Sessions"
 msgstr "最近录制会话"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:663
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:620
 msgid "Recently updated"
 msgstr "最近更新"
 
@@ -7362,7 +7361,7 @@ msgid "Recording error"
 msgstr "录制出错"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:140
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:134
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -7379,7 +7378,7 @@ msgstr "录制被拒绝"
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/streamers/card/use-streamer-status.tsx:367
+#: src/components/streamers/card/use-streamer-status.tsx:368
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -7387,12 +7386,12 @@ msgstr "录制将在计划允许时开始"
 msgid "Recordings"
 msgstr "录制内容"
 
-#: src/components/streamers/card/use-streamer-status.tsx:79
-#: src/components/streamers/card/use-streamer-status.tsx:88
+#: src/components/streamers/card/use-streamer-status.tsx:80
+#: src/components/streamers/card/use-streamer-status.tsx:89
 msgid "Recovering"
 msgstr "恢复中"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:586
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
 msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
@@ -7476,7 +7475,7 @@ msgstr "移除请求头"
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:153
+#: src/components/config/templates/tabs/platform-override-card.tsx:144
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
@@ -7680,7 +7679,7 @@ msgstr "在待确认状态 {0} 秒后恢复。"
 msgid "RESUMED START"
 msgstr "恢复启动"
 
-#: src/components/streamers/card/use-streamer-status.tsx:133
+#: src/components/streamers/card/use-streamer-status.tsx:134
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
@@ -7702,7 +7701,7 @@ msgstr "锁定文件重试次数"
 msgid "Retry"
 msgstr "重试"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:690
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:695
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
@@ -7776,7 +7775,7 @@ msgstr "右侧"
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:833
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:793
 msgid "Rows per page"
 msgstr "每页行数"
 
@@ -7824,7 +7823,7 @@ msgstr "当视频和弹幕分段都可用时运行。"
 msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
-#: src/components/layout/app-sidebar.tsx:54
+#: src/components/layout/app-sidebar.tsx:50
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
@@ -7879,8 +7878,8 @@ msgstr "星期六"
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:190
-#: src/components/config/templates/template-editor.tsx:247
+#: src/components/config/platforms/platform-editor.tsx:191
+#: src/components/config/templates/template-editor.tsx:248
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
@@ -7905,8 +7904,8 @@ msgstr "保存工作流"
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:188
-#: src/components/config/templates/template-editor.tsx:243
+#: src/components/config/platforms/platform-editor.tsx:189
+#: src/components/config/templates/template-editor.tsx:244
 #: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7936,8 +7935,8 @@ msgstr "已扫描！请在手机上确认"
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:42
-#: src/components/streamers/card/use-streamer-status.tsx:348
+#: src/components/streamers/card/use-streamer-status.tsx:43
+#: src/components/streamers/card/use-streamer-status.tsx:349
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -7971,7 +7970,7 @@ msgstr "搜索引擎..."
 msgid "Search events..."
 msgstr "搜索事件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:397
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:402
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
@@ -7983,7 +7982,7 @@ msgstr "搜索日志..."
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:107
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:103
 msgid "Search platform..."
 msgstr "搜索平台…"
 
@@ -8003,7 +8002,7 @@ msgstr "搜索录制会话..."
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:446
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:403
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
@@ -8056,13 +8055,13 @@ msgstr "分段超时（毫秒）"
 msgid "Segment TTL (ms)"
 msgstr "分段 TTL（毫秒）"
 
-#: src/components/streamers/edit/active-download-card.tsx:143
+#: src/components/streamers/edit/active-download-card.tsx:146
 msgid "Segments"
 msgstr "分段"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:422
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:427
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:375
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:740
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:697
 msgid "Select"
 msgstr "选择"
 
@@ -8165,7 +8164,7 @@ msgstr "选择产物"
 msgid "Select parse mode"
 msgstr "选择解析模式"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:414
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:419
 msgid "Select pipelines"
 msgstr "选择流水线"
 
@@ -8185,7 +8184,7 @@ msgstr "选择优先级"
 msgid "Select strategy"
 msgstr "选择策略"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:731
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:688
 msgid "Select streamers"
 msgstr "选择主播"
 
@@ -8385,7 +8384,7 @@ msgstr "设置"
 msgid "Settings updated"
 msgstr "配置已更新"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:179
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -8406,7 +8405,7 @@ msgstr "Shell 命令"
 msgid "Show all {0}"
 msgstr "显示全部 {0} 位"
 
-#: src/components/streamers/progress-indicator.tsx:55
+#: src/components/streamers/progress-indicator.tsx:57
 msgid "Show download details"
 msgstr "显示录制下载详情"
 
@@ -8442,7 +8441,7 @@ msgstr "登录"
 msgid "Sign in to the server before using the stream proxy."
 msgstr "使用直播代理前，请先登录服务器。"
 
-#: src/components/sidebar/user-menu.tsx:137
+#: src/components/sidebar/user-menu.tsx:136
 msgid "Sign out"
 msgstr "退出登录"
 
@@ -8466,7 +8465,7 @@ msgstr "单个 URL"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:71
-#: src/components/streamers/edit/active-download-card.tsx:124
+#: src/components/streamers/edit/active-download-card.tsx:127
 msgid "Size"
 msgstr "大小"
 
@@ -8535,7 +8534,7 @@ msgstr "发生错误！"
 msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
 msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:641
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:598
 msgid "Sort by"
 msgstr "排序方式"
 
@@ -8543,8 +8542,8 @@ msgstr "排序方式"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:230
-#: src/components/config/templates/tabs/platform-override-card.tsx:83
+#: src/components/config/platforms/platform-editor.tsx:232
+#: src/components/config/templates/tabs/platform-override-card.tsx:74
 msgid "Specific"
 msgstr "特定"
 
@@ -8556,7 +8555,7 @@ msgstr "特定 TTWID Cookie"
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
-#: src/components/streamers/edit/active-download-card.tsx:113
+#: src/components/streamers/edit/active-download-card.tsx:116
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:680
 msgid "Speed"
 msgstr "速度"
@@ -8616,7 +8615,7 @@ msgstr "已开始"
 msgid "STARTED"
 msgstr "已启动"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:635
 msgid "State"
 msgstr "状态"
 
@@ -8701,7 +8700,7 @@ msgstr "地址获取方式"
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:128
+#: src/components/streamers/card/stream-avatar-info.tsx:127
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
@@ -8746,7 +8745,7 @@ msgstr "直播开始时间"
 msgid "Stream structure change"
 msgstr "流结构变化"
 
-#: src/components/streamers/edit/active-download-card.tsx:64
+#: src/components/streamers/edit/active-download-card.tsx:67
 msgid "Stream URL"
 msgstr "直播链接"
 
@@ -8772,8 +8771,8 @@ msgstr "主播检查历史"
 msgid "Streamer created successfully"
 msgstr "主播创建成功"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:125
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:331
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:121
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:288
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
@@ -8786,11 +8785,11 @@ msgstr "主播 ID"
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
-#: src/components/streamers/card/use-streamer-status.tsx:127
+#: src/components/streamers/card/use-streamer-status.tsx:128
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
-#: src/components/streamers/card/use-streamer-status.tsx:183
+#: src/components/streamers/card/use-streamer-status.tsx:184
 msgid "Streamer no longer exists on the platform"
 msgstr "主播在平台上已不存在"
 
@@ -8799,16 +8798,16 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:858
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:818
 msgid "Streamer pagination"
 msgstr "主播分页"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:137
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:342
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:133
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:299
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:73
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:74
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
@@ -8817,11 +8816,11 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:377
 #: src/components/layout/site-header.tsx:31
 #: src/lib/menu-list.ts:58
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:437
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:394
 msgid "Streamers"
 msgstr "主播"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:420
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:421
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
@@ -8882,7 +8881,7 @@ msgid "Successfully processed {0} pipelines"
 msgstr "已成功处理 {0} 个流水线"
 
 #. placeholder {0}: result.succeeded
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:319
 msgid "Successfully processed {0} streamers"
 msgstr "成功处理 {0} 个主播"
 
@@ -8943,7 +8942,7 @@ msgstr "系统正在关闭"
 msgid "System started"
 msgstr "系统已启动"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:196
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:197
 msgid "System Status"
 msgstr "系统状态"
 
@@ -8983,7 +8982,7 @@ msgstr "TB"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:123
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:534
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:491
 msgid "Template"
 msgstr "模板"
 
@@ -9023,13 +9022,13 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:123
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:126
 msgid "Temporarily disabled"
 msgstr "暂时禁用"
 
-#: src/components/streamers/card/use-streamer-status.tsx:48
-#: src/components/streamers/card/use-streamer-status.tsx:117
-#: src/components/streamers/card/use-streamer-status.tsx:126
+#: src/components/streamers/card/use-streamer-status.tsx:49
+#: src/components/streamers/card/use-streamer-status.tsx:118
+#: src/components/streamers/card/use-streamer-status.tsx:127
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
@@ -9073,7 +9072,7 @@ msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:186
+#: src/components/streamers/card/use-streamer-status.tsx:187
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
@@ -9188,11 +9187,11 @@ msgstr "此 STOKEN 不含大写字母，很可能取错了值。请从网盘页�
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
-#: src/components/streamers/card/use-streamer-status.tsx:280
+#: src/components/streamers/card/use-streamer-status.tsx:281
 msgid "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
 msgstr "该主播正在直播，但全局下载并发已用满。一旦有空闲槽位，录制和弹幕采集将自动开始。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:360
+#: src/components/streamers/card/use-streamer-status.tsx:361
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
@@ -9350,7 +9349,7 @@ msgstr "收件人地址"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:124
+#: src/components/config/templates/tabs/platform-override-card.tsx:115
 msgid "Toggle"
 msgstr "切换"
 
@@ -9391,7 +9390,7 @@ msgstr "活跃发言用户"
 msgid "Top Words"
 msgstr "高频词"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:454
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:411
 msgid "total"
 msgstr "总计"
 
@@ -9452,7 +9451,7 @@ msgstr "传输数帮助"
 msgid "Transient error"
 msgstr "瞬时错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:92
+#: src/components/streamers/card/use-streamer-status.tsx:93
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
@@ -9549,11 +9548,11 @@ msgstr "尝试调整过滤器或限制"
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:811
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:771
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:555
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:560
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:485
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:340
 msgid "Try adjusting your search or filters."
@@ -9631,8 +9630,8 @@ msgstr "极速压缩"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
-#: src/components/health/health-status-badge.tsx:60
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:621
+#: src/components/health/health-status-badge.tsx:59
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:622
 msgid "Unhealthy"
 msgstr "不健康"
 
@@ -9652,7 +9651,7 @@ msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:623
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:624
 msgid "Unknown"
 msgstr "未知"
 
@@ -9690,7 +9689,7 @@ msgstr "未识别的事件类型。"
 msgid "Unsupported link"
 msgstr "不支持的链接"
 
-#: src/components/streamers/card/use-streamer-status.tsx:146
+#: src/components/streamers/card/use-streamer-status.tsx:147
 msgid "Until"
 msgstr "直到"
 
@@ -9703,7 +9702,7 @@ msgid "UPDATE"
 msgstr "更新"
 
 #: src/components/config/global/backup-restore-card.tsx:92
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:533
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:534
 msgid "Updated"
 msgstr "已更新"
 
@@ -9711,7 +9710,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
-#: src/components/streamers/card/upload-indicator.tsx:53
+#: src/components/streamers/card/upload-indicator.tsx:57
 msgid "upload"
 msgstr "上传"
 
@@ -9783,13 +9782,13 @@ msgid "Uptime"
 msgstr "运行时间"
 
 #. placeholder {0}: formatLocalizedDuration( health.uptime_secs, i18n.locale, )
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:253
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:254
 msgid "Uptime <0>{0}</0>"
 msgstr "运行时间 <0>{0}</0>"
 
 #: src/components/notifications/channel-card.tsx:144
 #: src/components/streamers/config/streamer-identity-fields.tsx:73
-#: src/components/streamers/progress-indicator.tsx:99
+#: src/components/streamers/progress-indicator.tsx:101
 msgid "URL"
 msgstr "URL"
 
@@ -9948,7 +9947,7 @@ msgstr "视频设置"
 msgid "View"
 msgstr "查看"
 
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:381
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:382
 msgid "View All"
 msgstr "查看全部"
 
@@ -9966,7 +9965,7 @@ msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:218
 #: src/components/sessions/session-card.tsx:270
-#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:205
+#: src/routes/_authed/_dashboard/dashboard.lazy.tsx:206
 msgid "View Details"
 msgstr "查看详情"
 
@@ -9999,7 +9998,7 @@ msgstr "开始前等待时间。"
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
-#: src/components/streamers/card/use-streamer-status.tsx:291
+#: src/components/streamers/card/use-streamer-status.tsx:292
 msgid "Waiting since"
 msgstr "等待时长"
 
@@ -10164,7 +10163,7 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/components/streamers/streamer-editor.tsx:100
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:194
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:199
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "有未保存的更改，确定要离开吗？"
 
