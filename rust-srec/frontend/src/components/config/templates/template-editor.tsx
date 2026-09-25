@@ -261,6 +261,7 @@ export function TemplateEditor({
               output: '',
               limits: '',
               danmu: '',
+              danmuStatistics: '',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
