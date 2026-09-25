@@ -545,6 +545,13 @@ impl JobRepository for SqlxJobRepository {
                             FROM job
                             LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
                             WHERE job.status = ? AND job.job_type IN ({})
+                            AND NOT EXISTS (
+                                SELECT 1 FROM dag_step_execution AS owner_step
+                                JOIN dag_execution AS owner_dag ON owner_dag.id = owner_step.dag_id
+                                WHERE owner_step.id = job.dag_step_execution_id
+                                  AND (owner_step.status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                                       OR owner_dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
+                            )
                             ORDER BY job.priority DESC,
                                      CASE WHEN step.depends_on_step_ids IS NOT NULL
                                                AND step.depends_on_step_ids != '[]'
@@ -569,6 +576,13 @@ impl JobRepository for SqlxJobRepository {
                             FROM job
                             LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
                             WHERE job.status = ?
+                            AND NOT EXISTS (
+                                SELECT 1 FROM dag_step_execution AS owner_step
+                                JOIN dag_execution AS owner_dag ON owner_dag.id = owner_step.dag_id
+                                WHERE owner_step.id = job.dag_step_execution_id
+                                  AND (owner_step.status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                                       OR owner_dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
+                            )
                             ORDER BY job.priority DESC,
                                      CASE WHEN step.depends_on_step_ids IS NOT NULL
                                                AND step.depends_on_step_ids != '[]'
@@ -595,6 +609,13 @@ impl JobRepository for SqlxJobRepository {
                         updated_at = ?
                     WHERE id = ?
                       AND status = ?
+                      AND NOT EXISTS (
+                        SELECT 1 FROM dag_step_execution AS owner_step
+                        JOIN dag_execution AS owner_dag ON owner_dag.id = owner_step.dag_id
+                        WHERE owner_step.id = job.dag_step_execution_id
+                          AND (owner_step.status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                               OR owner_dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
+                      )
                     RETURNING *
                     "#,
                 )
@@ -685,14 +706,43 @@ impl JobRepository for SqlxJobRepository {
     async fn reset_processing_jobs(&self) -> Result<i32> {
         retry_on_sqlite_busy("reset_processing_jobs", || async {
             let now = crate::database::time::now_ms();
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            // A failed status write in an older process may have left an active job
+            // underneath a settled step or DAG. Such jobs must never be replayed.
+            sqlx::query(
+                r#"
+                UPDATE job
+                SET status = CASE WHEN EXISTS (
+                        SELECT 1 FROM dag_step_execution AS step
+                        JOIN dag_execution AS dag ON dag.id = step.dag_id
+                        WHERE step.id = job.dag_step_execution_id
+                          AND (step.status = 'FAILED' OR dag.status = 'FAILED')
+                    ) THEN 'FAILED' ELSE 'CANCELLED' END,
+                    completed_at = COALESCE(completed_at, ?), updated_at = ?, retry_after = NULL,
+                    error = COALESCE(error, 'Recovered unfinished job belonging to a terminal workflow step or DAG')
+                WHERE status IN ('PENDING', 'PROCESSING')
+                  AND EXISTS (
+                    SELECT 1 FROM dag_step_execution AS step
+                    JOIN dag_execution AS dag ON dag.id = step.dag_id
+                    WHERE step.id = job.dag_step_execution_id
+                      AND (step.status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                           OR dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
+                  )
+                "#,
+            )
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
             let result = sqlx::query(
                 "UPDATE job SET status = ?, started_at = NULL, updated_at = ? WHERE status = ?",
             )
             .bind(JobStatus::Pending.as_str())
             .bind(now)
             .bind(JobStatus::Processing.as_str())
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+            tx.commit().await?;
             Ok(result.rows_affected() as i32)
         })
         .await

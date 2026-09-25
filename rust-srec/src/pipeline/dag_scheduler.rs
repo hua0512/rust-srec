@@ -564,9 +564,9 @@ impl DagScheduler {
     /// time when one is planned. With the row recorded, a planned retry is
     /// stored for the manager's sweeper and the step stays PROCESSING;
     /// otherwise the failure reaches the step and its dependents through
-    /// [`Self::on_job_failed`]. A retry that cannot be recorded, or whose job
-    /// row could not be written, falls back to failing the step: nothing else
-    /// would advance it.
+    /// [`Self::on_job_failed`]. A retry that cannot be scheduled fails the step.
+    /// A job failure that could not be persisted leaves the step active: the worker
+    /// retains ownership until persistence succeeds or shutdown interrupts it.
     pub async fn on_job_attempt_failed<F, Fut>(
         &self,
         dag_step_execution_id: &str,
@@ -596,14 +596,11 @@ impl DagScheduler {
             None => attempt.error.to_string(),
         };
 
-        let recorded = persist_failure(message.clone()).await;
-        if matches!(recorded, Ok(JobFailureOutcome::Unchanged)) {
+        let recorded = persist_failure(message.clone()).await?;
+        if recorded == JobFailureOutcome::Unchanged {
             return Ok(StepFailureOutcome::Ignored);
         }
-        if let Err(error) = &recorded {
-            error!(job_id = %attempt.job_id, %error, "Failed to persist pipeline job failure");
-        }
-        if let (Some(planned), Ok(JobFailureOutcome::Transitioned)) = (planned, &recorded) {
+        if let Some(planned) = planned {
             match self
                 .job_queue
                 .schedule_retry(attempt.job_id, planned.retry_after)
@@ -3548,7 +3545,7 @@ mod tests {
         ));
         let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
             pool.clone(),
-            pool,
+            pool.clone(),
         ));
         let queue = Arc::new(JobQueue::with_repository(
             Default::default(),
@@ -3719,14 +3716,15 @@ mod tests {
             "{outcome:?}"
         );
 
-        // C: the job row was not written as FAILED, so the retry cannot be
-        // recorded and the failure is applied instead.
+        // C: the failure is durable, but scheduling another attempt fails.
+        sqlx::query("CREATE TRIGGER reject_retry BEFORE UPDATE OF retry_after ON job WHEN NEW.retry_after IS NOT NULL BEGIN SELECT RAISE(ABORT, 'retry write failed'); END")
+            .execute(&pool).await.unwrap();
         let job_c = job_of("C");
         let outcome = scheduler
             .on_job_attempt_failed(
                 &step_id("C"),
                 attempt(&job_c, 0, StepFailureKind::Timeout),
-                |_message| async { Ok(JobFailureOutcome::Transitioned) },
+                record(job_c.clone()),
             )
             .await
             .unwrap();
@@ -3735,31 +3733,41 @@ mod tests {
             "{outcome:?}"
         );
         let row = job_repo.get_job(&job_c).await.unwrap();
-        assert_eq!(row.status, JobStatus::Pending.as_str());
+        assert_eq!(row.status, JobStatus::Failed.as_str());
         assert!(row.retry_after.is_none());
+        sqlx::query("DROP TRIGGER reject_retry")
+            .execute(&pool)
+            .await
+            .unwrap();
 
-        // E: the job row could not be written at all.
+        // E: an unrecorded failure cannot settle the step. Its owner can retry persistence.
         let job_e = job_of("E");
-        let outcome = scheduler
+        let error = scheduler
             .on_job_attempt_failed(
                 &step_id("E"),
                 attempt(&job_e, 0, StepFailureKind::ProcessorError),
-                |_message| async { Err(Error::Validation("disk full".to_string())) },
+                |_message| async { Err(Error::Database("disk full".to_string())) },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Database(_)));
+        assert_eq!(
+            dag_repo.get_step(&step_id("E")).await.unwrap().get_status(),
+            Some(DagStepStatus::Processing)
+        );
+        assert_eq!(
+            job_repo.get_job(&job_e).await.unwrap().get_status(),
+            Some(JobStatus::Pending)
+        );
+        let outcome = scheduler
+            .on_job_attempt_failed(
+                &step_id("E"),
+                attempt(&job_e, 0, StepFailureKind::ExecutionStart),
+                record(job_e.clone()),
             )
             .await
             .unwrap();
-        assert!(
-            matches!(outcome, StepFailureOutcome::Failed(_)),
-            "{outcome:?}"
-        );
-        assert!(
-            job_repo
-                .get_job(&job_e)
-                .await
-                .unwrap()
-                .retry_after
-                .is_none()
-        );
+        assert!(matches!(outcome, StepFailureOutcome::Failed(_)));
 
         // F: the processor never ran; the last active step settles the DAG.
         let job_f = job_of("F");
@@ -3791,6 +3799,93 @@ mod tests {
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
         assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
         assert_eq!(dag.failed_steps, 5);
+    }
+
+    #[tokio::test]
+    async fn recovery_settles_active_jobs_of_terminal_workflows_before_claiming() {
+        use crate::database::repositories::{SqlxDagRepository, SqlxJobRepository};
+
+        for initial_job_status in ["PENDING", "PROCESSING"] {
+            for (dag_status, step_status, expected) in [
+                ("FAILED", "FAILED", JobStatus::Failed),
+                ("FAILED", "PROCESSING", JobStatus::Failed),
+                ("CANCELLED", "CANCELLED", JobStatus::Cancelled),
+                ("COMPLETED", "COMPLETED", JobStatus::Cancelled),
+                ("PROCESSING", "FAILED", JobStatus::Failed),
+                ("PROCESSING", "CANCELLED", JobStatus::Cancelled),
+            ] {
+                let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                    .await
+                    .unwrap();
+                crate::database::run_migrations(&pool).await.unwrap();
+                let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+                let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+                let queue = Arc::new(JobQueue::with_repository(Default::default(), jobs.clone()));
+                let scheduler = DagScheduler::new(queue.clone(), dags.clone(), jobs.clone());
+                let created = scheduler
+                    .create_dag_pipeline(
+                        DagPipelineDefinition::new(
+                            "stale active job",
+                            vec![DagStep::new(
+                                "A",
+                                PipelineStep::inline("remux", serde_json::json!({})),
+                            )],
+                        ),
+                        &["input.flv".into()],
+                        DagRunContext::default(),
+                    )
+                    .await
+                    .unwrap();
+                let job = queue.dequeue(None).await.unwrap().unwrap();
+                let step_id = job.dag_step_execution_id.as_deref().unwrap();
+                // Model rows left by the old failure path or an interrupted cancellation.
+                sqlx::query("UPDATE job SET status = ? WHERE id = ?")
+                    .bind(initial_job_status)
+                    .bind(&job.id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query("UPDATE dag_step_execution SET status = ? WHERE id = ?")
+                    .bind(step_status)
+                    .bind(step_id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                sqlx::query("UPDATE dag_execution SET status = ? WHERE id = ?")
+                    .bind(dag_status)
+                    .bind(&created.dag_id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                assert!(jobs.claim_next_pending_job(None).await.unwrap().is_none());
+                assert!(
+                    jobs.claim_next_pending_job(Some(&["remux".to_owned()]))
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+                scheduler.recover_dag_jobs().await.unwrap();
+                assert_eq!(queue.recover_jobs().await.unwrap(), 0);
+                let stored = jobs.get_job(&job.id).await.unwrap();
+                assert_eq!(stored.get_status(), Some(expected));
+                assert!(stored.completed_at.is_some());
+                assert!(stored.retry_after.is_none());
+                assert_eq!(queue.depth(), 0);
+                assert!(queue.get_cancellation_token(&job.id).await.is_none());
+                assert!(queue.dequeue(None).await.unwrap().is_none());
+                assert_eq!(
+                    queue.recover_jobs().await.unwrap(),
+                    0,
+                    "recovery is idempotent"
+                );
+                if dag_status == "FAILED" && step_status == "FAILED" {
+                    // Repair also makes an explicit workflow retry possible again.
+                    scheduler.retry_dag(&created.dag_id, || {}).await.unwrap();
+                    assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, job.id);
+                }
+                queue.stop_progress_aggregator().await;
+            }
+        }
     }
 
     #[tokio::test]
