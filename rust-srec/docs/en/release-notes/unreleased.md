@@ -145,6 +145,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Fixed a brief flash of the wrong colours when opening the web interface behind Cloudflare with Rocket Loader enabled. Your light/dark mode and custom theme now appear from the first frame.
 - The navigation menu on phones and narrow windows now opens and closes instantly with a smooth slide, even on long pages such as the streamer list. Closing it returns keyboard focus to the menu button.
 - Collapsing or expanding the sidebar on wider screens is now one smooth motion: icons stay in place instead of jumping sideways, and labels fade with the edge. Hovering a menu entry now enlarges only that entry's icon rather than every icon in the sidebar.
+- Fixed text looking blurry on some browsers while hovering a settings card. Settings, health, and pipeline graph cards no longer grow when hovered; they highlight instead, so fields and workflow connections stay in place.
 
 ## Monitoring and maintenance
 

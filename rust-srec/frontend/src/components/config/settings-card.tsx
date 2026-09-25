@@ -33,7 +33,7 @@ export function SettingsCard({
   return (
     <Card
       className={cn(
-        'h-full border-white/10 bg-background/30 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:bg-background/40 hover:scale-[1.01] group',
+        'h-full border-white/10 bg-background/30 backdrop-blur-xl shadow-xl hover:shadow-2xl transition-[background-color,box-shadow] duration-300 hover:bg-background/40',
         className,
       )}
     >
@@ -42,7 +42,7 @@ export function SettingsCard({
           <div className="flex items-start sm:items-center gap-3">
             <div
               className={cn(
-                'p-2.5 rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-colors duration-300 group-hover:scale-105 shrink-0',
+                'p-2.5 rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5 shrink-0',
                 iconBgColor,
               )}
             >
