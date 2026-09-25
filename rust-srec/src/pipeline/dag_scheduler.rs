@@ -3790,6 +3790,115 @@ mod tests {
         assert_eq!(dag.failed_steps, 5);
     }
 
+    #[tokio::test]
+    async fn failed_attempt_observability_errors_preserve_retry_and_cleanup() {
+        use crate::database::models::StepRetryPolicy;
+        use crate::database::repositories::JobRepository as _;
+
+        for fault in [
+            "CREATE TRIGGER fail_observability BEFORE INSERT ON job_execution_logs
+             BEGIN SELECT RAISE(ABORT, 'log write failed'); END",
+            "CREATE TRIGGER fail_observability BEFORE UPDATE OF execution_info ON job
+             BEGIN SELECT RAISE(ABORT, 'summary write failed'); END",
+        ] {
+            let pool = setup_test_pool().await;
+            let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ));
+            let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ));
+            let queue = Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            ));
+            let scheduler = DagScheduler::new(queue.clone(), dag_repo.clone(), job_repo.clone());
+            let created = scheduler
+                .create_dag_pipeline(
+                    DagPipelineDefinition::new(
+                        "retry despite observability failure",
+                        vec![
+                            DagStep::new(
+                                "upload",
+                                PipelineStep::inline("rclone", serde_json::json!({})),
+                            )
+                            .with_retry(StepRetryPolicy {
+                                max_attempts: 2,
+                                backoff_secs: 30,
+                            }),
+                        ],
+                    ),
+                    &["/input.flv".to_string()],
+                    DagRunContext::default(),
+                )
+                .await
+                .unwrap();
+            let job = queue.dequeue(None).await.unwrap().unwrap();
+            assert_eq!(queue.depth(), 1);
+            assert!(queue.get_cancellation_token(&job.id).await.is_some());
+            sqlx::query(fault).execute(&pool).await.unwrap();
+
+            let outcome = scheduler
+                .on_job_attempt_failed(
+                    job.dag_step_execution_id.as_deref().unwrap(),
+                    FailedStepAttempt {
+                        job_id: &job.id,
+                        retry_count: 0,
+                        error: "upload failed",
+                        kind: StepFailureKind::ProcessorError,
+                    },
+                    |message| {
+                        let queue = &queue;
+                        let job_id = &job.id;
+                        async move {
+                            queue
+                                .fail_with_step_info(
+                                    job_id,
+                                    &message,
+                                    Some("rclone"),
+                                    Some(1),
+                                    Some(1),
+                                    &[],
+                                )
+                                .await
+                        }
+                    },
+                )
+                .await
+                .unwrap();
+            let StepFailureOutcome::Retried(planned) = outcome else {
+                panic!("observability failure suppressed retry: {outcome:?}");
+            };
+            let stored = job_repo.get_job(&job.id).await.unwrap();
+            assert_eq!(stored.get_status(), Some(JobStatus::Failed));
+            assert_eq!(
+                stored.retry_after,
+                Some(planned.retry_after.timestamp_millis())
+            );
+            assert_eq!(
+                stored.error.as_deref(),
+                Some(planned.describe("upload failed").as_str())
+            );
+            assert_eq!(queue.depth(), 0);
+            assert!(queue.get_cancellation_token(&job.id).await.is_none());
+            assert_eq!(
+                step_statuses(&dag_repo, &created.dag_id).await,
+                ["upload=PROCESSING"]
+            );
+            assert_eq!(
+                dag_repo
+                    .get_dag(&created.dag_id)
+                    .await
+                    .unwrap()
+                    .get_status(),
+                Some(DagExecutionStatus::Processing)
+            );
+            queue.stop_progress_aggregator().await;
+        }
+    }
+
     /// The worker's completion entry point fails a workflow it cannot advance
     /// from the result, so the DAG settles and the worker still receives a
     /// completion to forward.

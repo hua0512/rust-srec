@@ -2576,6 +2576,54 @@ impl JobQueue {
         self.notify.notify_one();
     }
 
+    async fn persist_failure_metadata(
+        &self,
+        repo: &dyn JobRepository,
+        job_id: &str,
+        step: FailedStep<'_>,
+        log_entry: &JobLogEntry,
+    ) -> Result<()> {
+        let FailedStep {
+            processor_name,
+            step_number,
+            total_steps,
+        } = step;
+        let exec_info_str = repo.get_job_execution_info(job_id).await?;
+        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+            exec_info_str.as_deref(),
+            JsonContext::JobField {
+                job_id,
+                field: "execution_info",
+            },
+            "Invalid execution_info JSON; resetting to defaults",
+        );
+
+        if let Some(name) = processor_name {
+            exec_info.current_processor = Some(name.to_string());
+        }
+        if let Some(step) = step_number {
+            exec_info.current_step = Some(step);
+        }
+        if let Some(total) = total_steps {
+            exec_info.total_steps = Some(total);
+        }
+
+        extend_logs_capped(&mut exec_info, std::slice::from_ref(log_entry));
+        update_log_summary(&mut exec_info, std::slice::from_ref(log_entry));
+
+        self.persist_logs_to_db(
+            job_id,
+            std::slice::from_ref(log_entry),
+            LogPersistence::Append,
+        )
+        .await?;
+
+        let exec_info_json = serde_json::to_string(&exec_info)?;
+        repo.update_job_execution_info(job_id, &exec_info_json)
+            .await?;
+        Ok(())
+    }
+
     async fn fail_internal(
         &self,
         job_id: &str,
@@ -2612,40 +2660,14 @@ impl JobQueue {
             }
             transitioned = true;
 
-            if metadata != FailureMetadata::Preserve {
-                let exec_info_str = repo.get_job_execution_info(job_id).await?;
-                let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                    exec_info_str.as_deref(),
-                    JsonContext::JobField {
-                        job_id,
-                        field: "execution_info",
-                    },
-                    "Invalid execution_info JSON; resetting to defaults",
-                );
-
-                if let Some(name) = processor_name {
-                    exec_info.current_processor = Some(name.to_string());
-                }
-                if let Some(step) = step_number {
-                    exec_info.current_step = Some(step);
-                }
-                if let Some(total) = total_steps {
-                    exec_info.total_steps = Some(total);
-                }
-
-                extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
-                update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
-
-                self.persist_logs_to_db(
-                    job_id,
-                    std::slice::from_ref(&log_entry),
-                    LogPersistence::Append,
-                )
-                .await?;
-
-                let exec_info_json = serde_json::to_string(&exec_info)?;
-                repo.update_job_execution_info(job_id, &exec_info_json)
-                    .await?;
+            // FAILED is already durable. Auxiliary metadata errors must not suppress a
+            // retry or skip terminal cleanup after this transition has won.
+            if metadata != FailureMetadata::Preserve
+                && let Err(error) = self
+                    .persist_failure_metadata(repo.as_ref(), job_id, step, &log_entry)
+                    .await
+            {
+                warn!(job_id, %error, "Failed to persist failed job execution metadata");
             }
         }
 
