@@ -50,7 +50,6 @@ describe('SharedConfigEditor danmu tab', () => {
     expect(screen.getByText('Danmu Statistics')).toBeInTheDocument();
   });
 
-  // A template's per-platform override omits the path: statistics are never resolved from it.
   it('leaves the statistics settings out when the layer has no path for them', () => {
     renderDanmuTab(PATHS);
 

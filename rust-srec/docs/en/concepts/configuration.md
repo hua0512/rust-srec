@@ -20,7 +20,7 @@ For example, if the global output format is `flv` and a template sets `mp4`, str
 3. Leave fields inherited unless that streamer needs a different value.
 4. Edit the template to update the group. Check the rules below for recordings already in progress.
 
-A template can also provide platform-specific overrides. Those take precedence over the template's common settings for that platform.
+A template can also provide platform-specific overrides for pipelines and platform options (extractor settings). For streamers on that platform they take precedence over the template's own pipelines and are merged into its platform options. Other settings cannot be overridden per platform within a template.
 
 ## Important merge rules
 

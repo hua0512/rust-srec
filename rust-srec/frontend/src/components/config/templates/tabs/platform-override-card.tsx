@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   LayoutGrid,
-  Settings,
   Boxes,
 } from 'lucide-react';
 import {
@@ -17,9 +16,7 @@ import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { EngineConfig } from '@/api/schemas';
 import { PlatformSpecificTab } from '../../platforms/tabs/platform-specific-tab';
-import { GeneralTab } from '../../platforms/tabs/general-tab';
 import {
   SharedConfigEditor,
   SharedConfigPaths,
@@ -32,20 +29,20 @@ interface PlatformOverrideCardProps {
   platformName: string;
   form: UseFormReturn<TemplateFormValues>;
   onRemove: () => void;
-  engines?: EngineConfig[];
 }
 
 export function PlatformOverrideCard({
   platformName,
   form,
   onRemove,
-  engines,
 }: PlatformOverrideCardProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   // Dynamic base path for this override
   const basePath = `platform_overrides.${platformName}`;
 
+  // Only the pipeline paths are rendered (see `availableTabs` below); the rest satisfy the shared
+  // editor's type.
   const paths: SharedConfigPaths<TemplateFormValues> = {
     streamSelection: configPath<TemplateFormValues>(
       basePath,
@@ -57,9 +54,9 @@ export function PlatformOverrideCard({
       basePath,
       'download_retry_policy',
     ),
-    output: basePath, // Output settings are flat on the config object (output_folder, etc.)
-    limits: basePath, // Limits are flat
-    danmu: basePath, // record_danmu is flat
+    output: basePath,
+    limits: basePath,
+    danmu: basePath,
     pipeline: configPath<TemplateFormValues>(basePath, 'pipeline'),
     sessionCompletePipeline: configPath<TemplateFormValues>(
       basePath,
@@ -72,12 +69,6 @@ export function PlatformOverrideCard({
   };
 
   const extraTabs: ExtraTab[] = [
-    {
-      value: 'general',
-      label: <Trans>General</Trans>,
-      icon: Settings,
-      content: <GeneralTab form={form} basePath={basePath} />,
-    },
     {
       value: 'specific',
       label: <Trans>Specific</Trans>,
@@ -161,9 +152,11 @@ export function PlatformOverrideCard({
             <SharedConfigEditor
               form={form}
               paths={paths}
-              engines={engines}
               extraTabs={extraTabs}
-              defaultTab="general"
+              defaultTab="specific"
+              // The resolver reads only the extractor options and the pipelines from a template's
+              // per-platform override; anything else stored there never reaches a recording.
+              availableTabs={['pipeline']}
               // Platform override uses objects for complex fields
               proxyMode="object"
               configMode="object"

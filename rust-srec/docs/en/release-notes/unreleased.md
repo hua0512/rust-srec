@@ -87,6 +87,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - Added timezone selection to both time-based filter editors. Matching and wakeups use consistent overnight and daylight-saving boundaries, including repeated hours. Saved timezones survive edits, and backup schema 0.1.8 exports explicit zones.
 - Fixed invalid global and platform values being saved. Validation checks types, negative values, and overflow while preserving supported zero/default meanings. Platform edits cannot change the canonical name used for URL lookup.
 - Fixed the global settings page warning about unsaved changes right after a successful save. After saving, the page shows the settings as the server stored them.
+- Template platform overrides now offer only the settings that take effect there: pipelines and platform options. Other settings entered in a template's platform override were never applied; set them on the template, the platform, or the streamer instead.
 - Fixed proxy usernames and passwords containing percent signs, spaces, Unicode, or URL delimiters. Download diagnostics omit proxy URLs.
 - Fixed account-email conflicts during backup imports. Email swaps and reuse of released addresses work regardless of input order; conflicts are rejected before configuration changes.
 - Fixed concurrent database updates losing results, double-counting media deletion, or overwriting template edits during credential refresh. Failed updates roll back their associated changes.

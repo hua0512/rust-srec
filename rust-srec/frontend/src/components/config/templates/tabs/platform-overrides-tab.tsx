@@ -1,7 +1,7 @@
 import { useWatch } from 'react-hook-form';
 import type { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
-import { listPlatformConfigs, listEngines } from '@/server/functions';
+import { listPlatformConfigs } from '@/server/functions';
 import { Button } from '@/components/ui/button';
 import { Plus, LayoutGrid } from 'lucide-react';
 import {
@@ -46,11 +46,6 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     queryFn: () => listPlatformConfigs(),
   });
 
-  const { data: engines = [] } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
-
   // A field-level subscription: adding or removing an override re-renders this tab, not the
   // component that owns `useForm`.
   const currentOverrides =
@@ -88,7 +83,7 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
               </CardTitle>
               <CardDescription>
                 <Trans>
-                  Override configuration (paths, delays, etc.) for specific
+                  Override pipelines and platform options for specific
                   platforms.
                 </Trans>
               </CardDescription>
@@ -146,7 +141,6 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
             platformName={platformName}
             form={form}
             onRemove={() => handleRemoveOverride(platformName)}
-            engines={engines}
           />
         ))}
       </CardContent>
