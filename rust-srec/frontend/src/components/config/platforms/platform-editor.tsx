@@ -44,6 +44,34 @@ function displayedPlatformOptions(
   return { ...DOUYIN_CONFIG_DISPLAY_DEFAULTS, ...stored };
 }
 
+function toPlatformFormValues(
+  platform: z.infer<typeof PlatformConfigSchema>,
+): z.input<typeof EditPlatformSchema> {
+  return {
+    fetch_delay_ms: platform.fetch_delay_ms,
+    download_delay_ms: platform.download_delay_ms,
+    record_danmu: platform.record_danmu,
+    danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
+    cookies: platform.cookies,
+    platform_specific_config: displayedPlatformOptions(platform),
+    proxy_config: platform.proxy_config,
+    output_folder: platform.output_folder,
+    output_filename_template: platform.output_filename_template,
+    download_engine: platform.download_engine,
+    stream_selection_config: platform.stream_selection_config,
+    output_file_format: platform.output_file_format,
+    min_segment_size_bytes: platform.min_segment_size_bytes,
+    max_download_duration_secs: platform.max_download_duration_secs,
+    max_part_size_bytes: platform.max_part_size_bytes,
+    download_retry_policy: platform.download_retry_policy,
+    pipeline: platform.pipeline,
+    session_complete_pipeline: platform.session_complete_pipeline,
+    paired_segment_pipeline: platform.paired_segment_pipeline,
+    offline_check_count: platform.offline_check_count,
+    offline_check_delay_ms: platform.offline_check_delay_ms,
+  };
+}
+
 interface PlatformEditorProps {
   platform: z.infer<typeof PlatformConfigSchema>;
   onSubmit: (data: EditPlatformFormValues) => void;
@@ -62,57 +90,13 @@ export function PlatformEditor({
 
   const form = useForm({
     resolver: zodResolver(EditPlatformSchema),
-    defaultValues: {
-      fetch_delay_ms: platform.fetch_delay_ms,
-      download_delay_ms: platform.download_delay_ms,
-      record_danmu: platform.record_danmu,
-      danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
-      cookies: platform.cookies,
-      platform_specific_config: displayedPlatformOptions(platform),
-      proxy_config: platform.proxy_config,
-      output_folder: platform.output_folder,
-      output_filename_template: platform.output_filename_template,
-      download_engine: platform.download_engine,
-      stream_selection_config: platform.stream_selection_config,
-      output_file_format: platform.output_file_format,
-      min_segment_size_bytes: platform.min_segment_size_bytes,
-      max_download_duration_secs: platform.max_download_duration_secs,
-      max_part_size_bytes: platform.max_part_size_bytes,
-      download_retry_policy: platform.download_retry_policy,
-      pipeline: platform.pipeline,
-      session_complete_pipeline: platform.session_complete_pipeline,
-      paired_segment_pipeline: platform.paired_segment_pipeline,
-      offline_check_count: platform.offline_check_count,
-      offline_check_delay_ms: platform.offline_check_delay_ms,
-    },
+    defaultValues: toPlatformFormValues(platform),
   });
   const { reset } = form;
 
   // Reset form when platform data changes (e.g. after QR login re-fetch)
   useEffect(() => {
-    reset({
-      fetch_delay_ms: platform.fetch_delay_ms,
-      download_delay_ms: platform.download_delay_ms,
-      record_danmu: platform.record_danmu,
-      danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
-      cookies: platform.cookies,
-      platform_specific_config: displayedPlatformOptions(platform),
-      proxy_config: platform.proxy_config,
-      output_folder: platform.output_folder,
-      output_filename_template: platform.output_filename_template,
-      download_engine: platform.download_engine,
-      stream_selection_config: platform.stream_selection_config,
-      output_file_format: platform.output_file_format,
-      min_segment_size_bytes: platform.min_segment_size_bytes,
-      max_download_duration_secs: platform.max_download_duration_secs,
-      max_part_size_bytes: platform.max_part_size_bytes,
-      download_retry_policy: platform.download_retry_policy,
-      pipeline: platform.pipeline,
-      session_complete_pipeline: platform.session_complete_pipeline,
-      paired_segment_pipeline: platform.paired_segment_pipeline,
-      offline_check_count: platform.offline_check_count,
-      offline_check_delay_ms: platform.offline_check_delay_ms,
-    });
+    reset(toPlatformFormValues(platform));
   }, [platform, reset]);
 
   const Icon = getPlatformIcon(platform.name);
