@@ -41,10 +41,13 @@ export const updateGlobalConfig = createServerFn({ method: 'POST' })
     parseInput(GlobalConfigUpdateSchema, data),
   )
   .handler(async ({ data }) => {
-    await fetchBackend('/config/global', {
+    // The backend answers with the stored config, which can differ from the request: it skips
+    // `null` fields and clamps some values.
+    const json = await fetchBackend('/config/global', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+    return GlobalConfigSchema.parse(json);
   });
 
 // --- Platforms ---

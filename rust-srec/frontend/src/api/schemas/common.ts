@@ -82,6 +82,23 @@ export const DanmuStatisticsObjectSchema = z.object({
   extra_stop_words: z.array(z.string()).optional(),
 });
 
+/**
+ * Danmu statistics as an override layer's form submits them.
+ *
+ * The statistics inputs create the object as soon as they render, so a layer whose fields were
+ * all left empty still holds `{}`. For an override that would replace the inherited settings with
+ * the defaults, so it is sent as `null` and the layer keeps inheriting. The global layer has
+ * nothing to inherit and keeps `{}`.
+ */
+export const DanmuStatisticsOverrideSchema =
+  DanmuStatisticsObjectSchema.nullable()
+    .optional()
+    .overwrite((value) =>
+      value && Object.values(value).every((field) => field === undefined)
+        ? null
+        : value,
+    );
+
 export const DownloadRetryPolicyObjectSchema = z.object({
   max_retries: z.number(),
   initial_delay_ms: z.number(),

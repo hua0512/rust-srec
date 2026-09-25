@@ -59,6 +59,22 @@ export default defineConfig({
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
+      // The web build's TanStack Start plugin appends this block to the route tree both builds
+      // share. Writing the same footer here keeps the committed file identical whichever build
+      // ran last.
+      routeTreeFileFooter: [
+        [
+          "import type { getRouter } from './router.tsx'",
+          "import type { startInstance } from './start.ts'",
+          "declare module '@tanstack/react-start' {",
+          '  interface Register {',
+          '    ssr: true',
+          '    router: Awaited<ReturnType<typeof getRouter>>',
+          '    config: Awaited<ReturnType<typeof startInstance.getOptions>>',
+          '  }',
+          '}',
+        ].join('\n'),
+      ],
     }),
     react(),
     babel({ presets: [linguiTransformerBabelPreset()] }),

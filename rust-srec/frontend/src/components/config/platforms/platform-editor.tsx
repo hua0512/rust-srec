@@ -22,6 +22,7 @@ import {
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
 import { SharedConfigEditor } from '../shared-config-editor';
+import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';
 import { listEngines } from '@/server/functions';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
@@ -65,7 +66,7 @@ export function PlatformEditor({
       fetch_delay_ms: platform.fetch_delay_ms,
       download_delay_ms: platform.download_delay_ms,
       record_danmu: platform.record_danmu,
-      danmu_statistics: platform.danmu_statistics,
+      danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
       cookies: platform.cookies,
       platform_specific_config: displayedPlatformOptions(platform),
       proxy_config: platform.proxy_config,
@@ -93,7 +94,7 @@ export function PlatformEditor({
       fetch_delay_ms: platform.fetch_delay_ms,
       download_delay_ms: platform.download_delay_ms,
       record_danmu: platform.record_danmu,
-      danmu_statistics: platform.danmu_statistics,
+      danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
       cookies: platform.cookies,
       platform_specific_config: displayedPlatformOptions(platform),
       proxy_config: platform.proxy_config,
@@ -204,6 +205,7 @@ export function PlatformEditor({
               output: '',
               limits: '',
               danmu: '',
+              danmuStatistics: '',
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',

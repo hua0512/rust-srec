@@ -34,6 +34,9 @@ export interface SharedConfigPaths<T extends FieldValues> {
   limits: string;
   // Danmu settings base path (record_danmu)
   danmu: string;
+  // Danmu statistics base path. Omit to skip the card, as a template's per-platform overrides do:
+  // statistics are never resolved from that layer.
+  danmuStatistics?: string;
   pipeline: Path<T>;
   sessionCompletePipeline?: Path<T>;
   pairedSegmentPipeline?: Path<T>;
@@ -333,10 +336,16 @@ export function SharedConfigEditor<T extends FieldValues>({
                 form={form}
                 basePath={paths.danmu === '' ? undefined : paths.danmu}
               />
-              <DanmuStatisticsCard
-                form={form}
-                basePath={paths.danmu === '' ? undefined : paths.danmu}
-              />
+              {paths.danmuStatistics !== undefined && (
+                <DanmuStatisticsCard
+                  form={form}
+                  basePath={
+                    paths.danmuStatistics === ''
+                      ? undefined
+                      : paths.danmuStatistics
+                  }
+                />
+              )}
             </motion.div>
           </TabsContent>
         )}

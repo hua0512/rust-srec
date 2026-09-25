@@ -11,6 +11,7 @@ import {
   StreamerFormValues,
 } from '@/api/schemas';
 import { parseUrl, getStreamer } from '@/server/functions';
+import { danmuStatisticsFormValue } from '@/components/config/shared/danmu-statistics-value';
 
 type Streamer = NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
 
@@ -45,8 +46,11 @@ export function useStreamerForm({ streamer }: UseStreamerFormOptions = {}) {
   // the code path; the form always works with an object.
   const specificConfig = useMemo(() => {
     const raw = streamer?.streamer_specific_config;
-    if (typeof raw === 'string') return JSON.parse(raw);
-    return raw ?? {};
+    const config = (typeof raw === 'string' ? JSON.parse(raw) : raw) ?? {};
+    return {
+      ...config,
+      danmu_statistics: danmuStatisticsFormValue(config.danmu_statistics),
+    };
   }, [streamer?.streamer_specific_config]);
 
   const defaultValues = useMemo<StreamerFormValues>(
