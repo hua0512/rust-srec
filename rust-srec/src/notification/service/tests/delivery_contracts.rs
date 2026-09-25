@@ -33,6 +33,7 @@ fn pending(id: u64) -> PendingNotification {
         created_at: DateTime::from_timestamp(0, 0).unwrap(),
         channel_state: HashMap::new(),
         targets: Vec::new(),
+        delivery_lock: Default::default(),
         retry_generation: 0,
         retry_cancel: CancellationToken::new(),
         next_retry_at: None,
@@ -262,4 +263,195 @@ async fn cancellation_wins_when_a_retry_timer_is_already_ready() {
     })
     .await
     .expect("ready retry cancellation must settle promptly");
+}
+
+struct ControlledChannel {
+    key: &'static str,
+    started: tokio::sync::mpsc::UnboundedSender<(&'static str, tokio::sync::oneshot::Sender<()>)>,
+}
+
+#[async_trait::async_trait]
+impl NotificationChannel for ControlledChannel {
+    fn channel_type(&self) -> &'static str {
+        "controlled"
+    }
+    fn is_enabled(&self) -> bool {
+        true
+    }
+    async fn send(&self, _: &NotificationEvent) -> Result<()> {
+        let (release, released) = tokio::sync::oneshot::channel();
+        self.started.send((self.key, release)).unwrap();
+        released
+            .await
+            .map_err(|_| crate::Error::Other("controlled send abandoned".into()))
+    }
+}
+
+fn controlled_targets(
+    service: &NotificationService,
+    keys: &[&'static str],
+) -> tokio::sync::mpsc::UnboundedReceiver<(&'static str, tokio::sync::oneshot::Sender<()>)> {
+    let (started, receiver) = tokio::sync::mpsc::unbounded_channel();
+    for key in keys {
+        service.registry.write().insert(Arc::new(RuntimeChannel {
+            breaker: service.new_breaker(),
+            key: (*key).into(),
+            db_channel_id: None,
+            display_name: (*key).into(),
+            channel_type: "controlled".into(),
+            channel: Arc::new(ControlledChannel {
+                key,
+                started: started.clone(),
+            }),
+        }));
+    }
+    receiver
+}
+
+#[tokio::test(start_paused = true)]
+async fn healthy_targets_finish_before_stalled_targets_without_overlapping_passes() {
+    let service = Arc::new(NotificationService::new());
+    let mut starts = controlled_targets(&service, &["stalled", "healthy"]);
+    let notify = tokio::spawn({
+        let service = service.clone();
+        async move {
+            service.notify(event()).await.unwrap();
+        }
+    });
+    let mut releases = HashMap::new();
+    for _ in 0..2 {
+        let (key, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .expect("independent targets must both start")
+            .unwrap();
+        releases.insert(key, release);
+    }
+    releases.remove("healthy").unwrap().send(()).unwrap();
+    let id = *service.pending_queue.iter().next().unwrap().key();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if service.pending_queue.get(&id).unwrap().channel_state["healthy"].status
+                == DeliveryStatus::Delivered
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!notify.is_finished(), "the stalled target is still pending");
+    let another_pass = tokio::spawn({
+        let service = service.clone();
+        async move {
+            service.process_notification(id).await;
+        }
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), starts.recv())
+            .await
+            .is_err(),
+        "an overlapping pass must not duplicate a target already in flight"
+    );
+    releases.remove("stalled").unwrap().send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        notify.await.unwrap();
+        another_pass.await.unwrap();
+    })
+    .await
+    .unwrap();
+    assert!(starts.try_recv().is_err());
+    assert_eq!(service.stats().pending_count, 0);
+    service.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn channel_concurrency_is_bounded_per_notification() {
+    let service = Arc::new(NotificationService::new());
+    let mut starts = controlled_targets(&service, &["a", "b", "c", "d", "e", "f", "g", "h"]);
+    let notify = tokio::spawn({
+        let service = service.clone();
+        async move {
+            service.notify(event()).await.unwrap();
+        }
+    });
+    let mut releases = Vec::new();
+    for _ in 0..4 {
+        let (_, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        releases.push(release);
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), starts.recv())
+            .await
+            .is_err()
+    );
+    for _ in 0..4 {
+        releases.pop().unwrap().send(()).unwrap();
+        let (_, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        releases.push(release);
+    }
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(1), notify)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(service.stats().pending_count, 0);
+    service.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_a_delivery_pass_drops_sends_and_releases_the_pass_lock() {
+    let service = Arc::new(NotificationService::new());
+    let mut starts = controlled_targets(&service, &["a", "b", "c", "d", "e", "f", "g", "h"]);
+    let notify = tokio::spawn({
+        let service = service.clone();
+        async move {
+            service.notify(event()).await.unwrap();
+        }
+    });
+    let mut releases = Vec::new();
+    for _ in 0..4 {
+        let (_, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        releases.push(release);
+    }
+    let id = *service.pending_queue.iter().next().unwrap().key();
+    notify.abort();
+    assert!(notify.await.unwrap_err().is_cancelled());
+    for release in releases {
+        assert!(
+            release.send(()).is_err(),
+            "cancelled channel futures must not remain detached"
+        );
+    }
+    assert!(starts.try_recv().is_err());
+    let resume = tokio::spawn({
+        let service = service.clone();
+        async move {
+            service.process_notification(id).await;
+        }
+    });
+    for _ in 0..8 {
+        let (_, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        release.send(()).unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(1), resume)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(service.stats().pending_count, 0);
+    service.stop().await;
 }
