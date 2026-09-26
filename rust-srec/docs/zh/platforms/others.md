@@ -20,14 +20,16 @@
 
 ## 小红书
 
-- **URL**: `https://xhslink.com/m/{id}`
-- **协议**: HLS
+- **URL**: `https://xhslink.com/m/{id}`, `https://xhslink.com/o/{id}`
+- **协议**: FLV/HLS
 - **弹幕**: ❌ 不支持
 
 ::: info App 分享链接
 请使用 `xhslink.com` 分享链接。`xiaohongshu.com/user/profile/...` 这类个人主页直链目前不支持。
 
-注意：`xhslink.com/m/{id}` 的 `{id}` 每次开播都会变化，请在每次开播时重新复制分享链接。
+注意：分享链接每次开播都会变化，请在每次开播时重新复制分享链接。
+
+分享链接无需配置 Cookie。如果配置了 Cookie，必须包含非空的 `a1` 字段，否则会报解析错误。
 :::
 
 ## Twitcasting
