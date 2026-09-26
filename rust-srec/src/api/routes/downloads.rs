@@ -156,7 +156,7 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // is assembled are delivered afterwards instead of being lost in the
     // snapshot/subscribe gap (the snapshot is the only recovery path for a
     // missed UploadStarted).
-    let mut event_rx = download_manager.subscribe();
+    let mut event_rx = download_manager.subscribe_shared();
     let mut check_history_rx = state.check_history_broadcaster.subscribe();
     let mut upload_rx = state.upload_status_broadcaster.subscribe();
 
@@ -265,9 +265,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                 match event {
                     Ok(event) => {
                         // V2 message (metadata/metrics split)
-                        if let Some(msg) = map_event_to_protobuf(&event, &filter) {
-                            let bytes = msg.encode_to_vec();
-                            match sender.send(Message::Binary(Bytes::from(bytes))).await {
+                        if let Some(bytes) = shared_event_bytes(&event, &filter) {
+                            match sender.send(Message::Binary(bytes)).await {
                                 Ok(_) => {}
                                 Err(e) => {
                                     debug!("Failed to send message, client may be slow: {}", e);
@@ -375,6 +374,21 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     }
 
     // debug!("WebSocket connection closed, cleaning up");
+}
+
+fn shared_event_bytes(
+    envelope: &crate::utils::shared_event::SharedEvent<DownloadManagerEvent>,
+    filter: &Option<String>,
+) -> Option<Bytes> {
+    if filter
+        .as_ref()
+        .is_some_and(|id| envelope.event.streamer_id() != id.as_str())
+    {
+        return None;
+    }
+    envelope.encoded(|event| {
+        map_event_to_protobuf(event, &None).map(|message| Bytes::from(message.encode_to_vec()))
+    })
 }
 
 /// Map a DownloadManagerEvent to metadata/metrics split messages.
@@ -818,6 +832,31 @@ mod tests {
         );
         drop(server);
         fixture.pool.close().await;
+    }
+
+    #[test]
+    fn shared_encoding_filters_before_caching_and_reuses_the_wire_payload() {
+        let envelope = crate::utils::shared_event::SharedEvent::new(
+            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
+                download_id: "download".to_string(),
+                streamer_id: "selected".to_string(),
+                streamer_name: "Streamer".to_string(),
+                session_id: "session".to_string(),
+                status: crate::downloader::engine::DownloadStatus::Downloading,
+                progress: crate::downloader::engine::DownloadProgress::default(),
+            }),
+        );
+        assert!(shared_event_bytes(&envelope, &Some("other".to_string())).is_none());
+        let selected = shared_event_bytes(&envelope, &Some("selected".to_string())).unwrap();
+        let unfiltered = shared_event_bytes(&envelope, &None).unwrap();
+        assert_eq!(selected.as_ptr(), unfiltered.as_ptr());
+        assert_eq!(
+            selected.as_ref(),
+            map_event_to_protobuf(&envelope.event, &None)
+                .unwrap()
+                .encode_to_vec()
+        );
+        assert!(shared_event_bytes(&envelope, &Some("other".to_string())).is_none());
     }
 
     #[test]

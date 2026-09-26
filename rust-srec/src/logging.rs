@@ -27,6 +27,7 @@ use tracing_subscriber::{
 
 use crate::database::repositories::{ConfigRepository, StreamerRepository};
 use crate::utils::fs;
+use crate::utils::shared_event::{SharedEvent, SharedEventSender, publish_shared};
 
 pub(crate) mod store;
 use store::{LogStore, LogWriter};
@@ -67,6 +68,7 @@ pub struct LogEvent {
 pub struct LoggingConfig {
     handle: FilterHandle,
     log_tx: broadcast::Sender<LogEvent>,
+    shared_log_tx: Arc<SharedEventSender<LogEvent>>,
     log_dir: PathBuf,
     store: Arc<LogStore>,
 }
@@ -79,19 +81,30 @@ impl LoggingConfig {
         let (layer, handle) = reload::Layer::new(EnvFilter::new("info"));
         let (sender, _) = broadcast::channel(LOG_BROADCAST_CAPACITY);
         let store = Arc::new(LogStore::new(log_dir.clone(), Default::default()));
-        (Self::new(handle, sender, log_dir, store), layer)
+        (
+            Self::new(
+                handle,
+                sender,
+                Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY)),
+                log_dir,
+                store,
+            ),
+            layer,
+        )
     }
 
     /// Create a new logging configuration.
     fn new(
         handle: FilterHandle,
         log_tx: broadcast::Sender<LogEvent>,
+        shared_log_tx: Arc<SharedEventSender<LogEvent>>,
         log_dir: PathBuf,
         store: Arc<LogStore>,
     ) -> Self {
         Self {
             handle,
             log_tx,
+            shared_log_tx,
             log_dir,
             store,
         }
@@ -128,10 +141,14 @@ impl LoggingConfig {
         self.log_tx.subscribe()
     }
 
+    pub(crate) fn subscribe_shared(&self) -> broadcast::Receiver<Arc<SharedEvent<LogEvent>>> {
+        self.shared_log_tx.subscribe()
+    }
+
     /// Broadcast a log event to all subscribers.
     pub fn broadcast(&self, event: LogEvent) {
         // Ignore errors - just means no subscribers currently
-        let _ = self.log_tx.send(event);
+        publish_shared(&self.log_tx, &self.shared_log_tx, event);
     }
 
     /// Get the log directory path.
@@ -211,6 +228,7 @@ impl LoggingConfig {
 /// Custom layer that broadcasts log events.
 struct BroadcastLayer {
     tx: broadcast::Sender<LogEvent>,
+    shared_tx: Arc<SharedEventSender<LogEvent>>,
 }
 
 impl<S> Layer<S> for BroadcastLayer
@@ -218,7 +236,7 @@ where
     S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
-        if self.tx.receiver_count() == 0 {
+        if self.tx.receiver_count() == 0 && self.shared_tx.receiver_count() == 0 {
             return;
         }
         let metadata = event.metadata();
@@ -236,7 +254,7 @@ where
         };
 
         // Broadcast - ignore errors (no subscribers)
-        let _ = self.tx.send(log_event);
+        publish_shared(&self.tx, &self.shared_tx, log_event);
     }
 }
 
@@ -285,7 +303,11 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
 
     // Create broadcast channel for log streaming
     let (log_tx, _) = broadcast::channel(LOG_BROADCAST_CAPACITY);
-    let broadcast_layer = BroadcastLayer { tx: log_tx.clone() };
+    let shared_log_tx = Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY));
+    let broadcast_layer = BroadcastLayer {
+        tx: log_tx.clone(),
+        shared_tx: shared_log_tx.clone(),
+    };
 
     // Build and initialize the subscriber with local timezone timestamps
     tracing_subscriber::registry()
@@ -307,7 +329,13 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
             crate::Error::Other(format!("Failed to set global default subscriber: {}", e))
         })?;
 
-    let config = Arc::new(LoggingConfig::new(filter_handle, log_tx, log_path, store));
+    let config = Arc::new(LoggingConfig::new(
+        filter_handle,
+        log_tx,
+        shared_log_tx,
+        log_path,
+        store,
+    ));
 
     Ok((config, guard))
 }
@@ -370,7 +398,11 @@ mod tests {
         let formatted = AtomicUsize::new(0);
         let (tx, rx) = broadcast::channel(4);
         drop(rx);
-        let subscriber = tracing_subscriber::registry().with(BroadcastLayer { tx: tx.clone() });
+        let shared = Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY));
+        let subscriber = tracing_subscriber::registry().with(BroadcastLayer {
+            tx: tx.clone(),
+            shared_tx: shared.clone(),
+        });
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(value = ?Observed(&formatted));
             assert_eq!(formatted.load(Ordering::SeqCst), 0);
@@ -379,8 +411,16 @@ mod tests {
             assert_eq!(formatted.load(Ordering::SeqCst), 1);
             assert_eq!(rx.try_recv().unwrap().message, "value: observed");
             drop(rx);
+            let mut shared_rx = shared.subscribe();
             tracing::info!(value = ?Observed(&formatted));
-            assert_eq!(formatted.load(Ordering::SeqCst), 1);
+            assert_eq!(formatted.load(Ordering::SeqCst), 2);
+            assert_eq!(
+                shared_rx.try_recv().unwrap().event.message,
+                "value: observed"
+            );
+            drop(shared_rx);
+            tracing::info!(value = ?Observed(&formatted));
+            assert_eq!(formatted.load(Ordering::SeqCst), 2);
         });
     }
 
@@ -401,7 +441,13 @@ mod tests {
             reload::Layer::<EnvFilter, tracing_subscriber::Registry>::new(EnvFilter::new("info"));
         let (tx, _) = broadcast::channel(4);
         let store = Arc::new(LogStore::new(dir.path().to_owned(), Default::default()));
-        let config = LoggingConfig::new(handle, tx, dir.path().to_owned(), store);
+        let config = LoggingConfig::new(
+            handle,
+            tx,
+            Arc::new(SharedEventSender::new(LOG_BROADCAST_CAPACITY)),
+            dir.path().to_owned(),
+            store,
+        );
         let cancel = CancellationToken::new();
         let cleanup = config.run_retention_cleanup(cancel.clone());
         let verify = async {

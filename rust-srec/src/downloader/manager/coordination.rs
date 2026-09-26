@@ -7,6 +7,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::debug;
 
 use super::DownloadManagerEvent;
+use crate::utils::shared_event::{SharedEvent, SharedEventSender, publish_shared};
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum PublicationError {
@@ -19,6 +20,7 @@ pub(super) enum PublicationError {
 #[derive(Clone)]
 pub(super) struct DownloadEventPublisher {
     observer_tx: broadcast::Sender<DownloadManagerEvent>,
+    shared_tx: Arc<SharedEventSender<DownloadManagerEvent>>,
     pub(super) feedback: Arc<OnceLock<Arc<crate::scheduler::feedback::SchedulerFeedback>>>,
     pub(super) coordination_tx: Option<DownloadCoordinationSender>,
 }
@@ -31,6 +33,7 @@ impl DownloadEventPublisher {
         Self {
             feedback: Arc::new(OnceLock::new()),
             observer_tx,
+            shared_tx: Arc::new(SharedEventSender::new(256)),
             coordination_tx,
         }
     }
@@ -116,11 +119,17 @@ impl DownloadEventPublisher {
     }
 
     pub(super) fn observe(&self, event: DownloadManagerEvent) -> bool {
-        self.observer_tx.send(event).is_ok()
+        publish_shared(&self.observer_tx, &self.shared_tx, event)
     }
 
     pub(super) fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
         self.observer_tx.subscribe()
+    }
+
+    pub(super) fn subscribe_shared(
+        &self,
+    ) -> broadcast::Receiver<Arc<SharedEvent<DownloadManagerEvent>>> {
+        self.shared_tx.subscribe()
     }
 
     pub(super) async fn shutdown_coordination(&self) -> std::result::Result<(), &'static str> {

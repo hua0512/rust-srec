@@ -768,13 +768,27 @@ async fn logging_stream_ws(
     }))
 }
 
+fn encode_log_event(event: &crate::logging::LogEvent) -> Bytes {
+    let proto_event = log_event::LogEvent {
+        timestamp_ms: event.timestamp.timestamp_millis(),
+        level: parse_log_level(&event.level) as i32,
+        target: event.target.clone(),
+        message: event.message.clone(),
+    };
+    let message = log_event::WsMessage {
+        event_type: EventType::Log as i32,
+        payload: Some(log_event::ws_message::Payload::Log(proto_event)),
+    };
+    Bytes::from(message.encode_to_vec())
+}
+
 /// Handle an established WebSocket connection for log streaming.
 async fn handle_socket(
     socket: WebSocket,
     logging_config: std::sync::Arc<crate::logging::LoggingConfig>,
 ) {
     let (mut sender, mut receiver) = socket.split();
-    let mut log_rx = logging_config.subscribe();
+    let mut log_rx = logging_config.subscribe_shared();
 
     // Heartbeat interval
     let heartbeat_interval = Duration::from_secs(30);
@@ -787,20 +801,9 @@ async fn handle_socket(
             result = log_rx.recv() => {
                 match result {
                     Ok(event) => {
-                        // Convert internal LogEvent to protobuf LogEvent
-                        let proto_event = log_event::LogEvent {
-                            timestamp_ms: event.timestamp.timestamp_millis(),
-                            level: parse_log_level(&event.level) as i32,
-                            target: event.target,
-                            message: event.message,
-                        };
-                        let ws_msg = log_event::WsMessage {
-                            event_type: EventType::Log as i32,
-                            payload: Some(log_event::ws_message::Payload::Log(proto_event)),
-                        };
-                        let bytes = ws_msg.encode_to_vec();
-                        if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
-                            break; // Client disconnected
+                        if let Some(bytes) = event.encoded(|event| Some(encode_log_event(event)))
+                            && sender.send(Message::Binary(bytes)).await.is_err() {
+                            break;
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
