@@ -3,6 +3,7 @@
 //! Implements danmu collection for Bilibili live streaming using the generic
 //! WebSocket provider with binary protocol and Brotli/Zlib compression.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
@@ -104,6 +105,22 @@ struct DecodedPacket {
     /// Slice of the frame (or of the decompressed buffer) the packet came
     /// from; refcounted, so packets never copy their body.
     body: Bytes,
+}
+
+// Borrow the Base64 payload and skip unrelated JSON fields on the common V2
+// path. Cow still accepts escaped strings, allocating only when unescaping.
+#[derive(Deserialize)]
+struct GiftV2Notification<'a> {
+    #[serde(borrow)]
+    cmd: Cow<'a, str>,
+    #[serde(borrow)]
+    data: GiftV2Payload<'a>,
+}
+
+#[derive(Deserialize)]
+struct GiftV2Payload<'a> {
+    #[serde(borrow)]
+    pb: Cow<'a, str>,
 }
 
 // Subset of SEND_GIFT_V2 used for recording. Tags follow the schema shipped in
@@ -438,9 +455,20 @@ impl BilibiliDanmuProtocol {
             && let Some(end) = rest.iter().position(|&b| b == b'"')
             && let Ok(cmd) = std::str::from_utf8(&rest[..end])
             && !cmd.contains('\\')
-            && !Self::handles_command(cmd.split(':').next().unwrap_or(cmd))
         {
-            return;
+            let cmd_base = cmd.split(':').next().unwrap_or(cmd);
+            if !Self::handles_command(cmd_base) {
+                return;
+            }
+            if cmd_base == "SEND_GIFT_V2"
+                && let Ok(notification) = serde_json::from_slice::<GiftV2Notification<'_>>(body)
+                && notification.cmd.split(':').next() == Some("SEND_GIFT_V2")
+            {
+                Self::parse_gifts_v2(&notification.data.pb, items);
+                return;
+            }
+            // Duplicate fields or an unexpected envelope use Value's existing
+            // semantics below, including keeping the last duplicate field.
         }
 
         let Ok(json) = serde_json::from_slice::<Value>(body) else {
@@ -460,7 +488,13 @@ impl BilibiliDanmuProtocol {
             }
             "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
             "SEND_GIFT_V2" => {
-                Self::parse_gifts_v2(&json, items);
+                if let Some(pb) = json
+                    .get("data")
+                    .and_then(|data| data.get("pb"))
+                    .and_then(Value::as_str)
+                {
+                    Self::parse_gifts_v2(pb, items);
+                }
                 return;
             }
             "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
@@ -473,14 +507,7 @@ impl BilibiliDanmuProtocol {
         items.extend(item);
     }
 
-    fn parse_gifts_v2(json: &Value, items: &mut Vec<DanmuItem>) {
-        let Some(pb) = json
-            .get("data")
-            .and_then(|data| data.get("pb"))
-            .and_then(Value::as_str)
-        else {
-            return;
-        };
+    fn parse_gifts_v2(pb: &str, items: &mut Vec<DanmuItem>) {
         let bytes = match STANDARD.decode(pb) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -497,11 +524,15 @@ impl BilibiliDanmuProtocol {
         };
         // Disabled batches must not produce gifts, matching the upstream gate.
         // Record sender identity as delivered: anonymous senders can have uid=0.
-        if !batch.switch {
+        if !batch.switch || batch.gift_list.is_empty() {
             return;
         }
 
-        for gift in batch.gift_list {
+        let gift_count = batch.gift_list.len();
+        items.reserve(gift_count);
+        let mut user_id = batch.uid.to_string();
+        let mut username = batch.uname;
+        for (index, gift) in batch.gift_list.into_iter().enumerate() {
             let Ok(count) = u32::try_from(gift.num) else {
                 debug!("Ignoring SEND_GIFT_V2 gift with invalid count");
                 continue;
@@ -519,8 +550,18 @@ impl BilibiliDanmuProtocol {
             }
             let mut message = DanmuMessage::gift(
                 uuid::Uuid::new_v4().to_string(),
-                batch.uid.to_string(),
-                batch.uname.clone(),
+                // The final gift can own these strings directly; single-gift
+                // notifications need no sender-string clones.
+                if index + 1 == gift_count {
+                    std::mem::take(&mut user_id)
+                } else {
+                    user_id.clone()
+                },
+                if index + 1 == gift_count {
+                    std::mem::take(&mut username)
+                } else {
+                    username.clone()
+                },
                 gift.gift_name,
                 count,
             )
@@ -945,6 +986,40 @@ mod tests {
         items
     }
 
+    #[test]
+    #[ignore = "manual decoder microbenchmark; run with --release --ignored --nocapture"]
+    fn benchmark_send_gift_v2_notifications() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        for gift_count in [1, 8, 32] {
+            let mut batch = gift_v2_fixture();
+            batch.gift_list = vec![batch.gift_list[0].clone(); gift_count];
+            let body = serde_json::to_vec(&serde_json::json!({
+                "cmd": "SEND_GIFT_V2",
+                "danmu": {"area": 0},
+                "data": {"dmscore": 476, "pb": STANDARD.encode(batch.encode_to_vec())}
+            }))
+            .unwrap();
+            let iterations = 100_000 / gift_count;
+            let mut samples = Vec::new();
+            for _ in 0..5 {
+                let start = Instant::now();
+                for _ in 0..iterations {
+                    let mut items = Vec::new();
+                    BilibiliDanmuProtocol::parse_notification(black_box(&body), &mut items);
+                    black_box(items);
+                }
+                samples.push(start.elapsed().as_nanos() / iterations as u128);
+            }
+            samples.sort_unstable();
+            eprintln!(
+                "{gift_count} gifts/notification: median {} ns/notification",
+                samples[2]
+            );
+        }
+    }
+
     fn assert_v2_gifts(items: &[DanmuItem]) {
         assert_eq!(items.len(), 2);
         for (item, name, count, price, timestamp) in [
@@ -994,6 +1069,38 @@ mod tests {
         let mut items = Vec::new();
         BilibiliDanmuProtocol::parse_notification(body.as_bytes(), &mut items);
         assert_v2_gifts(&items);
+    }
+
+    #[test]
+    fn test_send_gift_v2_accepts_escaped_strings_and_duplicate_payload_fields() {
+        let escaped_pb = GIFT_V2_PB.replacen('C', r"\u0043", 1);
+        for body in [
+            format!(r#"{{"cmd":"SEND_GIFT_V2","data":{{"pb":"{escaped_pb}"}}}}"#),
+            format!(r#"{{"cmd":"SEND_GIFT_\u00562","data":{{"pb":"{GIFT_V2_PB}"}}}}"#),
+            format!(r#"{{"cmd":"SEND_GIFT_V2","data":{{"pb":null,"pb":"{GIFT_V2_PB}"}}}}"#),
+            format!(r#"{{"cmd":"SEND_GIFT_V2","data":null,"data":{{"pb":"{GIFT_V2_PB}"}}}}"#),
+        ] {
+            let mut items = Vec::new();
+            BilibiliDanmuProtocol::parse_notification(body.as_bytes(), &mut items);
+            assert_v2_gifts(&items);
+        }
+    }
+
+    #[test]
+    fn test_send_gift_v2_prefix_does_not_override_last_command_or_accept_invalid_json() {
+        let body = format!(
+            r#"{{"cmd":"SEND_GIFT_V2","data":{{"pb":"{GIFT_V2_PB}","title":"Changed"}},"cmd":"ROOM_CHANGE"}}"#
+        );
+        let item = parse_single_notification(body.as_bytes()).expect("room change");
+        assert!(matches!(
+            item,
+            DanmuItem::Control(DanmuControlEvent::RoomInfoChanged { title: Some(title), .. })
+                if title == "Changed"
+        ));
+
+        let mut malformed = gift_v2_body(GIFT_V2_PB);
+        malformed.extend_from_slice(b" trailing garbage");
+        assert!(parse_single_notification(&malformed).is_none());
     }
 
     #[test]
