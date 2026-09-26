@@ -484,6 +484,20 @@ pub struct DanmuRateEntry {
     pub count: i64,
 }
 
+/// Output metadata needed to render one session without loading its output rows.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct SessionOutputSummary {
+    pub session_id: String,
+    pub output_count: i64,
+    pub thumbnail_id: Option<String>,
+}
+
+impl SessionOutputSummary {
+    pub fn count(&self) -> u32 {
+        self.output_count.clamp(0, i64::from(u32::MAX)) as u32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

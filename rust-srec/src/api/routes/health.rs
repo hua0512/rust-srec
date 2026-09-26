@@ -174,7 +174,7 @@ pub struct IdleResponse {
 pub async fn idle_check(State(state): State<HealthRouteState>) -> ApiResult<impl IntoResponse> {
     let active_recordings = state.download_manager.active_count();
     let pending_recordings = state.download_manager.pending_count();
-    let processing_jobs = state.pipeline_manager.get_stats().await?.processing;
+    let processing_jobs = state.pipeline_manager.count_processing_jobs().await?;
 
     let idle = active_recordings == 0 && pending_recordings == 0 && processing_jobs == 0;
     let status = if idle {
@@ -410,6 +410,51 @@ mod tests {
         let json = read_json(response).await;
         assert_eq!(json["idle"], serde_json::Value::Bool(false));
         assert_eq!(json["processing_jobs"], 1);
+    }
+
+    #[tokio::test]
+    async fn idle_check_reads_current_database_processing_count() {
+        use std::sync::Arc;
+
+        use crate::database::models::{JobDbModel, JobStatus};
+        use crate::database::repositories::{JobRepository, SqlxJobRepository};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+        let job = JobDbModel::new_with_input("remux", "input", 0, None, None, "{}");
+        repo.create_job(&job).await.unwrap();
+        let state = build_idle_test_state(crate::pipeline::PipelineManager::with_repository(
+            Default::default(),
+            repo.clone(),
+        ));
+        for (status, expected) in [
+            (JobStatus::Pending, 0),
+            (JobStatus::Processing, 1),
+            (JobStatus::Completed, 0),
+            (JobStatus::Failed, 0),
+            (JobStatus::Cancelled, 0),
+        ] {
+            repo.update_job_status(&job.id, status).await.unwrap();
+            let response = idle_check(State(state.clone()))
+                .await
+                .unwrap()
+                .into_response();
+            assert_eq!(
+                response.status(),
+                if expected == 0 {
+                    StatusCode::OK
+                } else {
+                    StatusCode::SERVICE_UNAVAILABLE
+                }
+            );
+            let json = read_json(response).await;
+            assert_eq!(json["processing_jobs"], expected);
+            assert_eq!(json["idle"], expected == 0);
+        }
+        pool.close().await;
     }
 
     #[test]

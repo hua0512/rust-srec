@@ -530,6 +530,11 @@ where
         }
     }
 
+    /// Authoritative processing count for the restart-safety health check.
+    pub async fn count_processing_jobs(&self) -> Result<u64> {
+        self.job_queue.count_processing_jobs().await
+    }
+
     /// Get comprehensive pipeline statistics.
     /// Returns counts by status (pending, processing, completed, failed)
     /// and average processing time.

@@ -24,8 +24,8 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::{
-    DanmuRateEntry, GiftTallyEntry, MediaFileType, Pagination, SessionFilters, TitleEntry,
-    TopTalkerEntry, WordFrequencyEntry,
+    DanmuRateEntry, GiftTallyEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
+    WordFrequencyEntry,
 };
 use crate::session::SessionEvent;
 
@@ -232,7 +232,7 @@ pub async fn list_sessions(
     // statistics rows carry aggregate JSON blobs tens of kilobytes each.
     let (streamers, outputs, danmu_totals) = tokio::try_join!(
         streamer_repository.get_streamers_by_ids(&streamer_ids),
-        session_repository.get_media_outputs_for_sessions(&session_ids),
+        session_repository.summarize_session_outputs(&session_ids),
         session_repository.get_danmu_counts_for_sessions(&session_ids),
     )
     .map_err(ApiError::from)?;
@@ -242,14 +242,12 @@ pub async fn list_sessions(
     let mut output_counts = std::collections::HashMap::new();
     let mut thumbnail_urls = std::collections::HashMap::new();
     for output in outputs {
-        let count = output_counts
-            .entry(output.session_id.clone())
-            .or_insert(0_u32);
-        *count = count.saturating_add(1);
-        if output.file_type == MediaFileType::Thumbnail.as_str() {
-            thumbnail_urls
-                .entry(output.session_id)
-                .or_insert_with(|| format!("/api/media/{}/content", output.id));
+        output_counts.insert(output.session_id.clone(), output.count());
+        if let Some(thumbnail_id) = output.thumbnail_id {
+            thumbnail_urls.insert(
+                output.session_id,
+                format!("/api/media/{thumbnail_id}/content"),
+            );
         }
     }
     let danmu_counts: std::collections::HashMap<_, _> = danmu_totals
@@ -602,14 +600,10 @@ async fn get_thumbnail_url(
     session_id: &str,
     repo: &dyn crate::database::repositories::session::SessionRepository,
 ) -> Option<String> {
-    use crate::database::models::MediaFileType;
-    // We assume the repository method returns outputs ordered by creation, taking the first thumbnail found
-    // Optimally we'd have a specific query for this, but filtering in app is acceptable for now given low volume per session
-    let outputs = repo.get_media_outputs_for_session(session_id).await.ok()?;
-    outputs
-        .into_iter()
-        .find(|o| o.file_type == MediaFileType::Thumbnail.as_str())
-        .map(|o| format!("/api/media/{}/content", o.id))
+    repo.first_thumbnail_id(session_id)
+        .await
+        .ok()?
+        .map(|id| format!("/api/media/{id}/content"))
 }
 
 /// Parse titles JSON and extract and current title.
