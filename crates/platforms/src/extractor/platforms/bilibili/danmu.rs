@@ -496,7 +496,8 @@ impl BilibiliDanmuProtocol {
             }
         };
         // Disabled batches must not produce gifts, matching the upstream gate.
-        if !batch.switch || batch.uid <= 0 || batch.uname.is_empty() {
+        // Record sender identity as delivered: anonymous senders can have uid=0.
+        if !batch.switch {
             return;
         }
 
@@ -993,6 +994,44 @@ mod tests {
         let mut items = Vec::new();
         BilibiliDanmuProtocol::parse_notification(body.as_bytes(), &mut items);
         assert_v2_gifts(&items);
+    }
+
+    #[test]
+    fn test_send_gift_v2_preserves_anonymous_sender_and_skips_unknown_fields() {
+        // Independent wire fixture with uid=0, sender_uinfo.anon, and unknown
+        // varint/fixed64/length-delimited/fixed32 fields in the batch and gift.
+        // Mirrors the anonymous-sender case in BililiveRecorder commit a27640a.
+        let pb = "CAASDOWMv+WQjeeUqOaIt1I6EgZGbG93ZXIYAihkQgRnb2xkUMTo6sUGwAz///////////8ByQzvzauJZ0UjAdIMA/8AgN0M776t3lgBelcIABIQCgzljL/lkI3nlKjmiLcgAUpBCAESCWFub25fdGVzdBoCdjEiLEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE9KAHgEgHpEgAAAAAAAAAA8hIA/RIAAAAA";
+        let item = parse_single_notification(&gift_v2_body(pb)).expect("anonymous gift");
+        let DanmuItem::Message(msg) = item else {
+            panic!("expected gift");
+        };
+        assert_eq!(msg.message_type, crate::danmaku::message::DanmuType::Gift);
+        assert_eq!(msg.user_id, "0");
+        assert_eq!(msg.username, "匿名用户");
+        assert_eq!(msg.content, "赠送 Flower x2");
+        assert_eq!(msg.timestamp.timestamp_millis(), 1_757_066_308_000);
+        let meta = msg.metadata.unwrap();
+        assert_eq!(meta["gift_count"], 2);
+        assert_eq!(meta["price"], 100);
+    }
+
+    #[test]
+    fn test_send_gift_v2_records_sender_identity_as_delivered() {
+        for (uid, uname) in [(0, "匿名用户"), (-1, "TestUser"), (42, "")] {
+            let mut batch = gift_v2_fixture();
+            batch.uid = uid;
+            batch.uname = uname.to_string();
+            let items = parse_gift_v2_batch(&batch);
+            assert_eq!(items.len(), 2);
+            for item in items {
+                let DanmuItem::Message(msg) = item else {
+                    panic!("expected gift");
+                };
+                assert_eq!(msg.user_id, uid.to_string());
+                assert_eq!(msg.username, uname);
+            }
+        }
     }
 
     #[tokio::test]
