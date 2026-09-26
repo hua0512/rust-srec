@@ -105,6 +105,17 @@ describe('Douyu configuration', () => {
     );
   });
 
+  it('hides the App device options for web extraction', () => {
+    renderFields({ api_mode: 'web' });
+    expect(screen.queryByText('App Device')).toBeNull();
+    expect(screen.queryByLabelText('Device Model')).toBeNull();
+  });
+
+  it('shows the App device options when the method is unset', () => {
+    renderFields();
+    expect(screen.getByText('App Device')).toBeInTheDocument();
+  });
+
   it('shows the legacy CDN default for audio-only extraction', () => {
     renderFields({ api_mode: 'app', only_audio: true });
     expect(cdnInput().placeholder).toBe('Default: ws-h5');

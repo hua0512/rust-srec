@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
+import { cn } from '@/lib/utils';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Switch } from '@/components/ui/switch';
@@ -17,6 +18,10 @@ import { DouyuQualityCombobox } from './douyu-quality-combobox';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
+  CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
@@ -71,9 +76,9 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
               name={configPath<TFieldValues>(fieldName, 'api_mode')}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
+                  <ConfigFieldLabel accent="indigo" className="mb-3">
                     <Trans>Extraction Method</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     value={field.value ?? 'unset'}
                     onValueChange={(value) =>
@@ -81,11 +86,11 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                     }
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="unset">
                         {unsetPlaceholder('App')}
                       </SelectItem>
@@ -97,7 +102,7 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       App uses anonymous playback. Web is retained for
                       compatibility. Audio only always uses Web.
@@ -111,9 +116,9 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
               name={configPath<TFieldValues>(fieldName, 'codec')}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
+                  <ConfigFieldLabel accent="indigo" className="mb-3">
                     <Trans>Preferred Video Codec</Trans>
-                  </FormLabel>
+                  </ConfigFieldLabel>
                   <Select
                     value={field.value ?? 'unset'}
                     onValueChange={(value) =>
@@ -121,11 +126,11 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                     }
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
                       <SelectItem value="unset">
                         {unsetPlaceholder('AVC')}
                       </SelectItem>
@@ -133,7 +138,7 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                       <SelectItem value="hevc">HEVC (H.265)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       Prefer HEVC when available, with AVC fallback. Ignored for
                       audio only.
@@ -149,12 +154,13 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
               name={configPath<TFieldValues>(fieldName, 'cdn')}
               render={({ field }) => (
                 <FormItem>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Cloud className="w-4 h-4 text-muted-foreground" />
-                    <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <Trans>Preferred CDN</Trans>
-                    </FormLabel>
-                  </div>
+                  <ConfigFieldLabel
+                    icon={Cloud}
+                    accent="indigo"
+                    className="mb-3"
+                  >
+                    <Trans>Preferred CDN</Trans>
+                  </ConfigFieldLabel>
                   <FormControl>
                     <Input
                       placeholder={unsetPlaceholder(
@@ -165,10 +171,10 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                       // Null rather than an empty string, which the extractor
                       // would read as a CDN preference of its own.
                       onChange={(e) => field.onChange(e.target.value || null)}
-                      className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all"
+                      className={CONFIG_INPUT}
                     />
                   </FormControl>
-                  <FormDescription className="text-[10px] font-medium pt-1 px-1">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are
                       accepted.
@@ -191,9 +197,10 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                       form={form}
                       value={field.value}
                       onChange={field.onChange}
+                      className="h-11 shadow-sm"
                     />
                   </FormControl>
-                  <FormDescription className="text-[10px] font-medium pt-1">
+                  <FormDescription className={CONFIG_DESCRIPTION}>
                     <Trans>
                       Select a preset or type a Douyu rate. Audio only requests
                       AAC without video.
@@ -206,95 +213,106 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
         </div>
       </section>
 
-      <section className="space-y-6">
-        <ConfigSectionHeading icon={Zap} accent="indigo">
-          <Trans>App Device</Trans>
-        </ConfigSectionHeading>
-        <FormDescription>
-          <Trans>
-            App requests share one device identity across retries. The user
-            agent follows the model and Android version.
-          </Trans>
-        </FormDescription>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[
-            {
-              key: 'device_name',
-              label: msg`Device Model`,
-              fallback: i18n._(msg`Random model`),
-            },
-            { key: 'os_version', label: msg`Android Version`, fallback: '14' },
-            {
-              key: 'device_id',
-              label: msg`Device ID`,
-              fallback: i18n._(msg`Automatic`),
-            },
-          ].map(({ key, label, fallback }) => (
+      {/* Unset still shows it: that is the App default here, or an inherited
+          method that may be App. */}
+      {apiMode !== 'web' && (
+        <section className="space-y-6">
+          <ConfigSectionHeading icon={Zap} accent="indigo">
+            <Trans>App Device</Trans>
+          </ConfigSectionHeading>
+          <FormDescription>
+            <Trans>
+              App requests share one device identity across retries. The user
+              agent follows the model and Android version.
+            </Trans>
+          </FormDescription>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[
+              {
+                key: 'device_name',
+                label: msg`Device Model`,
+                fallback: i18n._(msg`Random model`),
+              },
+              {
+                key: 'os_version',
+                label: msg`Android Version`,
+                fallback: '14',
+              },
+              {
+                key: 'device_id',
+                label: msg`Device ID`,
+                fallback: i18n._(msg`Automatic`),
+              },
+            ].map(({ key, label, fallback }) => (
+              <FormField
+                key={key}
+                control={form.control}
+                name={configPath<TFieldValues>(fieldName, key)}
+                render={({ field }) => (
+                  <FormItem>
+                    <ConfigFieldLabel accent="indigo" className="mb-3">
+                      {i18n._(label)}
+                    </ConfigFieldLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        placeholder={unsetPlaceholder(fallback)}
+                        onChange={(e) => field.onChange(e.target.value || null)}
+                        className={CONFIG_INPUT}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            ))}
             <FormField
-              key={key}
               control={form.control}
-              name={configPath<TFieldValues>(fieldName, key)}
+              name={configPath<TFieldValues>(fieldName, 'device_id_mode')}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{i18n._(label)}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value ?? ''}
-                      placeholder={unsetPlaceholder(fallback)}
-                      onChange={(e) => field.onChange(e.target.value || null)}
-                    />
-                  </FormControl>
+                  <ConfigFieldLabel accent="indigo" className="mb-3">
+                    <Trans>Device ID source</Trans>
+                  </ConfigFieldLabel>
+                  <Select
+                    value={field.value ?? 'unset'}
+                    onValueChange={(value) =>
+                      field.onChange(value === 'unset' ? null : value)
+                    }
+                  >
+                    <FormControl>
+                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className={CONFIG_SELECT_CONTENT}>
+                      <SelectItem value="unset">
+                        {unsetPlaceholder(i18n._(msg`Local generation`))}
+                      </SelectItem>
+                      <SelectItem value="local">
+                        <Trans>Local generation</Trans>
+                      </SelectItem>
+                      <SelectItem value="server">
+                        <Trans>Server registration</Trans>
+                      </SelectItem>
+                      <SelectItem value="default">
+                        <Trans>Fixed fallback</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </FormItem>
               )}
             />
-          ))}
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'device_id_mode')}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  <Trans>Device ID source</Trans>
-                </FormLabel>
-                <Select
-                  value={field.value ?? 'unset'}
-                  onValueChange={(value) =>
-                    field.onChange(value === 'unset' ? null : value)
-                  }
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="unset">
-                      {unsetPlaceholder(i18n._(msg`Local generation`))}
-                    </SelectItem>
-                    <SelectItem value="local">
-                      <Trans>Local generation</Trans>
-                    </SelectItem>
-                    <SelectItem value="server">
-                      <Trans>Server registration</Trans>
-                    </SelectItem>
-                    <SelectItem value="default">
-                      <Trans>Fixed fallback</Trans>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-        </div>
-        <FormDescription>
-          <Trans>
-            An explicit Device ID overrides the acf_did cookie and selected
-            source. Server registration requires an additional request and is
-            reused by this extractor.
-          </Trans>
-        </FormDescription>
-      </section>
+          </div>
+          <FormDescription>
+            <Trans>
+              An explicit Device ID overrides the acf_did cookie and selected
+              source. Server registration requires an additional request and is
+              reused by this extractor.
+            </Trans>
+          </FormDescription>
+        </section>
+      )}
 
       {/* Network & Content Section */}
       <section className="space-y-6">
@@ -338,12 +356,13 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
             name={configPath<TFieldValues>(fieldName, 'request_retries')}
             render={({ field }) => (
               <FormItem>
-                <div className="flex items-center gap-2 mb-3">
-                  <RotateCcw className="w-4 h-4 text-muted-foreground" />
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>API Request Retries</Trans>
-                  </FormLabel>
-                </div>
+                <ConfigFieldLabel
+                  icon={RotateCcw}
+                  accent="indigo"
+                  className="mb-3"
+                >
+                  <Trans>API Request Retries</Trans>
+                </ConfigFieldLabel>
                 <FormControl>
                   <NumberInput
                     field={field}
@@ -353,10 +372,10 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                     // Null rather than an absent key: the config resolver only
                     // lets a stated null override a legacy flat template value.
                     onChange={(value) => field.onChange(value ?? null)}
-                    className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all max-w-[120px]"
+                    className={cn(CONFIG_INPUT, 'max-w-[120px]')}
                   />
                 </FormControl>
-                <FormDescription className="text-[10px] font-medium pt-1">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Maximum attempts for metadata and App playback requests.
                   </Trans>
