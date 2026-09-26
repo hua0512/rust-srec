@@ -2396,21 +2396,18 @@ use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 use crate::session::state::OfflineSignal;
 
 fn make_lifecycle_with_events(pool: SqlitePool) -> Arc<SessionLifecycle> {
-    // Tiny hysteresis window so the audit-log tests below can exercise
-    // the hysteresis path without sleeping for 90s. Tiny `ended_retention`
-    // so the in-memory dedup map doesn't leak between scenarios.
-    let cfg = HysteresisConfig::from_window(std::time::Duration::from_millis(25));
+    // Audit tests drive transitions explicitly and never wait for expiry.
+    // Keep the default hysteresis and dedup retention windows so SQLite
+    // worker latency and CI scheduling cannot expire the state under test.
     let event_repo: Arc<dyn SessionEventRepository> =
         Arc::new(SqlxSessionEventRepository::new(pool.clone(), pool.clone()));
     Arc::new(
-        SessionLifecycle::with_config(
+        SessionLifecycle::new(
             Arc::new(SessionLifecycleRepository::new(pool)),
             Arc::new(OfflineClassifier::new()),
             16,
-            cfg,
         )
-        .with_event_repo(event_repo)
-        .with_ended_retention(std::time::Duration::from_millis(50)),
+        .with_event_repo(event_repo),
     )
 }
 
@@ -2565,11 +2562,17 @@ async fn resumed_then_started_pair_persisted() {
         stop_cause: None,
     };
     lifecycle.on_download_terminal(&event).await.unwrap();
-    // Resume before the (25 ms) timer fires.
-    lifecycle
+    // Resume the same session while its hysteresis window is open.
+    let resumed = lifecycle
         .on_live_detected(live_args(Utc::now()))
         .await
         .unwrap();
+    assert_eq!(
+        resumed,
+        StartSessionOutcome::ReusedActive {
+            session_id: sid.clone(),
+        }
+    );
 
     let rows = read_events(&pool, &sid).await;
     let kinds: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
