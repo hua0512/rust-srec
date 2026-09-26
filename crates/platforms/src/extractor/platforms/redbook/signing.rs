@@ -95,24 +95,18 @@ fn sign_with_parameters(
 
 #[cfg(test)]
 pub(super) mod tests {
+    use base64::{
+        alphabet::Alphabet,
+        engine::general_purpose::{GeneralPurpose, PAD},
+    };
+
     use super::*;
 
-    fn decode(encoded: &str, alphabet: &[u8; 64]) -> Vec<u8> {
-        let standard = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let encoded: String = encoded
-            .bytes()
-            .map(|byte| {
-                if byte == b'=' {
-                    '='
-                } else {
-                    char::from(standard[alphabet.iter().position(|b| *b == byte).unwrap()])
-                }
-            })
-            .collect();
-        STANDARD.decode(encoded).unwrap()
-    }
-
     pub(crate) fn decode_request_fields(signature: &str) -> (u32, Vec<u8>, String) {
+        let decode = |encoded: &str, alphabet: &[u8; 64]| {
+            let alphabet = Alphabet::new(std::str::from_utf8(alphabet).unwrap()).unwrap();
+            GeneralPurpose::new(&alphabet, PAD).decode(encoded).unwrap()
+        };
         let envelope: serde_json::Value = serde_json::from_slice(&decode(
             signature.strip_prefix("XYS_").unwrap(),
             ENVELOPE_ALPHABET,

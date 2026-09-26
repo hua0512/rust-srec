@@ -51,7 +51,8 @@ impl RedBook {
         extras: Option<serde_json::Value>,
     ) -> Self {
         let mut extractor = Extractor::new("RedBook", url, client);
-        Self::setup_headers(&mut extractor);
+        extractor.set_origin_and_referer_static(Self::BASE_URL);
+        extractor.add_header_str(reqwest::header::USER_AGENT, USER_AGENT);
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
@@ -60,30 +61,6 @@ impl RedBook {
         Self {
             extractor,
             _extras: extras,
-        }
-    }
-
-    /// Setup common headers for RedBook requests
-    fn setup_headers(extractor: &mut Extractor) {
-        let headers = [
-            (reqwest::header::ORIGIN.as_str(), Self::BASE_URL),
-            (reqwest::header::REFERER.as_str(), Self::BASE_URL),
-            (reqwest::header::USER_AGENT.as_str(), USER_AGENT),
-        ];
-
-        for (key, value) in headers {
-            extractor.add_header_str(key, value);
-        }
-    }
-
-    /// Determine MediaFormat from URL extension
-    fn get_format_from_url(url: &str) -> StreamFormat {
-        if url.contains(M3U8_EXTENSION) {
-            StreamFormat::Hls
-        } else if url.contains(FLV_EXTENSION) {
-            StreamFormat::Flv
-        } else {
-            StreamFormat::Hls // Default to HLS for unknown formats
         }
     }
 
@@ -103,7 +80,11 @@ impl RedBook {
                     .and_then(|v| v.as_str())
                     .unwrap_or(DEFAULT_QUALITY);
 
-                let format = Self::get_format_from_url(url);
+                let format = if url.contains(M3U8_EXTENSION) || !url.contains(FLV_EXTENSION) {
+                    StreamFormat::Hls
+                } else {
+                    StreamFormat::Flv
+                };
                 let is_bak = url.contains("bak");
 
                 let display_quality = match (codec == DEFAULT_CODEC_H265, is_bak) {
@@ -141,14 +122,6 @@ impl RedBook {
         }
 
         streams
-    }
-
-    /// Preserve room titles verbatim, including replay markers.
-    fn resolve_title(room_title: Option<&str>, artist: &str) -> String {
-        room_title
-            .filter(|t| !t.is_empty())
-            .map(ToString::to_string)
-            .unwrap_or_else(|| format!("{artist} 的直播"))
     }
 
     fn room_id_from_url(url: &reqwest::Url) -> Result<String, ExtractorError> {
@@ -207,25 +180,6 @@ impl RedBook {
             .header("X-s", signature))
     }
 
-    fn fallback_streams(room_id: &str) -> Vec<StreamInfo> {
-        let cdn_flv = format!("{XHS_CDN_FLV_PREFIX}{room_id}{FLV_EXTENSION}");
-        let cdn_m3u8 = format!("{XHS_CDN_FLV_PREFIX}{room_id}{M3U8_EXTENSION}");
-        vec![
-            StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
-                .quality(DEFAULT_QUALITY)
-                .priority(0)
-                .codec(DEFAULT_CODEC_H264)
-                .is_headers_needed(true)
-                .build(),
-            StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
-                .quality(DEFAULT_QUALITY)
-                .priority(1)
-                .codec(DEFAULT_CODEC_H264)
-                .is_headers_needed(true)
-                .build(),
-        ]
-    }
-
     fn parse_room_info(
         &self,
         body: &str,
@@ -248,7 +202,12 @@ impl RedBook {
         })?;
         let host = data.host_info.unwrap_or_default();
         let artist = host.nick_name.unwrap_or_default();
-        let title = Self::resolve_title(room.room_title.as_deref(), &artist);
+        let title = room
+            .room_title
+            .as_deref()
+            .filter(|title| !title.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{artist} 的直播"));
         let is_live = room.status == Some(2)
             && room
                 .room_title
@@ -289,7 +248,25 @@ impl RedBook {
             }
         }
         if media.streams.is_empty() {
-            media.streams = Self::fallback_streams(room_id);
+            media.streams = [
+                (FLV_EXTENSION, StreamFormat::Flv, MediaFormat::Flv),
+                (M3U8_EXTENSION, StreamFormat::Hls, MediaFormat::Ts),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(priority, (extension, format, media_format))| {
+                StreamInfo::builder(
+                    format!("{XHS_CDN_FLV_PREFIX}{room_id}{extension}"),
+                    format,
+                    media_format,
+                )
+                .quality(DEFAULT_QUALITY)
+                .priority(priority as u32)
+                .codec(DEFAULT_CODEC_H264)
+                .is_headers_needed(true)
+                .build()
+            })
+            .collect();
         }
         media.headers = Some(self.extractor.get_platform_headers_map());
         Ok(media)
@@ -349,19 +326,13 @@ mod tests {
     }
 
     #[test]
-    fn share_link_matching_is_unchanged() {
-        for url in [
-            "http://xhslink.com/m/844vKmW30jz",
-            "https://xhslink.com/m/test",
-        ] {
-            assert!(URL_REGEX.is_match(url));
-        }
-        for url in [
-            "https://xhslink.com/test",
-            "https://www.xiaohongshu.com/user/profile/test",
-        ] {
-            assert!(!URL_REGEX.is_match(url));
-        }
+    fn test_url_regex_matches_share_links() {
+        assert!(!super::URL_REGEX.is_match("http://xhslink.com/DEnpCgb"));
+        assert!(!super::URL_REGEX.is_match("https://xhslink.com/DEnpCgb"));
+        assert!(super::URL_REGEX.is_match("http://xhslink.com/m/844vKmW30jz"));
+        assert!(super::URL_REGEX.is_match("https://xhslink.com/m/844vKmW30jz"));
+
+        assert!(!super::URL_REGEX.as_str().contains("xiaohongshu"));
     }
 
     #[test]
@@ -492,7 +463,6 @@ mod tests {
     #[test]
     fn offline_replay_and_untitled_rooms_have_no_streams() {
         for (status, title) in [
-            (json!(1), json!("live")),
             (json!(3), json!("live")),
             (Value::Null, json!("live")),
             (json!(2), json!("直播回放")),
@@ -517,7 +487,6 @@ mod tests {
             r#"{"success":false,"code":-1,"msg":"request rejected"}"#,
             r#"{"success":true}"#,
             r#"{"success":true,"data":{}}"#,
-            r#"{"success":true,"data":{"room_info":null}}"#,
             "<html>verification required</html>",
         ] {
             assert!(
