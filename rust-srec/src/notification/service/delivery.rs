@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use dashmap::DashMap;
+use futures::StreamExt;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
@@ -48,19 +49,22 @@ impl NotificationService {
         else {
             return;
         };
-        Self::process_notification_detached(Arc::new(DeliveryContext {
-            id,
-            channels,
-            pending_queue: self.pending_queue.clone(),
-            dead_letters: self.dead_letters.clone(),
-            dead_letter_cleanup_ts: self.dead_letter_cleanup_ts.clone(),
-            notification_repo: self.notification_repo.clone(),
-            config: self.config.clone(),
-            next_dead_letter_id: self.next_dead_letter_id.clone(),
-            cancellation_token: self.cancellation_token.clone(),
-            retry_cancel,
-            task_supervisor: self.task_supervisor.clone(),
-        }))
+        Self::process_notification_detached(
+            Arc::new(DeliveryContext {
+                id,
+                channels,
+                pending_queue: self.pending_queue.clone(),
+                dead_letters: self.dead_letters.clone(),
+                dead_letter_cleanup_ts: self.dead_letter_cleanup_ts.clone(),
+                notification_repo: self.notification_repo.clone(),
+                config: self.config.clone(),
+                next_dead_letter_id: self.next_dead_letter_id.clone(),
+                cancellation_token: self.cancellation_token.clone(),
+                retry_cancel,
+                task_supervisor: self.task_supervisor.clone(),
+            }),
+            None,
+        )
         .await;
     }
 
@@ -90,7 +94,7 @@ impl NotificationService {
                 return;
             }
 
-            Self::process_notification_detached(ctx).await;
+            Self::process_notification_detached(ctx, Some(expected_generation)).await;
         });
     }
 
@@ -112,7 +116,10 @@ impl NotificationService {
         Duration::from_millis(delay_ms.saturating_add(jitter))
     }
 
-    async fn process_notification_detached(ctx: Arc<DeliveryContext>) {
+    async fn process_notification_detached(
+        ctx: Arc<DeliveryContext>,
+        expected_generation: Option<u64>,
+    ) {
         // Borrow the context fields under their own names for the delivery
         // pass; the borrows end before `ctx` is moved into
         // `spawn_retry_detached` at the bottom.
@@ -128,132 +135,166 @@ impl NotificationService {
             ..
         } = &*ctx;
         let id = *id;
+        let Some(delivery_lock) = pending_queue
+            .get(&id)
+            .map(|pending| pending.delivery_lock.clone())
+        else {
+            return;
+        };
+        let _delivery_guard = delivery_lock.lock().await;
         let pending_snapshot = match pending_queue.get(&id) {
-            Some(pending) => pending.clone(),
-            None => return,
+            Some(pending)
+                if Arc::ptr_eq(&pending.delivery_lock, &delivery_lock)
+                    && expected_generation
+                        .is_none_or(|generation| pending.retry_generation == generation) =>
+            {
+                pending.clone()
+            }
+            _ => return,
         };
         let mut circuit_blocked = false;
         let mut rendered = RenderCache::new();
 
-        for channel in channels {
-            // Borrow the key for the map lookups below; it is only
-            // materialised into an owned `String` on the dead-letter path.
-            let channel_key = channel.key.as_str();
-            let is_pending = pending_queue.get(&id).and_then(|pending| {
-                pending
-                    .channel_state
-                    .get(channel_key)
-                    .map(|state| state.status)
-            }) == Some(DeliveryStatus::Pending);
-            if !is_pending {
-                continue;
-            }
-
-            let allowed = channel.breaker.lock().is_allowed();
-            if !allowed {
-                circuit_blocked = true;
-                continue;
-            }
-
-            let text = rendered.get(&pending_snapshot.event, channel.channel.locale());
-            match channel
-                .channel
-                .send_rendered(&pending_snapshot.event, &text)
-                .await
-            {
-                Ok(()) => {
-                    channel.breaker.lock().record_success();
-                    if let Some(mut pending) = pending_queue.get_mut(&id)
-                        && let Some(state) = pending.channel_state.get_mut(channel_key)
-                    {
-                        state.status = DeliveryStatus::Delivered;
-                        state.last_attempt = Some(Utc::now());
-                        state.last_error = None;
-                    }
-                    debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
-                }
-                Err(error) => {
-                    {
-                        let mut breaker = channel.breaker.lock();
-                        breaker.record_failure(config.circuit_breaker_threshold);
-                        circuit_blocked |= breaker.is_open;
-                    }
-
-                    let now = Utc::now();
-                    let mut attempts = 0;
-                    let mut dead_lettered = false;
-                    if let Some(mut pending) = pending_queue.get_mut(&id)
-                        && let Some(state) = pending.channel_state.get_mut(channel_key)
-                    {
-                        state.attempts += 1;
-                        state.last_attempt = Some(now);
-                        state.last_error = Some(error.to_string());
-                        attempts = state.attempts;
-                        if state.attempts >= config.max_retries {
-                            state.status = DeliveryStatus::DeadLettered;
-                            dead_lettered = true;
+        {
+            // The futures stay owned by this pass: cancellation drops in-flight
+            // sends, and retries are scheduled only after all admitted targets settle.
+            let mut seen = std::collections::HashSet::new();
+            let targets: Vec<_> = channels
+                .iter()
+                .filter(|channel| {
+                    seen.insert(channel.key.clone())
+                        && pending_snapshot
+                            .channel_state
+                            .get(channel.key.as_str())
+                            .is_some_and(|state| state.status == DeliveryStatus::Pending)
+                })
+                .cloned()
+                .collect();
+            let deliveries = futures::stream::iter(targets)
+                .map(|channel| {
+                    let text = rendered.get(&pending_snapshot.event, channel.channel.locale());
+                    let event = &pending_snapshot.event;
+                    async move {
+                        let is_pending = pending_queue.get(&id).and_then(|pending| {
+                            pending
+                                .channel_state
+                                .get(channel.key.as_str())
+                                .map(|state| state.status)
+                        }) == Some(DeliveryStatus::Pending);
+                        if !is_pending {
+                            return (channel, None, false);
                         }
+                        let allowed = channel.breaker.lock().is_allowed();
+                        if !allowed {
+                            return (channel, None, true);
+                        }
+                        let outcome = channel.channel.send_rendered(event, &text).await;
+                        (channel, Some(outcome), false)
                     }
-
-                    if dead_lettered {
-                        let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
-                        dead_letters.insert(
-                            dead_letter_id,
-                            DeadLetterEntry {
-                                id: dead_letter_id,
-                                notification_id: id,
-                                event: pending_snapshot.event.clone(),
-                                channel_key: Some(channel_key.to_string()),
-                                channel_id: channel.db_channel_id.clone(),
-                                channel_type: channel.channel_type.clone(),
-                                attempts,
-                                error: error.to_string(),
-                                created_at: pending_snapshot.created_at,
-                                dead_lettered_at: now,
-                            },
-                        );
-                        Self::maybe_cleanup_dead_letters_detached(
-                            dead_letters,
-                            config.dead_letter_retention_days,
-                            dead_letter_cleanup_ts,
-                            now,
-                        );
-                        warn!(
-                            notification_id = id,
-                            channel = %channel.channel_type,
-                            attempts = config.max_retries,
-                            "Notification dead-lettered"
-                        );
-
-                        if let (Some(repo), Some(db_channel_id)) =
-                            (notification_repo.as_ref(), channel.db_channel_id.as_ref())
+                })
+                .buffer_unordered(4);
+            tokio::pin!(deliveries);
+            while let Some((channel, result, blocked)) = deliveries.next().await {
+                circuit_blocked |= blocked;
+                let Some(result) = result else {
+                    continue;
+                };
+                let channel_key = channel.key.as_str();
+                match result {
+                    Ok(()) => {
+                        channel.breaker.lock().record_success();
+                        if let Some(mut pending) = pending_queue.get_mut(&id)
+                            && let Some(state) = pending.channel_state.get_mut(channel_key)
                         {
-                            match serde_json::to_string(&pending_snapshot.event) {
-                                Ok(payload) => {
-                                    let entry = NotificationDeadLetterDbModel::new(
-                                        db_channel_id.clone(),
-                                        pending_snapshot.event.event_type(),
-                                        payload,
-                                        error.to_string(),
-                                        attempts as i32,
-                                        pending_snapshot.created_at.timestamp_millis(),
-                                    );
-                                    if let Err(persist_error) =
-                                        repo.add_to_dead_letter(&entry).await
-                                    {
+                            state.status = DeliveryStatus::Delivered;
+                            state.last_attempt = Some(Utc::now());
+                            state.last_error = None;
+                        }
+                        debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
+                    }
+                    Err(error) => {
+                        {
+                            let mut breaker = channel.breaker.lock();
+                            breaker.record_failure(config.circuit_breaker_threshold);
+                            circuit_blocked |= breaker.is_open;
+                        }
+
+                        let now = Utc::now();
+                        let mut attempts = 0;
+                        let mut dead_lettered = false;
+                        if let Some(mut pending) = pending_queue.get_mut(&id)
+                            && let Some(state) = pending.channel_state.get_mut(channel_key)
+                        {
+                            state.attempts += 1;
+                            state.last_attempt = Some(now);
+                            state.last_error = Some(error.to_string());
+                            attempts = state.attempts;
+                            if state.attempts >= config.max_retries {
+                                state.status = DeliveryStatus::DeadLettered;
+                                dead_lettered = true;
+                            }
+                        }
+
+                        if dead_lettered {
+                            let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
+                            dead_letters.insert(
+                                dead_letter_id,
+                                DeadLetterEntry {
+                                    id: dead_letter_id,
+                                    notification_id: id,
+                                    event: pending_snapshot.event.clone(),
+                                    channel_key: Some(channel_key.to_string()),
+                                    channel_id: channel.db_channel_id.clone(),
+                                    channel_type: channel.channel_type.clone(),
+                                    attempts,
+                                    error: error.to_string(),
+                                    created_at: pending_snapshot.created_at,
+                                    dead_lettered_at: now,
+                                },
+                            );
+                            Self::maybe_cleanup_dead_letters_detached(
+                                dead_letters,
+                                config.dead_letter_retention_days,
+                                dead_letter_cleanup_ts,
+                                now,
+                            );
+                            warn!(
+                                notification_id = id,
+                                channel = %channel.channel_type,
+                                attempts = config.max_retries,
+                                "Notification dead-lettered"
+                            );
+
+                            if let (Some(repo), Some(db_channel_id)) =
+                                (notification_repo.as_ref(), channel.db_channel_id.as_ref())
+                            {
+                                match serde_json::to_string(&pending_snapshot.event) {
+                                    Ok(payload) => {
+                                        let entry = NotificationDeadLetterDbModel::new(
+                                            db_channel_id.clone(),
+                                            pending_snapshot.event.event_type(),
+                                            payload,
+                                            error.to_string(),
+                                            attempts as i32,
+                                            pending_snapshot.created_at.timestamp_millis(),
+                                        );
+                                        if let Err(persist_error) =
+                                            repo.add_to_dead_letter(&entry).await
+                                        {
+                                            warn!(
+                                                channel_id = %db_channel_id,
+                                                error = %persist_error,
+                                                "Failed to persist dead letter entry"
+                                            );
+                                        }
+                                    }
+                                    Err(serialize_error) => {
                                         warn!(
                                             channel_id = %db_channel_id,
-                                            error = %persist_error,
-                                            "Failed to persist dead letter entry"
+                                            error = %serialize_error,
+                                            "Failed to serialize dead letter entry"
                                         );
                                     }
-                                }
-                                Err(serialize_error) => {
-                                    warn!(
-                                        channel_id = %db_channel_id,
-                                        error = %serialize_error,
-                                        "Failed to serialize dead letter entry"
-                                    );
                                 }
                             }
                         }

@@ -184,6 +184,8 @@ struct PendingNotification {
     channel_state: HashMap<String, ChannelDeliveryState>,
     /// Delivery and retries keep the instance selected at admission, across reloads.
     targets: Vec<Arc<RuntimeChannel>>,
+    /// Serialize initial, manual-drain, and retry passes for this notification.
+    delivery_lock: Arc<tokio::sync::Mutex<()>>,
     retry_generation: u64,
     retry_cancel: CancellationToken,
     next_retry_at: Option<DateTime<Utc>>,
@@ -389,6 +391,7 @@ impl NotificationService {
             created_at: Utc::now(),
             channel_state,
             targets: target_channels,
+            delivery_lock: Default::default(),
             retry_generation: 0,
             retry_cancel: CancellationToken::new(),
             next_retry_at: None,
@@ -500,6 +503,7 @@ impl NotificationService {
             created_at: Utc::now(),
             channel_state,
             targets: target_channels,
+            delivery_lock: Default::default(),
             retry_generation: 0,
             retry_cancel: CancellationToken::new(),
             next_retry_at: None,
