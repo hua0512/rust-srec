@@ -54,13 +54,10 @@ impl StatisticsSession {
     }
 
     pub(crate) async fn persist_if_changed(&mut self) {
-        if self.repository.is_none() {
+        if self.repository.is_none() || self.aggregator.total_count() == self.last_persisted_total {
             return;
         }
         let statistics = self.aggregator.current_stats();
-        if statistics.total_count == self.last_persisted_total {
-            return;
-        }
         persist_statistics(self.repository.as_deref(), &self.session_id, &statistics).await;
         self.last_persisted_total = statistics.total_count;
     }
@@ -71,7 +68,7 @@ impl StatisticsSession {
             return;
         }
         let state = self.aggregator.export_state();
-        checkpoint::save(self.repository.as_ref(), &self.session_id, &state).await;
+        checkpoint::save(self.repository.as_ref(), &self.session_id, state).await;
         self.last_checkpoint_total = self.aggregator.total_count();
     }
 
@@ -80,7 +77,7 @@ impl StatisticsSession {
             checkpoint::save(
                 self.repository.as_ref(),
                 &self.session_id,
-                &self.aggregator.export_state(),
+                self.aggregator.export_state(),
             )
             .await;
         } else {
