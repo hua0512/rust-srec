@@ -29,6 +29,10 @@ pub struct PandaTvMedia {
     pub is_pw: bool,
     #[serde(rename = "isLive")]
     pub is_live: bool,
+    #[serde(rename = "onAirType")]
+    pub on_air_type: Option<String>,
+    #[serde(rename = "liveType")]
+    pub live_type: Option<String>,
     #[serde(rename = "thumbUrl")]
     pub thumb_url: String,
     #[serde(rename = "userImg")]
