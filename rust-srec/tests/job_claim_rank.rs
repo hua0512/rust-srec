@@ -7,7 +7,7 @@ use sqlx::{SqlitePool, migrate::Migrator};
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 const RANK_MIGRATION: i64 = 20260926000000;
 
-async fn candidates(pool: &SqlitePool, types: &[String], rank: &str) -> Vec<String> {
+async fn legacy_candidates(pool: &SqlitePool, types: &[String]) -> Vec<String> {
     let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
         "SELECT job.id FROM job LEFT JOIN dag_step_execution step ON step.id = job.dag_step_execution_id \
          WHERE job.status = 'PENDING' AND NOT EXISTS (SELECT 1 FROM dag_step_execution owner_step \
@@ -23,10 +23,11 @@ async fn candidates(pool: &SqlitePool, types: &[String], rank: &str) -> Vec<Stri
         }
         separated.push_unseparated(")");
     }
-    query
-        .push(" ORDER BY job.priority DESC, ")
-        .push(rank)
-        .push(", job.created_at, job.id");
+    query.push(
+        " ORDER BY job.priority DESC, \
+         CASE WHEN step.depends_on_step_ids IS NOT NULL AND step.depends_on_step_ids != '[]' \
+              THEN 0 ELSE 1 END, job.created_at, job.id",
+    );
     query.build_query_scalar().fetch_all(pool).await.unwrap()
 }
 
@@ -80,8 +81,7 @@ async fn rank_upgrade_preserves_claim_order_and_tracks_relinks_and_dependencies(
     ];
     let mut expected = Vec::new();
     for types in &filters {
-        expected.push(candidates(&pool, types,
-            "CASE WHEN step.depends_on_step_ids IS NOT NULL AND step.depends_on_step_ids != '[]' THEN 0 ELSE 1 END").await);
+        expected.push(legacy_candidates(&pool, types).await);
     }
     assert_eq!(
         expected[0],
@@ -104,10 +104,6 @@ async fn rank_upgrade_preserves_claim_order_and_tracks_relinks_and_dependencies(
         .execute(&pool)
         .await
         .unwrap();
-        assert_eq!(
-            candidates(&pool, types, "job.continuation_rank").await,
-            expected
-        );
         let mut actual = Vec::new();
         while let Some(job) = repo.claim_next_pending_job(Some(types)).await.unwrap() {
             actual.push(job.id);

@@ -161,14 +161,14 @@ mod tests {
         agg
     }
 
-    #[test]
-    fn encode_decode_round_trip_preserves_the_checkpoint() {
+    #[tokio::test]
+    async fn encode_decode_round_trip_preserves_the_checkpoint() {
         let state = aggregator_with_messages(2_000).export_state();
-        let bytes = encode(&state).expect("encode");
-        let restored = decode(&bytes).expect("decode");
+        let expected = serde_json::to_value(&state).unwrap();
+        let bytes = offload(move || encode(&state)).await.expect("encode");
+        let restored = offload(move || decode(&bytes)).await.expect("decode");
 
-        assert_eq!(restored.version, state.version);
-        assert_eq!(restored.total_count(), state.total_count());
+        assert_eq!(serde_json::to_value(&restored).unwrap(), expected);
 
         let rebuilt = StatisticsAggregator::from_state(restored, StatisticsConfig::default())
             .expect("restored checkpoint loads");
@@ -176,16 +176,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn offloaded_codec_preserves_checkpoints_and_bounds_cpu_concurrency() {
+    async fn offloaded_codec_runs_off_runtime_and_bounds_cpu_concurrency() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::time::Duration;
-
-        let original = aggregator_with_messages(2_000).export_state();
-        let expected = serde_json::to_value(&original).unwrap();
-        let encoded = offload(move || encode(&original)).await.unwrap();
-        let decoded = offload(move || decode(&encoded)).await.unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
-        assert!(offload(|| decode(b"invalid checkpoint")).await.is_err());
 
         let active = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
@@ -231,8 +224,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn decode_rejects_garbage_without_panicking() {
-        assert!(decode(b"not gzip at all").is_err());
+    #[tokio::test]
+    async fn decode_rejects_garbage_without_panicking() {
+        assert!(offload(|| decode(b"not gzip at all")).await.is_err());
     }
 }

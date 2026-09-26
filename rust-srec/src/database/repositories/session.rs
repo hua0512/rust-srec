@@ -1465,18 +1465,8 @@ mod tests {
                 continue;
             }
             assert_eq!(summaries.len(), 1);
-            let rows = repo
-                .get_media_outputs_for_session("session-1")
-                .await
-                .unwrap();
-            assert_eq!(summaries[0].count(), rows.len() as u32);
+            assert_eq!(summaries[0].output_count, 6);
             assert_eq!(summaries[0].thumbnail_id.as_deref(), Some("z-first"));
-            assert_eq!(
-                summaries[0].thumbnail_id,
-                rows.iter()
-                    .find(|output| output.file_type == MediaFileType::Thumbnail.as_str())
-                    .map(|output| output.id.clone())
-            );
         }
         assert_eq!(
             repo.first_thumbnail_id("session-1")
@@ -1501,7 +1491,7 @@ mod tests {
             .summarize_session_outputs(&["session-1".to_string()])
             .await
             .unwrap();
-        assert_eq!(summaries[0].count(), 3);
+        assert_eq!(summaries[0].output_count, 3);
         assert_eq!(summaries[0].thumbnail_id, None);
     }
 

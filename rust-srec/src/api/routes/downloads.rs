@@ -387,23 +387,14 @@ fn shared_event_bytes(
         return None;
     }
     envelope.encoded(|event| {
-        map_event_to_protobuf(event, &None).map(|message| Bytes::from(message.encode_to_vec()))
+        map_event_to_protobuf(event).map(|message| Bytes::from(message.encode_to_vec()))
     })
 }
 
 /// Map a DownloadManagerEvent to metadata/metrics split messages.
 ///
-/// Returns None if the event should be filtered out.
-fn map_event_to_protobuf(
-    event: &DownloadManagerEvent,
-    filter: &Option<String>,
-) -> Option<WsMessage> {
-    if let Some(filter_id) = filter
-        && event.streamer_id() != filter_id.as_str()
-    {
-        return None;
-    }
-
+/// Returns None for events that are not broadcast to WebSocket clients.
+fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
     match event {
         DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
             streamer_id,
@@ -852,7 +843,7 @@ mod tests {
         assert_eq!(selected.as_ptr(), unfiltered.as_ptr());
         assert_eq!(
             selected.as_ref(),
-            map_event_to_protobuf(&envelope.event, &None)
+            map_event_to_protobuf(&envelope.event)
                 .unwrap()
                 .encode_to_vec()
         );
@@ -867,31 +858,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_matches_streamer() {
-        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            cdn_host: "cdn.example.com".to_string(),
-            download_url: "https://cdn.example.com/stream".to_string(),
-        });
-
-        // No filter - should pass
-        let result = map_event_to_protobuf(&event, &None);
-        assert!(result.is_some());
-
-        // Matching filter - should pass
-        let result = map_event_to_protobuf(&event, &Some("streamer-123".to_string()));
-        assert!(result.is_some());
-
-        // Non-matching filter - should be filtered out
-        let result = map_event_to_protobuf(&event, &Some("other-streamer".to_string()));
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn test_config_events_not_broadcast() {
         let event = DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
             download_id: "dl-1".to_string(),
@@ -900,7 +866,7 @@ mod tests {
             update_type: ConfigUpdateType::Cookies,
         });
 
-        let result = map_event_to_protobuf(&event, &None);
+        let result = map_event_to_protobuf(&event);
         assert!(result.is_none());
     }
 
@@ -916,7 +882,7 @@ mod tests {
             download_url: "https://cdn.example.com/stream".to_string(),
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadMeta as i32);
 
         if let Some(Payload::DownloadMeta(payload)) = msg.payload {
@@ -946,7 +912,7 @@ mod tests {
             split_reason_details_json: None,
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::SegmentCompleted as i32);
 
         if let Some(Payload::SegmentCompleted(payload)) = msg.payload {
@@ -977,7 +943,7 @@ mod tests {
             stop_cause: None,
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadCompleted as i32);
 
         if let Some(Payload::DownloadCompleted(payload)) = msg.payload {
@@ -1005,7 +971,7 @@ mod tests {
             recoverable: true,
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadFailed as i32);
 
         if let Some(Payload::DownloadFailed(payload)) = msg.payload {
@@ -1027,7 +993,7 @@ mod tests {
             cause: crate::downloader::DownloadStopCause::User,
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadCancelled as i32);
 
         if let Some(Payload::DownloadCancelled(payload)) = msg.payload {
@@ -1050,7 +1016,7 @@ mod tests {
             kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadRejected as i32);
 
         if let Some(Payload::DownloadRejected(payload)) = msg.payload {
@@ -1076,7 +1042,7 @@ mod tests {
             download_url: "https://cdn.example.com/stream".to_string(),
         });
 
-        let msg = map_event_to_protobuf(&event, &None).unwrap();
+        let msg = map_event_to_protobuf(&event).unwrap();
 
         // Encode to bytes
         let bytes = msg.encode_to_vec();

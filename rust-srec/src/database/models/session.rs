@@ -492,12 +492,6 @@ pub struct SessionOutputSummary {
     pub thumbnail_id: Option<String>,
 }
 
-impl SessionOutputSummary {
-    pub fn count(&self) -> u32 {
-        self.output_count.clamp(0, i64::from(u32::MAX)) as u32
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

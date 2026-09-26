@@ -242,7 +242,10 @@ pub async fn list_sessions(
     let mut output_counts = std::collections::HashMap::new();
     let mut thumbnail_urls = std::collections::HashMap::new();
     for output in outputs {
-        output_counts.insert(output.session_id.clone(), output.count());
+        output_counts.insert(
+            output.session_id.clone(),
+            output.output_count.clamp(0, i64::from(u32::MAX)) as u32,
+        );
         if let Some(thumbnail_id) = output.thumbnail_id {
             thumbnail_urls.insert(
                 output.session_id,
