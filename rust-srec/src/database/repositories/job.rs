@@ -534,7 +534,9 @@ impl JobRepository for SqlxJobRepository {
             // a steady arrival rate cannot starve work already in the queue. This deliberately
             // differs from list_jobs_filtered, which orders newest-first for display;
             // JobQueue::dequeue's in-memory fallback keeps only the priority and age order,
-            // as it cannot see step dependencies.
+            // as it cannot see step dependencies. SQLite maintains continuation_rank
+            // with the job/step relationship; the literal status predicate lets the
+            // planner use the partial pending indexes for the complete ordering.
             for _ in 0..3 {
                 let next_id: Option<String> = match job_types {
                     Some(types) if !types.is_empty() => {
@@ -543,8 +545,7 @@ impl JobRepository for SqlxJobRepository {
                             r#"
                             SELECT job.id
                             FROM job
-                            LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
-                            WHERE job.status = ? AND job.job_type IN ({})
+                            WHERE job.status = 'PENDING' AND job.job_type IN ({})
                             AND NOT EXISTS (
                                 SELECT 1 FROM dag_step_execution AS owner_step
                                 JOIN dag_execution AS owner_dag ON owner_dag.id = owner_step.dag_id
@@ -553,17 +554,14 @@ impl JobRepository for SqlxJobRepository {
                                        OR owner_dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
                             )
                             ORDER BY job.priority DESC,
-                                     CASE WHEN step.depends_on_step_ids IS NOT NULL
-                                               AND step.depends_on_step_ids != '[]'
-                                          THEN 0 ELSE 1 END ASC,
+                                     job.continuation_rank ASC,
                                      job.created_at ASC, job.id ASC
                             LIMIT 1
                             "#,
                             placeholders
                         );
 
-                        let mut query = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql))
-                            .bind(JobStatus::Pending.as_str());
+                        let mut query = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql));
                         for jt in types {
                             query = query.bind(jt);
                         }
@@ -574,8 +572,7 @@ impl JobRepository for SqlxJobRepository {
                             r#"
                             SELECT job.id
                             FROM job
-                            LEFT JOIN dag_step_execution AS step ON step.id = job.dag_step_execution_id
-                            WHERE job.status = ?
+                            WHERE job.status = 'PENDING'
                             AND NOT EXISTS (
                                 SELECT 1 FROM dag_step_execution AS owner_step
                                 JOIN dag_execution AS owner_dag ON owner_dag.id = owner_step.dag_id
@@ -584,14 +581,11 @@ impl JobRepository for SqlxJobRepository {
                                        OR owner_dag.status IN ('COMPLETED', 'FAILED', 'CANCELLED'))
                             )
                             ORDER BY job.priority DESC,
-                                     CASE WHEN step.depends_on_step_ids IS NOT NULL
-                                               AND step.depends_on_step_ids != '[]'
-                                          THEN 0 ELSE 1 END ASC,
+                                     job.continuation_rank ASC,
                                      job.created_at ASC, job.id ASC
                             LIMIT 1
                             "#,
                         )
-                        .bind(JobStatus::Pending.as_str())
                         .fetch_optional(&self.pool)
                         .await?
                     }
