@@ -28,6 +28,8 @@
 Use `xhslink.com` share links. Direct profile URLs like `xiaohongshu.com/user/profile/...` are not supported.
 
 Note: the `xhslink.com/m/{id}` part changes every stream. Copy a fresh share link when the streamer goes live.
+
+Cookies are optional for share links. If you configure cookies, include a non-empty `a1` value; incomplete cookies cause an extraction error.
 :::
 
 ## Twitcasting
