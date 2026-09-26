@@ -129,7 +129,7 @@ impl ExtractorFactory {
 
         if REDBOOK_PROFILE_URL_REGEX.is_match(url) {
             return Err(ExtractorError::ValidationError(
-                "RedBook profile URLs are not supported; use xhslink.com/m share links".to_string(),
+                "RedBook profile URLs are not supported; use xhslink.com/m or xhslink.com/o share links".to_string(),
             ));
         }
 

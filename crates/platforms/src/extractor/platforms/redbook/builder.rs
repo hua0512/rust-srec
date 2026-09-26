@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub static URL_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:https?://)?xhslink\.com/m/[a-zA-Z0-9_-]+").unwrap());
+    LazyLock::new(|| Regex::new(r"^(?:https?://)?xhslink\.com/[mo]/[a-zA-Z0-9_-]+").unwrap());
 // Constants for common strings and values
 const DEFAULT_QUALITY: &str = "原画";
 const DEFAULT_CODEC_H264: &str = "avc";
@@ -129,11 +129,21 @@ impl RedBook {
             url.host_str(),
             Some("www.xiaohongshu.com" | "xiaohongshu.com" | "live-room.xiaohongshu.com")
         );
-        let room_id = url
+        let path = url
             .path()
             .strip_prefix("/livestream/")
             .unwrap_or_default()
             .trim_end_matches('/');
+        // App share links can insert a dynamic route before the room ID.
+        let room_id = match path.split_once('/') {
+            Some((route, room_id))
+                if route.starts_with("dynpath") && Self::valid_room_id(route) =>
+            {
+                room_id
+            }
+            Some(_) => "",
+            None => path,
+        };
         if trusted_host && Self::valid_room_id(room_id) {
             Ok(room_id.to_string())
         } else {
@@ -331,6 +341,7 @@ mod tests {
         assert!(!super::URL_REGEX.is_match("https://xhslink.com/DEnpCgb"));
         assert!(super::URL_REGEX.is_match("http://xhslink.com/m/844vKmW30jz"));
         assert!(super::URL_REGEX.is_match("https://xhslink.com/m/844vKmW30jz"));
+        assert!(super::URL_REGEX.is_match("https://xhslink.com/o/share123"));
 
         assert!(!super::URL_REGEX.as_str().contains("xiaohongshu"));
     }
@@ -348,11 +359,17 @@ mod tests {
             .unwrap();
             assert_eq!(RedBook::room_id_from_url(&url).unwrap(), "room_123-456");
         }
+        let dynamic_url = reqwest::Url::parse(
+            "https://www.xiaohongshu.com/livestream/dynpathExample/123456?source=share_out_of_app",
+        )
+        .unwrap();
+        assert_eq!(RedBook::room_id_from_url(&dynamic_url).unwrap(), "123456");
         for url in [
             "https://xhslink.com/m/test",
             "https://www.xiaohongshu.com/user/profile/user123",
             "https://www.xiaohongshu.com/livestream/",
             "https://www.xiaohongshu.com/livestream/room123/extra",
+            "https://www.xiaohongshu.com/livestream/dynpathExample/room123/extra",
             "https://www.xiaohongshu.com/livestream/room%2F123",
             "https://example.invalid/livestream/room123",
         ] {
