@@ -56,6 +56,9 @@ fn concurrent_admission_never_exceeds_capacity_and_evicts_oldest_ties_by_id() {
             threads.spawn(move || {
                 barrier.wait();
                 assert!(service.enqueue_pending(id, pending(id)));
+                // DashMap counts shards separately; freeze admission so concurrent
+                // evictions and insertions cannot inflate the observed length.
+                let _admission = service.queue_admission.lock();
                 assert!(service.pending_queue.len() <= 4);
             });
         }
