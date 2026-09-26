@@ -10190,3 +10190,83 @@ msgstr "放大"
 #: src/components/pipeline/dag-graph-view.tsx:109
 msgid "Zoom out"
 msgstr "缩小"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Extraction Method"
+msgstr "提取方式"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Android App"
+msgstr "Android App"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Web (deprecated)"
+msgstr "Web（已弃用）"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
+msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始终使用 Web。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Preferred Video Codec"
+msgstr "首选视频编码"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+msgstr "优先使用可用的 HEVC，否则回退到 AVC。仅音频模式忽略此设置。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+msgstr "App CDN 示例：hw、tct、hs、ws。兼容旧的 -h5 后缀。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Maximum attempts for metadata and App playback requests."
+msgstr "元数据及 App 播放请求的最大尝试次数。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App Device"
+msgstr "App 设备"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
+msgstr "App 重试请求使用同一设备身份，User-Agent 根据机型和 Android 版本生成。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device Model"
+msgstr "设备机型"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Android Version"
+msgstr "Android 版本"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device ID"
+msgstr "设备 ID"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Random model"
+msgstr "随机机型"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Automatic"
+msgstr "自动"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device ID source"
+msgstr "设备 ID 来源"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Local generation"
+msgstr "本地生成"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Server registration"
+msgstr "服务端注册"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Fixed fallback"
+msgstr "固定兼容值"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
+msgstr "指定的设备 ID 优先于 acf_did Cookie 和所选来源。服务端注册需要额外请求，同一提取器会复用注册结果。"

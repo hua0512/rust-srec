@@ -1,4 +1,5 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -20,6 +21,13 @@ import {
 import { configPath } from '@/components/config/shared/form-path';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
 import { NumberInput } from '@/components/ui/number-input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface DouyuConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -35,6 +43,14 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
 }: DouyuConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   const defaultPlaceholder = useDefaultPlaceholder();
+  const apiMode = useWatch({
+    control: form.control,
+    name: configPath<TFieldValues>(fieldName, 'api_mode'),
+  });
+  const onlyAudio = useWatch({
+    control: form.control,
+    name: configPath<TFieldValues>(fieldName, 'only_audio'),
+  });
   // A template or streamer layer leaves a blank field to the layer above it;
   // the platform layer falls back to the extractor's own default instead.
   const unsetPlaceholder = (fallback: string | number) =>
@@ -52,6 +68,84 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={form.control}
+              name={configPath<TFieldValues>(fieldName, 'api_mode')}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Extraction Method</Trans>
+                  </FormLabel>
+                  <Select
+                    value={field.value ?? 'unset'}
+                    onValueChange={(value) =>
+                      field.onChange(value === 'unset' ? null : value)
+                    }
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="unset">
+                        {unsetPlaceholder('App')}
+                      </SelectItem>
+                      <SelectItem value="app">
+                        <Trans>Android App</Trans>
+                      </SelectItem>
+                      <SelectItem value="web">
+                        <Trans>Web (deprecated)</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    <Trans>
+                      App uses anonymous playback. Web is retained for
+                      compatibility. Audio only always uses Web.
+                    </Trans>
+                  </FormDescription>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name={configPath<TFieldValues>(fieldName, 'codec')}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Preferred Video Codec</Trans>
+                  </FormLabel>
+                  <Select
+                    value={field.value ?? 'unset'}
+                    onValueChange={(value) =>
+                      field.onChange(value === 'unset' ? null : value)
+                    }
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="unset">
+                        {unsetPlaceholder('AVC')}
+                      </SelectItem>
+                      <SelectItem value="avc">AVC (H.264)</SelectItem>
+                      <SelectItem value="hevc">HEVC (H.265)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    <Trans>
+                      Prefer HEVC when available, with AVC fallback. Ignored for
+                      audio only.
+                    </Trans>
+                  </FormDescription>
+                </FormItem>
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField
+              control={form.control}
               name={configPath<TFieldValues>(fieldName, 'cdn')}
               render={({ field }) => (
                 <FormItem>
@@ -63,7 +157,9 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                   </div>
                   <FormControl>
                     <Input
-                      placeholder={unsetPlaceholder('ws-h5')}
+                      placeholder={unsetPlaceholder(
+                        apiMode === 'web' || onlyAudio ? 'ws-h5' : 'hw',
+                      )}
                       {...field}
                       value={field.value ?? ''}
                       // Null rather than an empty string, which the extractor
@@ -74,8 +170,8 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                   </FormControl>
                   <FormDescription className="text-[10px] font-medium pt-1 px-1">
                     <Trans>
-                      Specify preferred content delivery network (e.g., ws-h5,
-                      hw-h5).
+                      App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are
+                      accepted.
                     </Trans>
                   </FormDescription>
                 </FormItem>
@@ -108,6 +204,96 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
             />
           </div>
         </div>
+      </section>
+
+      <section className="space-y-6">
+        <ConfigSectionHeading icon={Zap} accent="indigo">
+          <Trans>App Device</Trans>
+        </ConfigSectionHeading>
+        <FormDescription>
+          <Trans>
+            App requests share one device identity across retries. The user
+            agent follows the model and Android version.
+          </Trans>
+        </FormDescription>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[
+            {
+              key: 'device_name',
+              label: msg`Device Model`,
+              fallback: i18n._(msg`Random model`),
+            },
+            { key: 'os_version', label: msg`Android Version`, fallback: '14' },
+            {
+              key: 'device_id',
+              label: msg`Device ID`,
+              fallback: i18n._(msg`Automatic`),
+            },
+          ].map(({ key, label, fallback }) => (
+            <FormField
+              key={key}
+              control={form.control}
+              name={configPath<TFieldValues>(fieldName, key)}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{i18n._(label)}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      value={field.value ?? ''}
+                      placeholder={unsetPlaceholder(fallback)}
+                      onChange={(e) => field.onChange(e.target.value || null)}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          ))}
+          <FormField
+            control={form.control}
+            name={configPath<TFieldValues>(fieldName, 'device_id_mode')}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  <Trans>Device ID source</Trans>
+                </FormLabel>
+                <Select
+                  value={field.value ?? 'unset'}
+                  onValueChange={(value) =>
+                    field.onChange(value === 'unset' ? null : value)
+                  }
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="unset">
+                      {unsetPlaceholder(i18n._(msg`Local generation`))}
+                    </SelectItem>
+                    <SelectItem value="local">
+                      <Trans>Local generation</Trans>
+                    </SelectItem>
+                    <SelectItem value="server">
+                      <Trans>Server registration</Trans>
+                    </SelectItem>
+                    <SelectItem value="default">
+                      <Trans>Fixed fallback</Trans>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        </div>
+        <FormDescription>
+          <Trans>
+            An explicit Device ID overrides the acf_did cookie and selected
+            source. Server registration requires an additional request and is
+            reused by this extractor.
+          </Trans>
+        </FormDescription>
       </section>
 
       {/* Network & Content Section */}
@@ -172,7 +358,7 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                 </FormControl>
                 <FormDescription className="text-[10px] font-medium pt-1">
                   <Trans>
-                    Max number of retry attempts for metadata fetching.
+                    Maximum attempts for metadata and App playback requests.
                   </Trans>
                 </FormDescription>
               </FormItem>

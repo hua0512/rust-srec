@@ -10190,3 +10190,83 @@ msgstr "Zoom in"
 #: src/components/pipeline/dag-graph-view.tsx:109
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Extraction Method"
+msgstr "Extraction Method"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Android App"
+msgstr "Android App"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Web (deprecated)"
+msgstr "Web (deprecated)"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
+msgstr "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Preferred Video Codec"
+msgstr "Preferred Video Codec"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+msgstr "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+msgstr "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Maximum attempts for metadata and App playback requests."
+msgstr "Maximum attempts for metadata and App playback requests."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App Device"
+msgstr "App Device"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
+msgstr "App requests share one device identity across retries. The user agent follows the model and Android version."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device Model"
+msgstr "Device Model"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Android Version"
+msgstr "Android Version"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device ID"
+msgstr "Device ID"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Random model"
+msgstr "Random model"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Automatic"
+msgstr "Automatic"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Device ID source"
+msgstr "Device ID source"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Local generation"
+msgstr "Local generation"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Server registration"
+msgstr "Server registration"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "Fixed fallback"
+msgstr "Fixed fallback"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
+msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
+msgstr "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."

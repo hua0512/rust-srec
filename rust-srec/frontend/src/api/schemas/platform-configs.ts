@@ -64,10 +64,25 @@ export const BilibiliConfigSchema = z
 // Douyu platform-specific configuration
 export const DouyuConfigSchema = z
   .object({
+    api_mode: z.enum(['app', 'web']).nullable().optional(),
+    codec: z.enum(['avc', 'hevc']).nullable().optional(),
+    device_name: z.string().nullable().optional(),
+    os_version: z.string().nullable().optional(),
+    device_id: z
+      .string()
+      .regex(
+        /^(?:[A-Za-z0-9]{32}|[A-Za-z0-9_]{8}(?:-[A-Za-z0-9_]{4}){3}-[A-Za-z0-9_]{12})$/,
+      )
+      .nullable()
+      .optional(),
+    device_id_mode: z
+      .enum(['local', 'server', 'default'])
+      .nullable()
+      .optional(),
     cdn: z.string().nullable().optional(),
     disable_interactive_game: z.boolean().nullable().optional(),
     only_audio: z.boolean().nullable().optional(),
-    rate: z.number().nullable().optional(),
+    rate: z.number().int().nonnegative().nullable().optional(),
     request_retries: z.number().int().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
