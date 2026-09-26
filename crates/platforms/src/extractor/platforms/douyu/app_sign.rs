@@ -1,6 +1,6 @@
 //! Android 8.2.2.0 playback signing.
 //! The tables and block transform reproduce libmakeurl4.0.1.so.
-//! Protocol reference: https://github.com/biliup/biliup/pull/1748.
+//! Protocol reference: [Android playback API](https://github.com/biliup/biliup/pull/1748).
 
 mod data;
 mod transform;
