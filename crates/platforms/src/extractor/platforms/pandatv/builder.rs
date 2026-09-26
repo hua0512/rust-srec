@@ -27,6 +27,11 @@ pub struct PandaTV {
     _extras: Option<serde_json::Value>,
 }
 
+fn is_live_broadcast(is_live: bool, on_air_type: Option<&str>, live_type: Option<&str>) -> bool {
+    // Recorded broadcasts can still have isLive set to true.
+    is_live && on_air_type != Some("rec") && live_type != Some("rec")
+}
+
 impl PandaTV {
     const BASE_URL: &str = "https://www.pandalive.co.kr";
 
@@ -97,7 +102,11 @@ impl PandaTV {
                 .build());
         };
 
-        if !media.is_live {
+        if !is_live_broadcast(
+            media.is_live,
+            media.on_air_type.as_deref(),
+            media.live_type.as_deref(),
+        ) {
             return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
                 .is_live(false)
                 .build());
@@ -133,6 +142,16 @@ impl PandaTV {
         let live_media = live_info.media.ok_or(ExtractorError::ValidationError(
             "Live media field is missing".to_string(),
         ))?;
+        if !is_live_broadcast(
+            live_media.is_live,
+            Some(&live_media.on_air_type),
+            Some(&live_media.live_type),
+        ) {
+            return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+                .is_live(false)
+                .build());
+        }
+
         let play_list = live_info.play_list.ok_or(ExtractorError::ValidationError(
             "PlayList field is missing".to_string(),
         ))?;
@@ -247,10 +266,35 @@ mod tests {
     use crate::extractor::{
         default::default_client,
         platform_extractor::PlatformExtractor,
-        platforms::pandatv::{builder::PandaTV, models::PandaTvLiveResponse},
+        platforms::pandatv::{
+            builder::PandaTV,
+            models::{PandaTvBjResponse, PandaTvLiveResponse},
+        },
     };
 
     const TEST_URL: &str = "https://www.pandalive.co.kr/play/codud23";
+
+    #[tokio::test]
+    async fn recorded_room_is_offline_without_requesting_playback() {
+        let response: PandaTvBjResponse = serde_json::from_value(serde_json::json!({
+            "result": true,
+            "bjInfo": {
+                "id": "test", "nick": "Test", "thumbUrl": "",
+                "channelTitle": "Recorded broadcast", "channelDesc": "", "isBJ": "Y",
+                "playTime": {"monthTime": 0, "totalTime": 0, "month": "", "total": ""}
+            },
+            "media": {
+                "title": "Recording", "userId": "test", "userIdx": 1, "userNick": "Test",
+                "isAdult": true, "isPw": true, "isLive": true,
+                "onAirType": "rec", "liveType": "rec", "thumbUrl": "", "userImg": ""
+            }
+        }))
+        .unwrap();
+        let extractor = PandaTV::new(TEST_URL.to_string(), default_client(), None, None);
+        let info = extractor.parse_live_info(response).await.unwrap();
+        assert!(!info.is_live);
+        assert!(info.streams.is_empty());
+    }
 
     #[test]
     fn test_live_response_error_payload_parses_without_success_fields() {
