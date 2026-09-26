@@ -102,7 +102,7 @@ impl Douyu {
             ("ilow", "0"),
             ("iar", "0"),
             ("net", "WIFI"),
-            ("device", device.query_device.as_str()),
+            ("device", identity.query_device.as_str()),
         ]
         .into_iter()
         .map(|(key, value)| (key.into(), value.into()))
@@ -121,7 +121,7 @@ impl Douyu {
             .header("User-Device", identity.user_device.clone())
             .header("aid", "android1")
             .header("channel", "447")
-            .header(header::USER_AGENT, device.user_agent.clone())
+            .header(header::USER_AGENT, identity.user_agent.clone())
             .header("time", timestamp.to_string())
             .header("auth", auth)
             .header(header::COOKIE, identity.cookie.clone()))

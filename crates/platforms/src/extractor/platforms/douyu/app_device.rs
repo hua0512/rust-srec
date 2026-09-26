@@ -30,17 +30,19 @@ const DEV_AES_IV: [u8; 16] = [
     59, 96, 30, 218, 35, 200, 117, 87, 84, 43, 146, 248, 226, 205, 182, 2,
 ];
 
-/// One model, UA and DID for the lifetime of an extractor, including retries
-/// and deferred CDN/quality resolution. Cached headers avoid repeat encoding.
+/// Validate options eagerly; initialize the device on the first playback request.
+/// A completed identity is shared by retries and deferred CDN/quality resolution.
 pub(super) struct AppDevice {
-    pub query_device: String,
-    pub user_agent: HeaderValue,
+    device_name: Option<String>,
+    os_version: Option<String>,
     mode: DouyuDeviceIdMode,
     explicit_did: Option<String>,
     identity: OnceCell<DeviceIdentity>,
 }
 
 pub(super) struct DeviceIdentity {
+    pub query_device: String,
+    pub user_agent: HeaderValue,
     pub did: String,
     pub user_device: HeaderValue,
     pub cookie: HeaderValue,
@@ -104,27 +106,13 @@ fn quote_plus(value: &str) -> String {
         .replace("%20", "+")
 }
 
-impl DeviceIdentity {
-    fn new(did: String) -> Result<Self, ExtractorError> {
-        Ok(Self {
-            user_device: HeaderValue::from_str(&STANDARD.encode(format!("{did}|v{APP_VERSION}")))
-                .map_err(|_| ValidationError("Invalid Douyu User-Device header".into()))?,
-            cookie: HeaderValue::from_str(&format!("acf_did={did}"))
-                .map_err(|_| ValidationError("Invalid Douyu device cookie".into()))?,
-            did,
-        })
-    }
-}
-
 impl AppDevice {
     pub fn new(
         extras: Option<&Value>,
         cookies: &FxHashMap<String, String>,
     ) -> Result<Self, ExtractorError> {
-        let name = configured_string(extras, "device_name")?
-            .map(str::to_owned)
-            .unwrap_or_else(random_android_device);
-        let os = configured_string(extras, "os_version")?.unwrap_or("14");
+        let device_name = configured_string(extras, "device_name")?.map(str::to_owned);
+        let os_version = configured_string(extras, "os_version")?.map(str::to_owned);
         let mode = match extras
             .and_then(|extras| extras.get("device_id_mode"))
             .filter(|v| !v.is_null())
@@ -147,13 +135,8 @@ impl AppDevice {
                 .cloned(),
         };
         Ok(Self {
-            query_device: name.replace(' ', "-"),
-            user_agent: HeaderValue::from_str(&format!(
-                "android/{APP_VERSION} (android {}; ; {})",
-                quote_plus(os),
-                quote_plus(&name)
-            ))
-            .map_err(|_| ValidationError("Invalid Douyu User-Agent header".into()))?,
+            device_name,
+            os_version,
             mode,
             explicit_did,
             identity: OnceCell::new(),
@@ -163,6 +146,16 @@ impl AppDevice {
     pub async fn identity(&self, client: &Client) -> Result<&DeviceIdentity, ExtractorError> {
         self.identity
             .get_or_try_init(|| async {
+                let name = self
+                    .device_name
+                    .clone()
+                    .unwrap_or_else(random_android_device);
+                let user_agent = HeaderValue::from_str(&format!(
+                    "android/{APP_VERSION} (android {}; ; {})",
+                    quote_plus(self.os_version.as_deref().unwrap_or("14")),
+                    quote_plus(&name)
+                ))
+                .map_err(|_| ValidationError("Invalid Douyu User-Agent header".into()))?;
                 let did = if let Some(did) = &self.explicit_did {
                     did.clone()
                 } else {
@@ -180,17 +173,27 @@ impl AppDevice {
                                 .as_millis();
                             super::app_sign::hex(&Md5::digest(timestamp.to_string().as_bytes()))
                         }
-                        DouyuDeviceIdMode::Server => self.register(client).await?,
+                        DouyuDeviceIdMode::Server => Self::register(client, &user_agent).await?,
                     }
                 };
-                DeviceIdentity::new(did)
+                Ok(DeviceIdentity {
+                    query_device: name.replace(' ', "-"),
+                    user_agent,
+                    user_device: HeaderValue::from_str(
+                        &STANDARD.encode(format!("{did}|v{APP_VERSION}")),
+                    )
+                    .map_err(|_| ValidationError("Invalid Douyu User-Device header".into()))?,
+                    cookie: HeaderValue::from_str(&format!("acf_did={did}"))
+                        .map_err(|_| ValidationError("Invalid Douyu device cookie".into()))?,
+                    did,
+                })
             })
             .await
     }
 
     fn registration_request(
-        &self,
         client: &Client,
+        user_agent: &HeaderValue,
         timestamp: u64,
         android_id: &str,
         oaid: &str,
@@ -199,7 +202,7 @@ impl AppDevice {
         Ok(client
             .post("https://passport.douyu.com/japi/app/did/android")
             .timeout(Duration::from_secs(5))
-            .header(header::USER_AGENT, self.user_agent.clone())
+            .header(header::USER_AGENT, user_agent.clone())
             .header("dev", registration_dev(android_id, oaid)?)
             .header("User-Device", user_device)
             .header("aid", "android1")
@@ -209,7 +212,7 @@ impl AppDevice {
             .form(&[("biz_type", "12"), ("channel_id", "447"), ("token", "")]))
     }
 
-    async fn register(&self, client: &Client) -> Result<String, ExtractorError> {
+    async fn register(client: &Client, user_agent: &HeaderValue) -> Result<String, ExtractorError> {
         let android_id = uuid::Uuid::new_v4().simple().to_string();
         let oaid = uuid::Uuid::new_v4().to_string();
         let timestamp = SystemTime::now()
@@ -218,13 +221,13 @@ impl AppDevice {
                 ValidationError("Invalid system time for Douyu device registration".into())
             })?
             .as_secs();
-        let response: RegistrationResponse = self
-            .registration_request(client, timestamp, &android_id[..16], &oaid)?
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+        let response: RegistrationResponse =
+            Self::registration_request(client, user_agent, timestamp, &android_id[..16], &oaid)?
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
         response.into_did()
     }
 }
@@ -287,15 +290,15 @@ mod tests {
     use crate::extractor::default::default_client;
     use serde_json::json;
 
-    #[test]
-    fn device_wire_vectors() {
+    #[tokio::test]
+    async fn device_wire_vectors() {
         let device = AppDevice::new(
             Some(&json!({"device_name":"OnePlus 华为~*+/%", "os_version":"14 Q+~*"})),
             &FxHashMap::default(),
         )
         .unwrap();
         assert_eq!(
-            device.user_agent,
+            device.identity(&default_client()).await.unwrap().user_agent,
             "android/8.2.2.0 (android 14+Q%2B~%2A; ; OnePlus+%E5%8D%8E%E4%B8%BA~%2A%2B%2F%25)"
         );
         assert_eq!(
@@ -307,23 +310,18 @@ mod tests {
     #[tokio::test]
     async fn dynamic_profile_is_consistent_and_cached() {
         let device = AppDevice::new(None, &FxHashMap::default()).unwrap();
-        let model = device.query_device.as_bytes();
+        assert!(device.identity.get().is_none());
+        let client = default_client();
+        let (a, b) = tokio::join!(device.identity(&client), device.identity(&client));
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert!(std::ptr::eq(a, b));
+        let model = a.query_device.as_bytes();
         assert_eq!(model.len(), 8);
         assert!(model[..3].iter().all(u8::is_ascii_uppercase));
         assert_eq!(model[3], b'-');
         assert!(model[4..6].iter().all(u8::is_ascii_uppercase));
         assert!(model[6..].iter().all(u8::is_ascii_digit));
-        assert!(
-            device
-                .user_agent
-                .to_str()
-                .unwrap()
-                .contains(&device.query_device)
-        );
-        let client = default_client();
-        let (a, b) = tokio::join!(device.identity(&client), device.identity(&client));
-        let (a, b) = (a.unwrap(), b.unwrap());
-        assert!(std::ptr::eq(a, b));
+        assert!(a.user_agent.to_str().unwrap().contains(&a.query_device));
         assert!(is_valid_did(&a.did));
         assert_eq!(a.cookie.to_str().unwrap(), format!("acf_did={}", a.did));
         assert_eq!(
@@ -366,23 +364,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn registration_request_and_response_contract() {
+    #[tokio::test]
+    async fn registration_request_and_response_contract() {
         let device = AppDevice::new(
             Some(&json!({"device_name":"OnePlus 12","os_version":"15"})),
             &FxHashMap::default(),
         )
         .unwrap();
-        let request = device
-            .registration_request(
-                &default_client(),
-                1790312470,
-                "0123456789abcdef",
-                "01234567-89ab-cdef-0123-456789abcdef",
-            )
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = default_client();
+        let identity = device.identity(&client).await.unwrap();
+        let request = AppDevice::registration_request(
+            &client,
+            &identity.user_agent,
+            1790312470,
+            "0123456789abcdef",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        )
+        .unwrap()
+        .build()
+        .unwrap();
         assert_eq!(request.method(), reqwest::Method::POST);
         assert_eq!(
             request.url().as_str(),

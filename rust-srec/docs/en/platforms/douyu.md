@@ -56,6 +56,6 @@ Example platform-specific JSON:
 
 Douyu may dispatch a different CDN or downgrade the requested quality. Resolved streams report the returned rate/CDN and actual codec. The App method does not automatically switch to Web on playback errors; choose `web` explicitly when needed. Audio-only is the compatibility exception described above.
 
-The App model, generated user agent, and device ID remain consistent for the lifetime of each extractor, including retries and CDN changes. Device settings do not affect Web extraction. Server registration has a five-second timeout, requires network access, and is reused by the same extractor; failures are reported without silently switching identities. To keep an identity across extractor instances or application restarts, configure `device_id` or a valid `acf_did` cookie.
+The App model, generated user agent, and device ID are initialized on the first App playback request, then reused for retries and CDN changes. Offline checks and Web extraction do not initialize an App device. Device options are still validated when configuring the extractor. Server registration has a five-second timeout, requires network access, and is reused by the same extractor; failures are reported without silently switching identities. To keep an identity across extractor instances or application restarts, configure `device_id` or a valid `acf_did` cookie.
 
 The default local DID uses the Android client's timestamp-based MD5 algorithm. `device_id_mode: "default"` uses `10000000000000000000000000001511`.
