@@ -3,15 +3,21 @@
 //! Implements danmu collection for Bilibili live streaming using the generic
 //! WebSocket provider with binary protocol and Brotli/Zlib compression.
 
-use byteorder::{BigEndian, ByteOrder};
-use bytes::Bytes;
-use flate2::read::ZlibDecoder;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use byteorder::{BigEndian, ByteOrder};
+use bytes::Bytes;
+use chrono::{TimeZone, Utc};
+use flate2::read::ZlibDecoder;
+use prost::Message as ProstMessage;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
@@ -22,8 +28,6 @@ use crate::danmaku::websocket::{
 };
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
-use chrono::{TimeZone, Utc};
-use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
 use super::cookie_utils::{extract_cookie_value, strip_refresh_token};
@@ -100,6 +104,35 @@ struct DecodedPacket {
     /// Slice of the frame (or of the decompressed buffer) the packet came
     /// from; refcounted, so packets never copy their body.
     body: Bytes,
+}
+
+// Subset of SEND_GIFT_V2 used for recording. Tags follow the schema shipped in
+// blive-message-listener@0.5.6-beta.1 (src/protobuf/SEND_GIFT_V2.proto.ts).
+// Prost skips other fields, including nested medal and animation information.
+#[derive(Clone, PartialEq, prost::Message)]
+struct SendGiftV2 {
+    #[prost(int64, tag = "1")]
+    uid: i64,
+    #[prost(string, tag = "2")]
+    uname: String,
+    #[prost(message, repeated, tag = "10")]
+    gift_list: Vec<GiftV2>,
+    #[prost(bool, tag = "11")]
+    switch: bool,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct GiftV2 {
+    #[prost(string, tag = "2")]
+    gift_name: String,
+    #[prost(int64, tag = "3")]
+    num: i64,
+    #[prost(int64, tag = "5")]
+    price: i64,
+    #[prost(string, tag = "8")]
+    coin_type: String,
+    #[prost(int64, tag = "10")]
+    timestamp: i64,
 }
 
 /// Bilibili Danmu Protocol Implementation
@@ -386,6 +419,7 @@ impl BilibiliDanmuProtocol {
             "DANMU_MSG"
                 | "DANMU_MSG_MIRROR"
                 | "SEND_GIFT"
+                | "SEND_GIFT_V2"
                 | "SUPER_CHAT_MESSAGE"
                 | "ROOM_CHANGE"
                 | "ROOM_LOCK"
@@ -393,8 +427,8 @@ impl BilibiliDanmuProtocol {
         )
     }
 
-    /// Parse a notification message (op=5) into a danmu item.
-    fn parse_notification(body: &[u8]) -> Option<DanmuItem> {
+    /// Append items from a notification (op=5); V2 gifts can contain a batch.
+    fn parse_notification(body: &[u8], items: &mut Vec<DanmuItem>) {
         // Bilibili serialises `cmd` as the first key. Most notifications
         // (INTERACT_WORD, ONLINE_RANK_*, WATCHED_CHANGE, STOP_LIVE_ROOM_LIST,
         // ...) are dropped anyway, so when that layout holds and the command
@@ -406,27 +440,105 @@ impl BilibiliDanmuProtocol {
             && !cmd.contains('\\')
             && !Self::handles_command(cmd.split(':').next().unwrap_or(cmd))
         {
-            return None;
+            return;
         }
 
-        let json: Value = serde_json::from_slice(body).ok()?;
-        let cmd = json.get("cmd")?.as_str()?;
+        let Ok(json) = serde_json::from_slice::<Value>(body) else {
+            return;
+        };
+        let Some(cmd) = json.get("cmd").and_then(Value::as_str) else {
+            return;
+        };
 
         // Handle DANMU_MSG variants (e.g., "DANMU_MSG:4:0:2:2:2:0")
         let cmd_base = cmd.split(':').next().unwrap_or(cmd);
         // DANMU_MSG_MIRROR are mirror of DANMU_MSG
 
-        match cmd_base {
+        let item = match cmd_base {
             "DANMU_MSG" | "DANMU_MSG_MIRROR" => {
                 Self::parse_danmu_msg(&json).map(DanmuItem::Message)
             }
             "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
+            "SEND_GIFT_V2" => {
+                Self::parse_gifts_v2(&json, items);
+                return;
+            }
             "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
             "ROOM_CHANGE" => Self::parse_room_change(&json),
             // Stream-ending / enforcement events.
             // Bilibili emits these when the live room is forcibly ended/locked.
             "ROOM_LOCK" | "CUT_OFF" => Self::parse_stream_closed(cmd_base, &json),
             _ => None,
+        };
+        items.extend(item);
+    }
+
+    fn parse_gifts_v2(json: &Value, items: &mut Vec<DanmuItem>) {
+        let Some(pb) = json
+            .get("data")
+            .and_then(|data| data.get("pb"))
+            .and_then(Value::as_str)
+        else {
+            return;
+        };
+        let bytes = match STANDARD.decode(pb) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                debug!(%error, "Invalid SEND_GIFT_V2 base64 payload");
+                return;
+            }
+        };
+        let batch = match SendGiftV2::decode(bytes.as_slice()) {
+            Ok(batch) => batch,
+            Err(error) => {
+                debug!(%error, "Invalid SEND_GIFT_V2 protobuf payload");
+                return;
+            }
+        };
+        // Disabled batches must not produce gifts, matching the upstream gate.
+        if !batch.switch || batch.uid <= 0 || batch.uname.is_empty() {
+            return;
+        }
+
+        for gift in batch.gift_list {
+            let Ok(count) = u32::try_from(gift.num) else {
+                debug!("Ignoring SEND_GIFT_V2 gift with invalid count");
+                continue;
+            };
+            let Ok(price) = u64::try_from(gift.price) else {
+                debug!("Ignoring SEND_GIFT_V2 gift with invalid price");
+                continue;
+            };
+            if count == 0
+                || gift.gift_name.is_empty()
+                || !matches!(gift.coin_type.as_str(), "gold" | "silver")
+            {
+                debug!("Ignoring SEND_GIFT_V2 gift with invalid name, count or coin type");
+                continue;
+            }
+            let mut message = DanmuMessage::gift(
+                uuid::Uuid::new_v4().to_string(),
+                batch.uid.to_string(),
+                batch.uname.clone(),
+                gift.gift_name,
+                count,
+            )
+            // Preserve the same raw price units as legacy SEND_GIFT.
+            .with_metadata("price", serde_json::json!(price));
+
+            // Timestamp belongs to each gift, not the outer JSON envelope.
+            // Missing/nonpositive or out-of-range values keep reception time.
+            let timestamp = if gift.timestamp > 1_000_000_000_000 {
+                Utc.timestamp_millis_opt(gift.timestamp).single()
+            } else if gift.timestamp > 0 {
+                Utc.timestamp_opt(gift.timestamp, 0).single()
+            } else {
+                None
+            };
+            if let Some(timestamp) = timestamp {
+                message = message.with_timestamp(timestamp);
+            }
+            items.push(DanmuItem::Message(message));
         }
     }
 
@@ -733,9 +845,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                 for packet in packets {
                     match packet.operation {
                         op::NOTIFICATION => {
-                            if let Some(item) = Self::parse_notification(&packet.body) {
-                                items.push(item);
-                            }
+                            Self::parse_notification(&packet.body, &mut items);
                         }
                         // op::HEARTBEAT_REPLY => {
                         //     debug!("Bilibili heartbeat reply received");
@@ -805,6 +915,166 @@ mod tests {
     use crate::danmaku::ConnectionConfig;
 
     use super::*;
+
+    fn parse_single_notification(body: &[u8]) -> Option<DanmuItem> {
+        let mut items = Vec::new();
+        BilibiliDanmuProtocol::parse_notification(body, &mut items);
+        assert!(items.len() <= 1);
+        items.pop()
+    }
+
+    // Independently encoded wire fixture: two gifts, a uid above JS's safe
+    // integer range, second/millisecond timestamps, and unknown fields in
+    // both the envelope and first gift. Keep literal to detect schema drift.
+    const GIFT_V2_PB: &str = "CIGAgICAgIAQEghHaWZ0VXNlclIbEgZSb2NrZXQYBShkQgRnb2xkUIDiz6oGmAZ7UhwSBkZsb3dlchgCKMgBQgZzaWx2ZXJQ+9CV/7wxWAGiBgd1bmtub3du";
+
+    fn gift_v2_body(pb: &str) -> Vec<u8> {
+        // cmd first exercises the fast command filter as well as dispatch.
+        format!(r#"{{"cmd":"SEND_GIFT_V2","data":{{"pb":"{pb}"}}}}"#).into_bytes()
+    }
+
+    fn gift_v2_fixture() -> SendGiftV2 {
+        SendGiftV2::decode(STANDARD.decode(GIFT_V2_PB).unwrap().as_slice()).unwrap()
+    }
+
+    fn parse_gift_v2_batch(batch: &SendGiftV2) -> Vec<DanmuItem> {
+        let body = gift_v2_body(&STANDARD.encode(batch.encode_to_vec()));
+        let mut items = Vec::new();
+        BilibiliDanmuProtocol::parse_notification(&body, &mut items);
+        items
+    }
+
+    fn assert_v2_gifts(items: &[DanmuItem]) {
+        assert_eq!(items.len(), 2);
+        for (item, name, count, price, timestamp) in [
+            (&items[0], "Rocket", 5, 100, 1_700_000_000_000_i64),
+            (&items[1], "Flower", 2, 200, 1_700_000_000_123_i64),
+        ] {
+            let DanmuItem::Message(msg) = item else {
+                panic!("expected gift message");
+            };
+            assert_eq!(msg.message_type, crate::danmaku::message::DanmuType::Gift);
+            assert_eq!(msg.user_id, "9007199254740993");
+            assert_eq!(msg.username, "GiftUser");
+            assert_eq!(msg.content, format!("赠送 {name} x{count}"));
+            assert_eq!(msg.timestamp.timestamp_millis(), timestamp);
+            let meta = msg.metadata.as_ref().unwrap();
+            assert_eq!(meta["gift_name"], name);
+            assert_eq!(meta["gift_count"], count);
+            assert_eq!(meta["price"], price);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_gift_v2_decodes_batches_in_raw_and_compressed_frames() {
+        use std::io::Write;
+
+        let notification = build_packet(&gift_v2_body(GIFT_V2_PB), op::NOTIFICATION);
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&notification).unwrap();
+        let mut compressed = build_packet(&encoder.finish().unwrap(), op::NOTIFICATION);
+        BigEndian::write_u16(&mut compressed[6..8], ver::ZLIB);
+        let mut protocol = BilibiliDanmuProtocol::default();
+        for frame in [notification, compressed] {
+            let output = protocol
+                .decode_message(&Message::Binary(frame.into()), "1")
+                .await
+                .unwrap();
+            let (items, outbound) = output.into_parts();
+            assert!(outbound.is_empty());
+            assert_v2_gifts(&items);
+        }
+    }
+
+    #[test]
+    fn test_send_gift_v2_accepts_reordered_json_and_command_suffix() {
+        let body = format!(r#"{{"data":{{"pb":"{GIFT_V2_PB}"}},"cmd":"SEND_GIFT_V2:1"}}"#);
+        let mut items = Vec::new();
+        BilibiliDanmuProtocol::parse_notification(body.as_bytes(), &mut items);
+        assert_v2_gifts(&items);
+    }
+
+    #[tokio::test]
+    async fn test_send_gift_v2_malformed_payloads_do_not_drop_following_notifications() {
+        let mut protocol = BilibiliDanmuProtocol::default();
+        for data in [
+            serde_json::json!({}),
+            serde_json::json!({"pb": null}),
+            serde_json::json!({"pb": 42}),
+            serde_json::json!({"pb": ""}),
+            serde_json::json!({"pb": "!invalid!"}),
+            // Truncated varint, truncated nested message, wrong wire type.
+            serde_json::json!({"pb": STANDARD.encode([0x08, 0x80])}),
+            serde_json::json!({"pb": STANDARD.encode([0x52, 0x05, 0x12])}),
+            serde_json::json!({"pb": STANDARD.encode([0x0a, 0x00])}),
+        ] {
+            let body =
+                serde_json::to_vec(&serde_json::json!({"cmd": "SEND_GIFT_V2", "data": data}))
+                    .unwrap();
+            let mut frame = build_packet(&body, op::NOTIFICATION);
+            frame.extend(build_packet(&gift_v2_body(GIFT_V2_PB), op::NOTIFICATION));
+            let output = protocol
+                .decode_message(&Message::Binary(frame.into()), "1")
+                .await
+                .unwrap();
+            let (items, outbound) = output.into_parts();
+            assert!(outbound.is_empty());
+            assert_v2_gifts(&items);
+        }
+    }
+
+    #[test]
+    fn test_send_gift_v2_disabled_and_empty_batches_emit_nothing() {
+        let mut batch = gift_v2_fixture();
+        batch.switch = false;
+        assert!(parse_gift_v2_batch(&batch).is_empty());
+        batch.switch = true;
+        batch.gift_list.clear();
+        assert!(parse_gift_v2_batch(&batch).is_empty());
+        assert!(parse_gift_v2_batch(&SendGiftV2::default()).is_empty());
+    }
+
+    #[test]
+    fn test_send_gift_v2_invalid_gifts_do_not_hide_valid_siblings() {
+        let fixture = gift_v2_fixture();
+        for (count, price, coin_type, name) in [
+            (-1, 100, "gold", "Rocket"),
+            (i64::MAX, 100, "gold", "Rocket"),
+            (0, 100, "gold", "Rocket"),
+            (5, -1, "gold", "Rocket"),
+            (5, 100, "unknown", "Rocket"),
+            (5, 100, "gold", ""),
+        ] {
+            let mut batch = fixture.clone();
+            batch.gift_list[0].num = count;
+            batch.gift_list[0].price = price;
+            batch.gift_list[0].coin_type = coin_type.to_string();
+            batch.gift_list[0].gift_name = name.to_string();
+            let items = parse_gift_v2_batch(&batch);
+            assert_eq!(items.len(), 1);
+            let DanmuItem::Message(msg) = &items[0] else {
+                panic!("expected gift");
+            };
+            assert_eq!(msg.content, "赠送 Flower x2");
+        }
+    }
+
+    #[test]
+    fn test_send_gift_v2_invalid_timestamps_fall_back_to_reception_time() {
+        for timestamp in [0, -1, i64::MIN, i64::MAX] {
+            let mut batch = gift_v2_fixture();
+            batch.gift_list[0].timestamp = timestamp;
+            let before = Utc::now();
+            let items = parse_gift_v2_batch(&batch);
+            let after = Utc::now();
+            assert_eq!(items.len(), 2);
+            let DanmuItem::Message(msg) = &items[0] else {
+                panic!("expected gift");
+            };
+            assert!(msg.timestamp >= before && msg.timestamp <= after);
+        }
+    }
 
     #[test]
     fn test_extract_room_id() {
@@ -917,8 +1187,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item =
-            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse SEND_GIFT");
+        let item = parse_single_notification(&body).expect("should parse SEND_GIFT");
 
         match item {
             DanmuItem::Message(msg) => {
@@ -950,8 +1219,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item = BilibiliDanmuProtocol::parse_notification(&body)
-            .expect("should parse SUPER_CHAT_MESSAGE");
+        let item = parse_single_notification(&body).expect("should parse SUPER_CHAT_MESSAGE");
 
         match item {
             DanmuItem::Message(msg) => {
@@ -982,8 +1250,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item =
-            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse ROOM_CHANGE");
+        let item = parse_single_notification(&body).expect("should parse ROOM_CHANGE");
 
         match item {
             DanmuItem::Control(DanmuControlEvent::RoomInfoChanged {
@@ -1009,8 +1276,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item =
-            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse ROOM_LOCK");
+        let item = parse_single_notification(&body).expect("should parse ROOM_LOCK");
 
         match item {
             DanmuItem::Control(DanmuControlEvent::StreamClosed { message, action }) => {
@@ -1031,7 +1297,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item = BilibiliDanmuProtocol::parse_notification(&body).expect("should parse CUT_OFF");
+        let item = parse_single_notification(&body).expect("should parse CUT_OFF");
 
         match item {
             DanmuItem::Control(DanmuControlEvent::StreamClosed { message, action }) => {
