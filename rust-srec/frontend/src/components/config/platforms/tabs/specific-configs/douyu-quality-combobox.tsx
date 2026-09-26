@@ -87,7 +87,7 @@ function parseQualityInput(value: string) {
     return { type: 'rate', rate: option.rate } as const;
   }
 
-  if (/^-?\d+$/.test(normalized)) {
+  if (/^\d+$/.test(normalized)) {
     return { type: 'rate', rate: Number.parseInt(normalized, 10) } as const;
   }
 

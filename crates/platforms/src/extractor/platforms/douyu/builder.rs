@@ -11,9 +11,12 @@ use tracing::debug;
 
 use std::collections::HashMap;
 
+use super::app_device::AppDevice;
+
 use crate::{
     extractor::{
         error::ExtractorError,
+        platform_configs::{DouyuApiMode, DouyuCodec},
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::douyu::models::{
             CachedEncryptionKey, DouyuBetardResponse, DouyuEncryptionResponse, DouyuH5PlayData,
@@ -62,6 +65,10 @@ fn is_douyu_auth_failed(status: StatusCode, body: &str) -> bool {
 
 pub struct Douyu {
     pub extractor: Extractor,
+    pub api_mode: DouyuApiMode,
+    pub codec: DouyuCodec,
+    configuration_error: Option<String>,
+    pub(super) app_device: Result<AppDevice, String>,
     pub cdn: String,
     /// When true, rooms running interactive games will be treated as not live
     pub disable_interactive_game: bool,
@@ -84,18 +91,40 @@ impl Douyu {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let cdn = extras_get_str(extras.as_ref(), "cdn")
-            .unwrap_or("ws-h5")
-            .to_owned();
+        let mut configuration_error = None;
+        let api_mode = Self::parse_option(extras.as_ref(), "api_mode", &mut configuration_error);
+        let codec = Self::parse_option(extras.as_ref(), "codec", &mut configuration_error);
 
         let disable_interactive_game =
             extras_get_bool(extras.as_ref(), "disable_interactive_game").unwrap_or(false);
 
-        let rate = extras_get_i64(extras.as_ref(), "rate").unwrap_or(0);
+        let parsed_rate = extras_get_i64(extras.as_ref(), "rate");
+        let rate = parsed_rate.unwrap_or(0);
+        if extras
+            .as_ref()
+            .and_then(|e| e.get("rate"))
+            .is_some_and(|v| !v.is_null())
+            && parsed_rate.is_none()
+        {
+            configuration_error = Some("Douyu rate must be a non-negative integer".into());
+        }
 
         let only_audio = extras_get_bool(extras.as_ref(), "only_audio")
             .or_else(|| extras_get_bool(extras.as_ref(), "onlyAudio"))
             .unwrap_or(false);
+
+        let cdn = extras_get_str(extras.as_ref(), "cdn")
+            .filter(|cdn| !cdn.trim().is_empty())
+            .unwrap_or(if api_mode == DouyuApiMode::Web || only_audio {
+                "ws-h5"
+            } else {
+                "hw"
+            })
+            .trim()
+            .to_owned();
+        if rate < 0 {
+            configuration_error = Some("Douyu rate must be non-negative".into());
+        }
 
         // Clamp to at least 1 so the `for attempt in 0..self.request_retries` loop in
         // `get_betard_room_info` runs; 0 would make every betard fetch return the generic
@@ -111,14 +140,59 @@ impl Douyu {
             extractor.set_cookies_from_string(&cookies);
         }
 
+        let app_device =
+            AppDevice::new(extras.as_ref(), &extractor.cookies).map_err(|e| e.to_string());
+
         Self {
             extractor,
+            api_mode,
+            codec,
+            configuration_error,
+            app_device,
             cdn,
             disable_interactive_game,
             rate,
             only_audio,
             request_retries,
         }
+    }
+
+    fn parse_option<T: serde::de::DeserializeOwned + Default>(
+        extras: Option<&serde_json::Value>,
+        key: &str,
+        error: &mut Option<String>,
+    ) -> T {
+        match extras
+            .and_then(|extras| extras.get(key))
+            .filter(|v| !v.is_null())
+        {
+            Some(value) => match serde_json::from_value(value.clone()) {
+                Ok(value) => value,
+                Err(_) => {
+                    *error = Some(format!("Invalid Douyu {key}"));
+                    T::default()
+                }
+            },
+            None => T::default(),
+        }
+    }
+
+    fn validate_configuration(&self) -> Result<(), ExtractorError> {
+        if let Some(error) = &self.configuration_error {
+            return Err(ExtractorError::ValidationError(error.clone()));
+        }
+        if self.uses_app() {
+            self.app_device
+                .as_ref()
+                .map_err(|error| ExtractorError::ValidationError(error.clone()))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn uses_app(&self) -> bool {
+        // The Android endpoint has no verified audio-only contract. Preserve
+        // existing audio-only recordings through the web endpoint's `fa` option.
+        self.api_mode == DouyuApiMode::App && !self.only_audio
     }
 
     pub(crate) fn extract_rid(&self, response: &str) -> Result<u64, ExtractorError> {
@@ -487,7 +561,7 @@ impl Douyu {
     }
 
     /// Generates authentication signature using fallback method (no JS engine required)
-    /// This implements the DouyuUtils.sign algorithm from the Python version
+    /// Implements the DouyuUtils.sign algorithm.
     ///
     /// # Arguments
     /// * `rid` - Room ID
@@ -569,7 +643,7 @@ impl Douyu {
     ) -> Result<DouyuH5PlayData, ExtractorError> {
         let did = did.unwrap_or(DOUYU_DEFAULT_DID);
 
-        // If auth fails, refresh encryption key once and retry (Python tends to refresh often).
+        // Refresh the encryption key once on authentication failure.
         for attempt in 0..2 {
             if attempt == 1 {
                 debug!(
@@ -592,7 +666,7 @@ impl Douyu {
             form_data.insert("iar", "0".to_string());
             form_data.insert("ive", "0".to_string());
             form_data.insert("rid", rid.to_string());
-            form_data.insert("hevc", "1".to_string());
+            form_data.insert("hevc", Self::form_bool(self.codec == DouyuCodec::Hevc));
             form_data.insert("fa", Self::form_bool(self.only_audio));
             form_data.insert("sov", "0".to_string());
 
@@ -724,7 +798,7 @@ impl Douyu {
         clippy::too_many_arguments,
         reason = "arguments map the Douyu response into one MediaInfo value"
     )]
-    fn create_media_info(
+    pub(super) fn create_media_info(
         &self,
         title: &str,
         artist: &str,
@@ -982,19 +1056,23 @@ impl Douyu {
                     MediaFormat::Ts
                 };
 
-                let codec = Self::stream_codec(cdn.is_h265, self.only_audio);
+                let is_h265 = cdn.is_h265 && self.codec == DouyuCodec::Hevc;
+                let codec = Self::stream_codec(is_h265, self.only_audio);
 
-                let priority = if cdn.cdn == preferred_cdn && rate.rate == preferred_rate {
+                let mut priority = if cdn.cdn == preferred_cdn && rate.rate == preferred_rate {
                     0
                 } else {
                     10
                 };
+                if self.codec == DouyuCodec::Hevc && !is_h265 && !self.only_audio {
+                    priority += 1;
+                }
 
                 let extras = serde_json::json!({
                     "cdn": cdn.cdn.clone(),
                     "rate": rate.rate.to_string(),
                     "rid": rid.to_string(),
-                    "is_h265": cdn.is_h265,
+                    "is_h265": is_h265,
                     "only_audio": self.only_audio,
                 });
 
@@ -1085,6 +1163,11 @@ impl PlatformExtractor for Douyu {
     }
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
+        self.validate_configuration()?;
+        if self.uses_app() {
+            return self.extract_app().await;
+        }
+        debug!("Using deprecated Douyu web extraction");
         let response = self.get_web_response().await?;
         let response_arc: Arc<str> = response.into();
         let media_info = self.parse_web_response(response_arc).await?;
@@ -1092,8 +1175,13 @@ impl PlatformExtractor for Douyu {
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
+        self.validate_configuration()?;
         if !stream_info.url.is_empty() {
             return Ok(());
+        }
+
+        if self.uses_app() {
+            return self.resolve_app_stream(stream_info).await;
         }
 
         let extras = stream_info.extras.as_ref().ok_or_else(|| {
@@ -1125,7 +1213,8 @@ impl PlatformExtractor for Douyu {
             .await?;
 
         stream_info.url = Self::stream_url(&resp, is_h265, only_audio);
-        stream_info.codec = Self::stream_codec(is_h265, only_audio).to_string();
+        let has_hevc = is_h265 && resp.player_1.as_deref().is_some_and(|url| !url.is_empty());
+        stream_info.codec = Self::stream_codec(has_hevc, only_audio).to_string();
         stream_info.is_audio_only = only_audio;
         Ok(())
     }
@@ -1169,6 +1258,49 @@ mod tests {
         );
 
         assert!(extractor.only_audio);
+        assert!(!extractor.uses_app());
+        assert_eq!(extractor.cdn, "ws-h5");
+    }
+
+    #[test]
+    fn test_douyu_method_defaults_and_legacy_selection() {
+        use crate::extractor::platform_configs::{DouyuApiMode, DouyuCodec};
+        let default = Douyu::new(
+            "https://www.douyu.com/100".into(),
+            default_client(),
+            None,
+            None,
+        );
+        assert!(default.uses_app());
+        assert_eq!(default.api_mode, DouyuApiMode::App);
+        assert_eq!(default.codec, DouyuCodec::Avc);
+        assert_eq!(default.cdn, "hw");
+        let web = Douyu::new(
+            "https://www.douyu.com/100".into(),
+            default_client(),
+            None,
+            Some(json!({"api_mode":"web","codec":"hevc","rate":"2"})),
+        );
+        assert!(!web.uses_app());
+        assert_eq!(web.codec, DouyuCodec::Hevc);
+        assert_eq!(web.cdn, "ws-h5");
+        assert_eq!(web.rate, 2);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_playback_options_fail_before_network_requests() {
+        for extras in [
+            json!({"api_mode":"invalid"}),
+            json!({"codec":"av1"}),
+            json!({"rate":-1}),
+            json!({"rate":1.5}),
+        ] {
+            let douyu = Douyu::new("invalid".into(), default_client(), None, Some(extras));
+            assert!(matches!(
+                douyu.extract().await,
+                Err(crate::extractor::error::ExtractorError::ValidationError(_))
+            ));
+        }
     }
 
     #[test]

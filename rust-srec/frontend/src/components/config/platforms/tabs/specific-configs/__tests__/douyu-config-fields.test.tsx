@@ -56,7 +56,7 @@ describe('Douyu configuration', () => {
     renderFields();
 
     expect(cdnInput().value).toBe('');
-    expect(cdnInput().placeholder).toBe('Default: ws-h5');
+    expect(cdnInput().placeholder).toBe('Default: hw');
     expect(retriesInput().value).toBe('');
     expect(retriesInput().placeholder).toBe('Default: 3');
   });
@@ -95,5 +95,80 @@ describe('Douyu configuration', () => {
     fireEvent.change(retriesInput(), { target: { value: '0' } });
 
     expect(stored().request_retries).toBe(0);
+  });
+
+  it('shows the legacy CDN default for web extraction', () => {
+    renderFields({ api_mode: 'web' });
+    expect(cdnInput().placeholder).toBe('Default: ws-h5');
+    expect(screen.getByLabelText('Extraction Method')).toHaveTextContent(
+      'Web (deprecated)',
+    );
+  });
+
+  it('shows the legacy CDN default for audio-only extraction', () => {
+    renderFields({ api_mode: 'app', only_audio: true });
+    expect(cdnInput().placeholder).toBe('Default: ws-h5');
+  });
+
+  it('preserves unset method and codec instead of writing overrides', () => {
+    const { stored } = renderFields({}, { inherited: true });
+    expect(screen.getByLabelText('Extraction Method')).toHaveTextContent(
+      'Inherited',
+    );
+    expect(screen.getByLabelText('Preferred Video Codec')).toHaveTextContent(
+      'Inherited',
+    );
+    expect(stored().api_mode).toBeUndefined();
+    expect(stored().codec).toBeUndefined();
+  });
+
+  it('changes method and codec and restores inheritance', () => {
+    const { stored } = renderFields(
+      { api_mode: 'app', codec: 'avc' },
+      { inherited: true },
+    );
+    const method = screen.getByLabelText('Extraction Method');
+    expect(method).toHaveTextContent('Android App');
+    fireEvent.keyDown(method, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'Web (deprecated)' }));
+    expect(stored().api_mode).toBe('web');
+
+    const codec = screen.getByLabelText('Preferred Video Codec');
+    expect(codec).toHaveTextContent('AVC (H.264)');
+    fireEvent.keyDown(codec, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'HEVC (H.265)' }));
+    expect(stored().codec).toBe('hevc');
+
+    for (const trigger of [method, codec]) {
+      fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      fireEvent.click(screen.getByRole('option', { name: 'Inherited' }));
+    }
+    expect(stored().api_mode).toBeNull();
+    expect(stored().codec).toBeNull();
+  });
+
+  it('saves device options and can clear them to inherit', () => {
+    const { stored } = renderFields({}, { inherited: true });
+    for (const [label, key, value] of [
+      ['Device Model', 'device_name', 'OnePlus 12'],
+      ['Android Version', 'os_version', '15'],
+      ['Device ID', 'device_id', '0123456789abcdef0123456789abcdef'],
+    ]) {
+      const input = screen.getByLabelText(label);
+      expect(input).toHaveAttribute('placeholder', 'Inherited');
+      fireEvent.change(input, { target: { value } });
+      expect(stored()[key]).toBe(value);
+      fireEvent.change(input, { target: { value: '' } });
+      expect(stored()[key]).toBeNull();
+    }
+    const source = screen.getByLabelText('Device ID source');
+    fireEvent.keyDown(source, { key: 'ArrowDown' });
+    fireEvent.click(
+      screen.getByRole('option', { name: 'Server registration' }),
+    );
+    expect(stored().device_id_mode).toBe('server');
+    fireEvent.keyDown(source, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'Inherited' }));
+    expect(stored().device_id_mode).toBeNull();
   });
 });

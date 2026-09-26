@@ -55,15 +55,63 @@ pub struct BilibiliConfig {
     pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
+/// Douyu playback API. The web method is retained for compatibility but deprecated.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DouyuApiMode {
+    #[default]
+    App,
+    Web,
+}
+
+/// Preferred video codec; HEVC falls back to AVC when unavailable.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DouyuCodec {
+    #[default]
+    Avc,
+    Hevc,
+}
+
+/// How an anonymous Android device ID is obtained when no explicit ID/cookie is supplied.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DouyuDeviceIdMode {
+    #[default]
+    Local,
+    Server,
+    Default,
+}
+
 /// Douyu platform-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DouyuConfig {
-    /// CDN type selection (default: "ws-h5")
+    /// Playback method (default: app; web is deprecated).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_mode: Option<DouyuApiMode>,
+    /// Preferred video codec (default: avc).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codec: Option<DouyuCodec>,
+    /// Android model; unset generates an ABC-DE12-style model per extractor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_name: Option<String>,
+    /// Android version used in the generated User-Agent (default: 14).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
+    /// Explicit Android DID, taking precedence over acf_did and device_id_mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id_mode: Option<DouyuDeviceIdMode>,
+    /// CDN type selection (default: "hw" for app, "ws-h5" for web).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cdn: Option<String>,
     /// Treat interactive games as offline (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disable_interactive_game: Option<bool>,
+    /// Audio-only extraction uses the deprecated web API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub only_audio: Option<bool>,
     /// Quality rate, 0 = original quality (default: 0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate: Option<i64>,
@@ -266,11 +314,18 @@ mod tests {
 
     #[test]
     fn test_douyu_config_deserialize() {
-        let json = json!({"cdn": "hw-h5", "rate": 0, "request_retries": 5});
+        let json = json!({"api_mode":"app", "codec":"hevc", "cdn": "hw-h5", "rate": 0, "request_retries": 5, "only_audio":false});
         let config: DouyuConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.cdn, Some("hw-h5".to_string()));
         assert_eq!(config.rate, Some(0));
         assert_eq!(config.request_retries, Some(5));
+        assert_eq!(config.api_mode, Some(DouyuApiMode::App));
+        assert_eq!(config.codec, Some(DouyuCodec::Hevc));
+        assert_eq!(config.only_audio, Some(false));
+        assert_eq!(
+            serde_json::to_value(DouyuConfig::default()).unwrap(),
+            json!({})
+        );
     }
 
     #[test]

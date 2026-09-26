@@ -1,3 +1,6 @@
+mod app;
+mod app_device;
+mod app_sign;
 mod builder;
 mod danmu;
 mod danmu_models;
