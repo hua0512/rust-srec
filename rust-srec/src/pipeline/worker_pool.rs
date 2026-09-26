@@ -457,65 +457,58 @@ impl WorkerPool {
                     let mut current_poll_interval = poll_interval;
 
                     loop {
-                        // Check for cancellation
+                        // Register before inspecting the queue so an enqueue between an
+                        // empty claim and parking cannot lose its broadcast wakeup.
+                        let notified = notifier.notified();
+                        tokio::pin!(notified);
+                        notified.as_mut().enable();
                         if cancellation_token.is_cancelled() {
                             debug!("{} worker {} shutting down", worker_type, i);
                             break;
                         }
 
-                        // Wait for a job or timeout
-                        tokio::select! {
-                            _ = cancellation_token.cancelled() => {
-                                break;
-                            }
-                            _ = notifier.notified() => {
-                                // New job available
-                            }
-                            _ = tokio::time::sleep(current_poll_interval) => {
-                                // Poll timeout (fallback / missed notify)
-                            }
-                        }
-
-                        // Try to acquire a permit
-                        let Some(permit) = concurrency.try_acquire() else {
-                            continue; // No permits available
-                        };
-
-                        // Try to dequeue a job
-                        let filter_types = if supported_job_types.is_empty() {
-                            None
-                        } else {
-                            Some(supported_job_types.as_slice()) // Vec Derefs to slice
-                        };
-
-                        let claimed = match job_queue.dequeue(filter_types).await {
-                            Ok(claimed) => claimed,
-                            Err(e) => {
-                                error!("Error dequeuing job: {}", e);
+                        if let Some(permit) = concurrency.try_acquire() {
+                            let filter_types = if supported_job_types.is_empty() {
                                 None
-                            }
-                        };
+                            } else {
+                                Some(supported_job_types.as_slice())
+                            };
+                            let claimed = match job_queue.dequeue(filter_types).await {
+                                Ok(claimed) => claimed,
+                                Err(e) => {
+                                    error!("Error dequeuing job: {}", e);
+                                    None
+                                }
+                            };
 
-                        // Nothing to run, or the claim failed: back off before polling again so
-                        // an idle pool does not spin at `poll_interval_ms`.
-                        let Some(job) = claimed else {
+                            if let Some(job) = claimed {
+                                current_poll_interval = poll_interval;
+                                debug!(
+                                    "{} worker {} processing job {} ({})",
+                                    worker_type, i, job.id, job.job_type
+                                );
+                                runner.run(job).await;
+                                drop(permit);
+                                // A cache-backed queue and a short processor may both
+                                // finish without yielding. Keep other tasks responsive
+                                // while draining a backlog without a timer per job.
+                                tokio::task::yield_now().await;
+                                continue;
+                            }
                             let next_ms = (current_poll_interval.as_millis() as u64)
                                 .saturating_mul(2)
                                 .min(max_poll_interval.as_millis() as u64);
                             current_poll_interval =
                                 std::time::Duration::from_millis(next_ms.max(1));
                             drop(permit);
-                            continue;
-                        };
-                        current_poll_interval = poll_interval;
+                        }
 
-                        debug!(
-                            "{} worker {} processing job {} ({})",
-                            worker_type, i, job.id, job.job_type
-                        );
-                        runner.run(job).await;
-
-                        drop(permit);
+                        // Back off only when no work or admission capacity is available.
+                        tokio::select! {
+                            _ = cancellation_token.cancelled() => break,
+                            _ = &mut notified => {},
+                            _ = tokio::time::sleep(current_poll_interval) => {},
+                        }
                     }
                 });
             }
@@ -1796,6 +1789,66 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pool.concurrency.state.lock().admitted, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
+        let queue = Arc::new(JobQueue::new());
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 1,
+                poll_interval_ms: 100,
+                ..Default::default()
+            },
+        );
+        let (event_tx, mut event_rx) = broadcast::channel(256);
+        for _ in 0..32 {
+            queue
+                .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
+                .await
+                .unwrap();
+        }
+        pool.start_with_dag_scheduler(
+            queue.clone(),
+            vec![Arc::new(NoopProcessor)],
+            None,
+            None,
+            Some(event_tx),
+        );
+        tokio::time::timeout(Duration::from_millis(99), async {
+            let mut completed = 0;
+            while completed < 32 {
+                if matches!(
+                    event_rx.recv().await.unwrap(),
+                    PipelineEvent::JobCompleted { .. }
+                ) {
+                    completed += 1;
+                }
+            }
+        })
+        .await
+        .expect("a queued burst must not wait for a polling timer between jobs");
+        wait_for_admissions(&pool, 0).await;
+        tokio::time::advance(Duration::from_secs(20)).await;
+        tokio::task::yield_now().await;
+        queue
+            .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_millis(99), async {
+            while !matches!(
+                event_rx.recv().await.unwrap(),
+                PipelineEvent::JobCompleted { .. }
+            ) {}
+        })
+        .await
+        .expect("enqueue must wake an idle worker without waiting for backoff");
+        tokio::time::timeout(Duration::from_secs(1), pool.stop())
+            .await
+            .unwrap();
+        assert_eq!(pool.concurrency.state.lock().admitted, 0);
+        assert_eq!(pool.active_count(), 0);
     }
 
     struct SleepProcessor;
