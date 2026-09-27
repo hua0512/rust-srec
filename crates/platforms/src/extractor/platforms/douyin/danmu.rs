@@ -375,6 +375,73 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decode_chat_with_room_metadata_on_one_mib_stack() {
+        // Wire fixture, not generated message constructors: constructing the
+        // large unboxed Common/Room tree could overflow before reaching decode.
+        const CHAT: &[u8] = &[
+            0x0a, 7, 0x10, 1, 0x82, 1, 2, 8, 1, // common: msg_id=1, room.id=1
+            0x12, 7, 8, 1, 0x1a, 3, b'b', b'o', b'b', // user: id=1, nickname=bob
+            0x1a, 2, b'h', b'i', // content=hi
+        ];
+        let output = std::thread::Builder::new()
+            .name("douyin-chat-decode".into())
+            // Match a normal Windows executable's stack budget. This also
+            // prevents a larger test-runner stack from hiding the regression.
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                use std::io::Write;
+
+                use flate2::{Compression, write::GzEncoder};
+
+                let chat = douyin_proto::webcast::im::ChatMessage::decode(CHAT).unwrap();
+                assert_eq!(chat.encode_to_vec(), CHAT);
+                drop(chat);
+                let response = douyin_proto::webcast::im::Response {
+                    messages: vec![douyin_proto::webcast::im::Message {
+                        method: "WebcastChatMessage".into(),
+                        payload: CHAT.to_vec(),
+                        ..Default::default()
+                    }],
+                    need_ack: true,
+                    ..Default::default()
+                };
+                let mut compressed = GzEncoder::new(Vec::new(), Compression::fast());
+                compressed.write_all(&response.encode_to_vec()).unwrap();
+                let frame = douyin_proto::webcast::im::PushFrame {
+                    log_id: 42,
+                    payload: compressed.finish().unwrap(),
+                    ..Default::default()
+                };
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        DouyinDanmuProtocol::default()
+                            .decode_message(&Message::Binary(frame.encode_to_vec().into()), "room")
+                            .await
+                            .unwrap()
+                    })
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        let (items, outbound) = output.into_parts();
+        let [DanmuItem::Message(message)] = items.as_slice() else {
+            panic!("expected one chat message");
+        };
+        assert_eq!(message.id, "1");
+        assert_eq!(message.user_id, "1");
+        assert_eq!(message.username, "bob");
+        assert_eq!(message.content, "hi");
+        let [Message::Binary(ack)] = outbound.as_slice() else {
+            panic!("expected an acknowledgement");
+        };
+        let ack = douyin_proto::webcast::im::PushFrame::decode(ack.clone()).unwrap();
+        assert_eq!(ack.log_id, 42);
+        assert_eq!(ack.payload_type, "ack");
+    }
+
+    #[test]
     fn test_gzip_decompression() {
         use flate2::Compression;
         use flate2::write::GzEncoder;
