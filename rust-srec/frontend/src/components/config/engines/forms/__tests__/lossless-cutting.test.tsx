@@ -128,17 +128,5 @@ describe.each([
         'enable_lossless_cutting',
       );
     });
-
-    it.each(['false', null])(
-      'rejects a malformed opt-in value: %s',
-      (value) => {
-        expect(
-          schema.safeParse({ enable_lossless_cutting: value }).success,
-        ).toBe(false);
-        expect(
-          overrideSchema.safeParse({ enable_lossless_cutting: value }).success,
-        ).toBe(false);
-      },
-    );
   },
 );

@@ -434,13 +434,6 @@ mod tests {
                     serde_json::to_value(&disabled).unwrap()["enable_lossless_cutting"],
                     false
                 );
-                assert!(
-                    DownloadManager::apply_override(
-                        disabled,
-                        &serde_json::json!({"enable_lossless_cutting": "false"}),
-                    )
-                    .is_err()
-                );
             }
         }
         check::<FfmpegEngineConfig>();

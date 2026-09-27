@@ -492,8 +492,7 @@ impl DownloadManager {
             split_expiration.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut pending_cut_completion: Option<(u32, u64)> = None;
             let mut last_started_sequence: Option<u32> = None;
-            let publish_split = || {
-                let state = translator_handle.manual_split.snapshot();
+            let publish_split = |state| {
                 translator_events.publish(DownloadManagerEvent::Progress(
                     DownloadProgressEvent::ManualSplitChanged {
                         download_id: translator_download_id.clone(),
@@ -520,7 +519,7 @@ impl DownloadManager {
                         continue;
                     }
                     update = split_updates.changed() => {
-                        if update.is_ok() { publish_split(); }
+                        if let Ok(state) = update { publish_split(state); }
                         continue;
                     }
                 };
@@ -627,7 +626,7 @@ impl DownloadManager {
                             // next logical segment starts; native writers close first.
                             if last_started_sequence.is_some_and(|started| started > index) {
                                 translator_handle.manual_split.complete(request_id);
-                                publish_split();
+                                publish_split(translator_handle.manual_split.snapshot());
                             } else {
                                 pending_cut_completion = Some((index, request_id));
                             }
@@ -850,7 +849,7 @@ impl DownloadManager {
                         {
                             translator_handle.manual_split.complete(request_id);
                             pending_cut_completion = None;
-                            publish_split();
+                            publish_split(translator_handle.manual_split.snapshot());
                         }
                         last_started_sequence = Some(sequence);
 
@@ -869,7 +868,7 @@ impl DownloadManager {
                 natural_terminal,
                 DownloadTerminalEvent::Failed { .. }
             ));
-            publish_split();
+            publish_split(translator_handle.manual_split.snapshot());
 
             // Circuit-breaker health is read from the engine's own outcome, not
             // from the terminal `choose_attempt_terminal` publishes. A stop

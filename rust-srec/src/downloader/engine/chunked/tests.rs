@@ -208,8 +208,8 @@ async fn real_media_manual_cut_native_pipelines_preserve_samples() {
         ],
     )
     .await;
-    let expected_video = hashes(&binary, &source, false).await;
-    let expected_audio = hashes(&binary, &source, true).await;
+    let expected_video = hashes(&binary, &source, MediaHash::VideoFrames).await;
+    let expected_audio = hashes(&binary, &source, MediaHash::AudioPackets).await;
     for format in ["flv", "ts", "fmp4"] {
         let input_dir = directory.path().join(format!("input-{format}"));
         let output_dir = directory.path().join(format!("output-{format}"));
@@ -383,8 +383,8 @@ async fn real_media_manual_cut_native_pipelines_preserve_samples() {
         let mut video = Vec::new();
         let mut audio = Vec::new();
         for path in &paths {
-            video.extend(hashes(&binary, path, false).await);
-            audio.extend(hashes(&binary, path, true).await);
+            video.extend(hashes(&binary, path, MediaHash::VideoFrames).await);
+            audio.extend(hashes(&binary, path, MediaHash::AudioPackets).await);
         }
         assert!(
             video == expected_video,
@@ -403,56 +403,17 @@ async fn real_media_manual_cut_native_pipelines_preserve_samples() {
     }
 }
 
-async fn hashes(binary: &str, path: &Path, audio: bool) -> Vec<String> {
-    let path = path.to_str().unwrap();
-    let args = if audio {
-        vec![
-            "-v",
-            "error",
-            "-i",
-            path,
-            "-map",
-            "0:a",
-            "-c",
-            "copy",
-            "-bsf:a",
-            "aac_adtstoasc",
-            "-f",
-            "framehash",
-            "-",
-        ]
-    } else {
-        vec![
-            "-v",
-            "error",
-            "-i",
-            path,
-            "-map",
-            "0:v",
-            "-fps_mode",
-            "passthrough",
-            "-f",
-            "framemd5",
-            "-",
-        ]
-    };
-    String::from_utf8(command(binary, &args).await)
-        .unwrap()
-        .lines()
-        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
-        .map(|line| line.split(',').nth(5).unwrap().trim().to_owned())
-        .collect()
+enum MediaHash {
+    VideoFrames,
+    VideoPackets,
+    AudioPackets,
 }
 
-async fn video_packet_hashes(binary: &str, path: &Path) -> Vec<String> {
-    let output = command(
-        binary,
-        &[
-            "-v",
-            "error",
-            "-i",
-            path.to_str().unwrap(),
-            "-map",
+async fn hashes(binary: &str, path: &Path, kind: MediaHash) -> Vec<String> {
+    let mut args = vec!["-v", "error", "-i", path.to_str().unwrap(), "-map"];
+    args.extend_from_slice(match kind {
+        MediaHash::VideoFrames => &["0:v", "-fps_mode", "passthrough", "-f", "framemd5", "-"],
+        MediaHash::VideoPackets => &[
             "0:v",
             "-c",
             "copy",
@@ -462,9 +423,18 @@ async fn video_packet_hashes(binary: &str, path: &Path) -> Vec<String> {
             "framehash",
             "-",
         ],
-    )
-    .await;
-    String::from_utf8(output)
+        MediaHash::AudioPackets => &[
+            "0:a",
+            "-c",
+            "copy",
+            "-bsf:a",
+            "aac_adtstoasc",
+            "-f",
+            "framehash",
+            "-",
+        ],
+    });
+    String::from_utf8(command(binary, &args).await)
         .unwrap()
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
@@ -509,8 +479,8 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         ],
     )
     .await;
-    let expected_video = hashes(&binary, &source, false).await;
-    let expected_audio = hashes(&binary, &source, true).await;
+    let expected_video = hashes(&binary, &source, MediaHash::VideoFrames).await;
+    let expected_audio = hashes(&binary, &source, MediaHash::AudioPackets).await;
     let direct_output = directory.path().join("direct");
     tokio::fs::create_dir(&direct_output).await.unwrap();
     let direct_engine = FfmpegEngine::with_config_async(FfmpegEngineConfig {
@@ -619,8 +589,8 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         let mut video = Vec::new();
         let mut audio = Vec::new();
         for file in &files {
-            video.extend(hashes(&binary, &file.path, false).await);
-            audio.extend(hashes(&binary, &file.path, true).await);
+            video.extend(hashes(&binary, &file.path, MediaHash::VideoFrames).await);
+            audio.extend(hashes(&binary, &file.path, MediaHash::AudioPackets).await);
         }
         if mode == "stop" {
             assert!(video.len() < expected_video.len());
@@ -633,10 +603,10 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
                     .iter()
                     .all(|frame| remaining.any(|item| item == frame))
             );
-            let reference_packets = video_packet_hashes(&binary, &source).await;
+            let reference_packets = hashes(&binary, &source, MediaHash::VideoPackets).await;
             let mut packets = Vec::new();
             for file in &files {
-                packets.extend(video_packet_hashes(&binary, &file.path).await);
+                packets.extend(hashes(&binary, &file.path, MediaHash::VideoPackets).await);
             }
             assert!(!packets.is_empty());
             assert!(
@@ -1011,11 +981,11 @@ async fn real_streamlink_manual_cut_preserves_media_without_restarting_acquisiti
     let mut video = Vec::new();
     let mut audio = Vec::new();
     for file in files {
-        video.extend(hashes(&binary, &file.path, false).await);
-        audio.extend(hashes(&binary, &file.path, true).await);
+        video.extend(hashes(&binary, &file.path, MediaHash::VideoFrames).await);
+        audio.extend(hashes(&binary, &file.path, MediaHash::AudioPackets).await);
     }
-    assert!(video == hashes(&binary, &source, false).await);
-    assert!(audio == hashes(&binary, &source, true).await);
+    assert!(video == hashes(&binary, &source, MediaHash::VideoFrames).await);
+    assert!(audio == hashes(&binary, &source, MediaHash::AudioPackets).await);
     assert!(
         requests
             .lock()

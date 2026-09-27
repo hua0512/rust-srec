@@ -182,7 +182,7 @@ impl ManualSplitControl {
         });
     }
 
-    /// EOF fences new requests but lets a file already cut finish remuxing.
+    /// EOF rejects new requests but lets a file already cut finish remuxing.
     pub fn end_acquisition(&self) {
         self.state.send_if_modified(|state| {
             if state.closed || state.acquisition_ended {
@@ -200,7 +200,7 @@ impl ManualSplitControl {
         });
     }
 
-    /// Fence future requests and settle an outstanding request on EOF/stop/error.
+    /// Reject new requests and settle an outstanding request on EOF/stop/error.
     pub fn close(&self, failed: bool) {
         self.state.send_if_modified(|state| {
             if state.closed {
@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn eof_fences_requests_but_allows_an_already_cut_file_to_finalize() {
+    fn eof_rejects_requests_but_allows_an_already_cut_file_to_finalize() {
         let control = ManualSplitControl::default();
         control.enable();
         let request = control.request(Duration::from_secs(30)).unwrap();

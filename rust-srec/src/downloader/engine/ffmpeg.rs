@@ -473,8 +473,6 @@ impl DownloadEngine for FfmpegEngine {
         let supported = self.config.enable_lossless_cutting
             && super::chunked::supports(&handle.config_snapshot())
             && self.config.output_args.is_empty();
-        #[cfg(test)]
-        let supported = supported && self.fixture.is_none();
         if supported {
             super::chunked::run(
                 handle,

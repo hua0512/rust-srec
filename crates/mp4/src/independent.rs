@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 
-use crate::box_utils::{BoxView, box_at, find_first_box};
+use crate::box_utils::{box_at, find_first_box};
 
 fn word(data: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_be_bytes(
@@ -16,26 +16,21 @@ fn word(data: &[u8], offset: usize) -> Option<u32> {
 mod tests {
     use super::*;
 
-    fn atom(name: &[u8; 4], body: &[u8]) -> Vec<u8> {
-        let mut result = ((body.len() + 8) as u32).to_be_bytes().to_vec();
-        result.extend_from_slice(name);
-        result.extend_from_slice(body);
-        result
-    }
+    use crate::test_support::make_box;
 
     fn init(video: bool, default_flags: u32) -> Bytes {
         let mut tkhd = vec![0; 16];
         tkhd[12..16].copy_from_slice(&1u32.to_be_bytes());
         let mut hdlr = vec![0; 12];
         hdlr[8..12].copy_from_slice(if video { b"vide" } else { b"soun" });
-        let mut trak = atom(b"tkhd", &tkhd);
-        trak.extend(atom(b"mdia", &atom(b"hdlr", &hdlr)));
+        let mut trak = make_box(b"tkhd", &tkhd);
+        trak.extend(make_box(b"mdia", &make_box(b"hdlr", &hdlr)));
         let mut trex = vec![0; 24];
         trex[4..8].copy_from_slice(&1u32.to_be_bytes());
         trex[20..24].copy_from_slice(&default_flags.to_be_bytes());
-        let mut moov = atom(b"trak", &trak);
-        moov.extend(atom(b"mvex", &atom(b"trex", &trex)));
-        Bytes::from(atom(b"moov", &moov))
+        let mut moov = make_box(b"trak", &trak);
+        moov.extend(make_box(b"mvex", &make_box(b"trex", &trex)));
+        Bytes::from(make_box(b"moov", &moov))
     }
 
     fn media(first_flags: Option<u32>) -> Bytes {
@@ -47,10 +42,10 @@ mod tests {
         if let Some(flags) = first_flags {
             trun.extend_from_slice(&flags.to_be_bytes());
         }
-        let mut traf = atom(b"tfhd", &tfhd);
-        traf.extend(atom(b"trun", &trun));
-        let mut result = atom(b"moof", &atom(b"traf", &traf));
-        result.extend(atom(b"mdat", &[1, 2, 3, 4]));
+        let mut traf = make_box(b"tfhd", &tfhd);
+        traf.extend(make_box(b"trun", &trun));
+        let mut result = make_box(b"moof", &make_box(b"traf", &traf));
+        result.extend(make_box(b"mdat", &[1, 2, 3, 4]));
         Bytes::from(result)
     }
 
@@ -87,10 +82,6 @@ mod tests {
     }
 }
 
-fn child(data: &Bytes, parent: BoxView, name: [u8; 4]) -> Option<BoxView> {
-    find_first_box(data, parent.body_start, parent.end, name)
-}
-
 #[derive(Debug, Clone)]
 struct Track {
     video: bool,
@@ -115,7 +106,7 @@ impl IndependentFragmentCheck {
             if item.fourcc != *b"trak" {
                 continue;
             }
-            let tkhd = child(data, item, *b"tkhd")?;
+            let tkhd = find_first_box(data, item.body_start, item.end, *b"tkhd")?;
             let body = &data[tkhd.body_start..tkhd.end];
             let id = word(
                 body,
@@ -125,8 +116,8 @@ impl IndependentFragmentCheck {
                     _ => return None,
                 },
             )?;
-            let mdia = child(data, item, *b"mdia")?;
-            let hdlr = child(data, mdia, *b"hdlr")?;
+            let mdia = find_first_box(data, item.body_start, item.end, *b"mdia")?;
+            let hdlr = find_first_box(data, mdia.body_start, mdia.end, *b"hdlr")?;
             let handler = data.get(hdlr.body_start..hdlr.end)?.get(8..12)?;
             let video = match handler {
                 b"vide" => true,
@@ -146,7 +137,7 @@ impl IndependentFragmentCheck {
                 return None;
             }
         }
-        let mvex = child(data, moov, *b"mvex")?;
+        let mvex = find_first_box(data, moov.body_start, moov.end, *b"mvex")?;
         let mut offset = mvex.body_start;
         while offset < mvex.end {
             let item = box_at(data, offset, mvex.end)?;
@@ -178,7 +169,7 @@ impl IndependentFragmentCheck {
             if traf.fourcc != *b"traf" {
                 continue;
             }
-            let tfhd = child(data, traf, *b"tfhd")?;
+            let tfhd = find_first_box(data, traf.body_start, traf.end, *b"tfhd")?;
             let body = &data[tfhd.body_start..tfhd.end];
             let flags = word(body, 0)? & 0x00ff_ffff;
             // Explicit absolute data offsets do not remain valid in a new file.
@@ -202,7 +193,7 @@ impl IndependentFragmentCheck {
             } else {
                 track.default_flags
             };
-            let trun = child(data, traf, *b"trun")?;
+            let trun = find_first_box(data, traf.body_start, traf.end, *b"trun")?;
             let body = &data[trun.body_start..trun.end];
             let flags = word(body, 0)? & 0x00ff_ffff;
             if word(body, 4)? == 0 {
