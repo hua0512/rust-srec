@@ -256,17 +256,19 @@ impl Default for FfmpegEngine {
     }
 }
 
-#[async_trait]
-impl DownloadEngine for FfmpegEngine {
-    fn engine_type(&self) -> EngineType {
-        EngineType::Ffmpeg
-    }
-
-    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+impl FfmpegEngine {
+    async fn run_process(
+        &self,
+        handle: Arc<DownloadHandle>,
+        chunked: bool,
+    ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
         // `DownloadManager::prepare_output_dir` runs before engine startup,
         // enforcing the output-root write gate and classifying directory errors.
-        let args = self.build_args(&config);
+        let mut args = self.build_args(&config);
+        if chunked {
+            super::chunked::configure_args(&mut args, &config);
+        }
         let segment_mode = config.max_segment_duration_secs > 0;
         let single_output_path = if segment_mode {
             None
@@ -439,6 +441,8 @@ impl DownloadEngine for FfmpegEngine {
         }));
 
         let events = FfmpegEvents {
+            ignored_output_path: chunked.then(|| config.output_dir.join(super::chunked::LIST_NAME)),
+            continuous_timestamps: chunked,
             source: FfmpegSource::Direct,
             segment_mode,
             single_output_path,
@@ -456,6 +460,32 @@ impl DownloadEngine for FfmpegEngine {
             vec![("event reader", event_task)],
         )
         .await
+    }
+}
+
+#[async_trait]
+impl DownloadEngine for FfmpegEngine {
+    fn engine_type(&self) -> EngineType {
+        EngineType::Ffmpeg
+    }
+
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+        let supported = self.config.enable_lossless_cutting
+            && super::chunked::supports(&handle.config_snapshot())
+            && self.config.output_args.is_empty();
+        #[cfg(test)]
+        let supported = supported && self.fixture.is_none();
+        if supported {
+            super::chunked::run(
+                handle,
+                &self.config.binary_path,
+                Duration::from_secs(self.config.graceful_stop_timeout_secs.into()),
+                |inner| self.run_process(inner, true),
+            )
+            .await
+        } else {
+            self.run_process(handle, false).await
+        }
     }
 
     fn is_available(&self) -> bool {

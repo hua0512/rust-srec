@@ -27,6 +27,9 @@ pub struct TsAnalysis {
     pub stream_info: TsStreamInfo,
     pub has_psi: bool,
     pub has_random_access: bool,
+    /// Every declared media track starts at a PES boundary after its program
+    /// tables, and the first video PES carries a random-access indicator.
+    pub independent_start: bool,
     pub resolution: Option<Resolution>,
 }
 
@@ -93,6 +96,8 @@ impl TsAnalysis {
 }
 
 struct TsAnalysisBuilder {
+    has_pat: bool,
+    first_payloads: HashMap<u16, (bool, bool)>,
     transport_stream_id: u16,
     program_count: usize,
     programs: Vec<ProgramInfo>,
@@ -110,6 +115,8 @@ struct TsAnalysisBuilder {
 impl TsAnalysisBuilder {
     fn new(include_resolution: bool) -> Self {
         Self {
+            has_pat: false,
+            first_payloads: HashMap::new(),
             transport_stream_id: 0,
             program_count: 0,
             programs: Vec::new(),
@@ -142,7 +149,23 @@ impl TsAnalysisBuilder {
             .take()
             .and_then(StreamingResolutionDetector::finish);
 
+        let independent_start = self.has_pat
+            && !self.programs.is_empty()
+            && self.programs.iter().all(|program| {
+                program.other_streams.is_empty()
+                    && (!program.video_streams.is_empty() || !program.audio_streams.is_empty())
+                    && program
+                        .video_streams
+                        .iter()
+                        .all(|stream| self.first_payloads.get(&stream.pid) == Some(&(true, true)))
+                    && program.audio_streams.iter().all(|stream| {
+                        self.first_payloads
+                            .get(&stream.pid)
+                            .is_some_and(|(start, _)| *start)
+                    })
+            });
         TsAnalysis {
+            independent_start,
             stream_info: TsStreamInfo {
                 transport_stream_id: self.transport_stream_id,
                 program_count: self.program_count,
@@ -288,6 +311,7 @@ impl TsSegmentData {
             self.data.clone(),
             |pat: PatRef| {
                 let mut builder = builder.borrow_mut();
+                builder.has_pat = true;
                 builder.has_psi = true;
                 builder.transport_stream_id = pat.transport_stream_id;
                 builder.program_count = pat.program_count();
@@ -325,6 +349,13 @@ impl TsSegmentData {
             },
             Some(|packet: &TsPacketRef| {
                 let mut builder = builder.borrow_mut();
+                if packet.payload().is_some() {
+                    let initialized = builder.has_pat && builder.stream_pids.contains(&packet.pid);
+                    builder.first_payloads.entry(packet.pid).or_insert((
+                        initialized && packet.payload_unit_start_indicator,
+                        packet.has_random_access_indicator(),
+                    ));
+                }
                 builder.has_random_access |= packet.has_random_access_indicator();
                 if let Some(detector) = &mut builder.resolution_detector {
                     detector.push_packet(packet);
@@ -497,6 +528,60 @@ pub struct StreamEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_cut_requires_program_tables_and_random_access_on_the_first_video_pes() {
+        fn psi(pid: u16, section: &[u8]) -> Vec<u8> {
+            let mut packet = vec![0xff; 188];
+            packet[..5].copy_from_slice(&[0x47, 0x40 | (pid >> 8) as u8, pid as u8, 0x10, 0]);
+            packet[5..5 + section.len()].copy_from_slice(section);
+            packet
+        }
+        fn video(random_access: bool, counter: u8) -> Vec<u8> {
+            let mut packet = vec![0xff; 188];
+            packet[..6].copy_from_slice(&[
+                0x47,
+                0x41,
+                0,
+                0x30 | counter,
+                1,
+                if random_access { 0x40 } else { 0 },
+            ]);
+            packet[6..15].copy_from_slice(&[0, 0, 1, 0xe0, 0, 0, 0x80, 0, 0]);
+            packet
+        }
+        let pat = psi(
+            0,
+            &[0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0, 0, 0, 0, 0],
+        );
+        let pmt = psi(
+            0x1000,
+            &[
+                2, 0xb0, 18, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, 0x1b, 0xe1, 0, 0xf0, 0, 0, 0, 0, 0,
+            ],
+        );
+        for (packets, expected) in [
+            (vec![pat.clone(), pmt.clone(), video(true, 0)], true),
+            (
+                vec![pat.clone(), pmt.clone(), video(false, 0), video(true, 1)],
+                false,
+            ),
+            (
+                vec![video(true, 0), pat.clone(), pmt.clone(), video(true, 1)],
+                false,
+            ),
+            (vec![video(true, 0)], false),
+        ] {
+            let segment = TsSegmentData::new(make_media_segment(), packets.concat().into())
+                .with_continuity_check(false);
+            let analysis = segment
+                .analysis(StreamProfileOptions {
+                    include_resolution: false,
+                })
+                .unwrap();
+            assert_eq!(analysis.independent_start, expected);
+        }
+    }
 
     fn make_media_segment() -> MediaSegment {
         MediaSegment {

@@ -45,10 +45,10 @@ pub(crate) fn box_at(data: &Bytes, offset: usize, end: usize) -> Option<BoxView>
         return None;
     }
 
-    let remaining = &data[offset..end];
+    let remaining = data.get(offset..end)?;
     let (size, fourcc, header_size) = read_box_header(remaining)?;
 
-    if size < header_size || offset + size > end {
+    if size < header_size || offset.checked_add(size)? > end {
         return None;
     }
 

@@ -130,6 +130,13 @@ impl IntoResponse for ApiError {
 impl From<Error> for ApiError {
     fn from(err: Error) -> Self {
         match err {
+            Error::ManualSplit(error) => {
+                let code = match error {
+                    pipeline_common::ManualSplitError::Unavailable => "SPLIT_UNAVAILABLE",
+                    pipeline_common::ManualSplitError::Closed => "DOWNLOAD_STOPPING",
+                };
+                ApiError::new(StatusCode::CONFLICT, code, error.to_string())
+            }
             Error::SchedulerFeedbackBusy { .. } => ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "SCHEDULER_FEEDBACK_BUSY",

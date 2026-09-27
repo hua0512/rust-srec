@@ -153,6 +153,19 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         }
 
         switch (message.eventType) {
+          case EventType.DOWNLOAD_SPLIT:
+            if (
+              message.payload.case === 'downloadSplit' &&
+              message.payload.value.state
+            ) {
+              useDownloadStore
+                .getState()
+                .upsertManualSplit(
+                  message.payload.value.downloadId,
+                  message.payload.value.state,
+                );
+            }
+            break;
           case EventType.SNAPSHOT:
             if (message.payload.case === 'snapshot') {
               type SnapshotItem = Parameters<typeof setSnapshot>[0][number];

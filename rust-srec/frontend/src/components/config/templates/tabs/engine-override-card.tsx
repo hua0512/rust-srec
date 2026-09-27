@@ -25,7 +25,7 @@ export function EngineOverrideCard({
     const basePath = `engines_override.${engineId}`;
     switch (engineType) {
       case 'FFMPEG':
-        return <FfmpegForm basePath={basePath} />;
+        return <FfmpegForm basePath={basePath} isOverride />;
       case 'STREAMLINK':
         return <StreamlinkForm basePath={basePath} isOverride />;
       case 'MESIO':

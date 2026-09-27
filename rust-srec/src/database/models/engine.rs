@@ -80,6 +80,9 @@ impl std::str::FromStr for EngineType {
 /// FFmpeg engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FfmpegEngineConfig {
+    /// Opt into experimental chunked recording for lossless manual cuts.
+    #[serde(default)]
+    pub enable_lossless_cutting: bool,
     /// Path to ffmpeg binary
     #[serde(default = "default_ffmpeg_path")]
     pub binary_path: String,
@@ -116,6 +119,7 @@ fn default_graceful_stop_timeout() -> u32 {
 impl Default for FfmpegEngineConfig {
     fn default() -> Self {
         Self {
+            enable_lossless_cutting: false,
             binary_path: default_ffmpeg_path(),
             input_args: Vec::new(),
             output_args: Vec::new(),
@@ -129,6 +133,9 @@ impl Default for FfmpegEngineConfig {
 /// Streamlink engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamlinkEngineConfig {
+    /// Opt into experimental chunked recording for lossless manual cuts.
+    #[serde(default)]
+    pub enable_lossless_cutting: bool,
     /// Path to streamlink binary
     #[serde(default = "default_streamlink_path")]
     pub binary_path: String,
@@ -165,6 +172,7 @@ fn default_quality() -> String {
 impl Default for StreamlinkEngineConfig {
     fn default() -> Self {
         Self {
+            enable_lossless_cutting: false,
             binary_path: default_streamlink_path(),
             ffmpeg_path: None,
             quality: default_quality(),

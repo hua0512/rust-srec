@@ -33,6 +33,7 @@ const optionalInt = (min: number) =>
     .optional();
 
 export const FfmpegConfigSchema = z.object({
+  enable_lossless_cutting: z.boolean().default(false),
   binary_path: z.string().default('ffmpeg'),
   input_args: z.array(z.string()).default([]),
   output_args: z.array(z.string()).default([]),
@@ -47,6 +48,7 @@ export const FfmpegConfigSchema = z.object({
 export type FfmpegConfig = z.infer<typeof FfmpegConfigSchema>;
 
 export const StreamlinkConfigSchema = z.object({
+  enable_lossless_cutting: z.boolean().default(false),
   binary_path: z.string().default('streamlink'),
   ffmpeg_path: z.string().nullable().optional(),
   quality: z.string().default('best'),
@@ -256,10 +258,12 @@ export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 
 export const FfmpegConfigOverrideSchema = z
   .object({
+    enable_lossless_cutting: z.boolean().optional(),
     binary_path: optionalString(),
     input_args: z.array(z.string()).optional(),
     output_args: z.array(z.string()).optional(),
     timeout_secs: optionalInt(0),
+    graceful_stop_timeout_secs: optionalInt(0),
     user_agent: optionalNonEmptyString(),
   })
   .strict();
@@ -267,10 +271,12 @@ export type FfmpegConfigOverride = z.infer<typeof FfmpegConfigOverrideSchema>;
 
 export const StreamlinkConfigOverrideSchema = z
   .object({
+    enable_lossless_cutting: z.boolean().optional(),
     binary_path: optionalString(),
     ffmpeg_path: z.string().nullable().optional(),
     quality: optionalString(),
     extra_args: z.array(z.string()).optional(),
+    graceful_stop_timeout_secs: optionalInt(0),
     twitch_proxy_playlist: optionalNonEmptyString(),
     twitch_proxy_playlist_exclude: optionalNonEmptyString(),
   })

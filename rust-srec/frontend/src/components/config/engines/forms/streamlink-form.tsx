@@ -16,6 +16,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
 import { InputWithUnit } from '@/components/ui/input-with-unit';
+import { LosslessCuttingField } from './lossless-cutting-field';
 import {
   CONFIG_DESCRIPTION,
   ConfigFieldLabel,
@@ -33,6 +34,7 @@ export function StreamlinkForm({
   const { i18n } = useLingui();
   return (
     <div className="space-y-6">
+      <LosslessCuttingField basePath={basePath} isOverride={isOverride} />
       <div className="grid gap-6 md:grid-cols-2">
         <FormField
           name={`${basePath}.binary_path`}

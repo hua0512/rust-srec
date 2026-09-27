@@ -97,10 +97,15 @@ impl PipelineProvider for HlsPipeline {
                 sync_pipeline.add_processor(SegmentSplitOperator::new(self.context.clone()));
         }
 
-        if self.config.segment_limiter {
+        if self.config.segment_limiter || self.context.manual_split.is_some() {
             sync_pipeline = sync_pipeline.add_processor(SegmentLimiterOperator::new(
-                self.common_config.max_duration,
-                Some(self.common_config.max_file_size),
+                self.config
+                    .segment_limiter
+                    .then_some(self.common_config.max_duration)
+                    .flatten(),
+                self.config
+                    .segment_limiter
+                    .then_some(self.common_config.max_file_size),
             ));
         }
 

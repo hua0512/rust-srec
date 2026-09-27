@@ -644,13 +644,12 @@ impl Default for StreamlinkEngine {
     }
 }
 
-#[async_trait]
-impl DownloadEngine for StreamlinkEngine {
-    fn engine_type(&self) -> EngineType {
-        EngineType::Streamlink
-    }
-
-    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+impl StreamlinkEngine {
+    async fn run_process(
+        &self,
+        handle: Arc<DownloadHandle>,
+        chunked: bool,
+    ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
         let stop_budget = Arc::new(StopBudget {
             handle: handle.clone(),
@@ -660,7 +659,10 @@ impl DownloadEngine for StreamlinkEngine {
         // `DownloadManager::prepare_output_dir` runs before engine startup,
         // enforcing the output-root write gate and classifying directory errors.
         let streamlink_args = self.build_streamlink_args(&config);
-        let ffmpeg_args = self.build_ffmpeg_args(&config);
+        let mut ffmpeg_args = self.build_ffmpeg_args(&config);
+        if chunked {
+            super::chunked::configure_args(&mut ffmpeg_args, &config);
+        }
         let segment_mode = config.max_segment_duration_secs > 0;
         let single_output_path = if segment_mode {
             None
@@ -1190,6 +1192,8 @@ impl DownloadEngine for StreamlinkEngine {
 
         // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status
         let events = FfmpegEvents {
+            ignored_output_path: chunked.then(|| config.output_dir.join(super::chunked::LIST_NAME)),
+            continuous_timestamps: chunked,
             source: FfmpegSource::Streamlink,
             segment_mode,
             single_output_path,
@@ -1211,6 +1215,32 @@ impl DownloadEngine for StreamlinkEngine {
             ],
         )
         .await
+    }
+}
+
+#[async_trait]
+impl DownloadEngine for StreamlinkEngine {
+    fn engine_type(&self) -> EngineType {
+        EngineType::Streamlink
+    }
+
+    async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
+        let supported = self.config.enable_lossless_cutting
+            && super::chunked::supports(&handle.config_snapshot())
+            && self.config.extra_args.is_empty();
+        #[cfg(test)]
+        let supported = supported && self.fixture.is_none() && self.shutdown_fixture.is_none();
+        if supported {
+            super::chunked::run(
+                handle,
+                &self.ffmpeg_path,
+                Duration::from_secs(self.config.graceful_stop_timeout_secs.into()),
+                |inner| self.run_process(inner, true),
+            )
+            .await
+        } else {
+            self.run_process(handle, false).await
+        }
     }
 
     fn is_available(&self) -> bool {

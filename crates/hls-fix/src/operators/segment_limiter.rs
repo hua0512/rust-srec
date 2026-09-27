@@ -7,6 +7,8 @@ use tracing::debug;
 
 /// HLS processor: Limits HLS segments based on size or duration
 pub struct SegmentLimiterOperator {
+    fragment_check: Option<hls::mp4::IndependentFragmentCheck>,
+    media_written: bool,
     max_duration: Option<Duration>,
     max_size: Option<u64>,
     current_duration: Duration,
@@ -20,6 +22,8 @@ pub struct SegmentLimiterOperator {
 impl SegmentLimiterOperator {
     pub fn new(max_duration: Option<Duration>, max_size: Option<u64>) -> Self {
         Self {
+            fragment_check: None,
+            media_written: false,
             max_duration,
             max_size,
             current_duration: Duration::from_secs(0),
@@ -87,10 +91,12 @@ impl SegmentLimiterOperator {
         self.current_duration = Duration::from_secs(0);
         self.current_size = 0;
         self.init_segment_sent = false;
+        self.media_written = false;
     }
 
     /// Add segment to current tracking
     fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
+        self.media_written = true;
         self.current_size += segment_data.len() as u64;
         self.current_duration += Self::safe_duration(segment_duration);
     }
@@ -109,9 +115,29 @@ impl Processor<HlsData> for SegmentLimiterOperator {
         match input.segment_type() {
             SegmentType::Ts => {
                 if let HlsData::TsData(ts_data) = input {
+                    let manual = if self.media_written
+                        && context.manual_split.as_ref().is_some_and(|control| {
+                            control.snapshot().status == pipeline_common::ManualSplitStatus::Pending
+                        })
+                        && ts_data
+                            .analysis(hls::StreamProfileOptions {
+                                include_resolution: false,
+                            })
+                            .is_ok_and(|analysis| analysis.independent_start)
+                    {
+                        context
+                            .manual_split
+                            .as_ref()
+                            .and_then(|control| control.begin())
+                    } else {
+                        None
+                    };
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if let Some(reason) =
-                        self.check_limit_reached(ts_data.data(), ts_data.segment.duration)
+                    if let Some(reason) = manual
+                        .map(|request_id| SplitReason::Manual { request_id })
+                        .or_else(|| {
+                            self.check_limit_reached(ts_data.data(), ts_data.segment.duration)
+                        })
                     {
                         output(HlsData::end_marker_with_reason(reason))?;
                         self.reset_counters();
@@ -125,6 +151,8 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sInit => {
                 if let HlsData::M4sData(M4sData::InitSegment(init_segment)) = input {
+                    self.fragment_check =
+                        hls::mp4::IndependentFragmentCheck::from_init(&init_segment.data);
                     // Track the most recent init segment so a later size/duration split re-emits
                     // the codec configuration the following M4sMedia is encoded against, not a
                     // stale one from before a SegmentSplitOperator init-CRC switch.
@@ -137,9 +165,28 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sMedia => {
                 if let HlsData::M4sData(M4sData::Segment(segment)) = input {
+                    let manual = if self.media_written
+                        && context.manual_split.as_ref().is_some_and(|control| {
+                            control.snapshot().status == pipeline_common::ManualSplitStatus::Pending
+                        })
+                        && self
+                            .fragment_check
+                            .as_ref()
+                            .is_some_and(|check| check.is_independent(&segment.data))
+                    {
+                        context
+                            .manual_split
+                            .as_ref()
+                            .and_then(|control| control.begin())
+                    } else {
+                        None
+                    };
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if let Some(reason) =
-                        self.check_limit_reached(&segment.data, segment.segment.duration)
+                    if let Some(reason) = manual
+                        .map(|request_id| SplitReason::Manual { request_id })
+                        .or_else(|| {
+                            self.check_limit_reached(&segment.data, segment.segment.duration)
+                        })
                     {
                         output(HlsData::end_marker_with_reason(reason))?;
                         self.reset_counters();
@@ -189,6 +236,85 @@ mod tests {
     use m3u8_rs::MediaSegment;
     use pipeline_common::StreamerContext;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn manual_cut_waits_for_sync_sample_and_repeats_the_init_without_losing_segments() {
+        use mp4::test_support::{make_box, make_full_box};
+        let mut track_header = vec![0; 12];
+        track_header[8..12].copy_from_slice(&1u32.to_be_bytes());
+        let mut handler = vec![0; 8];
+        handler[4..8].copy_from_slice(b"vide");
+        let mut track = make_full_box(b"tkhd", 0, 0, &track_header);
+        track.extend(make_box(b"mdia", &make_full_box(b"hdlr", 0, 0, &handler)));
+        let mut defaults = vec![0; 20];
+        defaults[..4].copy_from_slice(&1u32.to_be_bytes());
+        let mut movie = make_box(b"trak", &track);
+        movie.extend(make_box(b"mvex", &make_full_box(b"trex", 0, 0, &defaults)));
+        let init = Bytes::from(make_box(b"moov", &movie));
+        let media = |flags: u32, value| {
+            let mut fragment = make_full_box(b"tfhd", 0, 0x020000, &1u32.to_be_bytes());
+            let mut samples = 1u32.to_be_bytes().to_vec();
+            samples.extend_from_slice(&flags.to_be_bytes());
+            fragment.extend(make_full_box(b"trun", 0, 4, &samples));
+            let mut data = make_box(b"moof", &make_box(b"traf", &fragment));
+            data.extend(make_box(b"mdat", &[value]));
+            HlsData::mp4_segment(
+                MediaSegment {
+                    duration: 1.0,
+                    ..Default::default()
+                },
+                data.into(),
+            )
+        };
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        let mut limiter = SegmentLimiterOperator::new(None, None);
+        let mut out = Vec::new();
+        for item in [
+            HlsData::mp4_init(Default::default(), init.clone()),
+            media(0x0200_0000, 1),
+        ] {
+            limiter
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        control.request(Duration::from_secs(30)).unwrap();
+        limiter
+            .process(&context, media(0x0101_0000, 2), &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert!(!out.iter().any(HlsData::is_end_marker));
+        limiter
+            .process(&context, media(0x0200_0000, 3), &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(out.len(), 6);
+        assert!(matches!(
+            out[3],
+            HlsData::EndMarker(Some(SplitReason::Manual { .. }))
+        ));
+        assert_eq!(out[4].data(), Some(&init));
+        assert_eq!(
+            out.iter()
+                .filter_map(|item| if item.is_mp4_media() {
+                    item.data().and_then(|data| data.last()).copied()
+                } else {
+                    None
+                })
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+    }
 
     #[test]
     fn splits_on_fractional_duration_limit() {

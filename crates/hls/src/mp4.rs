@@ -2,6 +2,7 @@ use bytes::Bytes;
 use m3u8_rs::MediaSegment;
 
 use crate::profile::SegmentType;
+pub use mp4::independent::IndependentFragmentCheck;
 
 /// MP4 segment types (init or media)
 #[derive(Debug, Clone)]

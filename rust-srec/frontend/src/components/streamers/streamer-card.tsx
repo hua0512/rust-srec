@@ -118,6 +118,7 @@ export const StreamerCard = memo(
 
                 {!selectionMode && (
                   <StreamActionsMenu
+                    downloadId={activeDownloadId}
                     streamer={streamer}
                     onDelete={onDelete}
                     onToggle={onToggle}

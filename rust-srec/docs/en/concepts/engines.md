@@ -22,6 +22,25 @@ Streamlink can also be an **extractor**, which resolves the stream URL before do
 
 For Mesio, enable FLV and HLS Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
 
+## Lossless cutting {#lossless-cutting}
+
+During a supported recording, open the streamer card's **Actions** menu and select **Lossless cutting**. The recorder finishes the current file and continues in a new file within the same recording session. The cut does not re-encode media or reconnect to the source.
+
+The action waits for a safe media boundary. Repeated clicks share the pending request. If no suitable boundary arrives within 30 seconds, the request expires and recording continues. File finalization can take longer; success is shown after the old file is ready and the next file has started.
+
+| Engine | Availability |
+| --- | --- |
+| Mesio FLV | Requires FLV consistency processing and the headers needed to start the next file. Video cuts wait for a keyframe. |
+| Mesio HLS | Requires HLS consistency processing and an independently decodable TS or fMP4 segment. |
+| FFmpeg | Requires experimental **Enable lossless cutting**, MP4, MKV, FLV, TS, or MOV output, and no custom output arguments. |
+| Streamlink | Requires experimental **Enable lossless cutting**, the same output formats, and no extra Streamlink arguments. |
+
+In the download engine configuration, turn on **Enable lossless cutting** for the FFmpeg or Streamlink engine you use. This setting is marked **Experimental** and is off by default, including for existing configurations. The JSON field is `enable_lossless_cutting` (default `false`). Changes apply to new recordings. Template engine overrides can enable or disable it explicitly, or select **Use engine setting** to inherit the engine configuration. Mesio does not require this option.
+
+When enabled for a supported FFmpeg or Streamlink mode, recording uses temporary chunks and assembles each final file after a manual cut, an automatic limit, or the end of recording. Final files become available only after assembly finishes, even when no manual cut is requested. This uses additional disk space and I/O during finalization. Final filenames follow your configured template, including `%i` when present. A numeric suffix such as `-001` is added only if that filename already exists. The recording attempt ID and unfinished remux files stay inside the `.srec-chunks-*` staging directory. When the option is off, or the output format or custom arguments are unsupported, the engine retains its existing recording behavior and does not offer this action.
+
+If finalization fails or the backend stops unexpectedly, preserve the `.srec-chunks-*` directory in the recording output folder. Its `group-*.json` files identify the intended outputs, and `group-*.ffconcat` files describe the closed chunks. A retained manifest can be remuxed to a **new** output file using FFmpeg's concat demuxer with stream copy. Recovery is manual; an unfinished last chunk may require separate inspection. Do not delete the staging files until the recovered output has been checked.
+
 ## 2. FLV Consistency Fix
 
 When enabled, FLV items pass through one ordered repair chain before the writer. The chain preserves media payloads while fixing container-level structure:

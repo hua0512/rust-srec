@@ -161,9 +161,7 @@ fn opaque_versions_keep_the_configured_cli_without_injecting_new_options() {
 async fn actual_backend_preserves_recording_after_rejected_or_ignored_plugin_capability() {
     use crate::database::models::engine::StreamlinkEngineConfig;
     use crate::downloader::engine::streamlink::StreamlinkEngine;
-    use crate::downloader::engine::{
-        DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent,
-    };
+    use crate::downloader::engine::{DownloadConfig, DownloadHandle, EngineType, SegmentEvent};
     let directory = tempfile::tempdir().unwrap();
     let reject = directory.path().join("opaque_reject.exe");
     let ignore = directory.path().join("opaque_ignore.exe");
@@ -234,7 +232,8 @@ async fn actual_backend_preserves_recording_after_rejected_or_ignored_plugin_cap
         assert!(!tokio::fs::try_exists(&output).await.unwrap());
         timeout_at(
             Instant::now() + Duration::from_secs(10),
-            engine.run(handle.clone()),
+            // The opaque executable emulates process control, not FFmpeg muxing.
+            engine.run_process(handle.clone(), false),
         )
         .await
         .unwrap()

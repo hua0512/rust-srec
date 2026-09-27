@@ -40,10 +40,11 @@ enum EventType {
   // job_id: STARTED inserts, PROGRESS patches, TERMINAL removes.
   //
   // NOTE: enum values and WsMessage oneof field numbers have drifted
-  // (value 11 is a hole); pick each independently. Next free enum: 17.
+  // (value 11 is a hole); pick each independently. Next free enum: 18.
   EVENT_TYPE_UPLOAD_STARTED = 14;
   EVENT_TYPE_UPLOAD_PROGRESS = 15;
   EVENT_TYPE_UPLOAD_TERMINAL = 16;
+  EVENT_TYPE_DOWNLOAD_SPLIT = 17;
 }
 
 // Server-to-client message envelope
@@ -65,7 +66,8 @@ message WsMessage {
     UploadStarted upload_started = 14;
     UploadProgress upload_progress = 15;
     UploadTerminal upload_terminal = 16;
-    // Next free oneof field: 17.
+    DownloadSplit download_split = 17;
+    // Next free oneof field: 18.
   }
 }
 
@@ -105,6 +107,7 @@ message DownloadState {
 
 // Download metadata (low frequency).
 message DownloadMeta {
+  ManualSplitState manual_split = 9;
   string download_id = 1;
   string streamer_id = 2;
   string session_id = 3;
@@ -117,6 +120,21 @@ message DownloadMeta {
   string cdn_host = 6;
   // The actual stream URL being downloaded (may contain signed query params).
   string download_url = 7;
+}
+
+// Revisions order control changes independently of progress and metadata.
+message ManualSplitState {
+  bool supported = 1;
+  string unavailable_reason = 2;
+  uint64 request_id = 3;
+  uint64 revision = 4;
+  string status = 5;
+}
+
+message DownloadSplit {
+  string download_id = 1;
+  string streamer_id = 2;
+  ManualSplitState state = 3;
 }
 
 // Download metrics (high frequency).

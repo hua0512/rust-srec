@@ -41,6 +41,8 @@ function formatResolutionSide(details: unknown): string | null {
 
 function formatSplitReasonFromCode(i18n: I18n, code: string): string | null {
   switch (code) {
+    case 'manual':
+      return i18n._(msg`Manual cut`);
     case 'size_limit':
       return i18n._(msg`Size limit`);
     case 'duration_limit':

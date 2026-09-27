@@ -55,6 +55,7 @@ async fn next_initial_item<T>(
 pub struct HlsDownloader {
     /// Download configuration.
     config: Arc<RwLock<DownloadConfig>>,
+    manual_split: Arc<pipeline_common::ManualSplitControl>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
     /// Event sender for segment events.
@@ -83,11 +84,17 @@ impl HlsDownloader {
     ) -> Self {
         Self {
             config,
+            manual_split: Arc::default(),
             engine_config,
             event_tx,
             cancellation_token,
             hls_config,
         }
+    }
+
+    pub fn with_manual_split(mut self, control: Arc<pipeline_common::ManualSplitControl>) -> Self {
+        self.manual_split = control;
+        self
     }
 
     fn config_snapshot(&self) -> DownloadConfig {
@@ -236,7 +243,11 @@ impl HlsDownloader {
         let hls_pipeline_config = config.build_hls_pipeline_config();
 
         // Create StreamerContext with cancellation token
-        let context = Arc::new(StreamerContext::with_name(&streamer_id, token.clone()));
+        let context = Arc::new(
+            StreamerContext::with_name(&streamer_id, token.clone())
+                .with_manual_split(self.manual_split.clone()),
+        );
+        self.manual_split.enable();
 
         // Create HlsPipeline using PipelineProvider::with_config
         let pipeline_provider =

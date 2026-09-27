@@ -90,6 +90,7 @@ struct StreamState {
     max_timestamp: u32,
     split_count: u32,
     first_content_tag_seen: bool,
+    media_tags: u64,
 }
 
 impl StreamState {
@@ -101,11 +102,13 @@ impl StreamState {
             max_timestamp: 0,
             split_count: 0,
             first_content_tag_seen: false,
+            media_tags: 0,
         }
     }
 
     fn reset_counters(&mut self) {
         self.accumulated_size = 0;
+        self.media_tags = 0;
         self.start_timestamp = self.max_timestamp;
         self.split_count += 1;
     }
@@ -249,6 +252,11 @@ impl Processor<FlvData> for LimitOperator {
                 output(FlvData::Header(header))?;
             }
             FlvData::Tag(tag) => {
+                let is_media = !tag.is_script_tag()
+                    && !tag.is_video_sequence_header()
+                    && !tag.is_audio_sequence_header()
+                    && !tag.classification().end_of_sequence
+                    && !tag.is_filtered();
                 // Account for the tag plus the 4-byte PreviousTagSize field that follows
                 // every tag on disk. accumulated_size still excludes the file header and
                 // the tags split_stream re-injects, so it tracks slightly under the
@@ -309,9 +317,32 @@ impl Processor<FlvData> for LimitOperator {
                     true
                 };
 
-                if should_split && can_split_on_tag {
+                // A manual cut requires cached initialization and an actual media
+                // boundary. Never use the automatic limit's non-keyframe fallback.
+                let manual_boundary = self.state.media_tags > 0
+                    && self.state.cache.header.as_ref().is_some_and(|header| {
+                        !header.has_audio || self.state.cache.audio_sequence_tag.is_some()
+                    })
+                    && is_media
+                    && if has_video {
+                        self.state.cache.video_sequence_tag.is_some() && tag.is_key_frame_nalu()
+                    } else {
+                        tag.is_audio_tag() && self.state.cache.audio_sequence_tag.is_some()
+                    };
+                let manual_request = if manual_boundary {
+                    context
+                        .manual_split
+                        .as_ref()
+                        .and_then(|control| control.begin())
+                } else {
+                    None
+                };
+
+                if manual_request.is_some() || (should_split && can_split_on_tag) {
                     // Direct splitting - no retrospective logic
-                    let split_reason = self.determine_split_reason();
+                    let split_reason = manual_request
+                        .map(|request_id| SplitReason::Manual { request_id })
+                        .unwrap_or_else(|| self.determine_split_reason());
 
                     // Report the split with current stats
                     if let Some(callback) = &self.config.on_split {
@@ -322,14 +353,18 @@ impl Processor<FlvData> for LimitOperator {
                     // Perform the split
                     self.split_stream(split_reason, output)?;
 
+                    self.state.media_tags += u64::from(is_media);
+
                     // Emit current tag after the split
                     output(FlvData::Tag(tag))?;
                 } else {
+                    self.state.media_tags += u64::from(is_media);
                     // No split needed, just forward the tag
                     output(FlvData::Tag(tag))?;
                 }
             }
             FlvData::EndOfSequence(_) | FlvData::Split(_) => {
+                self.state.media_tags = 0;
                 // Forward other data types
                 output(input)?;
             }
@@ -361,6 +396,157 @@ mod tests {
     use pipeline_common::{CancellationToken, StreamerContext};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn manual_cut_waits_for_keyframe_and_reinjects_headers_without_losing_media() {
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        let mut operator = LimitOperator::new(context.clone());
+        let mut out = Vec::new();
+        for item in [
+            test_utils::create_test_header(),
+            test_utils::create_video_sequence_header(0, 1),
+            test_utils::create_audio_sequence_header(0, 1),
+            test_utils::create_video_tag(0, true),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let request = control.request(std::time::Duration::from_secs(30)).unwrap();
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(40, false),
+                &mut |item| {
+                    out.push(item);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert!(!out.iter().any(|item| matches!(item, FlvData::Split(_))));
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(80, true),
+                &mut |item| {
+                    out.push(item);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let index = out.iter().position(|item| matches!(item, FlvData::Split(SplitReason::Manual { request_id }) if *request_id == request.request_id)).unwrap();
+        assert!(matches!(&out[index + 1], FlvData::Header(_)));
+        assert!(matches!(&out[index + 2], FlvData::Tag(tag) if tag.is_video_sequence_header()));
+        assert!(matches!(&out[index + 3], FlvData::Tag(tag) if tag.is_audio_sequence_header()));
+        assert!(
+            matches!(&out[index + 4], FlvData::Tag(tag) if tag.is_key_frame_nalu() && tag.timestamp_ms == 80)
+        );
+        let timestamps: Vec<_> = out
+            .iter()
+            .filter_map(|item| match item {
+                FlvData::Tag(tag) if tag.is_video_tag() && !tag.is_video_sequence_header() => {
+                    Some(tag.timestamp_ms)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(timestamps, [0, 40, 80]);
+        assert_eq!(
+            control.snapshot().status,
+            pipeline_common::ManualSplitStatus::Finalizing
+        );
+    }
+
+    #[test]
+    fn manual_cut_never_uses_the_hard_limit_fallback_or_creates_an_empty_first_file() {
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        let mut operator = LimitOperator::with_config(
+            context.clone(),
+            LimitConfig {
+                max_size_bytes: Some(1),
+                ..LimitConfig::default()
+            },
+        );
+        control.request(std::time::Duration::from_secs(30)).unwrap();
+        let mut out = Vec::new();
+        for item in [
+            test_utils::create_test_header(),
+            test_utils::create_video_sequence_header(0, 1),
+            test_utils::create_video_tag(0, false),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        assert!(
+            !out.iter()
+                .any(|item| matches!(item, FlvData::Split(SplitReason::Manual { .. })))
+        );
+        assert_eq!(
+            control.snapshot().status,
+            pipeline_common::ManualSplitStatus::Pending
+        );
+    }
+
+    #[test]
+    fn manual_audio_cut_uses_an_audio_packet_and_coalesces_with_automatic_rotation() {
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        let mut operator = LimitOperator::with_config(
+            context.clone(),
+            LimitConfig {
+                max_duration_ms: Some(10),
+                ..LimitConfig::default()
+            },
+        );
+        let mut out = Vec::new();
+        for item in [
+            FlvData::Header(FlvHeader::new(true, false)),
+            test_utils::create_audio_sequence_header(0, 1),
+            test_utils::create_audio_tag(0),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        control.request(std::time::Duration::from_secs(30)).unwrap();
+        operator
+            .process(&context, test_utils::create_audio_tag(20), &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            out.iter()
+                .filter(|item| matches!(item, FlvData::Split(_)))
+                .count(),
+            1
+        );
+        assert!(
+            out.iter()
+                .any(|item| matches!(item, FlvData::Split(SplitReason::Manual { .. })))
+        );
+    }
 
     #[test]
     fn test_size_limit_with_keyframe_splitting() {

@@ -668,6 +668,7 @@ pub enum SegmentEvent {
 
 /// Handle to an active download.
 pub struct DownloadHandle {
+    pub manual_split: Arc<pipeline_common::ManualSplitControl>,
     /// Unique download ID.
     pub id: String,
     /// Engine type used.
@@ -691,6 +692,24 @@ pub struct DownloadHandle {
 }
 
 impl DownloadHandle {
+    /// Keep attempt ownership and stop deadlines while an adapter intercepts
+    /// private output events. The acquisition process is still the same attempt.
+    pub(super) fn with_output(
+        &self,
+        config: DownloadConfig,
+        event_tx: mpsc::Sender<SegmentEvent>,
+    ) -> Self {
+        Self {
+            id: self.id.clone(),
+            engine_type: self.engine_type,
+            config: Arc::new(RwLock::new(config)),
+            cancellation_token: self.cancellation_token.clone(),
+            manual_split: self.manual_split.clone(),
+            event_tx,
+            started_at: self.started_at,
+            stop_deadline: self.stop_deadline.clone(),
+        }
+    }
     /// Create a new download handle.
     pub fn new(
         id: impl Into<String>,
@@ -700,6 +719,7 @@ impl DownloadHandle {
     ) -> Self {
         Self {
             id: id.into(),
+            manual_split: Arc::default(),
             engine_type,
             config: Arc::new(RwLock::new(config)),
             cancellation_token: CancellationToken::new(),
@@ -747,6 +767,7 @@ impl DownloadHandle {
 
     /// Cancel the download.
     pub fn cancel(&self) {
+        self.manual_split.close(false);
         self.cancellation_token.cancel();
     }
 
@@ -773,6 +794,7 @@ impl DownloadHandle {
 /// Information about an active download.
 #[derive(Debug, Clone)]
 pub struct DownloadInfo {
+    pub manual_split: pipeline_common::ManualSplitSnapshot,
     /// Download ID.
     pub id: String,
     /// Stream URL being downloaded.

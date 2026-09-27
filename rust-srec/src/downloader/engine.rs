@@ -19,6 +19,7 @@
 //! All engines emit `SegmentEvent` messages through the `DownloadHandle`'s
 //! event channel to report progress, segment completion, and errors.
 
+mod chunked;
 mod ffmpeg;
 mod mesio;
 mod streamlink;
