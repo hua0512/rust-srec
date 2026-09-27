@@ -444,6 +444,34 @@ async fn hashes(binary: &str, path: &Path, audio: bool) -> Vec<String> {
         .collect()
 }
 
+async fn video_packet_hashes(binary: &str, path: &Path) -> Vec<String> {
+    let output = command(
+        binary,
+        &[
+            "-v",
+            "error",
+            "-i",
+            path.to_str().unwrap(),
+            "-map",
+            "0:v",
+            "-c",
+            "copy",
+            "-bsf:v",
+            "h264_mp4toannexb",
+            "-f",
+            "framehash",
+            "-",
+        ],
+    )
+    .await;
+    String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| line.split(',').nth(5).unwrap().trim().to_owned())
+        .collect()
+}
+
 #[tokio::test]
 #[ignore = "requires local FFmpeg with libx264; uses only generated local media"]
 async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
@@ -594,18 +622,35 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
             video.extend(hashes(&binary, &file.path, false).await);
             audio.extend(hashes(&binary, &file.path, true).await);
         }
-        let video_reference = if mode == "stop" {
+        if mode == "stop" {
             assert!(video.len() < expected_video.len());
-            &expected_video[..video.len()]
+            // A graceful stop can receive a future reference frame before its
+            // intervening B-frames. Decoded output is then an ordered subset,
+            // while encoded packets must still be an exact prefix of the source.
+            let mut remaining = expected_video.iter();
+            assert!(
+                video
+                    .iter()
+                    .all(|frame| remaining.any(|item| item == frame))
+            );
+            let reference_packets = video_packet_hashes(&binary, &source).await;
+            let mut packets = Vec::new();
+            for file in &files {
+                packets.extend(video_packet_hashes(&binary, &file.path).await);
+            }
+            assert!(!packets.is_empty());
+            assert!(
+                reference_packets.starts_with(&packets),
+                "video packets changed before stop"
+            );
         } else {
-            &expected_video[..]
-        };
+            assert!(video == expected_video, "video changed for {mode}");
+        }
         let audio_reference = if mode == "stop" {
             &expected_audio[..audio.len()]
         } else {
             &expected_audio[..]
         };
-        assert!(video == video_reference, "video changed for {mode}");
         assert!(
             audio == audio_reference,
             "audio changed for {format}: counts {} vs {}, first difference {:?}",
