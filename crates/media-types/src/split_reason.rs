@@ -37,6 +37,8 @@ pub struct AudioCodecInfo {
 /// Reason why a stream split occurred.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SplitReason {
+    /// User requested rotation; the identifier belongs to one recording attempt.
+    Manual { request_id: u64 },
     /// Video codec configuration changed.
     VideoCodecChange {
         /// Previous configuration (before the change).
@@ -73,6 +75,7 @@ pub enum SplitReason {
 impl fmt::Display for SplitReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Manual { .. } => write!(f, "manual cut"),
             Self::VideoCodecChange { from, to } => {
                 write!(f, "video codec change: {} -> {}", from.codec, to.codec)?;
                 if let (Some(w), Some(h)) = (from.width, from.height) {

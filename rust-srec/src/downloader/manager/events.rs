@@ -148,6 +148,13 @@ pub enum DownloadManagerEvent {
 /// Non-terminal download notifications.
 #[derive(Debug, Clone)]
 pub enum DownloadProgressEvent {
+    ManualSplitChanged {
+        download_id: String,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        state: pipeline_common::ManualSplitSnapshot,
+    },
     /// Download is parked waiting for a concurrency slot. Emitted only
     /// when the request had to wait (fast-path acquires emit
     /// [`Self::DownloadStarted`] directly with no preceding `DownloadQueued`).
@@ -357,7 +364,8 @@ impl DownloadManagerEvent {
 impl DownloadProgressEvent {
     pub fn streamer_id(&self) -> &str {
         match self {
-            Self::DownloadQueued { streamer_id, .. }
+            Self::ManualSplitChanged { streamer_id, .. }
+            | Self::DownloadQueued { streamer_id, .. }
             | Self::DownloadDequeued { streamer_id, .. }
             | Self::DownloadStarted { streamer_id, .. }
             | Self::Progress { streamer_id, .. }
@@ -370,7 +378,8 @@ impl DownloadProgressEvent {
 
     pub fn streamer_name(&self) -> &str {
         match self {
-            Self::DownloadQueued { streamer_name, .. }
+            Self::ManualSplitChanged { streamer_name, .. }
+            | Self::DownloadQueued { streamer_name, .. }
             | Self::DownloadDequeued { streamer_name, .. }
             | Self::DownloadStarted { streamer_name, .. }
             | Self::Progress { streamer_name, .. }
@@ -388,7 +397,8 @@ impl DownloadProgressEvent {
     /// have one.
     pub fn session_id(&self) -> &str {
         match self {
-            Self::DownloadQueued { session_id, .. }
+            Self::ManualSplitChanged { session_id, .. }
+            | Self::DownloadQueued { session_id, .. }
             | Self::DownloadDequeued { session_id, .. }
             | Self::DownloadStarted { session_id, .. }
             | Self::Progress { session_id, .. }

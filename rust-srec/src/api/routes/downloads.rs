@@ -74,7 +74,58 @@ pub struct WsAuthParams {
 
 /// Create the downloads router.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/ws", get(download_progress_ws))
+    Router::new().route("/ws", get(download_progress_ws)).route(
+        "/{download_id}/split",
+        axum::routing::post(request_manual_split),
+    )
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct ManualSplitResponse {
+    request_id: String,
+    status: &'static str,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/downloads/{download_id}/split",
+    params(("download_id" = String, Path, description = "Current recording attempt ID")),
+    responses(
+        (status = 202, description = "Cut requested; completion is delivered over the download WebSocket", body = ManualSplitResponse),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Full access required"),
+        (status = 404, description = "Recording attempt no longer exists"),
+        (status = 409, description = "Recording is stopping or lossless cutting is unsupported")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "downloads"
+)]
+pub async fn request_manual_split(
+    State(state): State<DownloadRouteState>,
+    axum::extract::Path(download_id): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<(axum::http::StatusCode, axum::Json<ManualSplitResponse>), ApiError> {
+    use crate::api::auth_request::{AccessPolicy, authorize_request};
+    use axum::http::StatusCode;
+
+    authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        None,
+        AccessPolicy::Full,
+    )
+    .await?;
+    let split = state
+        .download_manager
+        .request_manual_split(&download_id)
+        .map_err(ApiError::from)?;
+    Ok((
+        StatusCode::ACCEPTED,
+        axum::Json(ManualSplitResponse {
+            request_id: split.request_id.to_string(),
+            status: split.status.as_str(),
+        }),
+    ))
 }
 
 /// WebSocket handler for download status streaming.
@@ -396,6 +447,21 @@ fn shared_event_bytes(
 /// Returns None for events that are not broadcast to WebSocket clients.
 fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
     match event {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
+            download_id,
+            streamer_id,
+            state,
+            ..
+        }) => Some(WsMessage {
+            event_type: EventType::DownloadSplit as i32,
+            payload: Some(Payload::DownloadSplit(
+                crate::api::proto::download_progress::DownloadSplit {
+                    download_id: download_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    state: Some(crate::api::proto::manual_split_to_proto(state)),
+                },
+            )),
+        }),
         DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
             streamer_id,
             streamer_name,
@@ -443,6 +509,7 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
         }) => {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let meta = crate::api::proto::DownloadMeta {
+                manual_split: None,
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
                 session_id: session_id.clone(),
@@ -489,6 +556,7 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
             completed_at,
             duration_secs,
             size_bytes,
+            split_reason_code,
             ..
         }) => {
             let payload = SegmentCompleted {
@@ -499,7 +567,7 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
                 duration_secs: *duration_secs,
                 size_bytes: *size_bytes,
                 session_id: session_id.clone(),
-                split_reason: String::new(),
+                split_reason: split_reason_code.clone().unwrap_or_default(),
                 started_at_ms: started_at
                     .as_ref()
                     .map(chrono::DateTime::timestamp_millis)
@@ -750,6 +818,94 @@ mod tests {
     use super::*;
     use crate::downloader::ConfigUpdateType;
     use crate::downloader::engine::EngineType;
+
+    #[tokio::test]
+    async fn manual_cut_endpoint_requires_full_access() {
+        use crate::database::models::ApiKeyAccessLevel;
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        let fixture = crate::api::auth_request::tests::fixture().await;
+        let (_, read_key) = fixture
+            .service
+            .create_api_key(
+                &fixture.user_id,
+                "cut-read",
+                ApiKeyAccessLevel::ReadOnly,
+                None,
+            )
+            .await
+            .unwrap();
+        let (_, full_key) = fixture
+            .service
+            .create_api_key(&fixture.user_id, "cut-full", ApiKeyAccessLevel::Full, None)
+            .await
+            .unwrap();
+        let state = DownloadRouteState {
+            auth_service: Some(fixture.service.clone()),
+            download_manager: Arc::new(crate::downloader::DownloadManager::new()),
+            check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            pipeline_manager: Arc::new(PipelineManager::new()),
+        };
+        let app = Router::new()
+            .route(
+                "/{download_id}/split",
+                axum::routing::post(request_manual_split),
+            )
+            .with_state(state);
+        for (credential, expected) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some("invalid"), StatusCode::UNAUTHORIZED),
+            (Some(read_key.as_str()), StatusCode::FORBIDDEN),
+            (Some(full_key.as_str()), StatusCode::NOT_FOUND),
+        ] {
+            let mut request = Request::builder()
+                .method("POST")
+                .uri("/stale-attempt/split");
+            if let Some(credential) = credential {
+                request = request.header("Authorization", format!("Bearer {credential}"));
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+        }
+        fixture.pool.close().await;
+    }
+
+    #[test]
+    fn manual_cut_events_preserve_request_identity_and_revision() {
+        let control = pipeline_common::ManualSplitControl::default();
+        control.enable();
+        let state = control.request(Duration::from_secs(30)).unwrap();
+        let message = map_event_to_protobuf(&DownloadManagerEvent::Progress(
+            DownloadProgressEvent::ManualSplitChanged {
+                download_id: "attempt".into(),
+                streamer_id: "streamer".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session".into(),
+                state: state.clone(),
+            },
+        ))
+        .unwrap();
+        let Some(Payload::DownloadSplit(split)) = message.payload else {
+            panic!("expected cut state");
+        };
+        let split_state = split.state.unwrap();
+        assert_eq!(split.download_id, "attempt");
+        assert_eq!(split_state.request_id, state.request_id);
+        assert_eq!(split_state.revision, state.revision);
+        assert_eq!(split_state.status, "pending");
+    }
 
     #[tokio::test]
     async fn download_socket_rejects_read_keys_and_disconnects_revoked_credentials() {

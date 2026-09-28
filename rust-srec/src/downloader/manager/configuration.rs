@@ -407,6 +407,40 @@ mod tests {
     }
 
     #[test]
+    fn lossless_cutting_defaults_off_and_preserves_explicit_overrides() {
+        fn check<T: Serialize + DeserializeOwned + Default>() {
+            for config in [T::default(), serde_json::from_str::<T>("{}").unwrap()] {
+                assert_eq!(
+                    serde_json::to_value(&config).unwrap()["enable_lossless_cutting"],
+                    false
+                );
+                let enabled = DownloadManager::apply_override(
+                    config,
+                    &serde_json::json!({"enable_lossless_cutting": true}),
+                )
+                .unwrap();
+                let inherited =
+                    DownloadManager::apply_override(enabled, &serde_json::json!({})).unwrap();
+                assert_eq!(
+                    serde_json::to_value(&inherited).unwrap()["enable_lossless_cutting"],
+                    true
+                );
+                let disabled = DownloadManager::apply_override(
+                    inherited,
+                    &serde_json::json!({"enable_lossless_cutting": false}),
+                )
+                .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&disabled).unwrap()["enable_lossless_cutting"],
+                    false
+                );
+            }
+        }
+        check::<FfmpegEngineConfig>();
+        check::<StreamlinkEngineConfig>();
+    }
+
+    #[test]
     fn valid_override_uses_effective_configuration_without_stale_values() {
         let base = FfmpegEngineConfig {
             binary_path: "first-executable".to_owned(),

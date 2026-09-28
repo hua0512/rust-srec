@@ -197,6 +197,7 @@ pub(super) fn setup_writer_callbacks(
 
 fn split_reason_code(reason: &SplitReason) -> &'static str {
     match reason {
+        SplitReason::Manual { .. } => "manual",
         SplitReason::VideoCodecChange { .. } => "video_codec_change",
         SplitReason::AudioCodecChange { .. } => "audio_codec_change",
         SplitReason::SizeLimit => "size_limit",
@@ -211,6 +212,7 @@ fn split_reason_code(reason: &SplitReason) -> &'static str {
 
 fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
     let details = match reason {
+        SplitReason::Manual { request_id } => serde_json::json!({ "request_id": request_id }),
         SplitReason::VideoCodecChange { from, to } => serde_json::json!({
             "from": {
                 "codec": from.codec.clone(),

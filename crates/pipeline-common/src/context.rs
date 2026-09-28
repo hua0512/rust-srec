@@ -16,6 +16,8 @@ pub struct StreamerContext {
     pub name: String,
     /// The cancellation token
     pub token: CancellationToken,
+    /// Optional live-recording control; offline repair pipelines leave it unset.
+    pub manual_split: Option<std::sync::Arc<crate::ManualSplitControl>>,
 }
 
 impl StreamerContext {
@@ -24,11 +26,17 @@ impl StreamerContext {
         Self {
             name: "DefaultStreamer".to_string(),
             token,
+            manual_split: None,
         }
     }
 
     pub fn arc_new(token: CancellationToken) -> std::sync::Arc<Self> {
         std::sync::Arc::new(Self::new(token))
+    }
+
+    pub fn with_manual_split(mut self, control: std::sync::Arc<crate::ManualSplitControl>) -> Self {
+        self.manual_split = Some(control);
+        self
     }
 
     pub fn with_name(name: impl Into<String>, token: CancellationToken) -> Self {

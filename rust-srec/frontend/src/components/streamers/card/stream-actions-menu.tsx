@@ -12,18 +12,22 @@ import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
+import { useLosslessCutItem } from './lossless-cut-action';
 
 interface StreamActionsMenuProps {
+  downloadId?: string;
   streamer: z.infer<typeof StreamerSchema>;
   onDelete: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
 }
 
 export const StreamActionsMenu = ({
+  downloadId,
   streamer,
   onDelete,
   onToggle,
 }: StreamActionsMenuProps) => {
+  const cutAction = useLosslessCutItem(downloadId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -62,6 +66,12 @@ export const StreamActionsMenu = ({
             </>
           )}
         </DropdownMenuItem>
+        {cutAction && (
+          <>
+            <DropdownMenuSeparator />
+            {cutAction}
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className="cursor-pointer group">
           <Link to="/player" search={{ url: streamer.url }}>

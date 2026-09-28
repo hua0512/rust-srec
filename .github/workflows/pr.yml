@@ -125,7 +125,7 @@ jobs:
         run: sccache --show-stats || true
 
   tool-gated-tests:
-    name: Tool-gated tests (ffmpeg, rclone)
+    name: Tool-gated tests (ffmpeg, rclone, streamlink)
     needs: check-changes
     if: needs.check-changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -137,6 +137,11 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.11
         with:
           version: "v0.13.0"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: rust-srec/tests/streamlink_control/requirements.txt
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
@@ -144,15 +149,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev ffmpeg rclone
+      # Same pinned, wheel-only Streamlink as the Streamlink control jobs;
+      # setup-python puts its console script on PATH for the gated tests.
+      - name: Install audited test-only Streamlink
+        run: 'python -m pip install --only-binary=:all: -r rust-srec/tests/streamlink_control/requirements.txt'
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-test-tools
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Tests that need a real ffmpeg or rclone are `#[ignore]`d so the plain
+      # Tests that need a real ffmpeg, rclone, or Streamlink are `#[ignore]`d so the plain
       # suite runs anywhere; this job is where they are actually exercised. Every
       # ignored test of the package runs here except the SQLite stress test,
       # so a newly gated test is picked up without editing this filter.
-      - name: Run ffmpeg and rclone gated tests
+      - name: Run ffmpeg, rclone, and Streamlink gated tests
         run: cargo nextest run --locked -p rust-srec --run-ignored ignored-only -E 'not binary(sqlite_claim_stress)'
       - name: sccache stats
         if: always()

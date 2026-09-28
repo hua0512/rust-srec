@@ -67,6 +67,7 @@ struct ActiveSegment {
 }
 
 struct SegmentTracker {
+    continuous_timestamps: bool,
     segment_mode: bool,
     started_instant: Instant,
     active: Option<ActiveSegment>,
@@ -100,6 +101,7 @@ impl SegmentTracker {
     fn new(segment_mode: bool, started_instant: Instant) -> Self {
         Self {
             segment_mode,
+            continuous_timestamps: false,
             started_instant,
             active: None,
             next_index: 0,
@@ -141,7 +143,7 @@ impl SegmentTracker {
         self.segments_completed = self.segments_completed.saturating_add(1);
         self.bytes_completed = self.bytes_completed.saturating_add(size_bytes);
         self.total_bytes = self.bytes_completed;
-        if self.segment_mode {
+        if self.segment_mode && !self.continuous_timestamps {
             self.media_offset += duration_secs;
             self.media_total = self.media_offset;
             self.total_duration = self.media_offset;
@@ -171,7 +173,7 @@ impl SegmentTracker {
         }
         if let Some(mut progress) = parse_progress(line) {
             let elapsed = now.duration_since(self.started_instant).as_secs_f64();
-            self.media_total = if self.segment_mode {
+            self.media_total = if self.segment_mode && !self.continuous_timestamps {
                 self.media_offset + progress.media_duration_secs
             } else {
                 progress.media_duration_secs
@@ -221,6 +223,8 @@ impl SegmentTracker {
 }
 
 pub(crate) struct FfmpegEvents {
+    pub ignored_output_path: Option<PathBuf>,
+    pub continuous_timestamps: bool,
     pub source: FfmpegSource,
     pub segment_mode: bool,
     pub single_output_path: Option<PathBuf>,
@@ -242,6 +246,7 @@ impl FfmpegEvents {
         exit_rx: impl Future<Output = Result<E, oneshot::error::RecvError>>,
     ) {
         let mut tracker = SegmentTracker::new(self.segment_mode, self.started_instant);
+        tracker.continuous_timestamps = self.continuous_timestamps;
         let mut reader = OutputRecordReader::new(stderr);
         let mut output_io_kind = None;
         let mut cleanup_unconfirmed = false;
@@ -259,7 +264,9 @@ impl FfmpegEvents {
                 }
                 record = reader.next_record() => match record {
                     Ok(Some(line)) => {
-                        for event in tracker.observe(&line, Instant::now(), Utc::now()).await.into_events() { self.send(event).await; }
+                        if !self.ignored_output_path.as_ref().is_some_and(|ignored| parse_opened_path(&line).as_ref() == Some(ignored)) {
+                            for event in tracker.observe(&line, Instant::now(), Utc::now()).await.into_events() { self.send(event).await; }
+                        }
                         if !line.starts_with("frame=") { debug!(streamer_id = %self.streamer_id, %line, "FFmpeg stderr"); }
                         if matches!(self.source, FfmpegSource::Direct) && (line.contains("Error") || line.contains("error")) {
                             warn!(streamer_id = %self.streamer_id, %line, "FFmpeg error");
@@ -382,6 +389,8 @@ mod tests {
                 result
             });
             let events = FfmpegEvents {
+                ignored_output_path: None,
+                continuous_timestamps: false,
                 source,
                 segment_mode: false,
                 single_output_path: Some(path.clone()),
@@ -453,6 +462,8 @@ mod tests {
             drop(exit_tx);
         }
         FfmpegEvents {
+            ignored_output_path: None,
+            continuous_timestamps: false,
             source,
             segment_mode: false,
             single_output_path: Some(path),

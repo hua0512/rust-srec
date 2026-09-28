@@ -23,7 +23,7 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:250
+#: src/components/config/engines/forms/streamlink-form.tsx:256
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:181
+#: src/components/config/engines/forms/ffmpeg-form.tsx:191
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:151
+#: src/components/config/engines/forms/ffmpeg-form.tsx:161
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -260,7 +260,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:50
+#: src/components/config/engines/forms/ffmpeg-form.tsx:60
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 
@@ -364,11 +364,11 @@ msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/ffmpeg-form.tsx:65
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:52
+#: src/components/config/engines/forms/streamlink-form.tsx:58
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
@@ -397,7 +397,7 @@ msgstr "账号不存在"
 msgid "Action"
 msgstr "操作"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:43
+#: src/components/streamers/card/stream-actions-menu.tsx:47
 msgid "Actions"
 msgstr "操作"
 
@@ -447,7 +447,7 @@ msgstr "添加主播"
 msgid "Add an engine"
 msgstr "添加引擎"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:133
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "添加覆盖项以自定义特定平台的行为。"
 
@@ -520,7 +520,7 @@ msgid "Add module..."
 msgstr "添加模块..."
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:98
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
 msgid "Add Override"
 msgstr "添加覆盖项"
 
@@ -673,11 +673,23 @@ msgstr "始终使用 Streamlink"
 msgid "An error occurred"
 msgstr "发生错误"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:308
+msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
+msgstr "指定的设备 ID 优先于 acf_did Cookie 和所选来源。服务端注册需要额外请求，同一提取器会复用注册结果。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
+msgid "Android App"
+msgstr "Android App"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:238
+msgid "Android Version"
+msgstr "Android 版本"
+
 #: src/components/danmu/danmu-viewer.tsx:348
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "匿名元数据 • UTF-8 格式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:255
+#: src/components/config/engines/forms/streamlink-form.tsx:261
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -707,7 +719,7 @@ msgstr "API 密钥"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:158
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:364
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -715,9 +727,25 @@ msgstr "API 请求重试次数"
 msgid "API Settings"
 msgstr "API 设置"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:178
+msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+msgstr "App CDN 示例：hw、tct、hs、ws。兼容旧的 -h5 后缀。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:221
+msgid "App Device"
+msgstr "App 设备"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:224
+msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
+msgstr "App 重试请求使用同一设备身份，User-Agent 根据机型和 Android 版本生成。"
+
 #: src/components/notifications/forms/gotify-form.tsx:56
 msgid "App Token"
 msgstr "应用令牌"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:106
+msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
+msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始终使用 Web。"
 
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:82
 msgid "Appearance & style"
@@ -734,6 +762,10 @@ msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。
 #: src/components/player/url-input-form.tsx:308
 msgid "Applied to all URLs"
 msgstr "应用于所有链接"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:170
+msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
+msgstr "仅适用于 MP4、MKV、FLV、TS 或 MOV 输出。其他格式的录制使用普通录制方式。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:84
 msgid "Apply template settings."
@@ -782,11 +814,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:156
+#: src/components/config/engines/forms/ffmpeg-form.tsx:166
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:186
+#: src/components/config/engines/forms/ffmpeg-form.tsx:196
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -844,7 +876,7 @@ msgstr "音频比特率"
 msgid "Audio Codec"
 msgstr "音频编码"
 
-#: src/lib/split-reason.ts:59
+#: src/lib/split-reason.ts:61
 msgid "Audio codec change"
 msgstr "音频编码变化"
 
@@ -933,6 +965,10 @@ msgstr "从 URL 自动填充名称"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:244
+msgid "Automatic"
+msgstr "自动"
+
 #: src/components/config/shared/output-settings-card.tsx:222
 msgid "Automatic (match the site)"
 msgstr "自动（按站点匹配）"
@@ -966,9 +1002,9 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:173
-#: src/components/config/templates/template-editor.tsx:224
-#: src/components/config/templates/template-editor.tsx:227
+#: src/components/config/platforms/platform-editor.tsx:157
+#: src/components/config/templates/template-editor.tsx:208
+#: src/components/config/templates/template-editor.tsx:211
 msgid "Back"
 msgstr "返回"
 
@@ -1155,7 +1191,7 @@ msgstr "Bearer Token"
 msgid "Behind live edge"
 msgstr "距直播最新位置"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:139
+#: src/components/config/engines/forms/streamlink-form.tsx:145
 msgid "best"
 msgstr "最佳"
 
@@ -1167,8 +1203,8 @@ msgstr "测试版"
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:45
-#: src/components/config/engines/forms/streamlink-form.tsx:42
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/streamlink-form.tsx:48
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "可执行文件路径"
@@ -1431,7 +1467,7 @@ msgstr "渠道已删除"
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:218
+#: src/components/config/engines/forms/streamlink-form.tsx:224
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
@@ -1443,7 +1479,7 @@ msgstr "个渠道"
 #: src/components/config/global/backup-restore-card.tsx:413
 #: src/components/config/global/backup-restore-card.tsx:418
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/lib/split-reason.ts:229
+#: src/lib/split-reason.ts:231
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:407
 msgid "Channels"
 msgstr "声道"
@@ -1551,7 +1587,7 @@ msgstr "清除日期范围"
 msgid "Clear selection"
 msgstr "清除选择"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:94
+#: src/components/config/engines/forms/streamlink-form.tsx:100
 msgid "Clearing the field inherits the engine setting."
 msgstr "清空字段会继承引擎设置。"
 
@@ -1604,8 +1640,8 @@ msgstr "最接近目标码率"
 #: src/components/player/playback-details.tsx:56
 #: src/components/player/stream-info-card.tsx:33
 #: src/lib/__tests__/split-reason.test.tsx:11
-#: src/lib/split-reason.ts:151
-#: src/lib/split-reason.ts:205
+#: src/lib/split-reason.ts:153
+#: src/lib/split-reason.ts:207
 msgid "Codec"
 msgstr "编解码器"
 
@@ -1625,7 +1661,7 @@ msgstr "收集统计"
 msgid "Coming soon"
 msgstr "即将推出"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:223
+#: src/components/config/engines/forms/streamlink-form.tsx:229
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -1861,7 +1897,7 @@ msgstr "连接不稳定"
 msgid "Connection status: {statusLabel}"
 msgstr "连接状态：{statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:77
+#: src/components/config/engines/forms/ffmpeg-form.tsx:87
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
@@ -2011,6 +2047,10 @@ msgstr "无法加载预设：{0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:67
+msgid "Could not request lossless cutting. Refresh the recording status and try again."
+msgstr "无法请求无损分段。请刷新录制状态后重试。"
+
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
 msgid "Could not show the file: {message}"
 msgstr "无法显示该文件：{message}"
@@ -2045,7 +2085,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:246
+#: src/components/config/templates/template-editor.tsx:230
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:439
@@ -2124,7 +2164,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:198
+#: src/components/config/templates/template-editor.tsx:182
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:203
 msgid "Create Template"
 msgstr "创建模板"
@@ -2274,6 +2314,10 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:123
+msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "已设置自定义 FFmpeg 输出参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:983
 msgid "Custom Flags"
 msgstr "自定义标志"
@@ -2290,7 +2334,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:202
+#: src/components/config/engines/forms/streamlink-form.tsx:208
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -2302,7 +2346,7 @@ msgstr "自定义画质值"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:125
+#: src/components/config/engines/forms/ffmpeg-form.tsx:135
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -2527,7 +2571,7 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/workflows/workflow-card.tsx:103
 #: src/components/pipeline/workflows/workflow-card.tsx:126
 #: src/components/sessions/session-card.tsx:287
-#: src/components/streamers/card/stream-actions-menu.tsx:89
+#: src/components/streamers/card/stream-actions-menu.tsx:99
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:476
 msgid "Delete"
@@ -2755,6 +2799,18 @@ msgstr "识别中…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "根据链接自动识别，并自动应用该平台的设置。"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:243
+msgid "Device ID"
+msgstr "设备 ID"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:275
+msgid "Device ID source"
+msgstr "设备 ID 来源"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:233
+msgid "Device Model"
+msgstr "设备机型"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:634
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
@@ -2775,7 +2831,7 @@ msgstr "目录路径已复制"
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:53
+#: src/components/streamers/card/stream-actions-menu.tsx:57
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
 msgstr "禁用"
@@ -2789,6 +2845,7 @@ msgstr "禁用秒传"
 msgid "Disable selected"
 msgstr "禁用所选"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:93
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:51
@@ -2805,7 +2862,7 @@ msgid "Disconnected"
 msgstr "已断开"
 
 #: src/components/sessions/recordings-tab.tsx:276
-#: src/lib/split-reason.ts:51
+#: src/lib/split-reason.ts:53
 msgid "Discontinuity"
 msgstr "不连续"
 
@@ -2943,11 +3000,11 @@ msgstr "时长"
 msgid "Duration (ms)"
 msgstr "时长（毫秒）"
 
-#: src/lib/split-reason.ts:47
+#: src/lib/split-reason.ts:49
 msgid "Duration limit"
 msgstr "时长限制"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:144
+#: src/components/config/engines/forms/streamlink-form.tsx:150
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -3035,13 +3092,17 @@ msgstr "例如：标准处理"
 msgid "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号和换行都会保留。不要添加 shell 引号。下方占位符会展开，但不会经过 shell 解释。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:25
+msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
+msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
+
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:118
 #: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:95
-#: src/components/streamers/card/stream-actions-menu.tsx:79
+#: src/components/streamers/card/stream-actions-menu.tsx:89
 msgid "Edit"
 msgstr "编辑"
 
@@ -3080,7 +3141,7 @@ msgstr "生效范围"
 msgid "Empty pattern"
 msgstr "表达式为空"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:60
+#: src/components/streamers/card/stream-actions-menu.tsx:64
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
 msgstr "启用"
@@ -3092,6 +3153,10 @@ msgstr "启用高级 FLV 时间戳修复"
 #: src/components/config/engines/forms/mesio-form.tsx:367
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "启用高级 HLS 分段重建"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:63
+msgid "Enable lossless cutting"
+msgstr "启用无损分段"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:133
 msgid "Enable monitoring"
@@ -3114,6 +3179,7 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable selected"
 msgstr "启用所选"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:90
 #: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
@@ -3208,7 +3274,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:384
 #: src/components/config/global/backup-restore-card.tsx:389
 #: src/components/config/global/backup-restore-card.tsx:394
-#: src/components/config/templates/template-editor.tsx:289
+#: src/components/config/templates/template-editor.tsx:273
 #: src/components/layout/site-header.tsx:42
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
 msgid "Engines"
@@ -3400,6 +3466,7 @@ msgstr "退出选择模式"
 msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:66
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
@@ -3438,12 +3505,16 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:238
+#: src/components/config/engines/forms/streamlink-form.tsx:244
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:604
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:754
 msgid "Extra Arguments"
 msgstr "额外参数"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:129
+msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "已设置额外的 Streamlink 参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:14
 msgid "Extract AAC"
@@ -3474,9 +3545,13 @@ msgstr "提取 MP3"
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:80
+msgid "Extraction Method"
+msgstr "提取方式"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
 msgid "Extraction Settings"
 msgstr "提取设置"
@@ -3883,12 +3958,12 @@ msgstr "ffmpeg"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:63
+#: src/components/config/engines/forms/streamlink-form.tsx:69
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:86
+#: src/components/config/engines/forms/streamlink-form.tsx:92
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器上的路径，不要添加 shell 引号。环境默认值优先使用 FFMPEG_PATH，然后使用 PATH 中的 ffmpeg。"
 
@@ -3896,7 +3971,7 @@ msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器�
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:85
 msgid "FFMPEG_PATH or ffmpeg"
 msgstr "FFMPEG_PATH 或 ffmpeg"
 
@@ -3958,7 +4033,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:130
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:334
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -3997,9 +4072,21 @@ msgstr "过滤原因："
 msgid "Filters"
 msgstr "过滤器"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:138
+msgid "Finalizing recording file..."
+msgstr "正在完成录制文件…"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:173
+msgid "Finalizing..."
+msgstr "正在收尾…"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Fine tune brand and surface colors."
 msgstr "微调品牌和表面颜色。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:123
+msgid "Finish this file and continue recording at the next safe boundary."
+msgstr "在下一个安全分割点结束当前文件，并继续录制到新文件。"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:275
 msgid "First input file path"
@@ -4024,6 +4111,10 @@ msgstr "修复 HLS 不连续性"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:122
 msgid "Fixed executable name or path on the server. Placeholders are expanded only in arguments. On Windows servers, use shell command mode for .bat or .cmd files."
 msgstr "服务器上的固定可执行文件名称或路径。仅在参数中展开占位符。在 Windows 服务器上，.bat 或 .cmd 文件请使用 shell 命令模式。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:299
+msgid "Fixed fallback"
+msgstr "固定兼容值"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
 msgid "Floating"
@@ -4116,7 +4207,7 @@ msgid "Friday"
 msgstr "星期五"
 
 #: src/lib/__tests__/split-reason.test.tsx:13
-#: src/lib/split-reason.ts:117
+#: src/lib/split-reason.ts:119
 msgctxt "Comparison table column"
 msgid "From"
 msgstr "变更前"
@@ -4158,8 +4249,8 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:222
-#: src/components/config/templates/template-editor.tsx:279
+#: src/components/config/platforms/platform-editor.tsx:206
+#: src/components/config/templates/template-editor.tsx:263
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
@@ -4299,8 +4390,8 @@ msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:88
-#: src/components/config/engines/forms/streamlink-form.tsx:155
+#: src/components/config/engines/forms/ffmpeg-form.tsx:98
+#: src/components/config/engines/forms/streamlink-form.tsx:161
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
@@ -4340,7 +4431,7 @@ msgstr "高清缩略图"
 msgid "Header Key"
 msgstr "Header 键"
 
-#: src/lib/split-reason.ts:49
+#: src/lib/split-reason.ts:51
 msgid "Header received"
 msgstr "收到头部"
 
@@ -4565,7 +4656,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:197
+#: src/components/config/engines/forms/streamlink-form.tsx:203
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4672,7 +4763,7 @@ msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
 msgid "Inherited"
@@ -4683,7 +4774,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:77
+#: src/components/config/engines/forms/streamlink-form.tsx:83
 msgid "Inherited from engine"
 msgstr "继承引擎设置"
 
@@ -4711,7 +4802,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:139
+#: src/components/config/engines/forms/ffmpeg-form.tsx:149
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -4957,7 +5048,7 @@ msgstr "左侧"
 msgid "Let the player proxy sources on private or local networks."
 msgstr "允许播放器代理位于私有或本地网络上的源。"
 
-#: src/lib/split-reason.ts:181
+#: src/lib/split-reason.ts:183
 msgid "Level"
 msgstr "级别"
 
@@ -5074,6 +5165,11 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:290
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:293
+msgid "Local generation"
+msgstr "本地生成"
+
 #: src/components/logging/log-file-browser.tsx:151
 msgid "Log Files"
 msgstr "日志文件"
@@ -5143,6 +5239,10 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 #: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
 msgstr "循环保护"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:119
+msgid "Lossless cutting will not be used"
+msgstr "不会使用无损分段"
 
 #: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
@@ -5221,6 +5321,10 @@ msgstr "管理应用配置。"
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
+#: src/lib/split-reason.ts:45
+msgid "Manual cut"
+msgstr "手动分段"
+
 #: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
 msgstr "需要手动更新"
@@ -5297,10 +5401,6 @@ msgstr "最大密钥重试次数"
 msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:174
-msgid "Max number of retry attempts for metadata fetching."
-msgstr "元数据获取的最大重试次数。"
-
 #: src/components/config/global/resource-limits-card.tsx:74
 #: src/components/config/shared/limits-card.tsx:108
 msgid "Max Part Size"
@@ -5348,6 +5448,10 @@ msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 #: src/components/config/global/concurrency-card.tsx:120
 msgid "Max Uploads"
 msgstr "最大上传数"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:379
+msgid "Maximum attempts for metadata and App playback requests."
+msgstr "元数据及 App 播放请求的最大尝试次数。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Maximum compression to minimize storage usage, then delete original."
@@ -5549,7 +5653,7 @@ msgstr "移动文件"
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:120
+#: src/components/config/engines/forms/ffmpeg-form.tsx:130
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -5642,7 +5746,7 @@ msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:320
 msgid "Network & Content"
 msgstr "网络与内容"
 
@@ -5787,6 +5891,10 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:17
+msgid "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "未在时限内收到关键帧，未找到安全分割点，录制仍在继续。"
+
 #: src/components/filters/FilterCard.tsx:90
 msgid "No keywords set"
 msgstr "未设置关键字"
@@ -5828,6 +5936,10 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:29
+msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "未在时限内收到新的媒体数据，未找到安全分割点，录制仍在继续。"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
@@ -5856,11 +5968,11 @@ msgstr "未发现处理管道 DAG。"
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:106
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
 msgid "No platform found."
 msgstr "未找到平台。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:130
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
@@ -5917,6 +6029,10 @@ msgstr "没有找到结果"
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:129
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:32
+msgid "No safe cut boundary was found. Recording continues."
+msgstr "未找到安全分割点，录制仍在继续。"
 
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:310
 msgid "No specialized options available for this platform."
@@ -6209,7 +6325,7 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/pipeline/presets/preset-card.tsx:116
 #: src/components/pipeline/workflows/workflow-card.tsx:89
 #: src/components/sessions/session-card.tsx:245
-#: src/components/streamers/card/stream-actions-menu.tsx:37
+#: src/components/streamers/card/stream-actions-menu.tsx:41
 msgid "Open menu"
 msgstr "打开菜单"
 
@@ -6290,7 +6406,7 @@ msgstr "输出"
 msgid "Output and its file deleted"
 msgstr "已删除产物及其文件"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:169
+#: src/components/config/engines/forms/ffmpeg-form.tsx:179
 msgid "Output Arguments"
 msgstr "输出参数"
 
@@ -6388,7 +6504,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:86
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
@@ -6537,7 +6653,7 @@ msgstr "路径"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:80
+#: src/components/config/engines/forms/streamlink-form.tsx:86
 msgid "Path to FFmpeg"
 msgstr "FFmpeg 可执行文件路径"
 
@@ -6769,7 +6885,7 @@ msgstr "平台选项"
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:83
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
@@ -6786,7 +6902,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:401
-#: src/components/config/templates/template-editor.tsx:299
+#: src/components/config/templates/template-editor.tsx:283
 #: src/components/layout/site-header.tsx:43
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "Platforms"
@@ -6905,6 +7021,10 @@ msgstr "由 <0>Rust-srec</0> 提供支持。"
 msgid "Precision Schedule"
 msgstr "精确时间表"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:142
+msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+msgstr "优先使用可用的 HEVC，否则回退到 AVC。仅音频模式忽略此设置。"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:199
 msgid "Prefer session pairing"
 msgstr "优先使用会话配对"
@@ -6913,7 +7033,7 @@ msgstr "优先使用会话配对"
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:162
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -6932,6 +7052,10 @@ msgstr "首选画质"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:120
+msgid "Preferred Video Codec"
+msgstr "首选视频编码"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:227
 msgid "Preparing download..."
@@ -7112,7 +7236,7 @@ msgstr "处理器"
 msgid "Processor is required"
 msgstr "必须选择处理器"
 
-#: src/lib/split-reason.ts:166
+#: src/lib/split-reason.ts:168
 msgid "Profile"
 msgstr "档次"
 
@@ -7171,7 +7295,7 @@ msgstr "二维码已过期"
 msgid "QR Login"
 msgstr "扫码登录"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:134
+#: src/components/config/engines/forms/streamlink-form.tsx:140
 #: src/components/player/stream-info-card.tsx:32
 msgid "Quality"
 msgstr "质量"
@@ -7184,7 +7308,7 @@ msgstr "质量（qscale）"
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:192
 msgid "Quality Rate"
 msgstr "画质等级"
 
@@ -7224,6 +7348,10 @@ msgstr "内存使用率"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:209
 msgid "Random"
 msgstr "随机"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:234
+msgid "Random model"
+msgstr "随机机型"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:558
 msgid "Rate Limiting"
@@ -7342,6 +7470,10 @@ msgstr "推荐"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "推荐：8388608 (8 MiB)"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:112
+msgid "Reconnect to request a cut."
+msgstr "重新连接后才能请求分段。"
+
 #: src/components/config/global/file-config-card.tsx:29
 #: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Record Danmu"
@@ -7373,10 +7505,18 @@ msgstr "录制完成"
 msgid "Recording rejected"
 msgstr "录制被拒绝"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:88
+msgid "Recording split successfully."
+msgstr "录制分段成功。"
+
 #: src/components/sessions/timeline-tab.tsx:320
 #: src/lib/notification-event-types.ts:19
 msgid "Recording started"
 msgstr "录制已开始"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:153
+msgid "Recording uses temporary chunks"
+msgstr "录制将使用临时分块"
 
 #: src/components/streamers/card/use-streamer-status.tsx:368
 msgid "Recording will start when schedule allows"
@@ -7385,6 +7525,10 @@ msgstr "录制将在计划允许时开始"
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Recordings"
 msgstr "录制内容"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:157
+msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
+msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:80
 #: src/components/streamers/card/use-streamer-status.tsx:89
@@ -7622,7 +7766,7 @@ msgid "Reset view"
 msgstr "重置视图"
 
 #: src/components/player/playback-details.tsx:79
-#: src/lib/split-reason.ts:187
+#: src/lib/split-reason.ts:189
 msgid "Resolution"
 msgstr "分辨率"
 
@@ -7630,7 +7774,7 @@ msgstr "分辨率"
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
-#: src/lib/split-reason.ts:55
+#: src/lib/split-reason.ts:57
 msgid "Resolution change"
 msgstr "分辨率变化"
 
@@ -7850,7 +7994,7 @@ msgid "Same-name policy"
 msgstr "同名文件策略"
 
 #: src/lib/__tests__/split-reason.test.tsx:12
-#: src/lib/split-reason.ts:213
+#: src/lib/split-reason.ts:215
 msgid "Sample Rate"
 msgstr "采样率"
 
@@ -7878,8 +8022,8 @@ msgstr "星期六"
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:191
-#: src/components/config/templates/template-editor.tsx:248
+#: src/components/config/platforms/platform-editor.tsx:175
+#: src/components/config/templates/template-editor.tsx:232
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
@@ -7904,8 +8048,8 @@ msgstr "保存工作流"
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/template-editor.tsx:244
+#: src/components/config/platforms/platform-editor.tsx:173
+#: src/components/config/templates/template-editor.tsx:228
 #: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7982,7 +8126,7 @@ msgstr "搜索日志..."
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:103
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
 msgid "Search platform..."
 msgstr "搜索平台…"
 
@@ -8073,7 +8217,7 @@ msgstr "选择默认引擎"
 msgid "Select a format"
 msgstr "选择格式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:204
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
 
@@ -8256,6 +8400,10 @@ msgstr "服务器代理"
 #: src/components/player/player-card.tsx:208
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "服务器代理会通过本应用的服务器转发播放，并使用该来源配置的上游代理设置。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:296
+msgid "Server registration"
+msgstr "服务端注册"
 
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36
@@ -8445,8 +8593,8 @@ msgstr "使用直播代理前，请先登录服务器。"
 msgid "Sign out"
 msgstr "退出登录"
 
-#: src/lib/split-reason.ts:193
-#: src/lib/split-reason.ts:235
+#: src/lib/split-reason.ts:195
+#: src/lib/split-reason.ts:237
 msgid "Signature"
 msgstr "签名"
 
@@ -8473,7 +8621,7 @@ msgstr "大小"
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
-#: src/lib/split-reason.ts:45
+#: src/lib/split-reason.ts:47
 msgid "Size limit"
 msgstr "大小限制"
 
@@ -8542,7 +8690,7 @@ msgstr "排序方式"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:232
+#: src/components/config/platforms/platform-editor.tsx:216
 #: src/components/config/templates/tabs/platform-override-card.tsx:74
 msgid "Specific"
 msgstr "特定"
@@ -8550,10 +8698,6 @@ msgstr "特定"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:76
-msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
-msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
 #: src/components/streamers/edit/active-download-card.tsx:116
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:680
@@ -8568,6 +8712,10 @@ msgstr "按时长分割。"
 msgid "Split after size."
 msgstr "按大小分割。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:142
+msgid "Split file now"
+msgstr "立即分割文件"
+
 #: src/components/config/engines/forms/mesio-form.tsx:82
 msgid "Split on any raw header change. Safe but may cause extra files."
 msgstr "在任意原始头变更时分割。安全但可能产生额外文件。"
@@ -8580,9 +8728,17 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:107
+msgid "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
+msgstr "无需重新连接或重新编码即可分割录制。默认关闭，修改仅对新开始的录制生效。"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:670
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:171
+msgid "Splitting..."
+msgstr "正在分割…"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Standard"
@@ -8741,7 +8897,7 @@ msgstr "流分割策略"
 msgid "Stream start time"
 msgstr "直播开始时间"
 
-#: src/lib/split-reason.ts:53
+#: src/lib/split-reason.ts:55
 msgid "Stream structure change"
 msgstr "流结构变化"
 
@@ -8828,7 +8984,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:47
+#: src/components/config/engines/forms/streamlink-form.tsx:53
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -9056,9 +9212,17 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:97
+msgid "The cut could not be completed."
+msgstr "无法完成分段。"
+
 #: src/components/streamers/config/streamer-identity-fields.tsx:84
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:114
+msgid "The file is split at the next safe boundary."
+msgstr "文件将在下一个安全分割点分割。"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:431
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
@@ -9076,6 +9240,10 @@ msgstr "你要访问的页面不存在。"
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:94
+msgid "The recording ended before the cut completed."
+msgstr "分段完成前录制已结束。"
+
 #: src/components/player/playback-state.ts:28
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
 msgstr "服务器拒绝了此直播源。请检查地址；如果是本地源，请同时检查私有网络访问设置。"
@@ -9091,6 +9259,10 @@ msgstr "此地址的直播流已不可用。请刷新直播地址或切换直播
 #: src/components/player/playback-state.ts:33
 msgid "The stream URL could not be refreshed. Retry or check the source credentials."
 msgstr "无法刷新直播地址。请重试或检查源站凭据。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:21
+msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
+msgstr "直播流的分片未标记为可独立播放，未找到安全分割点，录制仍在继续。"
 
 #: src/components/player/playback-state.ts:29
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
@@ -9261,8 +9433,8 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:99
-#: src/components/config/engines/forms/streamlink-form.tsx:166
+#: src/components/config/engines/forms/ffmpeg-form.tsx:109
+#: src/components/config/engines/forms/streamlink-form.tsx:172
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
@@ -9279,7 +9451,7 @@ msgstr "时间线"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:66
+#: src/components/config/engines/forms/ffmpeg-form.tsx:76
 msgid "Timeout"
 msgstr "超时"
 
@@ -9336,7 +9508,7 @@ msgid "To"
 msgstr "收件人"
 
 #: src/lib/__tests__/split-reason.test.tsx:14
-#: src/lib/split-reason.ts:125
+#: src/lib/split-reason.ts:127
 msgctxt "Comparison table column"
 msgid "To"
 msgstr "变更后"
@@ -9459,7 +9631,7 @@ msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:133
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:337
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
@@ -9586,7 +9758,7 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:183
+#: src/components/config/engines/forms/streamlink-form.tsx:189
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -9594,11 +9766,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:192
+#: src/components/config/engines/forms/streamlink-form.tsx:198
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:213
+#: src/components/config/engines/forms/streamlink-form.tsx:219
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
@@ -9800,11 +9972,12 @@ msgstr "必须填写 URL"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:109
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:87
+#: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Use engine setting"
 msgstr "使用引擎设置"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:122
+#: src/components/config/engines/forms/streamlink-form.tsx:128
 msgid "Use environment default"
 msgstr "使用环境默认值"
 
@@ -9833,7 +10006,7 @@ msgstr "使用播放器默认的缓冲与延迟平衡设置。"
 msgid "Use TLS"
 msgstr "启用 TLS"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:115
+#: src/components/config/engines/forms/ffmpeg-form.tsx:125
 #: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
 msgstr "User-Agent"
@@ -9860,6 +10033,10 @@ msgstr "用户名（可选）"
 #: src/components/layout/site-header.tsx:35
 msgid "Users"
 msgstr "用户"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:164
+msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
+msgstr "会占用额外的磁盘空间和 I/O。文件收尾失败时会保留临时分块。"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
@@ -9927,7 +10104,7 @@ msgstr "视频比特率"
 msgid "Video Codec"
 msgstr "视频编码"
 
-#: src/lib/split-reason.ts:57
+#: src/lib/split-reason.ts:59
 msgid "Video codec change"
 msgstr "视频编码变化"
 
@@ -9994,6 +10171,10 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:140
+msgid "Waiting for a safe cut..."
+msgstr "正在等待安全分割点…"
+
 #: src/components/logging/log-viewer.tsx:496
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
@@ -10006,13 +10187,17 @@ msgstr "等待时长"
 msgid "Warning when the processing queue gets too long."
 msgstr "处理队列过长时发出警告。"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:70
+#: src/components/streamers/card/stream-actions-menu.tsx:80
 msgid "Watch"
 msgstr "观看"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 msgid "WEB"
 msgstr "WEB"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
+msgid "Web (deprecated)"
+msgstr "Web（已弃用）"
 
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:74
 msgid "Web API"
@@ -10190,83 +10375,3 @@ msgstr "放大"
 #: src/components/pipeline/dag-graph-view.tsx:109
 msgid "Zoom out"
 msgstr "缩小"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Extraction Method"
-msgstr "提取方式"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Android App"
-msgstr "Android App"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Web (deprecated)"
-msgstr "Web（已弃用）"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
-msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始终使用 Web。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Preferred Video Codec"
-msgstr "首选视频编码"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
-msgstr "优先使用可用的 HEVC，否则回退到 AVC。仅音频模式忽略此设置。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
-msgstr "App CDN 示例：hw、tct、hs、ws。兼容旧的 -h5 后缀。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Maximum attempts for metadata and App playback requests."
-msgstr "元数据及 App 播放请求的最大尝试次数。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App Device"
-msgstr "App 设备"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
-msgstr "App 重试请求使用同一设备身份，User-Agent 根据机型和 Android 版本生成。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device Model"
-msgstr "设备机型"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Android Version"
-msgstr "Android 版本"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device ID"
-msgstr "设备 ID"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Random model"
-msgstr "随机机型"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Automatic"
-msgstr "自动"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device ID source"
-msgstr "设备 ID 来源"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Local generation"
-msgstr "本地生成"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Server registration"
-msgstr "服务端注册"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Fixed fallback"
-msgstr "固定兼容值"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
-msgstr "指定的设备 ID 优先于 acf_did Cookie 和所选来源。服务端注册需要额外请求，同一提取器会复用注册结果。"

@@ -28,16 +28,33 @@ pub use download_progress::{
 impl From<&DownloadInfo> for DownloadMeta {
     fn from(info: &DownloadInfo) -> Self {
         Self {
+            manual_split: Some(manual_split_to_proto(&info.manual_split)),
             download_id: info.id.clone(),
             streamer_id: info.streamer_id.clone(),
             session_id: info.session_id.clone(),
             engine_type: info.engine_type.as_str().to_string(),
             started_at_ms: info.started_at.timestamp_millis(),
-            // Snapshot meta is immutable, so updated_at tracks started_at.
+            // Identity metadata is immutable; manual_split has its own revision.
             updated_at_ms: info.started_at.timestamp_millis(),
             cdn_host: crate::utils::url::extract_host(&info.url).unwrap_or_default(),
             download_url: info.url.clone(),
         }
+    }
+}
+
+pub fn manual_split_to_proto(
+    state: &pipeline_common::ManualSplitSnapshot,
+) -> download_progress::ManualSplitState {
+    download_progress::ManualSplitState {
+        supported: state.supported,
+        unavailable_reason: state.unavailable_reason.to_string(),
+        request_id: state.request_id,
+        revision: state.revision,
+        status: state.status.as_str().to_string(),
+        expiry_reason: state
+            .expiry_reason
+            .map(|reason| reason.as_str().to_string())
+            .unwrap_or_default(),
     }
 }
 
@@ -175,6 +192,7 @@ mod tests {
 
     fn create_test_download_info() -> DownloadInfo {
         DownloadInfo {
+            manual_split: Default::default(),
             id: "download-123".to_string(),
             url: "https://example.com/stream".to_string(),
             streamer_id: "streamer-456".to_string(),

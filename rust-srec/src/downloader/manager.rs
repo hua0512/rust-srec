@@ -149,6 +149,7 @@ impl From<&ActiveDownload> for DownloadInfo {
     fn from(download: &ActiveDownload) -> Self {
         let config = download.handle.config.read();
         Self {
+            manual_split: download.handle.manual_split.snapshot(),
             id: download.handle.id.clone(),
             url: config.url.clone(),
             streamer_id: config.streamer_id.clone(),
@@ -847,6 +848,31 @@ impl DownloadManager {
             download.handle.cancel();
         }
         Ok(download.completion.clone())
+    }
+
+    /// Request safe file rotation without stopping this recording attempt.
+    pub fn request_manual_split(
+        &self,
+        download_id: &str,
+    ) -> Result<pipeline_common::ManualSplitSnapshot> {
+        let download =
+            self.active_downloads
+                .get(download_id)
+                .ok_or_else(|| crate::Error::NotFound {
+                    entity_type: "Download".into(),
+                    id: download_id.into(),
+                })?;
+        let phase = download.phase.lock();
+        if !matches!(*phase, AttemptPhase::Running) || download.handle.is_cancelled() {
+            return Err(crate::Error::ManualSplit(
+                pipeline_common::ManualSplitError::Closed,
+            ));
+        }
+        download
+            .handle
+            .manual_split
+            .request(std::time::Duration::from_secs(30))
+            .map_err(crate::Error::ManualSplit)
     }
 
     /// Get information about active downloads.

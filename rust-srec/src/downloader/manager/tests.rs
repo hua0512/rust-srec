@@ -134,6 +134,117 @@ fn test_download_config(output_dir: std::path::PathBuf, session_id: &str) -> Dow
     )
 }
 
+#[tokio::test]
+async fn manual_cut_completes_after_both_segment_events_in_either_order() {
+    for external_order in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let started = |sequence| SegmentEvent::SegmentStarted {
+            path: directory.path().join(format!("{sequence}.flv")),
+            sequence,
+            started_at: Utc::now(),
+        };
+        let mut closed = completed_segment(directory.path().join("0.flv"), 0);
+        if let SegmentEvent::SegmentCompleted(info) = &mut closed {
+            info.split_reason_code = Some("manual".into());
+            info.split_reason_details_json = Some(r#"{"request_id":1}"#.into());
+        }
+        let tail = if external_order {
+            vec![started(1), closed]
+        } else {
+            vec![closed, started(1)]
+        };
+        let id = start_scripted_download_with_engine(
+            &manager,
+            test_download_config(directory.path().to_path_buf(), "manual"),
+            ScriptedSegmentEngine::with_gated_tail(vec![started(0)], release.clone(), tail),
+        )
+        .await
+        .unwrap();
+        let handle = manager.active_downloads.get(&id).unwrap().handle.clone();
+        assert!(matches!(
+            manager.request_manual_split(&id),
+            Err(crate::Error::ManualSplit(
+                pipeline_common::ManualSplitError::Unavailable
+            ))
+        ));
+        handle.manual_split.enable();
+        let first = manager.request_manual_split(&id).unwrap();
+        assert_eq!(first, manager.request_manual_split(&id).unwrap());
+        assert!(matches!(
+            manager.request_manual_split("stale-attempt"),
+            Err(crate::Error::NotFound { .. })
+        ));
+        assert_eq!(handle.manual_split.begin(), Some(1));
+        release.notify_one();
+        let mut revisions = Vec::new();
+        let mut terminal = false;
+        while !terminal || !events.is_empty() {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for download events")
+                .expect("download event channel closed");
+            match event {
+                DownloadManagerEvent::Terminal(_) => terminal = true,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
+                    state,
+                    ..
+                }) => revisions.push((state.revision, state.status)),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            handle.manual_split.snapshot().status,
+            pipeline_common::ManualSplitStatus::Completed
+        );
+        // Each revision is published once, in order.
+        assert!(
+            revisions.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "{revisions:?}"
+        );
+        assert!(
+            revisions.contains(&(4, pipeline_common::ManualSplitStatus::Completed)),
+            "{revisions:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn manual_cut_is_rejected_after_stop_and_does_not_survive_the_attempt() {
+    let directory = tempfile::tempdir().unwrap();
+    let manager = DownloadManager::new();
+    let mut events = manager.subscribe();
+    let release = Arc::new(tokio::sync::Notify::new());
+    let id = start_scripted_download_with_engine(
+        &manager,
+        test_download_config(directory.path().to_path_buf(), "manual-stop"),
+        ScriptedSegmentEngine::with_gated_tail(Vec::new(), release.clone(), Vec::new()),
+    )
+    .await
+    .unwrap();
+    let handle = manager.active_downloads.get(&id).unwrap().handle.clone();
+    handle.manual_split.enable();
+    manager.request_manual_split(&id).unwrap();
+    manager
+        .request_stop_download(&id, DownloadStopCause::User)
+        .unwrap();
+    assert!(matches!(
+        manager.request_manual_split(&id),
+        Err(crate::Error::ManualSplit(
+            pipeline_common::ManualSplitError::Closed
+        ))
+    ));
+    assert_eq!(handle.manual_split.begin(), None);
+    release.notify_one();
+    wait_for_download_terminal(&mut events).await;
+    assert_eq!(
+        handle.manual_split.snapshot().status,
+        pipeline_common::ManualSplitStatus::Cancelled
+    );
+}
+
 async fn start_scripted_download(
     manager: &DownloadManager,
     config: DownloadConfig,

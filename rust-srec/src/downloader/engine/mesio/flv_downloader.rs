@@ -30,6 +30,7 @@ use crate::downloader::engine::traits::{DownloadConfig, EngineStartError, Segmen
 pub struct FlvDownloader {
     /// Download configuration.
     config: Arc<RwLock<DownloadConfig>>,
+    manual_split: Arc<pipeline_common::ManualSplitControl>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
     /// Event sender for segment events.
@@ -58,11 +59,17 @@ impl FlvDownloader {
     ) -> Self {
         Self {
             config,
+            manual_split: Arc::default(),
             engine_config,
             event_tx,
             cancellation_token,
             flv_config,
         }
+    }
+
+    pub fn with_manual_split(mut self, control: Arc<pipeline_common::ManualSplitControl>) -> Self {
+        self.manual_split = control;
+        self
     }
 
     fn config_snapshot(&self) -> DownloadConfig {
@@ -151,7 +158,11 @@ impl FlvDownloader {
         };
 
         // Create StreamerContext with streamer name and cancellation token
-        let context = Arc::new(StreamerContext::with_name(&streamer_id, token.clone()));
+        let context = Arc::new(
+            StreamerContext::with_name(&streamer_id, token.clone())
+                .with_manual_split(self.manual_split.clone()),
+        );
+        self.manual_split.enable();
 
         // Create FlvPipeline using PipelineProvider::with_config
         let pipeline_provider =

@@ -102,6 +102,7 @@ pub struct MessageResponse {
         (name = "tools", description = "External tool integration endpoints (BaiduPCS-Go)")
     ),
     paths(
+        crate::api::routes::downloads::request_manual_split,
         // Health endpoints
         crate::api::routes::health::health_check,
         crate::api::routes::health::readiness_check,

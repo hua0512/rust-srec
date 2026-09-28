@@ -28,6 +28,7 @@ pub mod channel_pipeline;
 pub mod config;
 mod context;
 pub mod crc32;
+mod manual_split;
 pub mod pipeline;
 pub mod processor;
 pub mod progress;
@@ -41,6 +42,10 @@ pub use channel_pipeline::{
     ChannelSpec, PipelineReceiver, PipelineSender, SpawnedPipeline, spawn_pipeline,
 };
 pub use context::StreamerContext;
+pub use manual_split::{
+    ManualSplitControl, ManualSplitError, ManualSplitExpiryReason, ManualSplitSnapshot,
+    ManualSplitStatus,
+};
 pub use pipeline::{Pipeline, ProgressSink, ProgressThrottle};
 pub use processor::Processor;
 pub use progress::{Progress, ProgressEvent};

@@ -9,6 +9,7 @@ export type ConnectionStatus =
 
 // Plain object versions of proto types for store state
 export interface DownloadMeta {
+  manualSplit?: ManualSplitState;
   downloadId: string;
   streamerId: string;
   sessionId: string;
@@ -17,6 +18,15 @@ export interface DownloadMeta {
   updatedAtMs: bigint;
   cdnHost: string;
   downloadUrl: string;
+}
+
+export interface ManualSplitState {
+  supported: boolean;
+  unavailableReason: string;
+  requestId: bigint;
+  revision: bigint;
+  status: string;
+  expiryReason: string;
 }
 
 export interface DownloadMetrics {
@@ -117,6 +127,8 @@ function toView(meta: DownloadMeta, metrics: DownloadMetrics): Download {
 }
 
 interface DownloadStoreState {
+  manualSplitById: Map<string, ManualSplitState>;
+  upsertManualSplit: (downloadId: string, split: ManualSplitState) => void;
   metaById: Map<string, DownloadMeta>;
   metricsById: Map<string, DownloadMetrics>;
   viewsById: Map<string, Download>;
@@ -155,6 +167,15 @@ interface DownloadStoreState {
 }
 
 export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
+  manualSplitById: new Map(),
+  upsertManualSplit: (downloadId, split) =>
+    set((state) => {
+      if (state.terminatedIds.has(downloadId)) return state;
+      const previous = state.manualSplitById.get(downloadId);
+      if (previous && previous.revision >= split.revision) return state;
+      state.manualSplitById.set(downloadId, split);
+      return { version: state.version + 1 };
+    }),
   metaById: new Map(),
   metricsById: new Map(),
   viewsById: new Map(),
@@ -165,6 +186,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   setSnapshot: (downloads, queued) =>
     set((state) => {
+      state.manualSplitById.clear();
       state.metaById.clear();
       state.metricsById.clear();
       state.viewsById.clear();
@@ -172,6 +194,8 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       state.queuedByStreamer.clear();
       for (const d of downloads) {
         const id = d.meta.downloadId || d.metrics.downloadId;
+        if (d.meta.manualSplit)
+          state.manualSplitById.set(id, d.meta.manualSplit);
         state.metaById.set(id, d.meta);
         state.metricsById.set(id, d.metrics);
         state.viewsById.set(id, toView(d.meta, d.metrics));
@@ -276,6 +300,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   removeDownload: (downloadId) =>
     set((state) => {
+      state.manualSplitById.delete(downloadId);
       state.terminatedIds.set(downloadId, Date.now());
       const had =
         state.metaById.delete(downloadId) ||
@@ -323,6 +348,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   clearAll: () =>
     set((state) => {
+      state.manualSplitById.clear();
       state.metaById.clear();
       state.metricsById.clear();
       state.viewsById.clear();

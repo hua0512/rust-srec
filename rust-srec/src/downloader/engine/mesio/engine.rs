@@ -131,7 +131,8 @@ impl DownloadEngine for MesioEngine {
                     handle.event_tx.clone(),
                     handle.cancellation_token.clone(),
                     self.hls_config.clone(),
-                );
+                )
+                .with_manual_split(handle.manual_split.clone());
                 downloader.run().await.map(|_| ())
             }
             ProtocolType::Flv => {
@@ -141,7 +142,8 @@ impl DownloadEngine for MesioEngine {
                     handle.event_tx.clone(),
                     handle.cancellation_token.clone(),
                     self.flv_config.clone(),
-                );
+                )
+                .with_manual_split(handle.manual_split.clone());
                 downloader.run().await.map(|_| ())
             }
             _ => {

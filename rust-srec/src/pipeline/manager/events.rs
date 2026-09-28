@@ -142,7 +142,8 @@ where
                 | DownloadProgressEvent::Progress { .. }
                 | DownloadProgressEvent::SegmentStarted { .. }
                 | DownloadProgressEvent::ConfigUpdated { .. }
-                | DownloadProgressEvent::ConfigUpdateFailed { .. },
+                | DownloadProgressEvent::ConfigUpdateFailed { .. }
+                | DownloadProgressEvent::ManualSplitChanged { .. },
             ) => {}
         }
         Ok(())

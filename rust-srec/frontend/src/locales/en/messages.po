@@ -23,7 +23,7 @@ msgstr " - Session: {0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:250
+#: src/components/config/engines/forms/streamlink-form.tsx:256
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:181
+#: src/components/config/engines/forms/ffmpeg-form.tsx:191
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:151
+#: src/components/config/engines/forms/ffmpeg-form.tsx:161
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -260,7 +260,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:50
+#: src/components/config/engines/forms/ffmpeg-form.tsx:60
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg or ffmpeg"
 
@@ -364,11 +364,11 @@ msgstr "A unique ID used by other steps to reference this one."
 msgid "A unique name for this configuration template."
 msgstr "A unique name for this configuration template."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/ffmpeg-form.tsx:65
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "Absolute path or 'ffmpeg' if in PATH"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:52
+#: src/components/config/engines/forms/streamlink-form.tsx:58
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
@@ -397,7 +397,7 @@ msgstr "Account Not Found"
 msgid "Action"
 msgstr "Action"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:43
+#: src/components/streamers/card/stream-actions-menu.tsx:47
 msgid "Actions"
 msgstr "Actions"
 
@@ -447,7 +447,7 @@ msgstr "Add a streamer"
 msgid "Add an engine"
 msgstr "Add an engine"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:133
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "Add an override to customize behavior for specific platforms."
 
@@ -520,7 +520,7 @@ msgid "Add module..."
 msgstr "Add module..."
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:98
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
 msgid "Add Override"
 msgstr "Add Override"
 
@@ -673,11 +673,23 @@ msgstr "Always use Streamlink"
 msgid "An error occurred"
 msgstr "An error occurred"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:308
+msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
+msgstr "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
+msgid "Android App"
+msgstr "Android App"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:238
+msgid "Android Version"
+msgstr "Android Version"
+
 #: src/components/danmu/danmu-viewer.tsx:348
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "Anonymized Metadata • UTF-8 Format"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:255
+#: src/components/config/engines/forms/streamlink-form.tsx:261
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
@@ -707,7 +719,7 @@ msgstr "API Keys"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:158
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:364
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -715,9 +727,25 @@ msgstr "API Request Retries"
 msgid "API Settings"
 msgstr "API Settings"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:178
+msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+msgstr "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:221
+msgid "App Device"
+msgstr "App Device"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:224
+msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
+msgstr "App requests share one device identity across retries. The user agent follows the model and Android version."
+
 #: src/components/notifications/forms/gotify-form.tsx:56
 msgid "App Token"
 msgstr "App Token"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:106
+msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
+msgstr "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
 
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:82
 msgid "Appearance & style"
@@ -734,6 +762,10 @@ msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 #: src/components/player/url-input-form.tsx:308
 msgid "Applied to all URLs"
 msgstr "Applied to all URLs"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:170
+msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
+msgstr "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:84
 msgid "Apply template settings."
@@ -782,11 +814,11 @@ msgstr "Are you sure you want to delete this session? This action cannot be undo
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:156
+#: src/components/config/engines/forms/ffmpeg-form.tsx:166
 msgid "Args inserted before -i input_url"
 msgstr "Args inserted before -i input_url"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:186
+#: src/components/config/engines/forms/ffmpeg-form.tsx:196
 msgid "Args used for processing/encoding"
 msgstr "Args used for processing/encoding"
 
@@ -844,7 +876,7 @@ msgstr "Audio Bitrate"
 msgid "Audio Codec"
 msgstr "Audio Codec"
 
-#: src/lib/split-reason.ts:59
+#: src/lib/split-reason.ts:61
 msgid "Audio codec change"
 msgstr "Audio codec change"
 
@@ -933,6 +965,10 @@ msgstr "Autofill name from URL"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "Automate your stream recordings with ease and reliability."
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:244
+msgid "Automatic"
+msgstr "Automatic"
+
 #: src/components/config/shared/output-settings-card.tsx:222
 msgid "Automatic (match the site)"
 msgstr "Automatic (match the site)"
@@ -966,9 +1002,9 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:173
-#: src/components/config/templates/template-editor.tsx:224
-#: src/components/config/templates/template-editor.tsx:227
+#: src/components/config/platforms/platform-editor.tsx:157
+#: src/components/config/templates/template-editor.tsx:208
+#: src/components/config/templates/template-editor.tsx:211
 msgid "Back"
 msgstr "Back"
 
@@ -1155,7 +1191,7 @@ msgstr "Bearer Token"
 msgid "Behind live edge"
 msgstr "Behind live edge"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:139
+#: src/components/config/engines/forms/streamlink-form.tsx:145
 msgid "best"
 msgstr "best"
 
@@ -1167,8 +1203,8 @@ msgstr "BETA"
 msgid "Bilibili QR Login"
 msgstr "Bilibili QR Login"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:45
-#: src/components/config/engines/forms/streamlink-form.tsx:42
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/streamlink-form.tsx:48
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "Binary Path"
@@ -1431,7 +1467,7 @@ msgstr "Channel deleted"
 msgid "Channel updated"
 msgstr "Channel updated"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:218
+#: src/components/config/engines/forms/streamlink-form.tsx:224
 msgid "channel1,channel2"
 msgstr "channel1,channel2"
 
@@ -1443,7 +1479,7 @@ msgstr "channels"
 #: src/components/config/global/backup-restore-card.tsx:413
 #: src/components/config/global/backup-restore-card.tsx:418
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/lib/split-reason.ts:229
+#: src/lib/split-reason.ts:231
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:407
 msgid "Channels"
 msgstr "Channels"
@@ -1551,7 +1587,7 @@ msgstr "Clear date range"
 msgid "Clear selection"
 msgstr "Clear selection"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:94
+#: src/components/config/engines/forms/streamlink-form.tsx:100
 msgid "Clearing the field inherits the engine setting."
 msgstr "Clearing the field inherits the engine setting."
 
@@ -1604,8 +1640,8 @@ msgstr "Closest to bitrate"
 #: src/components/player/playback-details.tsx:56
 #: src/components/player/stream-info-card.tsx:33
 #: src/lib/__tests__/split-reason.test.tsx:11
-#: src/lib/split-reason.ts:151
-#: src/lib/split-reason.ts:205
+#: src/lib/split-reason.ts:153
+#: src/lib/split-reason.ts:207
 msgid "Codec"
 msgstr "Codec"
 
@@ -1625,7 +1661,7 @@ msgstr "Collect statistics"
 msgid "Coming soon"
 msgstr "Coming soon"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:223
+#: src/components/config/engines/forms/streamlink-form.tsx:229
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "Comma-separated list of channels to exclude from proxy"
 
@@ -1861,7 +1897,7 @@ msgstr "Connection Instability"
 msgid "Connection status: {statusLabel}"
 msgstr "Connection status: {statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:77
+#: src/components/config/engines/forms/ffmpeg-form.tsx:87
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
@@ -2011,6 +2047,10 @@ msgstr "Could not load presets: {0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:67
+msgid "Could not request lossless cutting. Refresh the recording status and try again."
+msgstr "Could not request lossless cutting. Refresh the recording status and try again."
+
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:197
 msgid "Could not show the file: {message}"
 msgstr "Could not show the file: {message}"
@@ -2045,7 +2085,7 @@ msgstr "CPU Usage"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
-#: src/components/config/templates/template-editor.tsx:246
+#: src/components/config/templates/template-editor.tsx:230
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:439
@@ -2124,7 +2164,7 @@ msgstr "Create Preset"
 msgid "Create streamer"
 msgstr "Create streamer"
 
-#: src/components/config/templates/template-editor.tsx:198
+#: src/components/config/templates/template-editor.tsx:182
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:203
 msgid "Create Template"
 msgstr "Create Template"
@@ -2274,6 +2314,10 @@ msgstr "Custom Configuration"
 msgid "Custom FFmpeg"
 msgstr "Custom FFmpeg"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:123
+msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:983
 msgid "Custom Flags"
 msgstr "Custom Flags"
@@ -2290,7 +2334,7 @@ msgstr "Custom Headers"
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:202
+#: src/components/config/engines/forms/streamlink-form.tsx:208
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
@@ -2302,7 +2346,7 @@ msgstr "Custom rate"
 msgid "Custom Tags"
 msgstr "Custom Tags"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:125
+#: src/components/config/engines/forms/ffmpeg-form.tsx:135
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
@@ -2527,7 +2571,7 @@ msgstr "Delay between the re-checks used to confirm a streamer has really gone o
 #: src/components/pipeline/workflows/workflow-card.tsx:103
 #: src/components/pipeline/workflows/workflow-card.tsx:126
 #: src/components/sessions/session-card.tsx:287
-#: src/components/streamers/card/stream-actions-menu.tsx:89
+#: src/components/streamers/card/stream-actions-menu.tsx:99
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:476
 msgid "Delete"
@@ -2755,6 +2799,18 @@ msgstr "Detecting…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "Determined from the URL. Platform settings apply automatically."
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:243
+msgid "Device ID"
+msgstr "Device ID"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:275
+msgid "Device ID source"
+msgstr "Device ID source"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:233
+msgid "Device Model"
+msgstr "Device Model"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:634
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
@@ -2775,7 +2831,7 @@ msgstr "Directory path copied"
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:53
+#: src/components/streamers/card/stream-actions-menu.tsx:57
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
 msgstr "Disable"
@@ -2789,6 +2845,7 @@ msgstr "Disable rapid upload"
 msgid "Disable selected"
 msgstr "Disable selected"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:93
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:51
@@ -2805,7 +2862,7 @@ msgid "Disconnected"
 msgstr "Disconnected"
 
 #: src/components/sessions/recordings-tab.tsx:276
-#: src/lib/split-reason.ts:51
+#: src/lib/split-reason.ts:53
 msgid "Discontinuity"
 msgstr "Discontinuity"
 
@@ -2943,11 +3000,11 @@ msgstr "Duration"
 msgid "Duration (ms)"
 msgstr "Duration (ms)"
 
-#: src/lib/split-reason.ts:47
+#: src/lib/split-reason.ts:49
 msgid "Duration limit"
 msgstr "Duration limit"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:144
+#: src/components/config/engines/forms/streamlink-form.tsx:150
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
@@ -3035,13 +3092,17 @@ msgstr "e.g., Standard Processing"
 msgid "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 msgstr "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:25
+msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
+msgstr "Earlier files are still being finalized, so the cut was not made. Recording continues."
+
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:118
 #: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:95
-#: src/components/streamers/card/stream-actions-menu.tsx:79
+#: src/components/streamers/card/stream-actions-menu.tsx:89
 msgid "Edit"
 msgstr "Edit"
 
@@ -3080,7 +3141,7 @@ msgstr "Effective Scope"
 msgid "Empty pattern"
 msgstr "Empty pattern"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:60
+#: src/components/streamers/card/stream-actions-menu.tsx:64
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
 msgstr "Enable"
@@ -3092,6 +3153,10 @@ msgstr "Enable advanced FLV timestamp repairing"
 #: src/components/config/engines/forms/mesio-form.tsx:367
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "Enable advanced HLS segment reconstruction"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:63
+msgid "Enable lossless cutting"
+msgstr "Enable lossless cutting"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:133
 msgid "Enable monitoring"
@@ -3114,6 +3179,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enable selected"
 msgstr "Enable selected"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:90
 #: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
@@ -3208,7 +3274,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:384
 #: src/components/config/global/backup-restore-card.tsx:389
 #: src/components/config/global/backup-restore-card.tsx:394
-#: src/components/config/templates/template-editor.tsx:289
+#: src/components/config/templates/template-editor.tsx:273
 #: src/components/layout/site-header.tsx:42
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
 msgid "Engines"
@@ -3400,6 +3466,7 @@ msgstr "Exit selection mode"
 msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:66
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
@@ -3438,12 +3505,16 @@ msgstr "Export Configuration"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:238
+#: src/components/config/engines/forms/streamlink-form.tsx:244
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:604
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:754
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:129
+msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:14
 msgid "Extract AAC"
@@ -3474,9 +3545,13 @@ msgstr "Extract MP3"
 msgid "Extraction API Mode"
 msgstr "Extraction API Mode"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:80
+msgid "Extraction Method"
+msgstr "Extraction Method"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
@@ -3883,12 +3958,12 @@ msgstr "ffmpeg"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg Audio Filter (-af)"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:63
+#: src/components/config/engines/forms/streamlink-form.tsx:69
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg Path"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:86
+#: src/components/config/engines/forms/streamlink-form.tsx:92
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 
@@ -3896,7 +3971,7 @@ msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend serv
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:85
 msgid "FFMPEG_PATH or ffmpeg"
 msgstr "FFMPEG_PATH or ffmpeg"
 
@@ -3958,7 +4033,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:130
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:334
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -3997,9 +4072,21 @@ msgstr "Filtered:"
 msgid "Filters"
 msgstr "Filters"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:138
+msgid "Finalizing recording file..."
+msgstr "Finalizing recording file..."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:173
+msgid "Finalizing..."
+msgstr "Finalizing..."
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Fine tune brand and surface colors."
 msgstr "Fine tune brand and surface colors."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:123
+msgid "Finish this file and continue recording at the next safe boundary."
+msgstr "Finish this file and continue recording at the next safe boundary."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:275
 msgid "First input file path"
@@ -4024,6 +4111,10 @@ msgstr "Fix HLS Discontinuities"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:122
 msgid "Fixed executable name or path on the server. Placeholders are expanded only in arguments. On Windows servers, use shell command mode for .bat or .cmd files."
 msgstr "Fixed executable name or path on the server. Placeholders are expanded only in arguments. On Windows servers, use shell command mode for .bat or .cmd files."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:299
+msgid "Fixed fallback"
+msgstr "Fixed fallback"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
 msgid "Floating"
@@ -4116,7 +4207,7 @@ msgid "Friday"
 msgstr "Friday"
 
 #: src/lib/__tests__/split-reason.test.tsx:13
-#: src/lib/split-reason.ts:117
+#: src/lib/split-reason.ts:119
 msgctxt "Comparison table column"
 msgid "From"
 msgstr "From"
@@ -4158,8 +4249,8 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:222
-#: src/components/config/templates/template-editor.tsx:279
+#: src/components/config/platforms/platform-editor.tsx:206
+#: src/components/config/templates/template-editor.tsx:263
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
@@ -4299,8 +4390,8 @@ msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, an
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:88
-#: src/components/config/engines/forms/streamlink-form.tsx:155
+#: src/components/config/engines/forms/ffmpeg-form.tsx:98
+#: src/components/config/engines/forms/streamlink-form.tsx:161
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
@@ -4340,7 +4431,7 @@ msgstr "HD Thumbnail"
 msgid "Header Key"
 msgstr "Header Key"
 
-#: src/lib/split-reason.ts:49
+#: src/lib/split-reason.ts:51
 msgid "Header received"
 msgstr "Header received"
 
@@ -4565,7 +4656,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:197
+#: src/components/config/engines/forms/streamlink-form.tsx:203
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4672,7 +4763,7 @@ msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
 msgid "Inherited"
@@ -4683,7 +4774,7 @@ msgstr "Inherited"
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:77
+#: src/components/config/engines/forms/streamlink-form.tsx:83
 msgid "Inherited from engine"
 msgstr "Inherited from engine"
 
@@ -4711,7 +4802,7 @@ msgstr "Inline: {stepName}"
 msgid "Input"
 msgstr "Input"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:139
+#: src/components/config/engines/forms/ffmpeg-form.tsx:149
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
@@ -4957,7 +5048,7 @@ msgstr "Left"
 msgid "Let the player proxy sources on private or local networks."
 msgstr "Let the player proxy sources on private or local networks."
 
-#: src/lib/split-reason.ts:181
+#: src/lib/split-reason.ts:183
 msgid "Level"
 msgstr "Level"
 
@@ -5074,6 +5165,11 @@ msgstr "Loading…"
 msgid "Local Archive"
 msgstr "Local Archive"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:290
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:293
+msgid "Local generation"
+msgstr "Local generation"
+
 #: src/components/logging/log-file-browser.tsx:151
 msgid "Log Files"
 msgstr "Log Files"
@@ -5143,6 +5239,10 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 #: src/components/config/engines/forms/mesio-form.tsx:151
 msgid "Loop Protection"
 msgstr "Loop Protection"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:119
+msgid "Lossless cutting will not be used"
+msgstr "Lossless cutting will not be used"
 
 #: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
@@ -5221,6 +5321,10 @@ msgstr "Manage your application configuration."
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
+#: src/lib/split-reason.ts:45
+msgid "Manual cut"
+msgstr "Manual cut"
+
 #: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
 msgstr "Manual update required"
@@ -5297,10 +5401,6 @@ msgstr "Max Key Retries"
 msgid "Max Key Retry Delay (ms)"
 msgstr "Max Key Retry Delay (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:174
-msgid "Max number of retry attempts for metadata fetching."
-msgstr "Max number of retry attempts for metadata fetching."
-
 #: src/components/config/global/resource-limits-card.tsx:74
 #: src/components/config/shared/limits-card.tsx:108
 msgid "Max Part Size"
@@ -5348,6 +5448,10 @@ msgstr "Max transactions/second to the remote API (--tpslimit)."
 #: src/components/config/global/concurrency-card.tsx:120
 msgid "Max Uploads"
 msgstr "Max Uploads"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:379
+msgid "Maximum attempts for metadata and App playback requests."
+msgstr "Maximum attempts for metadata and App playback requests."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Maximum compression to minimize storage usage, then delete original."
@@ -5549,7 +5653,7 @@ msgstr "Move Files"
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:120
+#: src/components/config/engines/forms/ffmpeg-form.tsx:130
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -5642,7 +5746,7 @@ msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and tim
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:320
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -5787,6 +5891,10 @@ msgstr "No issues detected"
 msgid "No jobs found"
 msgstr "No jobs found"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:17
+msgid "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+
 #: src/components/filters/FilterCard.tsx:90
 msgid "No keywords set"
 msgstr "No keywords set"
@@ -5828,6 +5936,10 @@ msgstr "No metadata tags added"
 msgid "No modules configured"
 msgstr "No modules configured"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:29
+msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "No new media arrived in time, so no safe cut boundary was found. Recording continues."
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
@@ -5856,11 +5968,11 @@ msgstr "No pipeline DAGs found."
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:106
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
 msgid "No platform found."
 msgstr "No platform found."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:130
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
@@ -5917,6 +6029,10 @@ msgstr "No results found"
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:129
 msgid "No running pipelines selected"
 msgstr "No running pipelines selected"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:32
+msgid "No safe cut boundary was found. Recording continues."
+msgstr "No safe cut boundary was found. Recording continues."
 
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:310
 msgid "No specialized options available for this platform."
@@ -6209,7 +6325,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 #: src/components/pipeline/presets/preset-card.tsx:116
 #: src/components/pipeline/workflows/workflow-card.tsx:89
 #: src/components/sessions/session-card.tsx:245
-#: src/components/streamers/card/stream-actions-menu.tsx:37
+#: src/components/streamers/card/stream-actions-menu.tsx:41
 msgid "Open menu"
 msgstr "Open menu"
 
@@ -6290,7 +6406,7 @@ msgstr "Output"
 msgid "Output and its file deleted"
 msgstr "Output and its file deleted"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:169
+#: src/components/config/engines/forms/ffmpeg-form.tsx:179
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
@@ -6388,7 +6504,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:86
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "Override pipelines and platform options for specific platforms."
 
@@ -6537,7 +6653,7 @@ msgstr "Path"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:80
+#: src/components/config/engines/forms/streamlink-form.tsx:86
 msgid "Path to FFmpeg"
 msgstr "Path to FFmpeg"
 
@@ -6769,7 +6885,7 @@ msgstr "Platform options"
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:83
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
@@ -6786,7 +6902,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:401
-#: src/components/config/templates/template-editor.tsx:299
+#: src/components/config/templates/template-editor.tsx:283
 #: src/components/layout/site-header.tsx:43
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "Platforms"
@@ -6905,6 +7021,10 @@ msgstr "Powered by <0>Rust-srec</0>."
 msgid "Precision Schedule"
 msgstr "Precision Schedule"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:142
+msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+msgstr "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:199
 msgid "Prefer session pairing"
 msgstr "Prefer session pairing"
@@ -6913,7 +7033,7 @@ msgstr "Prefer session pairing"
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:162
 msgid "Preferred CDN"
 msgstr "Preferred CDN"
 
@@ -6932,6 +7052,10 @@ msgstr "Preferred Qualities"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:120
+msgid "Preferred Video Codec"
+msgstr "Preferred Video Codec"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:227
 msgid "Preparing download..."
@@ -7112,7 +7236,7 @@ msgstr "Processor"
 msgid "Processor is required"
 msgstr "Processor is required"
 
-#: src/lib/split-reason.ts:166
+#: src/lib/split-reason.ts:168
 msgid "Profile"
 msgstr "Profile"
 
@@ -7171,7 +7295,7 @@ msgstr "QR code expired"
 msgid "QR Login"
 msgstr "QR Login"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:134
+#: src/components/config/engines/forms/streamlink-form.tsx:140
 #: src/components/player/stream-info-card.tsx:32
 msgid "Quality"
 msgstr "Quality"
@@ -7184,7 +7308,7 @@ msgstr "Quality (qscale)"
 msgid "Quality Control"
 msgstr "Quality Control"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:192
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
@@ -7224,6 +7348,10 @@ msgstr "RAM utilization"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:209
 msgid "Random"
 msgstr "Random"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:234
+msgid "Random model"
+msgstr "Random model"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:558
 msgid "Rate Limiting"
@@ -7342,6 +7470,10 @@ msgstr "Recommended"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "Recommended: 8388608 (8 MiB)"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:112
+msgid "Reconnect to request a cut."
+msgstr "Reconnect to request a cut."
+
 #: src/components/config/global/file-config-card.tsx:29
 #: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Record Danmu"
@@ -7373,10 +7505,18 @@ msgstr "Recording finished"
 msgid "Recording rejected"
 msgstr "Recording rejected"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:88
+msgid "Recording split successfully."
+msgstr "Recording split successfully."
+
 #: src/components/sessions/timeline-tab.tsx:320
 #: src/lib/notification-event-types.ts:19
 msgid "Recording started"
 msgstr "Recording started"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:153
+msgid "Recording uses temporary chunks"
+msgstr "Recording uses temporary chunks"
 
 #: src/components/streamers/card/use-streamer-status.tsx:368
 msgid "Recording will start when schedule allows"
@@ -7385,6 +7525,10 @@ msgstr "Recording will start when schedule allows"
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Recordings"
 msgstr "Recordings"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:157
+msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
+msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 
 #: src/components/streamers/card/use-streamer-status.tsx:80
 #: src/components/streamers/card/use-streamer-status.tsx:89
@@ -7622,7 +7766,7 @@ msgid "Reset view"
 msgstr "Reset view"
 
 #: src/components/player/playback-details.tsx:79
-#: src/lib/split-reason.ts:187
+#: src/lib/split-reason.ts:189
 msgid "Resolution"
 msgstr "Resolution"
 
@@ -7630,7 +7774,7 @@ msgstr "Resolution"
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
 
-#: src/lib/split-reason.ts:55
+#: src/lib/split-reason.ts:57
 msgid "Resolution change"
 msgstr "Resolution change"
 
@@ -7850,7 +7994,7 @@ msgid "Same-name policy"
 msgstr "Same-name policy"
 
 #: src/lib/__tests__/split-reason.test.tsx:12
-#: src/lib/split-reason.ts:213
+#: src/lib/split-reason.ts:215
 msgid "Sample Rate"
 msgstr "Sample Rate"
 
@@ -7878,8 +8022,8 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:191
-#: src/components/config/templates/template-editor.tsx:248
+#: src/components/config/platforms/platform-editor.tsx:175
+#: src/components/config/templates/template-editor.tsx:232
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
@@ -7904,8 +8048,8 @@ msgstr "Save Workflow"
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/template-editor.tsx:244
+#: src/components/config/platforms/platform-editor.tsx:173
+#: src/components/config/templates/template-editor.tsx:228
 #: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
@@ -7982,7 +8126,7 @@ msgstr "Search logs..."
 msgid "Search outputs..."
 msgstr "Search outputs..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:103
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
 msgid "Search platform..."
 msgstr "Search platform..."
 
@@ -8073,7 +8217,7 @@ msgstr "Select a default engine"
 msgid "Select a format"
 msgstr "Select a format"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:204
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 
@@ -8256,6 +8400,10 @@ msgstr "Server proxy"
 #: src/components/player/player-card.tsx:208
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "Server proxy relays playback through this app's server with the source's upstream proxy settings."
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:296
+msgid "Server registration"
+msgstr "Server registration"
 
 #: src/components/notifications/channel-card.tsx:133
 #: src/components/notifications/forms/gotify-form.tsx:36
@@ -8445,8 +8593,8 @@ msgstr "Sign in to the server before using the stream proxy."
 msgid "Sign out"
 msgstr "Sign out"
 
-#: src/lib/split-reason.ts:193
-#: src/lib/split-reason.ts:235
+#: src/lib/split-reason.ts:195
+#: src/lib/split-reason.ts:237
 msgid "Signature"
 msgstr "Signature"
 
@@ -8473,7 +8621,7 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
-#: src/lib/split-reason.ts:45
+#: src/lib/split-reason.ts:47
 msgid "Size limit"
 msgstr "Size limit"
 
@@ -8542,7 +8690,7 @@ msgstr "Sort by"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:232
+#: src/components/config/platforms/platform-editor.tsx:216
 #: src/components/config/templates/tabs/platform-override-card.tsx:74
 msgid "Specific"
 msgstr "Specific"
@@ -8550,10 +8698,6 @@ msgstr "Specific"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
 msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:76
-msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
-msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
 #: src/components/streamers/edit/active-download-card.tsx:116
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:680
@@ -8568,6 +8712,10 @@ msgstr "Split after duration."
 msgid "Split after size."
 msgstr "Split after size."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:142
+msgid "Split file now"
+msgstr "Split file now"
+
 #: src/components/config/engines/forms/mesio-form.tsx:82
 msgid "Split on any raw header change. Safe but may cause extra files."
 msgstr "Split on any raw header change. Safe but may cause extra files."
@@ -8580,9 +8728,17 @@ msgstr "Split only on codec configuration changes. Reduces false splits."
 msgid "Split Reason: {formattedReason}"
 msgstr "Split Reason: {formattedReason}"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:107
+msgid "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
+msgstr "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:670
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "Splits a single large file into N parallel chunks for faster upload."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:171
+msgid "Splitting..."
+msgstr "Splitting..."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Standard"
@@ -8741,7 +8897,7 @@ msgstr "Stream Splitting Strategy"
 msgid "Stream start time"
 msgstr "Stream start time"
 
-#: src/lib/split-reason.ts:53
+#: src/lib/split-reason.ts:55
 msgid "Stream structure change"
 msgstr "Stream structure change"
 
@@ -8828,7 +8984,7 @@ msgstr "Streamers currently live will appear here."
 msgid "Streaming services"
 msgstr "Streaming services"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:47
+#: src/components/config/engines/forms/streamlink-form.tsx:53
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -9056,9 +9212,17 @@ msgstr "The configuration has been successfully processed. Here is a summary of 
 msgid "The configuration matches existing data"
 msgstr "The configuration matches existing data"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:97
+msgid "The cut could not be completed."
+msgstr "The cut could not be completed."
+
 #: src/components/streamers/config/streamer-identity-fields.tsx:84
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:114
+msgid "The file is split at the next safe boundary."
+msgstr "The file is split at the next safe boundary."
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:431
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
@@ -9076,6 +9240,10 @@ msgstr "The page you are looking for does not exist."
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:94
+msgid "The recording ended before the cut completed."
+msgstr "The recording ended before the cut completed."
+
 #: src/components/player/playback-state.ts:28
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
 msgstr "The server rejected this source. Check the URL and, for local sources, the private network access setting."
@@ -9091,6 +9259,10 @@ msgstr "The stream is no longer available at this address. Refresh the stream UR
 #: src/components/player/playback-state.ts:33
 msgid "The stream URL could not be refreshed. Retry or check the source credentials."
 msgstr "The stream URL could not be refreshed. Retry or check the source credentials."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:21
+msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
+msgstr "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
 
 #: src/components/player/playback-state.ts:29
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
@@ -9261,8 +9433,8 @@ msgstr "Time Placeholders (Local Time)"
 msgid "Time Range"
 msgstr "Time Range"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:99
-#: src/components/config/engines/forms/streamlink-form.tsx:166
+#: src/components/config/engines/forms/ffmpeg-form.tsx:109
+#: src/components/config/engines/forms/streamlink-form.tsx:172
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
@@ -9279,7 +9451,7 @@ msgstr "Timeline"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:66
+#: src/components/config/engines/forms/ffmpeg-form.tsx:76
 msgid "Timeout"
 msgstr "Timeout"
 
@@ -9336,7 +9508,7 @@ msgid "To"
 msgstr "To"
 
 #: src/lib/__tests__/split-reason.test.tsx:14
-#: src/lib/split-reason.ts:125
+#: src/lib/split-reason.ts:127
 msgctxt "Comparison table column"
 msgid "To"
 msgstr "To"
@@ -9459,7 +9631,7 @@ msgstr "Transient monitoring errors are being preserved until sustained download
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:133
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:337
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -9586,7 +9758,7 @@ msgstr "TTWID Management Mode"
 msgid "Tuesday"
 msgstr "Tuesday"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:183
+#: src/components/config/engines/forms/streamlink-form.tsx:189
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -9594,11 +9766,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:192
+#: src/components/config/engines/forms/streamlink-form.tsx:198
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch Proxy Playlist"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:213
+#: src/components/config/engines/forms/streamlink-form.tsx:219
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
@@ -9800,11 +9972,12 @@ msgstr "URL is required"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:109
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:87
+#: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Use engine setting"
 msgstr "Use engine setting"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:122
+#: src/components/config/engines/forms/streamlink-form.tsx:128
 msgid "Use environment default"
 msgstr "Use environment default"
 
@@ -9833,7 +10006,7 @@ msgstr "Use the player's default balance of buffering and delay."
 msgid "Use TLS"
 msgstr "Use TLS"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:115
+#: src/components/config/engines/forms/ffmpeg-form.tsx:125
 #: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
 msgstr "User Agent"
@@ -9860,6 +10033,10 @@ msgstr "Username (Optional)"
 #: src/components/layout/site-header.tsx:35
 msgid "Users"
 msgstr "Users"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:164
+msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
+msgstr "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
@@ -9927,7 +10104,7 @@ msgstr "Video Bitrate"
 msgid "Video Codec"
 msgstr "Video Codec"
 
-#: src/lib/split-reason.ts:57
+#: src/lib/split-reason.ts:59
 msgid "Video codec change"
 msgstr "Video codec change"
 
@@ -9994,6 +10171,10 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:140
+msgid "Waiting for a safe cut..."
+msgstr "Waiting for a safe cut..."
+
 #: src/components/logging/log-viewer.tsx:496
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
@@ -10006,13 +10187,17 @@ msgstr "Waiting since"
 msgid "Warning when the processing queue gets too long."
 msgstr "Warning when the processing queue gets too long."
 
-#: src/components/streamers/card/stream-actions-menu.tsx:70
+#: src/components/streamers/card/stream-actions-menu.tsx:80
 msgid "Watch"
 msgstr "Watch"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 msgid "WEB"
 msgstr "WEB"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
+msgid "Web (deprecated)"
+msgstr "Web (deprecated)"
 
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:74
 msgid "Web API"
@@ -10190,83 +10375,3 @@ msgstr "Zoom in"
 #: src/components/pipeline/dag-graph-view.tsx:109
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Extraction Method"
-msgstr "Extraction Method"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Android App"
-msgstr "Android App"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Web (deprecated)"
-msgstr "Web (deprecated)"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
-msgstr "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Preferred Video Codec"
-msgstr "Preferred Video Codec"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
-msgstr "Prefer HEVC when available, with AVC fallback. Ignored for audio only."
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
-msgstr "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Maximum attempts for metadata and App playback requests."
-msgstr "Maximum attempts for metadata and App playback requests."
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App Device"
-msgstr "App Device"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "App requests share one device identity across retries. The user agent follows the model and Android version."
-msgstr "App requests share one device identity across retries. The user agent follows the model and Android version."
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device Model"
-msgstr "Device Model"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Android Version"
-msgstr "Android Version"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device ID"
-msgstr "Device ID"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Random model"
-msgstr "Random model"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Automatic"
-msgstr "Automatic"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Device ID source"
-msgstr "Device ID source"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Local generation"
-msgstr "Local generation"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Server registration"
-msgstr "Server registration"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "Fixed fallback"
-msgstr "Fixed fallback"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx
-msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
-msgstr "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."

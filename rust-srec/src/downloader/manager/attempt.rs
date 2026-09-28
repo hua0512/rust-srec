@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -486,7 +486,32 @@ impl DownloadManager {
         // recording that produced it.
         let lifecycle_errors = Arc::new(Mutex::new(Vec::<String>::new()));
         let translator_lifecycle_errors = Arc::clone(&lifecycle_errors);
+        let mut split_updates = handle.manual_split.updates();
         let translator_future = async move {
+            let mut split_expiration = tokio::time::interval(Duration::from_secs(1));
+            split_expiration.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut pending_cut_completion: Option<(u32, u64)> = None;
+            let mut last_started_sequence: Option<u32> = None;
+            // Completions publish immediately so the cut result precedes the
+            // next segment event; the watch branch then sees the same revision.
+            // Revisions only grow, so anything not newer was already sent.
+            let published_split_revision = AtomicU64::new(0);
+            let publish_split = |state: pipeline_common::ManualSplitSnapshot| {
+                if published_split_revision.fetch_max(state.revision, Ordering::AcqRel)
+                    >= state.revision
+                {
+                    return;
+                }
+                translator_events.publish(DownloadManagerEvent::Progress(
+                    DownloadProgressEvent::ManualSplitChanged {
+                        download_id: translator_download_id.clone(),
+                        streamer_id: translator_streamer_id.clone(),
+                        streamer_name: translator_streamer_name.clone(),
+                        session_id: translator_session_id.clone(),
+                        state,
+                    },
+                ));
+            };
             const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
             let mut last_progress_emit = Instant::now()
                 .checked_sub(PROGRESS_MIN_INTERVAL)
@@ -496,7 +521,18 @@ impl DownloadManager {
             let mut output_failure_recorded = false;
 
             let natural_terminal = loop {
-                let Some(event) = segment_rx.recv().await else {
+                let next = tokio::select! {
+                    event = segment_rx.recv() => event,
+                    _ = split_expiration.tick() => {
+                        translator_handle.manual_split.expire();
+                        continue;
+                    }
+                    update = split_updates.changed() => {
+                        if let Ok(state) = update { publish_split(state); }
+                        continue;
+                    }
+                };
+                let Some(event) = next else {
                     break DownloadTerminalEvent::Failed {
                         download_id: translator_download_id.clone(),
                         streamer_id: translator_streamer_id.clone(),
@@ -513,6 +549,19 @@ impl DownloadManager {
 
                 match event {
                     SegmentEvent::SegmentCompleted(info) => {
+                        let manual_request = if info.split_reason_code.as_deref() == Some("manual")
+                        {
+                            info.split_reason_details_json
+                                .as_deref()
+                                .and_then(|details| {
+                                    serde_json::from_str::<serde_json::Value>(details).ok()
+                                })
+                                .and_then(|details| {
+                                    details.get("request_id").and_then(|id| id.as_u64())
+                                })
+                        } else {
+                            None
+                        };
                         let SegmentInfo {
                             path,
                             duration_secs,
@@ -578,6 +627,18 @@ impl DownloadManager {
                             translator_lifecycle_errors.lock().push(format!(
                                 "required segment completion could not be applied: {delivery_error}"
                             ));
+                            if let Some(request_id) = manual_request {
+                                translator_handle.manual_split.fail(request_id);
+                            }
+                        } else if let Some(request_id) = manual_request {
+                            // External remuxers finalize the old file after the
+                            // next logical segment starts; native writers close first.
+                            if last_started_sequence.is_some_and(|started| started > index) {
+                                translator_handle.manual_split.complete(request_id);
+                                publish_split(translator_handle.manual_split.snapshot());
+                            } else {
+                                pending_cut_completion = Some((index, request_id));
+                            }
                         }
 
                         if let Some(mut download) =
@@ -792,6 +853,15 @@ impl DownloadManager {
                             };
                         }
 
+                        if let Some((previous_sequence, request_id)) = pending_cut_completion
+                            && previous_sequence.checked_add(1) == Some(sequence)
+                        {
+                            translator_handle.manual_split.complete(request_id);
+                            pending_cut_completion = None;
+                            publish_split(translator_handle.manual_split.snapshot());
+                        }
+                        last_started_sequence = Some(sequence);
+
                         debug!(
                             download_id = %translator_download_id,
                             path = %path.display(),
@@ -802,6 +872,12 @@ impl DownloadManager {
                     }
                 }
             };
+
+            translator_handle.manual_split.close(matches!(
+                natural_terminal,
+                DownloadTerminalEvent::Failed { .. }
+            ));
+            publish_split(translator_handle.manual_split.snapshot());
 
             // Circuit-breaker health is read from the engine's own outcome, not
             // from the terminal `choose_attempt_terminal` publishes. A stop
