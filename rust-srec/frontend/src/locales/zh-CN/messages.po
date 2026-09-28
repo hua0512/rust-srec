@@ -2043,7 +2043,7 @@ msgstr "无法加载预设：{0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:31
+#: src/components/streamers/card/lossless-cut-action.tsx:67
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
 
@@ -3084,6 +3084,10 @@ msgstr "例如：标准处理"
 msgid "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号和换行都会保留。不要添加 shell 引号。下方占位符会展开，但不会经过 shell 解释。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:24
+msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
+msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
+
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:118
 #: src/components/layout/site-header.tsx:54
@@ -4056,7 +4060,7 @@ msgstr "过滤原因："
 msgid "Filters"
 msgstr "过滤器"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:84
+#: src/components/streamers/card/lossless-cut-action.tsx:129
 msgid "Finalizing recording file..."
 msgstr "正在完成录制文件…"
 
@@ -4064,7 +4068,7 @@ msgstr "正在完成录制文件…"
 msgid "Fine tune brand and surface colors."
 msgstr "微调品牌和表面颜色。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:67
+#: src/components/streamers/card/lossless-cut-action.tsx:112
 msgid "Finish this file and continue recording at the next safe boundary."
 msgstr "在下一个安全分割点结束当前文件，并继续录制到新文件。"
 
@@ -5220,7 +5224,7 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:88
+#: src/components/streamers/card/lossless-cut-action.tsx:133
 msgid "Lossless cutting"
 msgstr "无损分段"
 
@@ -5871,6 +5875,10 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:16
+msgid "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "未在时限内收到关键帧，未找到安全分割点，录制仍在继续。"
+
 #: src/components/filters/FilterCard.tsx:90
 msgid "No keywords set"
 msgstr "未设置关键字"
@@ -5911,6 +5919,10 @@ msgstr "未添加元数据标签"
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:323
 msgid "No modules configured"
 msgstr "未配置模块"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:28
+msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "未在时限内收到新的媒体数据，未找到安全分割点，录制仍在继续。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "No other steps available to depend on."
@@ -6002,7 +6014,7 @@ msgstr "没有找到结果"
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:48
+#: src/components/streamers/card/lossless-cut-action.tsx:31
 msgid "No safe cut boundary was found. Recording continues."
 msgstr "未找到安全分割点，录制仍在继续。"
 
@@ -7442,7 +7454,7 @@ msgstr "推荐"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "推荐：8388608 (8 MiB)"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:64
+#: src/components/streamers/card/lossless-cut-action.tsx:109
 msgid "Reconnect to request a cut."
 msgstr "重新连接后才能请求分段。"
 
@@ -7477,7 +7489,7 @@ msgstr "录制完成"
 msgid "Recording rejected"
 msgstr "录制被拒绝"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:45
+#: src/components/streamers/card/lossless-cut-action.tsx:88
 msgid "Recording split successfully."
 msgstr "录制分段成功。"
 
@@ -9176,7 +9188,7 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:54
+#: src/components/streamers/card/lossless-cut-action.tsx:97
 msgid "The cut could not be completed."
 msgstr "无法完成分段。"
 
@@ -9200,7 +9212,7 @@ msgstr "你要访问的页面不存在。"
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:51
+#: src/components/streamers/card/lossless-cut-action.tsx:94
 msgid "The recording ended before the cut completed."
 msgstr "分段完成前录制已结束。"
 
@@ -9219,6 +9231,10 @@ msgstr "此地址的直播流已不可用。请刷新直播地址或切换直播
 #: src/components/player/playback-state.ts:33
 msgid "The stream URL could not be refreshed. Retry or check the source credentials."
 msgstr "无法刷新直播地址。请重试或检查源站凭据。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:20
+msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
+msgstr "直播流的分片未标记为可独立播放，未找到安全分割点，录制仍在继续。"
 
 #: src/components/player/playback-state.ts:29
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
@@ -9283,7 +9299,7 @@ msgstr "浏览器不支持此媒体格式。请选择其他格式或使用其他
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:66
+#: src/components/streamers/card/lossless-cut-action.tsx:111
 msgid "This recording mode does not support lossless cutting."
 msgstr "当前录制模式不支持无损分段。"
 
@@ -10131,7 +10147,7 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:86
+#: src/components/streamers/card/lossless-cut-action.tsx:131
 msgid "Waiting for a safe cut..."
 msgstr "正在等待安全分割点…"
 

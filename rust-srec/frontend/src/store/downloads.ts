@@ -26,6 +26,7 @@ export interface ManualSplitState {
   requestId: bigint;
   revision: bigint;
   status: string;
+  expiryReason: string;
 }
 
 export interface DownloadMetrics {

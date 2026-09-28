@@ -12,8 +12,7 @@ import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
-import { LosslessCutAction } from './lossless-cut-action';
-import type { ReactNode } from 'react';
+import { useLosslessCutItem } from './lossless-cut-action';
 
 interface StreamActionsMenuProps {
   downloadId?: string;
@@ -28,7 +27,8 @@ export const StreamActionsMenu = ({
   onDelete,
   onToggle,
 }: StreamActionsMenuProps) => {
-  const menu = (cutAction?: ReactNode) => (
+  const cutAction = useLosslessCutItem(downloadId);
+  return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -96,12 +96,5 @@ export const StreamActionsMenu = ({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-  return downloadId ? (
-    <LosslessCutAction key={downloadId} downloadId={downloadId}>
-      {menu}
-    </LosslessCutAction>
-  ) : (
-    menu()
   );
 };

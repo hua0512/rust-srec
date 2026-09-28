@@ -2043,7 +2043,7 @@ msgstr "Could not load presets: {0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 
-#: src/components/streamers/card/lossless-cut-action.tsx:31
+#: src/components/streamers/card/lossless-cut-action.tsx:67
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "Could not request lossless cutting. Refresh the recording status and try again."
 
@@ -3084,6 +3084,10 @@ msgstr "e.g., Standard Processing"
 msgid "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 msgstr "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 
+#: src/components/streamers/card/lossless-cut-action.tsx:24
+msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
+msgstr "Earlier files are still being finalized, so the cut was not made. Recording continues."
+
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:118
 #: src/components/layout/site-header.tsx:54
@@ -4056,7 +4060,7 @@ msgstr "Filtered:"
 msgid "Filters"
 msgstr "Filters"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:84
+#: src/components/streamers/card/lossless-cut-action.tsx:129
 msgid "Finalizing recording file..."
 msgstr "Finalizing recording file..."
 
@@ -4064,7 +4068,7 @@ msgstr "Finalizing recording file..."
 msgid "Fine tune brand and surface colors."
 msgstr "Fine tune brand and surface colors."
 
-#: src/components/streamers/card/lossless-cut-action.tsx:67
+#: src/components/streamers/card/lossless-cut-action.tsx:112
 msgid "Finish this file and continue recording at the next safe boundary."
 msgstr "Finish this file and continue recording at the next safe boundary."
 
@@ -5220,7 +5224,7 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:88
+#: src/components/streamers/card/lossless-cut-action.tsx:133
 msgid "Lossless cutting"
 msgstr "Lossless cutting"
 
@@ -5871,6 +5875,10 @@ msgstr "No issues detected"
 msgid "No jobs found"
 msgstr "No jobs found"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:16
+msgid "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
+
 #: src/components/filters/FilterCard.tsx:90
 msgid "No keywords set"
 msgstr "No keywords set"
@@ -5911,6 +5919,10 @@ msgstr "No metadata tags added"
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:323
 msgid "No modules configured"
 msgstr "No modules configured"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:28
+msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
+msgstr "No new media arrived in time, so no safe cut boundary was found. Recording continues."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:685
 msgid "No other steps available to depend on."
@@ -6002,7 +6014,7 @@ msgstr "No results found"
 msgid "No running pipelines selected"
 msgstr "No running pipelines selected"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:48
+#: src/components/streamers/card/lossless-cut-action.tsx:31
 msgid "No safe cut boundary was found. Recording continues."
 msgstr "No safe cut boundary was found. Recording continues."
 
@@ -7442,7 +7454,7 @@ msgstr "Recommended"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "Recommended: 8388608 (8 MiB)"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:64
+#: src/components/streamers/card/lossless-cut-action.tsx:109
 msgid "Reconnect to request a cut."
 msgstr "Reconnect to request a cut."
 
@@ -7477,7 +7489,7 @@ msgstr "Recording finished"
 msgid "Recording rejected"
 msgstr "Recording rejected"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:45
+#: src/components/streamers/card/lossless-cut-action.tsx:88
 msgid "Recording split successfully."
 msgstr "Recording split successfully."
 
@@ -9176,7 +9188,7 @@ msgstr "The configuration has been successfully processed. Here is a summary of 
 msgid "The configuration matches existing data"
 msgstr "The configuration matches existing data"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:54
+#: src/components/streamers/card/lossless-cut-action.tsx:97
 msgid "The cut could not be completed."
 msgstr "The cut could not be completed."
 
@@ -9200,7 +9212,7 @@ msgstr "The page you are looking for does not exist."
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 
-#: src/components/streamers/card/lossless-cut-action.tsx:51
+#: src/components/streamers/card/lossless-cut-action.tsx:94
 msgid "The recording ended before the cut completed."
 msgstr "The recording ended before the cut completed."
 
@@ -9219,6 +9231,10 @@ msgstr "The stream is no longer available at this address. Refresh the stream UR
 #: src/components/player/playback-state.ts:33
 msgid "The stream URL could not be refreshed. Retry or check the source credentials."
 msgstr "The stream URL could not be refreshed. Retry or check the source credentials."
+
+#: src/components/streamers/card/lossless-cut-action.tsx:20
+msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
+msgstr "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
 
 #: src/components/player/playback-state.ts:29
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
@@ -9283,7 +9299,7 @@ msgstr "This media format is not supported by your browser. Choose another forma
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
-#: src/components/streamers/card/lossless-cut-action.tsx:66
+#: src/components/streamers/card/lossless-cut-action.tsx:111
 msgid "This recording mode does not support lossless cutting."
 msgstr "This recording mode does not support lossless cutting."
 
@@ -10131,7 +10147,7 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/streamers/card/lossless-cut-action.tsx:86
+#: src/components/streamers/card/lossless-cut-action.tsx:131
 msgid "Waiting for a safe cut..."
 msgstr "Waiting for a safe cut..."
 

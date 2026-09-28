@@ -30,6 +30,7 @@ describe('useDownloadStore terminated tracking', () => {
       requestId: 1n,
       revision: 3n,
       status: 'pending',
+      expiryReason: '',
     };
     store.setSnapshot(
       [
