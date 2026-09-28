@@ -59,6 +59,8 @@ export default defineConfig({
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
+      // Keep colocated route tests out of the generated route tree.
+      routeFileIgnorePattern: '^__tests__$',
       // The web build's TanStack Start plugin appends this block to the route tree both builds
       // share. Writing the same footer here keeps the committed file identical whichever build
       // ran last.

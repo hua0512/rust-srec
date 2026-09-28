@@ -66,7 +66,10 @@ export default defineConfig(() => ({
       },
     }),
     tailwindcss(),
-    tanstackStart({}),
+    tanstackStart({
+      // Keep colocated route tests out of the generated route tree.
+      router: { routeFileIgnorePattern: '^__tests__$' },
+    }),
     react(),
     babel({ presets: [linguiTransformerBabelPreset()] }),
     // Limit oxlint to source folders (avoid linting build outputs).
