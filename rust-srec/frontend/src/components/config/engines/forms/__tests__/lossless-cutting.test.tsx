@@ -1,6 +1,6 @@
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import {
@@ -14,9 +14,14 @@ import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card
 import { FfmpegForm } from '../ffmpeg-form';
 import { StreamlinkForm } from '../streamlink-form';
 
+type EngineValues = {
+  enable_lossless_cutting?: boolean;
+  output_args?: string[];
+  extra_args?: string[];
+};
 type Values = {
-  config?: { enable_lossless_cutting?: boolean };
-  engines_override?: Record<string, { enable_lossless_cutting?: boolean }>;
+  config?: EngineValues;
+  engines_override?: Record<string, EngineValues>;
 };
 
 beforeAll(() => {
@@ -26,23 +31,29 @@ beforeAll(() => {
 describe.each([
   {
     type: 'FFMPEG',
+    argsField: 'output_args',
+    warning: 'Custom FFmpeg output arguments are set.',
     Component: FfmpegForm,
     schema: FfmpegConfigSchema,
     overrideSchema: FfmpegConfigOverrideSchema,
   },
   {
     type: 'STREAMLINK',
+    argsField: 'extra_args',
+    warning: 'Extra Streamlink arguments are set.',
     Component: StreamlinkForm,
     schema: StreamlinkConfigSchema,
     overrideSchema: StreamlinkConfigOverrideSchema,
   },
 ])(
   '$type lossless cutting configuration',
-  ({ type, Component, schema, overrideSchema }) => {
-    function mount(value?: boolean, override = false) {
+  ({ type, argsField, warning, Component, schema, overrideSchema }) => {
+    function mount(value?: boolean, override = false, args?: string[]) {
       let form!: UseFormReturn<Values>;
-      const config =
-        value === undefined ? {} : { enable_lossless_cutting: value };
+      const config: EngineValues = {
+        ...(value === undefined ? {} : { enable_lossless_cutting: value }),
+        ...(args === undefined ? {} : { [argsField]: args }),
+      };
       function Harness() {
         form = useForm<Values>({
           defaultValues: override
@@ -83,6 +94,11 @@ describe.each([
       expect(toggle).not.toBeChecked();
       expect(saved().enable_lossless_cutting).toBe(false);
       expect(screen.getByText('Experimental')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Split recordings without reconnecting/),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('note')).toBeNull();
+      fireEvent.click(toggle);
       expect(screen.getByRole('note')).toHaveTextContent(
         'Recording uses temporary chunks',
       );
@@ -92,10 +108,38 @@ describe.each([
       expect(screen.getByRole('note')).toHaveTextContent(
         'Final files are available only after this step finishes.',
       );
-      fireEvent.click(toggle);
+      expect(screen.getByRole('note')).toHaveTextContent(
+        'Temporary chunks are kept if file finalization fails.',
+      );
       expect(saved().enable_lossless_cutting).toBe(true);
       fireEvent.click(toggle);
       expect(saved().enable_lossless_cutting).toBe(false);
+      expect(screen.queryByRole('note')).toBeNull();
+    });
+
+    it('warns when custom arguments keep lossless cutting from applying', () => {
+      mount(false, false, ['-flag']);
+      expect(screen.queryByRole('alert')).toBeNull();
+      fireEvent.click(
+        screen.getByRole('switch', { name: 'Enable lossless cutting' }),
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent(warning);
+      cleanup();
+      mount(true, false, []);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('evaluates only settings present in an override', () => {
+      mount(true, true);
+      expect(screen.getByRole('note')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).toBeNull();
+      cleanup();
+      mount(true, true, ['-flag']);
+      expect(screen.getByRole('alert')).toHaveTextContent(warning);
+      cleanup();
+      mount(undefined, true, ['-flag']);
+      expect(screen.queryByRole('note')).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
     });
 
     it('loads an enabled engine without resetting it', () => {

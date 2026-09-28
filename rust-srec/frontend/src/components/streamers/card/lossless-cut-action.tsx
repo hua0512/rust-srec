@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import type { I18n } from '@lingui/core';
 import { Loader2, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useDownloadStore } from '@/store/downloads';
 import { requestLosslessCut } from '@/server/functions/downloads';
@@ -38,7 +39,8 @@ function expiryMessage(i18n: I18n, reason: string | undefined): string {
  * it is keyed by `downloadId` internally so the menu root never remounts when
  * a recording starts, ends, or is replaced.
  *
- * Returns the menu item to render, or `null` without an active download.
+ * Returns the menu item to render, or `null` when there is no active download
+ * or the recording does not support lossless cutting.
  */
 export function useLosslessCutItem(downloadId: string | undefined) {
   const { i18n, t } = useLingui();
@@ -96,42 +98,80 @@ export function useLosslessCutItem(downloadId: string | undefined) {
     }
   }, [downloadId, requestId, split, i18n, t]);
 
-  if (downloadId === undefined) return null;
+  // Unsupported recordings never offer the action; the item is disabled only
+  // for temporary reasons, which the second line explains on every device.
+  // Only the label and icon are dimmed so that explanation stays readable.
+  if (downloadId === undefined || !split?.supported) return null;
 
   const pending =
     (mutation.isPending && mutation.variables === downloadId) ||
-    split?.status === 'pending' ||
-    split?.status === 'finalizing' ||
-    (requestId !== undefined && (!split || split.requestId < requestId));
-  const explanation = !connected
+    split.status === 'pending' ||
+    split.status === 'finalizing' ||
+    (requestId !== undefined && split.requestId < requestId);
+  const disabledReason = !connected
     ? t`Reconnect to request a cut.`
-    : !split?.supported
-      ? t`This recording mode does not support lossless cutting.`
-      : t`Finish this file and continue recording at the next safe boundary.`;
+    : pending
+      ? t`The file is split at the next safe boundary.`
+      : undefined;
 
   return (
-    <div title={explanation}>
-      <DropdownMenuItem
-        disabled={!connected || !split?.supported || pending}
-        onSelect={() => mutation.mutate(downloadId)}
-        aria-description={explanation}
-        className="cursor-pointer"
-      >
-        {pending ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <Scissors className="mr-2 h-4 w-4" />
-        )}
-        <span aria-live="polite">
-          {split?.status === 'finalizing' ? (
+    <DropdownMenuItem
+      disabled={disabledReason !== undefined}
+      onSelect={() => mutation.mutate(downloadId)}
+      aria-description={
+        disabledReason ??
+        t`Finish this file and continue recording at the next safe boundary.`
+      }
+      className="cursor-pointer group items-start data-[disabled]:opacity-100"
+    >
+      {pending ? (
+        <Loader2 className="mr-2 mt-0.5 h-4 w-4 animate-spin text-cyan-500 opacity-50 dark:text-cyan-400" />
+      ) : (
+        <Scissors className="mr-2 mt-0.5 h-4 w-4 text-cyan-500 group-hover:text-cyan-600 group-data-[disabled]:opacity-50 dark:text-cyan-400 dark:group-hover:text-cyan-300" />
+      )}
+      <span className="flex flex-col gap-0.5">
+        <span
+          aria-live="polite"
+          className="text-cyan-600 group-hover:text-cyan-700 group-data-[disabled]:opacity-50 dark:text-cyan-400 dark:group-hover:text-cyan-300 transition-colors"
+        >
+          {split.status === 'finalizing' ? (
             <Trans>Finalizing recording file...</Trans>
           ) : pending ? (
             <Trans>Waiting for a safe cut...</Trans>
           ) : (
-            <Trans>Lossless cutting</Trans>
+            <Trans>Split file now</Trans>
           )}
         </span>
-      </DropdownMenuItem>
-    </div>
+        {disabledReason && (
+          <span className="text-xs text-muted-foreground">
+            {disabledReason}
+          </span>
+        )}
+      </span>
+    </DropdownMenuItem>
+  );
+}
+
+/**
+ * Card badge while this card's download has a cut in progress. Reads only the
+ * split state, so progress updates re-render the badge alone.
+ */
+export function LosslessCutBadge({ downloadId }: { downloadId: string }) {
+  const status = useDownloadStore(
+    (state) => state.manualSplitById.get(downloadId)?.status,
+  );
+  if (status !== 'pending' && status !== 'finalizing') return null;
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 whitespace-nowrap border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+    >
+      <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+      {status === 'pending' ? (
+        <Trans>Splitting...</Trans>
+      ) : (
+        <Trans>Finalizing...</Trans>
+      )}
+    </Badge>
   );
 }

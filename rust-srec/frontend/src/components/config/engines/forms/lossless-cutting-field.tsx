@@ -1,5 +1,6 @@
 import { Trans } from '@lingui/react/macro';
-import { Info } from 'lucide-react';
+import { Info, TriangleAlert } from 'lucide-react';
+import { useWatch } from 'react-hook-form';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -20,13 +21,32 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
+/**
+ * The engine's custom-arguments field that disables chunked recording when it
+ * is non-empty. Mirrors the gate in the backend FFmpeg and Streamlink engines;
+ * the output format half of that gate lives in the recording configuration,
+ * not in engine settings, so it can only be described here.
+ */
+export type LosslessCuttingArgsField = 'output_args' | 'extra_args';
+
 export function LosslessCuttingField({
   basePath,
+  argsField,
   isOverride = false,
 }: {
   basePath: string;
+  argsField: LosslessCuttingArgsField;
   isOverride?: boolean;
 }) {
+  const enabled = useWatch({ name: `${basePath}.enable_lossless_cutting` });
+  // An override without this key inherits the engine's arguments, which are
+  // not known here; only arguments set in this form are evaluated.
+  const args: unknown = useWatch({ name: `${basePath}.${argsField}` });
+  const blockedByArgs = Array.isArray(args) && args.length > 0;
+  // Overrides cannot see the inherited engine value, so details follow only
+  // an explicit `true`.
+  const showDetails = enabled === true;
+
   return (
     <FormField
       name={`${basePath}.enable_lossless_cutting`}
@@ -84,35 +104,62 @@ export function LosslessCuttingField({
               default. Changes apply to new recordings.
             </Trans>
           </FormDescription>
-          <Alert role="note">
-            <Info />
-            <AlertTitle>
-              <Trans>Recording uses temporary chunks</Trans>
-            </AlertTitle>
-            <AlertDescription>
-              <p>
-                <Trans>
-                  When enabled, recordings are written to temporary chunks and
-                  combined into final files after a cut, a size or duration
-                  limit, or recording stops. Final files are available only
-                  after this step finishes.
-                </Trans>
-              </p>
-              <p>
-                <Trans>
-                  Uses extra disk space and I/O. Keep temporary chunks if file
-                  finalization fails.
-                </Trans>
-              </p>
-              <p>
-                <Trans>
-                  Requires MP4, MKV, FLV, TS, or MOV output with no custom
-                  FFmpeg output arguments or extra Streamlink arguments. Other
-                  settings use normal recording without lossless cutting.
-                </Trans>
-              </p>
-            </AlertDescription>
-          </Alert>
+          {showDetails && blockedByArgs && (
+            <Alert
+              role="alert"
+              className="bg-amber-500/5 border-amber-500/30 text-amber-700 dark:text-amber-400 *:data-[slot=alert-description]:text-amber-700/90 dark:*:data-[slot=alert-description]:text-amber-400/90"
+            >
+              <TriangleAlert />
+              <AlertTitle className="line-clamp-none">
+                <Trans>Lossless cutting will not be used</Trans>
+              </AlertTitle>
+              <AlertDescription>
+                {argsField === 'output_args' ? (
+                  <Trans>
+                    Custom FFmpeg output arguments are set. Remove them to
+                    record with lossless cutting; until then this engine records
+                    normally.
+                  </Trans>
+                ) : (
+                  <Trans>
+                    Extra Streamlink arguments are set. Remove them to record
+                    with lossless cutting; until then this engine records
+                    normally.
+                  </Trans>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          {showDetails && (
+            <Alert role="note">
+              <Info />
+              <AlertTitle className="line-clamp-none">
+                <Trans>Recording uses temporary chunks</Trans>
+              </AlertTitle>
+              <AlertDescription>
+                <p>
+                  <Trans>
+                    Recordings are written to temporary chunks and combined into
+                    final files after a cut, a size or duration limit, or
+                    recording stops. Final files are available only after this
+                    step finishes.
+                  </Trans>
+                </p>
+                <p>
+                  <Trans>
+                    Uses extra disk space and I/O. Temporary chunks are kept if
+                    file finalization fails.
+                  </Trans>
+                </p>
+                <p>
+                  <Trans>
+                    Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings
+                    in other formats use normal recording.
+                  </Trans>
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
           <FormMessage />
         </FormItem>
       )}

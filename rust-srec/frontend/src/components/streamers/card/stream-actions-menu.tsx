@@ -46,7 +46,6 @@ export const StreamActionsMenu = ({
         <DropdownMenuLabel>
           <Trans>Actions</Trans>
         </DropdownMenuLabel>
-        {cutAction}
         <DropdownMenuItem
           onClick={() => onToggle(streamer.id, !streamer.enabled)}
           className="cursor-pointer group"
@@ -67,6 +66,12 @@ export const StreamActionsMenu = ({
             </>
           )}
         </DropdownMenuItem>
+        {cutAction && (
+          <>
+            <DropdownMenuSeparator />
+            {cutAction}
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className="cursor-pointer group">
           <Link to="/player" search={{ url: streamer.url }}>

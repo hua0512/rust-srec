@@ -8,6 +8,7 @@ import { ProgressIndicator } from './progress-indicator';
 import { StatusBadge } from './card/stream-status-badge';
 import { useStreamerStatus } from './card/use-streamer-status';
 import { StreamActionsMenu } from './card/stream-actions-menu';
+import { LosslessCutBadge } from './card/lossless-cut-action';
 import { StreamAvatarInfo } from './card/stream-avatar-info';
 import { DashboardCard } from '../dashboard/dashboard-card';
 import { useDownloadStore } from '@/store/downloads';
@@ -109,8 +110,11 @@ export const StreamerCard = memo(
           <div className="flex justify-between items-start">
             <div className="space-y-3 w-full">
               <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <StatusBadge status={status} />
+                  {activeDownloadId !== undefined && (
+                    <LosslessCutBadge downloadId={activeDownloadId} />
+                  )}
                   {hasActiveUploads && (
                     <UploadIndicator streamerId={streamer.id} />
                   )}

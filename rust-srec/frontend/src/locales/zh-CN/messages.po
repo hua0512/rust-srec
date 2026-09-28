@@ -23,7 +23,7 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:252
+#: src/components/config/engines/forms/streamlink-form.tsx:256
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:187
+#: src/components/config/engines/forms/ffmpeg-form.tsx:191
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:157
+#: src/components/config/engines/forms/ffmpeg-form.tsx:161
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -260,7 +260,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:56
+#: src/components/config/engines/forms/ffmpeg-form.tsx:60
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 
@@ -364,11 +364,11 @@ msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:61
+#: src/components/config/engines/forms/ffmpeg-form.tsx:65
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:54
+#: src/components/config/engines/forms/streamlink-form.tsx:58
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
@@ -689,7 +689,7 @@ msgstr "Android 版本"
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "匿名元数据 • UTF-8 格式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:257
+#: src/components/config/engines/forms/streamlink-form.tsx:261
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -763,6 +763,10 @@ msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。
 msgid "Applied to all URLs"
 msgstr "应用于所有链接"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:155
+msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
+msgstr "仅适用于 MP4、MKV、FLV、TS 或 MOV 输出。其他格式的录制使用普通录制方式。"
+
 #: src/components/streamers/config/streamer-recording-fields.tsx:84
 msgid "Apply template settings."
 msgstr "应用模板设置。"
@@ -810,11 +814,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:162
+#: src/components/config/engines/forms/ffmpeg-form.tsx:166
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:192
+#: src/components/config/engines/forms/ffmpeg-form.tsx:196
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -1187,7 +1191,7 @@ msgstr "Bearer Token"
 msgid "Behind live edge"
 msgstr "距直播最新位置"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:141
+#: src/components/config/engines/forms/streamlink-form.tsx:145
 msgid "best"
 msgstr "最佳"
 
@@ -1199,8 +1203,8 @@ msgstr "测试版"
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:51
-#: src/components/config/engines/forms/streamlink-form.tsx:44
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/streamlink-form.tsx:48
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:62
 msgid "Binary Path"
 msgstr "可执行文件路径"
@@ -1463,7 +1467,7 @@ msgstr "渠道已删除"
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:220
+#: src/components/config/engines/forms/streamlink-form.tsx:224
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
@@ -1583,7 +1587,7 @@ msgstr "清除日期范围"
 msgid "Clear selection"
 msgstr "清除选择"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:96
+#: src/components/config/engines/forms/streamlink-form.tsx:100
 msgid "Clearing the field inherits the engine setting."
 msgstr "清空字段会继承引擎设置。"
 
@@ -1657,7 +1661,7 @@ msgstr "收集统计"
 msgid "Coming soon"
 msgstr "即将推出"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:225
+#: src/components/config/engines/forms/streamlink-form.tsx:229
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -1893,7 +1897,7 @@ msgstr "连接不稳定"
 msgid "Connection status: {statusLabel}"
 msgstr "连接状态：{statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:83
+#: src/components/config/engines/forms/ffmpeg-form.tsx:87
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
@@ -2310,6 +2314,10 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:118
+msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "已设置自定义 FFmpeg 输出参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:983
 msgid "Custom Flags"
 msgstr "自定义标志"
@@ -2326,7 +2334,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:204
+#: src/components/config/engines/forms/streamlink-form.tsx:208
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -2338,7 +2346,7 @@ msgstr "自定义画质值"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:131
+#: src/components/config/engines/forms/ffmpeg-form.tsx:135
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -2563,7 +2571,7 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/workflows/workflow-card.tsx:103
 #: src/components/pipeline/workflows/workflow-card.tsx:126
 #: src/components/sessions/session-card.tsx:287
-#: src/components/streamers/card/stream-actions-menu.tsx:94
+#: src/components/streamers/card/stream-actions-menu.tsx:99
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:476
 msgid "Delete"
@@ -2823,7 +2831,7 @@ msgstr "目录路径已复制"
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:58
+#: src/components/streamers/card/stream-actions-menu.tsx:57
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
 msgstr "禁用"
@@ -2837,7 +2845,7 @@ msgstr "禁用秒传"
 msgid "Disable selected"
 msgstr "禁用所选"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:68
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:88
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:51
@@ -2996,7 +3004,7 @@ msgstr "时长（毫秒）"
 msgid "Duration limit"
 msgstr "时长限制"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:146
+#: src/components/config/engines/forms/streamlink-form.tsx:150
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -3084,7 +3092,7 @@ msgstr "例如：标准处理"
 msgid "Each box is one argument, in order. Empty arguments, spaces, quotes and line breaks are preserved. Do not add shell quotes. Placeholders below are expanded without shell interpretation."
 msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号和换行都会保留。不要添加 shell 引号。下方占位符会展开，但不会经过 shell 解释。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:24
+#: src/components/streamers/card/lossless-cut-action.tsx:25
 msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
 msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 
@@ -3094,7 +3102,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:95
-#: src/components/streamers/card/stream-actions-menu.tsx:84
+#: src/components/streamers/card/stream-actions-menu.tsx:89
 msgid "Edit"
 msgstr "编辑"
 
@@ -3133,7 +3141,7 @@ msgstr "生效范围"
 msgid "Empty pattern"
 msgstr "表达式为空"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:65
+#: src/components/streamers/card/stream-actions-menu.tsx:64
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
 msgstr "启用"
@@ -3146,7 +3154,7 @@ msgstr "启用高级 FLV 时间戳修复"
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "启用高级 HLS 分段重建"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:38
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:58
 msgid "Enable lossless cutting"
 msgstr "启用无损分段"
 
@@ -3171,7 +3179,7 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable selected"
 msgstr "启用所选"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:65
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:85
 #: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
@@ -3458,7 +3466,7 @@ msgstr "退出选择模式"
 msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:41
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:61
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
@@ -3497,12 +3505,16 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:240
+#: src/components/config/engines/forms/streamlink-form.tsx:244
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:604
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:117
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:754
 msgid "Extra Arguments"
 msgstr "额外参数"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:124
+msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
+msgstr "已设置额外的 Streamlink 参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:14
 msgid "Extract AAC"
@@ -3946,12 +3958,12 @@ msgstr "ffmpeg"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:65
+#: src/components/config/engines/forms/streamlink-form.tsx:69
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:88
+#: src/components/config/engines/forms/streamlink-form.tsx:92
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器上的路径，不要添加 shell 引号。环境默认值优先使用 FFMPEG_PATH，然后使用 PATH 中的 ffmpeg。"
 
@@ -3959,7 +3971,7 @@ msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器�
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:81
+#: src/components/config/engines/forms/streamlink-form.tsx:85
 msgid "FFMPEG_PATH or ffmpeg"
 msgstr "FFMPEG_PATH 或 ffmpeg"
 
@@ -4060,15 +4072,19 @@ msgstr "过滤原因："
 msgid "Filters"
 msgstr "过滤器"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:129
+#: src/components/streamers/card/lossless-cut-action.tsx:138
 msgid "Finalizing recording file..."
 msgstr "正在完成录制文件…"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:173
+msgid "Finalizing..."
+msgstr "正在收尾…"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Fine tune brand and surface colors."
 msgstr "微调品牌和表面颜色。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:112
+#: src/components/streamers/card/lossless-cut-action.tsx:123
 msgid "Finish this file and continue recording at the next safe boundary."
 msgstr "在下一个安全分割点结束当前文件，并继续录制到新文件。"
 
@@ -4374,8 +4390,8 @@ msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:94
-#: src/components/config/engines/forms/streamlink-form.tsx:157
+#: src/components/config/engines/forms/ffmpeg-form.tsx:98
+#: src/components/config/engines/forms/streamlink-form.tsx:161
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
@@ -4640,7 +4656,7 @@ msgstr "https://discord.com/api/webhooks/..."
 msgid "https://gotify.example.com"
 msgstr "https://gotify.example.com"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:199
+#: src/components/config/engines/forms/streamlink-form.tsx:203
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -4758,7 +4774,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:83
 msgid "Inherited from engine"
 msgstr "继承引擎设置"
 
@@ -4786,7 +4802,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:145
+#: src/components/config/engines/forms/ffmpeg-form.tsx:149
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -5224,9 +5240,9 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:133
-msgid "Lossless cutting"
-msgstr "无损分段"
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:114
+msgid "Lossless cutting will not be used"
+msgstr "不会使用无损分段"
 
 #: src/components/sessions/recordings-tab.tsx:284
 msgid "Lossless Split"
@@ -5637,7 +5653,7 @@ msgstr "移动文件"
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:126
+#: src/components/config/engines/forms/ffmpeg-form.tsx:130
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -5875,7 +5891,7 @@ msgstr "未检测到问题"
 msgid "No jobs found"
 msgstr "未找到处理任务"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:16
+#: src/components/streamers/card/lossless-cut-action.tsx:17
 msgid "No keyframe arrived in time, so no safe cut boundary was found. Recording continues."
 msgstr "未在时限内收到关键帧，未找到安全分割点，录制仍在继续。"
 
@@ -5920,7 +5936,7 @@ msgstr "未添加元数据标签"
 msgid "No modules configured"
 msgstr "未配置模块"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:28
+#: src/components/streamers/card/lossless-cut-action.tsx:29
 msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
 msgstr "未在时限内收到新的媒体数据，未找到安全分割点，录制仍在继续。"
 
@@ -6014,7 +6030,7 @@ msgstr "没有找到结果"
 msgid "No running pipelines selected"
 msgstr "未选择运行中的流水线"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:31
+#: src/components/streamers/card/lossless-cut-action.tsx:32
 msgid "No safe cut boundary was found. Recording continues."
 msgstr "未找到安全分割点，录制仍在继续。"
 
@@ -6390,7 +6406,7 @@ msgstr "输出"
 msgid "Output and its file deleted"
 msgstr "已删除产物及其文件"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:175
+#: src/components/config/engines/forms/ffmpeg-form.tsx:179
 msgid "Output Arguments"
 msgstr "输出参数"
 
@@ -6637,7 +6653,7 @@ msgstr "路径"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:82
+#: src/components/config/engines/forms/streamlink-form.tsx:86
 msgid "Path to FFmpeg"
 msgstr "FFmpeg 可执行文件路径"
 
@@ -7279,7 +7295,7 @@ msgstr "二维码已过期"
 msgid "QR Login"
 msgstr "扫码登录"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:136
+#: src/components/config/engines/forms/streamlink-form.tsx:140
 #: src/components/player/stream-info-card.tsx:32
 msgid "Quality"
 msgstr "质量"
@@ -7454,7 +7470,7 @@ msgstr "推荐"
 msgid "Recommended: 8388608 (8 MiB)"
 msgstr "推荐：8388608 (8 MiB)"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:109
+#: src/components/streamers/card/lossless-cut-action.tsx:112
 msgid "Reconnect to request a cut."
 msgstr "重新连接后才能请求分段。"
 
@@ -7498,7 +7514,7 @@ msgstr "录制分段成功。"
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:90
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:137
 msgid "Recording uses temporary chunks"
 msgstr "录制将使用临时分块"
 
@@ -7509,6 +7525,10 @@ msgstr "录制将在计划允许时开始"
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Recordings"
 msgstr "录制内容"
+
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:141
+msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
+msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:80
 #: src/components/streamers/card/use-streamer-status.tsx:89
@@ -7731,10 +7751,6 @@ msgstr "如果直播间被主播设置了密码保护，则为必填。"
 #: src/components/config/shared/pipeline-tabs-section.tsx:217
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
-
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:108
-msgid "Requires MP4, MKV, FLV, TS, or MOV output with no custom FFmpeg output arguments or extra Streamlink arguments. Other settings use normal recording without lossless cutting."
-msgstr "需要输出为 MP4、MKV、FLV、TS 或 MOV，且没有自定义 FFmpeg 输出参数或额外的 Streamlink 参数。其他配置使用普通录制模式，不提供无损分段。"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:369
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:122
@@ -8696,6 +8712,10 @@ msgstr "按时长分割。"
 msgid "Split after size."
 msgstr "按大小分割。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:142
+msgid "Split file now"
+msgstr "立即分割文件"
+
 #: src/components/config/engines/forms/mesio-form.tsx:82
 msgid "Split on any raw header change. Safe but may cause extra files."
 msgstr "在任意原始头变更时分割。安全但可能产生额外文件。"
@@ -8708,13 +8728,17 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:82
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:102
 msgid "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
 msgstr "无需重新连接或重新编码即可分割录制。默认关闭，修改仅对新开始的录制生效。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:670
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
+
+#: src/components/streamers/card/lossless-cut-action.tsx:171
+msgid "Splitting..."
+msgstr "正在分割…"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "Standard"
@@ -8960,7 +8984,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:49
+#: src/components/config/engines/forms/streamlink-form.tsx:53
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -9196,6 +9220,10 @@ msgstr "无法完成分段。"
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
+#: src/components/streamers/card/lossless-cut-action.tsx:114
+msgid "The file is split at the next safe boundary."
+msgstr "文件将在下一个安全分割点分割。"
+
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:431
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
 msgstr "密钥继承你账户的权限，并受此处选择的权限级别限制。"
@@ -9232,7 +9260,7 @@ msgstr "此地址的直播流已不可用。请刷新直播地址或切换直播
 msgid "The stream URL could not be refreshed. Retry or check the source credentials."
 msgstr "无法刷新直播地址。请重试或检查源站凭据。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:20
+#: src/components/streamers/card/lossless-cut-action.tsx:21
 msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
 msgstr "直播流的分片未标记为可独立播放，未找到安全分割点，录制仍在继续。"
 
@@ -9298,10 +9326,6 @@ msgstr "浏览器不支持此媒体格式。请选择其他格式或使用其他
 #: src/components/config/shared/pipeline-tabs-section.tsx:98
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
-
-#: src/components/streamers/card/lossless-cut-action.tsx:111
-msgid "This recording mode does not support lossless cutting."
-msgstr "当前录制模式不支持无损分段。"
 
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:65
 msgid "This removes {countLabel} from the recording's file list. This action cannot be undone."
@@ -9409,8 +9433,8 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:105
-#: src/components/config/engines/forms/streamlink-form.tsx:168
+#: src/components/config/engines/forms/ffmpeg-form.tsx:109
+#: src/components/config/engines/forms/streamlink-form.tsx:172
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
@@ -9427,7 +9451,7 @@ msgstr "时间线"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:72
+#: src/components/config/engines/forms/ffmpeg-form.tsx:76
 msgid "Timeout"
 msgstr "超时"
 
@@ -9734,7 +9758,7 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:185
+#: src/components/config/engines/forms/streamlink-form.tsx:189
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -9742,11 +9766,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:194
+#: src/components/config/engines/forms/streamlink-form.tsx:198
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:215
+#: src/components/config/engines/forms/streamlink-form.tsx:219
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
@@ -9948,12 +9972,12 @@ msgstr "必须填写 URL"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:62
-#: src/components/config/engines/forms/streamlink-form.tsx:111
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:82
+#: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Use engine setting"
 msgstr "使用引擎设置"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:124
+#: src/components/config/engines/forms/streamlink-form.tsx:128
 msgid "Use environment default"
 msgstr "使用环境默认值"
 
@@ -9982,7 +10006,7 @@ msgstr "使用播放器默认的缓冲与延迟平衡设置。"
 msgid "Use TLS"
 msgstr "启用 TLS"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:121
+#: src/components/config/engines/forms/ffmpeg-form.tsx:125
 #: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
 msgstr "User-Agent"
@@ -10010,9 +10034,9 @@ msgstr "用户名（可选）"
 msgid "Users"
 msgstr "用户"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:102
-msgid "Uses extra disk space and I/O. Keep temporary chunks if file finalization fails."
-msgstr "会增加磁盘空间与 I/O 开销。如果文件收尾失败，请保留临时分块。"
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:149
+msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
+msgstr "会占用额外的磁盘空间和 I/O。文件收尾失败时会保留临时分块。"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
@@ -10147,7 +10171,7 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/streamers/card/lossless-cut-action.tsx:131
+#: src/components/streamers/card/lossless-cut-action.tsx:140
 msgid "Waiting for a safe cut..."
 msgstr "正在等待安全分割点…"
 
@@ -10163,7 +10187,7 @@ msgstr "等待时长"
 msgid "Warning when the processing queue gets too long."
 msgstr "处理队列过长时发出警告。"
 
-#: src/components/streamers/card/stream-actions-menu.tsx:75
+#: src/components/streamers/card/stream-actions-menu.tsx:80
 msgid "Watch"
 msgstr "观看"
 
@@ -10245,10 +10269,6 @@ msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-s
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1572
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
-
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:94
-msgid "When enabled, recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
-msgstr "启用后，录制内容会先写入临时分块，在分段、达到大小或时长限制或录制停止后，合并为最终文件。只有完成此步骤后，最终文件才可使用。"
 
 #: src/components/config/global/output-retention-fields.tsx:69
 #: src/components/config/global/output-retention-fields.tsx:72

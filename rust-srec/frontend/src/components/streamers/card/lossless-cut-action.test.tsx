@@ -24,14 +24,12 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
     children,
     disabled,
     onSelect,
-    title,
   }: {
     children: ReactNode;
     disabled: boolean;
     onSelect: () => void;
-    title: string;
   }) => (
-    <button disabled={disabled} onClick={onSelect} title={title}>
+    <button disabled={disabled} onClick={onSelect}>
       {children}
     </button>
   ),
@@ -85,24 +83,30 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('requires a supported active connection', () => {
+it('is hidden for unsupported recordings and disabled with a visible reason while disconnected', () => {
   useDownloadStore.getState().upsertManualSplit('download-1', {
     ...initial,
     supported: false,
     revision: 2n,
   });
   mount();
-  expect(
-    screen.getByRole('button', { name: 'Lossless cutting' }),
-  ).toBeDisabled();
+  expect(screen.queryByRole('button')).toBeNull();
   act(() =>
     useDownloadStore
       .getState()
       .upsertManualSplit('download-1', { ...initial, revision: 3n }),
   );
-  expect(screen.getByRole('button')).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Split file now' })).toBeEnabled();
+  expect(screen.queryByText('Reconnect to request a cut.')).toBeNull();
   act(() => useDownloadStore.getState().setConnectionStatus('disconnected'));
   expect(screen.getByRole('button')).toBeDisabled();
+  expect(screen.getByText('Reconnect to request a cut.')).toBeVisible();
+});
+
+it('is hidden without split state', () => {
+  useDownloadStore.getState().clearAll();
+  mount();
+  expect(screen.queryByRole('button')).toBeNull();
 });
 
 it('waits for completed output and reports success after the menu closes', async () => {
@@ -155,8 +159,11 @@ it('restores a pending cut and explains expiration without reporting success', a
     }),
   );
   expect(
-    screen.getByRole('button', { name: 'Waiting for a safe cut...' }),
+    screen.getByRole('button', { name: /^Waiting for a safe cut\.\.\./ }),
   ).toBeDisabled();
+  expect(
+    screen.getByText('The file is split at the next safe boundary.'),
+  ).toBeVisible();
   act(() =>
     useDownloadStore.getState().upsertManualSplit('download-1', {
       ...initial,
@@ -170,9 +177,7 @@ it('restores a pending cut and explains expiration without reporting success', a
       'No safe cut boundary was found. Recording continues.',
     ),
   );
-  expect(
-    screen.getByRole('button', { name: 'Lossless cutting' }),
-  ).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Split file now' })).toBeEnabled();
   expect(toast.success).not.toHaveBeenCalled();
 });
 
@@ -238,9 +243,7 @@ it('does not carry a request over to a replacement recording', async () => {
       .upsertManualSplit('download-2', { ...initial, revision: 1n }),
   );
   view.switchTo('download-2');
-  expect(
-    screen.getByRole('button', { name: 'Lossless cutting' }),
-  ).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Split file now' })).toBeEnabled();
   view.switchTo(undefined);
   expect(screen.queryByRole('button')).toBeNull();
 });

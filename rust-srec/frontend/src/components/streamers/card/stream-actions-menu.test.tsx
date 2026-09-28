@@ -50,14 +50,24 @@ it('keeps an open menu open when a recording starts and is replaced', () => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
   });
   expect(screen.getByRole('menu')).toBeInTheDocument();
-  expect(screen.queryByText('Lossless cutting')).toBeNull();
+  expect(screen.queryByText('Split file now')).toBeNull();
 
+  act(() =>
+    useDownloadStore.getState().upsertManualSplit('download-1', {
+      supported: true,
+      unavailableReason: '',
+      requestId: 0n,
+      revision: 1n,
+      status: 'idle',
+      expiryReason: '',
+    }),
+  );
   view.rerender(tree('download-1'));
   expect(screen.getByRole('menu')).toBeInTheDocument();
-  expect(screen.getByText('Lossless cutting')).toBeInTheDocument();
+  expect(screen.getByText('Split file now')).toBeInTheDocument();
 
   view.rerender(tree('download-2'));
   view.rerender(tree(undefined));
   expect(screen.getByRole('menu')).toBeInTheDocument();
-  expect(screen.queryByText('Lossless cutting')).toBeNull();
+  expect(screen.queryByText('Split file now')).toBeNull();
 });
