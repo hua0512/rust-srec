@@ -179,10 +179,34 @@ async fn manual_cut_completes_after_both_segment_events_in_either_order() {
         ));
         assert_eq!(handle.manual_split.begin(), Some(1));
         release.notify_one();
-        wait_for_download_terminal(&mut events).await;
+        let mut revisions = Vec::new();
+        let mut terminal = false;
+        while !terminal || !events.is_empty() {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for download events")
+                .expect("download event channel closed");
+            match event {
+                DownloadManagerEvent::Terminal(_) => terminal = true,
+                DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
+                    state,
+                    ..
+                }) => revisions.push((state.revision, state.status)),
+                _ => {}
+            }
+        }
         assert_eq!(
             handle.manual_split.snapshot().status,
             pipeline_common::ManualSplitStatus::Completed
+        );
+        // Each revision is published once, in order.
+        assert!(
+            revisions.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "{revisions:?}"
+        );
+        assert!(
+            revisions.contains(&(4, pipeline_common::ManualSplitStatus::Completed)),
+            "{revisions:?}"
         );
     }
 }

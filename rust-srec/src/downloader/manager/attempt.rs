@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -492,7 +492,16 @@ impl DownloadManager {
             split_expiration.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut pending_cut_completion: Option<(u32, u64)> = None;
             let mut last_started_sequence: Option<u32> = None;
-            let publish_split = |state| {
+            // Completions publish immediately so the cut result precedes the
+            // next segment event; the watch branch then sees the same revision.
+            // Revisions only grow, so anything not newer was already sent.
+            let published_split_revision = AtomicU64::new(0);
+            let publish_split = |state: pipeline_common::ManualSplitSnapshot| {
+                if published_split_revision.fetch_max(state.revision, Ordering::AcqRel)
+                    >= state.revision
+                {
+                    return;
+                }
                 translator_events.publish(DownloadManagerEvent::Progress(
                     DownloadProgressEvent::ManualSplitChanged {
                         download_id: translator_download_id.clone(),

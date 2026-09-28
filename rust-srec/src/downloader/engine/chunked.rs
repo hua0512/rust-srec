@@ -9,7 +9,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -22,6 +22,10 @@ use super::{
 };
 
 pub(super) const LIST_NAME: &str = "chunks.csv";
+
+/// Groups queued or finalizing at which a manual cut waits instead of adding
+/// another. Automatic limits still queue, so file size stays bounded.
+const MANUAL_CUT_BACKLOG: usize = 2;
 
 #[cfg(test)]
 mod tests;
@@ -314,7 +318,8 @@ async fn ingest(
     handle: &DownloadHandle,
     directory: &Path,
     mut events: mpsc::Receiver<SegmentEvent>,
-    jobs: mpsc::Sender<Group>,
+    jobs: mpsc::UnboundedSender<Group>,
+    backlog: &AtomicUsize,
     completed: &AtomicU32,
 ) -> Result<Option<SegmentEvent>, EngineStartError> {
     let config = handle.config_snapshot();
@@ -344,7 +349,16 @@ async fn ingest(
                 if let Some(current) = &mut group
                     && !current.chunks.is_empty()
                 {
-                    let request = handle.manual_split.begin();
+                    let request = if backlog.load(Ordering::Acquire) >= MANUAL_CUT_BACKLOG {
+                        if handle.manual_split.is_pending() {
+                            handle.manual_split.defer(
+                                pipeline_common::ManualSplitExpiryReason::FinalizationBacklog,
+                            );
+                        }
+                        None
+                    } else {
+                        handle.manual_split.begin()
+                    };
                     current.reason = if request.is_some() {
                         Some("manual")
                     } else if config.max_segment_duration_secs > 0
@@ -362,10 +376,9 @@ async fn ingest(
                     if current.reason.is_some()
                         && let Some(finished) = group.take()
                     {
-                        jobs.try_send(finished).map_err(|_| {
-                            failure(
-                                "Recording finalization backlog is full; recovery files retained",
-                            )
+                        backlog.fetch_add(1, Ordering::AcqRel);
+                        jobs.send(finished).map_err(|_| {
+                            failure("Recording finalizer stopped; recovery files retained")
                         })?;
                         index += 1;
                     }
@@ -420,8 +433,8 @@ async fn ingest(
     if let Some(group) = group
         && !group.chunks.is_empty()
     {
+        backlog.fetch_add(1, Ordering::AcqRel);
         jobs.send(group)
-            .await
             .map_err(|_| failure("Recording finalizer stopped; recovery files retained"))?;
     }
     Ok(terminal)
@@ -544,13 +557,15 @@ async fn finalize_groups(
     handle: &DownloadHandle,
     binary: &str,
     directory: &Path,
-    mut jobs: mpsc::Receiver<Group>,
+    mut jobs: mpsc::UnboundedReceiver<Group>,
+    backlog: &AtomicUsize,
     completed: &AtomicU32,
 ) -> Result<(u64, f64), EngineStartError> {
     let mut bytes = 0u64;
     let mut duration = 0.0;
     while let Some(mut group) = jobs.recv().await {
         let size = finalize(handle, binary, &mut group).await?;
+        backlog.fetch_sub(1, Ordering::AcqRel);
         bytes = bytes.saturating_add(size);
         duration += group.duration();
         send(
@@ -608,11 +623,20 @@ where
     config.max_segment_size_bytes = 0;
     let (events_tx, events_rx) = mpsc::channel(32);
     let inner = Arc::new(handle.with_output(config, events_tx));
-    let (jobs_tx, jobs_rx) = mpsc::channel(2);
+    // Closed groups queue without bound. Their chunks are already on disk, and
+    // ingestion must keep draining producer events: a blocked event channel
+    // stalls the producer's output reader and then acquisition itself. A slow
+    // disk therefore delays final files but never stops recording; only
+    // manual cuts wait while `backlog` is at `MANUAL_CUT_BACKLOG`.
+    let (jobs_tx, jobs_rx) = mpsc::unbounded_channel();
+    let backlog = AtomicUsize::new(0);
     let completed = AtomicU32::new(0);
     let producer = producer(inner);
     let ingest = async {
-        let result = ingest(&handle, &directory, events_rx, jobs_tx, &completed).await;
+        let result = ingest(
+            &handle, &directory, events_rx, jobs_tx, &backlog, &completed,
+        )
+        .await;
         if result.is_err() {
             handle.manual_split.close(true);
             handle.cancellation_token.cancel();
@@ -620,7 +644,8 @@ where
         result
     };
     let finalize = async {
-        let result = finalize_groups(&handle, binary, &directory, jobs_rx, &completed).await;
+        let result =
+            finalize_groups(&handle, binary, &directory, jobs_rx, &backlog, &completed).await;
         if result.is_err() {
             handle.manual_split.close(true);
             handle.cancellation_token.cancel();

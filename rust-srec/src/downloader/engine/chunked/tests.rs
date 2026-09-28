@@ -1379,3 +1379,108 @@ async fn shutdown_deadline_abandons_finalization_but_keeps_recovery_files() {
     assert!(staging.join("group-0.ffconcat").exists());
     assert!(staging.join("group-0.json").exists());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn slow_finalization_queues_groups_without_stopping_acquisition() {
+    let tools = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let finalizer = fake_finalizer(tools.path(), "0.2");
+    let (handle, mut events) = fixture_handle(directory.path(), "backlog");
+    // Every 2 s chunk exceeds the limit, so each closes its own group and the
+    // producer queues groups far faster than the finalizer publishes them.
+    handle.update_config(|config| config.max_segment_duration_secs = 1);
+    tokio::time::timeout(
+        Duration::from_secs(20),
+        run(handle.clone(), &finalizer, |inner| async move {
+            produce_chunks(&inner, 6, 6).await?;
+            send(
+                &inner,
+                SegmentEvent::DownloadCompleted {
+                    total_bytes: 60,
+                    total_duration_secs: 12.0,
+                    total_segments: 6,
+                    engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
+                },
+            )
+            .await
+        }),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert!(!handle.is_cancelled());
+    let events = drain(&mut events);
+    let completed: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            SegmentEvent::SegmentCompleted(info) => Some(info),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed.len(), 6);
+    for info in &completed {
+        assert_eq!(tokio::fs::read(&info.path).await.unwrap(), b"final media");
+    }
+    assert!(matches!(
+        events.last(),
+        Some(SegmentEvent::DownloadCompleted {
+            total_segments: 6,
+            ..
+        })
+    ));
+}
+
+/// Runs ingestion over two chunks with a manual request waiting and
+/// `backlog` groups already queued, returning the first closed group.
+async fn first_group_with_backlog(backlog: usize) -> (Group, pipeline_common::ManualSplitSnapshot) {
+    let directory = tempfile::tempdir().unwrap();
+    let (handle, _outer) = fixture_handle(directory.path(), "manual-backlog");
+    handle.update_config(|config| config.max_segment_duration_secs = 1);
+    let staging = directory.path().join("staging");
+    tokio::fs::create_dir(&staging).await.unwrap();
+    let (events_tx, events_rx) = mpsc::channel(32);
+    let inner = handle.with_output(
+        DownloadConfig::new("fixture", &staging, "streamer", "Streamer", "session"),
+        events_tx,
+    );
+    let (jobs_tx, mut jobs_rx) = mpsc::unbounded_channel();
+    let queued = AtomicUsize::new(backlog);
+    let completed = AtomicU32::new(0);
+    handle.manual_split.enable();
+    // A backlogged request is never claimed, so it may expire immediately;
+    // a claimable one must outlive the run.
+    let timeout = if backlog >= MANUAL_CUT_BACKLOG {
+        Duration::ZERO
+    } else {
+        Duration::from_secs(30)
+    };
+    handle.manual_split.request(timeout).unwrap();
+    produce_chunks(&inner, 2, 2).await.unwrap();
+    let ingest = ingest(&handle, &staging, events_rx, jobs_tx, &queued, &completed);
+    tokio::pin!(ingest);
+    let group = tokio::select! {
+        group = jobs_rx.recv() => group.unwrap(),
+        result = &mut ingest => panic!("ingestion ended early: {result:?}"),
+    };
+    // The group closed at the second chunk, so that boundary was examined.
+    handle.manual_split.expire();
+    (group, handle.manual_split.snapshot())
+}
+
+#[tokio::test]
+async fn manual_cut_waits_while_finalization_is_backlogged() {
+    let (group, split) = first_group_with_backlog(MANUAL_CUT_BACKLOG).await;
+    assert_eq!(group.reason, Some("duration_limit"));
+    assert_eq!(group.request_id, None);
+    assert_eq!(split.status, pipeline_common::ManualSplitStatus::Expired);
+    assert_eq!(
+        split.expiry_reason,
+        Some(pipeline_common::ManualSplitExpiryReason::FinalizationBacklog)
+    );
+
+    let (group, split) = first_group_with_backlog(MANUAL_CUT_BACKLOG - 1).await;
+    assert_eq!(group.reason, Some("manual"));
+    assert_eq!(group.request_id, Some(split.request_id));
+}
