@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 use crate::database::models::engine::FfmpegEngineConfig;
 use crate::downloader::engine::{DownloadEngine, EngineType, FfmpegEngine};
@@ -117,7 +119,7 @@ async fn chunked_output_names_preserve_sequence_templates_in_events_and_recovery
         assert_eq!(path, group.path);
         assert_eq!(sequence, group.index);
         let metadata: serde_json::Value =
-            serde_json::from_slice(&tokio::fs::read(group.recovery).await.unwrap()).unwrap();
+            serde_json::from_slice(&tokio::fs::read(&group.recovery).await.unwrap()).unwrap();
         assert_eq!(
             metadata["output_path"],
             serde_json::to_value(&group.path).unwrap()
@@ -660,13 +662,30 @@ async fn manual_cut_chunk_list_reads_only_complete_ordered_records() {
     let first = list
         .next(directory.path(), Path::new("chunk-00000000.mkv"))
         .await
+        .unwrap()
         .unwrap();
     assert_eq!((first.start, first.end), (0.0, 2.08));
     let second = list
         .next(directory.path(), Path::new("chunk-00000001.mkv"))
         .await
+        .unwrap()
         .unwrap();
     assert_eq!((second.start, second.end), (2.08, 4.08));
+    // A partially written record is not consumed until its newline arrives.
+    tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .await
+        .unwrap()
+        .write_all(b"chunk-00000002.mkv,4.08")
+        .await
+        .unwrap();
+    assert!(
+        list.next(directory.path(), Path::new("chunk-00000002.mkv"))
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -692,7 +711,6 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
         run(
             handle.clone(),
             "missing-recording-finalizer",
-            Duration::from_secs(1),
             |inner| async move {
                 let dir = inner.config_snapshot().output_dir;
                 let path = dir.join("chunk-00000000.mkv");
@@ -754,12 +772,23 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
     );
     assert!(staging.join("group-0.ffconcat").exists());
     assert!(staging.join("group-0.json").exists());
+    let mut reserved = None;
     while let Ok(event) = events.try_recv() {
         assert!(!matches!(
             event,
             SegmentEvent::SegmentCompleted(_) | SegmentEvent::DownloadCompleted { .. }
         ));
+        if let SegmentEvent::SegmentStarted {
+            path, sequence: 0, ..
+        } = event
+        {
+            reserved = Some(path);
+        }
     }
+    assert!(
+        !reserved.unwrap().exists(),
+        "unused reservation must be released"
+    );
 }
 
 #[tokio::test]
@@ -1005,25 +1034,37 @@ async fn assert_direct_recording(engine: &dyn DownloadEngine, config: DownloadCo
         config,
         sender,
     ));
-    let (result, files) = tokio::time::timeout(Duration::from_secs(30), async {
-        tokio::join!(engine.run(handle.clone()), async {
-            let mut files = Vec::new();
-            loop {
-                let event = events.recv().await.unwrap();
-                assert!(!handle.manual_split.snapshot().supported);
-                match event {
-                    SegmentEvent::SegmentCompleted(info) => files.push(info.path),
-                    SegmentEvent::DownloadCompleted { .. } => break,
-                    SegmentEvent::DownloadFailed { message, .. } => panic!("{message}"),
-                    _ => {}
+    // The handle keeps a sender alive, so the event stream never closes by
+    // itself: an engine error that sends no terminal event must end the wait.
+    let files = tokio::time::timeout(Duration::from_secs(30), async {
+        let run = engine.run(handle.clone());
+        tokio::pin!(run);
+        let mut finished = false;
+        let mut files = Vec::new();
+        loop {
+            tokio::select! {
+                result = &mut run, if !finished => {
+                    result.unwrap();
+                    finished = true;
+                }
+                event = events.recv() => {
+                    assert!(!handle.manual_split.snapshot().supported);
+                    match event.unwrap() {
+                        SegmentEvent::SegmentCompleted(info) => files.push(info.path),
+                        SegmentEvent::DownloadCompleted { .. } => break,
+                        SegmentEvent::DownloadFailed { message, .. } => panic!("{message}"),
+                        _ => {}
+                    }
                 }
             }
-            files
-        })
+        }
+        if !finished {
+            run.await.unwrap();
+        }
+        files
     })
     .await
     .unwrap();
-    result.unwrap();
     assert_eq!(files.len(), 1);
     assert!(tokio::fs::metadata(&files[0]).await.unwrap().len() > 0);
     assert!(
@@ -1041,4 +1082,288 @@ async fn assert_direct_recording(engine: &dyn DownloadEngine, config: DownloadCo
                 .starts_with(".srec-chunks-")
         );
     }
+}
+
+#[test]
+fn chunk_pattern_escapes_percent_in_the_output_directory() {
+    let mut config = DownloadConfig::new(
+        "fixture",
+        "root/50%d/.srec-chunks-attempt",
+        "streamer",
+        "Streamer",
+        "session",
+    );
+    config.output_format = "mkv".into();
+    let mut args = vec![
+        "-f".to_string(),
+        "segment".to_string(),
+        "output".to_string(),
+    ];
+    configure_args(&mut args, &config);
+    assert_eq!(
+        args.last().unwrap(),
+        "root/50%%d/.srec-chunks-attempt/chunk-%08d.mkv"
+    );
+    // The list path is opened verbatim, not expanded as a pattern.
+    let list = args.iter().position(|arg| arg == "-segment_list").unwrap();
+    assert_eq!(args[list + 1], "root/50%d/.srec-chunks-attempt/chunks.csv");
+}
+
+#[tokio::test]
+async fn unpublished_group_releases_only_an_empty_reservation() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = DownloadConfig::new(
+        "fixture",
+        directory.path(),
+        "streamer",
+        "Streamer",
+        "session",
+    )
+    .with_filename_template("recording")
+    .with_output_format("mkv");
+    let (events, _receiver) = mpsc::channel(8);
+    let handle = DownloadHandle::new("attempt", EngineType::Ffmpeg, config, events);
+    let staging = directory.path().join(".srec-chunks-attempt");
+    tokio::fs::create_dir(&staging).await.unwrap();
+
+    let empty = Group::new(&handle, &staging, 0, Utc::now()).await.unwrap();
+    let empty_path = empty.path.clone();
+    assert!(empty_path.exists());
+    drop(empty);
+    assert!(!empty_path.exists());
+
+    let replaced = Group::new(&handle, &staging, 1, Utc::now()).await.unwrap();
+    let replaced_path = replaced.path.clone();
+    tokio::fs::write(&replaced_path, b"someone else's media")
+        .await
+        .unwrap();
+    drop(replaced);
+    assert_eq!(
+        tokio::fs::read(&replaced_path).await.unwrap(),
+        b"someone else's media"
+    );
+}
+
+fn chunk_info(path: PathBuf, index: u32) -> SegmentInfo {
+    SegmentInfo {
+        path,
+        index,
+        duration_secs: 2.0,
+        size_bytes: 10,
+        started_at: Some(Utc::now()),
+        completed_at: Utc::now(),
+        split_reason_code: None,
+        split_reason_details_json: None,
+    }
+}
+
+/// Writes `count` chunk files, timing records for the first `recorded`, and
+/// the events a segment producer emits for them.
+async fn produce_chunks(
+    inner: &DownloadHandle,
+    count: u32,
+    recorded: u32,
+) -> Result<(), EngineStartError> {
+    let dir = inner.config_snapshot().output_dir;
+    let mut list = String::new();
+    for index in 0..count {
+        let name = format!("chunk-{index:08}.mkv");
+        let path = dir.join(&name);
+        tokio::fs::write(&path, b"chunk data").await.unwrap();
+        if index < recorded {
+            let start = f64::from(index) * 2.0;
+            list.push_str(&format!("{name},{start},{}\n", start + 2.0));
+        }
+        tokio::fs::write(dir.join(LIST_NAME), &list).await.unwrap();
+        send(
+            inner,
+            SegmentEvent::SegmentStarted {
+                path: path.clone(),
+                sequence: index,
+                started_at: Utc::now(),
+            },
+        )
+        .await?;
+        send(
+            inner,
+            SegmentEvent::SegmentCompleted(chunk_info(path, index)),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+fn fixture_handle(
+    directory: &Path,
+    id: &str,
+) -> (Arc<DownloadHandle>, mpsc::Receiver<SegmentEvent>) {
+    let config = DownloadConfig::new("fixture", directory, "streamer", "Streamer", "session")
+        .with_filename_template("recording")
+        .with_output_format("mkv");
+    let (sender, events) = mpsc::channel(64);
+    let handle = Arc::new(DownloadHandle::new(id, EngineType::Ffmpeg, config, sender));
+    (handle, events)
+}
+
+fn drain(events: &mut mpsc::Receiver<SegmentEvent>) -> Vec<SegmentEvent> {
+    let mut drained = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        drained.push(event);
+    }
+    drained
+}
+
+/// A finalizer that writes the output named by its last argument after `delay`.
+#[cfg(unix)]
+fn fake_finalizer(directory: &Path, delay: &str) -> String {
+    crate::downloader::engine::utils::test_support::script(
+        directory,
+        "finalizer",
+        &format!("sleep {delay}\nfor last; do :; done\nprintf 'final media' > \"$last\"\n"),
+    )
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn crashed_producer_still_finalizes_recorded_chunks_and_keeps_its_failure_kind() {
+    let tools = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let finalizer = fake_finalizer(tools.path(), "0");
+    let (handle, mut events) = fixture_handle(directory.path(), "crash");
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        run(handle.clone(), &finalizer, |inner| async move {
+            // A killed producer never records its last, unclosed chunk.
+            produce_chunks(&inner, 3, 2).await?;
+            send(
+                &inner,
+                SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::ProcessExit { code: Some(255) },
+                    message: "ffmpeg exited with code 255".into(),
+                },
+            )
+            .await
+        }),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let events = drain(&mut events);
+    let completed: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            SegmentEvent::SegmentCompleted(info) => Some(info),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].duration_secs, 4.0);
+    assert_eq!(
+        tokio::fs::read(&completed[0].path).await.unwrap(),
+        b"final media"
+    );
+    assert!(matches!(
+        events.last(),
+        Some(SegmentEvent::DownloadFailed {
+            kind: DownloadFailureKind::ProcessExit { code: Some(255) },
+            ..
+        })
+    ));
+    assert!(DownloadFailureKind::ProcessExit { code: Some(255) }.is_recoverable());
+    let staging = directory.path().join(".srec-chunks-crash");
+    assert!(staging.join("chunk-00000002.mkv").exists());
+    assert!(!staging.join("chunk-00000000.mkv").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stopping_waits_for_finalization_of_captured_media() {
+    let tools = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let finalizer = fake_finalizer(tools.path(), "1");
+    let (handle, mut events) = fixture_handle(directory.path(), "stop");
+    let stopper = handle.clone();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        run(handle.clone(), &finalizer, |inner| async move {
+            produce_chunks(&inner, 1, 1).await?;
+            stopper.cancel();
+            send(
+                &inner,
+                SegmentEvent::DownloadCompleted {
+                    total_bytes: 10,
+                    total_duration_secs: 2.0,
+                    total_segments: 1,
+                    engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
+                },
+            )
+            .await
+        }),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let events = drain(&mut events);
+    let Some(SegmentEvent::SegmentCompleted(info)) = events
+        .iter()
+        .find(|event| matches!(event, SegmentEvent::SegmentCompleted(_)))
+    else {
+        panic!("expected a finalized recording");
+    };
+    assert_eq!(tokio::fs::read(&info.path).await.unwrap(), b"final media");
+    assert!(matches!(
+        events.last(),
+        Some(SegmentEvent::DownloadCompleted {
+            total_segments: 1,
+            ..
+        })
+    ));
+    assert!(!directory.path().join(".srec-chunks-stop").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn shutdown_deadline_abandons_finalization_but_keeps_recovery_files() {
+    let tools = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let finalizer = fake_finalizer(tools.path(), "30");
+    let (handle, mut events) = fixture_handle(directory.path(), "shutdown");
+    let stopper = handle.clone();
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        run(handle.clone(), &finalizer, |inner| async move {
+            produce_chunks(&inner, 1, 1).await?;
+            stopper.set_stop_deadline(tokio::time::Instant::now() + Duration::from_millis(200));
+            stopper.cancel();
+            send(
+                &inner,
+                SegmentEvent::DownloadCompleted {
+                    total_bytes: 10,
+                    total_duration_secs: 2.0,
+                    total_segments: 1,
+                    engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
+                },
+            )
+            .await
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.unwrap_err().message.contains("shutdown deadline"));
+    let events = drain(&mut events);
+    let Some(SegmentEvent::SegmentStarted { path, .. }) = events.first() else {
+        panic!("expected the recording file to start");
+    };
+    assert!(!path.exists(), "unused reservation must be released");
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        SegmentEvent::SegmentCompleted(_) | SegmentEvent::DownloadCompleted { .. }
+    )));
+    let staging = directory.path().join(".srec-chunks-shutdown");
+    assert!(staging.join("chunk-00000000.mkv").exists());
+    assert!(staging.join("group-0.ffconcat").exists());
+    assert!(staging.join("group-0.json").exists());
 }

@@ -474,12 +474,9 @@ impl DownloadEngine for FfmpegEngine {
             && super::chunked::supports(&handle.config_snapshot())
             && self.config.output_args.is_empty();
         if supported {
-            super::chunked::run(
-                handle,
-                &self.config.binary_path,
-                Duration::from_secs(self.config.graceful_stop_timeout_secs.into()),
-                |inner| self.run_process(inner, true),
-            )
+            super::chunked::run(handle, &self.config.binary_path, |inner| {
+                self.run_process(inner, true)
+            })
             .await
         } else {
             self.run_process(handle, false).await

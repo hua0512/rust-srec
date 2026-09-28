@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -54,13 +53,16 @@ pub(super) fn configure_args(args: &mut Vec<String>, config: &DownloadConfig) {
         "-segment_list_size".into(),
         "0".into(),
     ]);
-    args.push(
-        config
-            .output_dir
-            .join("chunk-%08d.mkv")
-            .to_string_lossy()
-            .replace('\\', "/"),
-    );
+    args.push(chunk_pattern(&config.output_dir));
+}
+
+/// The segment muxer expands `%` in the whole output pattern, so a literal `%`
+/// in the directory must be doubled. The `-segment_list` path is not a pattern.
+fn chunk_pattern(output_dir: &Path) -> String {
+    PathBuf::from(output_dir.to_string_lossy().replace('%', "%%"))
+        .join("chunk-%08d.mkv")
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn failure(message: impl Into<String>) -> EngineStartError {
@@ -129,7 +131,15 @@ struct ChunkList {
 }
 
 impl ChunkList {
-    async fn next(&mut self, directory: &Path, path: &Path) -> Result<Chunk, EngineStartError> {
+    /// Returns the timing record for the closed chunk at `path`, or `None` when
+    /// the producer has not written one. FFmpeg writes a record before opening
+    /// the next chunk, so only the final chunk of a crashed or killed producer
+    /// can lack one.
+    async fn next(
+        &mut self,
+        directory: &Path,
+        path: &Path,
+    ) -> Result<Option<Chunk>, EngineStartError> {
         let list_path = directory.join(LIST_NAME);
         if self.file.is_none() {
             self.file = Some(
@@ -172,13 +182,13 @@ impl ChunkList {
                 end,
             });
         }
-        let chunk = self.entries.pop_front().ok_or_else(|| {
-            failure("Closed chunk has no finalized timing record; recovery files retained")
-        })?;
+        let Some(chunk) = self.entries.pop_front() else {
+            return Ok(None);
+        };
         if path.file_name().and_then(|name| name.to_str()) != Some(&chunk.name) {
             return Err(failure("Chunk events and timing records are out of order"));
         }
-        Ok(chunk)
+        Ok(Some(chunk))
     }
 }
 
@@ -193,6 +203,31 @@ struct Group {
     ended_at: DateTime<Utc>,
     reason: Option<&'static str>,
     request_id: Option<u64>,
+    published: bool,
+}
+
+impl Drop for Group {
+    /// A group that never published leaves only its reservation at `path`.
+    /// Drop also covers a finalizer aborted by forced shutdown, so this uses
+    /// synchronous calls on a single small file. Anything with content is
+    /// kept: the reservation may have been replaced by something else.
+    fn drop(&mut self) {
+        if self.published {
+            return;
+        }
+        match std::fs::metadata(&self.path) {
+            Ok(metadata) if metadata.is_file() && metadata.len() == 0 => {
+                if let Err(error) = std::fs::remove_file(&self.path) {
+                    warn!(path = %self.path.display(), %error, "Could not remove unused recording file reservation");
+                }
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                warn!(path = %self.path.display(), %error, "Could not inspect unused recording file reservation");
+            }
+        }
+    }
 }
 
 impl Group {
@@ -208,41 +243,42 @@ impl Group {
             Some(config.initial_segment_index + index),
         );
         let path = reserve_output_path(&config.output_dir, &name, &config.output_format).await?;
-        let manifest = directory.join(format!("group-{index}.ffconcat"));
-        let recovery = directory.join(format!("group-{index}.json"));
-        tokio::fs::write(&manifest, b"ffconcat version 1.0\n")
-            .await
-            .map_err(|e| io_error("write recovery manifest", &manifest, e))?;
-        let metadata = serde_json::json!({
-            "output_path": path, "manifest": manifest, "session_id": config.session_id,
-            "download_id": handle.id, "segment_index": config.initial_segment_index + index,
-            "started_at": started_at, "format": config.output_format,
-        });
-        let bytes = serde_json::to_vec_pretty(&metadata).map_err(|e| failure(e.to_string()))?;
-        tokio::fs::write(&recovery, bytes)
-            .await
-            .map_err(|e| io_error("write recovery metadata", &recovery, e))?;
-        send(
-            handle,
-            SegmentEvent::SegmentStarted {
-                path: path.clone(),
-                sequence: index,
-                started_at,
-            },
-        )
-        .await?;
-        Ok(Self {
+        // Owning the reservation first lets `Drop` release it on every later error.
+        let group = Self {
             index,
             path,
-            manifest,
-            recovery,
+            manifest: directory.join(format!("group-{index}.ffconcat")),
+            recovery: directory.join(format!("group-{index}.json")),
             chunks: Vec::new(),
             bytes: 0,
             started_at,
             ended_at: started_at,
             reason: None,
             request_id: None,
-        })
+            published: false,
+        };
+        tokio::fs::write(&group.manifest, b"ffconcat version 1.0\n")
+            .await
+            .map_err(|e| io_error("write recovery manifest", &group.manifest, e))?;
+        let metadata = serde_json::json!({
+            "output_path": group.path, "manifest": group.manifest, "session_id": config.session_id,
+            "download_id": handle.id, "segment_index": config.initial_segment_index + index,
+            "started_at": started_at, "format": config.output_format,
+        });
+        let bytes = serde_json::to_vec_pretty(&metadata).map_err(|e| failure(e.to_string()))?;
+        tokio::fs::write(&group.recovery, bytes)
+            .await
+            .map_err(|e| io_error("write recovery metadata", &group.recovery, e))?;
+        send(
+            handle,
+            SegmentEvent::SegmentStarted {
+                path: group.path.clone(),
+                sequence: index,
+                started_at,
+            },
+        )
+        .await?;
+        Ok(group)
     }
 
     async fn append(&mut self, chunk: Chunk, info: &SegmentInfo) -> Result<(), EngineStartError> {
@@ -286,7 +322,23 @@ async fn ingest(
     let mut index = 0;
     let mut list = ChunkList::default();
     let mut terminal = None;
+    // A closed chunk still waiting for its timing record. Only the producer's
+    // final chunk may stay here; any later chunk event makes it an error.
+    let mut unrecorded: Option<SegmentInfo> = None;
     while let Some(event) = events.recv().await {
+        if matches!(
+            event,
+            SegmentEvent::SegmentStarted { .. } | SegmentEvent::SegmentCompleted(_)
+        ) && let Some(info) = unrecorded.take()
+        {
+            let chunk = list.next(directory, &info.path).await?.ok_or_else(|| {
+                failure("Closed chunk has no finalized timing record; recovery files retained")
+            })?;
+            if let Some(group) = &mut group {
+                group.append(chunk, &info).await?;
+            }
+            handle.manual_split.enable();
+        }
         match event {
             SegmentEvent::SegmentStarted { started_at, .. } => {
                 if let Some(current) = &mut group
@@ -322,14 +374,16 @@ async fn ingest(
                     group = Some(Group::new(handle, directory, index, started_at).await?);
                 }
             }
-            SegmentEvent::SegmentCompleted(info) => {
-                let chunk = list.next(directory, &info.path).await?;
-                if let Some(group) = &mut group {
-                    group.append(chunk, &info).await?;
+            SegmentEvent::SegmentCompleted(info) => match list.next(directory, &info.path).await? {
+                Some(chunk) => {
+                    if let Some(group) = &mut group {
+                        group.append(chunk, &info).await?;
+                    }
+                    // At least one closed, playable chunk is required before offering a cut.
+                    handle.manual_split.enable();
                 }
-                // At least one closed, playable chunk is required before offering a cut.
-                handle.manual_split.enable();
-            }
+                None => unrecorded = Some(info),
+            },
             SegmentEvent::Progress(mut progress) => {
                 progress.segments_completed = completed.load(Ordering::Acquire);
                 progress.current_segment = group
@@ -346,6 +400,23 @@ async fn ingest(
         }
     }
     handle.manual_split.end_acquisition();
+    if let Some(info) = unrecorded {
+        // A crashed or killed producer never closes its last chunk, so FFmpeg
+        // never records its timing. Its length cannot be trusted, so it stays
+        // out of the group and remains in the staging directory for manual
+        // inspection; every recorded chunk before it is still finalized.
+        match list.next(directory, &info.path).await? {
+            Some(chunk) => {
+                if let Some(group) = &mut group {
+                    group.append(chunk, &info).await?;
+                }
+            }
+            None => warn!(
+                path = %info.path.display(),
+                "Final recording chunk has no timing record; retained in the staging directory"
+            ),
+        }
+    }
     if let Some(group) = group
         && !group.chunks.is_empty()
     {
@@ -359,8 +430,7 @@ async fn ingest(
 async fn finalize(
     handle: &DownloadHandle,
     binary: &str,
-    group: &Group,
-    stop_timeout: Duration,
+    group: &mut Group,
 ) -> Result<u64, EngineStartError> {
     let format = handle.config_snapshot().output_format;
     let temporary = group.manifest.with_extension(format!("partial.{format}"));
@@ -410,23 +480,23 @@ async fn finalize(
         }
         Ok::<_, std::io::Error>((detail, io_kind))
     }));
-    let mut deadline = None;
-    let mut updates = handle.stop_deadline_updates();
-    let mut stopping = handle.cancellation_token.is_cancelled();
+    // Stopping a recording does not bound finalization. The group's media is
+    // already captured, and killing a long remux (plus faststart) would turn a
+    // playable recording into staged chunks, so an ordinary stop waits for it.
+    // Only the absolute deadline published by manager shutdown, which bounds
+    // the process, can abandon it; chunks and manifests then stay for recovery.
+    let mut deadlines = handle.stop_deadline_updates();
     let status = loop {
-        if stopping {
-            let proposed = tokio::time::Instant::now() + handle.graceful_stop_budget(stop_timeout);
-            deadline = Some(deadline.map_or(proposed, |previous: tokio::time::Instant| {
-                previous.min(proposed)
-            }));
-        }
+        let deadline = *deadlines.borrow_and_update();
         tokio::select! {
             result = child.wait() => break result.map_err(|e| io_error("wait for recording finalizer", &temporary, e))?,
-            _ = handle.cancellation_token.cancelled(), if !stopping => { stopping = true; },
-            changed = updates.changed() => { if changed.is_err() { return Err(failure("Finalizer deadline channel closed")); } },
+            changed = deadlines.changed() => { if changed.is_err() { return Err(failure("Finalizer deadline channel closed")); } },
             _ = async { match deadline { Some(deadline) => tokio::time::sleep_until(deadline).await, None => std::future::pending::<()>().await } } => {
                 super::utils::terminate_and_reap(&mut child, "recording finalizer", super::utils::PROCESS_CLEANUP_TIMEOUT).await.map_err(failure)?;
-                return Err(failure("Recording finalization timed out; recovery files retained"));
+                return Err(failure(format!(
+                    "Recording finalization stopped at the shutdown deadline; chunks and manifest retained at {}",
+                    group.manifest.display()
+                )));
             }
         }
     };
@@ -466,6 +536,7 @@ async fn finalize(
     tokio::fs::rename(&temporary, &group.path)
         .await
         .map_err(|e| io_error("publish finalized recording", &group.path, e))?;
+    group.published = true;
     Ok(size)
 }
 
@@ -475,12 +546,11 @@ async fn finalize_groups(
     directory: &Path,
     mut jobs: mpsc::Receiver<Group>,
     completed: &AtomicU32,
-    stop_timeout: Duration,
 ) -> Result<(u64, f64), EngineStartError> {
     let mut bytes = 0u64;
     let mut duration = 0.0;
-    while let Some(group) = jobs.recv().await {
-        let size = finalize(handle, binary, &group, stop_timeout).await?;
+    while let Some(mut group) = jobs.recv().await {
+        let size = finalize(handle, binary, &mut group).await?;
         bytes = bytes.saturating_add(size);
         duration += group.duration();
         send(
@@ -505,7 +575,7 @@ async fn finalize_groups(
             .chunks
             .iter()
             .map(|chunk| directory.join(&chunk.name))
-            .chain([group.manifest, group.recovery])
+            .chain([group.manifest.clone(), group.recovery.clone()])
         {
             if let Err(error) = tokio::fs::remove_file(&path).await {
                 warn!(path = %path.display(), %error, "Could not remove finalized recording staging file");
@@ -518,7 +588,6 @@ async fn finalize_groups(
 pub(super) async fn run<F, Fut>(
     handle: Arc<DownloadHandle>,
     binary: &str,
-    stop_timeout: Duration,
     producer: F,
 ) -> Result<(), EngineStartError>
 where
@@ -551,30 +620,17 @@ where
         result
     };
     let finalize = async {
-        let result = finalize_groups(
-            &handle,
-            binary,
-            &directory,
-            jobs_rx,
-            &completed,
-            stop_timeout,
-        )
-        .await;
+        let result = finalize_groups(&handle, binary, &directory, jobs_rx, &completed).await;
         if result.is_err() {
             handle.manual_split.close(true);
             handle.cancellation_token.cancel();
         }
         result
     };
-    let work = async { tokio::join!(producer, ingest, finalize) };
-    tokio::pin!(work);
-    let (producer_result, ingest_result, finalized) = tokio::select! {
-        result = &mut work => result,
-        _ = handle.cancellation_token.cancelled() => {
-            handle.set_stop_deadline(tokio::time::Instant::now() + stop_timeout);
-            work.await
-        }
-    };
+    // A stop reaches the producer through the shared cancellation token and
+    // bounds only acquisition, with the producer's own graceful-stop timeout.
+    // Finalization of captured groups is bounded by shutdown alone; see `finalize`.
+    let (producer_result, ingest_result, finalized) = tokio::join!(producer, ingest, finalize);
     let (bytes, duration) = finalized?;
     let terminal = ingest_result?;
     producer_result?;
