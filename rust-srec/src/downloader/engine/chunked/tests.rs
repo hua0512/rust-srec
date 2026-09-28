@@ -1159,22 +1159,34 @@ fn chunk_info(path: PathBuf, index: u32) -> SegmentInfo {
 
 /// Writes `count` chunk files, timing records for the first `recorded`, and
 /// the events a segment producer emits for them.
+///
+/// Records are appended like FFmpeg's segment muxer does with
+/// `-segment_list_size 0`: it never rewrites the list, and flushes each record
+/// before opening the next chunk. The producer runs ahead of ingestion, so
+/// rewriting the list here would let ingestion read it mid-truncation.
 async fn produce_chunks(
     inner: &DownloadHandle,
     count: u32,
     recorded: u32,
 ) -> Result<(), EngineStartError> {
     let dir = inner.config_snapshot().output_dir;
-    let mut list = String::new();
+    let mut list = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(LIST_NAME))
+        .await
+        .unwrap();
     for index in 0..count {
         let name = format!("chunk-{index:08}.mkv");
         let path = dir.join(&name);
         tokio::fs::write(&path, b"chunk data").await.unwrap();
         if index < recorded {
             let start = f64::from(index) * 2.0;
-            list.push_str(&format!("{name},{start},{}\n", start + 2.0));
+            list.write_all(format!("{name},{start},{}\n", start + 2.0).as_bytes())
+                .await
+                .unwrap();
+            list.flush().await.unwrap();
         }
-        tokio::fs::write(dir.join(LIST_NAME), &list).await.unwrap();
         send(
             inner,
             SegmentEvent::SegmentStarted {
