@@ -94,6 +94,26 @@ impl SegmentLimiterOperator {
         self.media_written = false;
     }
 
+    /// Claims a waiting manual cut at this segment when it starts
+    /// independently. A dependent segment is recorded as the reason the
+    /// request is still waiting, so an expiry can explain itself.
+    fn manual_boundary(
+        context: &StreamerContext,
+        media_written: bool,
+        independent: impl FnOnce() -> bool,
+    ) -> Option<u64> {
+        let control = context.manual_split.as_ref()?;
+        if !media_written || !control.is_pending() {
+            return None;
+        }
+        if independent() {
+            control.begin()
+        } else {
+            control.defer(pipeline_common::ManualSplitExpiryReason::NoIndependentSegment);
+            None
+        }
+    }
+
     /// Add segment to current tracking
     fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
         self.media_written = true;
@@ -115,23 +135,13 @@ impl Processor<HlsData> for SegmentLimiterOperator {
         match input.segment_type() {
             SegmentType::Ts => {
                 if let HlsData::TsData(ts_data) = input {
-                    let manual = if self.media_written
-                        && context.manual_split.as_ref().is_some_and(|control| {
-                            control.snapshot().status == pipeline_common::ManualSplitStatus::Pending
-                        })
-                        && ts_data
+                    let manual = Self::manual_boundary(context, self.media_written, || {
+                        ts_data
                             .analysis(hls::StreamProfileOptions {
                                 include_resolution: false,
                             })
                             .is_ok_and(|analysis| analysis.independent_start)
-                    {
-                        context
-                            .manual_split
-                            .as_ref()
-                            .and_then(|control| control.begin())
-                    } else {
-                        None
-                    };
+                    });
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
                     if let Some(reason) = manual
                         .map(|request_id| SplitReason::Manual { request_id })
@@ -165,22 +175,11 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             }
             SegmentType::M4sMedia => {
                 if let HlsData::M4sData(M4sData::Segment(segment)) = input {
-                    let manual = if self.media_written
-                        && context.manual_split.as_ref().is_some_and(|control| {
-                            control.snapshot().status == pipeline_common::ManualSplitStatus::Pending
-                        })
-                        && self
-                            .fragment_check
+                    let manual = Self::manual_boundary(context, self.media_written, || {
+                        self.fragment_check
                             .as_ref()
                             .is_some_and(|check| check.is_independent(&segment.data))
-                    {
-                        context
-                            .manual_split
-                            .as_ref()
-                            .and_then(|control| control.begin())
-                    } else {
-                        None
-                    };
+                    });
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
                     if let Some(reason) = manual
                         .map(|request_id| SplitReason::Manual { request_id })
@@ -313,6 +312,18 @@ mod tests {
                 })
                 .collect::<Vec<_>>(),
             [1, 2, 3]
+        );
+
+        // A request that sees only dependent fragments explains its expiry.
+        control.complete(control.snapshot().request_id);
+        control.request(Duration::ZERO).unwrap();
+        limiter
+            .process(&context, media(0x0101_0000, 4), &mut |_| Ok(()))
+            .unwrap();
+        control.expire();
+        assert_eq!(
+            control.snapshot().expiry_reason,
+            Some(pipeline_common::ManualSplitExpiryReason::NoIndependentSegment)
         );
     }
 

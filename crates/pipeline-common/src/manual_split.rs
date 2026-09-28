@@ -33,6 +33,32 @@ impl ManualSplitStatus {
     }
 }
 
+/// Why the last request expired without a cut. Recorded by the media path
+/// while a request waits, so the client can tell "nothing arrived" apart from
+/// "media arrived but could not start a playable file".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManualSplitExpiryReason {
+    /// No media arrived that could be examined as a boundary.
+    NoMedia,
+    /// Video arrived, but no keyframe with the headers needed to start a file.
+    NoKeyframe,
+    /// HLS segments arrived, but none was marked as independently decodable.
+    NoIndependentSegment,
+    /// A boundary was available, but earlier files were still being finalized.
+    FinalizationBacklog,
+}
+
+impl ManualSplitExpiryReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoMedia => "no_media",
+            Self::NoKeyframe => "no_keyframe",
+            Self::NoIndependentSegment => "no_independent_segment",
+            Self::FinalizationBacklog => "finalization_backlog",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManualSplitSnapshot {
     pub supported: bool,
@@ -40,6 +66,8 @@ pub struct ManualSplitSnapshot {
     pub request_id: u64,
     pub revision: u64,
     pub status: ManualSplitStatus,
+    /// Set only while `status` is `Expired`.
+    pub expiry_reason: Option<ManualSplitExpiryReason>,
 }
 
 impl Default for ManualSplitSnapshot {
@@ -50,6 +78,7 @@ impl Default for ManualSplitSnapshot {
             request_id: 0,
             revision: 0,
             status: ManualSplitStatus::Idle,
+            expiry_reason: None,
         }
     }
 }
@@ -62,10 +91,24 @@ pub enum ManualSplitError {
     Closed,
 }
 
+impl State {
+    fn expire(&mut self) {
+        self.snapshot.status = ManualSplitStatus::Expired;
+        self.snapshot.expiry_reason = Some(
+            self.deferral
+                .take()
+                .unwrap_or(ManualSplitExpiryReason::NoMedia),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct State {
     snapshot: ManualSplitSnapshot,
     deadline: Option<Instant>,
+    /// The most recent reason a waiting request was not honoured. Kept out of
+    /// the snapshot so per-packet deferrals publish nothing until expiry.
+    deferral: Option<ManualSplitExpiryReason>,
     closed: bool,
     acquisition_ended: bool,
 }
@@ -88,6 +131,23 @@ impl Default for ManualSplitControl {
 impl ManualSplitControl {
     pub fn snapshot(&self) -> ManualSplitSnapshot {
         self.state.borrow().snapshot.clone()
+    }
+
+    /// Cheap check for media paths that must only inspect boundaries while a
+    /// request is waiting.
+    pub fn is_pending(&self) -> bool {
+        self.state.borrow().snapshot.status == ManualSplitStatus::Pending
+    }
+
+    /// Record why the media path could not honour a waiting request here.
+    /// Publishes nothing; the reason is reported if the request expires.
+    pub fn defer(&self, reason: ManualSplitExpiryReason) {
+        self.state.send_if_modified(|state| {
+            if state.snapshot.status == ManualSplitStatus::Pending {
+                state.deferral = Some(reason);
+            }
+            false
+        });
     }
 
     pub fn enable(&self) {
@@ -118,8 +178,10 @@ impl ManualSplitControl {
             }
             state.snapshot.request_id += 1;
             state.snapshot.status = ManualSplitStatus::Pending;
+            state.snapshot.expiry_reason = None;
             state.snapshot.revision += 1;
             state.deadline = Some(Instant::now() + timeout);
+            state.deferral = None;
             result = Ok(state.snapshot.clone());
             true
         });
@@ -141,12 +203,13 @@ impl ManualSplitControl {
                 .deadline
                 .is_some_and(|deadline| Instant::now() >= deadline)
             {
-                state.snapshot.status = ManualSplitStatus::Expired;
+                state.expire();
             } else {
                 state.snapshot.status = ManualSplitStatus::Finalizing;
                 request_id = Some(state.snapshot.request_id);
             }
             state.deadline = None;
+            state.deferral = None;
             state.snapshot.revision += 1;
             true
         });
@@ -231,7 +294,7 @@ impl ManualSplitControl {
                 return false;
             }
             state.deadline = None;
-            state.snapshot.status = ManualSplitStatus::Expired;
+            state.expire();
             state.snapshot.revision += 1;
             true
         });
@@ -308,6 +371,33 @@ mod tests {
         control.close(true);
         control.complete(request.request_id);
         assert_eq!(control.snapshot().status, ManualSplitStatus::Failed);
+    }
+
+    #[test]
+    fn expiry_reports_the_latest_deferral_and_a_new_request_clears_it() {
+        let control = ManualSplitControl::default();
+        control.enable();
+        control.defer(ManualSplitExpiryReason::NoKeyframe);
+        control.request(Duration::ZERO).unwrap();
+        let revision = control.snapshot().revision;
+        control.defer(ManualSplitExpiryReason::NoKeyframe);
+        control.defer(ManualSplitExpiryReason::NoIndependentSegment);
+        assert_eq!(control.snapshot().revision, revision);
+        control.expire();
+        let expired = control.snapshot();
+        assert_eq!(expired.status, ManualSplitStatus::Expired);
+        assert_eq!(
+            expired.expiry_reason,
+            Some(ManualSplitExpiryReason::NoIndependentSegment)
+        );
+
+        control.request(Duration::ZERO).unwrap();
+        assert_eq!(control.snapshot().expiry_reason, None);
+        assert_eq!(control.begin(), None);
+        assert_eq!(
+            control.snapshot().expiry_reason,
+            Some(ManualSplitExpiryReason::NoMedia)
+        );
     }
 
     #[test]

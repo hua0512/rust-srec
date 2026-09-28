@@ -51,6 +51,10 @@ pub fn manual_split_to_proto(
         request_id: state.request_id,
         revision: state.revision,
         status: state.status.as_str().to_string(),
+        expiry_reason: state
+            .expiry_reason
+            .map(|reason| reason.as_str().to_string())
+            .unwrap_or_default(),
     }
 }
 

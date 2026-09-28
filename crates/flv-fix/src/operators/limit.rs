@@ -329,13 +329,15 @@ impl Processor<FlvData> for LimitOperator {
                     } else {
                         tag.is_audio_tag() && self.state.cache.audio_sequence_tag.is_some()
                     };
-                let manual_request = if manual_boundary {
-                    context
-                        .manual_split
-                        .as_ref()
-                        .and_then(|control| control.begin())
-                } else {
-                    None
+                let manual_request = match context.manual_split.as_ref() {
+                    Some(control) if manual_boundary => control.begin(),
+                    // A waiting request records why this media tag could not
+                    // start a file, so an expiry can explain itself.
+                    Some(control) if is_media && has_video && control.is_pending() => {
+                        control.defer(pipeline_common::ManualSplitExpiryReason::NoKeyframe);
+                        None
+                    }
+                    _ => None,
                 };
 
                 if manual_request.is_some() || (should_split && can_split_on_tag) {
@@ -461,6 +463,39 @@ mod tests {
         assert_eq!(
             control.snapshot().status,
             pipeline_common::ManualSplitStatus::Finalizing
+        );
+    }
+
+    #[test]
+    fn manual_cut_expiry_without_a_keyframe_reports_the_missing_keyframe() {
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        let mut operator = LimitOperator::new(context.clone());
+        for item in [
+            test_utils::create_test_header(),
+            test_utils::create_video_sequence_header(0, 1),
+            test_utils::create_audio_sequence_header(0, 1),
+            test_utils::create_video_tag(0, true),
+        ] {
+            operator.process(&context, item, &mut |_| Ok(())).unwrap();
+        }
+        control.request(std::time::Duration::ZERO).unwrap();
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(40, false),
+                &mut |_| Ok(()),
+            )
+            .unwrap();
+        control.expire();
+        let snapshot = control.snapshot();
+        assert_eq!(snapshot.status, pipeline_common::ManualSplitStatus::Expired);
+        assert_eq!(
+            snapshot.expiry_reason,
+            Some(pipeline_common::ManualSplitExpiryReason::NoKeyframe)
         );
     }
 

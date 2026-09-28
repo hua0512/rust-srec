@@ -34,7 +34,6 @@ mod tests {
     }
 
     fn media(first_flags: Option<u32>) -> Bytes {
-        let tfhd = [0x00, 0x02, 0, 0, 0, 0, 0, 1];
         let mut trun = if first_flags.is_some() { 4u32 } else { 0 }
             .to_be_bytes()
             .to_vec();
@@ -42,6 +41,31 @@ mod tests {
         if let Some(flags) = first_flags {
             trun.extend_from_slice(&flags.to_be_bytes());
         }
+        fragment(trun)
+    }
+
+    /// A run of `samples` whose first sample flags come from `first_flags`
+    /// (trun flag 0x04) and whose later samples use the track defaults.
+    fn run_with_first_flags(first_flags: u32, samples: u32) -> Bytes {
+        let mut trun = 4u32.to_be_bytes().to_vec();
+        trun.extend_from_slice(&samples.to_be_bytes());
+        trun.extend_from_slice(&first_flags.to_be_bytes());
+        fragment(trun)
+    }
+
+    /// A run with per-sample durations and flags (trun flags 0x100 | 0x400).
+    fn run_with_sample_flags(flags: &[u32]) -> Bytes {
+        let mut trun = 0x0500u32.to_be_bytes().to_vec();
+        trun.extend_from_slice(&(flags.len() as u32).to_be_bytes());
+        for flags in flags {
+            trun.extend_from_slice(&40u32.to_be_bytes());
+            trun.extend_from_slice(&flags.to_be_bytes());
+        }
+        fragment(trun)
+    }
+
+    fn fragment(trun: Vec<u8>) -> Bytes {
+        let tfhd = [0x00, 0x02, 0, 0, 0, 0, 0, 1];
         let mut traf = make_box(b"tfhd", &tfhd);
         traf.extend(make_box(b"trun", &trun));
         let mut result = make_box(b"moof", &make_box(b"traf", &traf));
@@ -69,6 +93,28 @@ mod tests {
     }
 
     #[test]
+    fn sync_samples_with_unknown_dependency_need_non_sync_signalling_in_the_run() {
+        let signalled = IndependentFragmentCheck::from_init(&init(true, 0x0101_0000)).unwrap();
+        let unsignalled = IndependentFragmentCheck::from_init(&init(true, 0)).unwrap();
+        // First-sample flags with later samples marked non-sync by default.
+        assert!(signalled.is_independent(&run_with_first_flags(0, 2)));
+        assert!(!signalled.is_independent(&run_with_first_flags(0, 1)));
+        // All flags zero: nothing distinguishes a keyframe from an inter frame.
+        assert!(!unsignalled.is_independent(&run_with_first_flags(0, 2)));
+        assert!(!unsignalled.is_independent(&media(None)));
+        // Per-sample flags.
+        assert!(unsignalled.is_independent(&run_with_sample_flags(&[0, 0x0101_0000])));
+        assert!(!unsignalled.is_independent(&run_with_sample_flags(&[0, 0])));
+        assert!(!unsignalled.is_independent(&run_with_sample_flags(&[0x0101_0000, 0])));
+        // An explicit dependency or a non-sync first sample is never a cut point.
+        assert!(!signalled.is_independent(&run_with_first_flags(0x0100_0000, 2)));
+        assert!(!signalled.is_independent(&run_with_first_flags(0x0001_0000, 2)));
+        // Any later non-sync sample in the run is sufficient evidence.
+        let complete = run_with_sample_flags(&[0, 0, 0x0101_0000]);
+        assert!(unsignalled.is_independent(&complete));
+    }
+
+    #[test]
     fn manual_cut_rejects_truncated_boxes_and_missing_initialization() {
         let init = init(true, 0x0200_0000);
         for end in 0..init.len() {
@@ -81,6 +127,9 @@ mod tests {
         }
     }
 }
+
+/// `sample_is_non_sync_sample` in ISO/IEC 14496-12 sample flags.
+const NON_SYNC: u32 = 0x0001_0000;
 
 #[derive(Debug, Clone)]
 struct Track {
@@ -196,7 +245,8 @@ impl IndependentFragmentCheck {
             let trun = find_first_box(data, traf.body_start, traf.end, *b"trun")?;
             let body = &data[trun.body_start..trun.end];
             let flags = word(body, 0)? & 0x00ff_ffff;
-            if word(body, 4)? == 0 {
+            let sample_count = word(body, 4)?;
+            if sample_count == 0 {
                 return Some(false);
             }
             let mut field = 8;
@@ -208,22 +258,68 @@ impl IndependentFragmentCheck {
                 if flags & 0x000400 != 0 {
                     return Some(false);
                 }
-                Some(word(body, field)?)
+                let first = word(body, field)?;
+                field += 4;
+                Some(first)
             } else if flags & 0x000400 != 0 {
+                let mut offset = field;
                 if flags & 0x000100 != 0 {
-                    field += 4;
+                    offset += 4;
                 }
                 if flags & 0x000200 != 0 {
-                    field += 4;
+                    offset += 4;
                 }
-                Some(word(body, field)?)
+                Some(word(body, offset)?)
             } else {
                 default_flags
             };
+            // Per-sample rows start after the optional first-sample flags.
+            let rows = field;
+            // Whether the flags of a sample after the first mark it non-sync:
+            // proof that this muxer signals sync samples rather than leaving
+            // every sample's flags at zero.
+            let later_non_sync = || -> Option<bool> {
+                if sample_count < 2 {
+                    return Some(false);
+                }
+                if flags & 0x000400 == 0 {
+                    return Some(default_flags.is_some_and(|flags| flags & NON_SYNC != 0));
+                }
+                let row = [0x000100, 0x000200, 0x000400, 0x000800]
+                    .into_iter()
+                    .filter(|flag| flags & flag != 0)
+                    .count()
+                    * 4;
+                let before_flags = [0x000100, 0x000200]
+                    .into_iter()
+                    .filter(|flag| flags & flag != 0)
+                    .count()
+                    * 4;
+                for sample in 1..sample_count as usize {
+                    let offset = rows
+                        .checked_add(sample.checked_mul(row)?)?
+                        .checked_add(before_flags)?;
+                    if word(body, offset)? & NON_SYNC != 0 {
+                        return Some(true);
+                    }
+                }
+                Some(false)
+            };
             if track.video {
                 let flags = sample_flags?;
-                if flags & 0x0001_0000 != 0 || (flags >> 24) & 3 != 2 {
+                if flags & NON_SYNC != 0 {
                     return Some(false);
+                }
+                // ISO/IEC 14496-12 sample_depends_on: 2 = independently
+                // decodable, 1 = depends on other samples, 0 = unknown. A sync
+                // sample with an unknown dependency is still a sync sample, but
+                // is trusted only when the same run marks later samples
+                // non-sync; a muxer that zeroes all flags would otherwise make
+                // every inter frame look like a cut point.
+                match (flags >> 24) & 3 {
+                    2 => {}
+                    0 if later_non_sync()? => {}
+                    _ => return Some(false),
                 }
             }
         }

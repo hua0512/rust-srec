@@ -129,6 +129,9 @@ message ManualSplitState {
   uint64 request_id = 3;
   uint64 revision = 4;
   string status = 5;
+  // Set only when status is "expired": no_media, no_keyframe,
+  // no_independent_segment, or finalization_backlog.
+  string expiry_reason = 6;
 }
 
 message DownloadSplit {

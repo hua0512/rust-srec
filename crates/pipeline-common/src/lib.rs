@@ -43,7 +43,8 @@ pub use channel_pipeline::{
 };
 pub use context::StreamerContext;
 pub use manual_split::{
-    ManualSplitControl, ManualSplitError, ManualSplitSnapshot, ManualSplitStatus,
+    ManualSplitControl, ManualSplitError, ManualSplitExpiryReason, ManualSplitSnapshot,
+    ManualSplitStatus,
 };
 pub use pipeline::{Pipeline, ProgressSink, ProgressThrottle};
 pub use processor::Processor;
