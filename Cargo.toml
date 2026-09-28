@@ -83,7 +83,7 @@ tower-http = { version = "0.7.0", features = ["cors", "trace", "request-id", "fs
 tempfile = "3.27.0"
 axum = { version = "0.8.4", features = ["ws"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
-utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 rmcp = { version = "3.1.2", features = ["transport-streamable-http-server"] }
 schemars = "1.1"
