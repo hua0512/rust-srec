@@ -24,6 +24,9 @@ type Values = {
   engines_override?: Record<string, EngineValues>;
 };
 
+const details = () =>
+  screen.queryByRole('button', { name: 'Recording uses temporary chunks' });
+
 beforeAll(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 });
@@ -97,24 +100,31 @@ describe.each([
       expect(
         screen.getByText(/Split recordings without reconnecting/),
       ).toBeInTheDocument();
-      expect(screen.queryByRole('note')).toBeNull();
+      expect(details()).toBeNull();
       fireEvent.click(toggle);
-      expect(screen.getByRole('note')).toHaveTextContent(
-        'Recording uses temporary chunks',
-      );
-      expect(screen.getByRole('note')).toHaveTextContent(
-        'extra disk space and I/O',
-      );
-      expect(screen.getByRole('note')).toHaveTextContent(
+      const trigger = details()!;
+      const panel = document.getElementById(
+        trigger.getAttribute('aria-controls')!,
+      )!;
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      expect(panel).toHaveAttribute('inert');
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      expect(panel).not.toHaveAttribute('inert');
+      expect(panel).toHaveTextContent('extra disk space and I/O');
+      expect(panel).toHaveTextContent(
         'Final files are available only after this step finishes.',
       );
-      expect(screen.getByRole('note')).toHaveTextContent(
+      expect(panel).toHaveTextContent(
         'Temporary chunks are kept if file finalization fails.',
       );
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      expect(panel).toHaveAttribute('inert');
       expect(saved().enable_lossless_cutting).toBe(true);
       fireEvent.click(toggle);
       expect(saved().enable_lossless_cutting).toBe(false);
-      expect(screen.queryByRole('note')).toBeNull();
+      expect(details()).toBeNull();
     });
 
     it('warns when custom arguments keep lossless cutting from applying', () => {
@@ -131,14 +141,14 @@ describe.each([
 
     it('evaluates only settings present in an override', () => {
       mount(true, true);
-      expect(screen.getByRole('note')).toBeInTheDocument();
+      expect(details()).toBeInTheDocument();
       expect(screen.queryByRole('alert')).toBeNull();
       cleanup();
       mount(true, true, ['-flag']);
       expect(screen.getByRole('alert')).toHaveTextContent(warning);
       cleanup();
       mount(undefined, true, ['-flag']);
-      expect(screen.queryByRole('note')).toBeNull();
+      expect(details()).toBeNull();
       expect(screen.queryByRole('alert')).toBeNull();
     });
 

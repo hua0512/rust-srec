@@ -5,6 +5,11 @@ import { useWatch } from 'react-hook-form';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
+import {
   FormControl,
   FormDescription,
   FormField,
@@ -130,39 +135,44 @@ export function LosslessCuttingField({
               </AlertDescription>
             </Alert>
           )}
-          {showDetails && (
-            <Alert role="note">
-              <Info />
-              <AlertTitle className="line-clamp-none">
-                <Trans>Recording uses temporary chunks</Trans>
-              </AlertTitle>
-              <AlertDescription>
-                <p>
-                  <Trans>
-                    Recordings are written to temporary chunks and combined into
-                    final files after a cut, a size or duration limit, or
-                    recording stops. Final files are available only after this
-                    step finishes.
-                  </Trans>
-                </p>
-                <p>
-                  <Trans>
-                    Uses extra disk space and I/O. Temporary chunks are kept if
-                    file finalization fails.
-                  </Trans>
-                </p>
-                <p>
-                  <Trans>
-                    Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings
-                    in other formats use normal recording.
-                  </Trans>
-                </p>
-              </AlertDescription>
-            </Alert>
-          )}
+          {showDetails && <LosslessCuttingDetails />}
           <FormMessage />
         </FormItem>
       )}
     />
+  );
+}
+
+function LosslessCuttingDetails() {
+  return (
+    <Disclosure className="rounded-lg border bg-card text-sm text-card-foreground">
+      <DisclosureTrigger
+        icon={<Info aria-hidden="true" />}
+        className="rounded-lg px-4 py-3 tracking-tight"
+      >
+        <Trans>Recording uses temporary chunks</Trans>
+      </DisclosureTrigger>
+      <DisclosureContent className="grid gap-1 pr-4 pb-3 pl-11 text-muted-foreground [&_p]:leading-relaxed">
+        <p>
+          <Trans>
+            Recordings are written to temporary chunks and combined into final
+            files after a cut, a size or duration limit, or recording stops.
+            Final files are available only after this step finishes.
+          </Trans>
+        </p>
+        <p>
+          <Trans>
+            Uses extra disk space and I/O. Temporary chunks are kept if file
+            finalization fails.
+          </Trans>
+        </p>
+        <p>
+          <Trans>
+            Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in
+            other formats use normal recording.
+          </Trans>
+        </p>
+      </DisclosureContent>
+    </Disclosure>
   );
 }

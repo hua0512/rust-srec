@@ -763,7 +763,7 @@ msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgid "Applied to all URLs"
 msgstr "Applied to all URLs"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:155
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:170
 msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
 msgstr "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
 
@@ -2314,7 +2314,7 @@ msgstr "Custom Configuration"
 msgid "Custom FFmpeg"
 msgstr "Custom FFmpeg"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:118
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:123
 msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 
@@ -2845,7 +2845,7 @@ msgstr "Disable rapid upload"
 msgid "Disable selected"
 msgstr "Disable selected"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:88
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:93
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:51
@@ -3154,7 +3154,7 @@ msgstr "Enable advanced FLV timestamp repairing"
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "Enable advanced HLS segment reconstruction"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:58
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:63
 msgid "Enable lossless cutting"
 msgstr "Enable lossless cutting"
 
@@ -3179,7 +3179,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enable selected"
 msgstr "Enable selected"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:85
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:90
 #: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
@@ -3466,7 +3466,7 @@ msgstr "Exit selection mode"
 msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:61
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:66
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
@@ -3512,7 +3512,7 @@ msgstr "Exports include all global settings, platforms, templates, streamers, en
 msgid "Extra Arguments"
 msgstr "Extra Arguments"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:124
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:129
 msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 
@@ -5240,7 +5240,7 @@ msgstr "Long-lived credentials for programmatic access to the REST API and the b
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:114
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:119
 msgid "Lossless cutting will not be used"
 msgstr "Lossless cutting will not be used"
 
@@ -7514,7 +7514,7 @@ msgstr "Recording split successfully."
 msgid "Recording started"
 msgstr "Recording started"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:137
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:153
 msgid "Recording uses temporary chunks"
 msgstr "Recording uses temporary chunks"
 
@@ -7526,7 +7526,7 @@ msgstr "Recording will start when schedule allows"
 msgid "Recordings"
 msgstr "Recordings"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:141
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:157
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 
@@ -8728,7 +8728,7 @@ msgstr "Split only on codec configuration changes. Reduces false splits."
 msgid "Split Reason: {formattedReason}"
 msgstr "Split Reason: {formattedReason}"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:102
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:107
 msgid "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
 msgstr "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
 
@@ -9972,7 +9972,7 @@ msgstr "URL is required"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:82
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:87
 #: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Use engine setting"
 msgstr "Use engine setting"
@@ -10034,7 +10034,7 @@ msgstr "Username (Optional)"
 msgid "Users"
 msgstr "Users"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:149
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:164
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 

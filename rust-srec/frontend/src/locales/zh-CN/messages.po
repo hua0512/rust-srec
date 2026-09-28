@@ -763,7 +763,7 @@ msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。
 msgid "Applied to all URLs"
 msgstr "应用于所有链接"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:155
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:170
 msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
 msgstr "仅适用于 MP4、MKV、FLV、TS 或 MOV 输出。其他格式的录制使用普通录制方式。"
 
@@ -2314,7 +2314,7 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:118
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:123
 msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "已设置自定义 FFmpeg 输出参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
@@ -2845,7 +2845,7 @@ msgstr "禁用秒传"
 msgid "Disable selected"
 msgstr "禁用所选"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:88
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:93
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/streamers/card/use-streamer-status.tsx:51
@@ -3154,7 +3154,7 @@ msgstr "启用高级 FLV 时间戳修复"
 msgid "Enable advanced HLS segment reconstruction"
 msgstr "启用高级 HLS 分段重建"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:58
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:63
 msgid "Enable lossless cutting"
 msgstr "启用无损分段"
 
@@ -3179,7 +3179,7 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enable selected"
 msgstr "启用所选"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:85
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:90
 #: src/components/config/shared/record-danmu-card.tsx:100
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
@@ -3466,7 +3466,7 @@ msgstr "退出选择模式"
 msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:61
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:66
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
@@ -3512,7 +3512,7 @@ msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎
 msgid "Extra Arguments"
 msgstr "额外参数"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:124
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:129
 msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "已设置额外的 Streamlink 参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
@@ -5240,7 +5240,7 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:114
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:119
 msgid "Lossless cutting will not be used"
 msgstr "不会使用无损分段"
 
@@ -7514,7 +7514,7 @@ msgstr "录制分段成功。"
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:137
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:153
 msgid "Recording uses temporary chunks"
 msgstr "录制将使用临时分块"
 
@@ -7526,7 +7526,7 @@ msgstr "录制将在计划允许时开始"
 msgid "Recordings"
 msgstr "录制内容"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:141
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:157
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
@@ -8728,7 +8728,7 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:102
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:107
 msgid "Split recordings without reconnecting or re-encoding. Off by default. Changes apply to new recordings."
 msgstr "无需重新连接或重新编码即可分割录制。默认关闭，修改仅对新开始的录制生效。"
 
@@ -9972,7 +9972,7 @@ msgstr "必须填写 URL"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:82
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:87
 #: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Use engine setting"
 msgstr "使用引擎设置"
@@ -10034,7 +10034,7 @@ msgstr "用户名（可选）"
 msgid "Users"
 msgstr "用户"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:149
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:164
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "会占用额外的磁盘空间和 I/O。文件收尾失败时会保留临时分块。"
 

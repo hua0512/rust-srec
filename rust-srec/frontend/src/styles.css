@@ -465,6 +465,70 @@ html {
   animation-play-state: paused;
 }
 
+/* Disclosure panel (transitions.dev "Accordion expand"), see
+   components/ui/disclosure.tsx. Height animates via grid-template-rows
+   0fr -> 1fr so content of any size needs no JS measuring. The inner element
+   must clip its own overflow and carry no padding, or the 0fr track keeps a
+   residual strip and never fully closes.
+   Each part carries its own data-state and descendants are reached only with
+   `>`, so an open disclosure never opens one nested inside it. */
+.rs-disclosure {
+  --rs-disclosure-expand: 250ms;
+  --rs-disclosure-collapse: 250ms;
+  --rs-disclosure-chevron: 250ms;
+  --rs-disclosure-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rs-disclosure-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--rs-disclosure-collapse)
+    var(--rs-disclosure-ease);
+}
+
+.rs-disclosure-panel[data-state='open'] {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--rs-disclosure-expand)
+    var(--rs-disclosure-ease);
+}
+
+.rs-disclosure-panel > .rs-disclosure-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    opacity var(--rs-disclosure-collapse) var(--rs-disclosure-ease),
+    filter var(--rs-disclosure-collapse) var(--rs-disclosure-ease);
+}
+
+.rs-disclosure-panel[data-state='open'] > .rs-disclosure-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--rs-disclosure-expand) var(--rs-disclosure-ease),
+    filter var(--rs-disclosure-expand) var(--rs-disclosure-ease);
+}
+
+/* A vertical flip turns the "v" into a "^" through a flat line at the
+   midpoint and animates in every browser, unlike CSS `d:` path morphing. The
+   chevron path must be symmetric about its viewBox centre; non-scaling-stroke
+   keeps the stroke width constant mid-flip. */
+.rs-disclosure-trigger > .rs-disclosure-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--rs-disclosure-chevron) var(--rs-disclosure-ease);
+}
+
+.rs-disclosure-chevron path {
+  vector-effect: non-scaling-stroke;
+}
+
+.rs-disclosure-trigger[data-state='open'] > .rs-disclosure-chevron {
+  transform: scaleY(-1);
+}
+
 .rs-dashboard-grid {
   animation: rs-dashboard-grid-enter 300ms ease-out both;
 }
@@ -508,7 +572,10 @@ html {
     animation: none;
   }
 
-  .rs-notification-badge-dot {
+  .rs-notification-badge-dot,
+  .rs-disclosure-panel,
+  .rs-disclosure-panel > .rs-disclosure-panel-inner,
+  .rs-disclosure-trigger > .rs-disclosure-chevron {
     transition: none !important;
   }
 }
