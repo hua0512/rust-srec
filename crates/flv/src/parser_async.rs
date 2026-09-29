@@ -1,7 +1,7 @@
 use crate::data::FlvData;
 use crate::error::FlvError;
 use crate::framing;
-use crate::header::FlvHeader;
+use crate::header::{FlvHeader, MAX_DATA_OFFSET};
 use crate::tag::FlvTag;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BytesMut};
@@ -160,7 +160,7 @@ impl Decoder for FlvDecoder {
                     return Err(FlvError::InvalidHeader);
                 }
 
-                if data_offset < FLV_HEADER_SIZE {
+                if !(FLV_HEADER_SIZE..=MAX_DATA_OFFSET as usize).contains(&data_offset) {
                     return Err(FlvError::InvalidHeader);
                 }
 
@@ -419,6 +419,46 @@ mod tests {
     }
 
     #[test]
+    fn oversized_header_is_rejected_before_reserving_extension_bytes() {
+        for data_offset in [MAX_DATA_OFFSET + 1, u32::MAX] {
+            let mut buffer = BytesMut::from(&b"FLV\x01\x05"[..]);
+            buffer.extend_from_slice(&data_offset.to_be_bytes());
+            let capacity = buffer.capacity();
+            assert!(FlvHeader::parse(&mut Cursor::new(&buffer[..])).is_err());
+            assert!(matches!(
+                FlvDecoder::default().decode(&mut buffer),
+                Err(FlvError::InvalidHeader)
+            ));
+            assert_eq!(buffer.capacity(), capacity);
+        }
+    }
+
+    #[test]
+    fn extended_headers_up_to_the_limit_are_consumed_exactly() {
+        for data_offset in [9_u32, 13, 65_536] {
+            let mut buffer = BytesMut::from(&b"FLV\x01\x05"[..]);
+            buffer.extend_from_slice(&data_offset.to_be_bytes());
+            buffer.resize(data_offset as usize, 0);
+            buffer.extend_from_slice(&[0; 4]); // PreviousTagSize0
+            let expected = FlvHeader {
+                data_offset,
+                ..FlvHeader::new(true, true)
+            };
+            assert_eq!(
+                FlvHeader::parse(&mut Cursor::new(&buffer[..])).unwrap(),
+                expected
+            );
+            let mut decoder = FlvDecoder::default();
+            assert_eq!(
+                decoder.decode(&mut buffer).unwrap(),
+                Some(FlvData::Header(expected))
+            );
+            assert!(buffer.is_empty());
+            assert_eq!(decoder.position(), u64::from(data_offset) + 4);
+        }
+    }
+
+    #[test]
     fn test_decode_header_ok() {
         init_tracing();
         let mut decoder = FlvDecoder::default();
@@ -559,28 +599,48 @@ mod tests {
 
     #[tokio::test]
     async fn test_flv_decoder_stream() {
-        let data = vec![
-            0x46, 0x4C, 0x56, // "FLV" signature
-            0x01, // version
-            0x05, // flags (audio and video)
-            0x00, 0x00, 0x00, 0x09, // data offset (9 bytes)
-            // FLV tag header (11 bytes)
-            0x09, // tag type (video)
-            0x00, 0x00, 0x00, 0x00, // data size (0 bytes for header)
-            0x00, 0x00, 0x00, 0x00, // timestamp (0 ms)
-            0x00, // stream ID (always 0)
+        use std::time::Duration;
+
+        use bytes::Bytes;
+        use futures::{TryStreamExt, stream};
+        use tokio_util::io::StreamReader;
+
+        // Complete FLV containing two PCM stereo packets, with all back-pointers.
+        let data = [
+            b'F', b'L', b'V', 1, 4, 0, 0, 0, 9, 0, 0, 0, 0, 8, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0x3f,
+            1, 0, 2, 0, 0, 0, 0, 16, 8, 0, 0, 5, 0, 1, 1, 0, 0, 0, 0, 0x3f, 3, 0, 4, 0, 0, 0, 0,
+            16,
         ];
-
-        let cursor = Cursor::new(data);
-        let mut decoder_stream = FlvDecoderStream::new(cursor);
-
-        let result = decoder_stream.next().await;
-
-        assert!(result.is_some());
-        if let Some(Ok(FlvData::Header(header))) = result {
-            assert_eq!(header.version, 1);
-        } else {
-            panic!("Expected FLV header");
+        let expected = vec![
+            FlvData::Header(FlvHeader::new(true, false)),
+            FlvData::Tag(FlvTag::new(
+                0,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from_static(b"\x3f\x01\0\x02\0"),
+            )),
+            FlvData::Tag(FlvTag::new(
+                257,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from_static(b"\x3f\x03\0\x04\0"),
+            )),
+        ];
+        for chunk_size in [1, 7, data.len()] {
+            let chunks = stream::iter(
+                data.chunks(chunk_size)
+                    .map(|chunk| Ok::<_, std::io::Error>(Bytes::copy_from_slice(chunk))),
+            );
+            let decoded = tokio::time::timeout(
+                Duration::from_secs(2),
+                FlvDecoderStream::new(StreamReader::new(chunks)).try_collect::<Vec<_>>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(decoded, expected, "chunk size {chunk_size}");
         }
     }
 
@@ -638,10 +698,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flv_parser_invalid() {
-        let path = Path::new("invalid.flv");
-        let parser = FlvParser::create_decoder_stream(path).await;
-        assert!(parser.is_err());
+    async fn decoder_stream_propagates_invalid_header_and_terminates() {
+        let mut stream = FlvDecoderStream::new(Cursor::new(b"NOT-FLV-HEADER"));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            assert!(matches!(
+                stream.next().await,
+                Some(Err(FlvError::InvalidHeader))
+            ));
+            assert!(stream.next().await.is_none());
+        })
+        .await
+        .unwrap();
     }
 
     #[test]

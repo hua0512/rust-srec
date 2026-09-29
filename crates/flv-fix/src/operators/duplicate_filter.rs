@@ -1,104 +1,128 @@
-//! # DuplicateTagFilterOperator
+//! Bounded, byte-verified duplicate suppression for recognized media packets.
 //!
-//! Drops exact duplicate media tags within a rolling window.
+//! CRC32 is only a lookup accelerator; matching payload bytes are required before
+//! dropping a tag. Payloads are copied into bounded storage so small tags cannot
+//! pin large decoder buffers. Opaque, control, and multitrack tags pass through.
 //!
-//! Some live streaming sources may "loop" the last few seconds of content when
-//! a streamer goes offline, effectively replaying a chunk of the stream with
-//! identical FLV tags (often with repeated timestamps).
-//!
-//! This operator performs a conservative deduplication:
-//! - Only applies to audio/video *media* tags (script tags and sequence headers
-//!   are passed through).
-//! - Considers a tag duplicate if `(tag_type, timestamp_ms, crc32(data), len)`
-//!   matches one seen recently.
-//! - Additionally, if a large timestamp back-jump is detected, it will try to
-//!   detect "replay loops" where the same content is re-sent with a constant
-//!   timestamp offset and drop those tags as well.
-//! - Resets state on `FlvData::Header` so segment boundaries don't cross-talk.
-//!
-//! This is intentionally conservative to avoid false positives on legitimate
-//! repeated content (e.g. identical AAC frames at different timestamps).
-use flv::data::FlvData;
-use flv::tag::FlvTag;
-use pipeline_common::{PipelineError, Processor, StreamerContext};
-use std::collections::{HashMap, HashSet, VecDeque};
+//! Optional replay detection buffers a short candidate run after a clock reset.
+//! It requires a unique historical run with three distinct payloads and matching
+//! timestamp deltas. Ambiguous or incomplete candidates are emitted unchanged.
+//! This remains a heuristic and is disabled by default, as is pipeline filtering.
+use std::collections::{HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use bytes::Bytes;
+use flv::{FlvData, FlvTag, SplitReason};
+use pipeline_common::{PipelineError, Processor, StreamerContext, crc32};
 use tracing::{debug, trace};
 
-use pipeline_common::crc32;
+const REPLAY_CONFIRMATION_PACKETS: usize = 3;
+const MAX_PENDING_TAGS: usize = 8;
+const MAX_PENDING_BYTES: usize = 1024 * 1024;
+const MAX_REPLAY_CANDIDATES: usize = 16;
+const REPLAY_GAP: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct TagKey(u64);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct FingerprintKey(u64);
-
-#[derive(Clone, Copy, Debug)]
-struct PayloadIdentity {
+struct TagKey {
     tag_type: u8,
-    len: u64,
-    crc: u64,
+    stream_id: u32,
+    timestamp_ms: u32,
+    len: usize,
+    crc: u32,
 }
 
-#[inline]
-fn mix64(mut x: u64) -> u64 {
-    // SplitMix64
-    x = x.wrapping_add(0x9E3779B97F4A7C15);
-    x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-    x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
-    x ^ (x >> 31)
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SeenTag {
+    key: TagKey,
+    data: Bytes,
 }
 
-impl TagKey {
-    fn from_identity(identity: PayloadIdentity, timestamp_ms: u32) -> Self {
-        let x = ((identity.tag_type as u64) << 56)
-            ^ identity.len.rotate_left(17)
-            ^ timestamp_ms as u64
-            ^ identity.crc.rotate_left(1);
-        TagKey(mix64(x))
+impl Hash for SeenTag {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash collisions still undergo the derived, byte-for-byte Eq check.
+        self.key.hash(state);
     }
 }
 
-impl FingerprintKey {
-    fn from_identity(identity: PayloadIdentity) -> Self {
-        let x = ((identity.tag_type as u64) << 56)
-            ^ identity.len.rotate_left(17)
-            ^ identity.crc.rotate_left(1);
-        FingerprintKey(mix64(x))
-    }
-}
-
-impl PayloadIdentity {
+impl SeenTag {
     fn new(tag: &FlvTag) -> Self {
         Self {
-            tag_type: tag.tag_type().into(),
-            len: tag.data().len() as u64,
-            crc: crc32::crc32(tag.data().as_ref()) as u64,
+            key: TagKey {
+                tag_type: tag.tag_type().into(),
+                stream_id: tag.stream_id,
+                timestamp_ms: tag.timestamp_ms,
+                len: tag.data().len(),
+                crc: crc32::crc32(tag.data()),
+            },
+            data: tag.data().clone(),
         }
     }
 
-    fn tag_key(self, timestamp_ms: u32) -> TagKey {
-        TagKey::from_identity(self, timestamp_ms)
+    fn same_payload(&self, other: &Self) -> bool {
+        self.key.tag_type == other.key.tag_type
+            && self.key.stream_id == other.key.stream_id
+            && self.key.len == other.key.len
+            && self.key.crc == other.key.crc
+            && self.data == other.data
+    }
+}
+
+#[derive(Default)]
+struct History {
+    order: VecDeque<SeenTag>,
+    seen: HashSet<SeenTag>,
+    bytes: usize,
+}
+
+impl History {
+    fn clear(&mut self) {
+        self.order.clear();
+        self.seen.clear();
+        self.bytes = 0;
     }
 
-    fn fingerprint(self) -> FingerprintKey {
-        FingerprintKey::from_identity(self)
+    /// Returns false only for a retained, byte-identical duplicate. Packets that
+    /// cannot be retained still return true so their caller can forward them.
+    fn remember(&mut self, mut tag: SeenTag, config: &DuplicateTagFilterConfig) -> bool {
+        if config.window_capacity_tags == 0 || tag.data.len() > config.window_capacity_bytes {
+            // Missing packets must not join two unrelated historical replay runs.
+            self.clear();
+            return true;
+        }
+        if self.seen.contains(&tag) {
+            return false;
+        }
+        while self.order.len() >= config.window_capacity_tags
+            || self.bytes > config.window_capacity_bytes - tag.data.len()
+        {
+            if let Some(old) = self.order.pop_front() {
+                self.bytes -= old.data.len();
+                self.seen.remove(&old);
+            }
+        }
+        tag.data = Bytes::copy_from_slice(&tag.data);
+        self.bytes += tag.data.len();
+        self.seen.insert(tag.clone());
+        self.order.push_back(tag);
+        true
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DuplicateTagFilterConfig {
-    /// Maximum number of recently-seen tags to remember for exact duplicate
-    /// suppression.
+    /// Maximum number of media packets retained. Zero disables retention.
     pub window_capacity_tags: usize,
-    /// Minimum timestamp back-jump (ms) to consider the stream as "replaying"
-    /// recent content (e.g. streamer went offline and service loops tail).
+    /// Maximum retained payload bytes (16 MiB by default). Oversized packets
+    /// pass through. Replay lookahead additionally retains at most 1 MiB.
+    pub window_capacity_bytes: usize,
+    /// Minimum per-stream backwards timestamp jump that starts a new timeline.
     pub replay_backjump_threshold_ms: u32,
-    /// Enable replay detection using a constant timestamp offset.
-    ///
-    /// When enabled and a back-jump is detected, the operator will attempt to
-    /// find an offset that maps incoming replay timestamps to a previously seen
-    /// region and drop tags that match the mapped timestamps.
+    /// Opt in to heuristic replay removal after a clock reset. Confirmation
+    /// needs three distinct packets in order, at one consistent offset. Pending
+    /// packets are released on the next input after 500 ms, after eight packets,
+    /// or on finish; this synchronous processor does not run an idle timer.
     pub enable_replay_offset_matching: bool,
 }
 
@@ -106,24 +130,59 @@ impl Default for DuplicateTagFilterConfig {
     fn default() -> Self {
         Self {
             window_capacity_tags: 8 * 1024,
+            window_capacity_bytes: 16 * 1024 * 1024,
             replay_backjump_threshold_ms: 2_000,
-            enable_replay_offset_matching: true,
+            enable_replay_offset_matching: false,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct ReplayCursor {
+    next: usize,
+    offset_ms: i64,
+}
+
+impl ReplayCursor {
+    fn advance(&mut self, history: &History, tag: &SeenTag) -> bool {
+        if history.order.get(self.next).is_some_and(|old| {
+            old.same_payload(tag)
+                && old.key.timestamp_ms as i64 - tag.key.timestamp_ms as i64 == self.offset_ms
+        }) {
+            self.next += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+struct Candidate {
+    cursors: Vec<ReplayCursor>,
+    pending: Vec<FlvTag>,
+    bytes: usize,
+    started: Instant,
+    first_timestamp: u32,
+}
+
+enum ReplayState {
+    Normal,
+    Candidate(Candidate),
+    Confirmed {
+        cursor: ReplayCursor,
+        last_seen: Instant,
+        last_timestamp: u32,
+    },
 }
 
 pub struct DuplicateTagFilterOperator {
     context: Arc<StreamerContext>,
     config: DuplicateTagFilterConfig,
-    order: VecDeque<SeenEntry>,
-    seen: HashSet<TagKey>,
-    fingerprint_last: HashMap<FingerprintKey, (u32, u64)>,
-    seq: u64,
-    max_timestamp_seen: u32,
-    replay_active: bool,
-    replay_offset_ms: Option<i64>,
-    dropped_duplicates: u64,
-    next_drop_log_at: u64,
+    history: History,
+    replay: ReplayState,
+    // Audio and video can have different clocks. A jump starts a fresh epoch
+    // for both so the second stream's first packet cannot restart confirmation.
+    last_timestamps: [Option<u32>; 2],
 }
 
 impl DuplicateTagFilterOperator {
@@ -132,19 +191,12 @@ impl DuplicateTagFilterOperator {
     }
 
     pub fn with_config(context: Arc<StreamerContext>, config: DuplicateTagFilterConfig) -> Self {
-        let cap = config.window_capacity_tags.max(1);
         Self {
             context,
             config,
-            order: VecDeque::with_capacity(cap.min(1024)),
-            seen: HashSet::with_capacity(cap.min(1024)),
-            fingerprint_last: HashMap::with_capacity(cap.min(1024)),
-            seq: 0,
-            max_timestamp_seen: 0,
-            replay_active: false,
-            replay_offset_ms: None,
-            dropped_duplicates: 0,
-            next_drop_log_at: 1_000,
+            history: History::default(),
+            replay: ReplayState::Normal,
+            last_timestamps: [None; 2],
         }
     }
 
@@ -152,121 +204,192 @@ impl DuplicateTagFilterOperator {
         Self::with_config(
             context,
             DuplicateTagFilterConfig {
-                window_capacity_tags: capacity.max(1),
+                window_capacity_tags: capacity,
                 ..Default::default()
             },
         )
     }
 
-    fn reset(&mut self) {
-        self.order.clear();
-        self.seen.clear();
-        self.fingerprint_last.clear();
-        self.seq = 0;
-        self.max_timestamp_seen = 0;
-        self.replay_active = false;
-        self.replay_offset_ms = None;
-        self.dropped_duplicates = 0;
-        self.next_drop_log_at = 1_000;
+    fn emit_new(
+        &mut self,
+        tag: FlvTag,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        self.history.remember(SeenTag::new(&tag), &self.config);
+        output(FlvData::Tag(tag))
     }
 
-    fn track_tag(&mut self, tag: &FlvTag, key: TagKey, fingerprint: FingerprintKey) {
-        self.seq = self.seq.wrapping_add(1);
-        let seq = self.seq;
+    fn release_candidate(
+        &mut self,
+        candidate: Candidate,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        // The reset was not a proven replay. Its packets belong to a new epoch,
+        // even if an old epoch contained identical bytes at identical timestamps.
+        self.history.clear();
+        for tag in candidate.pending {
+            self.emit_new(tag, output)?;
+        }
+        Ok(())
+    }
 
-        self.seen.insert(key);
-        self.fingerprint_last
-            .insert(fingerprint, (tag.timestamp_ms, seq));
-        self.order.push_back(SeenEntry {
-            key,
-            fingerprint,
-            seq,
-        });
+    fn flush_pending(
+        &mut self,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        if matches!(self.replay, ReplayState::Candidate(_))
+            && let ReplayState::Candidate(candidate) =
+                std::mem::replace(&mut self.replay, ReplayState::Normal)
+        {
+            self.release_candidate(candidate, output)?;
+        }
+        Ok(())
+    }
 
-        while self.order.len() > self.config.window_capacity_tags {
-            if let Some(old) = self.order.pop_front() {
-                self.seen.remove(&old.key);
-                if self
-                    .fingerprint_last
-                    .get(&old.fingerprint)
-                    .is_some_and(|&(_, last_seq)| last_seq == old.seq)
+    fn reset(&mut self) {
+        self.replay = ReplayState::Normal;
+        self.history.clear();
+        self.last_timestamps = [None; 2];
+    }
+
+    fn begin_replay(&mut self, tag: &SeenTag, now: Instant) {
+        self.replay = ReplayState::Normal;
+        if self.config.enable_replay_offset_matching {
+            let mut cursors = Vec::new();
+            for (index, old) in self.history.order.iter().enumerate() {
+                if old.same_payload(tag) {
+                    if cursors.len() == MAX_REPLAY_CANDIDATES {
+                        // Repetitive content cannot identify a unique source run.
+                        self.history.clear();
+                        return;
+                    }
+                    cursors.push(ReplayCursor {
+                        next: index,
+                        offset_ms: old.key.timestamp_ms as i64 - tag.key.timestamp_ms as i64,
+                    });
+                }
+            }
+            if !cursors.is_empty() {
+                self.replay = ReplayState::Candidate(Candidate {
+                    cursors,
+                    pending: Vec::new(),
+                    bytes: 0,
+                    started: now,
+                    first_timestamp: tag.key.timestamp_ms,
+                });
+                return;
+            }
+        }
+        self.history.clear();
+    }
+
+    fn process_media(
+        &mut self,
+        mut tag: FlvTag,
+        now: Instant,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        let seen = SeenTag::new(&tag);
+        let stream = usize::from(tag.is_video_tag());
+        if self.last_timestamps[stream].is_some_and(|last| {
+            last.saturating_sub(tag.timestamp_ms) > self.config.replay_backjump_threshold_ms
+        }) {
+            self.flush_pending(output)?;
+            self.last_timestamps = [None; 2];
+            self.begin_replay(&seen, now);
+        }
+        self.last_timestamps[stream] = Some(tag.timestamp_ms);
+
+        if matches!(&self.replay,
+            ReplayState::Confirmed { cursor, last_seen, last_timestamp }
+                if cursor.next == self.history.order.len()
+                    && now.duration_since(*last_seen) <= REPLAY_GAP
+                    && tag.timestamp_ms.abs_diff(*last_timestamp) <= self.config.replay_backjump_threshold_ms.max(REPLAY_GAP.as_millis() as u32)
+        ) {
+            // A complete replay may loop again with a different timestamp base.
+            // Require fresh confirmation rather than reusing its previous offset.
+            self.begin_replay(&seen, now);
+        }
+
+        match std::mem::replace(&mut self.replay, ReplayState::Normal) {
+            ReplayState::Normal => {
+                if !self.history.remember(seen, &self.config) {
+                    trace!(streamer = %self.context.name, timestamp_ms = tag.timestamp_ms, "Dropping byte-identical media tag");
+                    return Ok(());
+                }
+                output(FlvData::Tag(tag))
+            }
+            ReplayState::Candidate(mut candidate) => {
+                let byte_limit = self.config.window_capacity_bytes.min(MAX_PENDING_BYTES);
+                let expired = now.duration_since(candidate.started) > REPLAY_GAP
+                    || tag.timestamp_ms.abs_diff(candidate.first_timestamp)
+                        > REPLAY_GAP.as_millis() as u32;
+                if expired || tag.data().len() > byte_limit.saturating_sub(candidate.bytes) {
+                    self.release_candidate(candidate, output)?;
+                    return self.emit_new(tag, output);
+                }
+                candidate
+                    .cursors
+                    .retain_mut(|cursor| cursor.advance(&self.history, &seen));
+                if candidate.cursors.is_empty() {
+                    self.release_candidate(candidate, output)?;
+                    return self.emit_new(tag, output);
+                }
+                candidate.bytes += tag.data().len();
+                // Detach from possibly much larger decoder buffers before buffering.
+                tag.set_data(Bytes::copy_from_slice(tag.data()));
+                candidate.pending.push(tag);
+                let distinct = candidate
+                    .pending
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, tag)| {
+                        !candidate.pending[..*index].iter().any(|earlier| {
+                            earlier.tag_type() == tag.tag_type()
+                                && earlier.stream_id == tag.stream_id
+                                && earlier.data() == tag.data()
+                        })
+                    })
+                    .count();
+                if candidate.cursors.len() == 1
+                    && distinct >= REPLAY_CONFIRMATION_PACKETS
+                    && seen.key.timestamp_ms > candidate.first_timestamp
                 {
-                    self.fingerprint_last.remove(&old.fingerprint);
+                    debug!(streamer = %self.context.name, packets = candidate.pending.len(), offset_ms = candidate.cursors[0].offset_ms, "Confirmed media replay");
+                    self.replay = ReplayState::Confirmed {
+                        cursor: candidate.cursors[0],
+                        last_seen: now,
+                        last_timestamp: seen.key.timestamp_ms,
+                    };
+                } else if candidate.pending.len() >= MAX_PENDING_TAGS {
+                    self.release_candidate(candidate, output)?;
+                } else {
+                    self.replay = ReplayState::Candidate(candidate);
+                }
+                Ok(())
+            }
+            ReplayState::Confirmed {
+                mut cursor,
+                last_seen,
+                last_timestamp,
+            } => {
+                if now.duration_since(last_seen) <= REPLAY_GAP
+                    && tag.timestamp_ms.abs_diff(last_timestamp) <= REPLAY_GAP.as_millis() as u32
+                    && cursor.advance(&self.history, &seen)
+                {
+                    self.replay = ReplayState::Confirmed {
+                        cursor,
+                        last_seen: now,
+                        last_timestamp: tag.timestamp_ms,
+                    };
+                    Ok(())
+                } else {
+                    self.history.clear();
+                    self.emit_new(tag, output)
                 }
             }
         }
     }
-
-    fn is_exact_duplicate(&self, key: TagKey) -> bool {
-        self.seen.contains(&key)
-    }
-
-    fn replay_mapped_key(
-        &mut self,
-        tag: &FlvTag,
-        identity: PayloadIdentity,
-        fingerprint: FingerprintKey,
-    ) -> Option<TagKey> {
-        if !self.replay_active || !self.config.enable_replay_offset_matching {
-            return None;
-        }
-
-        let ts = tag.timestamp_ms;
-
-        // If we don't have an offset yet, try to infer one from the last timestamp
-        // of the same fingerprint (if available).
-        if self.replay_offset_ms.is_none()
-            && let Some(&(prev_ts, _)) = self.fingerprint_last.get(&fingerprint)
-            && prev_ts > ts
-        {
-            let candidate = (prev_ts - ts) as i64;
-            let mapped_ts = prev_ts;
-            let mapped_key = identity.tag_key(mapped_ts);
-            if self.is_exact_duplicate(mapped_key) {
-                self.replay_offset_ms = Some(candidate);
-                return Some(mapped_key);
-            }
-        }
-
-        let offset = self.replay_offset_ms?;
-
-        let mapped_ts_i64 = ts as i64 + offset;
-        if mapped_ts_i64 < 0 || mapped_ts_i64 > u32::MAX as i64 {
-            return None;
-        }
-        let mapped_ts = mapped_ts_i64 as u32;
-
-        Some(identity.tag_key(mapped_ts))
-    }
-
-    fn track_and_check(
-        &mut self,
-        tag: &FlvTag,
-        identity: PayloadIdentity,
-        key: TagKey,
-        fingerprint: FingerprintKey,
-    ) -> bool {
-        // 1) Exact match (type + timestamp + payload).
-        if self.seen.contains(&key) {
-            return true;
-        }
-
-        // 2) Replay-mode match: same payload, but timestamp shifted by a constant offset.
-        if let Some(mapped_key) = self.replay_mapped_key(tag, identity, fingerprint)
-            && self.is_exact_duplicate(mapped_key)
-        {
-            return true;
-        }
-
-        false
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SeenEntry {
-    key: TagKey,
-    fingerprint: FingerprintKey,
-    seq: u64,
 }
 
 impl Processor<FlvData> for DuplicateTagFilterOperator {
@@ -279,76 +402,40 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
         if context.token.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
-
         match input {
-            FlvData::Header(_) => {
-                self.reset();
-                output(input)
+            FlvData::Tag(tag) if tag.classification().media => {
+                self.process_media(tag, Instant::now(), output)
             }
-            FlvData::Tag(tag) => {
-                // Keep metadata and codec config tags as-is. Dedicated operators handle those.
-                if tag.is_script_tag()
-                    || tag.is_video_sequence_header()
-                    || tag.is_audio_sequence_header()
-                {
-                    return output(FlvData::Tag(tag));
+            item => {
+                self.flush_pending(output)?;
+                let resets_timeline = match &item {
+                    FlvData::Header(_) | FlvData::EndOfSequence(_) => true,
+                    FlvData::Split(reason) => !matches!(
+                        reason,
+                        SplitReason::SizeLimit
+                            | SplitReason::DurationLimit
+                            | SplitReason::Manual { .. }
+                    ),
+                    // Control/config/opaque A/V packets are barriers: don't infer
+                    // replay across unexamined tracks or decoder state changes.
+                    FlvData::Tag(tag) => tag.is_audio_tag() || tag.is_video_tag(),
+                };
+                if resets_timeline {
+                    self.reset();
                 }
-
-                // Only dedup A/V media tags.
-                if !(tag.is_audio_tag() || tag.is_video_tag()) {
-                    return output(FlvData::Tag(tag));
-                }
-
-                // Update max timestamp seen and detect replay mode on large back-jumps.
-                let ts = tag.timestamp_ms;
-                let prev_max = self.max_timestamp_seen;
-                self.max_timestamp_seen = self.max_timestamp_seen.max(ts);
-                // Use the previous max for back-jump detection so the current tag doesn't
-                // "mask" a large regression by resetting max_timestamp_seen first.
-                if !self.replay_active
-                    && prev_max.saturating_sub(ts) > self.config.replay_backjump_threshold_ms
-                {
-                    self.replay_active = true;
-                }
-
-                let identity = PayloadIdentity::new(&tag);
-                let key = identity.tag_key(tag.timestamp_ms);
-                let fingerprint = identity.fingerprint();
-
-                if self.track_and_check(&tag, identity, key, fingerprint) {
-                    self.dropped_duplicates = self.dropped_duplicates.saturating_add(1);
-                    trace!(
-                        "{} Dropping duplicate media tag: type={:?} ts={} len={}",
-                        self.context.name,
-                        tag.tag_type(),
-                        tag.timestamp_ms,
-                        tag.data().len()
-                    );
-                    if self.dropped_duplicates >= self.next_drop_log_at {
-                        debug!(
-                            "{} Dropped {} duplicate media tags so far",
-                            self.context.name, self.dropped_duplicates
-                        );
-                        self.next_drop_log_at = self.next_drop_log_at.saturating_add(1_000);
-                    }
-                    return Ok(());
-                }
-
-                self.track_tag(&tag, key, fingerprint);
-
-                output(FlvData::Tag(tag))
+                output(item)
             }
-            _ => output(input),
         }
     }
 
     fn finish(
         &mut self,
         _context: &Arc<StreamerContext>,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        let result = self.flush_pending(output);
         self.reset();
-        Ok(())
+        result
     }
 
     fn name(&self) -> &'static str {
@@ -358,224 +445,485 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
 
 #[cfg(test)]
 mod tests {
+    use flv::{FlvHeader, FlvTagType};
     use pipeline_common::CancellationToken;
 
     use super::*;
-    use crate::test_utils::{create_audio_tag, create_test_header, create_video_tag};
 
-    #[test]
-    fn test_drops_exact_duplicate_media_tags_within_window() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DuplicateTagFilterOperator::with_capacity(context.clone(), 64);
-        let mut output_items = Vec::new();
+    // AV1 keyframe from the FFmpeg fixture documented in pipeline.rs.
+    const AV1_FRAME: &[u8] = b"\x91av01\x12\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80\x32\x0e\x10\0\xd0\0\0\x02\x80\0\0\0\xa9\x8e\x5e\xd0";
 
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Duplicate video and audio tags at the same timestamp.
-        let v = create_video_tag(100, true);
-        operator
-            .process(&context, v.clone(), &mut output_fn)
-            .unwrap();
-        operator.process(&context, v, &mut output_fn).unwrap();
-
-        let a = create_audio_tag(120);
-        operator
-            .process(&context, a.clone(), &mut output_fn)
-            .unwrap();
-        operator.process(&context, a, &mut output_fn).unwrap();
-
-        let video_count = output_items
-            .iter()
-            .filter_map(|i| match i {
-                FlvData::Tag(t) => Some(t),
-                _ => None,
-            })
-            .filter(|t| t.is_video_tag() && !t.is_video_sequence_header())
-            .count();
-        let audio_count = output_items
-            .iter()
-            .filter_map(|i| match i {
-                FlvData::Tag(t) => Some(t),
-                _ => None,
-            })
-            .filter(|t| t.is_audio_tag() && !t.is_audio_sequence_header())
-            .count();
-
-        assert_eq!(video_count, 1);
-        assert_eq!(audio_count, 1);
+    // One 16-bit stereo PCM sample; identities differ through actual sample data.
+    fn pcm(timestamp: u32, sample: u16) -> FlvData {
+        let [lo, hi] = sample.to_le_bytes();
+        FlvData::Tag(FlvTag::new(
+            timestamp,
+            0,
+            FlvTagType::Audio,
+            false,
+            Bytes::from(vec![0x3f, lo, hi, lo, hi]),
+        ))
     }
 
-    #[test]
-    fn test_allows_same_payload_at_different_timestamps() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DuplicateTagFilterOperator::with_capacity(context.clone(), 64);
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // create_audio_tag uses constant payload; timestamps differ so they should pass.
-        operator
-            .process(&context, create_audio_tag(100), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_audio_tag(200), &mut output_fn)
-            .unwrap();
-
-        let audio_count = output_items
-            .iter()
-            .filter_map(|i| match i {
-                FlvData::Tag(t) => Some(t),
-                _ => None,
-            })
-            .filter(|t| t.is_audio_tag() && !t.is_audio_sequence_header())
-            .count();
-
-        assert_eq!(audio_count, 2);
-    }
-
-    #[test]
-    fn test_resets_on_header() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DuplicateTagFilterOperator::with_capacity(context.clone(), 64);
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Segment 1.
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(100, true), &mut output_fn)
-            .unwrap();
-
-        // Segment 2: header resets, so identical tag should pass again.
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(100, true), &mut output_fn)
-            .unwrap();
-
-        let video_count = output_items
-            .iter()
-            .filter_map(|i| match i {
-                FlvData::Tag(t) => Some(t),
-                _ => None,
-            })
-            .filter(|t| t.is_video_tag() && !t.is_video_sequence_header())
-            .count();
-
-        assert_eq!(video_count, 2);
-    }
-
-    #[test]
-    fn test_drops_replayed_loop_of_last_content() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DuplicateTagFilterOperator::with_capacity(context.clone(), 256);
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Simulate a short "tail" of content.
-        let tail = [
-            create_video_tag(900, true),
-            create_audio_tag(920),
-            create_video_tag(933, false),
-            create_audio_tag(940),
-        ];
-
-        for item in tail.iter().cloned() {
-            operator.process(&context, item, &mut output_fn).unwrap();
-        }
-
-        // Upstream loops and replays the same tail with the same timestamps.
-        for item in tail.iter().cloned() {
-            operator.process(&context, item, &mut output_fn).unwrap();
-        }
-
-        let media_tag_count = output_items
-            .iter()
-            .filter(|i| matches!(i, FlvData::Tag(_)))
-            .count();
-
-        // First loop contributes 4 tags, second loop should be fully dropped.
-        assert_eq!(media_tag_count, 4);
-    }
-
-    #[test]
-    fn test_drops_replayed_loop_with_timestamp_offset() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let cfg = DuplicateTagFilterConfig {
-            window_capacity_tags: 256,
-            // Default is 2000ms; we use a large back-jump anyway.
-            replay_backjump_threshold_ms: 2_000,
+    fn replay_config() -> DuplicateTagFilterConfig {
+        DuplicateTagFilterConfig {
+            enable_replay_offset_matching: true,
             ..Default::default()
-        };
-        let mut operator = DuplicateTagFilterOperator::with_config(context.clone(), cfg);
-        let mut output_items = Vec::new();
+        }
+    }
 
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
+    fn run(config: DuplicateTagFilterConfig, input: Vec<FlvData>) -> Vec<FlvData> {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = DuplicateTagFilterOperator::with_config(context.clone(), config);
+        let mut output = Vec::new();
+        let mut emit = |item| {
+            output.push(item);
             Ok(())
         };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Original tail near the end of stream.
-        let tail = [
-            create_video_tag(9000, true),
-            create_audio_tag(9200),
-            create_video_tag(9330, false),
-            create_audio_tag(9400),
-        ];
-        for item in tail.iter().cloned() {
-            operator.process(&context, item, &mut output_fn).unwrap();
+        for item in input {
+            operator.process(&context, item, &mut emit).unwrap();
         }
+        operator.finish(&context, &mut emit).unwrap();
+        output
+    }
 
-        // Replay the same tail, but timestamps are offset back to "restart" from ~0.
-        let replay = [
-            create_video_tag(0, true),
-            create_audio_tag(200),
-            create_video_tag(330, false),
-            create_audio_tag(400),
-        ];
-        for item in replay.iter().cloned() {
-            operator.process(&context, item, &mut output_fn).unwrap();
+    fn sequence(start: u32) -> Vec<FlvData> {
+        (0..4)
+            .map(|index| pcm(start + index * 23, index as u16))
+            .collect()
+    }
+
+    #[test]
+    fn exact_duplicates_are_removed_but_new_timestamps_survive() {
+        for replay in [false, true] {
+            let config = DuplicateTagFilterConfig {
+                enable_replay_offset_matching: replay,
+                ..Default::default()
+            };
+            assert_eq!(
+                run(
+                    config,
+                    vec![pcm(100, 1), pcm(100, 1), pcm(123, 1), pcm(123, 2)]
+                ),
+                vec![pcm(100, 1), pcm(123, 1), pcm(123, 2)]
+            );
         }
+    }
 
-        let media_tag_count = output_items
+    #[test]
+    fn recognized_legacy_and_enhanced_media_are_deduplicated() {
+        // Real AAC silence and the AV1 keyframe used by the pipeline fixture.
+        // AVC/HEVC: FFmpeg -f lavfi -i color=c=black:s=16x16:r=25 -frames:v 1
+        // -c:v libx264 (or libx265) -f flv; encoder SEI removed from the packet.
+        let cases: &[(FlvTagType, &[u8])] = &[
+            (FlvTagType::Video, b"\x17\x01\0\0\0\0\0\0\x0f\x65\x88\x84\0\x2b\xff\xfe\xf6\x73\x7c\x0a\x6b\x6d\xb1\x81"),
+            (FlvTagType::Video, b"\x91avc1\0\0\0\0\0\0\x0f\x65\x88\x84\0\x2b\xff\xfe\xf6\x73\x7c\x0a\x6b\x6d\xb1\x81"),
+            (FlvTagType::Video, b"\x93hvc1\0\0\0\x0b\x28\x01\xaf\x1d\x80\xee\x23\x8f\xff\x5e\x8f"),
+            (FlvTagType::Video, b"\x91hvc1\0\0\0\0\0\0\x0b\x28\x01\xaf\x1d\x80\xee\x23\x8f\xff\x5e\x8f"),
+            (FlvTagType::Audio, b"\xaf\x01\x21\x10\x04\x60\x8c\x1c"),
+            (FlvTagType::Audio, b"\x91mp4a\x21\x10\x04\x60\x8c\x1c"),
+            (FlvTagType::Video, AV1_FRAME),
+        ];
+        for &(kind, data) in cases {
+            let tag = FlvData::Tag(FlvTag::new(
+                100,
+                0,
+                kind,
+                false,
+                Bytes::copy_from_slice(data),
+            ));
+            assert_eq!(
+                run(
+                    DuplicateTagFilterConfig::default(),
+                    vec![tag.clone(), tag.clone()]
+                ),
+                vec![tag]
+            );
+        }
+    }
+
+    #[test]
+    fn crc_collisions_and_old_combined_key_collisions_preserve_distinct_payloads() {
+        // These opaque AAC bodies test container identity, without decoding AAC.
+        let payloads: &[(u32, &[u8])] = &[
+            (100, b"\xaf\x01\x4b\x15\x7c\x8a\xaa\x45\x53\x1c"),
+            (100, b"\xaf\x01\x91\x5f\x5a\x95\x90\x9a\x61\x66"),
+            (26_196_655, b"\xaf\x01\xbf\xc3\xd0\x2a\xcc\x13\x3b\x6f"),
+            (26_231_339, b"\xaf\x01\xe1\xe4\x60\x67\x6e\xf9\xe5\x44"),
+        ];
+        assert_eq!(crc32::crc32(payloads[0].1), crc32::crc32(payloads[1].1));
+        let tags: Vec<_> = payloads
             .iter()
-            .filter(|i| matches!(i, FlvData::Tag(_)))
-            .count();
+            .map(|(ts, bytes)| {
+                FlvData::Tag(FlvTag::new(
+                    *ts,
+                    0,
+                    FlvTagType::Audio,
+                    false,
+                    Bytes::copy_from_slice(bytes),
+                ))
+            })
+            .collect();
+        // Repeat each immediately: bypassing the filter cannot satisfy this test.
+        let input = tags
+            .iter()
+            .flat_map(|tag| [tag.clone(), tag.clone()])
+            .collect();
+        assert_eq!(run(DuplicateTagFilterConfig::default(), input), tags);
 
-        // Only the first tail should remain.
-        assert_eq!(media_tag_count, 4);
+        let colliding = |ts, index: usize| {
+            FlvData::Tag(FlvTag::new(
+                ts,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::copy_from_slice(payloads[index].1),
+            ))
+        };
+        let input = vec![
+            colliding(10_000, 0),
+            pcm(10_023, 1),
+            pcm(10_046, 2),
+            colliding(0, 1),
+            pcm(23, 1),
+            pcm(46, 2),
+        ];
+        assert_eq!(run(replay_config(), input.clone()), input);
+    }
+
+    #[test]
+    fn retention_is_bounded_by_both_bytes_and_packet_count() {
+        for (tags, bytes) in [(2, 1000), (1000, 10)] {
+            let config = DuplicateTagFilterConfig {
+                window_capacity_tags: tags,
+                window_capacity_bytes: bytes,
+                ..Default::default()
+            };
+            assert_eq!(
+                run(
+                    config,
+                    vec![pcm(0, 1), pcm(23, 2), pcm(46, 3), pcm(0, 1), pcm(0, 1)]
+                ),
+                vec![pcm(0, 1), pcm(23, 2), pcm(46, 3), pcm(0, 1)]
+            );
+        }
+        for (tags, bytes) in [(0, 1000), (1000, 0), (1000, 4)] {
+            let config = DuplicateTagFilterConfig {
+                window_capacity_tags: tags,
+                window_capacity_bytes: bytes,
+                ..Default::default()
+            };
+            let input = vec![pcm(0, 1), pcm(0, 1), pcm(23, 2), pcm(23, 2)];
+            assert_eq!(run(config, input.clone()), input);
+        }
+    }
+
+    #[test]
+    fn ineligible_packets_are_preserved_and_separate_media_history() {
+        let cases: &[(FlvTagType, bool, &[u8])] = &[
+            (FlvTagType::Audio, true, b"\x3f\x01\0\x01\0"),
+            (FlvTagType::Audio, false, b"\xaf\0\x12\x10"),
+            (FlvTagType::Audio, false, b"\x92Opus"),
+            (FlvTagType::Audio, false, b"\x94Opus\0"),
+            (FlvTagType::Audio, false, b"\x95\x01Opus\0\x01"),
+            (FlvTagType::Audio, false, b"\xff\x01"),
+            (FlvTagType::Audio, false, b"\xaf\x01"),
+            (FlvTagType::Video, false, b"\x57\x01"),
+            (FlvTagType::Video, false, b"\x94av01\0"),
+            (FlvTagType::Video, false, b"\x92av01"),
+            (FlvTagType::Video, false, b"\x96\x01av01\0\x12\0"),
+            (FlvTagType::Video, false, b"\x91????\x01"),
+            (FlvTagType::Video, false, b"\x93av01\x12\0"),
+            (FlvTagType::Video, false, b"\x27\x01\0\0\0"),
+        ];
+        for &(kind, filtered, bytes) in cases {
+            let barrier = FlvData::Tag(FlvTag::new(
+                0,
+                0,
+                kind,
+                filtered,
+                Bytes::copy_from_slice(bytes),
+            ));
+            let input = vec![pcm(0, 1), barrier.clone(), barrier, pcm(0, 1)];
+            assert_eq!(
+                run(replay_config(), input.clone()),
+                input,
+                "payload {bytes:02x?}"
+            );
+        }
+    }
+
+    #[test]
+    fn timestamp_reset_starts_a_new_epoch_even_when_exact_bytes_match() {
+        let input = vec![pcm(0, 1), pcm(3000, 2), pcm(0, 1)];
+        for config in [DuplicateTagFilterConfig::default(), replay_config()] {
+            assert_eq!(run(config, input.clone()), input);
+        }
+    }
+
+    #[test]
+    fn replay_is_opt_in_and_requires_distinct_ordered_evidence() {
+        let original = sequence(10_000);
+        let replay = sequence(0);
+        let input: Vec<_> = original.iter().chain(&replay).cloned().collect();
+        assert_eq!(
+            run(DuplicateTagFilterConfig::default(), input.clone()),
+            input
+        );
+        assert_eq!(run(replay_config(), input), original);
+
+        // Valid repeated silence has no distinct evidence that it is a replay.
+        let silence = |ts| {
+            FlvData::Tag(FlvTag::new(
+                ts,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from_static(b"\xaf\x01\x21\x10\x04\x60\x8c\x1c"),
+            ))
+        };
+        let input: Vec<_> = [10_000, 0]
+            .into_iter()
+            .flat_map(|start| (0..10).map(move |i| silence(start + i * 23)))
+            .collect();
+        assert_eq!(run(replay_config(), input.clone()), input);
+        // Two alternating payloads also fail the distinct-evidence requirement.
+        let input: Vec<_> = [10_000, 0]
+            .into_iter()
+            .flat_map(|start| (0..6).map(move |i| pcm(start + i * 23, (i % 2) as u16)))
+            .collect();
+        assert_eq!(run(replay_config(), input.clone()), input);
+    }
+
+    #[test]
+    fn repeated_payload_anchors_and_new_offsets_require_fresh_confirmation() {
+        let original = vec![
+            pcm(10_000, 1),
+            pcm(10_023, 2),
+            pcm(10_046, 1),
+            pcm(10_069, 3),
+        ];
+        let mut input = original.clone();
+        for start in [0, 1000, 0] {
+            input.extend([
+                pcm(start, 1),
+                pcm(start + 23, 2),
+                pcm(start + 46, 1),
+                pcm(start + 69, 3),
+            ]);
+        }
+        assert_eq!(run(replay_config(), input), original);
+    }
+
+    #[test]
+    fn mismatches_release_candidates_and_end_confirmed_replays() {
+        let original = sequence(10_000);
+        let unconfirmed = vec![pcm(0, 0), pcm(23, 1), pcm(46, 99), pcm(69, 3)];
+        let input: Vec<_> = original.iter().chain(&unconfirmed).cloned().collect();
+        assert_eq!(run(replay_config(), input.clone()), input);
+        let new_content = vec![pcm(69, 99), pcm(0, 0), pcm(23, 1), pcm(46, 2)];
+        let input: Vec<_> = original
+            .iter()
+            .chain(&sequence(0)[..3])
+            .chain(&new_content)
+            .cloned()
+            .collect();
+        let expected: Vec<_> = original.iter().chain(&new_content).cloned().collect();
+        assert_eq!(run(replay_config(), input), expected);
+    }
+
+    #[test]
+    fn packet_order_and_timestamp_deltas_must_match_the_source_run() {
+        for replay in [
+            vec![pcm(0, 0), pcm(23, 2), pcm(46, 1), pcm(69, 3)],
+            vec![pcm(0, 0), pcm(24, 1), pcm(46, 2), pcm(69, 3)],
+        ] {
+            let input: Vec<_> = sequence(10_000).into_iter().chain(replay).collect();
+            assert_eq!(run(replay_config(), input.clone()), input);
+        }
+    }
+
+    #[test]
+    fn audio_and_video_must_agree_on_the_replay_offset() {
+        let video = |ts| {
+            FlvData::Tag(FlvTag::new(
+                ts,
+                0,
+                FlvTagType::Video,
+                false,
+                Bytes::from_static(AV1_FRAME),
+            ))
+        };
+        let original = vec![pcm(10_000, 1), video(10_000), pcm(10_023, 2), video(10_033)];
+        for video_offset in [0, 1] {
+            let replay = vec![
+                pcm(0, 1),
+                video(video_offset),
+                pcm(23, 2),
+                video(33 + video_offset),
+            ];
+            let input: Vec<_> = original.iter().chain(&replay).cloned().collect();
+            let expected = if video_offset == 0 {
+                original.clone()
+            } else {
+                input.clone()
+            };
+            assert_eq!(run(replay_config(), input), expected);
+        }
+    }
+
+    #[test]
+    fn candidate_limits_release_packets_before_finish() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        // Repeated payloads cannot confirm replay, so eight pending packets
+        // must be released even when no subsequent input arrives.
+        let repeated: Vec<_> = [10_000, 0]
+            .into_iter()
+            .flat_map(|start| (0..8).map(move |i| pcm(start + i * 23, 1)))
+            .collect();
+        // Three large but valid PCM packets exceed the lookahead byte budget
+        // before confirmation. The history budget is large enough for all three.
+        let large: Vec<_> = [10_000, 0]
+            .into_iter()
+            .flat_map(|start| {
+                (0..3).map(move |i| {
+                    let mut data = vec![i as u8; 600 * 1024 + 1];
+                    data[0] = 0x3f;
+                    FlvData::Tag(FlvTag::new(
+                        start + i * 23,
+                        0,
+                        FlvTagType::Audio,
+                        false,
+                        Bytes::from(data),
+                    ))
+                })
+            })
+            .collect();
+        for input in [repeated, large] {
+            let mut operator =
+                DuplicateTagFilterOperator::with_config(context.clone(), replay_config());
+            let mut output = Vec::new();
+            for item in &input {
+                operator
+                    .process(&context, item.clone(), &mut |item| {
+                        output.push(item);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            assert_eq!(output, input);
+        }
+    }
+
+    #[test]
+    fn inactivity_expires_candidates_and_confirmed_offsets() {
+        for confirmed_packets in [1, 3] {
+            let context = StreamerContext::arc_new(CancellationToken::new());
+            let mut operator =
+                DuplicateTagFilterOperator::with_config(context.clone(), replay_config());
+            let start = Instant::now();
+            let mut output = Vec::new();
+            let mut input = sequence(10_000);
+            input.extend(sequence(0)[..confirmed_packets].iter().cloned());
+            input.push(pcm(confirmed_packets as u32 * 23, confirmed_packets as u16));
+            if confirmed_packets == 1 {
+                input.push(pcm(46, 2));
+            }
+            for (index, item) in input.iter().enumerate() {
+                let FlvData::Tag(tag) = item else {
+                    unreachable!()
+                };
+                // Inject time at the processing boundary; no sleeps or wall-clock races.
+                let now = if index >= 4 + confirmed_packets {
+                    start + Duration::from_millis(501)
+                } else {
+                    start
+                };
+                operator
+                    .process_media(tag.clone(), now, &mut |item| {
+                        output.push(item);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            operator
+                .finish(&context, &mut |item| {
+                    output.push(item);
+                    Ok(())
+                })
+                .unwrap();
+            let expected = if confirmed_packets == 1 {
+                input
+            } else {
+                sequence(10_000).into_iter().chain([pcm(69, 3)]).collect()
+            };
+            assert_eq!(output, expected);
+        }
+    }
+
+    #[test]
+    fn boundaries_flush_candidates_and_only_source_boundaries_reset_history() {
+        for marker in [
+            FlvData::Header(FlvHeader::new(true, false)),
+            FlvData::EndOfSequence(Bytes::new()),
+            FlvData::Split(SplitReason::Discontinuity),
+            FlvData::Split(SplitReason::DurationLimit),
+        ] {
+            let mut input = sequence(10_000);
+            input.extend([pcm(0, 0), pcm(23, 1), marker]);
+            assert_eq!(run(replay_config(), input.clone()), input);
+        }
+        for marker in [
+            FlvData::Split(SplitReason::SizeLimit),
+            FlvData::Split(SplitReason::DurationLimit),
+            FlvData::Split(SplitReason::Manual { request_id: 1 }),
+        ] {
+            assert_eq!(
+                run(
+                    DuplicateTagFilterConfig::default(),
+                    vec![pcm(0, 1), marker.clone(), pcm(0, 1)]
+                ),
+                vec![pcm(0, 1), marker]
+            );
+        }
+        for marker in [
+            FlvData::Header(FlvHeader::new(true, false)),
+            FlvData::EndOfSequence(Bytes::new()),
+            FlvData::Split(SplitReason::Discontinuity),
+        ] {
+            let input = vec![pcm(0, 1), marker, pcm(0, 1)];
+            assert_eq!(
+                run(DuplicateTagFilterConfig::default(), input.clone()),
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn flushing_a_candidate_propagates_output_failure_without_reemitting_it() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            DuplicateTagFilterOperator::with_config(context.clone(), replay_config());
+        for item in sequence(10_000).into_iter().chain([pcm(0, 0), pcm(23, 1)]) {
+            operator.process(&context, item, &mut |_| Ok(())).unwrap();
+        }
+        let mut output = Vec::new();
+        let result = operator.finish(&context, &mut |item| {
+            if !output.is_empty() {
+                return Err(PipelineError::Io(std::io::ErrorKind::BrokenPipe.into()));
+            }
+            output.push(item);
+            Ok(())
+        });
+        assert!(
+            matches!(result,Err(PipelineError::Io(error)) if error.kind()==std::io::ErrorKind::BrokenPipe)
+        );
+        operator
+            .finish(&context, &mut |item| {
+                output.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(output, vec![pcm(0, 0)]);
     }
 }

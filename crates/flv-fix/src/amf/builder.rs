@@ -202,6 +202,21 @@ impl OnMetaDataBuilder {
             max_keyframes = max_keyframes.min(spacer_size / 2);
         }
 
+        // Reserved spacer slots keep the encoded size constant as they are
+        // replaced by keyframes. Try the largest permitted index once; only
+        // return early when serialization confirms the exact target size.
+        if self.data.spacer_size.is_some() {
+            let candidate = self.clone().with_keyframe_limit(max_keyframes);
+            let (bytes, _) = candidate.build_bytes_inner(target_u32, true, Some(0))?;
+            if bytes.len() == target_size {
+                return Ok(FixedSizeMetadata {
+                    bytes,
+                    keyframes_written: max_keyframes,
+                    truncated: max_keyframes < requested_keyframes,
+                });
+            }
+        }
+
         let mut low = 0usize;
         let mut high = max_keyframes;
         let mut best = None;
@@ -944,47 +959,100 @@ mod tests {
         }
     }
 
-    #[test]
-    fn fixed_size_metadata_reuses_reserved_keyframe_space() {
-        let (placeholder, _) = OnMetaDataBuilder::new()
-            .with_placeholder_keyframes(20)
-            .build_bytes(0, false)
-            .unwrap();
-        let mut cursor = std::io::Cursor::new(bytes::Bytes::from(placeholder.clone()));
+    fn decode_metadata(bytes: Vec<u8>) -> AmfScriptData {
+        let len = bytes.len();
+        let mut cursor = std::io::Cursor::new(bytes::Bytes::from(bytes));
         let script = ScriptData::demux(&mut cursor).unwrap();
-        let props = script.data[0].as_object_properties().unwrap();
-        let model = AmfScriptData::from_amf_object_ref(props).unwrap();
-
-        let fixed = OnMetaDataBuilder::from_script_data(model)
-            .with_final_keyframes(vec![0.0, 1.0, 2.0], vec![100, 200, 300])
-            .build_fixed_size(placeholder.len())
-            .unwrap();
-
-        assert_eq!(fixed.bytes.len(), placeholder.len());
-        assert_eq!(fixed.keyframes_written, 3);
-        assert!(!fixed.truncated);
+        assert_eq!(cursor.position(), len as u64);
+        assert_eq!(script.name, "onMetaData");
+        AmfScriptData::from_amf_object_ref(script.data[0].as_object_properties().unwrap()).unwrap()
     }
 
     #[test]
-    fn fixed_size_metadata_truncates_keyframes_to_reservation() {
-        let (placeholder, _) = OnMetaDataBuilder::new()
+    fn reserved_metadata_preserves_fields_and_exact_keyframe_positions() {
+        let template = AmfScriptData {
+            metadatadate: Some(time::OffsetDateTime::UNIX_EPOCH),
+            metadatacreator: Some("camera-\u{b5}".to_owned()),
+            ..Default::default()
+        };
+        let (placeholder, _) = OnMetaDataBuilder::from_script_data(template)
+            .with_duration(12.5)
+            .with_custom_property("source", Amf0Value::String("fixture".into()))
             .with_placeholder_keyframes(6)
             .build_bytes(0, false)
             .unwrap();
-        let mut cursor = std::io::Cursor::new(bytes::Bytes::from(placeholder.clone()));
-        let script = ScriptData::demux(&mut cursor).unwrap();
-        let model =
-            AmfScriptData::from_amf_object_ref(script.data[0].as_object_properties().unwrap())
+        let target = placeholder.len();
+        let model = decode_metadata(placeholder);
+        // Includes an empty index, a partial/full reservation, truncation, and
+        // unequal arrays. Expected positions are absolute and must not shift.
+        for (time_count, position_count, kept) in
+            [(0, 0, 0), (1, 3, 1), (3, 3, 3), (5, 5, 3), (5, 2, 2)]
+        {
+            let times: Vec<_> = (0..time_count).map(|i| i as f64 * 1.9).collect();
+            let positions: Vec<_> = (0..position_count).map(|i| 1000 + i * 500).collect();
+            let fixed = OnMetaDataBuilder::from_script_data(model.clone())
+                .with_final_keyframes(times.clone(), positions.clone())
+                .build_fixed_size(target)
                 .unwrap();
+            assert_eq!(fixed.bytes.len(), target);
+            assert_eq!(fixed.keyframes_written, kept);
+            assert_eq!(
+                fixed.truncated,
+                time_count.min(position_count as usize) > kept
+            );
+            let parsed = decode_metadata(fixed.bytes);
+            let Some(KeyframeData::Final {
+                times: actual_times,
+                filepositions,
+            }) = parsed.keyframes
+            else {
+                panic!("missing keyframe index");
+            };
+            assert_eq!(actual_times, times[..kept]);
+            assert_eq!(filepositions, positions[..kept]);
+            assert_eq!(parsed.spacer_size, Some(6 - kept * 2));
+            assert_eq!(parsed.duration, Some(12.5));
+            assert_eq!(parsed.metadatacreator.as_deref(), Some("camera-\u{b5}"));
+            assert_eq!(parsed.metadatadate, Some(time::OffsetDateTime::UNIX_EPOCH));
+            assert_eq!(
+                parsed
+                    .custom_properties
+                    .get("source")
+                    .and_then(Amf0Value::as_str),
+                Some("fixture")
+            );
+        }
+    }
 
-        let fixed = OnMetaDataBuilder::from_script_data(model)
-            .with_final_keyframes(vec![0.0, 1.0, 2.0, 3.0, 4.0], vec![10, 20, 30, 40, 50])
-            .build_fixed_size(placeholder.len())
+    #[test]
+    fn reserved_metadata_falls_back_for_padding_and_unfittable_targets() {
+        let model = AmfScriptData {
+            metadatadate: Some(time::OffsetDateTime::UNIX_EPOCH),
+            ..Default::default()
+        };
+        let (placeholder, _) = OnMetaDataBuilder::from_script_data(model)
+            .with_placeholder_keyframes(6)
+            .build_bytes(0, false)
             .unwrap();
-
-        assert_eq!(fixed.bytes.len(), placeholder.len());
-        assert_eq!(fixed.keyframes_written, 3);
-        assert!(fixed.truncated);
+        let size = placeholder.len();
+        let model = decode_metadata(placeholder);
+        let builder = OnMetaDataBuilder::from_script_data(model)
+            .with_final_keyframes(vec![0.0, 1.0], vec![100, 200]);
+        let padded = builder.clone().build_fixed_size(size + 17).unwrap();
+        assert_eq!(padded.bytes.len(), size + 17);
+        let parsed = decode_metadata(padded.bytes);
+        let Some(KeyframeData::Final {
+            times,
+            filepositions,
+        }) = parsed.keyframes
+        else {
+            panic!("missing keyframe index");
+        };
+        assert_eq!(times, vec![0.0, 1.0]);
+        assert_eq!(filepositions, vec![100, 200]);
+        assert!(
+            matches!(builder.build_fixed_size(size - 1), Err(FixedSizeMetadataError::TooLarge { target, minimum }) if target == size - 1 && minimum == size)
+        );
     }
 
     #[test]

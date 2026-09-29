@@ -1,13 +1,14 @@
 //! # GOP Sorting Operator
 //!
-//! This operator sorts FLV tags to ensure proper ordering based on timestamp and type.
+//! This operator interleaves FLV audio and video tags by timestamp while preserving
+//! arrival order within each stream. Timestamp repair is handled by later stages.
 //! Implementation matches the Kotlin version's logic for consistent behavior across platforms.
 //!
 //! ## Features
 //!
 //! - Buffers tags until a keyframe is encountered
 //! - Handles sequence headers specially for small buffers
-//! - Partitions and sorts tags by type for larger buffers
+//! - Partitions tags by type using reusable buffers
 //! - Maintains proper interleaving of audio and video tags
 //! - Preserves script tags in their original order
 //!
@@ -15,7 +16,7 @@
 //!
 //! 1. Buffer tags until a keyframe is encountered
 //! 2. For small buffers with sequence headers, emit them directly
-//! 3. For larger buffers, partition by type and sort
+//! 3. Partition the remaining tags by type, preserving per-stream order
 //! 4. Interleave audio and video tags based on timestamp
 //! 5. Emit in the correct order to ensure proper playback
 //!
@@ -27,16 +28,20 @@
 //!
 //! - hua0512
 //!
+use std::sync::Arc;
+
 use flv::data::FlvData;
 use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
-use std::sync::Arc;
 use tracing::{debug, info, trace, warn};
 
 /// GOP sorting operator that follows the Kotlin implementation's logic
 pub struct GopSortOperator {
     context: Arc<StreamerContext>,
     gop_tags: Vec<FlvTag>,
+    // Reuse partition storage across GOPs; payloads are drained on each flush.
+    audio_tags: Vec<FlvTag>,
+    video_tags: Vec<FlvTag>,
     has_video: bool,
 }
 
@@ -48,19 +53,20 @@ impl GopSortOperator {
     /// the next keyframe (`FlvTag::is_key_frame_nalu`); if the stream's video
     /// never matches that predicate (unknown codec, malformed tags), the buffer
     /// would otherwise grow for the lifetime of the stream. Flushing a partial
-    /// GOP is safe: `push_tags` preserves per-stream timestamp order.
+    /// GOP is safe: `push_tags` preserves per-stream arrival order.
     const MAX_GOP_TAGS: usize = 8192;
 
     pub fn new(context: Arc<StreamerContext>) -> Self {
         Self {
             context,
             gop_tags: Vec::new(),
+            audio_tags: Vec::new(),
+            video_tags: Vec::new(),
             has_video: false,
         }
     }
 
-    /// Process buffered tags and emit them in properly sorted order
-    /// This follows the Kotlin implementation's sorting logic
+    /// Emit script tags, then merge audio/video without reordering either stream.
     fn push_tags(
         &mut self,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
@@ -99,7 +105,7 @@ impl GopSortOperator {
                 }
 
                 // Adjust indices for video header after possible script tag removal
-                let avc_idx = if script_pos.is_some() && avc_pos > script_pos.unwrap() {
+                let avc_idx = if script_pos.is_some_and(|pos| avc_pos > pos) {
                     avc_pos - 1
                 } else {
                     avc_pos
@@ -110,7 +116,7 @@ impl GopSortOperator {
                 output(FlvData::Tag(avc_tag))?;
 
                 // Adjust indices for audio header after script and video header removal
-                let aac_idx = if script_pos.is_some() && aac_pos > script_pos.unwrap() {
+                let aac_idx = if script_pos.is_some_and(|pos| aac_pos > pos) {
                     aac_pos - 1
                 } else {
                     aac_pos
@@ -136,54 +142,43 @@ impl GopSortOperator {
             }
         }
 
-        // Partition tags by type (script, video, audio)
-        let mut script_tags = Vec::new();
-        let mut video_tags = Vec::new();
-        let mut audio_tags = Vec::new();
-
-        for tag in std::mem::take(&mut self.gop_tags) {
-            if tag.is_script_tag() {
-                script_tags.push(tag);
-            } else if tag.is_video_tag() {
-                video_tags.push(tag);
-            } else if tag.is_audio_tag() {
-                audio_tags.push(tag);
+        let result = (|| {
+            for tag in self.gop_tags.drain(..) {
+                if tag.is_script_tag() {
+                    // All script tags precede media, preserving arrival order.
+                    output(FlvData::Tag(tag))?;
+                } else if tag.is_video_tag() {
+                    self.video_tags.push(tag);
+                } else if tag.is_audio_tag() {
+                    self.audio_tags.push(tag);
+                }
             }
-        }
 
-        // Emit script tags in original order (no sorting)
-        for tag in script_tags {
-            output(FlvData::Tag(tag))?;
-        }
+            let mut audio_iter = self.audio_tags.drain(..).peekable();
+            let mut video_iter = self.video_tags.drain(..).peekable();
 
-        // Interleave audio and video without cloning.
-        let mut audio_iter = audio_tags.into_iter().peekable();
-        let mut video_iter = video_tags.into_iter().peekable();
-
-        // Two-pointer merge process (iterators are already ordered by per-stream timestamp).
-        while audio_iter.peek().is_some() && video_iter.peek().is_some() {
-            let audio_ts = audio_iter.peek().unwrap().timestamp_ms;
-            let video_ts = video_iter.peek().unwrap().timestamp_ms;
-
-            // Core comparison logic:
-            // If video timestamp <= audio timestamp, prioritize video tag.
-            // This ensures audio tags appear after the last video tag with timestamp less than or equal to it.
-            if video_ts <= audio_ts {
-                output(FlvData::Tag(video_iter.next().unwrap()))?;
-            } else {
-                output(FlvData::Tag(audio_iter.next().unwrap()))?;
+            // Preserve per-stream order, with video first on timestamp ties.
+            while let (Some(audio), Some(video)) = (audio_iter.peek(), video_iter.peek()) {
+                let next = if video.timestamp_ms <= audio.timestamp_ms {
+                    video_iter.next()
+                } else {
+                    audio_iter.next()
+                };
+                if let Some(tag) = next {
+                    output(FlvData::Tag(tag))?;
+                }
             }
-        }
+            for tag in audio_iter.chain(video_iter) {
+                output(FlvData::Tag(tag))?;
+            }
+            Ok(())
+        })();
 
-        // Emit remaining tags in the same relative order.
-        for tag in audio_iter {
-            output(FlvData::Tag(tag))?;
-        }
-        for tag in video_iter {
-            output(FlvData::Tag(tag))?;
-        }
-
-        Ok(())
+        // An error while emitting script tags can leave media in the partitions.
+        // Release those payloads as well, retaining only the reusable capacity.
+        self.audio_tags.clear();
+        self.video_tags.clear();
+        result
     }
 }
 
@@ -255,312 +250,261 @@ impl Processor<FlvData> for GopSortOperator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use bytes::Bytes;
+    use flv::data::SplitReason;
+    use flv::header::FlvHeader;
+    use pipeline_common::CancellationToken;
+
     use crate::test_utils::{
-        self, create_audio_sequence_header, create_audio_tag, create_script_tag,
-        create_test_header, create_video_sequence_header, create_video_tag,
+        create_audio_sequence_header, create_audio_tag, create_script_tag, create_test_header,
+        create_video_sequence_header, create_video_tag,
     };
-    use flv::tag::FlvTagType;
-    use pipeline_common::{CancellationToken, StreamerContext};
+
+    use super::*;
 
     #[test]
     fn video_without_keyframes_flushes_at_hard_cap() {
         let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = GopSortOperator::new(Arc::clone(&context));
-        let mut output_items = Vec::new();
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        for timestamp in 0..=GopSortOperator::MAX_GOP_TAGS as u32 {
-            operator
-                .process(&context, create_video_tag(timestamp, false), &mut output_fn)
-                .unwrap();
-        }
-
-        assert_eq!(output_items.len(), GopSortOperator::MAX_GOP_TAGS + 1);
-    }
-
-    #[test]
-    fn end_of_sequence_is_forwarded_after_flushing_gop() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = GopSortOperator::new(Arc::clone(&context));
-        let mut output_items = Vec::new();
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        // Non-keyframe tags stay buffered in gop_tags until a flush point.
-        for timestamp in [0, 33, 66] {
-            operator
-                .process(&context, create_video_tag(timestamp, false), &mut output_fn)
-                .unwrap();
-        }
-        operator
-            .process(
-                &context,
-                FlvData::EndOfSequence(bytes::Bytes::new()),
-                &mut output_fn,
-            )
-            .unwrap();
-
-        let tag_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Tag(_)))
-            .count();
-        assert_eq!(tag_count, 3, "buffered GOP must be flushed");
-        assert!(
-            matches!(output_items.last(), Some(FlvData::EndOfSequence(_))),
-            "EndOfSequence must be forwarded downstream after the flushed tags"
+        let mut operator = GopSortOperator::new(context.clone());
+        let mut output = Vec::new();
+        let mut expected = vec![create_test_header()];
+        expected.extend(
+            (0..=GopSortOperator::MAX_GOP_TAGS as u32).map(|ts| create_video_tag(ts, false)),
         );
+        for item in &expected {
+            operator
+                .process(&context, item.clone(), &mut |item| {
+                    output.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        // The tag that triggers the cap belongs to the next buffer.
+        assert_eq!(output, expected[..expected.len() - 1]);
+        operator
+            .finish(&context, &mut |item| {
+                output.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(output, expected);
     }
 
     #[test]
-    fn test_sequence_header_special_handling() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = GopSortOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Send header
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Send script tag + sequence headers (in mixed order) + a few regular tags
-        operator
-            .process(&context, create_audio_tag(5), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_script_tag(0, false), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(20, false), &mut output_fn)
-            .unwrap();
-
-        // Send a keyframe to trigger emission
-        operator
-            .process(&context, create_video_tag(30, true), &mut output_fn)
-            .unwrap();
-
-        // Finish processing
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        test_utils::print_tags(&output_items);
-
-        // Check that the script tag and sequence headers are properly ordered
-        if let FlvData::Tag(tag) = &output_items[1] {
+    fn sequence_headers_are_ordered_without_losing_buffered_media() {
+        let headers = [
+            create_script_tag(0, false),
+            create_video_sequence_header(0, 1),
+            create_audio_sequence_header(0, 0x12),
+        ];
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let context = StreamerContext::arc_new(CancellationToken::new());
+            let mut operator = GopSortOperator::new(context.clone());
+            let mut input = vec![create_test_header(), create_audio_tag(5)];
+            input.extend(order.map(|index| headers[index].clone()));
+            input.extend([create_video_tag(20, false), create_video_tag(30, true)]);
+            let mut output = Vec::new();
+            let mut emit = |item| {
+                output.push(item);
+                Ok(())
+            };
+            for item in input {
+                operator.process(&context, item, &mut emit).unwrap();
+            }
+            operator.finish(&context, &mut emit).unwrap();
             assert_eq!(
-                tag.tag_type(),
-                FlvTagType::ScriptData,
-                "First tag should be script"
-            );
-        }
-
-        if let FlvData::Tag(tag) = &output_items[2] {
-            assert!(
-                tag.is_video_sequence_header(),
-                "Second tag should be video sequence header"
-            );
-        }
-
-        if let FlvData::Tag(tag) = &output_items[3] {
-            assert!(
-                tag.is_audio_sequence_header(),
-                "Third tag should be audio sequence header"
+                output,
+                vec![
+                    create_test_header(),
+                    headers[0].clone(),
+                    headers[1].clone(),
+                    headers[2].clone(),
+                    create_audio_tag(5),
+                    create_video_tag(20, false),
+                    create_video_tag(30, true),
+                ],
+                "header order {order:?}"
             );
         }
     }
 
     #[test]
-    fn test_interleaving() {
+    fn repeated_flushes_preserve_stream_order_and_put_video_first_on_ties() {
         let context = StreamerContext::arc_new(CancellationToken::new());
         let mut operator = GopSortOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Send header
         operator
-            .process(&context, create_test_header(), &mut output_fn)
+            .process(&context, create_test_header(), &mut |_| Ok(()))
             .unwrap();
+        // Timestamp repair handles backwards jumps; merging preserves stream order.
+        for video_tail in [40, 15, 40] {
+            let mut output = Vec::new();
+            let mut emit = |item| {
+                output.push(item);
+                Ok(())
+            };
+            for item in [
+                create_audio_tag(10),
+                create_audio_tag(20),
+                create_video_tag(20, false),
+                create_script_tag(0, false),
+                create_audio_tag(30),
+                create_video_tag(video_tail, false),
+                create_script_tag(1, false),
+            ] {
+                operator.process(&context, item, &mut emit).unwrap();
+            }
+            let marker = FlvData::EndOfSequence(Bytes::new());
+            operator
+                .process(&context, marker.clone(), &mut emit)
+                .unwrap();
+            let mut expected = vec![
+                create_script_tag(0, false),
+                create_script_tag(1, false),
+                create_audio_tag(10),
+                create_video_tag(20, false),
+            ];
+            if video_tail == 15 {
+                expected.extend([
+                    create_video_tag(15, false),
+                    create_audio_tag(20),
+                    create_audio_tag(30),
+                ]);
+            } else {
+                expected.extend([
+                    create_audio_tag(20),
+                    create_audio_tag(30),
+                    create_video_tag(40, false),
+                ]);
+            }
+            expected.push(marker);
+            assert_eq!(output, expected, "video tail {video_tail}");
+        }
+    }
 
-        // Send audio and video tags with specific timestamps for testing interleaving
+    #[test]
+    fn boundaries_flush_buffered_tags_before_the_marker() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
         operator
-            .process(&context, create_audio_tag(10), &mut output_fn)
-            .unwrap(); // A10
-        operator
-            .process(&context, create_video_tag(20, false), &mut output_fn)
-            .unwrap(); // V20
-        operator
-            .process(&context, create_audio_tag(25), &mut output_fn)
-            .unwrap(); // A25
-        operator
-            .process(&context, create_video_tag(30, false), &mut output_fn)
-            .unwrap(); // V30
-        operator
-            .process(&context, create_audio_tag(35), &mut output_fn)
-            .unwrap(); // A35
+            .process(&context, create_test_header(), &mut |_| Ok(()))
+            .unwrap();
+        for marker in [
+            create_test_header(),
+            FlvData::Split(SplitReason::DurationLimit),
+            FlvData::EndOfSequence(Bytes::from_static(b"end")),
+        ] {
+            let mut output = Vec::new();
+            let mut emit = |item| {
+                output.push(item);
+                Ok(())
+            };
+            for item in [
+                create_audio_tag(10),
+                create_video_tag(0, false),
+                marker.clone(),
+            ] {
+                operator.process(&context, item, &mut emit).unwrap();
+            }
+            operator.finish(&context, &mut emit).unwrap();
+            assert_eq!(
+                output,
+                vec![create_video_tag(0, false), create_audio_tag(10), marker]
+            );
+        }
+    }
 
-        // Send keyframe to trigger emission
+    #[test]
+    fn audio_only_stream_flushes_at_each_threshold_and_at_finish() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(context.clone());
+        let header = FlvData::Header(FlvHeader::new(true, false));
+        let mut output = Vec::new();
         operator
-            .process(&context, create_video_tag(40, true), &mut output_fn)
-            .unwrap(); // V40 (keyframe)
-
-        // Finish processing
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        test_utils::print_tags(&output_items);
-
-        // Check the interleaving pattern
-        let timestamps = test_utils::extract_timestamps(&output_items);
-        let mut types = Vec::new();
-
-        for item in &output_items[1..] {
-            // Skip the header
-            if let FlvData::Tag(tag) = item {
-                types.push(if tag.is_audio_tag() {
-                    "A"
-                } else if tag.is_video_tag() {
-                    "V"
-                } else {
-                    "S"
-                });
+            .process(&context, header.clone(), &mut |item| {
+                output.push(item);
+                Ok(())
+            })
+            .unwrap();
+        let tags: Vec<_> = (0..25).map(|index| create_audio_tag(index * 10)).collect();
+        for (index, tag) in tags.iter().enumerate() {
+            operator
+                .process(&context, tag.clone(), &mut |item| {
+                    output.push(item);
+                    Ok(())
+                })
+                .unwrap();
+            if index == 10 || index == 20 {
+                assert_eq!(output[0], header);
+                assert_eq!(output[1..], tags[..index]);
             }
         }
-
-        println!("Timestamps: {timestamps:?}");
-        println!("Types: {types:?}");
-
-        // The Kotlin algorithm should interleave with audio tags after corresponding video tags
-        // Verify video tags come before audio tags with same or higher timestamps
-        let audio_pos = types.iter().position(|&t| t == "A").unwrap_or(0);
-        let video_pos = types.iter().position(|&t| t == "V").unwrap_or(0);
-
-        // Basic verification that the algorithm produces expected ordering
-        assert!(
-            audio_pos > 0 || video_pos > 0,
-            "Should have at least one audio or video tag"
-        );
-    }
-
-    #[test]
-    fn test_audio_tags_before_first_video() {
-        // Setup with audio tags having earlier timestamps than any video tag
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = GopSortOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Send header
         operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-
-        // Send audio tags with timestamps before any video tag
-        operator
-            .process(&context, create_audio_tag(5), &mut output_fn)
-            .unwrap(); // A5
-        operator
-            .process(&context, create_audio_tag(10), &mut output_fn)
-            .unwrap(); // A10
-
-        // Send video tags with higher timestamps
-        operator
-            .process(&context, create_video_tag(20, false), &mut output_fn)
-            .unwrap(); // V20
-        operator
-            .process(&context, create_video_tag(30, true), &mut output_fn)
-            .unwrap(); // V30 (keyframe)
-
-        // Finish processing
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        test_utils::print_tags(&output_items);
-
-        // Skip header (output_items[0])
-        // Verify that all audio tags are present in the output
-        let audio_tags_count = output_items
-            .iter()
-            .filter(|item| {
-                if let FlvData::Tag(tag) = item {
-                    tag.is_audio_tag()
-                } else {
-                    false
-                }
+            .finish(&context, &mut |item| {
+                output.push(item);
+                Ok(())
             })
-            .count();
-
-        assert_eq!(
-            audio_tags_count, 2,
-            "All audio tags should be present in output"
-        );
+            .unwrap();
+        assert_eq!(output[0], header);
+        assert_eq!(output[1..], tags);
     }
+
     #[test]
-    fn test_audio_only_stream() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = GopSortOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Create a header with no video
-        let mut header = create_test_header();
-        if let FlvData::Header(ref mut h) = header {
-            h.has_video = false;
-        }
-
-        operator.process(&context, header, &mut output_fn).unwrap();
-
-        // Send more than TAGS_BUFFER_SIZE audio tags
-        for i in 0..15 {
+    fn downstream_errors_propagate_without_retaining_unemitted_payloads() {
+        let expected = [
+            create_script_tag(0, false),
+            create_script_tag(1, false),
+            create_audio_tag(10),
+            create_video_tag(20, false),
+            create_audio_tag(30),
+            create_video_tag(40, false),
+        ];
+        for fail_at in 0..expected.len() {
+            let context = StreamerContext::arc_new(CancellationToken::new());
+            let mut operator = GopSortOperator::new(context.clone());
+            for item in [
+                create_test_header(),
+                create_audio_tag(10),
+                create_video_tag(20, false),
+                create_script_tag(0, false),
+                create_audio_tag(30),
+                create_video_tag(40, false),
+                create_script_tag(1, false),
+            ] {
+                operator.process(&context, item, &mut |_| Ok(())).unwrap();
+            }
+            let mut output = Vec::new();
+            let result = operator.process(
+                &context,
+                FlvData::EndOfSequence(Bytes::new()),
+                &mut |item| {
+                    if output.len() == fail_at {
+                        return Err(PipelineError::Io(std::io::ErrorKind::BrokenPipe.into()));
+                    }
+                    output.push(item);
+                    Ok(())
+                },
+            );
+            assert!(
+                matches!(result, Err(PipelineError::Io(error)) if error.kind() == std::io::ErrorKind::BrokenPipe)
+            );
+            assert_eq!(output, expected[..fail_at]);
+            output.clear();
+            let mut emit = |item| {
+                output.push(item);
+                Ok(())
+            };
             operator
-                .process(&context, create_audio_tag(i * 10), &mut output_fn)
+                .process(&context, create_audio_tag(100), &mut emit)
                 .unwrap();
+            operator.finish(&context, &mut emit).unwrap();
+            assert_eq!(output, vec![create_audio_tag(100)], "failure at {fail_at}");
         }
-
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        test_utils::print_tags(&output_items);
-
-        // Check that audio tags were flushed before the end
-        // The header is at index 0, so we check the count of tags after that.
-        // 10 tags should be flushed when the buffer is full, and the remaining 5 on finish.
-        let tag_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Tag(_)))
-            .count();
-        assert_eq!(tag_count, 15, "All audio tags should be flushed");
     }
 }

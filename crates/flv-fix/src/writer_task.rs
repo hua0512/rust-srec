@@ -335,11 +335,11 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         let tag_count = self.current_tag_count;
         let mut analyzer = std::mem::take(&mut self.analyzer);
 
-        if let Ok(stats) = analyzer.build_stats().cloned() {
-            info!("Path : {}: {}", path.display(), &stats);
+        if let Ok(stats) = analyzer.build_stats() {
+            info!("Path : {}: {}", path.display(), stats);
             if let Some(patch) = self.metadata_patch.take() {
                 let payload_offset = patch.payload_offset;
-                match Self::build_final_metadata(patch, &stats) {
+                match Self::build_final_metadata(patch, stats) {
                     Ok(metadata) => {
                         if metadata.truncated {
                             tracing::warn!(

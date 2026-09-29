@@ -537,6 +537,12 @@ impl Processor<FlvData> for TimingRepairOperator {
                     return self.handle_script_tag(&mut tag, output);
                 }
 
+                // Decoder initialization is not a media sample. Repeated sequence
+                // headers may carry timestamp zero even after playback has started.
+                if tag.is_audio_sequence_header() || tag.is_video_sequence_header() {
+                    return output(FlvData::Tag(tag));
+                }
+
                 // Check for timestamp issues
                 let mut need_correction = false;
 

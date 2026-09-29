@@ -202,6 +202,8 @@ pub struct MesioDuplicateTagFilterConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_capacity_tags: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_capacity_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replay_backjump_threshold_ms: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_replay_offset_matching: Option<bool>,
@@ -245,6 +247,9 @@ impl MesioFlvFixConfig {
             let mut c = cfg.duplicate_tag_filter_config.clone();
             if let Some(value) = override_cfg.window_capacity_tags {
                 c.window_capacity_tags = value;
+            }
+            if let Some(value) = override_cfg.window_capacity_bytes {
+                c.window_capacity_bytes = value;
             }
             if let Some(value) = override_cfg.replay_backjump_threshold_ms {
                 c.replay_backjump_threshold_ms = value;
@@ -590,11 +595,12 @@ mod tests {
           "flv_fix": {
             "sequence_header_change_mode": "semantic_signature",
             "drop_duplicate_sequence_headers": true,
-            "duplicate_tag_filtering": false,
+            "duplicate_tag_filtering": true,
             "duplicate_tag_filter_config": {
               "window_capacity_tags": 123,
+              "window_capacity_bytes": 1048576,
               "replay_backjump_threshold_ms": 5000,
-              "enable_replay_offset_matching": false
+              "enable_replay_offset_matching": true
             }
           }
         }"#;
@@ -609,14 +615,18 @@ mod tests {
             flv_fix::SequenceHeaderChangeMode::SemanticSignature
         );
         assert!(cfg.drop_duplicate_sequence_headers);
-        assert!(!cfg.duplicate_tag_filtering);
+        assert!(cfg.duplicate_tag_filtering);
         assert_eq!(cfg.duplicate_tag_filter_config.window_capacity_tags, 123);
+        assert_eq!(
+            cfg.duplicate_tag_filter_config.window_capacity_bytes,
+            1048576
+        );
         assert_eq!(
             cfg.duplicate_tag_filter_config.replay_backjump_threshold_ms,
             5000
         );
         assert!(
-            !cfg.duplicate_tag_filter_config
+            cfg.duplicate_tag_filter_config
                 .enable_replay_offset_matching
         );
     }

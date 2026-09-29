@@ -2045,6 +2045,7 @@ dependencies = [
 name = "flv"
 version = "0.1.2"
 dependencies = [
+ "aac",
  "amf0",
  "av1",
  "byteorder",

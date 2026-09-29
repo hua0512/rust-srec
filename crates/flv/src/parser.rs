@@ -1,14 +1,13 @@
-use bytes::BytesMut;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::Path;
+
+use bytes::BytesMut;
 use tracing::{debug, error};
 
 use crate::header::FlvHeader;
 use crate::tag::FlvTagType;
 use crate::{framing, tag::FlvTag};
-
-const BUFFER_SIZE: usize = 4 * 1024; // 4 KB buffer size
 
 /// Parser that works with borrowed data (FlvTag).
 pub struct FlvParser;
@@ -158,33 +157,20 @@ impl FlvParser {
     /// Returns the parsed tag and its type if successful
     /// Returns None if EOF is reached
     pub fn parse_tag<R: Read>(reader: &mut R) -> io::Result<Option<(FlvTag, FlvTagType)>> {
-        let mut tag_buffer = BytesMut::with_capacity(BUFFER_SIZE);
-
-        // Peek at tag header (first 11 bytes) to get the data size
-        tag_buffer.resize(framing::TAG_HEADER_SIZE, 0);
-        if let Err(e) = reader.read_exact(&mut tag_buffer) {
+        let mut header_bytes = [0u8; framing::TAG_HEADER_SIZE];
+        if let Err(e) = reader.read_exact(&mut header_bytes) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(None);
             }
             return Err(e);
         }
 
-        let header = {
-            let mut header_bytes = [0u8; framing::TAG_HEADER_SIZE];
-            header_bytes.copy_from_slice(&tag_buffer[..framing::TAG_HEADER_SIZE]);
-            framing::parse_tag_header_bytes(header_bytes)?
-        };
+        let header = framing::parse_tag_header_bytes(header_bytes)?;
 
-        // Now read the complete tag (header + data)
-        // Reset position to beginning of tag
-        let total_tag_size = framing::TAG_HEADER_SIZE + header.data_size as usize;
-
-        // Resize the buffer to fit the entire tag
-        // We've already read the first 11 bytes, so we need to allocate more space for the data
-        tag_buffer.resize(total_tag_size, 0);
-
-        // Read the remaining data (we already have the first 11 bytes)
-        if let Err(e) = reader.read_exact(&mut tag_buffer[framing::TAG_HEADER_SIZE..]) {
+        // Keep the fixed header on the stack and allocate only the payload.
+        // Freezing it directly also avoids sharing a sliced header/data buffer.
+        let mut data = BytesMut::zeroed(header.data_size as usize);
+        if let Err(e) = reader.read_exact(&mut data) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(None);
             }
@@ -192,15 +178,99 @@ impl FlvParser {
         }
 
         let tag_type = header.tag_type;
-        let tag_bytes = tag_buffer.freeze();
         let tag = FlvTag::new(
             header.timestamp_ms,
             header.stream_id,
             header.tag_type,
             header.is_filtered,
-            tag_bytes.slice(framing::TAG_HEADER_SIZE..),
+            data.freeze(),
         );
 
         Ok(Some((tag, tag_type)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+
+    struct ShortReads<R>(R);
+
+    impl<R: Read> Read for ShortReads<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let len = buf.len().min(3);
+            self.0.read(&mut buf[..len])
+        }
+    }
+
+    #[test]
+    fn payloads_of_different_sizes_survive_short_reads_without_consuming_the_next_tag() {
+        for size in [0, 4, 4095, 4096, 16 * 1024] {
+            // Filtered audio is opaque to the container parser.
+            let payload: Vec<u8> = (0..size).map(|index| index as u8).collect();
+            let mut packet = vec![0x28, 0, 0, 0, 0x34, 0x56, 0x78, 0x12, 0, 0, 0];
+            packet[1..4].copy_from_slice(&(size as u32).to_be_bytes()[1..]);
+            packet.extend_from_slice(&payload);
+            // A complete second tag exercises header/payload boundaries.
+            packet.extend_from_slice(&[8, 0, 0, 4, 0, 0, 23, 0, 0, 0, 0, 0xaf, 0, 0x12, 0x10]);
+
+            let mut reader = ShortReads(packet.as_slice());
+            assert_eq!(
+                FlvParser::parse_tag(&mut reader).unwrap(),
+                Some((
+                    FlvTag::new(
+                        0x1234_5678,
+                        0,
+                        FlvTagType::Audio,
+                        true,
+                        Bytes::from(payload)
+                    ),
+                    FlvTagType::Audio,
+                )),
+                "payload size {size}"
+            );
+            assert_eq!(
+                FlvParser::parse_tag(&mut reader).unwrap(),
+                Some((
+                    FlvTag::new(
+                        23,
+                        0,
+                        FlvTagType::Audio,
+                        false,
+                        Bytes::from_static(b"\xaf\0\x12\x10")
+                    ),
+                    FlvTagType::Audio,
+                ))
+            );
+            assert!(FlvParser::parse_tag(&mut reader).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn incomplete_tags_are_ignored_but_other_read_errors_propagate() {
+        let packet = [8, 0, 0, 4, 0, 0, 23, 0, 0, 0, 0, 0xaf, 0, 0x12, 0x10];
+        struct BrokenReader;
+        impl Read for BrokenReader {
+            fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::ConnectionReset.into())
+            }
+        }
+
+        for len in 0..packet.len() {
+            let mut truncated = &packet[..len];
+            assert!(
+                FlvParser::parse_tag(&mut truncated).unwrap().is_none(),
+                "length {len}"
+            );
+
+            let mut failed = packet[..len].chain(BrokenReader);
+            assert_eq!(
+                FlvParser::parse_tag(&mut failed).unwrap_err().kind(),
+                io::ErrorKind::ConnectionReset,
+                "length {len}"
+            );
+        }
     }
 }

@@ -1,3 +1,20 @@
+//! FLV container framing and audio/video payload inspection.
+//!
+//! Wire formats follow [Adobe FLV 10.1, Annex E] and [Enhanced RTMP v2]
+//! (v2-2026-01-31-r2). The bundled `enhanced-rtmp-v2.md` is an older reference;
+//! use the upstream specification for current packet types and FourCC values.
+//!
+//! The synchronous and asynchronous writers both emit a back-pointer after
+//! every tag, including the last tag. Enhanced payloads remain intact when
+//! writing, including ModEx and multitrack wrappers. Payload inspection is
+//! codec-specific and does not implement every Enhanced RTMP feature.
+//!
+//! Parsers cap extended headers at 64 KiB as a resource safeguard. This is an
+//! implementation limit, not a restriction imposed by the FLV specification.
+//!
+//! [Adobe FLV 10.1, Annex E]: https://veovera.github.io/enhanced-rtmp/docs/legacy/video-file-format-v10-1-spec.pdf#page=74
+//! [Enhanced RTMP v2]: https://github.com/veovera/enhanced-rtmp/blob/main/docs/enhanced/enhanced-rtmp-v2.md
+
 mod aac;
 pub mod audio;
 pub mod av1;
