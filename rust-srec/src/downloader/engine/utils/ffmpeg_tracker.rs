@@ -1,6 +1,7 @@
 //! Shared FFmpeg recording state. Process owners decide when the writer is settled;
 //! stderr EOF alone never authorizes publication of the final segment.
 
+use std::collections::VecDeque;
 use std::future::Future;
 use std::path::PathBuf;
 
@@ -78,7 +79,7 @@ struct SegmentTracker {
     total_duration: f64,
     media_offset: f64,
     media_total: f64,
-    last_progress: Option<(u64, f64, f64)>,
+    progress_samples: VecDeque<(u64, f64, f64)>,
 }
 
 #[derive(Default)]
@@ -111,7 +112,7 @@ impl SegmentTracker {
             total_duration: 0.0,
             media_offset: 0.0,
             media_total: 0.0,
-            last_progress: None,
+            progress_samples: VecDeque::new(),
         }
     }
 
@@ -201,21 +202,30 @@ impl SegmentTracker {
                 .active
                 .as_ref()
                 .map(|active| active.path.to_string_lossy().to_string());
-            progress.speed_bytes_per_sec = self
-                .last_progress
-                .and_then(|(previous_bytes, previous_elapsed, _)| {
-                    let dt = elapsed - previous_elapsed;
-                    (dt > 0.0).then_some((bytes.saturating_sub(previous_bytes) as f64 / dt) as u64)
-                })
-                .unwrap_or(0);
             progress.playback_ratio = self
-                .last_progress
+                .progress_samples
+                .back()
                 .and_then(|(_, previous_elapsed, previous_media)| {
                     let dt = elapsed - previous_elapsed;
                     (dt > 0.0).then_some((self.media_total - previous_media) / dt)
                 })
                 .unwrap_or(0.0);
-            self.last_progress = Some((bytes, elapsed, self.media_total));
+            // Short Matroska chunks can buffer all media until they close. Average
+            // five seconds of writes across rotations, including unchanged samples
+            // so a stalled recording's rate still reaches zero.
+            self.progress_samples
+                .push_back((bytes, elapsed, self.media_total));
+            while self.progress_samples.len() > 2 && self.progress_samples[1].1 <= elapsed - 5.0 {
+                self.progress_samples.pop_front();
+            }
+            progress.speed_bytes_per_sec = self
+                .progress_samples
+                .front()
+                .and_then(|(previous_bytes, previous_elapsed, _)| {
+                    let dt = elapsed - previous_elapsed;
+                    (dt > 0.0).then_some((bytes.saturating_sub(*previous_bytes) as f64 / dt) as u64)
+                })
+                .unwrap_or(0);
             events.progress = Some(SegmentEvent::Progress(progress));
         }
         events
@@ -530,6 +540,60 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, SegmentEvent::OutputIoError { .. }))
         );
+    }
+
+    #[tokio::test]
+    async fn chunked_progress_smooths_buffered_writes_and_expires_stalled_samples() {
+        let directory = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let wall = Utc::now();
+        let mut tracker = SegmentTracker::new(true, now);
+        tracker.continuous_timestamps = true;
+        let mut path = directory.path().join("chunk-0.mkv");
+        tokio::fs::write(&path, []).await.unwrap();
+        tracker.start(path.clone(), now, wall);
+
+        // A 1,000 B/s recording flushes 2,000 bytes every two seconds, while
+        // progress is reported every half second. It stalls from 10 to 16 s.
+        for tick in 0..=32 {
+            let elapsed = f64::from(tick) / 2.0;
+            let at = now + Duration::from_millis(u64::from(tick) * 500);
+            if tick > 0 && tick % 4 == 0 && (tick <= 20 || tick == 32) {
+                tokio::fs::write(&path, vec![0; 2_000]).await.unwrap();
+                path = directory.path().join(format!("chunk-{tick}.mkv"));
+                tokio::fs::write(&path, []).await.unwrap();
+                tracker
+                    .observe(
+                        &format!("[segment @ test] Opening '{}' for writing", path.display()),
+                        at,
+                        wall,
+                    )
+                    .await;
+            }
+            let events = tracker
+                .observe(
+                    &format!("frame=1 size=N/A time=00:00:{elapsed:05.2} bitrate=N/A"),
+                    at,
+                    wall,
+                )
+                .await;
+            let Some(SegmentEvent::Progress(progress)) = events.progress else {
+                panic!("expected progress");
+            };
+            let expected_bytes = u64::from(tick.min(20) / 4 + u32::from(tick == 32)) * 2_000;
+            assert_eq!(progress.bytes_downloaded, expected_bytes);
+            if (10..=20).contains(&tick) {
+                assert!(
+                    (800..=1_200).contains(&progress.speed_bytes_per_sec),
+                    "at {elapsed}s: {} B/s",
+                    progress.speed_bytes_per_sec
+                );
+            } else if (30..32).contains(&tick) {
+                assert_eq!(progress.speed_bytes_per_sec, 0);
+            } else if tick == 32 {
+                assert_eq!(progress.speed_bytes_per_sec, 400);
+            }
+        }
     }
 
     #[tokio::test]

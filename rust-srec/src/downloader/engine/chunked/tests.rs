@@ -530,7 +530,10 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         let engine = FfmpegEngine::with_config_async(FfmpegEngineConfig {
             enable_lossless_cutting: true,
             binary_path: binary.clone(),
-            input_args: vec!["-readrate".into(), "8".into()],
+            input_args: vec![
+                "-readrate".into(),
+                if mode == "mkv" { "1" } else { "8" }.into(),
+            ],
             ..Default::default()
         })
         .await;
@@ -548,6 +551,7 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         let mut requested = false;
         let mut files = Vec::new();
         let mut starts = Vec::new();
+        let mut live_rates = Vec::new();
         let mut tick = tokio::time::interval(Duration::from_millis(10));
         tokio::time::timeout(Duration::from_secs(20), async {
             loop {
@@ -561,6 +565,7 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
                     event = receiver.recv() => match event.unwrap() {
                         SegmentEvent::SegmentStarted { path, sequence, .. } => { starts.push((path, sequence)); if mode == "stop" && sequence == 1 { handle.cancel(); } }
                         SegmentEvent::SegmentCompleted(info) => files.push(info),
+                        SegmentEvent::Progress(progress) if mode == "mkv" && progress.duration_secs >= 5.0 => live_rates.push(progress.speed_bytes_per_sec),
                         SegmentEvent::DownloadCompleted { total_segments, .. } => { assert_eq!(total_segments, expected_segments); break; }
                         SegmentEvent::DownloadFailed { message, .. } => panic!("{message}"),
                         _ => {}
@@ -569,6 +574,12 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
             }
         }).await.unwrap();
         task.await.unwrap().unwrap();
+        if mode == "mkv" {
+            // Real-time acquisition must not report zero speed between buffered
+            // chunk writes once the measurement window has filled.
+            assert!(live_rates.len() >= 5, "missing real-time progress samples");
+            assert!(live_rates.iter().all(|rate| *rate > 0), "{live_rates:?}");
+        }
         assert!(requested);
         assert_eq!(starts.len(), expected_segments as usize);
         assert_eq!(files.len(), expected_segments as usize);
@@ -1217,6 +1228,7 @@ fn fixture_handle(
     (handle, events)
 }
 
+#[cfg(unix)]
 fn drain(events: &mut mpsc::Receiver<SegmentEvent>) -> Vec<SegmentEvent> {
     let mut drained = Vec::new();
     while let Ok(event) = events.try_recv() {
