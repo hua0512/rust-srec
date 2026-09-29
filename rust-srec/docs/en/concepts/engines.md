@@ -38,6 +38,12 @@ When enabled, FLV items pass through one ordered repair chain before the writer.
 
 Metadata updates do not rewrite the completed media data. If the available metadata space fills, the optional seek index is shortened instead. Filtered or encrypted script payloads are left unchanged.
 
+**Loop Protection** (`flv_fix.duplicate_tag_filtering`) is off by default. When enabled, it removes retained media tags with identical bytes, type, stream ID, and timestamp, including loops that jump back to earlier timestamps. With Offset Consistency Check off, a timestamp jump alone does not clear exact-match history: legitimate repeated content with the same timestamps may also be removed. Source headers, configuration/control packets, and explicit discontinuities reset that history.
+
+**Offset Consistency Check** (`flv_fix.duplicate_tag_filter_config.enable_replay_offset_matching`) is separately off by default. Enable it to detect loops whose timestamps have shifted. It requires three distinct payloads in order at one consistent timestamp offset; ambiguous or incomplete matches pass through. Matching uses stream timestamps, so pauses between GOP deliveries do not expire it. This remains a heuristic; leave Loop Protection off to preserve all incoming media tags.
+
+When enabled, filtering copies retained media payloads, up to 8,192 tags and **16 MiB per recording stream** by default, plus indexing overhead. Offset matching may retain another **1 MiB** of pending payloads. The advanced configuration field `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` controls the history byte budget (default `16777216`; `0` disables retention); it has no dedicated form field. Payloads larger than the budget pass through. No duplicate-filter history is allocated while Loop Protection is off.
+
 ## 3. Raw Data Mode
 
 In Raw Data Mode, the **Mesio** engine writes stream data directly to disk as it arrives from the network, without parsing or processing media packets (headers, frames, metadata).

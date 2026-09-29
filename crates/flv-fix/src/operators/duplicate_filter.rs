@@ -3,6 +3,8 @@
 //! CRC32 is only a lookup accelerator; matching payload bytes are required before
 //! dropping a tag. Payloads are copied into bounded storage so small tags cannot
 //! pin large decoder buffers. Opaque, control, and multitrack tags pass through.
+//! With offset matching disabled, exact-match history survives timestamp jumps
+//! until eviction or a source barrier.
 //!
 //! Optional replay detection buffers a short candidate run after a clock reset.
 //! It requires a unique historical run with three distinct payloads and matching
@@ -11,7 +13,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use flv::{FlvData, FlvTag, SplitReason};
@@ -22,7 +23,9 @@ const REPLAY_CONFIRMATION_PACKETS: usize = 3;
 const MAX_PENDING_TAGS: usize = 8;
 const MAX_PENDING_BYTES: usize = 1024 * 1024;
 const MAX_REPLAY_CANDIDATES: usize = 16;
-const REPLAY_GAP: Duration = Duration::from_millis(500);
+// Upstream GOP sorting delivers media in bursts. Only stream time determines
+// continuity; wall-clock pauses between deliveries must not end a replay.
+const REPLAY_GAP_MS: u32 = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct TagKey {
@@ -117,12 +120,13 @@ pub struct DuplicateTagFilterConfig {
     /// Maximum retained payload bytes (16 MiB by default). Oversized packets
     /// pass through. Replay lookahead additionally retains at most 1 MiB.
     pub window_capacity_bytes: usize,
-    /// Minimum per-stream backwards timestamp jump that starts a new timeline.
+    /// Minimum per-stream backwards jump that starts offset replay matching.
+    /// Ignored when offset matching is disabled; exact-match history is retained.
     pub replay_backjump_threshold_ms: u32,
     /// Opt in to heuristic replay removal after a clock reset. Confirmation
     /// needs three distinct packets in order, at one consistent offset. Pending
-    /// packets are released on the next input after 500 ms, after eight packets,
-    /// or on finish; this synchronous processor does not run an idle timer.
+    /// packets are released after 500 ms of stream time, after eight packets,
+    /// or on finish. Delivery pauses do not expire replay state.
     pub enable_replay_offset_matching: bool,
 }
 
@@ -161,7 +165,6 @@ struct Candidate {
     cursors: Vec<ReplayCursor>,
     pending: Vec<FlvTag>,
     bytes: usize,
-    started: Instant,
     first_timestamp: u32,
 }
 
@@ -170,7 +173,6 @@ enum ReplayState {
     Candidate(Candidate),
     Confirmed {
         cursor: ReplayCursor,
-        last_seen: Instant,
         last_timestamp: u32,
     },
 }
@@ -252,7 +254,7 @@ impl DuplicateTagFilterOperator {
         self.last_timestamps = [None; 2];
     }
 
-    fn begin_replay(&mut self, tag: &SeenTag, now: Instant) {
+    fn begin_replay(&mut self, tag: &SeenTag) {
         self.replay = ReplayState::Normal;
         if self.config.enable_replay_offset_matching {
             let mut cursors = Vec::new();
@@ -274,7 +276,6 @@ impl DuplicateTagFilterOperator {
                     cursors,
                     pending: Vec::new(),
                     bytes: 0,
-                    started: now,
                     first_timestamp: tag.key.timestamp_ms,
                 });
                 return;
@@ -286,29 +287,29 @@ impl DuplicateTagFilterOperator {
     fn process_media(
         &mut self,
         mut tag: FlvTag,
-        now: Instant,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         let seen = SeenTag::new(&tag);
         let stream = usize::from(tag.is_video_tag());
-        if self.last_timestamps[stream].is_some_and(|last| {
-            last.saturating_sub(tag.timestamp_ms) > self.config.replay_backjump_threshold_ms
-        }) {
+        if self.config.enable_replay_offset_matching
+            && self.last_timestamps[stream].is_some_and(|last| {
+                last.saturating_sub(tag.timestamp_ms) > self.config.replay_backjump_threshold_ms
+            })
+        {
             self.flush_pending(output)?;
             self.last_timestamps = [None; 2];
-            self.begin_replay(&seen, now);
+            self.begin_replay(&seen);
         }
         self.last_timestamps[stream] = Some(tag.timestamp_ms);
 
         if matches!(&self.replay,
-            ReplayState::Confirmed { cursor, last_seen, last_timestamp }
+            ReplayState::Confirmed { cursor, last_timestamp }
                 if cursor.next == self.history.order.len()
-                    && now.duration_since(*last_seen) <= REPLAY_GAP
-                    && tag.timestamp_ms.abs_diff(*last_timestamp) <= self.config.replay_backjump_threshold_ms.max(REPLAY_GAP.as_millis() as u32)
+                    && tag.timestamp_ms.abs_diff(*last_timestamp) <= self.config.replay_backjump_threshold_ms.max(REPLAY_GAP_MS)
         ) {
             // A complete replay may loop again with a different timestamp base.
             // Require fresh confirmation rather than reusing its previous offset.
-            self.begin_replay(&seen, now);
+            self.begin_replay(&seen);
         }
 
         match std::mem::replace(&mut self.replay, ReplayState::Normal) {
@@ -321,9 +322,7 @@ impl DuplicateTagFilterOperator {
             }
             ReplayState::Candidate(mut candidate) => {
                 let byte_limit = self.config.window_capacity_bytes.min(MAX_PENDING_BYTES);
-                let expired = now.duration_since(candidate.started) > REPLAY_GAP
-                    || tag.timestamp_ms.abs_diff(candidate.first_timestamp)
-                        > REPLAY_GAP.as_millis() as u32;
+                let expired = tag.timestamp_ms.abs_diff(candidate.first_timestamp) > REPLAY_GAP_MS;
                 if expired || tag.data().len() > byte_limit.saturating_sub(candidate.bytes) {
                     self.release_candidate(candidate, output)?;
                     return self.emit_new(tag, output);
@@ -358,7 +357,6 @@ impl DuplicateTagFilterOperator {
                     debug!(streamer = %self.context.name, packets = candidate.pending.len(), offset_ms = candidate.cursors[0].offset_ms, "Confirmed media replay");
                     self.replay = ReplayState::Confirmed {
                         cursor: candidate.cursors[0],
-                        last_seen: now,
                         last_timestamp: seen.key.timestamp_ms,
                     };
                 } else if candidate.pending.len() >= MAX_PENDING_TAGS {
@@ -370,16 +368,13 @@ impl DuplicateTagFilterOperator {
             }
             ReplayState::Confirmed {
                 mut cursor,
-                last_seen,
                 last_timestamp,
             } => {
-                if now.duration_since(last_seen) <= REPLAY_GAP
-                    && tag.timestamp_ms.abs_diff(last_timestamp) <= REPLAY_GAP.as_millis() as u32
+                if tag.timestamp_ms.abs_diff(last_timestamp) <= REPLAY_GAP_MS
                     && cursor.advance(&self.history, &seen)
                 {
                     self.replay = ReplayState::Confirmed {
                         cursor,
-                        last_seen: now,
                         last_timestamp: tag.timestamp_ms,
                     };
                     Ok(())
@@ -403,9 +398,7 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
             return Err(PipelineError::Cancelled);
         }
         match input {
-            FlvData::Tag(tag) if tag.classification().media => {
-                self.process_media(tag, Instant::now(), output)
-            }
+            FlvData::Tag(tag) if tag.classification().media => self.process_media(tag, output),
             item => {
                 self.flush_pending(output)?;
                 let resets_timeline = match &item {
@@ -654,11 +647,25 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_reset_starts_a_new_epoch_even_when_exact_bytes_match() {
-        let input = vec![pcm(0, 1), pcm(3000, 2), pcm(0, 1)];
+    fn identical_timestamp_loops_are_removed_without_requiring_offset_matching() {
+        let original: Vec<_> = (0..150).map(|i| pcm(10_000 + i * 23, i as u16)).collect();
+        let new_content = pcm(13_450, 150);
+        let input: Vec<_> = original
+            .iter()
+            .chain(&original)
+            .cloned()
+            .chain([new_content.clone()])
+            .collect();
+        let expected: Vec<_> = original.into_iter().chain([new_content]).collect();
         for config in [DuplicateTagFilterConfig::default(), replay_config()] {
-            assert_eq!(run(config, input.clone()), input);
+            assert_eq!(run(config, input.clone()), expected);
         }
+    }
+
+    #[test]
+    fn offset_matching_requires_confirmation_after_a_timestamp_reset() {
+        let input = vec![pcm(0, 1), pcm(3000, 2), pcm(0, 1)];
+        assert_eq!(run(replay_config(), input.clone()), input);
     }
 
     #[test]
@@ -816,48 +823,34 @@ mod tests {
     }
 
     #[test]
-    fn inactivity_expires_candidates_and_confirmed_offsets() {
-        for confirmed_packets in [1, 3] {
-            let context = StreamerContext::arc_new(CancellationToken::new());
-            let mut operator =
-                DuplicateTagFilterOperator::with_config(context.clone(), replay_config());
-            let start = Instant::now();
-            let mut output = Vec::new();
-            let mut input = sequence(10_000);
-            input.extend(sequence(0)[..confirmed_packets].iter().cloned());
-            input.push(pcm(confirmed_packets as u32 * 23, confirmed_packets as u16));
-            if confirmed_packets == 1 {
-                input.push(pcm(46, 2));
-            }
-            for (index, item) in input.iter().enumerate() {
+    fn stream_timestamp_gaps_expire_candidates_and_confirmed_offsets() {
+        for matched_packets in [1, 3] {
+            // All payloads and relative timestamps still match history. A gap
+            // greater than 500 ms of stream time must end suppression anyway.
+            let mut original = sequence(10_000);
+            let mut replay = sequence(0);
+            for item in &mut original[matched_packets..] {
                 let FlvData::Tag(tag) = item else {
                     unreachable!()
                 };
-                // Inject time at the processing boundary; no sleeps or wall-clock races.
-                let now = if index >= 4 + confirmed_packets {
-                    start + Duration::from_millis(501)
-                } else {
-                    start
-                };
-                operator
-                    .process_media(tag.clone(), now, &mut |item| {
-                        output.push(item);
-                        Ok(())
-                    })
-                    .unwrap();
+                tag.timestamp_ms += 501;
             }
-            operator
-                .finish(&context, &mut |item| {
-                    output.push(item);
-                    Ok(())
-                })
-                .unwrap();
-            let expected = if confirmed_packets == 1 {
-                input
+            for item in &mut replay[matched_packets..] {
+                let FlvData::Tag(tag) = item else {
+                    unreachable!()
+                };
+                tag.timestamp_ms += 501;
+            }
+            let input: Vec<_> = original.iter().chain(&replay).cloned().collect();
+            let expected = if matched_packets == 1 {
+                input.clone()
             } else {
-                sequence(10_000).into_iter().chain([pcm(69, 3)]).collect()
+                original
+                    .into_iter()
+                    .chain(replay[matched_packets..].iter().cloned())
+                    .collect()
             };
-            assert_eq!(output, expected);
+            assert_eq!(run(replay_config(), input), expected);
         }
     }
 

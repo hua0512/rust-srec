@@ -288,8 +288,16 @@ impl FlvStats {
                 self.audio_codec
                     .unwrap_or(AudioCodec::Legacy(SoundFormat::Aac))
             )?;
-            writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
-            writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
+            if self.audio_sample_rate.is_finite() && self.audio_sample_rate > 0.0 {
+                writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
+            } else {
+                writeln!(f, "    Sample rate: unknown")?;
+            }
+            if self.audio_sample_size > 0 {
+                writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
+            } else {
+                writeln!(f, "    Sample size: unknown")?;
+            }
             writeln!(f, "    Stereo: {}", self.audio_stereo)?;
             writeln!(f, "    Audio data rate: {:.2} kbps", self.audio_data_rate)?;
         }
@@ -646,6 +654,9 @@ mod tests {
         assert_eq!(analyzer.stats.audio_sample_rate, 48000.0);
         assert_eq!(analyzer.stats.audio_sample_size, 16);
         assert!(!analyzer.stats.audio_stereo);
+        let display = analyzer.stats.to_string();
+        assert!(display.contains("Sample rate: 48000 Hz"));
+        assert!(display.contains("Sample size: 16 bits"));
     }
 
     #[test]
@@ -706,6 +717,9 @@ mod tests {
             analyzer.build_stats().unwrap().audio_codec,
             Some(AudioCodec::Enhanced(AudioFourCC::Opus))
         );
+        let display = analyzer.stats.to_string();
+        assert!(display.contains("Sample rate: unknown"));
+        assert!(display.contains("Sample size: unknown"));
     }
 
     #[test]

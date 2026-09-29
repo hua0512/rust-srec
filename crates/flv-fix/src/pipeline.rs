@@ -356,6 +356,78 @@ mod test {
     }
 
     #[test]
+    fn replay_removal_survives_a_live_pause_between_gop_flushes() {
+        use std::time::Duration;
+
+        use bytes::Bytes;
+        use flv::{FlvHeader, FlvTag, FlvTagType};
+        use pipeline_common::{CancellationToken, PipelineError};
+
+        // AVC configuration, IDR and P frame from FFmpeg (SEI omitted):
+        // -f lavfi -i color=c=black:s=16x16:r=10 -t 2 -c:v libx264
+        // -preset ultrafast -tune zerolatency -g 10 -f flv black.flv
+        let tag =
+            |timestamp, kind, data| FlvData::Tag(FlvTag::new(timestamp, 0, kind, false, data));
+        let init = vec![
+            FlvData::Header(FlvHeader::new(true, true)),
+            tag(0, FlvTagType::Video, Bytes::from_static(b"\x17\0\0\0\0\x01\x42\xc0\x0a\xff\xe1\0\x15\x67\x42\xc0\x0a\xda\x7b\x01\x10\0\0\x03\0\x10\0\0\x03\x01\x48\xf1\x22\x6a\x01\0\x04\x68\xce\x0f\xc8")),
+        ];
+        let packets = |timestamp, sample: u16| {
+            let video = if sample.is_multiple_of(10) {
+                Bytes::from_static(
+                    b"\x17\x01\0\0\0\0\0\0\x0a\x65\x88\x84\x3a\x26\x28\0\x09\x02\xe0",
+                )
+            } else {
+                Bytes::from_static(b"\x27\x01\0\0\0\0\0\0\x05\x41\x9a\x20\x32\x94")
+            };
+            let [lo, hi] = sample.to_le_bytes();
+            [
+                tag(timestamp, FlvTagType::Video, video),
+                tag(
+                    timestamp,
+                    FlvTagType::Audio,
+                    Bytes::from(vec![0x3f, lo, hi, lo, hi]),
+                ),
+            ]
+        };
+        let mut input = init.clone();
+        input.extend((0..30).flat_map(|i| packets(10_000 + u32::from(i) * 100, i)));
+        let replay_start = input.len();
+        input.extend((0..30).flat_map(|i| packets(u32::from(i) * 100, i)));
+        // New content after the three-GOP replay must still reach the writer.
+        input.extend((30..40).flat_map(|i| packets(10_000 + u32::from(i) * 100, i)));
+        let mut expected = init;
+        expected.extend((0..40).flat_map(|i| packets(u32::from(i) * 100, i)));
+
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let config = FlvPipelineConfig::builder()
+            .duplicate_tag_filtering(true)
+            .duplicate_tag_filter_config(DuplicateTagFilterConfig {
+                enable_replay_offset_matching: true,
+                ..Default::default()
+            })
+            .build();
+        let pipeline =
+            FlvPipeline::with_config(context, &PipelineConfig::default(), config).build_pipeline();
+        let mut output = Vec::new();
+        pipeline
+            .run(
+                input.into_iter().enumerate().map(|(index, item)| {
+                    if index == replay_start + 40 {
+                        // The next keyframe flushes GOP two, a second after GOP
+                        // one confirmed the replay. Exercise real delivery time:
+                        // advancing Tokio's clock cannot catch std::time expiry.
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                    Ok::<_, PipelineError>(item)
+                }),
+                &mut |item| output.push(item.unwrap()),
+            )
+            .unwrap();
+        assert_eq!(output, expected);
+    }
+
+    #[test]
     fn repeated_sequence_headers_preserve_media_timestamps() {
         use pipeline_common::{CancellationToken, PipelineError};
 

@@ -538,8 +538,9 @@ impl Processor<FlvData> for TimingRepairOperator {
                 }
 
                 // Decoder initialization is not a media sample. Repeated sequence
-                // headers may carry timestamp zero even after playback has started.
+                // headers use the current offset without changing the media clock.
                 if tag.is_audio_sequence_header() || tag.is_video_sequence_header() {
+                    tag.timestamp_ms = TimingState::apply_delta(tag.timestamp_ms, self.state.delta);
                     return output(FlvData::Tag(tag));
                 }
 
@@ -689,6 +690,75 @@ mod tests {
         operator.finish(&context, &mut finish_output).unwrap();
 
         results
+    }
+
+    #[test]
+    fn sequence_headers_use_the_current_offset_without_changing_media_timing() {
+        // AAC silence and AV1 initialization/keyframe bytes from the FFmpeg
+        // fixtures documented in pipeline.rs. Timing repair does not decode them.
+        for (kind, config, data, interval) in [
+            (
+                FlvTagType::Audio,
+                &b"\xaf\0\x12\x10"[..],
+                &b"\xaf\x01\x21\x10\x04\x60\x8c\x1c"[..],
+                23,
+            ),
+            (
+                FlvTagType::Video,
+                &b"\x90av01\x81\0\x0c\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80"[..],
+                &b"\x91av01\x12\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80\x32\x0e\x10\0\xd0\0\0\x02\x80\0\0\0\xa9\x8e\x5e\xd0"[..],
+                100,
+            ),
+        ] {
+            let video = kind == FlvTagType::Video;
+            let packet = |timestamp, bytes| {
+                FlvData::Tag(FlvTag::new(timestamp, 0, kind, false, bytes::Bytes::from_static(bytes)))
+            };
+            let media = |timestamp| packet(timestamp, data);
+            let sequence = |timestamp| packet(timestamp, config);
+            let input = vec![
+                FlvData::Header(flv::FlvHeader::new(!video, video)),
+                media(0),
+                media(interval),
+                media(5000),
+                sequence(5000),
+                sequence(0),
+                media(5000 + interval),
+                media(0),
+                sequence(0),
+                media(interval),
+            ];
+            let mut expected = input.clone();
+            // Forward discontinuity creates a negative offset (clamped for a
+            // zero-timestamp header); the later rebound creates a positive one.
+            for (item, timestamp) in expected[1..].iter_mut().zip([
+                0,
+                interval,
+                2 * interval,
+                2 * interval,
+                0,
+                3 * interval,
+                4 * interval,
+                4 * interval,
+                5 * interval,
+            ]) {
+                let FlvData::Tag(tag) = item else {
+                    unreachable!()
+                };
+                tag.timestamp_ms = timestamp;
+            }
+            assert_eq!(
+                process_tags_through_operator(
+                    TimingRepairConfig {
+                        strategy: RepairStrategy::Strict,
+                        default_frame_rate: 10.0,
+                        ..Default::default()
+                    },
+                    input,
+                ),
+                expected
+            );
+        }
     }
 
     #[test]
