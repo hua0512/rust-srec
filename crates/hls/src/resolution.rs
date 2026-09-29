@@ -87,9 +87,9 @@ impl StreamingResolutionDetector {
 
 impl VideoProbe {
     fn push_packet(&mut self, packet: &TsPacketRef) -> Option<Resolution> {
-        let payload = packet.payload()?;
+        let payload = packet.payload_slice()?;
         if let Some(resolution) =
-            ResolutionDetector::scan_payload_for_sps(&payload, self.stream_type)
+            ResolutionDetector::scan_payload_for_sps(payload, self.stream_type)
         {
             return Some(resolution);
         }
@@ -97,7 +97,7 @@ impl VideoProbe {
         if packet.payload_unit_start_indicator {
             let previous_resolution = self.finish();
             self.in_pes = true;
-            self.expected_pes_len = Self::expected_pes_len(&payload);
+            self.expected_pes_len = Self::expected_pes_len(payload);
             self.current_pes.clear();
             if let Some(expected) = self.expected_pes_len {
                 self.current_pes.reserve(
@@ -106,12 +106,12 @@ impl VideoProbe {
                         .saturating_sub(self.current_pes.capacity()),
                 );
             }
-            self.append_payload(&payload);
+            self.append_payload(payload);
             if previous_resolution.is_some() {
                 return previous_resolution;
             }
         } else if self.in_pes {
-            self.append_payload(&payload);
+            self.append_payload(payload);
         }
 
         if self
@@ -191,7 +191,8 @@ impl ResolutionDetector {
                         continue;
                     }
                 } else {
-                    break;
+                    pos = zero_pos + 1;
+                    continue;
                 };
 
             if nal_start >= data.len() {
@@ -247,7 +248,8 @@ impl ResolutionDetector {
                         continue;
                     }
                 } else {
-                    break;
+                    pos = zero_pos + 1;
+                    continue;
                 };
 
             if nal_start >= data.len() {
@@ -328,6 +330,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn finds_sps_after_sei_payload_with_isolated_zero_bytes() {
+        // AVC SPS from a 640x352 FFmpeg encode; HEVC SPS from h265's
+        // 2560x1440 parser fixture. Both include emulation-prevention bytes.
+        let avc = [
+            0x67, 0x42, 0xc0, 0x1e, 0xda, 0x02, 0x80, 0xb6, 0xc0, 0x44, 0x00, 0x00, 0x03, 0x00,
+            0x04, 0x00, 0x00, 0x03, 0x00, 0xc8, 0x3c, 0x58, 0xba, 0x80,
+        ];
+        let hevc = b"B\x01\x01\x01@\0\0\x03\0\x90\0\0\x03\0\0\x03\0\x99\xa0\x01@ \x05\xa1e\x95R\x90\x84d_\xf8\xc0Z\x80\x80\x80\x82\0\0\x03\0\x02\0\0\x03\x01 \xc0\x0b\xbc\xa2\0\x02bX\0\x011-\x08";
+        for (codec, sps, sei_header, resolution) in [
+            (
+                StreamType::H264,
+                avc.as_slice(),
+                &[6][..],
+                Resolution::new(640, 352),
+            ),
+            (
+                StreamType::H265,
+                hevc.as_slice(),
+                &[0x4e, 1][..],
+                Resolution::new(2560, 1440),
+            ),
+        ] {
+            for prefix in [&[0, 0, 1][..], &[0, 0, 0, 1][..]] {
+                let mut payload = prefix.to_vec();
+                payload.extend_from_slice(sei_header);
+                // user_data_unregistered: 16-byte UUID, then rbsp_trailing_bits.
+                payload.extend_from_slice(&[5, 16]);
+                payload.extend((0..16).map(|value| value * 17));
+                payload.push(0x80);
+                // SPS carries the Annex B zero_byte before the start-code prefix.
+                payload.extend_from_slice(&[0, 0, 0, 1]);
+                payload.extend_from_slice(sps);
+                assert_eq!(
+                    ResolutionDetector::scan_payload_for_sps(&payload, codec),
+                    Some(resolution)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_find_nal_end_fast_three_byte() {
         // NAL data followed by 3-byte start code
         let data = [0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x01, 0x68];
@@ -356,7 +399,7 @@ mod tests {
         let pes_data = [
             0x00, 0x00, 0x01, // Start code
             0xE0, // Stream ID (video)
-            0x00, 0x10, // PES packet length
+            0x00, 0x00, // Unbounded video PES
             0x80, 0x00, // Flags
             0x00, // PES header data length (0)
             0x00, 0x00, 0x01, 0x67, // Elementary stream data

@@ -84,12 +84,18 @@ impl TsPacketRef {
     /// Get adaptation field data
     #[inline]
     pub fn adaptation_field(&self) -> Option<Bytes> {
+        self.adaptation_field_range()
+            .map(|range| self.data.slice(range))
+    }
+
+    #[inline]
+    fn adaptation_field_range(&self) -> Option<std::ops::Range<usize>> {
         if let Some(offset) = self.adaptation_field_offset
             && offset + 1 < self.data.len()
         {
             let length = self.data[offset] as usize;
             if offset + 1 + length <= self.data.len() {
-                return Some(self.data.slice(offset + 1..offset + 1 + length));
+                return Some(offset + 1..offset + 1 + length);
             }
         }
         None
@@ -103,6 +109,18 @@ impl TsPacketRef {
             return Some(self.data.slice(offset..));
         }
 
+        None
+    }
+
+    /// Borrow the payload without creating another reference-counted byte view.
+    /// Use [`Self::payload`] when the bytes must outlive the packet borrow.
+    #[inline]
+    pub fn payload_slice(&self) -> Option<&[u8]> {
+        if let Some(offset) = self.payload_offset
+            && offset < self.data.len()
+        {
+            return Some(&self.data[offset..]);
+        }
         None
     }
     /// Get PSI payload (removes pointer field if PUSI is set)
@@ -121,13 +139,11 @@ impl TsPacketRef {
     }
 
     /// Check if this packet has a random access indicator
+    #[inline]
     pub fn has_random_access_indicator(&self) -> bool {
-        if let Some(adaptation_field) = self.adaptation_field()
-            && !adaptation_field.is_empty()
-        {
-            return (adaptation_field[0] & 0x40) != 0;
-        }
-        false
+        self.adaptation_field_range()
+            .and_then(|range| self.data[range].first())
+            .is_some_and(|flags| flags & 0x40 != 0)
     }
 
     /// Parse the adaptation field into a structured type.
@@ -1073,7 +1089,11 @@ impl TsParser {
                     } else {
                         PmtRef::parse(psi_payload)
                     };
-                    if let Ok(pmt) = parse_result {
+                    // H.222.0 2.4.4.10: a next table must not replace the active
+                    // version, including when that same version later becomes current.
+                    if let Ok(pmt) = parse_result
+                        && pmt.current_next_indicator
+                    {
                         let program_number = self.pmt_pids.get(&pid).copied().unwrap_or(0);
                         let is_new = self
                             .pmt_versions
@@ -1121,6 +1141,10 @@ impl TsParser {
     where
         F: FnMut(PatRef) -> Result<()>,
     {
+        // H.222.0 2.4.4.5: future PATs do not change the current PID routing.
+        if !pat.current_next_indicator {
+            return Ok(());
+        }
         let is_new = self.pat_version != Some(pat.version_number);
         if is_new {
             self.pat_version = Some(pat.version_number);
@@ -1189,6 +1213,137 @@ impl TsParser {
 mod tests {
     use super::*;
 
+    #[test]
+    fn borrowed_payload_and_random_access_respect_adaptation_boundaries() {
+        for (control, adaptation_length, payload_length, random_access) in [
+            (1, 0, Some(184), false),
+            (3, 0, Some(183), false),
+            (3, 1, Some(182), true),
+            (2, 183, None, true),
+            (3, 183, None, true),
+            (3, 184, None, false), // Invalid adaptation length must not expose flags or payload.
+        ] {
+            let mut data = vec![0xaa; 188];
+            data[..4].copy_from_slice(&[0x47, 0x41, 0, control << 4]);
+            if control & 2 != 0 {
+                data[4] = adaptation_length;
+                if adaptation_length > 0 {
+                    data[5] = 0x40;
+                }
+            }
+            let data = Bytes::from(data);
+            let packet = TsPacketRef::parse(data.clone()).unwrap();
+            let expected = payload_length.map(|len| vec![0xaa; len]);
+            assert_eq!(packet.payload_slice(), expected.as_deref());
+            assert_eq!(packet.payload().as_deref(), expected.as_deref());
+            if let Some(payload) = packet.payload_slice() {
+                assert_eq!(payload.as_ptr(), data[188 - payload.len()..].as_ptr());
+            }
+            assert_eq!(packet.has_random_access_indicator(), random_access);
+        }
+    }
+
+    fn psi_packet(pid: u16, cc: u8, mut section: Vec<u8>, current: bool) -> Vec<u8> {
+        let crc_offset = section.len() - 4;
+        section[5] = (section[5] & !1) | u8::from(current);
+        let crc = crate::mpeg2_crc32(&section[..crc_offset]);
+        section[crc_offset..].copy_from_slice(&crc.to_be_bytes());
+        let mut payload = vec![0];
+        payload.extend(section);
+        build_ts_packet(pid, true, cc, &payload)
+    }
+
+    fn parse_versions(parser: &mut TsParser, packets: Vec<Vec<u8>>) -> (Vec<u8>, Vec<u8>) {
+        let mut pats = Vec::new();
+        let mut pmts = Vec::new();
+        parser
+            .parse_packets(
+                packets.concat().into(),
+                |pat| {
+                    pats.push(pat.version_number);
+                    Ok(())
+                },
+                |pmt| {
+                    pmts.push(pmt.version_number);
+                    Ok(())
+                },
+                None::<fn(&TsPacketRef) -> Result<()>>,
+            )
+            .unwrap();
+        (pats, pmts)
+    }
+
+    #[test]
+    fn future_pmt_is_ignored_until_that_same_version_becomes_current() {
+        let mut parser = TsParser::new()
+            .with_crc_validation(true)
+            .with_continuity_mode(ContinuityMode::Strict);
+        assert_eq!(
+            parse_versions(
+                &mut parser,
+                vec![
+                    psi_packet(0, 0, build_pat_section(0, 1, 0x1000), true),
+                    psi_packet(0x1000, 0, build_pmt_section(31, 1, 0x100, 1, 0x100), true),
+                ]
+            ),
+            (vec![0], vec![31])
+        );
+        // Exercise version wraparound as well as the next-to-current transition.
+        let next = build_pmt_section(0, 1, 0x101, 1, 0x101);
+        assert_eq!(
+            parse_versions(
+                &mut parser,
+                vec![psi_packet(0x1000, 1, next.clone(), false)]
+            ),
+            (vec![], vec![])
+        );
+        assert_eq!(
+            parse_versions(&mut parser, vec![psi_packet(0x1000, 2, next.clone(), true)]),
+            (vec![], vec![0])
+        );
+        assert_eq!(
+            parse_versions(&mut parser, vec![psi_packet(0x1000, 3, next, true)]),
+            (vec![], vec![])
+        );
+    }
+
+    #[test]
+    fn future_pat_preserves_active_pid_routing_until_it_becomes_current() {
+        let mut parser = TsParser::new()
+            .with_crc_validation(true)
+            .with_continuity_mode(ContinuityMode::Strict);
+        assert_eq!(
+            parse_versions(
+                &mut parser,
+                vec![
+                    psi_packet(0, 0, build_pat_section(0, 1, 0x1000), true),
+                    psi_packet(0x1000, 0, build_pmt_section(0, 1, 0x100, 1, 0x100), true),
+                ]
+            ),
+            (vec![0], vec![0])
+        );
+        assert_eq!(
+            parse_versions(
+                &mut parser,
+                vec![
+                    psi_packet(0, 1, build_pat_section(1, 1, 0x1001), false),
+                    psi_packet(0x1000, 1, build_pmt_section(1, 1, 0x101, 1, 0x101), true),
+                ]
+            ),
+            (vec![], vec![1])
+        );
+        assert_eq!(
+            parse_versions(
+                &mut parser,
+                vec![
+                    psi_packet(0, 2, build_pat_section(1, 1, 0x1001), true),
+                    psi_packet(0x1001, 0, build_pmt_section(0, 1, 0x102, 1, 0x102), true),
+                ]
+            ),
+            (vec![1], vec![0])
+        );
+    }
+
     fn build_ts_packet(
         pid: u16,
         payload_unit_start_indicator: bool,
@@ -1203,14 +1358,23 @@ mod tests {
             packet[1] |= 0x40;
         }
         packet[2] = (pid & 0xFF) as u8;
-        packet[3] = 0x10 | (cc & 0x0F);
-        packet[4..4 + payload.len()].copy_from_slice(payload);
+        let offset = 188 - payload.len();
+        if offset == 4 {
+            packet[3] = 0x10 | (cc & 0x0f);
+        } else {
+            packet[3] = 0x30 | (cc & 0x0f);
+            packet[4] = (offset - 5) as u8;
+            if offset > 5 {
+                packet[5] = 0;
+            }
+        }
+        packet[offset..].copy_from_slice(payload);
         packet
     }
 
     fn build_pat_section(version: u8, program_count: usize, first_pmt_pid: u16) -> Vec<u8> {
         let section_length = 9 + program_count * 4;
-        assert!(section_length <= 0x0FFF);
+        assert!(section_length <= 1021);
 
         let mut section = Vec::with_capacity(3 + section_length);
         section.push(0x00);
@@ -1231,7 +1395,7 @@ mod tests {
             section.push((pmt_pid & 0xFF) as u8);
         }
 
-        section.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        section.extend_from_slice(&crate::mpeg2_crc32(&section).to_be_bytes());
         section
     }
 
@@ -1243,7 +1407,7 @@ mod tests {
         first_stream_pid: u16,
     ) -> Vec<u8> {
         let section_length = 13 + stream_count * 5;
-        assert!(section_length <= 0x0FFF);
+        assert!(section_length <= 1021);
 
         let mut section = Vec::with_capacity(3 + section_length);
         section.push(0x02);
@@ -1268,7 +1432,7 @@ mod tests {
             section.push(0x00);
         }
 
-        section.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        section.extend_from_slice(&crate::mpeg2_crc32(&section).to_be_bytes());
         section
     }
 
@@ -1290,7 +1454,7 @@ mod tests {
         stream.extend_from_slice(&packet_1);
         stream.extend_from_slice(&packet_2);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut pat_count = 0usize;
         let mut programs = 0usize;
 
@@ -1336,7 +1500,7 @@ mod tests {
         stream.extend_from_slice(&packet_pmt_1);
         stream.extend_from_slice(&packet_pmt_2);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut pmt_count = 0usize;
         let mut stream_count = 0usize;
 
@@ -1380,7 +1544,7 @@ mod tests {
         stream.extend_from_slice(&packet_1);
         stream.extend_from_slice(&packet_2);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut versions = Vec::new();
 
         parser
@@ -1417,7 +1581,7 @@ mod tests {
         stream.extend_from_slice(&duplicate);
         stream.extend_from_slice(&packet_2);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut pat_count = 0usize;
         let mut programs = 0usize;
         parser
@@ -1440,7 +1604,7 @@ mod tests {
 
     #[test]
     fn ignores_orphan_psi_continuation_and_pointer_bytes() {
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut on_pat = |_pat| Ok(());
         let mut on_pmt = |_pmt| Ok(());
         let mut on_scte35 = None::<fn(crate::scte35::SpliceInfoSectionRef) -> Result<()>>;
@@ -1483,7 +1647,9 @@ mod tests {
         stream.extend_from_slice(&packet_1);
         stream.extend_from_slice(&packet_2);
 
-        let mut parser = TsParser::new().with_continuity_mode(ContinuityMode::Warn);
+        let mut parser = TsParser::new()
+            .with_crc_validation(true)
+            .with_continuity_mode(ContinuityMode::Warn);
         let result = parser.parse_packets(
             Bytes::from(stream),
             |_pat| Ok(()),
@@ -1504,7 +1670,9 @@ mod tests {
         stream.extend_from_slice(&packet_1);
         stream.extend_from_slice(&packet_2);
 
-        let mut parser = TsParser::new().with_continuity_mode(ContinuityMode::Strict);
+        let mut parser = TsParser::new()
+            .with_crc_validation(true)
+            .with_continuity_mode(ContinuityMode::Strict);
         let result = parser.parse_packets(
             Bytes::from(stream),
             |_pat| Ok(()),
@@ -1534,7 +1702,7 @@ mod tests {
         let ts_packet = build_ts_packet(0x0000, true, 0, &payload);
         packet[4..].copy_from_slice(&ts_packet);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut pat_count = 0usize;
 
         parser
@@ -1564,7 +1732,7 @@ mod tests {
         packet[..188].copy_from_slice(&ts_packet);
         packet[188..].copy_from_slice(&[0xAA; 16]);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut pat_count = 0usize;
 
         parser
@@ -1610,7 +1778,7 @@ mod tests {
         stream.extend_from_slice(&[0x47, 0x99, 0x88, 0x77, 0x66, 0x55]);
         stream.extend_from_slice(&m2ts_packet_2);
 
-        let mut parser = TsParser::new();
+        let mut parser = TsParser::new().with_crc_validation(true);
         let mut versions = Vec::new();
 
         parser

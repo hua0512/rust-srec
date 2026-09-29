@@ -373,86 +373,27 @@ mod tests {
     }
 
     fn create_test_ts_segment(duration: f32) -> HlsData {
-        let mut data = vec![0u8; 188 * 10]; // 10 TS packets
-        data[0] = 0x47; // TS sync byte
-        data[188] = 0x47; // Next packet sync byte
-
-        HlsData::TsData(
-            hls::TsSegmentData::new(
-                MediaSegment {
-                    uri: "segment.ts".to_string(),
-                    duration,
-                    ..MediaSegment::empty()
-                },
-                Bytes::from(data),
-            )
-            .with_continuity_mode(ts::ContinuityMode::Disabled),
+        HlsData::ts(
+            MediaSegment {
+                duration,
+                ..MediaSegment::empty()
+            },
+            Bytes::from_static(include_bytes!("../../hls/tests/fixtures/avc-640x352.ts")),
         )
     }
 
     fn create_test_mp4_init_segment() -> HlsData {
-        let mut data = vec![0u8; 128];
-
-        // Add fake 'ftyp' box
-        data[0] = 0x00;
-        data[1] = 0x00;
-        data[2] = 0x00;
-        data[3] = 0x20; // size: 32 bytes
-        data[4] = b'f';
-        data[5] = b't';
-        data[6] = b'y';
-        data[7] = b'p';
-
-        // Add fake 'moov' box
-        data[32] = 0x00;
-        data[33] = 0x00;
-        data[34] = 0x00;
-        data[35] = 0x60; // size: 96 bytes
-        data[36] = b'm';
-        data[37] = b'o';
-        data[38] = b'o';
-        data[39] = b'v';
-
-        HlsData::M4sData(M4sData::InitSegment(hls::M4sInitSegmentData {
-            segment: MediaSegment {
-                uri: "init.mp4".to_string(),
-                ..MediaSegment::empty()
-            },
-            data: Bytes::from(data),
-        }))
+        crate::test_support::init(crate::test_support::INIT)
     }
 
     fn create_test_mp4_media_segment(duration: f32) -> HlsData {
-        let mut data = vec![0u8; 128];
-
-        // Add fake 'moof' box
-        data[0] = 0x00;
-        data[1] = 0x00;
-        data[2] = 0x00;
-        data[3] = 0x40; // size: 64 bytes
-        data[4] = b'm';
-        data[5] = b'o';
-        data[6] = b'o';
-        data[7] = b'f';
-
-        // Add fake 'mdat' box
-        data[64] = 0x00;
-        data[65] = 0x00;
-        data[66] = 0x00;
-        data[67] = 0x40; // size: 64 bytes
-        data[68] = b'm';
-        data[69] = b'd';
-        data[70] = b'a';
-        data[71] = b't';
-
-        HlsData::M4sData(M4sData::Segment(hls::M4sSegmentData {
-            segment: MediaSegment {
-                uri: "segment.m4s".to_string(),
+        HlsData::mp4_segment(
+            MediaSegment {
                 duration,
                 ..MediaSegment::empty()
             },
-            data: Bytes::from(data),
-        }))
+            Bytes::from_static(crate::test_support::MEDIA0),
+        )
     }
 
     #[test]
@@ -493,7 +434,18 @@ mod tests {
         assert!(!stats.has_ts_segments);
         assert!(stats.has_mp4_segments);
 
-        // Check that video codec was detected
+        assert_eq!(
+            stats.mp4_init_segments_size,
+            crate::test_support::INIT.len() as u64
+        );
+        assert_eq!(
+            stats.mp4_media_segments_size,
+            crate::test_support::MEDIA0.len() as u64
+        );
+        assert_eq!(
+            stats.total_size,
+            (crate::test_support::INIT.len() + crate::test_support::MEDIA0.len()) as u64
+        );
     }
 
     #[test]
@@ -565,6 +517,8 @@ mod tests {
         let sample = [0x12, 0x00];
         let media = create_test_mp4_media_segment_for_track(1, &sample, 1.0);
         analyzer.analyze_segment(&media).unwrap();
+        assert_eq!(analyzer.stats.mp4_media_segment_count, 1);
+        assert_eq!(analyzer.stats.mp4_media_segments_size, media.size() as u64);
     }
 
     #[test]

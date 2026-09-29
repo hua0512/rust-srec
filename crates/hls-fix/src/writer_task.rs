@@ -17,13 +17,14 @@ use tracing::{debug, info, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
+use crate::output_state::OutputState;
 
 pub struct HlsFormatStrategy {
     analyzer: HlsAnalyzer,
-    current_offset: u64,
     target_duration: f32,
     max_file_size: Option<u64>,
     last_split_reason: Option<SplitReason>,
+    output_state: OutputState,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,18 +39,18 @@ impl HlsFormatStrategy {
     pub fn new(max_file_size: Option<u64>) -> Self {
         Self {
             analyzer: HlsAnalyzer::new(),
-            current_offset: 0,
             target_duration: 0.0,
             max_file_size,
             last_split_reason: None,
+            output_state: OutputState::default(),
         }
     }
 
     fn reset_for_new_file(&mut self) -> Result<(), HlsStrategyError> {
         self.analyzer.reset();
-        self.current_offset = 0;
         self.target_duration = 0.0;
         self.last_split_reason = None;
+        self.output_state.reset_file();
         Ok(())
     }
 
@@ -103,52 +104,50 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     ) -> Result<u64, Self::StrategyError> {
         match item {
             HlsData::TsData(ts) => {
-                let bytes_written = ts.data().len() as u64;
                 writer.write_all(ts.data())?;
-                // Accumulate TS segment duration
                 self.target_duration += ts.segment.duration;
                 self.analyze_written_segment(item);
-                Ok(bytes_written)
             }
-            HlsData::M4sData(m4s_data) => {
-                let bytes_written = match m4s_data {
-                    M4sData::InitSegment(init) => {
-                        info!("Found init segment, offset: {:?}", self.current_offset);
-                        let bytes_written = init.data.len() as u64;
-                        writer.write_all(&init.data)?;
-                        bytes_written
-                    }
-                    M4sData::Segment(segment) => {
-                        let bytes_written = segment.data.len() as u64;
-                        writer.write_all(&segment.data)?;
-                        self.target_duration += segment.segment.duration;
-                        bytes_written
-                    }
-                };
-                self.current_offset += bytes_written;
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                if self.output_state.is_repeated_init(init) {
+                    return Ok(0);
+                }
+                writer.write_all(&init.data)?;
                 self.analyze_written_segment(item);
-
-                Ok(bytes_written)
             }
-            // do nothing for end marker, it will be handled in after_item_written
+            HlsData::M4sData(M4sData::Segment(segment)) => {
+                if let Some(init) = self.output_state.pending_init().cloned() {
+                    writer.write_all(&init.data)?;
+                    self.analyze_written_segment(&HlsData::M4sData(M4sData::InitSegment(init)));
+                }
+                writer.write_all(&segment.data)?;
+                self.target_duration += segment.segment.duration;
+                self.analyze_written_segment(item);
+            }
             HlsData::EndMarker(reason) => {
                 self.last_split_reason = reason.clone();
-                Ok(0)
             }
         }
+        Ok(self.output_state.record(item))
     }
 
-    fn should_rotate_file(&self, _config: &WriterConfig, state: &WriterState) -> bool {
-        let Some(max_size) = self.max_file_size else {
-            return false;
-        };
-        if max_size == 0 {
-            return false;
-        }
+    fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
+        // HLS rotation requires the next media item, including any init replay.
+        false
+    }
 
-        // Rotate before writing the next item once we have at least one item in the current file.
-        // This avoids creating empty files when a rotation is requested before any payload is written.
-        state.items_written_current_file > 0 && state.bytes_written_current_file >= max_size
+    fn should_rotate_before_item(
+        &mut self,
+        item: &HlsData,
+        _config: &WriterConfig,
+        _state: &WriterState,
+    ) -> bool {
+        if self.output_state.would_exceed(item, self.max_file_size) {
+            self.last_split_reason = Some(SplitReason::SizeLimit);
+            true
+        } else {
+            false
+        }
     }
 
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
@@ -193,17 +192,6 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _config: &WriterConfig,
         state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
-        // If no explicit split reason was set (e.g. from an EndMarker), check if this
-        // close was triggered by the writer-level size rotation path.
-        if self.last_split_reason.is_none()
-            && let Some(max_size) = self.max_file_size
-            && max_size > 0
-            && state.items_written_current_file > 0
-            && state.bytes_written_current_file >= max_size
-        {
-            self.last_split_reason = Some(SplitReason::SizeLimit);
-        }
-
         let items_written = state.items_written_current_file;
         let duration_secs = self.target_duration;
 
@@ -225,9 +213,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     ) -> Result<PostWriteAction, Self::StrategyError> {
         self.update_status(state);
         if matches!(item, HlsData::EndMarker(_)) {
-            // If an end marker arrives before any real payload, don't rotate.
-            // This prevents creating empty files if the stream begins with a boundary marker.
-            if state.items_written_current_file <= 1 {
+            if state.bytes_written_current_file == 0 {
                 return Ok(PostWriteAction::None);
             }
 
@@ -236,7 +222,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 .build_stats()
                 .map_err(HlsStrategyError::Analyzer)?;
             debug!("HLS stats: {:?}", stats);
-            Ok(PostWriteAction::Rotate)
+            Ok(PostWriteAction::RotateOnNextItem)
         } else {
             Ok(PostWriteAction::None)
         }
@@ -256,6 +242,9 @@ pub struct HlsWriterConfig {
     pub output_dir: PathBuf,
     pub base_name: String,
     pub extension: String,
+    /// Maximum output bytes, including initialization. Split before a media
+    /// item would exceed it; a first oversized item stays intact. Zero disables
+    /// this limit, and control markers always retain their explicit reason.
     pub max_file_size: Option<u64>,
 }
 
@@ -322,150 +311,430 @@ impl ProtocolWriter for HlsWriter {
         &mut self,
         input: pipeline_common::PipelineReceiver<HlsData>,
     ) -> Result<WriterStats, WriterError> {
-        let mut saw_payload = false;
-        self.writer_task.run_from_channel(input, |item, _state| {
-            if !saw_payload && matches!(item, HlsData::EndMarker(_)) {
-                return false;
-            }
-            saw_payload |= !matches!(item, HlsData::EndMarker(_));
-            true
+        self.writer_task.run_from_channel(input, |item, state| {
+            !item.is_end_marker() || state.current_file_path.is_some()
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::{Arc, Mutex};
+
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
-    use pipeline_common::PipelineError;
+    use pipeline_common::{
+        PipelineError, PipelineProvider, StreamerContext, config::PipelineConfig,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+    use crate::test_support::{INIT, MEDIA0, MEDIA1, OTHER_INIT, OTHER_MEDIA, init, media};
+
+    // Buffer a finite input before running the synchronous writer. These tests
+    // need no worker thread, so a failed assertion cannot strand a channel wait.
+    fn write_items(writer: &mut HlsWriter, items: Vec<HlsData>) -> WriterStats {
+        let (tx, rx) = tokio::sync::mpsc::channel(items.len().max(1));
+        for item in items {
+            tx.try_send(Ok(item)).unwrap();
+        }
+        drop(tx);
+        writer.run(rx.into()).unwrap()
+    }
+
+    fn through_pipeline(
+        items: Vec<HlsData>,
+        limit: Option<u64>,
+        limiter: Option<bool>,
+    ) -> Vec<HlsData> {
+        let Some(segment_limiter) = limiter else {
+            return items;
+        };
+        let pipeline = crate::HlsPipeline::with_config(
+            StreamerContext::arc_new(CancellationToken::new()),
+            &PipelineConfig {
+                max_file_size: limit.unwrap_or(0),
+                ..Default::default()
+            },
+            crate::HlsPipelineConfig {
+                segment_limiter,
+                ..Default::default()
+            },
+        )
+        .build_pipeline();
+        let mut output = Vec::new();
+        pipeline
+            .run(items.into_iter().map(Ok::<_, PipelineError>), &mut |item| {
+                output.push(item.unwrap())
+            })
+            .unwrap();
+        output
+    }
+
+    fn assert_size_modes(
+        items: Vec<HlsData>,
+        limit: Option<u64>,
+        expected: &[Vec<u8>],
+        duration: f64,
+    ) {
+        // Raw, processed with writer fallback, and processed with both guards.
+        for limiter in [None, Some(false), Some(true)] {
+            let dir = tempfile::tempdir().unwrap();
+            let completed = Arc::new(Mutex::new(Vec::new()));
+            let events = completed.clone();
+            let mut writer = HlsWriter::new(HlsWriterConfig {
+                output_dir: dir.path().into(),
+                base_name: "test-%i".into(),
+                extension: "bin".into(),
+                max_file_size: limit,
+            });
+            writer.set_on_segment_complete_callback(move |_, sequence, duration, size, reason| {
+                events
+                    .lock()
+                    .unwrap()
+                    .push((sequence, size, duration, reason.cloned()));
+            });
+            let output = through_pipeline(items.clone(), limit, limiter);
+            let stats = write_items(&mut writer, output);
+            assert_eq!(
+                stats.files_created as usize,
+                expected.len(),
+                "limiter={limiter:?}, limit={limit:?}"
+            );
+            assert_eq!(
+                stats.bytes_written,
+                expected.iter().map(|file| file.len() as u64).sum::<u64>()
+            );
+            assert_eq!(stats.duration_secs, duration);
+            assert_eq!(
+                std::fs::read_dir(dir.path()).unwrap().count(),
+                expected.len()
+            );
+            let events = completed.lock().unwrap();
+            assert_eq!(events.len(), expected.len());
+            for (index, data) in expected.iter().enumerate() {
+                assert_eq!(
+                    std::fs::read(dir.path().join(format!("test-{index:03}.bin"))).unwrap(),
+                    *data
+                );
+                assert_eq!(events[index].0, index as u32);
+                assert_eq!(events[index].1, data.len() as u64);
+                assert_eq!(
+                    events[index].3,
+                    (index + 1 < expected.len()).then_some(SplitReason::SizeLimit)
+                );
+            }
+            assert_eq!(events.iter().map(|event| event.2).sum::<f64>(), duration);
+        }
+    }
 
     #[test]
-    fn rotates_on_max_file_size_between_items() {
-        let tempdir = tempfile::tempdir().expect("create temp dir");
+    fn raw_and_processed_mp4_share_init_aware_size_limits() {
+        let combined = [INIT, MEDIA0, MEDIA1].concat();
+        let split = [[INIT, MEDIA0].concat(), [INIT, MEDIA1].concat()];
+        for (limit, expected) in [
+            (None, vec![combined.clone()]),
+            (Some(0), vec![combined.clone()]),
+            (Some(combined.len() as u64), vec![combined.clone()]),
+            (Some(combined.len() as u64 - 1), split.to_vec()),
+            (Some(1), split.to_vec()),
+        ] {
+            // Repeating the map must not consume the byte budget twice. Trailing
+            // and consecutive end markers must not create extra output files.
+            assert_size_modes(
+                vec![
+                    init(INIT),
+                    media(MEDIA0),
+                    init(INIT),
+                    media(MEDIA1),
+                    HlsData::end_marker(),
+                    HlsData::end_marker(),
+                ],
+                limit,
+                &expected,
+                2.0,
+            );
+        }
+    }
 
+    #[test]
+    fn raw_and_processed_ts_share_predictive_size_limits() {
+        let inputs: Vec<_> = [0u8, 1, 2]
+            .into_iter()
+            .map(|byte| {
+                HlsData::ts(
+                    MediaSegment {
+                        duration: 1.0,
+                        ..Default::default()
+                    },
+                    vec![byte; 10].into(),
+                )
+            })
+            .collect();
+        let all = [vec![0; 10], vec![1; 10], vec![2; 10]].concat();
+        for (limit, expected) in [
+            (None, vec![all.clone()]),
+            (Some(0), vec![all.clone()]),
+            (Some(30), vec![all]),
+            (
+                Some(20),
+                vec![[vec![0; 10], vec![1; 10]].concat(), vec![2; 10]],
+            ),
+            (Some(15), vec![vec![0; 10], vec![1; 10], vec![2; 10]]),
+            (Some(1), vec![vec![0; 10], vec![1; 10], vec![2; 10]]),
+        ] {
+            assert_size_modes(inputs.clone(), limit, &expected, 3.0);
+        }
+    }
+
+    #[test]
+    fn explicit_boundary_reason_wins_at_the_size_limit_without_an_empty_successor() {
+        for reason in [
+            SplitReason::Manual { request_id: 42 },
+            SplitReason::DurationLimit,
+        ] {
+            for has_successor in [false, true] {
+                for limiter in [None, Some(false), Some(true)] {
+                    let first_file_size = (INIT.len() + MEDIA0.len()) as u64;
+                    let limit = Some(first_file_size);
+                    let mut items = vec![
+                        init(INIT),
+                        media(MEDIA0),
+                        HlsData::end_marker_with_reason(reason.clone()),
+                        HlsData::end_marker(),
+                    ];
+                    if has_successor {
+                        // No new init arrives: both paths must replay the latest one.
+                        items.push(media(MEDIA1));
+                    }
+                    let dir = tempfile::tempdir().unwrap();
+                    let completed = Arc::new(Mutex::new(Vec::new()));
+                    let events = completed.clone();
+                    let mut writer = HlsWriter::new(HlsWriterConfig {
+                        output_dir: dir.path().into(),
+                        base_name: "test-%i".into(),
+                        extension: "mp4".into(),
+                        max_file_size: limit,
+                    });
+                    writer.set_on_segment_complete_callback(move |_, sequence, _, size, reason| {
+                        events
+                            .lock()
+                            .unwrap()
+                            .push((sequence, size, reason.cloned()));
+                    });
+                    let stats = write_items(&mut writer, through_pipeline(items, limit, limiter));
+                    let count = if has_successor { 2 } else { 1 };
+                    assert_eq!(stats.files_created, count);
+                    assert_eq!(
+                        std::fs::read_dir(dir.path()).unwrap().count(),
+                        count as usize
+                    );
+                    let events = completed.lock().unwrap();
+                    assert_eq!(events[0], (0, first_file_size, Some(reason.clone())));
+                    assert_eq!(events.len(), count as usize);
+                    if has_successor {
+                        assert_eq!(events[1], (1, (INIT.len() + MEDIA1.len()) as u64, None));
+                        assert_eq!(
+                            std::fs::read(dir.path().join("test-001.mp4")).unwrap(),
+                            [INIT, MEDIA1].concat()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn size_rotation_restores_init_and_accounts_for_its_bytes() {
+        for limit in [1, (INIT.len() + MEDIA0.len()) as u64] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut writer = HlsWriter::new(HlsWriterConfig {
+                output_dir: dir.path().into(),
+                base_name: "test-%i".into(),
+                extension: "mp4".into(),
+                max_file_size: Some(limit),
+            });
+            let stats = write_items(&mut writer, vec![init(INIT), media(MEDIA0), media(MEDIA1)]);
+            assert_eq!(stats.files_created, 2);
+            assert_eq!(
+                stats.bytes_written,
+                (2 * INIT.len() + MEDIA0.len() + MEDIA1.len()) as u64
+            );
+            assert_eq!(stats.duration_secs, 2.0);
+            assert_eq!(
+                std::fs::read(dir.path().join("test-000.mp4")).unwrap(),
+                [INIT, MEDIA0].concat()
+            );
+            assert_eq!(
+                std::fs::read(dir.path().join("test-001.mp4")).unwrap(),
+                [INIT, MEDIA1].concat()
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_new_init_supersedes_the_cached_init_at_a_boundary() {
+        let dir = tempfile::tempdir().unwrap();
         let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: tempdir.path().to_path_buf(),
-            base_name: "test-%i".to_string(),
-            extension: "ts".to_string(),
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "mp4".into(),
+            max_file_size: Some((INIT.len() + MEDIA0.len()) as u64),
+        });
+        let stats = write_items(
+            &mut writer,
+            vec![
+                init(INIT),
+                media(MEDIA0),
+                HlsData::end_marker(),
+                init(OTHER_INIT),
+                media(OTHER_MEDIA),
+            ],
+        );
+        assert_eq!(stats.files_created, 2);
+        assert_eq!(stats.duration_secs, 2.0);
+        assert_eq!(
+            std::fs::read(dir.path().join("test-001.mp4")).unwrap(),
+            [OTHER_INIT, OTHER_MEDIA].concat()
+        );
+    }
+
+    #[test]
+    fn pipeline_preserves_media_across_a_repeated_map_without_duplicate_headers() {
+        use pipeline_common::{
+            PipelineError, PipelineProvider, StreamerContext, config::PipelineConfig,
+        };
+        use tokio_util::sync::CancellationToken;
+
+        let pipeline = crate::HlsPipeline::with_config(
+            StreamerContext::arc_new(CancellationToken::new()),
+            &PipelineConfig::default(),
+            crate::HlsPipelineConfig::default(),
+        )
+        .build_pipeline();
+        let inputs = [init(INIT), media(MEDIA0), init(INIT), media(MEDIA1)];
+        let mut output = Vec::new();
+        pipeline
+            .run(
+                inputs.into_iter().map(Ok::<_, PipelineError>),
+                &mut |item| output.push(item.unwrap()),
+            )
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "mp4".into(),
+            max_file_size: None,
+        });
+        let stats = write_items(&mut writer, output);
+        let expected = [INIT, MEDIA0, MEDIA1].concat();
+        assert_eq!(stats.files_created, 1);
+        assert_eq!(stats.duration_secs, 2.0);
+        assert_eq!(stats.bytes_written, expected.len() as u64);
+        assert_eq!(
+            std::fs::read(dir.path().join("test-000.mp4")).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn rotates_on_max_file_size_without_losing_or_duplicating_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "ts".into(),
             max_file_size: Some(15),
         });
-
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
-
-        let handle = std::thread::spawn(move || writer.run(rx.into()));
-
-        let seg = |bytes: &'static [u8]| {
-            Ok(HlsData::ts(
-                MediaSegment {
-                    duration: 1.0,
-                    ..MediaSegment::empty()
-                },
-                Bytes::from_static(bytes),
-            ))
-        };
-
-        tx.blocking_send(seg(&[0u8; 10])).unwrap();
-        tx.blocking_send(seg(&[1u8; 10])).unwrap();
-        tx.blocking_send(seg(&[2u8; 10])).unwrap();
-        drop(tx);
-
-        let stats = handle
-            .join()
-            .expect("writer thread join")
-            .expect("writer ok");
-
-        assert_eq!(stats.files_created, 2);
-
-        let file_count = std::fs::read_dir(tempdir.path())
-            .expect("read_dir")
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().is_some_and(|e| e == "ts"))
-            .count();
-        assert_eq!(file_count, 2);
+        // Payloads are opaque to this writer; distinct bytes expose loss/reordering.
+        let items = [0u8, 1, 2]
+            .into_iter()
+            .map(|value| {
+                HlsData::ts(
+                    MediaSegment {
+                        duration: 1.0,
+                        ..Default::default()
+                    },
+                    Bytes::from(vec![value; 10]),
+                )
+            })
+            .collect();
+        let stats = write_items(&mut writer, items);
+        assert_eq!(stats.files_created, 3);
+        assert_eq!(stats.bytes_written, 30);
+        assert_eq!(stats.duration_secs, 3.0);
+        for index in 0..3 {
+            assert_eq!(
+                std::fs::read(dir.path().join(format!("test-{index:03}.ts"))).unwrap(),
+                vec![index as u8; 10]
+            );
+        }
     }
 
     #[test]
     fn ignores_leading_end_markers() {
-        let tempdir = tempfile::tempdir().expect("create temp dir");
-
+        let dir = tempfile::tempdir().unwrap();
         let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: tempdir.path().to_path_buf(),
-            base_name: "test-%i".to_string(),
-            extension: "ts".to_string(),
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "ts".into(),
             max_file_size: None,
         });
-
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
-
-        let handle = std::thread::spawn(move || writer.run(rx.into()));
-
-        tx.blocking_send(Ok(HlsData::end_marker())).unwrap();
-        tx.blocking_send(Ok(HlsData::end_marker())).unwrap();
-        drop(tx);
-
-        let stats = handle
-            .join()
-            .expect("writer thread join")
-            .expect("writer ok");
+        let stats = write_items(
+            &mut writer,
+            vec![HlsData::end_marker(), HlsData::end_marker()],
+        );
         assert_eq!(stats.files_created, 0);
         assert_eq!(stats.bytes_written, 0);
         assert_eq!(stats.duration_secs, 0.0);
-
-        let file_count = std::fs::read_dir(tempdir.path())
-            .expect("read_dir")
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().is_some_and(|e| e == "ts"))
-            .count();
-        assert_eq!(file_count, 0);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     #[test]
-    fn av1_validation_failure_does_not_abort_writer() {
+    fn av1_validation_failure_does_not_abort_or_drop_written_media() {
         use mp4::test_support::{make_init_with_video_sample_entry, make_media_segment_for_track};
-
-        let tempdir = tempfile::tempdir().expect("create temp dir");
-
+        let dir = tempfile::tempdir().unwrap();
         let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: tempdir.path().to_path_buf(),
-            base_name: "test-%i".to_string(),
-            extension: "mp4".to_string(),
+            output_dir: dir.path().into(),
+            base_name: "test-%i".into(),
+            extension: "mp4".into(),
             max_file_size: None,
         });
-
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
-        let handle = std::thread::spawn(move || writer.run(rx.into()));
-
-        let init_data = make_init_with_video_sample_entry(1, *b"av01");
-        // OBU_TEMPORAL_DELIMITER with size 0: rejected by HlsAnalyzer's default
-        // Av1SampleValidationMode::StrictShouldNot policy.
-        let invalid_media = make_media_segment_for_track(1, &[0x12, 0x00]);
-        // OBU_FRAME with a one-byte payload: passes validation.
-        let valid_media = make_media_segment_for_track(1, &[0x32, 0x01, 0xAA]);
-        let expected_len = (init_data.len() + invalid_media.len() + valid_media.len()) as u64;
-
-        let media = |data: bytes::Bytes| {
-            Ok(HlsData::mp4_segment(
+        let init = HlsData::mp4_init(
+            MediaSegment::empty(),
+            make_init_with_video_sample_entry(1, *b"av01"),
+        );
+        let media = |sample: &[u8]| {
+            HlsData::mp4_segment(
                 MediaSegment {
                     duration: 1.0,
-                    ..MediaSegment::empty()
+                    ..Default::default()
                 },
-                data,
-            ))
+                make_media_segment_for_track(1, sample),
+            )
         };
-
-        tx.blocking_send(Ok(HlsData::mp4_init(MediaSegment::empty(), init_data)))
-            .unwrap();
-        tx.blocking_send(media(invalid_media)).unwrap();
-        tx.blocking_send(media(valid_media)).unwrap();
-        drop(tx);
-
-        // The non-conformant media segment must be written and must not end the run.
-        let stats = handle
-            .join()
-            .expect("writer thread join")
-            .expect("writer ok");
+        // These structural AV1 fixtures test OBU validation, not video decoding.
+        // The temporal delimiter is disallowed by the analyzer's default policy.
+        let rejected = media(&[0x12, 0x00]);
+        let accepted = media(&[0x32, 0x01, 0xaa]);
+        let mut analyzer = HlsAnalyzer::new();
+        analyzer.analyze_segment(&init).unwrap();
+        assert!(
+            analyzer
+                .analyze_segment(&rejected)
+                .unwrap_err()
+                .contains("AV1")
+        );
+        analyzer.analyze_segment(&accepted).unwrap();
+        let expected = [init.as_ref(), rejected.as_ref(), accepted.as_ref()].concat();
+        let stats = write_items(&mut writer, vec![init, rejected, accepted]);
         assert_eq!(stats.files_created, 1);
-        assert_eq!(stats.bytes_written, expected_len);
+        assert_eq!(stats.bytes_written, expected.len() as u64);
+        assert_eq!(stats.duration_secs, 2.0);
+        assert_eq!(
+            std::fs::read(dir.path().join("test-000.mp4")).unwrap(),
+            expected
+        );
     }
 }

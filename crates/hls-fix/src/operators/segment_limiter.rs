@@ -1,35 +1,29 @@
-use bytes::Bytes;
-use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType, SplitReason};
-use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Duration;
+
+use hls::{HlsData, M4sData, SplitReason};
+use pipeline_common::{PipelineError, Processor, StreamerContext};
 use tracing::debug;
 
-/// HLS processor: Limits HLS segments based on size or duration
+use crate::output_state::OutputState;
+
+/// Limits recordings at HLS media item boundaries, preserving initialization.
 pub struct SegmentLimiterOperator {
     fragment_check: Option<hls::mp4::IndependentFragmentCheck>,
-    media_written: bool,
+    output_state: OutputState,
     max_duration: Option<Duration>,
     max_size: Option<u64>,
     current_duration: Duration,
-    current_size: u64,
-    // Most recent initialization segment, re-emitted at the start of each new sequence.
-    init_segment: Option<M4sInitSegmentData>,
-    // Track if we've output an init segment recently
-    init_segment_sent: bool,
 }
 
 impl SegmentLimiterOperator {
     pub fn new(max_duration: Option<Duration>, max_size: Option<u64>) -> Self {
         Self {
             fragment_check: None,
-            media_written: false,
+            output_state: OutputState::default(),
             max_duration,
             max_size,
-            current_duration: Duration::from_secs(0),
-            current_size: 0,
-            init_segment: None,
-            init_segment_sent: false,
+            current_duration: Duration::ZERO,
         }
     }
 
@@ -41,57 +35,25 @@ impl SegmentLimiterOperator {
         }
     }
 
-    /// Helper function to check if any limit is reached, returning the reason if so
-    fn check_limit_reached(
-        &self,
-        segment_data: &Bytes,
-        segment_duration: f32,
-    ) -> Option<SplitReason> {
-        // If no limits are set, no limit can be reached
-        if self.max_duration.is_none() && self.max_size.is_none() {
+    fn check_limit_reached(&self, item: &HlsData, segment_duration: f32) -> Option<SplitReason> {
+        if !self.output_state.has_media() {
             return None;
         }
-
-        // Check size limit
-        if let Some(max_size) = self.max_size
-            && max_size > 0
-        {
-            let segment_size = segment_data.len() as u64;
-            if self.current_size + segment_size > max_size {
-                debug!(
-                    "Size limit reached: {} > {}",
-                    self.current_size + segment_size,
-                    max_size
-                );
-                return Some(SplitReason::SizeLimit);
-            }
+        if self.output_state.would_exceed(item, self.max_size) {
+            return Some(SplitReason::SizeLimit);
         }
-
-        // Check duration limit
         if let Some(max_duration) = self.max_duration
             && !max_duration.is_zero()
+            && self.current_duration + Self::safe_duration(segment_duration) > max_duration
         {
-            let segment_duration = Self::safe_duration(segment_duration);
-            if self.current_duration + segment_duration > max_duration {
-                debug!(
-                    "Duration limit reached: {:?} > {:?}",
-                    self.current_duration + segment_duration,
-                    max_duration
-                );
-                return Some(SplitReason::DurationLimit);
-            }
+            return Some(SplitReason::DurationLimit);
         }
-
         None
     }
 
-    /// Reset tracking counters
     fn reset_counters(&mut self) {
-        debug!("Resetting counters");
-        self.current_duration = Duration::from_secs(0);
-        self.current_size = 0;
-        self.init_segment_sent = false;
-        self.media_written = false;
+        self.current_duration = Duration::ZERO;
+        self.output_state.reset_file();
     }
 
     /// Claims a waiting manual cut at this segment when it starts
@@ -114,11 +76,31 @@ impl SegmentLimiterOperator {
         }
     }
 
-    /// Add segment to current tracking
-    fn track_segment(&mut self, segment_data: &Bytes, segment_duration: f32) {
-        self.media_written = true;
-        self.current_size += segment_data.len() as u64;
-        self.current_duration += Self::safe_duration(segment_duration);
+    fn process_media(
+        &mut self,
+        item: HlsData,
+        duration: f32,
+        manual: Option<u64>,
+        output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        if let Some(reason) = manual
+            .map(|request_id| SplitReason::Manual { request_id })
+            .or_else(|| self.check_limit_reached(&item, duration))
+        {
+            debug!(?reason, "Splitting HLS recording");
+            output(HlsData::end_marker_with_reason(reason))?;
+            self.reset_counters();
+        }
+        if item.is_mp4_media()
+            && let Some(init) = self.output_state.pending_init().cloned()
+        {
+            let init = HlsData::M4sData(M4sData::InitSegment(init));
+            self.output_state.record(&init);
+            output(init)?;
+        }
+        self.output_state.record(&item);
+        self.current_duration += Self::safe_duration(duration);
+        output(item)
     }
 }
 
@@ -132,87 +114,40 @@ impl Processor<HlsData> for SegmentLimiterOperator {
         if context.token.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
-        match input.segment_type() {
-            SegmentType::Ts => {
-                if let HlsData::TsData(ts_data) = input {
-                    let manual = Self::manual_boundary(context, self.media_written, || {
-                        ts_data
-                            .analysis(hls::StreamProfileOptions {
-                                include_resolution: false,
-                            })
-                            .is_ok_and(|analysis| analysis.independent_start)
-                    });
-                    // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if let Some(reason) = manual
-                        .map(|request_id| SplitReason::Manual { request_id })
-                        .or_else(|| {
-                            self.check_limit_reached(ts_data.data(), ts_data.segment.duration)
+        match &input {
+            HlsData::TsData(segment) => {
+                let manual = Self::manual_boundary(context, self.output_state.has_media(), || {
+                    segment
+                        .analysis(hls::StreamProfileOptions {
+                            include_resolution: false,
                         })
-                    {
-                        output(HlsData::end_marker_with_reason(reason))?;
-                        self.reset_counters();
-                    }
-
-                    self.track_segment(ts_data.data(), ts_data.segment.duration);
-
-                    // Unconditionally output the current segment and track its metrics.
-                    output(HlsData::TsData(ts_data))?;
-                }
+                        .is_ok_and(|analysis| analysis.independent_start)
+                });
+                let duration = segment.segment.duration;
+                self.process_media(input, duration, manual, output)
             }
-            SegmentType::M4sInit => {
-                if let HlsData::M4sData(M4sData::InitSegment(init_segment)) = input {
-                    self.fragment_check =
-                        hls::mp4::IndependentFragmentCheck::from_init(&init_segment.data);
-                    // Track the most recent init segment so a later size/duration split re-emits
-                    // the codec configuration the following M4sMedia is encoded against, not a
-                    // stale one from before a SegmentSplitOperator init-CRC switch.
-                    self.init_segment = Some(init_segment.clone());
-
-                    // Always output the init segment when we encounter it directly
-                    output(HlsData::M4sData(M4sData::InitSegment(init_segment)))?;
-                    self.init_segment_sent = true;
-                }
+            HlsData::M4sData(M4sData::Segment(segment)) => {
+                let manual = Self::manual_boundary(context, self.output_state.has_media(), || {
+                    self.fragment_check
+                        .as_ref()
+                        .is_some_and(|check| check.is_independent(&segment.data))
+                });
+                let duration = segment.segment.duration;
+                self.process_media(input, duration, manual, output)
             }
-            SegmentType::M4sMedia => {
-                if let HlsData::M4sData(M4sData::Segment(segment)) = input {
-                    let manual = Self::manual_boundary(context, self.media_written, || {
-                        self.fragment_check
-                            .as_ref()
-                            .is_some_and(|check| check.is_independent(&segment.data))
-                    });
-                    // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if let Some(reason) = manual
-                        .map(|request_id| SplitReason::Manual { request_id })
-                        .or_else(|| {
-                            self.check_limit_reached(&segment.data, segment.segment.duration)
-                        })
-                    {
-                        output(HlsData::end_marker_with_reason(reason))?;
-                        self.reset_counters();
-                    }
-
-                    // Ensure each new sequence starts with an init segment.
-                    if !self.init_segment_sent
-                        && let Some(init_segment) = &self.init_segment
-                    {
-                        output(HlsData::M4sData(M4sData::InitSegment(init_segment.clone())))?;
-                        self.init_segment_sent = true;
-                    }
-
-                    self.track_segment(&segment.data, segment.segment.duration);
-
-                    // Unconditionally output the current media segment and track its metrics.
-                    output(HlsData::M4sData(M4sData::Segment(segment)))?;
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                if !self.output_state.is_repeated_init(init) {
+                    self.fragment_check = hls::mp4::IndependentFragmentCheck::from_init(&init.data);
                 }
+                self.output_state.record(&input);
+                output(input)
             }
-            SegmentType::EndMarker => {
-                // Forward upstream EndMarkers as-is (preserve their reason)
+            HlsData::EndMarker(_) => {
                 output(input)?;
                 self.reset_counters();
+                Ok(())
             }
         }
-
-        Ok(())
     }
 
     fn finish(
@@ -235,6 +170,46 @@ mod tests {
     use m3u8_rs::MediaSegment;
     use pipeline_common::StreamerContext;
     use tokio_util::sync::CancellationToken;
+
+    use crate::test_support::{INIT, MEDIA0, MEDIA1, OTHER_INIT, OTHER_MEDIA, init, media};
+
+    #[test]
+    fn size_limit_includes_initialization_on_every_output_sequence() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            SegmentLimiterOperator::new(None, Some((INIT.len() + MEDIA0.len()) as u64));
+        let mut out = Vec::new();
+        for item in [
+            init(INIT),
+            media(MEDIA0),
+            media(MEDIA1),
+            media(MEDIA1),
+            media(MEDIA0),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        assert_eq!(out.len(), 9);
+        assert!(matches!(
+            out[2],
+            HlsData::EndMarker(Some(SplitReason::SizeLimit))
+        ));
+        assert!(matches!(
+            out[6],
+            HlsData::EndMarker(Some(SplitReason::SizeLimit))
+        ));
+        assert_eq!(
+            out.iter()
+                .filter_map(HlsData::data)
+                .map(Bytes::as_ref)
+                .collect::<Vec<_>>(),
+            [INIT, MEDIA0, INIT, MEDIA1, MEDIA1, INIT, MEDIA0]
+        );
+    }
 
     #[test]
     fn manual_cut_waits_for_sync_sample_and_repeats_the_init_without_losing_segments() {
@@ -389,62 +364,50 @@ mod tests {
     }
 
     #[test]
-    fn reemits_latest_init_after_split() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentLimiterOperator::new(None, Some(10));
-
+    fn reemits_latest_init_after_a_configuration_change_and_size_split() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            SegmentLimiterOperator::new(None, Some((OTHER_INIT.len() + OTHER_MEDIA.len()) as u64));
         let mut out = Vec::new();
-        let mut output = |item: HlsData| -> Result<(), PipelineError> {
-            out.push(item);
-            Ok(())
-        };
-
-        let media = |bytes: &'static [u8]| {
-            HlsData::mp4_segment(
-                MediaSegment {
-                    duration: 1.0,
-                    ..MediaSegment::empty()
-                },
-                Bytes::from_static(bytes),
-            )
-        };
-
-        operator
-            .process(
-                &context,
-                HlsData::mp4_init(MediaSegment::empty(), Bytes::from_static(b"AAAA")),
-                &mut output,
-            )
-            .unwrap();
-        operator
-            .process(&context, media(b"11111111"), &mut output)
-            .unwrap();
-        // Codec change mid-sequence: a new init segment replaces the tracked one.
-        operator
-            .process(
-                &context,
-                HlsData::mp4_init(MediaSegment::empty(), Bytes::from_static(b"BBBB")),
-                &mut output,
-            )
-            .unwrap();
-        // 8 more bytes exceed max_size=10, forcing a split; the new sequence must
-        // restart with the latest init segment, which this media is encoded against.
-        operator
-            .process(&context, media(b"22222222"), &mut output)
-            .unwrap();
-
-        assert_eq!(out.len(), 6);
+        for item in [
+            init(INIT),
+            media(MEDIA0),
+            HlsData::end_marker_with_reason(SplitReason::StreamStructureChange {
+                description: "init segment changed".into(),
+            }),
+            init(OTHER_INIT),
+            media(OTHER_MEDIA),
+            media(OTHER_MEDIA),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        assert_eq!(out.len(), 8);
         assert!(matches!(
-            out[3],
+            out[2],
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        ));
+        assert!(matches!(
+            out[5],
             HlsData::EndMarker(Some(SplitReason::SizeLimit))
         ));
-        match &out[4] {
-            HlsData::M4sData(M4sData::InitSegment(init)) => {
-                assert_eq!(init.data.as_ref(), b"BBBB");
-            }
-            other => panic!("expected re-emitted init segment, got {other:?}"),
-        }
-        assert!(matches!(out[5], HlsData::M4sData(M4sData::Segment(_))));
+        assert_eq!(
+            out.iter()
+                .filter_map(HlsData::data)
+                .map(Bytes::as_ref)
+                .collect::<Vec<_>>(),
+            [
+                INIT,
+                MEDIA0,
+                OTHER_INIT,
+                OTHER_MEDIA,
+                OTHER_INIT,
+                OTHER_MEDIA
+            ]
+        );
     }
 }
