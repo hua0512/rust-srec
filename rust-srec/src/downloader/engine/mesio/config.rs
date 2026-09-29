@@ -683,9 +683,11 @@ mod tests {
 
         // Should return default config - check individual fields
         let default_config = FlvPipelineConfig::default();
-        assert_eq!(
-            flv_pipeline_config.duplicate_tag_filtering,
-            default_config.duplicate_tag_filtering
+        assert!(!flv_pipeline_config.duplicate_tag_filtering);
+        assert!(
+            !flv_pipeline_config
+                .duplicate_tag_filter_config
+                .enable_replay_offset_matching
         );
         assert_eq!(flv_pipeline_config.pipe_mode, default_config.pipe_mode);
     }

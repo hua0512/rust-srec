@@ -64,12 +64,34 @@ pub enum CodecKind {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TagClass {
+    /// A recognized, nonempty media packet eligible for payload comparisons.
+    /// Multitrack wrappers and control packets are deliberately excluded.
+    pub media: bool,
     pub keyframe: bool,
     pub keyframe_media: bool,
     pub sequence_header: bool,
     pub end_of_sequence: bool,
     pub enhanced: bool,
     pub codec: Option<CodecKind>,
+}
+
+/// Borrowed configuration bytes after a recognized sequence header.
+///
+/// Container-only fields are excluded. The configuration itself is not decoded
+/// or validated, and legacy/enhanced codec declarations remain distinguishable.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SequenceHeader<'a> {
+    Audio {
+        codec: AudioCodec,
+        configuration: &'a [u8],
+    },
+    Video {
+        codec: VideoCodec,
+        /// Preserves the distinction between sequence start and the MPEG-2
+        /// descriptor form used for AV1. Legacy headers use SEQUENCE_START.
+        packet_type: EnhancedPacketType,
+        configuration: &'a [u8],
+    },
 }
 
 /// E-RTMP tag header fields with ModEx records skipped and the Multitrack
@@ -85,6 +107,9 @@ struct ExPacketHeader {
     /// The four FourCC bytes when present; `TagClass::keyframe_media` uses
     /// their presence as its payload-present check.
     four_cc_bytes: Option<[u8; 4]>,
+    multitrack: bool,
+    payload_offset: usize,
+    only_timestamp_modifiers: bool,
 }
 
 /// Parses the E-RTMP header of an enhanced audio or video payload (first byte
@@ -102,6 +127,7 @@ fn parse_ex_packet_header(data: &[u8], multitrack: u8, mod_ex: u8) -> Option<ExP
     let first_byte = *data.first()?;
     let mut packet_type = first_byte & 0x0F;
     let mut pos = 1_usize;
+    let mut only_timestamp_modifiers = true;
 
     while packet_type == mod_ex {
         // modExDataSize is UI8 + 1, escaping to UI16 + 1 when the UI8 is 255.
@@ -113,11 +139,17 @@ fn parse_ex_packet_header(data: &[u8], multitrack: u8, mod_ex: u8) -> Option<ExP
             pos += 2;
         }
         pos = pos.checked_add(size)?;
-        packet_type = *data.get(pos)? & 0x0F;
+        let modifier = *data.get(pos)?;
+        let record = data.get(pos - size..pos)?;
+        only_timestamp_modifiers &= modifier >> 4 == 0
+            && size == 3
+            && u32::from_be_bytes([0, record[0], record[1], record[2]]) < 1_000_000;
+        packet_type = modifier & 0x0F;
         pos += 1;
     }
 
-    if packet_type == multitrack {
+    let is_multitrack = packet_type == multitrack;
+    if is_multitrack {
         // High nibble is AvMultitrackType; the FourCC read below lands on the
         // same offset for all of its values, so the nibble needs no decoding.
         packet_type = *data.get(pos)? & 0x0F;
@@ -129,6 +161,9 @@ fn parse_ex_packet_header(data: &[u8], multitrack: u8, mod_ex: u8) -> Option<ExP
 
     Some(ExPacketHeader {
         packet_type,
+        multitrack: is_multitrack,
+        payload_offset: pos + 4,
+        only_timestamp_modifiers,
         four_cc_bytes: data
             .get(pos..pos + 4)
             .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()),
@@ -229,11 +264,24 @@ impl TagClass {
                 .and_then(codec_kind_from_video_codec);
             let coded_frames = packet_type == EnhancedPacketType::CODED_FRAMES
                 || packet_type == EnhancedPacketType::CODED_FRAMES_X;
+            let composition_size = usize::from(
+                packet_type == EnhancedPacketType::CODED_FRAMES
+                    && matches!(codec, Some(CodecKind::Avc | CodecKind::Hevc)),
+            ) * 3;
 
             return Self {
+                media: !header.multitrack
+                    && codec.is_some()
+                    && matches!(frame_type, 1..=4)
+                    && (packet_type == EnhancedPacketType::CODED_FRAMES
+                        || (packet_type == EnhancedPacketType::CODED_FRAMES_X
+                            && matches!(codec, Some(CodecKind::Avc | CodecKind::Hevc))))
+                    && data.len() > header.payload_offset + composition_size,
                 keyframe,
                 keyframe_media: keyframe && coded_frames && header.four_cc_bytes.is_some(),
-                sequence_header: packet_type == EnhancedPacketType::SEQUENCE_START,
+                sequence_header: packet_type == EnhancedPacketType::SEQUENCE_START
+                    || (packet_type == EnhancedPacketType::MPEG2_SEQUENCE_START
+                        && codec == Some(CodecKind::Av1)),
                 end_of_sequence: packet_type == EnhancedPacketType::SEQUENCE_END,
                 enhanced: true,
                 codec,
@@ -250,6 +298,12 @@ impl TagClass {
         let packetized = matches!(codec_id, Some(VideoCodecId::Avc | VideoCodecId::LegacyHevc));
 
         Self {
+            media: matches!(frame_type, 1..=4)
+                && if packetized {
+                    packet_type == Some(1) && data.len() > 5
+                } else {
+                    codec.is_some() && data.len() > 1
+                },
             keyframe,
             keyframe_media: keyframe
                 && if packetized {
@@ -299,6 +353,10 @@ impl TagClass {
                 });
 
             return Self {
+                media: !header.multitrack
+                    && codec.is_some()
+                    && header.packet_type == AudioPacketType::CodecFrames as u8
+                    && data.len() > header.payload_offset,
                 sequence_header: header.packet_type == AudioPacketType::SequenceStart as u8,
                 end_of_sequence: header.packet_type == AudioPacketType::SequenceEnd as u8,
                 enhanced: true,
@@ -325,6 +383,11 @@ impl TagClass {
         });
 
         Self {
+            media: if sound_format == SoundFormat::Aac {
+                data.get(1) == Some(&1) && data.len() > 2
+            } else {
+                sound_format != SoundFormat::DeviceSpecific && data.len() > 1
+            },
             sequence_header: sound_format == SoundFormat::Aac && data.get(1) == Some(&0),
             codec,
             ..Self::default()
@@ -339,6 +402,58 @@ fn demux_tag_header(reader: &mut std::io::Cursor<Bytes>) -> std::io::Result<Pars
 }
 
 impl FlvTag {
+    /// Inspect decoder configuration without demuxing or copying its payload.
+    ///
+    /// Known timestamp ModEx records are excluded from configuration. Returns
+    /// `None` for non-sequence tags, incomplete headers, unknown modifiers or
+    /// codecs, and multitrack wrappers. Callers comparing unsupported layouts
+    /// should conservatively compare the complete original payload instead.
+    pub fn sequence_header(&self) -> Option<SequenceHeader<'_>> {
+        if !self.class.sequence_header {
+            return None;
+        }
+        let data = self.data.as_ref();
+        match self.tag_type {
+            FlvTagType::Video if self.class.enhanced => {
+                let header = parse_enhanced_video_header(data)?;
+                if header.multitrack || !header.only_timestamp_modifiers {
+                    return None;
+                }
+                Some(SequenceHeader::Video {
+                    codec: VideoCodec::Enhanced(VideoFourCC::try_from(header.four_cc_bytes?).ok()?),
+                    packet_type: EnhancedPacketType::from(header.packet_type),
+                    configuration: data.get(header.payload_offset..)?,
+                })
+            }
+            FlvTagType::Video => Some(SequenceHeader::Video {
+                codec: video_codec_from_payload(data)?,
+                packet_type: EnhancedPacketType::SEQUENCE_START,
+                configuration: data.get(5..)?,
+            }),
+            FlvTagType::Audio if self.class.enhanced => {
+                let header = parse_ex_packet_header(
+                    data,
+                    AudioPacketType::Multitrack as u8,
+                    AudioPacketType::ModEx as u8,
+                )?;
+                if header.multitrack || !header.only_timestamp_modifiers {
+                    return None;
+                }
+                Some(SequenceHeader::Audio {
+                    codec: AudioCodec::Enhanced(
+                        AudioFourCC::from_u32(u32::from_be_bytes(header.four_cc_bytes?)).ok()?,
+                    ),
+                    configuration: data.get(header.payload_offset..)?,
+                })
+            }
+            FlvTagType::Audio => Some(SequenceHeader::Audio {
+                codec: AudioCodec::Legacy(SoundFormat::Aac),
+                configuration: data.get(2..)?,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn new(
         timestamp_ms: u32,
         stream_id: u32,
@@ -692,6 +807,32 @@ impl fmt::Display for FlvTagType {
 mod tests {
     use super::*;
 
+    #[test]
+    fn av1_mpeg2_sequence_start_is_configuration_with_or_without_wrappers() {
+        let config = [
+            0x80, 4, 129, 13, 12, 0, 10, 15, 0, 0, 0, 106, 239, 191, 225, 188, 2, 25, 144, 16, 16,
+            16, 64,
+        ];
+        for prefix in [
+            &b"\x95av01"[..],
+            &b"\x97\x02\0\0\x01\x05av01"[..],
+            &b"\x96\x05av01\0"[..],
+        ] {
+            let mut data = prefix.to_vec();
+            data.extend_from_slice(&config);
+            let tag = video_tag(&data);
+            assert!(tag.decode_video().unwrap().body.is_sequence_header());
+            assert!(tag.is_video_sequence_header());
+            assert!(!tag.is_key_frame_nalu());
+            assert_eq!(tag.classification().codec, Some(CodecKind::Av1));
+        }
+        // A coded frame with the same FourCC must remain media, not config.
+        let coded = video_tag(b"\x91av01\x12\0");
+        assert!(!coded.is_video_sequence_header());
+        assert!(coded.is_key_frame_nalu());
+        assert!(!video_tag(b"\x95hvc1").is_video_sequence_header());
+    }
+
     fn video_tag(data: &[u8]) -> FlvTag {
         FlvTag::new(0, 0, FlvTagType::Video, false, Bytes::copy_from_slice(data))
     }
@@ -729,6 +870,7 @@ mod tests {
         assert_eq!(
             tag.classification(),
             TagClass {
+                media: false,
                 keyframe: true,
                 keyframe_media: true,
                 sequence_header: false,

@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 const FLV_HEADER_SIZE: usize = 9;
 // DataOffset is a 32-bit header length field. In practice it is 9 for standard FLV.
 // Put a conservative bound to avoid buffering unbounded data for a bogus header.
-const MAX_DATA_OFFSET: u32 = 64 * 1024;
+pub(crate) const MAX_DATA_OFFSET: u32 = 64 * 1024;
 
 // Struct representing the FLV header, 9 bytes in total
 #[derive(Debug, Clone, PartialEq)]

@@ -268,7 +268,7 @@ impl Processor<FlvData> for LimitOperator {
                 // zeroed so the tags re-injected by split_stream open the new segment
                 // at timestamp 0.
                 if tag.is_script_tag() {
-                    self.state.cache.metadata = Some(tag.clone());
+                    self.state.cache.store_metadata(tag.clone());
                 } else if tag.is_video_sequence_header() {
                     self.state.cache.store_video_sequence_tag(tag.clone(), true);
                 } else if tag.is_audio_sequence_header() {

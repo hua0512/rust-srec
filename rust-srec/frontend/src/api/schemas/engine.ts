@@ -229,22 +229,28 @@ export const MesioConfigSchema = z.object({
         .enum(['crc32', 'semantic_signature'])
         .default('crc32'),
       drop_duplicate_sequence_headers: z.boolean().default(false),
-      duplicate_tag_filtering: z.boolean().default(true),
+      duplicate_tag_filtering: z.boolean().default(false),
       duplicate_tag_filter_config: z
         .object({
           window_capacity_tags: z.coerce.number().int().min(1).default(8192),
+          window_capacity_bytes: z.coerce
+            .number()
+            .int()
+            .min(0)
+            .default(16777216),
           replay_backjump_threshold_ms: z.coerce
             .number()
             .int()
             .min(0)
             .default(2000),
-          enable_replay_offset_matching: z.boolean().default(true),
+          enable_replay_offset_matching: z.boolean().default(false),
         })
         .optional()
         .default({
           window_capacity_tags: 8192,
+          window_capacity_bytes: 16777216,
           replay_backjump_threshold_ms: 2000,
-          enable_replay_offset_matching: true,
+          enable_replay_offset_matching: false,
         }),
     })
     .optional(),
@@ -288,6 +294,7 @@ export type StreamlinkConfigOverride = z.infer<
 const MesioDuplicateTagFilterOverrideSchema = z
   .object({
     window_capacity_tags: optionalInt(1),
+    window_capacity_bytes: optionalInt(0),
     replay_backjump_threshold_ms: optionalInt(0),
     enable_replay_offset_matching: z.boolean().optional(),
   })

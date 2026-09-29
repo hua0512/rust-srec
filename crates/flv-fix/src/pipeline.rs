@@ -42,7 +42,7 @@ pub type BoxStream<T> = Pin<Box<dyn Stream<Item = Result<T, FlvError>> + Send>>;
 /// Configuration options for the FLV processing pipeline
 #[derive(Debug, Clone)]
 pub struct FlvPipelineConfig {
-    /// Whether to filter duplicate tags
+    /// Whether to filter duplicate media tags. Disabled by default.
     pub duplicate_tag_filtering: bool,
 
     /// Configuration for duplicate media-tag filtering (used when
@@ -75,7 +75,7 @@ pub struct FlvPipelineConfig {
 impl Default for FlvPipelineConfig {
     fn default() -> Self {
         Self {
-            duplicate_tag_filtering: true,
+            duplicate_tag_filtering: false,
             duplicate_tag_filter_config: DuplicateTagFilterConfig::default(),
             sequence_header_change_mode: SequenceHeaderChangeMode::Crc32,
             drop_duplicate_sequence_headers: false,
@@ -307,23 +307,242 @@ impl PipelineProvider for FlvPipeline {
 #[cfg(test)]
 /// Tests for the FLV processing pipeline
 mod test {
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use flv::{FlvHeader, FlvTag, FlvTagType, SplitReason};
+    use pipeline_common::{CancellationToken, PipelineError};
+
     use super::*;
+    use crate::test_utils::create_audio_sequence_header;
+    use crate::test_utils::fixtures::{
+        AAC_LC_SILENCE, AV1_CODEC_CONFIG, AV1_KEYFRAME, AVC_CONFIG_16X16, AVC_IDR_16X16,
+        AVC_P_16X16,
+    };
+
+    /// Duration of one 1024-sample AAC frame at 44.1 kHz, rounded down.
+    const AAC_FRAME_MS: u32 = 23;
+
+    fn tag(timestamp: u32, kind: FlvTagType, data: &'static [u8]) -> FlvData {
+        FlvData::Tag(FlvTag::new(
+            timestamp,
+            0,
+            kind,
+            false,
+            Bytes::from_static(data),
+        ))
+    }
+
+    fn aac_silence(timestamp: u32) -> FlvData {
+        tag(timestamp, FlvTagType::Audio, AAC_LC_SILENCE)
+    }
+
+    fn run_pipeline(
+        common: &PipelineConfig,
+        config: FlvPipelineConfig,
+        input: impl IntoIterator<Item = FlvData>,
+    ) -> Vec<FlvData> {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let pipeline = FlvPipeline::with_config(context, common, config).build_pipeline();
+        let mut output = Vec::new();
+        pipeline
+            .run(input.into_iter().map(Ok::<_, PipelineError>), &mut |item| {
+                output.push(item.unwrap())
+            })
+            .unwrap();
+        output
+    }
+
+    #[test]
+    fn duplicate_filtering_is_disabled_until_explicitly_enabled() {
+        let mut unique = vec![FlvData::Header(FlvHeader::new(true, false))];
+        unique.extend((0..12).map(|frame| aac_silence(frame * AAC_FRAME_MS)));
+        let mut input = vec![unique[0].clone()];
+        for tag in &unique[1..] {
+            input.extend([tag.clone(), tag.clone()]);
+        }
+        let enabled = FlvPipelineConfig::builder()
+            .duplicate_tag_filtering(true)
+            .build();
+        for (config, expected) in [
+            (FlvPipelineConfig::default(), input.clone()),
+            (enabled, unique),
+        ] {
+            assert_eq!(
+                run_pipeline(&PipelineConfig::default(), config, input.clone()),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn replay_removal_follows_stream_time_across_delivery_pauses() {
+        // 10 fps video with one PCM audio packet per frame and a keyframe every
+        // 10 frames. GOP sorting upstream releases each GOP when the next
+        // keyframe arrives, so the filter receives the stream in bursts.
+        const FRAMES_PER_GOP: u16 = 10;
+        const TAGS_PER_GOP: usize = 2 * FRAMES_PER_GOP as usize;
+        const FRAME_MS: u32 = 100;
+        // Output timestamps start at 0, so expectations omit this source offset.
+        const SOURCE_START_MS: u32 = 10_000;
+
+        let frame = |timestamp, index: u16| {
+            let video = if index.is_multiple_of(FRAMES_PER_GOP) {
+                AVC_IDR_16X16
+            } else {
+                AVC_P_16X16
+            };
+            let [lo, hi] = index.to_le_bytes();
+            [
+                tag(timestamp, FlvTagType::Video, video),
+                FlvData::Tag(FlvTag::new(
+                    timestamp,
+                    0,
+                    FlvTagType::Audio,
+                    false,
+                    Bytes::from(vec![0x3f, lo, hi, lo, hi]),
+                )),
+            ]
+        };
+        let frames = |start: u32, indexes: std::ops::Range<u16>| {
+            indexes
+                .flat_map(move |i| frame(start + u32::from(i) * FRAME_MS, i))
+                .collect::<Vec<_>>()
+        };
+        let init = vec![
+            FlvData::Header(FlvHeader::new(true, true)),
+            tag(0, FlvTagType::Video, AVC_CONFIG_16X16),
+        ];
+        // Three GOPs, the same three GOPs replayed from timestamp 0, then a
+        // fourth GOP of new content.
+        let original = 0..3 * FRAMES_PER_GOP;
+        let new_content = original.end..original.end + FRAMES_PER_GOP;
+        // The source has sent two replayed GOPs. GOP sorting still holds the
+        // second until the next keyframe, so the pause falls between the
+        // filter receiving replayed GOPs one and two.
+        let pause_before = init.len() + 5 * TAGS_PER_GOP;
+        let input = [
+            init.clone(),
+            frames(SOURCE_START_MS, original.clone()),
+            frames(0, original),
+            frames(SOURCE_START_MS, new_content.clone()),
+        ]
+        .concat();
+        let expected = [init, frames(0, 0..new_content.end)].concat();
+
+        let config = FlvPipelineConfig::builder()
+            .duplicate_tag_filtering(true)
+            .duplicate_tag_filter_config(DuplicateTagFilterConfig {
+                enable_replay_offset_matching: true,
+                ..Default::default()
+            })
+            .build();
+        let input = input.into_iter().enumerate().map(|(index, item)| {
+            if index == pause_before {
+                // Longer than the filter's 500 ms replay gap, measured on the
+                // wall clock. The replay must survive because stream time is
+                // continuous.
+                std::thread::sleep(Duration::from_millis(600));
+            }
+            item
+        });
+        assert_eq!(
+            run_pipeline(&PipelineConfig::default(), config, input),
+            expected
+        );
+    }
+
+    #[test]
+    fn repeated_sequence_headers_preserve_media_timestamps() {
+        // A resent header carries timestamp 0 after media has advanced. It
+        // must not be treated as a timestamp jump that shifts later frames.
+        let frame_ts = |frame: u32| frame * 1_024_000 / 44_100;
+        let input = [
+            vec![
+                FlvData::Header(FlvHeader::new(true, false)),
+                create_audio_sequence_header(0, 0x12),
+            ],
+            (0..10).map(|frame| aac_silence(frame_ts(frame))).collect(),
+            vec![create_audio_sequence_header(0, 0x12)],
+            (10..12).map(|frame| aac_silence(frame_ts(frame))).collect(),
+        ]
+        .concat();
+        assert_eq!(
+            run_pipeline(
+                &PipelineConfig::default(),
+                FlvPipelineConfig::default(),
+                input.clone()
+            ),
+            input
+        );
+    }
+
+    #[test]
+    fn duration_splits_reinject_av1_mpeg2_configuration() {
+        const SPLIT_MS: u32 = 1000;
+        let common = PipelineConfig {
+            max_duration: Some(Duration::from_millis(SPLIT_MS.into())),
+            ..PipelineConfig::default()
+        };
+        // AV1 sequence start (packet type 5) with the MPEG-2 descriptor wrapper
+        // (tag 0x80, length 4) that FFmpeg/libaom-av1 emits before the av1C record.
+        let sequence_start = [&b"\x95av01\x80\x04"[..], AV1_CODEC_CONFIG].concat();
+        let init = vec![
+            FlvData::Header(FlvHeader::new(false, true)),
+            FlvData::Tag(FlvTag::new(
+                0,
+                0,
+                FlvTagType::Video,
+                false,
+                Bytes::from(sequence_start),
+            )),
+        ];
+        let mut input = init.clone();
+        let mut expected = init.clone();
+        for timestamp in (0..=SPLIT_MS + 200).step_by(100) {
+            input.push(tag(timestamp, FlvTagType::Video, AV1_KEYFRAME));
+            if timestamp == SPLIT_MS {
+                expected.push(FlvData::Split(SplitReason::DurationLimit));
+                expected.extend(init.clone());
+            }
+            // The second file restarts its timeline at the split.
+            let output_ts = if timestamp >= SPLIT_MS {
+                timestamp - SPLIT_MS
+            } else {
+                timestamp
+            };
+            expected.push(tag(output_ts, FlvTagType::Video, AV1_KEYFRAME));
+        }
+        assert_eq!(
+            run_pipeline(&common, FlvPipelineConfig::default(), input),
+            expected
+        );
+    }
 
     #[test]
     fn repair_strategy_defaults_to_relaxed_and_forwards_overrides() {
-        let default_config = FlvPipelineConfig::default();
-        assert_eq!(default_config.repair_strategy, RepairStrategy::Relaxed);
-        assert_eq!(
-            default_config.timing_repair_config().strategy,
-            RepairStrategy::Relaxed
-        );
+        let mut input = vec![
+            FlvData::Header(FlvHeader::new(true, false)),
+            create_audio_sequence_header(0, 0x12),
+        ];
+        let before_gap: Vec<u32> = (0..10).map(|frame| frame * AAC_FRAME_MS).collect();
+        let last_before_gap = before_gap[9];
+        input.extend(before_gap.into_iter().map(aac_silence));
+        input.extend([500, 523].map(aac_silence));
 
-        let strict_config = FlvPipelineConfig::builder()
+        // Relaxed repair keeps the ~300 ms gap; strict repair closes it so the
+        // next frame follows the last one by one AAC frame.
+        let closed = [1, 2].map(|n| last_before_gap + n * AAC_FRAME_MS);
+        let strict = FlvPipelineConfig::builder()
             .repair_strategy(RepairStrategy::Strict)
             .build();
-        assert_eq!(
-            strict_config.timing_repair_config().strategy,
-            RepairStrategy::Strict
-        );
+        for (config, tail) in [(FlvPipelineConfig::default(), [500, 523]), (strict, closed)] {
+            let mut expected = input[..input.len() - 2].to_vec();
+            expected.extend(tail.map(aac_silence));
+            assert_eq!(
+                run_pipeline(&PipelineConfig::default(), config, input.clone()),
+                expected
+            );
+        }
     }
 }

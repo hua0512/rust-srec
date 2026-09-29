@@ -1,5 +1,5 @@
 use flv::{
-    audio::{AudioCodec, AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
+    audio::{AudioCodec, SoundFormat},
     header::FlvHeader,
     resolution::Resolution,
     tag::FlvTag,
@@ -288,8 +288,16 @@ impl FlvStats {
                 self.audio_codec
                     .unwrap_or(AudioCodec::Legacy(SoundFormat::Aac))
             )?;
-            writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
-            writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
+            if self.audio_sample_rate.is_finite() && self.audio_sample_rate > 0.0 {
+                writeln!(f, "    Sample rate: {:.0} Hz", self.audio_sample_rate)?;
+            } else {
+                writeln!(f, "    Sample rate: unknown")?;
+            }
+            if self.audio_sample_size > 0 {
+                writeln!(f, "    Sample size: {} bits", self.audio_sample_size)?;
+            } else {
+                writeln!(f, "    Sample size: unknown")?;
+            }
             writeln!(f, "    Stereo: {}", self.audio_stereo)?;
             writeln!(f, "    Audio data rate: {:.2} kbps", self.audio_data_rate)?;
         }
@@ -467,40 +475,13 @@ impl FlvAnalyzer {
             self.has_audio_sequence_header = true;
 
             if self.stats.audio_codec.is_none() {
-                let audio_tag_utils = AudioTagUtils::new(tag.data().clone());
-                debug!(
-                    "Audio properties detected: codec={:?}, rate={:?}, size={:?}, type={:?}",
-                    audio_tag_utils.sound_format(),
-                    audio_tag_utils.sound_rate(),
-                    audio_tag_utils.sound_size(),
-                    audio_tag_utils.sound_type()
-                );
-                let sample_rate = audio_tag_utils
-                    .sound_rate()
-                    .map(|s| match s {
-                        SoundRate::Hz5512 => 5512.0,
-                        SoundRate::Hz11025 => 11025.0,
-                        SoundRate::Hz22050 => 22050.0,
-                        SoundRate::Hz44100 => 44100.0,
-                        SoundRate::Hz48000 => 48000.0,
-                    })
-                    .unwrap_or(44100.0);
-                let sample_size = audio_tag_utils
-                    .sound_size()
-                    .map(|s| match s {
-                        SoundSize::Bits8 => 8,
-                        SoundSize::Bits16 => 16,
-                        SoundSize::Bits24 => 24,
-                    })
-                    .unwrap_or(16); // Default to 16 bits if not found
-
-                let sound_type = audio_tag_utils.sound_type().unwrap_or(SoundType::Stereo);
-
-                let stereo = sound_type == SoundType::Stereo;
-
-                self.stats.audio_sample_rate = sample_rate;
-                self.stats.audio_sample_size = sample_size;
-                self.stats.audio_stereo = stereo;
+                // AAC's legacy SoundRate/SoundType bits are placeholders; the
+                // actual properties come from AudioSpecificConfig (FLV E.4.2.1).
+                if let Ok(audio) = tag.decode_audio() {
+                    self.stats.audio_sample_rate = audio.body.sample_rate();
+                    self.stats.audio_sample_size = audio.body.sample_size();
+                    self.stats.audio_stereo = audio.body.is_stereo();
+                }
                 // `get_audio_codec` resolves enhanced (ExHeader) tags to their
                 // FourCC; `AudioTagUtils::sound_format` alone would record the
                 // `SoundFormat::ExHeader` marker instead of the codec.
@@ -657,6 +638,28 @@ mod tests {
     use flv::video::VideoFourCC;
 
     #[test]
+    fn aac_properties_come_from_config_instead_of_legacy_header_bits() {
+        let mut analyzer = FlvAnalyzer::default();
+        analyzer
+            .analyze_header(&FlvHeader::new(true, false))
+            .unwrap();
+        let tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::Audio,
+            false,
+            Bytes::from_static(b"\xaf\0\x11\x88"),
+        );
+        analyzer.analyze_tag(&tag).unwrap();
+        assert_eq!(analyzer.stats.audio_sample_rate, 48000.0);
+        assert_eq!(analyzer.stats.audio_sample_size, 16);
+        assert!(!analyzer.stats.audio_stereo);
+        let display = analyzer.stats.to_string();
+        assert!(display.contains("Sample rate: 48000 Hz"));
+        assert!(display.contains("Sample size: 16 bits"));
+    }
+
+    #[test]
     fn test_analyze_header() {
         let mut analyzer = FlvAnalyzer::default();
         let header = FlvHeader::new(true, true);
@@ -714,6 +717,9 @@ mod tests {
             analyzer.build_stats().unwrap().audio_codec,
             Some(AudioCodec::Enhanced(AudioFourCC::Opus))
         );
+        let display = analyzer.stats.to_string();
+        assert!(display.contains("Sample rate: unknown"));
+        assert!(display.contains("Sample size: unknown"));
     }
 
     #[test]

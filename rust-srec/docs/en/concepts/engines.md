@@ -38,6 +38,28 @@ When enabled, FLV items pass through one ordered repair chain before the writer.
 
 Metadata updates do not rewrite the completed media data. If the available metadata space fills, the optional seek index is shortened instead. Filtered or encrypted script payloads are left unchanged.
 
+### Loop Protection {#loop-protection}
+
+When a source stalls, some CDNs replay the last few seconds of the stream, which leaves repeated footage in the recording. **Loop Protection** (`flv_fix.duplicate_tag_filtering`) removes these repeats. It is off by default.
+
+When it is on, Mesio keeps a copy of recent audio and video packets and drops a new packet only when it exactly matches one of them: same bytes, same track, and same timestamp. Close or likely matches are always kept.
+
+Mesio clears this history when the source reconnects or ends the stream, when the audio or video configuration changes, and at explicit stream discontinuities. It also clears it on any audio or video packet it cannot compare, such as encrypted, multitrack, or command packets, so Loop Protection does little on multitrack or encrypted streams. Sources that resend an unchanged configuration, for example before every group of frames, do not clear it.
+
+Exact matching has one trade-off. If an encoder restarts without sending different stream headers and produces identical frames at identical timestamps, such as silence or a black screen, those frames are also removed.
+
+**Offset Consistency Check** (`flv_fix.duplicate_tag_filter_config.enable_replay_offset_matching`) also catches replays whose timestamps have been shifted, which exact matching cannot. It is off by default and only takes effect while Loop Protection is on. After a large backward timestamp jump, Mesio briefly holds the next packets and compares them with the history. It removes the replay only if at least three different packets match in their original order with the same timestamp shift. Otherwise the held packets are written unchanged and a fresh history begins.
+
+Both options are heuristics. To keep every packet the source sends, leave Loop Protection off.
+
+Memory use per recording while Loop Protection is on:
+
+- The history holds up to 8,192 packets or 16 MiB, whichever limit is reached first. A packet larger than the byte limit is written unchanged but clears the history.
+- Offset Consistency Check holds up to another 1 MiB while it checks a possible replay.
+- Nothing is allocated while Loop Protection is off.
+
+The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It is not shown in the web form.
+
 ## 3. Raw Data Mode
 
 In Raw Data Mode, the **Mesio** engine writes stream data directly to disk as it arrives from the network, without parsing or processing media packets (headers, frames, metadata).

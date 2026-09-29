@@ -537,6 +537,13 @@ impl Processor<FlvData> for TimingRepairOperator {
                     return self.handle_script_tag(&mut tag, output);
                 }
 
+                // Decoder initialization is not a media sample. Repeated sequence
+                // headers use the current offset without changing the media clock.
+                if tag.is_audio_sequence_header() || tag.is_video_sequence_header() {
+                    tag.timestamp_ms = TimingState::apply_delta(tag.timestamp_ms, self.state.delta);
+                    return output(FlvData::Tag(tag));
+                }
+
                 // Check for timestamp issues
                 let mut need_correction = false;
 
@@ -683,6 +690,65 @@ mod tests {
         operator.finish(&context, &mut finish_output).unwrap();
 
         results
+    }
+
+    #[test]
+    fn sequence_headers_use_the_current_offset_without_changing_media_timing() {
+        use crate::test_utils::fixtures::{
+            AAC_LC_CONFIG, AAC_LC_SILENCE, AV1_CODEC_CONFIG, AV1_KEYFRAME,
+        };
+
+        let av1_config = [&b"\x90av01"[..], AV1_CODEC_CONFIG].concat();
+        for (kind, config, media, interval) in [
+            (FlvTagType::Audio, AAC_LC_CONFIG, AAC_LC_SILENCE, 23),
+            (FlvTagType::Video, &av1_config[..], AV1_KEYFRAME, 100),
+        ] {
+            let packet = |timestamp, data: &[u8]| {
+                FlvData::Tag(FlvTag::new(
+                    timestamp,
+                    0,
+                    kind,
+                    false,
+                    bytes::Bytes::copy_from_slice(data),
+                ))
+            };
+            // (input timestamp, payload, expected output timestamp)
+            let cases = [
+                (0, media, 0),
+                (interval, media, interval),
+                // Forward jump: media is pulled back to the next interval.
+                (5000, media, 2 * interval),
+                // Headers take the current offset without moving media timing.
+                (5000, config, 2 * interval),
+                // The same offset would be negative here, so it clamps to 0.
+                (0, config, 0),
+                (5000 + interval, media, 3 * interval),
+                // Rebound: media is pushed forward to the next interval.
+                (0, media, 4 * interval),
+                (0, config, 4 * interval),
+                (interval, media, 5 * interval),
+            ];
+            let video = kind == FlvTagType::Video;
+            let header = FlvData::Header(flv::FlvHeader::new(!video, video));
+            let input = std::iter::once(header.clone())
+                .chain(cases.iter().map(|&(ts, data, _)| packet(ts, data)))
+                .collect();
+            let expected: Vec<_> = std::iter::once(header)
+                .chain(cases.iter().map(|&(_, data, ts)| packet(ts, data)))
+                .collect();
+            assert_eq!(
+                process_tags_through_operator(
+                    TimingRepairConfig {
+                        strategy: RepairStrategy::Strict,
+                        default_frame_rate: 10.0,
+                        ..Default::default()
+                    },
+                    input,
+                ),
+                expected,
+                "{kind:?}"
+            );
+        }
     }
 
     #[test]

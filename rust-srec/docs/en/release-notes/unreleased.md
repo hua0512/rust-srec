@@ -6,6 +6,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 
 ## Before upgrading
 
+- **Mesio Loop Protection:** Loop Protection and Offset Consistency Check are now off by default. Engines saved with an earlier version keep their settings, so these options may still be on; turn them off in **FLV Tuning** if you do not need them. See [Loop Protection](../concepts/engines.md#loop-protection).
 - **Sign-in sessions:** Existing access tokens need a refresh with a valid refresh token or a new sign-in. Logout, password changes, and successful configuration imports now revoke the affected login sessions. API clients must serialize token refreshes; reusing a consumed refresh token can revoke all sessions for that user. See [session security](../operations/security.md#revocable-login-sessions).
 - **Previously exposed credentials:** New logs redact cookies, tokens, and passwords. Existing logs are not rewritten. Rotate credentials that appeared in logs you shared.
 - **Filter timezones:** New filters default to UTC. Migration and legacy-backup import preserve existing TimeBased local schedules. Editors now expose UTC, server-local, and IANA timezone choices. See [timezone compatibility](../operations/upgrading.md#filter-timezone-compatibility).
@@ -28,6 +29,8 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 
 ## Recording and recovery
 
+- AV1 recordings split by size or duration now start with the headers needed for playback, and repeated stream headers no longer disturb timestamps. E-AC-3 streams are now labelled with the standard codec name in file metadata.
+- Loop Protection now removes only packets that exactly match earlier ones. It keeps copies of recent packets, up to 16 MiB per recording.
 - Fixed shutdown ordering so recording tools can finalize files, save final segments, and close chat files before exit. Child processes are stopped with the application, including on macOS when the parent process is already exiting.
 - Added a standalone shutdown deadline of 30 seconds by default. Configure `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` and keep Docker's stop grace period longer. Forced or incomplete shutdowns are reported at the next startup; recovery warnings clear only after confirmed recovery. See [shutdown settings](../reference/environment.md#shutdown).
 - Added cooperative stopping for supported Streamlink 8.5.0 readers so buffered data can reach FFmpeg before finalization. Unsupported readers and forced stops report incomplete draining. See [supported readers and limits](../concepts/engines.md#stopping-streamlink-recordings).

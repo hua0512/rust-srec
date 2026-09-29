@@ -16,6 +16,7 @@ tokio-util = { workspace = true, features = ["io", "codec"] }
 futures = { workspace = true, features = ["std"] }
 bytes-util = { path = "../bytes-util" }
 amf0 = { path = "../amf0" }
+aac = { path = "../aac" }
 av1 = { path = "../av1" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }

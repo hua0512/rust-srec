@@ -1,9 +1,7 @@
-// This
+use std::{fmt, io};
 
-use std::io;
-
+use ::aac::PartialAudioSpecificConfig;
 use bytes::Bytes;
-use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AacPacketType {
@@ -70,44 +68,26 @@ impl AacPacket {
     }
 
     pub(crate) fn is_stereo(&self) -> bool {
-        match self {
-            AacPacket::SequenceHeader(data)
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
-            {
-                let channel_config = (data[3] >> 3) & 0x0F;
-                channel_config == 2 // Stereo
-            }
-            _ => false,
-        }
+        self.config()
+            .is_some_and(|config| config.channel_configuration == 2)
     }
 
     pub(crate) fn sample_rate(&self) -> f32 {
-        match self {
-            AacPacket::SequenceHeader(data)
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
-            {
-                let sample_rate_index = (data[2] >> 2) & 0x03;
-                match sample_rate_index {
-                    0 => 96000.0,
-                    1 => 88200.0,
-                    2 => 64000.0,
-                    3 => 48000.0,
-                    _ => 44100.0,
-                }
-            }
-            _ => 44100.0,
-        }
+        self.config()
+            .map_or(0.0, |config| config.sampling_frequency as f32)
     }
 
     pub(crate) fn sample_size(&self) -> u32 {
+        // FLV's AAC sample-size convention is 16 bits; AudioSpecificConfig
+        // does not contain a PCM sample-size field (FLV Annex E.4.2.1).
+        16
+    }
+
+    fn config(&self) -> Option<PartialAudioSpecificConfig> {
+        // FLV carries AudioSpecificConfig, not an ADTS frame header.
         match self {
-            AacPacket::SequenceHeader(data)
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
-            {
-                let sample_size = (data[2] >> 4) & 0x0F;
-                sample_size as u32
-            }
-            _ => 16,
+            AacPacket::SequenceHeader(data) => PartialAudioSpecificConfig::parse(data).ok(),
+            _ => None,
         }
     }
 }
@@ -150,31 +130,39 @@ impl fmt::Display for AacPacketType {
 mod tests {
     use super::*;
 
+    fn decode_sequence_header(config: &[u8]) -> crate::audio::AudioData {
+        let mut payload = vec![0xaf, 0];
+        payload.extend_from_slice(config);
+        crate::FlvTag::new(0, 0, crate::FlvTagType::Audio, false, Bytes::from(payload))
+            .decode_audio()
+            .unwrap()
+    }
+
     #[test]
-    fn test_new() {
-        // Test AAC Sequence Header packet
-        let seq_header_data = Bytes::from(vec![0, 1, 2, 3]);
-        let seq_header_packet =
-            AacPacket::new(AacPacketType::SequenceHeader, seq_header_data.clone());
-        assert_eq!(
-            seq_header_packet,
-            AacPacket::SequenceHeader(seq_header_data)
-        );
+    fn audio_specific_config_controls_rate_and_channels() {
+        for (data, rate, stereo) in [
+            (&[0x12, 0x10][..], 44100.0, true),
+            (&[0x11, 0x90][..], 48000.0, true),
+            (&[0x11, 0x88][..], 48000.0, false),
+            // AAC LC, explicit 24-bit sampling frequency of 48000 Hz, stereo.
+            (&[0x17, 0x80, 0x5d, 0xc0, 0x10][..], 48000.0, true),
+        ] {
+            let audio = decode_sequence_header(data);
+            assert!(audio.body.is_sequence_header());
+            assert_eq!(audio.body.sample_rate(), rate, "config {data:02x?}");
+            assert_eq!(audio.body.is_stereo(), stereo, "config {data:02x?}");
+            assert_eq!(audio.body.sample_size(), 16);
+        }
+    }
 
-        // Test AAC Raw packet
-        let raw_data = Bytes::from(vec![4, 5, 6, 7]);
-        let raw_packet = AacPacket::new(AacPacketType::Raw, raw_data.clone());
-        assert_eq!(raw_packet, AacPacket::Raw(raw_data));
-
-        // Test that the AacPacket::new method properly handles the different packet types
-        assert!(matches!(
-            AacPacket::new(AacPacketType::SequenceHeader, Bytes::new()),
-            AacPacket::SequenceHeader(_)
-        ));
-        assert!(matches!(
-            AacPacket::new(AacPacketType::Raw, Bytes::new()),
-            AacPacket::Raw(_)
-        ));
+    #[test]
+    fn truncated_config_accessors_do_not_panic_or_invent_a_rate() {
+        for data in [&[0xff, 0xf1][..], &[][..], &[0x12][..], &[0x17, 0x80][..]] {
+            let audio = decode_sequence_header(data);
+            assert_eq!(audio.body.sample_size(), 16, "config {data:02x?}");
+            assert!(!audio.body.is_stereo(), "config {data:02x?}");
+            assert_eq!(audio.body.sample_rate(), 0.0, "config {data:02x?}");
+        }
     }
 
     #[test]

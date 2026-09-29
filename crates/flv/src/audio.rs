@@ -261,6 +261,7 @@ impl AudioDataBody {
         }
     }
 
+    /// Returns the AAC configuration's sampling frequency, or zero when unknown.
     pub fn sample_rate(&self) -> f32 {
         match self {
             AudioDataBody::Aac(packet) => packet.sample_rate(),
@@ -353,24 +354,20 @@ pub enum AudioFourCC {
 impl AudioFourCC {
     pub fn from_u32(value: u32) -> Result<Self, io::Error> {
         Ok(match value {
-            // Note: The spec uses ASCII representations, but maps them to these u32 values
-            // in the binary stream. We'll use the numeric values for matching.
-            // These values seem arbitrary in the spec draft, double check if finalized.
-            // Let's assume the spec means these literal u32 values for now.
-            // If it meant the ASCII codes as u32, e.g., 'Opus' -> 0x4f707573, adjust accordingly.
-            // The current spec text is a bit ambiguous here. Assuming numeric mapping:
+            // Enhanced RTMP AudioFourCc values, packed in network byte order.
             0x61632D33 => AudioFourCC::Ac3,  // "ac-3"
-            0x6561632D => AudioFourCC::Eac3, // "eac-" (assuming eac-3)
+            0x65632D33 => AudioFourCC::Eac3, // "ec-3"
             0x4F707573 => AudioFourCC::Opus, // "Opus"
             0x2E6D7033 => AudioFourCC::Mp3,  // ".mp3"
             0x664C6143 => AudioFourCC::Flac, // "fLaC"
-            0x6D703461 => AudioFourCC::Aac,  // "mp4a" (Common FourCC for AAC)
-            // Alternative AAC FourCC if needed: 0x61616300 => AudioFourCC::Aac, // "aac\0"
+            0x6D703461 => AudioFourCC::Aac,  // "mp4a"
             _ => {
-                // Try matching common ASCII representations as well
+                // Historical aliases are accepted only on read.
                 match value {
-                    0x65616333 => AudioFourCC::Eac3, // "eac3"
-                    0x61616300 => AudioFourCC::Aac,  // "aac\0" (as used in as_bytes)
+                    // Accept identifiers emitted by older versions; write the
+                    // Enhanced RTMP AudioFourCc value "ec-3" for new metadata.
+                    0x6561632D | 0x65616333 => AudioFourCC::Eac3,
+                    0x61616300 => AudioFourCC::Aac, // "aac\0"
                     _ => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
@@ -385,11 +382,11 @@ impl AudioFourCC {
     /// Returns the canonical 32-bit big-endian value of the FourCC.
     ///
     /// Matches `as_bytes`; `from_u32` additionally accepts the alternate
-    /// spellings ("eac-", "aac\0") as input.
+    /// spellings ("eac-", "eac3", "aac\0") as input.
     pub const fn as_u32(&self) -> u32 {
         match self {
             AudioFourCC::Ac3 => 0x61632D33,  // "ac-3"
-            AudioFourCC::Eac3 => 0x65616333, // "eac3"
+            AudioFourCC::Eac3 => 0x65632D33, // "ec-3"
             AudioFourCC::Opus => 0x4F707573, // "Opus"
             AudioFourCC::Mp3 => 0x2E6D7033,  // ".mp3"
             AudioFourCC::Flac => 0x664C6143, // "fLaC"
@@ -400,7 +397,7 @@ impl AudioFourCC {
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
             AudioFourCC::Ac3 => b"ac-3", // Use consistent representation
-            AudioFourCC::Eac3 => b"eac3",
+            AudioFourCC::Eac3 => b"ec-3",
             AudioFourCC::Opus => b"Opus",
             AudioFourCC::Mp3 => b".mp3",
             AudioFourCC::Flac => b"fLaC", // Match spec example
@@ -857,6 +854,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn enhanced_eac3_uses_the_standard_fourcc() {
+        assert_eq!(
+            AudioFourCC::from_u32(u32::from_be_bytes(*b"ec-3")).unwrap(),
+            AudioFourCC::Eac3
+        );
+        assert_eq!(AudioFourCC::Eac3.as_u32().to_be_bytes(), *b"ec-3");
+        assert_eq!(AudioFourCC::Eac3.as_bytes(), b"ec-3");
+        let tag = crate::FlvTag::new(
+            0,
+            0,
+            crate::FlvTagType::Audio,
+            false,
+            Bytes::from_static(b"\x90ec-3\0"),
+        );
+        assert_eq!(
+            tag.get_audio_codec(),
+            Some(AudioCodec::Enhanced(AudioFourCC::Eac3))
+        );
+        assert!(tag.is_audio_sequence_header());
+        assert_eq!(
+            tag.decode_audio().unwrap(),
+            AudioData {
+                header: AudioHeader {
+                    sound_format: SoundFormat::ExHeader,
+                    packet: AudioPacket::AudioPacketType(AudioPacketType::SequenceStart),
+                },
+                // E-AC-3 configuration stays opaque to this demuxer.
+                body: AudioDataBody::Unknown {
+                    data: Bytes::from_static(b"\0")
+                },
+            }
+        );
+    }
+
+    #[test]
     fn test_parse_aac_audio_packet() {
         let mut reader = io::Cursor::new(Bytes::from(vec![0b10101101, 0b00000000, 1, 2, 3]));
         let audio_data = AudioData::demux(&mut reader, None).unwrap();
@@ -943,7 +975,7 @@ mod tests {
             (AudioCodec::Legacy(SoundFormat::Aac), 10),
             (AudioCodec::Legacy(SoundFormat::Mp3), 2),
             (AudioCodec::Enhanced(AudioFourCC::Ac3), 0x6163_2D33),
-            (AudioCodec::Enhanced(AudioFourCC::Eac3), 0x6561_6333),
+            (AudioCodec::Enhanced(AudioFourCC::Eac3), 0x6563_2D33),
             (AudioCodec::Enhanced(AudioFourCC::Opus), 0x4F70_7573),
             (AudioCodec::Enhanced(AudioFourCC::Mp3), 0x2E6D_7033),
             (AudioCodec::Enhanced(AudioFourCC::Flac), 0x664C_6143),
