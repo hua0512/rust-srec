@@ -125,8 +125,7 @@ mod tests {
 
     use super::FlvEncoder;
 
-    #[test]
-    fn complete_stream_matches_spec_bytes_and_round_trips() {
+    fn sample_stream() -> (FlvHeader, [FlvTag; 3]) {
         let header = FlvHeader::new(true, true);
         let tags = [
             FlvTag::new(
@@ -136,7 +135,8 @@ mod tests {
                 false,
                 Bytes::from_static(b"\xaf\0\x12\x10"),
             ),
-            // Legacy video command: end of client-side seeking.
+            // Legacy video command: end of client-side seeking. The timestamp
+            // needs the extended byte.
             FlvTag::new(
                 0x1234_5678,
                 0,
@@ -153,13 +153,37 @@ mod tests {
                 Bytes::from_static(b"opaque"),
             ),
         ];
-        // FLV Annex E.3/E.4 wire bytes, independent of either encoder's helpers.
-        let expected = [
-            b'F', b'L', b'V', 1, 5, 0, 0, 0, 9, 0, 0, 0, 0, 8, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xaf,
-            0, 0x12, 0x10, 0, 0, 0, 15, 9, 0, 0, 2, 0x34, 0x56, 0x78, 0x12, 0, 0, 0, 0x57, 1, 0, 0,
-            0, 13, 0x28, 0, 0, 6, 0x34, 0x56, 0x79, 0x12, 0, 0, 0, b'o', b'p', b'a', b'q', b'u',
-            b'e', 0, 0, 0, 17,
-        ];
+        (header, tags)
+    }
+
+    /// FLV Annex E.3/E.4 wire bytes for `sample_stream`, written by hand so
+    /// they are independent of either encoder.
+    fn sample_stream_bytes() -> Vec<u8> {
+        [
+            // Signature, version 1, audio+video flags, header size 9.
+            &b"FLV\x01\x05\0\0\0\x09"[..],
+            // PreviousTagSize0.
+            b"\0\0\0\0",
+            // Audio: type 8, size 4, timestamp 0, stream ID 0.
+            b"\x08\0\0\x04\0\0\0\0\0\0\0",
+            b"\xaf\0\x12\x10",
+            // PreviousTagSize: 11-byte tag header + 4.
+            b"\0\0\0\x0f",
+            // Video: type 9, size 2, timestamp 0x345678 + extended byte 0x12.
+            b"\x09\0\0\x02\x34\x56\x78\x12\0\0\0",
+            b"\x57\x01",
+            b"\0\0\0\x0d",
+            // Audio with the Filter bit (0x20 | 8), size 6.
+            b"\x28\0\0\x06\x34\x56\x79\x12\0\0\0",
+            b"opaque",
+            b"\0\0\0\x11",
+        ]
+        .concat()
+    }
+
+    #[test]
+    fn async_encoder_and_sync_writer_emit_spec_bytes() {
+        let (header, tags) = sample_stream();
         let mut encoded = BytesMut::new();
         let mut encoder = FlvEncoder::default();
         encoder
@@ -173,10 +197,17 @@ mod tests {
                 .unwrap();
             writer.write_tag_f(tag).unwrap();
         }
+        let expected = sample_stream_bytes();
         assert_eq!(encoded.as_ref(), expected);
         assert_eq!(writer.writer.get_ref().as_slice(), expected);
+    }
 
-        let mut reader = Cursor::new(&expected);
+    #[test]
+    fn spec_bytes_round_trip_through_sync_and_async_parsers() {
+        let (header, tags) = sample_stream();
+        let bytes = sample_stream_bytes();
+
+        let mut reader = Cursor::new(&bytes);
         assert_eq!(FlvParser::parse_header(&mut reader).unwrap(), header);
         let mut parsed = Vec::new();
         FlvParser::parse_tags_with_prev_tag_size_mode(
@@ -187,21 +218,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(parsed, tags);
-        assert_eq!(reader.position(), expected.len() as u64);
+        assert_eq!(reader.position(), bytes.len() as u64);
 
+        let mut buffer = BytesMut::from(&bytes[..]);
         let mut decoder = FlvDecoder::default();
         assert_eq!(
-            decoder.decode_eof(&mut encoded).unwrap(),
+            decoder.decode_eof(&mut buffer).unwrap(),
             Some(FlvData::Header(header))
         );
         for tag in tags {
             assert_eq!(
-                decoder.decode_eof(&mut encoded).unwrap(),
+                decoder.decode_eof(&mut buffer).unwrap(),
                 Some(FlvData::Tag(tag))
             );
         }
-        assert!(decoder.decode_eof(&mut encoded).unwrap().is_none());
-        assert!(encoded.is_empty());
+        assert!(decoder.decode_eof(&mut buffer).unwrap().is_none());
+        assert!(buffer.is_empty());
     }
 
     #[test]

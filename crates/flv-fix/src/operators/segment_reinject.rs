@@ -118,6 +118,7 @@ mod tests {
     use flv::FlvTagType;
 
     use super::*;
+    use crate::test_utils::fixtures::{AAC_LC_CONFIG, AV1_CODEC_CONFIG};
 
     struct DecoderBuffer {
         data: Vec<u8>,
@@ -141,10 +142,11 @@ mod tests {
         for zero_timestamp in [false, true] {
             let drops = Arc::new(AtomicUsize::new(0));
             let mut data = vec![0; 1024 * 1024];
+            let av1_sequence_start = [&b"\x90av01"[..], AV1_CODEC_CONFIG].concat();
             let payloads: [&[u8]; 3] = [
                 b"\x02\0\x0aonMetaData\x03\0\0\x09",
-                b"\x90av01\x81\0\x0c\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80",
-                b"\xaf\0\x12\x10",
+                &av1_sequence_start,
+                AAC_LC_CONFIG,
             ];
             for (index, payload) in payloads.iter().enumerate() {
                 data[index * 128..index * 128 + payload.len()].copy_from_slice(payload);

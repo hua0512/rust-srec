@@ -165,3 +165,36 @@ pub fn print_tags(items: &[FlvData]) {
         }
     }
 }
+
+/// Real codec payloads (FLV tag bodies) for operators that inspect codec data.
+/// FFmpeg is only needed to regenerate them, not to run tests.
+pub mod fixtures {
+    /// Legacy AAC-LC sequence header: 44.1 kHz stereo AudioSpecificConfig.
+    pub const AAC_LC_CONFIG: &[u8] = b"\xaf\0\x12\x10";
+
+    /// Legacy AAC-LC stereo silence, one 1024-sample raw_data_block at 44.1 kHz.
+    /// Second audio packet of:
+    /// `ffmpeg -f lavfi -i anullsrc=r=44100:cl=stereo -frames:a 2 -c:a aac -f flv silence.flv`
+    pub const AAC_LC_SILENCE: &[u8] = b"\xaf\x01\x21\x10\x04\x60\x8c\x1c";
+    /// `AAC_LC_SILENCE` in Enhanced-RTMP `CodedFrames` framing.
+    pub const AAC_LC_SILENCE_ENHANCED: &[u8] = b"\x91mp4a\x21\x10\x04\x60\x8c\x1c";
+
+    // Legacy AVC 16x16 black video, SEI omitted:
+    // `ffmpeg -f lavfi -i color=c=black:s=16x16:r=10 -t 2 -c:v libx264
+    //  -preset ultrafast -tune zerolatency -g 10 -f flv black.flv`
+    /// AVCDecoderConfigurationRecord from the command above.
+    pub const AVC_CONFIG_16X16: &[u8] = b"\x17\0\0\0\0\x01\x42\xc0\x0a\xff\xe1\0\x15\x67\x42\xc0\x0a\xda\x7b\x01\x10\0\0\x03\0\x10\0\0\x03\x01\x48\xf1\x22\x6a\x01\0\x04\x68\xce\x0f\xc8";
+    /// IDR frame from the command above.
+    pub const AVC_IDR_16X16: &[u8] =
+        b"\x17\x01\0\0\0\0\0\0\x0a\x65\x88\x84\x3a\x26\x28\0\x09\x02\xe0";
+    /// P frame from the command above.
+    pub const AVC_P_16X16: &[u8] = b"\x27\x01\0\0\0\0\0\0\x05\x41\x9a\x20\x32\x94";
+
+    // Enhanced-RTMP AV1 16x16 black keyframe:
+    // `ffmpeg -f lavfi -i color=c=black:s=16x16:r=10 -frames:v 1
+    //  -c:v libaom-av1 -cpu-used 8 -g 1 -crf 40 -f flv black.flv`
+    /// AV1CodecConfigurationRecord (av1C) from the command above, without FLV framing.
+    pub const AV1_CODEC_CONFIG: &[u8] = b"\x81\0\x0c\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80";
+    /// Keyframe (`CodedFrames`) tag body from the command above.
+    pub const AV1_KEYFRAME: &[u8] = b"\x91av01\x12\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80\x32\x0e\x10\0\xd0\0\0\x02\x80\0\0\0\xa9\x8e\x5e\xd0";
+}

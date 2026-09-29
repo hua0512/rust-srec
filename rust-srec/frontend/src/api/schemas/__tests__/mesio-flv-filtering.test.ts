@@ -35,15 +35,25 @@ describe('Mesio FLV filtering configuration', () => {
     },
   );
 
-  it('keeps partial overrides partial and validates the retained-payload budget', () => {
+  it('keeps partial overrides partial', () => {
     const partial = {
       flv_fix: { duplicate_tag_filter_config: { window_capacity_bytes: 0 } },
     };
     expect(MesioConfigOverrideSchema.parse(partial)).toEqual(partial);
-    expect(
-      MesioConfigSchema.safeParse({
-        flv_fix: { duplicate_tag_filter_config: { window_capacity_bytes: -1 } },
-      }).success,
-    ).toBe(false);
   });
+
+  it.each([
+    ['full config', MesioConfigSchema],
+    ['override', MesioConfigOverrideSchema],
+  ] as const)(
+    'rejects a negative or fractional payload budget in the %s schema',
+    (_, schema) => {
+      for (const window_capacity_bytes of [-1, 1.5]) {
+        const config = {
+          flv_fix: { duplicate_tag_filter_config: { window_capacity_bytes } },
+        };
+        expect(schema.safeParse(config).success).toBe(false);
+      }
+    },
+  );
 });

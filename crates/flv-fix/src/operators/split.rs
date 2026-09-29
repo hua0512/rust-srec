@@ -827,17 +827,18 @@ mod tests {
 
     #[test]
     fn timestamp_modifiers_are_ignored_but_inner_configuration_changes_split() {
+        use crate::test_utils::fixtures::{
+            AAC_LC_SILENCE_ENHANCED, AV1_CODEC_CONFIG, AV1_KEYFRAME,
+        };
         use flv::FlvTagType::{Audio, Video};
-        let av1_config = b"\x81\0\x0c\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80";
-        let av1_frame = b"\x91av01\x12\0\x0a\x0a\0\0\0\x01\x9f\xf9\xb5\xf2\0\x80\x32\x0e\x10\0\xd0\0\0\x02\x80\0\0\0\xa9\x8e\x5e\xd0";
         for (kind, codec, config, frame) in [
             (
                 Audio,
                 &b"mp4a"[..],
                 &b"\x12\x10"[..],
-                &b"\x91mp4a\x21\x10\x04\x60\x8c\x1c"[..],
+                AAC_LC_SILENCE_ENHANCED,
             ),
-            (Video, &b"av01"[..], &av1_config[..], &av1_frame[..]),
+            (Video, &b"av01"[..], AV1_CODEC_CONFIG, AV1_KEYFRAME),
         ] {
             let mut plain = vec![0x90];
             plain.extend_from_slice(codec);
