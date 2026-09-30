@@ -19,6 +19,7 @@ use tracing::{debug, trace, warn};
 use url::Url;
 
 use crate::hls::twitch_processor::{PREFETCH_SEGMENT_TITLE, TwitchPlaylistProcessor};
+use crate::redact::redact_url_str;
 
 use super::super::soop_processor::is_preloading_segment;
 
@@ -285,7 +286,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                     planned.descriptors.push(descriptor);
                 }
             } else {
-                warn!(msn, uri = %final_map_uri, "unparseable init map URI");
+                warn!(msn, uri = %redact_url_str(&final_map_uri), "unparseable init map URI");
             }
         }
 
@@ -361,7 +362,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                         if deciding {
                             warn!(
                                 msn,
-                                uri = %effective_uri,
+                                uri = %redact_url_str(&effective_uri),
                                 "skipping BYTERANGE segment with no explicit offset and no prior range to infer from"
                             );
                             skip(&mut planned, msn);
@@ -378,7 +379,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // --- Ad filtering (planner policy; the watcher only preprocesses) ---
         if scanned.is_ad {
             if deciding {
-                debug!(msn, uri = %segment.uri, "dropping ad segment");
+                debug!(msn, uri = %redact_url_str(&segment.uri), "dropping ad segment");
                 skip(&mut planned, msn);
             }
             continue;
@@ -389,7 +390,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // the playlist row so MSN = window_start + idx stays consistent.
         if ctx.soop && is_preloading_segment(segment) {
             if deciding {
-                debug!(msn, uri = %segment.uri, "dropping SOOP preloading placeholder");
+                debug!(msn, uri = %redact_url_str(&segment.uri), "dropping SOOP preloading placeholder");
                 skip(&mut planned, msn);
             }
             continue;
@@ -398,7 +399,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // --- Resolve, inherit query params, build identity ---
         let Some(absolute_uri) = resolve_uri(&base_url, &effective_uri) else {
             if deciding {
-                warn!(msn, uri = %effective_uri, "skipping segment with unresolvable URI");
+                warn!(msn, uri = %redact_url_str(&effective_uri), "skipping segment with unresolvable URI");
                 skip(&mut planned, msn);
             }
             continue;
@@ -407,7 +408,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         let Ok(parsed_url) = Url::parse(&final_uri) else {
             // A malformed URL never produces a job (terminal by construction).
             if deciding {
-                warn!(msn, uri = %final_uri, "skipping segment with malformed URL");
+                warn!(msn, uri = %redact_url_str(&final_uri), "skipping segment with malformed URL");
                 skip(&mut planned, msn);
             }
             continue;
@@ -428,7 +429,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         });
         media_segment.discontinuity = scanned.discontinuity;
 
-        trace!(msn, uri = %media_segment.uri, ?source, "planned segment");
+        trace!(msn, uri = %redact_url_str(&media_segment.uri), ?source, "planned segment");
         planned.descriptors.push(SegmentDescriptor {
             key: SegmentKey {
                 kind: SegmentKind::Media,

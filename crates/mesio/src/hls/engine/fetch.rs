@@ -23,6 +23,7 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::segment_utils::is_m4s_segment;
+use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 use super::budget::{ByteBudget, ByteReservation};
@@ -342,7 +343,7 @@ async fn download_once(
     .map_err(|e| {
         let class = classify_reqwest(&e);
         (
-            Failure::new(class, e.to_string()),
+            Failure::new(class, crate::redact::redact_reqwest(e).to_string()),
             matches!(class, FailureClass::Network | FailureClass::Timeout),
         )
     })?;
@@ -351,7 +352,7 @@ async fn download_once(
     if !status.is_success() {
         let failure = Failure::new(
             FailureClass::Http(status.as_u16()),
-            format!("HTTP {status} for {url}"),
+            format!("HTTP {status} for {}", Redacted(url)),
         );
         // 5xx gets one quick attempt-level retry; 4xx goes straight to the
         // store (it owns 404/429 pacing and the 401/403 freshness rule).
@@ -365,7 +366,7 @@ async fn download_once(
         ctx,
         DownloadEvent::ResourceStarted {
             resource: ResourceId::HlsSegment { key: key.clone() },
-            display_url: Arc::from(url.as_str()),
+            display_url: Arc::from(Redacted(url).to_string()),
             content_length,
         },
     );
@@ -434,7 +435,10 @@ async fn download_once(
         let Some(chunk) = chunk else { break };
         let chunk = chunk.map_err(|e| {
             let class = classify_reqwest(&e);
-            (Failure::new(class, e.to_string()), true)
+            (
+                Failure::new(class, crate::redact::redact_reqwest(e).to_string()),
+                true,
+            )
         })?;
         let chunk = match window.as_mut() {
             Some(window) => window.keep(chunk),
@@ -524,7 +528,7 @@ async fn download_once(
             from_cache: false,
         },
     );
-    trace!(size = bytes.len(), %url, "segment downloaded");
+    trace!(size = bytes.len(), url = %Redacted(url), "segment downloaded");
     Ok(bytes)
 }
 
@@ -768,7 +772,7 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
                         resource: ResourceId::HlsKey {
                             uri: Arc::clone(&identity),
                         },
-                        display_url: Arc::from(fetch_url.as_str()),
+                        display_url: Arc::from(Redacted(&fetch_url).to_string()),
                         content_length: None,
                     });
                 }
@@ -782,7 +786,7 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
                             .timeout(fetcher.key_download_timeout)
                             .send()
                             .await
-                            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+                            .map_err(HlsDownloaderError::from)?;
                         let status = response.status();
                         if !status.is_success() {
                             return Err(HlsDownloaderError::http_status(
@@ -791,10 +795,7 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
                                 "hls key fetch",
                             ));
                         }
-                        let bytes = response
-                            .bytes()
-                            .await
-                            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+                        let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
                         validate_key_bytes(&bytes, &identity)
                     };
                     let error = match attempt.await {

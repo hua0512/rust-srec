@@ -1768,3 +1768,48 @@ async fn flv_body_error_is_not_reported_as_a_finished_resource() {
         "{collected:?}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_http_errors_do_not_echo_signed_url_tokens() {
+    use mesio_engine::flv::FlvDownloader;
+
+    let origin = Origin::new();
+    origin.add_file_failing("stream.flv", minimal_flv_bytes(), 403, u32::MAX);
+    let base = origin.clone().serve().await;
+    let downloader = FlvDownloader::new().expect("downloader builds");
+
+    let error = downloader
+        .start_session(flv_request(&format!(
+            "{base}/stream.flv?wsSecret=topsecret&wsTime=1"
+        )))
+        .await
+        .map(|_| ())
+        .expect_err("403");
+
+    let message = error.to_string();
+    assert!(!message.contains("topsecret"), "{message}");
+    assert!(message.contains("wsSecret=***"), "{message}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hls_playlist_errors_do_not_echo_signed_url_tokens() {
+    use mesio_engine::hls::HlsDownloader;
+
+    // No playlist is scripted, so the playlist path 404s.
+    let origin = Origin::new();
+    origin.serve_playlists_at("never-served.m3u8");
+    let base = origin.clone().serve().await;
+    let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8?token=topsecret"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+
+    let error = downloader
+        .start_session(request)
+        .await
+        .map(|_| ())
+        .expect_err("404");
+
+    let message = error.to_string();
+    assert!(!message.contains("topsecret"), "{message}");
+}

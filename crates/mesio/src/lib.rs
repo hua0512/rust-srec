@@ -25,6 +25,7 @@ pub mod flv;
 pub mod hls;
 pub mod protocol_builder;
 pub mod proxy;
+pub mod redact;
 pub mod session;
 pub mod source;
 

@@ -385,7 +385,10 @@ impl MesioDownloader {
     pub fn detect_protocol(url: &str) -> Result<ProtocolType, DownloadError> {
         let url = Url::parse(url).map_err(|e| {
             DownloadError::invalid_url(
-                format!("Failed to parse URL for protocol detection: {url}"),
+                format!(
+                    "Failed to parse URL for protocol detection: {}",
+                    crate::redact::redact_url_str(url)
+                ),
                 e.to_string(),
             )
         })?;
@@ -411,7 +414,7 @@ impl MesioDownloader {
         }
 
         Err(DownloadError::ProtocolDetectionFailed {
-            url: url.to_string(),
+            url: crate::redact::redact_url(&url).to_string(),
         })
     }
 

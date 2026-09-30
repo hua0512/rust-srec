@@ -6,6 +6,7 @@ use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
+use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, VariantStream, parse_playlist_res};
 use std::borrow::Cow;
@@ -57,7 +58,10 @@ impl PlaylistEngine {
         url_str: &str,
     ) -> Result<InitialPlaylist, HlsDownloaderError> {
         let playlist_url = Url::parse(url_str).map_err(|e| HlsDownloaderError::Playlist {
-            reason: format!("Invalid playlist URL {url_str}: {e}"),
+            reason: format!(
+                "Invalid playlist URL {}: {e}",
+                crate::redact::redact_url_str(url_str)
+            ),
         })?;
         let cache_key = CacheKey::new(CacheResourceType::Playlist, playlist_url.as_str(), None);
 
@@ -85,7 +89,7 @@ impl PlaylistEngine {
             &self.events,
             DownloadEvent::ResourceStarted {
                 resource: resource.clone(),
-                display_url: Arc::from(playlist_url.as_str()),
+                display_url: Arc::from(Redacted(&playlist_url).to_string()),
                 content_length: None,
             },
         );
@@ -95,11 +99,12 @@ impl PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+            .map_err(HlsDownloaderError::from)?;
         if !response.status().is_success() {
             return Err(HlsDownloaderError::Playlist {
                 reason: format!(
-                    "Failed to fetch playlist {playlist_url}: HTTP {}",
+                    "Failed to fetch playlist {}: HTTP {}",
+                    Redacted(&playlist_url),
                     response.status()
                 ),
             });
@@ -107,10 +112,7 @@ impl PlaylistEngine {
         // Relative URIs resolve against the document actually served, which
         // differs from the requested URL after a redirect.
         let document_url = response.url().clone();
-        let playlist_bytes = response
-            .bytes()
-            .await
-            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        let playlist_bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {
@@ -161,7 +163,8 @@ impl PlaylistEngine {
             })?;
         debug!(
             "Derived base URL from playlist: {} -> {}",
-            document_url, base_url
+            Redacted(document_url),
+            base_url
         );
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
@@ -201,7 +204,10 @@ impl PlaylistEngine {
                 ),
             })?;
 
-        debug!("Selected media playlist URL: {media_playlist_url}");
+        debug!(
+            "Selected media playlist URL: {}",
+            Redacted(&media_playlist_url)
+        );
         let client = self.clients.client_for_url(&media_playlist_url);
         let resource = ResourceId::HlsPlaylist {
             url: Arc::from(media_playlist_url.as_str()),
@@ -210,7 +216,7 @@ impl PlaylistEngine {
             &self.events,
             DownloadEvent::ResourceStarted {
                 resource: resource.clone(),
-                display_url: Arc::from(media_playlist_url.as_str()),
+                display_url: Arc::from(Redacted(&media_playlist_url).to_string()),
                 content_length: None,
             },
         );
@@ -220,20 +226,18 @@ impl PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+            .map_err(HlsDownloaderError::from)?;
         if !response.status().is_success() {
             return Err(HlsDownloaderError::Playlist {
                 reason: format!(
-                    "Failed to fetch media playlist {media_playlist_url}: HTTP {}",
+                    "Failed to fetch media playlist {}: HTTP {}",
+                    Redacted(&media_playlist_url),
                     response.status()
                 ),
             });
         }
         let document_url = response.url().clone();
-        let playlist_bytes = response
-            .bytes()
-            .await
-            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        let playlist_bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {

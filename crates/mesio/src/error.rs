@@ -18,15 +18,14 @@ pub enum DownloadError {
     #[error("proxy configuration error: {reason}")]
     ProxyConfiguration { reason: String },
 
+    /// Construct via `From`, which redacts the URL in reqwest's message.
     #[error("HTTP request failed: {source}")]
-    Network {
-        #[from]
-        source: reqwest::Error,
-    },
+    Network { source: reqwest::Error },
 
     #[error("stream network error: {reason}")]
     StreamNetwork { reason: String },
 
+    /// `url` is redacted (see [`crate::redact`]).
     #[error("request failed with HTTP {status} during {operation} for {url}")]
     HttpStatus {
         status: StatusCode,
@@ -107,7 +106,7 @@ impl DownloadError {
     ) -> Self {
         Self::HttpStatus {
             status,
-            url: url.into(),
+            url: crate::redact::redact_url_str(&url.into()),
             operation,
         }
     }
@@ -129,6 +128,14 @@ impl DownloadError {
             Self::StreamNetwork { .. } => false,
             Self::SegmentFetch { retryable, .. } => !retryable,
             _ => false,
+        }
+    }
+}
+
+impl From<reqwest::Error> for DownloadError {
+    fn from(source: reqwest::Error) -> Self {
+        Self::Network {
+            source: crate::redact::redact_reqwest(source),
         }
     }
 }

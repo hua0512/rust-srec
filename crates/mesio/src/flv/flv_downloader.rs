@@ -20,6 +20,7 @@ use tracing::{debug, info, warn};
 use super::error::FlvDownloadError;
 use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
+use crate::redact::Redacted;
 use crate::{BoxMediaStream, DownloadError, downloader::create_client_pool};
 use crate::{
     DownloadEvent, DownloadRequest, DownloadSession, EventSink, MediaEngine, ProtocolSelection,
@@ -63,7 +64,7 @@ impl FlvDownloader {
         let reason = status.canonical_reason().unwrap_or("unknown");
         if status == StatusCode::NOT_FOUND {
             warn!(
-                url = %url,
+                url = %Redacted(url),
                 status = %status,
                 reason,
                 context,
@@ -71,7 +72,7 @@ impl FlvDownloader {
             );
         } else {
             warn!(
-                url = %url,
+                url = %Redacted(url),
                 status = %status,
                 reason,
                 context,
@@ -93,8 +94,8 @@ impl FlvDownloader {
 
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
-        info!(url = %url, "Starting FLV download request");
-        debug!(url = %url, params = ?self.config.base.params, "Sending FLV download request");
+        info!(url = %Redacted(url), "Starting FLV download request");
+        debug!(url = %Redacted(url), params = ?self.config.base.params, "Sending FLV download request");
 
         let client = self.clients.client_for_url(url);
         let response = client
@@ -129,7 +130,7 @@ impl FlvDownloader {
 
             if is_text_response {
                 warn!(
-                    url = %url,
+                    url = %Redacted(url),
                     content_type = %ct_str,
                     "Response has text Content-Type, likely not FLV data"
                 );
@@ -142,17 +143,17 @@ impl FlvDownloader {
                 });
             }
 
-            debug!(url = %url, content_type = %ct_str, "Content-Type check passed");
+            debug!(url = %Redacted(url), content_type = %ct_str, "Content-Type check passed");
         }
 
         if let Some(content_length) = response.content_length() {
             info!(
-                url = %url,
+                url = %Redacted(url),
                 content_length,
                 "FLV download started"
             );
         } else {
-            debug!(url = %url, "FLV content length not available");
+            debug!(url = %Redacted(url), "FLV content length not available");
         }
 
         Ok(response)
@@ -189,7 +190,7 @@ impl FlvDownloader {
         // not hold a cancel until the read timeout.
         let (mut byte_stream, first_chunk) = tokio::select! {
             _ = token.cancelled() => {
-                info!(url = %url, "Download cancelled");
+                info!(url = %Redacted(&url), "Download cancelled");
                 return Err(DownloadError::Cancelled);
             }
             opened = self.open_stream(&url, &events) => opened?,
@@ -315,7 +316,7 @@ impl FlvDownloader {
                 resource: ResourceId::FlvStream {
                     url: Arc::from(url.as_str()),
                 },
-                display_url: Arc::from(url.as_str()),
+                display_url: Arc::from(Redacted(url).to_string()),
                 content_length: response.content_length(),
             },
         );
@@ -332,7 +333,7 @@ impl FlvDownloader {
                     return Ok((byte_stream, chunk));
                 }
                 Some(Ok(chunk)) => probe.extend_from_slice(&chunk),
-                Some(Err(e)) => return Err(DownloadError::Network { source: e }),
+                Some(Err(e)) => return Err(DownloadError::from(e)),
                 None => break,
             }
         }
@@ -378,7 +379,7 @@ const PROBE_LEN: usize = flv::framing::TAG_HEADER_SIZE;
 fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
     const FLV_SIGNATURE: &[u8; 3] = b"FLV";
     if probe.is_empty() {
-        warn!(url = %url, "Empty FLV response");
+        warn!(url = %Redacted(url), "Empty FLV response");
         return Err(DownloadError::InvalidContent {
             protocol: "flv",
             reason: "Empty response received".to_string(),
@@ -390,7 +391,7 @@ fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
         .and_then(|header| <&[u8; flv::framing::TAG_HEADER_SIZE]>::try_from(header).ok())
         .is_some_and(flv::framing::is_plausible_tag_header);
     if is_header || is_tag {
-        debug!(url = %url, is_header, "FLV content validated, starting stream");
+        debug!(url = %Redacted(url), is_header, "FLV content validated, starting stream");
         return Ok(());
     }
 
@@ -404,7 +405,7 @@ fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
         format!("{:02X?}", &probe[..probe.len().min(32)])
     };
     warn!(
-        url = %url,
+        url = %Redacted(url),
         preview = %preview,
         first_byte = format!("0x{:02X}", probe[0]),
         is_text,

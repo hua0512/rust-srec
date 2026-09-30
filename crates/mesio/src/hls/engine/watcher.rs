@@ -26,6 +26,7 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::playlist::document_base_url;
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
+use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +157,7 @@ impl PlaylistWatcher {
             tokio::select! {
                 biased;
                 _ = self.cancel.cancelled() => {
-                    info!("Playlist watcher cancelled: {}", self.playlist_url);
+                    info!("Playlist watcher cancelled: {}", Redacted(&self.playlist_url));
                     return;
                 }
                 _ = tx.closed() => {
@@ -200,7 +201,10 @@ impl PlaylistWatcher {
                         return;
                     }
                     if ended {
-                        info!("Playlist watcher finished (ENDLIST): {}", self.playlist_url);
+                        info!(
+                            "Playlist watcher finished (ENDLIST): {}",
+                            Redacted(&self.playlist_url)
+                        );
                         // The Endlist snapshot is retained as the latest value;
                         // dropping the sender after it is unambiguous.
                         return;
@@ -216,7 +220,10 @@ impl PlaylistWatcher {
                     if matches!(e, HlsDownloaderError::Cancelled) {
                         return;
                     }
-                    error!("Error refreshing playlist {}: {e}", self.playlist_url);
+                    error!(
+                        "Error refreshing playlist {}: {e}",
+                        Redacted(&self.playlist_url)
+                    );
                     retries += 1;
                     if retries > self.config.playlist_config.live_max_refresh_retries {
                         // Publish the explicit failure cause before dropping
@@ -259,7 +266,7 @@ impl PlaylistWatcher {
             &self.events,
             DownloadEvent::ResourceStarted {
                 resource: resource.clone(),
-                display_url: Arc::from(self.playlist_url.as_str()),
+                display_url: Arc::from(Redacted(&self.playlist_url).to_string()),
                 content_length: None,
             },
         );
@@ -272,13 +279,13 @@ impl PlaylistWatcher {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
             response = request.send() => response,
         }
-        .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        .map_err(HlsDownloaderError::from)?;
 
         if !response.status().is_success() {
             return Err(HlsDownloaderError::Playlist {
                 reason: format!(
                     "Failed to fetch playlist {}: HTTP {}",
-                    self.playlist_url,
+                    Redacted(&self.playlist_url),
                     response.status()
                 ),
             });
@@ -297,7 +304,7 @@ impl PlaylistWatcher {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
             bytes = response.bytes() => bytes,
         }
-        .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        .map_err(HlsDownloaderError::from)?;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {
@@ -333,13 +340,13 @@ impl PlaylistWatcher {
             Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::Playlist {
                 reason: format!(
                     "Expected media playlist, got master for {}",
-                    self.playlist_url
+                    Redacted(&self.playlist_url)
                 ),
             }),
             Err(e) => Err(HlsDownloaderError::Playlist {
                 reason: format!(
                     "Failed to parse refreshed playlist {}: {e}",
-                    self.playlist_url
+                    Redacted(&self.playlist_url)
                 ),
             }),
         }
