@@ -316,7 +316,12 @@ fn process_snapshot(
             }
             // Prune under the window invariant: only entries below the new
             // window start are eligible (see SegmentStateStore::prune_below).
-            store.prune_below(snapshot.playlist.media_sequence);
+            for dropped in store.prune_below(
+                snapshot.playlist.media_sequence,
+                snapshot.playlist.segments.len(),
+            ) {
+                pending.push(dropped);
+            }
             None
         }
     }

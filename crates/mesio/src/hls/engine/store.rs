@@ -658,17 +658,22 @@ impl SegmentStateStore {
     /// (newest first). `max_state_entries` is a backstop within that rule:
     /// when nothing is safely evictable, state temporarily exceeds the cap.
     ///
-    /// Unfinished work (discovered, queued, in flight, or awaiting a retry)
-    /// is never evicted, even below the window: the assembler waits on every
-    /// planned MSN, and only a completion or terminal failure tells it the
-    /// outcome. A segment that slid out of the playlist is usually still
-    /// served for a while; if not, its retry budget terminalizes it.
-    pub fn prune_below(&mut self, window_start_msn: u64) {
+    /// Unfinished media below the window (discovered, queued, or awaiting a
+    /// retry) is the backlog: a segment that slid out of the playlist is
+    /// usually still served for a while, so it is kept and fetched rather
+    /// than lost. The backlog is bounded to one window's worth
+    /// (`window_len`) and by `max_state_entries`; beyond that, downloads are
+    /// persistently slower than the stream and keeping more only grows memory
+    /// and lag. The oldest entries go first, and each dropped MSN is returned
+    /// as a `Skipped` input — the assembler waits on every planned MSN, so it
+    /// must be told. In-flight work and unfinished inits are never dropped.
+    pub fn prune_below(&mut self, window_start_msn: u64, window_len: usize) -> Vec<AssemblerInput> {
         self.records.retain(|_, record| {
             record.state.is_unfinished()
                 || record.descriptor.key.kind == SegmentKind::Init
                 || record.descriptor.msn >= window_start_msn
         });
+        let dropped = self.drop_excess_backlog(window_start_msn, window_len);
 
         // Retain only the newest N init records, but never evict one that can
         // still appear in the window (msn >= window_start_msn) — that would
@@ -704,6 +709,78 @@ impl SegmentStateStore {
             );
         }
         // Ready/heap entries for pruned keys are dropped lazily on pop.
+        dropped
+    }
+
+    fn drop_excess_backlog(
+        &mut self,
+        window_start_msn: u64,
+        window_len: usize,
+    ) -> Vec<AssemblerInput> {
+        let mut backlog: Vec<(u64, SegmentKey)> = self
+            .records
+            .iter()
+            .filter(|(_, r)| {
+                r.descriptor.key.kind == SegmentKind::Media
+                    && r.descriptor.msn < window_start_msn
+                    && r.state.is_unfinished()
+                    && !matches!(r.state, SegmentState::InFlight { .. })
+            })
+            .map(|(key, r)| (r.descriptor.msn, key.clone()))
+            .collect();
+        let over_state_cap = self
+            .records
+            .len()
+            .saturating_sub(self.config.max_state_entries);
+        let excess = backlog
+            .len()
+            .saturating_sub(window_len)
+            .max(over_state_cap)
+            .min(backlog.len());
+        if excess == 0 {
+            return Vec::new();
+        }
+
+        backlog.sort_unstable_by_key(|(msn, _)| *msn);
+        let mut dropped_msns = Vec::with_capacity(excess);
+        for (msn, key) in backlog.into_iter().take(excess) {
+            self.records.remove(&key);
+            dropped_msns.push(msn);
+        }
+        // Another record can share an MSN (a URI change re-keys a segment);
+        // that MSN is still pending, so it must not be declared dead.
+        let live_msns: std::collections::HashSet<u64> = self
+            .records
+            .values()
+            .filter(|r| r.descriptor.key.kind == SegmentKind::Media)
+            .map(|r| r.descriptor.msn)
+            .collect();
+        dropped_msns.retain(|msn| !live_msns.contains(msn));
+        dropped_msns.dedup();
+        warn!(
+            dropped = excess,
+            window_start_msn, "download backlog exceeds its bound; skipping the oldest segments"
+        );
+
+        let mut inputs = Vec::new();
+        let mut run: Option<(u64, u64)> = None;
+        for msn in dropped_msns {
+            run = match run {
+                Some((from, to)) if msn == to + 1 => Some((from, msn)),
+                Some((from, to)) => {
+                    inputs.push(AssemblerInput::Skipped {
+                        from_msn: from,
+                        to_msn: to,
+                    });
+                    Some((msn, msn))
+                }
+                None => Some((msn, msn)),
+            };
+        }
+        if let Some((from_msn, to_msn)) = run {
+            inputs.push(AssemblerInput::Skipped { from_msn, to_msn });
+        }
+        inputs
     }
 }
 
@@ -1231,7 +1308,7 @@ mod tests {
             // msn 2 and 10 left in flight
         }
 
-        s.prune_below(10);
+        s.prune_below(10, 10);
 
         // msn=1 Completed media evicted (below window); init kept; in-flight
         // msn=2 kept; msn=10 kept.
@@ -1287,7 +1364,7 @@ mod tests {
             );
         }
 
-        s.prune_below(10);
+        s.prune_below(10, 10);
 
         assert!(
             s.records
@@ -1295,6 +1372,91 @@ mod tests {
                 .any(|k| k.uri.as_ref() == "https://e.com/i10.mp4"),
             "in-window init must survive the retention trim"
         );
+    }
+
+    fn skipped_ranges(inputs: &[AssemblerInput]) -> Vec<(u64, u64)> {
+        inputs
+            .iter()
+            .map(|input| match input {
+                AssemblerInput::Skipped { from_msn, to_msn } => (*from_msn, *to_msn),
+                other => panic!("unexpected input {other:?}"),
+            })
+            .collect()
+    }
+
+    fn media_msns(s: &SegmentStateStore) -> Vec<u64> {
+        let mut msns: Vec<u64> = s.records.values().map(|r| r.descriptor.msn).collect();
+        msns.sort_unstable();
+        msns
+    }
+
+    #[test]
+    fn backlog_is_capped_by_max_state_entries_and_dropped_msns_are_skipped() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            max_state_entries: 32,
+            ..StoreConfig::default()
+        });
+        s.ingest(
+            (0..500)
+                .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
+                .collect(),
+            Instant::now(),
+        );
+
+        // Downloads fell 500 segments behind a window that starts at 1000.
+        let dropped = s.prune_below(1000, 100);
+
+        assert_eq!(s.records.len(), 32);
+        assert_eq!(
+            media_msns(&s),
+            (468..500).collect::<Vec<_>>(),
+            "newest kept"
+        );
+        assert_eq!(skipped_ranges(&dropped), [(0, 467)]);
+    }
+
+    #[test]
+    fn backlog_is_capped_to_one_window() {
+        let mut s = store();
+        s.ingest(
+            (0..20)
+                .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
+                .collect(),
+            Instant::now(),
+        );
+
+        let dropped = s.prune_below(20, 5);
+
+        assert_eq!(media_msns(&s), [15, 16, 17, 18, 19]);
+        assert_eq!(skipped_ranges(&dropped), [(0, 14)]);
+        // Within the bound nothing more is dropped.
+        assert!(s.prune_below(20, 5).is_empty());
+    }
+
+    #[test]
+    fn backlog_drop_keeps_in_flight_work_and_msns_it_still_covers() {
+        let mut s = store();
+        let b = budget_unlimited();
+        // msn 1 is in flight under one URI and re-keyed to another URI.
+        s.ingest(
+            vec![descriptor("https://e.com/1a.ts", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let in_flight = take_one(&mut s, &b).expect("admitted");
+        s.ingest(
+            vec![
+                descriptor("https://e.com/1b.ts", 1, SegmentKind::Media),
+                descriptor("https://e.com/2.ts", 2, SegmentKind::Media),
+            ],
+            Instant::now(),
+        );
+
+        let dropped = s.prune_below(10, 0);
+
+        assert!(s.records.contains_key(&in_flight.descriptor.key));
+        assert_eq!(s.records.len(), 1);
+        // msn 1 is still pending in flight, so only msn 2 is declared dead.
+        assert_eq!(skipped_ranges(&dropped), [(2, 2)]);
     }
 
     #[test]
@@ -1306,7 +1468,7 @@ mod tests {
             Instant::now(),
         );
         // The window slides past it before it was admitted.
-        s.prune_below(100);
+        s.prune_below(100, 10);
 
         let (jobs, inputs) = s.next_ready_jobs(8, Instant::now(), &b);
         assert_eq!(jobs.len(), 1, "the assembler is still waiting on msn 1");
@@ -1340,7 +1502,7 @@ mod tests {
         let key = take_one(&mut s, &b).unwrap().descriptor.key.clone();
         fail(&mut s, &key);
 
-        s.prune_below(100);
+        s.prune_below(100, 10);
         assert!(
             s.next_retry_deadline().is_some(),
             "retry survives the slide"
@@ -1355,7 +1517,7 @@ mod tests {
             effects.assembler_inputs.as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, .. }]
         ));
-        s.prune_below(100);
+        s.prune_below(100, 10);
         assert!(!s.has_unfinished_work());
         assert!(
             s.records.is_empty(),

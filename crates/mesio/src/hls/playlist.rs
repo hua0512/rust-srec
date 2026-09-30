@@ -327,22 +327,25 @@ enum VariantMedia {
 /// cannot tell an audio-only variant from a muxed one. Twitch's audio-only
 /// variant is also recognized by its `VIDEO="audio_only"` group when CODECS is
 /// absent.
+///
+/// A codec this does not recognize could be audio or video, so it rules out
+/// both "only" classifications rather than being ignored.
 fn variant_media(variant: &VariantStream) -> Option<VariantMedia> {
     let Some(codecs) = variant.codecs.as_deref() else {
         return (variant.video.as_deref() == Some("audio_only")).then_some(VariantMedia::AudioOnly);
     };
     let (mut audio, mut video) = (false, false);
-    for codec in codecs.split(',').map(str::trim) {
+    for codec in codecs.split(',').map(str::trim).filter(|c| !c.is_empty()) {
         let family = codec
             .split('.')
             .next()
             .unwrap_or(codec)
             .to_ascii_lowercase();
-        match family.as_str() {
-            "mp4a" | "ac-3" | "ec-3" | "ac-4" | "opus" | "flac" | "alac" => audio = true,
-            "avc1" | "avc3" | "hvc1" | "hev1" | "av01" | "vp09" | "vp8" | "dvh1" | "dvhe"
-            | "mp4v" => video = true,
-            _ => {}
+        match codec_kind(&family) {
+            Some(CodecKind::Audio) => audio = true,
+            Some(CodecKind::Video) => video = true,
+            Some(CodecKind::Other) => {}
+            None => return None,
         }
     }
     match (audio, video) {
@@ -350,6 +353,25 @@ fn variant_media(variant: &VariantStream) -> Option<VariantMedia> {
         (false, true) => Some(VariantMedia::VideoOnly),
         (true, true) => Some(VariantMedia::AudioAndVideo),
         (false, false) => None,
+    }
+}
+
+enum CodecKind {
+    Audio,
+    Video,
+    /// Subtitles and captions: neither audio nor video.
+    Other,
+}
+
+/// Classify an RFC 6381 codec family (the part before the first `.`).
+fn codec_kind(family: &str) -> Option<CodecKind> {
+    match family {
+        "mp4a" | "ac-3" | "ec-3" | "ac-4" | "opus" | "flac" | "alac" | "mhm1" | "mha1" | "dtsc"
+        | "dtse" | "dtsh" | "dtsl" | "dtsx" => Some(CodecKind::Audio),
+        "avc1" | "avc3" | "hvc1" | "hev1" | "av01" | "vp08" | "vp09" | "vp8" | "vp9" | "vvc1"
+        | "vvi1" | "mp4v" | "dva1" | "dvav" | "dvh1" | "dvhe" | "dav1" => Some(CodecKind::Video),
+        "wvtt" | "stpp" | "tx3g" | "c608" | "c708" => Some(CodecKind::Other),
+        _ => None,
     }
 }
 
@@ -453,6 +475,47 @@ mod tests {
         );
         // The muxed "chunked" variant carries audio, so it is not video-only.
         assert!(select_variant(&master, &HlsVariantSelectionPolicy::VideoOnly).is_err());
+    }
+
+    #[test]
+    fn dolby_vision_muxed_variant_is_not_audio_only() {
+        let master = master(
+            "#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS=\"dvav.09.01,mp4a.40.2\"\n\
+             dolby.m3u8\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=160000,CODECS=\"mp4a.40.2\"\n\
+             audio-only.m3u8\n",
+        );
+
+        assert_eq!(
+            selected_uri(&master, HlsVariantSelectionPolicy::AudioOnly),
+            "audio-only.m3u8"
+        );
+    }
+
+    #[test]
+    fn unknown_codecs_rule_out_only_classifications() {
+        let master = master(
+            "#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS=\"xyz1.1,mp4a.40.2\"\n\
+             unknown-plus-audio.m3u8\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"avc1.64001f,xyz1.1\"\n\
+             unknown-plus-video.m3u8\n",
+        );
+
+        assert!(select_variant(&master, &HlsVariantSelectionPolicy::AudioOnly).is_err());
+        assert!(select_variant(&master, &HlsVariantSelectionPolicy::VideoOnly).is_err());
+    }
+
+    #[test]
+    fn subtitle_codecs_do_not_prevent_audio_only() {
+        let master = master(
+            "#EXT-X-STREAM-INF:BANDWIDTH=170000,CODECS=\"mp4a.40.2,wvtt\"\n\
+             audio-with-subs.m3u8\n",
+        );
+
+        assert_eq!(
+            selected_uri(&master, HlsVariantSelectionPolicy::AudioOnly),
+            "audio-with-subs.m3u8"
+        );
     }
 
     #[test]

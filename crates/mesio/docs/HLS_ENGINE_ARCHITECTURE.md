@@ -281,10 +281,13 @@ Responsibilities:
   Evicting a `Completed` entry still inside the window makes the next refresh
   re-discover and re-download it, breaking the no-duplicate guarantee — so
   pruning removes only finished entries below the current window's first MSN,
-  keeping init entries and unfinished work. A discovered, queued, in-flight, or
-  retrying segment that slid out of the window is kept until it completes or
-  terminalizes, since the assembler waits on every planned MSN and only those
-  outcomes tell it what happened. The init-retention cap (`max_retained_inits`) is itself subject to
+  keeping init entries and unfinished work. A discovered, queued, or retrying
+  segment that slid out of the window is kept as backlog until it completes or
+  terminalizes, since CDNs usually still serve it. The backlog is bounded to one
+  window's worth of segments and by `max_state_entries`; past that, downloads
+  are persistently slower than the stream, so the oldest backlog is dropped and
+  each dropped MSN is sent to the assembler as `Skipped` (it waits on every
+  planned MSN). In-flight work and unfinished inits are never dropped. The init-retention cap (`max_retained_inits`) is itself subject to
   the invariant: it may evict only init records *below* the window start, never an
   in-window init (which the next refresh would otherwise re-discover and
   re-download). `max_state_entries` is a backstop applied *within* that rule, not a
