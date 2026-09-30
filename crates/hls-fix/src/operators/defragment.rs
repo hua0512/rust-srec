@@ -85,6 +85,8 @@ impl DefragmentOperator {
 
     // EXT-X-MAP applies forward (RFC 8216 4.3.2.5). Media already gathered
     // with an init still belongs to that init, even if another arrives early.
+    // An init with no media is superseded: emitting it would open an output
+    // with a header and nothing to decode against it.
     fn handle_new_header(
         &mut self,
         data: HlsData,
@@ -92,7 +94,14 @@ impl DefragmentOperator {
     ) -> Result<(), PipelineError> {
         if !self.buffer.is_empty() {
             if self.has_init_segment {
-                self.flush_buffer(output)?;
+                if self.buffer.iter().any(HlsData::is_mp4_media) {
+                    self.flush_buffer(output)?;
+                } else {
+                    debug!(
+                        stream = %self.context.name,
+                        "Dropping initialization superseded before any media"
+                    );
+                }
             } else {
                 warn!(
                     stream = %self.context.name,
@@ -382,6 +391,31 @@ mod tests {
                 [INIT, MEDIA0, next_init, next_media]
             );
         }
+    }
+
+    #[test]
+    fn init_superseded_before_any_media_is_not_emitted() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = DefragmentOperator::new(context.clone());
+        let mut out = Vec::new();
+        for item in [init(INIT), init(OTHER_INIT), media(OTHER_MEDIA)] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        operator
+            .finish(&context, &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            out.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
+            [OTHER_INIT, OTHER_MEDIA]
+        );
     }
 
     #[test]
