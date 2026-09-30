@@ -222,9 +222,9 @@ pub async fn start_with_events(
     let reactor_config = ReactorConfig {
         store: StoreConfig {
             max_state_entries: engine.max_state_entries,
-            retry_budget: engine.lifecycle_retry_budget,
-            retry_delay_base: engine.lifecycle_retry_delay_base,
-            retry_delay_max: engine.lifecycle_retry_delay_max,
+            retry_budget: config.fetcher_config.max_segment_retries,
+            retry_delay_base: config.fetcher_config.segment_retry_delay_base,
+            retry_delay_max: config.fetcher_config.max_segment_retry_delay,
             fallback_size_estimate: engine.initial_segment_size_estimate,
             max_segment_size: engine.max_segment_size_bytes,
             max_retained_inits: engine.max_retained_inits,

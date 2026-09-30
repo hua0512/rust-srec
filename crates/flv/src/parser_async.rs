@@ -18,8 +18,6 @@ use tracing::{debug, error, trace, warn};
 
 // 8 KiB buffer size for reading
 const BUFFER_SIZE: usize = 8 * 1024;
-// 16 MiB sanity limit for tag data size
-const MAX_TAG_DATA_SIZE: u32 = 16 * 1024 * 1024;
 const FLV_HEADER_SIZE: usize = 9;
 const PREV_TAG_SIZE_FIELD_SIZE: usize = framing::PREV_TAG_SIZE_FIELD_SIZE;
 const TAG_HEADER_SIZE: usize = framing::TAG_HEADER_SIZE;
@@ -39,6 +37,19 @@ pub struct FlvDecoder {
     last_tag_size: u32,
     // Tracks the current byte position in the stream
     position: u64,
+    // Set after a resync lost framing. The byte scan cannot tell a real tag
+    // start from a payload byte, and trusting a false candidate's garbage
+    // DataSize would swallow up to 16 MiB of real tags into one bogus tag, so
+    // the next candidate is only accepted once its trailing PreviousTagSize
+    // confirms it.
+    resyncing: bool,
+}
+
+/// Whether `byte` can start a tag: the two reserved high bits are zero and the
+/// low five bits are an audio, video, or script type (the filter bit may be set).
+#[inline]
+fn is_tag_start(byte: u8) -> bool {
+    byte & 0xC0 == 0 && matches!(byte & 0x1F, 8 | 9 | 18)
 }
 
 impl FlvDecoder {
@@ -50,8 +61,8 @@ impl FlvDecoder {
     // Helper function to attempt resynchronization by finding the next potential tag start
     // Returns true if resync advanced the buffer, false otherwise.
     fn try_resync(&mut self, src: &mut BytesMut) -> bool {
-        // Look for the next potential tag start (TagType lives in low 5 bits; filter bit may be set).
-        if let Some(pos) = src.iter().position(|&b| matches!(b & 0x1F, 8 | 9 | 18)) {
+        self.resyncing = true;
+        if let Some(pos) = src.iter().position(|&b| is_tag_start(b)) {
             // Discard bytes before the potential tag start
             src.advance(pos);
             self.position += pos as u64;
@@ -84,6 +95,18 @@ impl FlvDecoder {
             self.last_tag_size = 0;
             false
         }
+    }
+}
+
+impl FlvDecoder {
+    /// Skip the rejected candidate's first byte and scan on from there, so
+    /// real tags inside its claimed data are found again.
+    fn reject_resync_candidate(&mut self, src: &mut BytesMut) -> Option<FlvData> {
+        trace!(position = self.position, "Resync candidate rejected");
+        src.advance(1);
+        self.position += 1;
+        self.try_resync(src);
+        None
     }
 }
 
@@ -280,23 +303,30 @@ impl Decoder for FlvDecoder {
             return Ok(None);
         }
 
-        if data_size > MAX_TAG_DATA_SIZE {
-            warn!(
-                "Unusually large tag data size: {} (max allowed: {}). Skipping tag header and attempting resync.",
-                data_size, MAX_TAG_DATA_SIZE
-            );
-            // Discard the invalid tag header
-            src.advance(TAG_HEADER_SIZE);
-            self.position += TAG_HEADER_SIZE as u64;
-            self.last_tag_size = 0; // Lost context
-            // Return None here as well to indicate progress (skipping header)
-            // without producing a full item. Let the next call handle PreviousTagSize.
-            trace!("Skipped large tag header, returning None to yield.");
-            return Ok(None);
-        }
-
         // --- 5. Check for Full Tag Data ---
         let total_tag_size = TAG_HEADER_SIZE + data_size as usize;
+
+        if self.resyncing {
+            // Confirm the candidate before trusting its DataSize: StreamID is
+            // always 0, and the PreviousTagSize after the data must match.
+            if src[0] & 0xC0 != 0 || header.stream_id != 0 {
+                return Ok(self.reject_resync_candidate(src));
+            }
+            let confirmed_len = total_tag_size + PREV_TAG_SIZE_FIELD_SIZE;
+            if src.len() < confirmed_len {
+                src.reserve(confirmed_len - src.len());
+                return Ok(None);
+            }
+            let trailing = &src[total_tag_size..confirmed_len];
+            let prev_tag_size =
+                u32::from_be_bytes([trailing[0], trailing[1], trailing[2], trailing[3]]);
+            if prev_tag_size as usize != total_tag_size {
+                return Ok(self.reject_resync_candidate(src));
+            }
+            debug!(position = self.position, "Resync confirmed at tag boundary");
+            self.resyncing = false;
+        }
+
         if src.len() < total_tag_size {
             trace!(
                 "Awaiting full tag data ({} bytes needed, have {})",
@@ -811,6 +841,83 @@ mod tests {
         assert!(!decoder.expecting_tag_header); // Parsed tag, expect prev size next
         assert_eq!(buffer.len(), 4); // Should have next prev tag size remaining
         assert_eq!(&buffer[..], &[0x00, 0x00, 0x00, 0x10]);
+    }
+
+    /// A tag with `data_len` bytes of `fill`, followed by its PreviousTagSize.
+    fn tag_with_trailer(tag_type: u8, timestamp: u8, fill: u8, data_len: usize) -> Vec<u8> {
+        let size = (data_len as u32).to_be_bytes();
+        let mut bytes = vec![
+            tag_type, size[1], size[2], size[3], 0, 0, timestamp, 0, 0, 0, 0,
+        ];
+        bytes.extend(std::iter::repeat_n(fill, data_len));
+        bytes.extend_from_slice(&((11 + data_len) as u32).to_be_bytes());
+        bytes
+    }
+
+    /// Decode everything, as FramedRead does at EOF, returning the tags.
+    fn decode_all_tags(decoder: &mut FlvDecoder, buffer: &mut BytesMut) -> Vec<FlvTag> {
+        let mut tags = Vec::new();
+        while let Some(item) = decoder.decode_eof(buffer).unwrap() {
+            if let FlvData::Tag(tag) = item {
+                tags.push(tag);
+            }
+        }
+        tags
+    }
+
+    #[test]
+    fn resync_rejects_a_false_tag_start_instead_of_swallowing_real_tags() {
+        init_tracing();
+        let mut decoder = FlvDecoder {
+            header_parsed: true,
+            expecting_tag_header: true,
+            ..Default::default()
+        };
+
+        // Corruption forces a resync. The first candidate after it is a byte
+        // that merely looks like an audio tag, with StreamID 0 and a DataSize
+        // (0x001000) spanning the real tags that follow.
+        let mut buffer = BytesMut::from(&[0x07_u8][..]);
+        buffer.extend_from_slice(&[
+            0x08, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]);
+        buffer.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        buffer.extend(tag_with_trailer(9, 10, 0x17, 5));
+        buffer.extend(tag_with_trailer(8, 20, 0xAF, 3));
+        // Pad past the false candidate's claimed end so its bogus trailer can
+        // be checked; the padding holds no tag start.
+        buffer.extend(std::iter::repeat_n(0xFF, 4200));
+        buffer.extend(tag_with_trailer(9, 30, 0x27, 4));
+
+        let tags = decode_all_tags(&mut decoder, &mut buffer);
+
+        let timestamps: Vec<u32> = tags.iter().map(|tag| tag.timestamp_ms).collect();
+        assert_eq!(timestamps, [10, 20, 30]);
+        assert_eq!(tags[0].data().len(), 5);
+    }
+
+    #[test]
+    fn resync_skips_candidates_with_reserved_bits_or_nonzero_stream_id() {
+        init_tracing();
+        let mut decoder = FlvDecoder {
+            header_parsed: true,
+            expecting_tag_header: true,
+            ..Default::default()
+        };
+
+        // 'I' (0x49) has tag type 9 in its low bits but a reserved bit set, as
+        // in a text error body.
+        let mut buffer = BytesMut::from(&b"\x07Invalid"[..]);
+        // A video-type byte whose StreamID bytes are nonzero.
+        buffer.extend_from_slice(&[
+            0x09, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03,
+        ]);
+        buffer.extend(tag_with_trailer(9, 40, 0x17, 5));
+
+        let tags = decode_all_tags(&mut decoder, &mut buffer);
+
+        let timestamps: Vec<u32> = tags.iter().map(|tag| tag.timestamp_ms).collect();
+        assert_eq!(timestamps, [40]);
     }
 
     #[test]

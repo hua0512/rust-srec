@@ -682,31 +682,55 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
         .key_cache
         .get_with(Arc::clone(&identity), {
             let ctx_clients = Arc::clone(&ctx.clients);
-            let timeout = ctx.config.fetcher_config.key_download_timeout;
+            let fetcher = ctx.config.fetcher_config.clone();
             let params = ctx.config.base.params.clone();
+            let cancel = ctx.cancel.clone();
             let identity = Arc::clone(&identity);
             async move {
                 let client = ctx_clients.client_for_url(&fetch_url);
-                let response = client
-                    .get(fetch_url.as_ref().clone())
-                    .query(&params)
-                    .timeout(timeout)
-                    .send()
-                    .await
-                    .map_err(|e| HlsDownloaderError::Network { source: e })?;
-                let status = response.status();
-                if !status.is_success() {
-                    return Err(HlsDownloaderError::http_status(
-                        status,
-                        fetch_url.as_str(),
-                        "hls key fetch",
-                    ));
+                let mut retries = 0;
+                loop {
+                    let attempt = async {
+                        let response = client
+                            .get(fetch_url.as_ref().clone())
+                            .query(&params)
+                            .timeout(fetcher.key_download_timeout)
+                            .send()
+                            .await
+                            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+                        let status = response.status();
+                        if !status.is_success() {
+                            return Err(HlsDownloaderError::http_status(
+                                status,
+                                fetch_url.as_str(),
+                                "hls key fetch",
+                            ));
+                        }
+                        let bytes = response
+                            .bytes()
+                            .await
+                            .map_err(|e| HlsDownloaderError::Network { source: e })?;
+                        validate_key_bytes(&bytes, &identity)
+                    };
+                    let error = match attempt.await {
+                        Ok(key) => return Ok(key),
+                        Err(error) => error,
+                    };
+                    if retries >= fetcher.max_key_retries || !is_retryable_key_error(&error) {
+                        return Err(error);
+                    }
+                    let delay = fetcher
+                        .key_retry_delay_base
+                        .checked_mul(1u32 << retries.min(16))
+                        .unwrap_or(fetcher.max_key_retry_delay)
+                        .min(fetcher.max_key_retry_delay);
+                    retries += 1;
+                    trace!(retries, ?delay, "key fetch failed; retrying");
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
+                        _ = tokio::time::sleep(delay) => {}
+                    }
                 }
-                let bytes = response
-                    .bytes()
-                    .await
-                    .map_err(|e| HlsDownloaderError::Network { source: e })?;
-                validate_key_bytes(&bytes, &identity)
             }
         })
         .await;
@@ -740,6 +764,21 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
             ),
             other => Failure::new(FailureClass::Network, format!("key fetch failed: {other}")),
         }),
+    }
+}
+
+/// Key fetch failures worth retrying: transport errors, timeouts, and
+/// server-side or rate-limit statuses. A 4xx or an invalid key would fail the
+/// same way again.
+fn is_retryable_key_error(error: &HlsDownloaderError) -> bool {
+    match error {
+        HlsDownloaderError::Network { .. } => true,
+        HlsDownloaderError::HttpStatus { status, .. } => {
+            status.is_server_error()
+                || *status == reqwest::StatusCode::REQUEST_TIMEOUT
+                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        }
+        _ => false,
     }
 }
 

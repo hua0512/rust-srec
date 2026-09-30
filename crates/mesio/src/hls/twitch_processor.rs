@@ -1,7 +1,12 @@
+use std::collections::HashMap;
+
 use m3u8_rs::DateRange;
 use m3u8_rs::{MediaPlaylist, MediaSegment};
-use moka::sync::Cache;
-use tracing::{debug, warn};
+use tracing::debug;
+
+/// Backstop for playlists where pruning can't run (e.g. missing PDT); Twitch
+/// playlists normally carry PDT and are pruned explicitly every refresh.
+const MAX_AD_DATERANGES: usize = 256;
 
 pub(super) struct ProcessedSegment<'a> {
     pub segment: &'a MediaSegment,
@@ -17,7 +22,7 @@ struct AdDateRange {
 
 #[derive(Debug)]
 pub(super) struct TwitchPlaylistProcessor {
-    ad_dateranges: Cache<String, AdDateRange>,
+    ad_dateranges: HashMap<String, AdDateRange>,
     pub discontinuity: bool,
 }
 
@@ -89,12 +94,7 @@ fn daterange_end_ms(daterange: &DateRange) -> Option<i64> {
 impl TwitchPlaylistProcessor {
     pub(super) fn new() -> Self {
         Self {
-            ad_dateranges: Cache::builder()
-                .max_capacity(256)
-                // Twitch playlists normally have PDT and get pruned explicitly
-                // below. This capacity is a backstop for unexpected playlists
-                // where pruning can't run (eg. missing PDT).
-                .build(),
+            ad_dateranges: HashMap::new(),
             discontinuity: false,
         }
     }
@@ -132,10 +132,9 @@ impl TwitchPlaylistProcessor {
             {
                 let start_ms = daterange.start_date.timestamp_millis();
                 let ad_range = AdDateRange { start_ms, end_ms };
-                let prev = self.ad_dateranges.get(&daterange.id);
+                let prev = self.ad_dateranges.insert(daterange.id.clone(), ad_range);
                 let is_new_or_changed =
                     prev.is_none_or(|prev| prev.start_ms != start_ms || prev.end_ms != end_ms);
-                self.ad_dateranges.insert(daterange.id.clone(), ad_range);
 
                 if is_new_or_changed {
                     debug!(
@@ -155,14 +154,20 @@ impl TwitchPlaylistProcessor {
             .filter_map(|s| s.program_date_time.map(|pdt| pdt.timestamp_millis()))
             .min();
         if let Some(min_pdt_ms) = min_pdt_ms {
-            // Safe heuristic: if an ad ended before the earliest PDT in the current
-            // playlist window, it cannot match any segment we'll consider again.
-            if let Err(error) = self
+            self.ad_dateranges.retain(|_id, dr| dr.end_ms >= min_pdt_ms);
+        }
+        // Without PDT nothing can be pruned by time; drop the ranges that end
+        // earliest, which are the least likely to match a later segment.
+        while self.ad_dateranges.len() > MAX_AD_DATERANGES {
+            let Some(oldest) = self
                 .ad_dateranges
-                .invalidate_entries_if(move |_id, dr| dr.end_ms < min_pdt_ms)
-            {
-                warn!(%error, "failed to prune expired Twitch ad ranges");
-            }
+                .iter()
+                .min_by_key(|(_id, dr)| dr.end_ms)
+                .map(|(id, _)| id.clone())
+            else {
+                break;
+            };
+            self.ad_dateranges.remove(&oldest);
         }
 
         let mut last_date_ms: Option<i64> = None;
@@ -204,8 +209,8 @@ impl TwitchPlaylistProcessor {
             } else if let Some(ms) = segment_date_ms
                 && self
                     .ad_dateranges
-                    .iter()
-                    .any(|(_id, dr)| ms >= dr.start_ms && ms < dr.end_ms)
+                    .values()
+                    .any(|dr| ms >= dr.start_ms && ms < dr.end_ms)
             {
                 is_ad = true;
             }
@@ -301,6 +306,59 @@ seg2.ts\n",
         let processed = processor.process_playlist(&playlist);
         let flags: Vec<bool> = processed.into_iter().map(|p| p.is_ad).collect();
         assert_eq!(flags, vec![false, true, true, false]);
+    }
+
+    #[test]
+    fn ad_ranges_that_ended_before_the_window_are_pruned() {
+        let mut processor = TwitchPlaylistProcessor::new();
+        processor.process_playlist(&parse_media_playlist(
+            "#EXTM3U\n\
+#EXT-X-TARGETDURATION:2\n\
+#EXT-X-MEDIA-SEQUENCE:1\n\
+#EXT-X-DATERANGE:ID=\"stitched-ad-1\",CLASS=\"twitch-stitched-ad\",START-DATE=\"2026-01-01T00:00:00Z\",DURATION=4.0\n\
+#EXT-X-PROGRAM-DATE-TIME:2026-01-01T00:00:00Z\n\
+#EXTINF:2.0,\n\
+ad1.ts\n",
+        ));
+        assert_eq!(processor.ad_dateranges.len(), 1);
+
+        // The window now starts after the ad ended.
+        let later = parse_media_playlist(
+            "#EXTM3U\n\
+#EXT-X-TARGETDURATION:2\n\
+#EXT-X-MEDIA-SEQUENCE:5\n\
+#EXT-X-PROGRAM-DATE-TIME:2026-01-01T00:00:10Z\n\
+#EXTINF:2.0,live\n\
+seg5.ts\n",
+        );
+        let processed = processor.process_playlist(&later);
+
+        assert!(processor.ad_dateranges.is_empty());
+        assert!(!processed[0].is_ad);
+    }
+
+    #[test]
+    fn ad_ranges_stay_bounded_without_program_date_time() {
+        let mut processor = TwitchPlaylistProcessor::new();
+        for i in 0..MAX_AD_DATERANGES + 10 {
+            // No PDT on the segment, so time-based pruning cannot run.
+            processor.process_playlist(&parse_media_playlist(&format!(
+                "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:{i}\n\
+#EXT-X-DATERANGE:ID=\"stitched-ad-{i}\",CLASS=\"twitch-stitched-ad\",START-DATE=\"2026-01-01T00:{:02}:{:02}Z\",DURATION=1.0\n\
+#EXTINF:2.0,\nad{i}.ts\n",
+                i / 60,
+                i % 60
+            )));
+        }
+
+        assert_eq!(processor.ad_dateranges.len(), MAX_AD_DATERANGES);
+        // The earliest-ending ranges were dropped; the newest is kept.
+        assert!(!processor.ad_dateranges.contains_key("stitched-ad-0"));
+        assert!(
+            processor
+                .ad_dateranges
+                .contains_key(&format!("stitched-ad-{}", MAX_AD_DATERANGES + 9))
+        );
     }
 
     #[test]

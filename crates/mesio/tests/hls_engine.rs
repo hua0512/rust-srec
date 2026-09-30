@@ -238,8 +238,9 @@ fn fast_config() -> HlsConfig {
     config.playlist_config.live_max_refresh_retries = 2;
     config.playlist_config.live_refresh_retry_delay = Duration::from_millis(20);
     config.fetcher_config.segment_retry_delay_base = Duration::from_millis(10);
-    config.engine_config.lifecycle_retry_delay_base = Duration::from_millis(20);
-    config.engine_config.lifecycle_retry_delay_max = Duration::from_millis(50);
+    config.fetcher_config.max_segment_retry_delay = Duration::from_millis(50);
+    config.fetcher_config.key_retry_delay_base = Duration::from_millis(10);
+    config.fetcher_config.max_key_retry_delay = Duration::from_millis(50);
     config.output_config.live_max_overall_stall_duration = Some(Duration::from_secs(10));
     config
 }
@@ -493,7 +494,7 @@ async fn terminal_failure_skips_segment_instead_of_stalling() {
     origin.add_file("seg2.ts", b"two".to_vec());
 
     let mut config = fast_config();
-    config.engine_config.lifecycle_retry_budget = 1;
+    config.fetcher_config.max_segment_retries = 1;
 
     let base = origin.clone().serve().await;
     let events = run_engine(&base, config).await;
@@ -504,6 +505,9 @@ async fn terminal_failure_skips_segment_instead_of_stalling() {
         vec![format!("{base}/seg0.ts"), format!("{base}/seg2.ts")],
         "the dead MSN must be skipped, not waited on"
     );
+    // max_segment_retries sets the reschedule budget: one attempt plus one
+    // reschedule (a 404 is not retried within an attempt).
+    assert_eq!(origin.hits("seg1.ts"), 2);
     assert!(
         events.iter().any(|e| matches!(
             e,
@@ -559,8 +563,9 @@ async fn window_slide_surfaces_explicit_skip() {
     assert!(ends_with_stream_ended(&events));
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn encrypted_stream_decrypts_with_single_key_fetch() {
+/// An AES-128 stream of three segments whose key is served at `key.bin`
+/// failing `key_failures` times with `key_status` first.
+fn encrypted_origin(key_status: u16, key_failures: u32) -> Origin {
     use aes::Aes128;
     use cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
     type Aes128CbcEnc = cbc::Encryptor<Aes128>;
@@ -589,24 +594,34 @@ async fn encrypted_stream_decrypts_with_single_key_fetch() {
     }
     body.push_str("#EXT-X-ENDLIST\n");
     origin.push_playlist(body);
-    origin.add_file("key.bin", key.to_vec());
+    origin.add_file_failing("key.bin", key.to_vec(), key_status, key_failures);
     for i in 0..3 {
         origin.add_file(
             &format!("seg{i}.ts"),
             encrypt(format!("clear-payload-{i}").as_bytes()),
         );
     }
+    origin
+}
 
-    let base = origin.clone().serve().await;
-    let events = run_engine(&base, fast_config()).await;
-
-    let payloads: Vec<Bytes> = events
+fn decrypted_payloads(events: &[Result<HlsStreamEvent, HlsDownloaderError>]) -> Vec<Bytes> {
+    events
         .iter()
         .filter_map(|e| match e {
             Ok(HlsStreamEvent::Data(data)) => data.data().cloned(),
             _ => None,
         })
-        .collect();
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn encrypted_stream_decrypts_with_single_key_fetch() {
+    let origin = encrypted_origin(0, 0);
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, fast_config()).await;
+
+    let payloads = decrypted_payloads(&events);
     assert_eq!(payloads.len(), 3);
     for (i, payload) in payloads.iter().enumerate() {
         assert_eq!(
@@ -619,6 +634,47 @@ async fn encrypted_stream_decrypts_with_single_key_fetch() {
         origin.hits("key.bin"),
         1,
         "concurrent segments must share one key fetch (single-flight + cache)"
+    );
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn transient_key_failures_are_retried_within_one_fetch() {
+    let origin = encrypted_origin(503, 2);
+    let mut config = fast_config();
+    // No segment reschedules, so only key retries can absorb the failures.
+    config.fetcher_config.max_segment_retries = 0;
+    config.fetcher_config.max_key_retries = 2;
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, config).await;
+
+    assert_eq!(decrypted_payloads(&events).len(), 3);
+    assert_eq!(
+        origin.hits("key.bin"),
+        3,
+        "two retries inside one shared fetch"
+    );
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn key_client_errors_are_not_retried() {
+    let origin = encrypted_origin(404, u32::MAX);
+    let mut config = fast_config();
+    config.fetcher_config.max_segment_retries = 0;
+    config.fetcher_config.max_key_retries = 3;
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, config).await;
+
+    assert!(decrypted_payloads(&events).is_empty());
+    // Failed loads are not cached, so each of the three segments may fetch
+    // once; retrying the 404 would add three more fetches per load.
+    assert!(
+        origin.hits("key.bin") <= 3,
+        "hits: {}",
+        origin.hits("key.bin")
     );
     assert!(ends_with_stream_ended(&events));
 }
@@ -736,7 +792,7 @@ async fn fmp4_init_terminal_failure_skips_dependent_media() {
     origin.add_file("seg1.m4s", b"media1".to_vec());
 
     let mut config = fast_config();
-    config.engine_config.lifecycle_retry_budget = 1;
+    config.fetcher_config.max_segment_retries = 1;
 
     let base = origin.clone().serve().await;
     let events = run_engine(&base, config).await;
