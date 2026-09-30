@@ -124,7 +124,7 @@ impl CacheManager {
         let file_result = self.file_cache.put(key, data, metadata).await;
 
         // Prefer the durable cache error, otherwise report a memory-cache failure.
-        file_result.or(memory_result)
+        file_result.and(memory_result)
     }
 
     /// Remove a key from cache
@@ -138,7 +138,7 @@ impl CacheManager {
         let file_result = self.file_cache.remove(key).await;
 
         // Return file cache error if any, otherwise memory cache error if any
-        file_result.or(mem_result)
+        file_result.and(mem_result)
     }
 
     /// Clear all entries
@@ -152,7 +152,7 @@ impl CacheManager {
         let file_result = self.file_cache.clear().await;
 
         // Return file cache error if any, otherwise memory cache error if any
-        file_result.or(mem_result)
+        file_result.and(mem_result)
     }
 
     /// Check if a key exists in the cache
@@ -309,5 +309,32 @@ mod tests {
         manager.memory_cache.sweep().await.unwrap();
         assert!(!manager.memory_cache.contains(&key).await.unwrap());
         assert!(manager.get(&key).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn put_reports_file_cache_failure_when_memory_cache_succeeds() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = CacheManager::new(CacheConfig {
+            disk_cache_path: Some(temp_dir.path().to_path_buf()),
+            max_disk_cache_size: 1024,
+            max_memory_cache_size: 1024,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        // Occupy the resource-type directory with a file so the disk write fails.
+        let content_dir = temp_dir.path().join("Content");
+        tokio::fs::remove_dir_all(&content_dir).await.unwrap();
+        tokio::fs::write(&content_dir, b"not a directory")
+            .await
+            .unwrap();
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        let data = Bytes::from_static(b"payload");
+
+        let result = manager
+            .put(key, data.clone(), CacheMetadata::new(data.len() as u64))
+            .await;
+
+        assert!(result.is_err());
     }
 }

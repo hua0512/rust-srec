@@ -710,7 +710,14 @@ async fn run_hls_source_failover(
                         delivered_media = true;
                     }
                     if item_tx.send(Ok(item)).await.is_err() {
+                        // The item stream and the attempt's engine task both
+                        // hold event sinks; the forwarder only finishes once
+                        // both are gone.
+                        drop(items);
                         handle.cancel();
+                        if let Some(Err(error)) = handle.join().await {
+                            debug!(%error, "HLS attempt failed after downstream closed");
+                        }
                         if let Err(error) = event_task.await {
                             warn!(%error, "HLS event forwarding task failed during cancellation");
                         }

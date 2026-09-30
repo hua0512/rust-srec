@@ -74,7 +74,7 @@ impl PlaylistEngine {
                     from_cache: true,
                 },
             );
-            return Self::parse_initial(&playlist_url, &cached_data);
+            return Self::parse_initial(&playlist_url, &playlist_url, &cached_data);
         }
 
         let client = self.clients.client_for_url(&playlist_url);
@@ -104,6 +104,9 @@ impl PlaylistEngine {
                 ),
             });
         }
+        // Relative URIs resolve against the document actually served, which
+        // differs from the requested URL after a redirect.
+        let document_url = response.url().clone();
         let playlist_bytes = response
             .bytes()
             .await
@@ -117,37 +120,48 @@ impl PlaylistEngine {
             },
         );
 
-        if let Some(cache_service) = &self.cache_service {
+        // A cache hit resolves against the requested URL, so only cache a
+        // playlist whose relative URIs resolve the same way from there.
+        if let Some(cache_service) = &self.cache_service
+            && document_base_url(&document_url).ok() == document_base_url(&playlist_url).ok()
+        {
             let metadata = CacheMetadata::new(playlist_bytes.len() as u64)
                 .with_expiration(self.config.playlist_config.initial_playlist_fetch_timeout);
-            cache_service
+            // Caching is an optimisation; a failed write must not abort the download.
+            if let Err(error) = cache_service
                 .put(cache_key, playlist_bytes.clone(), metadata)
-                .await?;
+                .await
+            {
+                warn!(%error, "failed to cache initial playlist");
+            }
         }
 
-        Self::parse_initial(&playlist_url, &playlist_bytes)
+        Self::parse_initial(&playlist_url, &document_url, &playlist_bytes)
     }
 
+    /// `document_url` is the URL the playlist was served from (after
+    /// redirects); its relative URIs resolve against it.
     fn parse_initial(
         playlist_url: &Url,
+        document_url: &Url,
         playlist_bytes: &[u8],
     ) -> Result<InitialPlaylist, HlsDownloaderError> {
         let playlist_bytes_to_parse: Cow<[u8]> =
-            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
+            if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str())
+                || TwitchPlaylistProcessor::is_twitch_playlist(document_url.as_str())
+            {
                 let playlist_content = String::from_utf8_lossy(playlist_bytes);
                 Cow::Owned(preprocess_twitch_playlist(&playlist_content).into_bytes())
             } else {
                 Cow::Borrowed(playlist_bytes)
             };
-        let base_url = playlist_url
-            .join(".")
-            .map_err(|e| HlsDownloaderError::Playlist {
+        let base_url =
+            document_base_url(document_url).map_err(|e| HlsDownloaderError::Playlist {
                 reason: format!("Failed to determine base URL: {e}"),
-            })?
-            .to_string();
+            })?;
         debug!(
             "Derived base URL from playlist: {} -> {}",
-            playlist_url, base_url
+            document_url, base_url
         );
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
@@ -278,6 +292,7 @@ impl PlaylistEngine {
                 ),
             });
         }
+        let document_url = response.url().clone();
         let playlist_bytes = response
             .bytes()
             .await
@@ -291,18 +306,18 @@ impl PlaylistEngine {
             },
         );
         let playlist_bytes_to_parse: Cow<[u8]> =
-            if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
+            if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str())
+                || TwitchPlaylistProcessor::is_twitch_playlist(document_url.as_str())
+            {
                 let playlist_content = String::from_utf8_lossy(&playlist_bytes);
                 Cow::Owned(preprocess_twitch_playlist(&playlist_content).into_bytes())
             } else {
                 Cow::Borrowed(&playlist_bytes)
             };
-        let media_base_url = media_playlist_url
-            .join(".")
-            .map_err(|e| HlsDownloaderError::Playlist {
+        let media_base_url =
+            document_base_url(&document_url).map_err(|e| HlsDownloaderError::Playlist {
                 reason: format!("Bad base URL for media playlist: {e}"),
-            })?
-            .to_string();
+            })?;
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(MediaPlaylistDetails {
                 playlist: pl,
@@ -317,6 +332,12 @@ impl PlaylistEngine {
             }),
         }
     }
+}
+
+/// Base URL that relative URIs in the playlist served from `document_url`
+/// resolve against (RFC 8216 §4.1: the playlist's own URI, after redirects).
+pub(crate) fn document_base_url(document_url: &Url) -> Result<String, url::ParseError> {
+    document_url.join(".").map(String::from)
 }
 
 fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {

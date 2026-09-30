@@ -1,22 +1,51 @@
 //! # File Cache
 //!
 //! This module implements a file-based persistent cache provider.
+//! Each `.entry` file contains a versioned header, JSON metadata, and payload,
+//! published together by one rename. Legacy data/`.meta` pairs are cache misses
+//! (they cannot provide a consistent snapshot), but remain eligible for sweep.
 
 use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
-use tokio::{fs, io, sync::Mutex};
+use tokio::{
+    fs,
+    io::{self, AsyncReadExt, AsyncWriteExt},
+    sync::Mutex,
+};
 use tracing::{debug, warn};
 
 use crate::cache::types::{CacheKey, CacheLookupResult, CacheMetadata, CacheResult, CacheStatus};
 
 use super::CacheProvider;
+
+/// Distinguishes temp files of concurrent puts within this process.
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+const ENTRY_MAGIC: &[u8; 8] = b"MESIOC01";
+// Metadata contains only timestamps, size, and a few HTTP header values. Bound
+// its length before allocating so a corrupt header cannot request gigabytes.
+const MAX_METADATA_BYTES: usize = 1024 * 1024;
+/// Temp files untouched for this long belong to a writer that died before
+/// publishing. A live write keeps modifying its file, and cache payloads are
+/// written in one pass, so this is far beyond any in-progress write.
+const STALE_TEMP_FILE_AGE: Duration = Duration::from_secs(60 * 60);
+
+/// The pid and counter separate concurrent writes, including across cache
+/// instances/processes; the `tmp` extension lets sweep skip unfinished files.
+fn temp_path_for(final_path: &Path) -> PathBuf {
+    let mut name = final_path.file_name().unwrap_or_default().to_os_string();
+    let n = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    name.push(format!(".{}.{n}.tmp", std::process::id()));
+    final_path.with_file_name(name)
+}
 
 #[derive(Debug, Clone)]
 pub struct FileCache {
@@ -89,14 +118,72 @@ impl FileCache {
         self.cache_dir
             .join(format!("{:?}", key.resource_type))
             .join(key.to_filename())
+            .with_extension("entry")
     }
 
-    /// Get the metadata path for a cached resource
-    fn get_metadata_path(&self, key: &CacheKey) -> PathBuf {
-        let mut path = self.get_cache_path(key);
-        path.set_extension("meta");
-        path
+    /// Leave the same open file positioned at its payload. Reopening by path
+    /// after reading metadata could observe a concurrent replacement.
+    async fn read_metadata(file: &mut fs::File) -> io::Result<CacheMetadata> {
+        let mut magic = [0; 8];
+        file.read_exact(&mut magic).await?;
+        if &magic != ENTRY_MAGIC {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid cache format",
+            ));
+        }
+        let metadata_len = file.read_u32().await? as usize;
+        if metadata_len > MAX_METADATA_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Cache metadata too large",
+            ));
+        }
+        let mut json = vec![0; metadata_len];
+        file.read_exact(&mut json).await?;
+        serde_json::from_slice(&json)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
+
+    /// Remove `path` only if it is still the file sweep inspected. A put that
+    /// published a fresh generation in between replaced the file, so its
+    /// identity differs and it is kept. The check narrows, but cannot close,
+    /// the window before removal; losing an entry there only costs a miss.
+    async fn remove_if_unchanged(path: &Path, observed: &std::fs::Metadata, context: &'static str) {
+        let Ok(current) = fs::metadata(path).await else {
+            return;
+        };
+        if same_file_generation(&current, observed) {
+            Self::remove_file_best_effort(path, context).await;
+        }
+    }
+
+    async fn write_entry(path: &Path, data: &Bytes, metadata_json: &[u8]) -> io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .await?;
+        file.write_all(ENTRY_MAGIC).await?;
+        // put() bounds this to MAX_METADATA_BYTES before opening the temp file.
+        file.write_u32(metadata_json.len() as u32).await?;
+        file.write_all(metadata_json).await?;
+        file.write_all(data).await?;
+        // Tokio may still have a blocking write in flight when write_all
+        // returns. Finish it before closing and publishing the file.
+        file.flush().await
+    }
+}
+
+#[cfg(unix)]
+fn same_file_generation(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    a.dev() == b.dev() && a.ino() == b.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file_generation(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    a.len() == b.len() && a.modified().ok() == b.modified().ok()
 }
 
 impl CacheProvider for FileCache {
@@ -107,15 +194,7 @@ impl CacheProvider for FileCache {
 
         self.ensure_initialized().await?;
 
-        let data_path = self.get_cache_path(key);
-        let meta_path = self.get_metadata_path(key);
-
-        // Use tokio::fs::try_exists for async file existence check
-        // This is more efficient than checking both files separately
-        let data_exists = fs::try_exists(&data_path).await?;
-        let meta_exists = fs::try_exists(&meta_path).await?;
-
-        Ok(data_exists && meta_exists)
+        fs::try_exists(self.get_cache_path(key)).await
     }
 
     async fn get(&self, key: &CacheKey) -> CacheLookupResult {
@@ -126,40 +205,19 @@ impl CacheProvider for FileCache {
         // Ensure cache is initialized
         self.ensure_initialized().await?;
 
-        let data_path = self.get_cache_path(key);
-        let meta_path = self.get_metadata_path(key);
-
-        // Check if both data and metadata exist
-        let data_exists = fs::try_exists(&data_path).await?;
-        let meta_exists = fs::try_exists(&meta_path).await?;
-
-        if !data_exists || !meta_exists {
-            return Ok(None);
-        }
-
-        // Read metadata
-        let metadata_bytes = match fs::read(&meta_path).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                warn!(path = ?meta_path, error = %e, "Failed to read cache metadata file");
+        let path = self.get_cache_path(key);
+        let mut file = match fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                warn!(?path, %error, "Failed to open cache entry");
                 return Ok(None);
             }
         };
-
-        let metadata: CacheMetadata = match serde_json::from_slice(&metadata_bytes) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!(path = ?meta_path, error = %e, "Failed to parse cache metadata");
-
-                // Delete invalid cache entry as a background task
-                // We use spawn to avoid blocking the current task
-                let data_path_clone = data_path.clone();
-                let meta_path_clone = meta_path.clone();
-                tokio::spawn(async move {
-                    Self::remove_file_best_effort(&data_path_clone, "invalid cache data").await;
-                    Self::remove_file_best_effort(&meta_path_clone, "invalid cache metadata").await;
-                });
-
+        let metadata = match Self::read_metadata(&mut file).await {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                warn!(?path, %error, "Failed to read cache metadata");
                 return Ok(None);
             }
         };
@@ -171,27 +229,20 @@ impl CacheProvider for FileCache {
             CacheStatus::Hit
         };
 
-        // Read data
-        let data = match fs::read(&data_path).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                warn!(path = ?data_path, error = %e, "Failed to read cache data file");
-                return Ok(None);
-            }
-        };
-
-        // For expired entries, we can still return the data, but remove it in the background
-        if status == CacheStatus::Expired {
-            let data_path_clone = data_path.clone();
-            let meta_path_clone = meta_path.clone();
-            tokio::spawn(async move {
-                Self::remove_file_best_effort(&data_path_clone, "expired cache data").await;
-                Self::remove_file_best_effort(&meta_path_clone, "expired cache metadata").await;
-            });
+        let mut data = Vec::new();
+        if let Err(error) = file.read_to_end(&mut data).await {
+            warn!(?path, %error, "Failed to read cache payload");
+            return Ok(None);
         }
-        let bytes = Bytes::from(data);
+        if data.len() as u64 != metadata.size {
+            warn!(?path, "Cache payload length does not match metadata");
+            return Ok(None);
+        }
 
-        Ok(Some((bytes, metadata, status)))
+        // Cleanup belongs to sweep: deleting this path after reading an expired
+        // or invalid generation could remove a concurrently published fresh one.
+
+        Ok(Some((Bytes::from(data), metadata, status)))
     }
 
     async fn put(&self, key: CacheKey, data: Bytes, metadata: CacheMetadata) -> CacheResult<()> {
@@ -203,7 +254,6 @@ impl CacheProvider for FileCache {
         self.ensure_initialized().await?;
 
         let data_path = self.get_cache_path(&key);
-        let meta_path = self.get_metadata_path(&key);
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = data_path.parent() {
@@ -221,33 +271,41 @@ impl CacheProvider for FileCache {
             }
         };
 
-        // Write data and metadata atomically if possible
-        // First write to temporary files then rename
-        let temp_data_path = data_path.with_extension("tmp");
-        let temp_meta_path = meta_path.with_extension("tmp");
-
-        // Write data file
-        match fs::write(&temp_data_path, &data).await {
-            Ok(_) => {}
-            Err(e) => {
-                warn!(path = ?temp_data_path, error = %e, "Failed to write cache data file");
-                return Err(e);
-            }
+        // get() rejects a payload whose length differs from metadata.size, so
+        // such an entry could never be read back.
+        if metadata.size != data.len() as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Cache metadata size {} does not match payload length {}",
+                    metadata.size,
+                    data.len()
+                ),
+            ));
         }
 
-        // Write metadata file
-        match fs::write(&temp_meta_path, &metadata_json).await {
-            Ok(_) => {}
-            Err(e) => {
-                warn!(path = ?temp_meta_path, error = %e, "Failed to write cache metadata file");
-                // Clean up data file
-                Self::remove_file_best_effort(&temp_data_path, "temporary cache data").await;
-                return Err(e);
-            }
+        if metadata_json.len() > MAX_METADATA_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Cache metadata too large",
+            ));
         }
 
-        // Rename temp files to final filenames
-        // This makes the operation more atomic and reduces the chance of incomplete writes
+        let temp_data_path = loop {
+            let path = temp_path_for(&data_path);
+            match Self::write_entry(&path, &data, &metadata_json).await {
+                Ok(()) => break path,
+                // A previous process with the same pid may have left a temp file.
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    Self::remove_file_best_effort(&path, "temporary cache entry").await;
+                    return Err(error);
+                }
+            }
+        };
+
+        // One rename publishes both fields. Readers open this file once, so
+        // even independent processes see one complete generation of the entry.
         if let Err(e) = fs::rename(&temp_data_path, &data_path).await {
             warn!(
                 from = ?temp_data_path,
@@ -257,21 +315,6 @@ impl CacheProvider for FileCache {
             );
             // Clean up
             Self::remove_file_best_effort(&temp_data_path, "temporary cache data").await;
-            Self::remove_file_best_effort(&temp_meta_path, "temporary cache metadata").await;
-            return Err(e);
-        }
-
-        if let Err(e) = fs::rename(&temp_meta_path, &meta_path).await {
-            warn!(
-                from = ?temp_meta_path,
-                to = ?meta_path,
-                error = %e,
-                "Failed to rename temporary metadata file"
-            );
-            // We successfully renamed the data file but not the metadata
-            // This is an inconsistent state, so try to clean up
-            Self::remove_file_best_effort(&data_path, "orphaned cache data").await;
-            Self::remove_file_best_effort(&temp_meta_path, "temporary cache metadata").await;
             return Err(e);
         }
 
@@ -288,22 +331,9 @@ impl CacheProvider for FileCache {
         self.ensure_initialized().await?;
 
         let data_path = self.get_cache_path(key);
-        let meta_path = self.get_metadata_path(key);
-
-        // Try to remove both files
-        // We don't care if the files don't exist
-        let data_result = fs::remove_file(&data_path).await;
-        let meta_result = fs::remove_file(&meta_path).await;
-
-        // If both operations error, return the data error
-        // If only one errors, return that error
-        match (data_result, meta_result) {
-            (Err(e), _) if e.kind() != io::ErrorKind::NotFound => {
+        match fs::remove_file(&data_path).await {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => {
                 warn!(path = ?data_path, error = %e, "Failed to remove cache data file");
-                Err(e)
-            }
-            (_, Err(e)) if e.kind() != io::ErrorKind::NotFound => {
-                warn!(path = ?meta_path, error = %e, "Failed to remove cache metadata file");
                 Err(e)
             }
             _ => Ok(()),
@@ -361,15 +391,12 @@ impl CacheProvider for FileCache {
             return Ok(());
         }
 
-        // No limit configured, nothing to sweep
-        if self.max_size == 0 {
-            return Ok(());
-        }
-
         self.ensure_initialized().await?;
+        let now = SystemTime::now();
 
         // Collect all cached entries with their metadata
-        let mut entries: Vec<(PathBuf, PathBuf, u64, u64)> = Vec::new(); // (data_path, meta_path, size, cached_at)
+        // Legacy entries retain their sidecar path only for eviction.
+        let mut entries: Vec<(PathBuf, Option<PathBuf>, u64, u64)> = Vec::new();
         let mut total_size: u64 = 0;
 
         // Scan all subdirectories for cache entries
@@ -400,43 +427,70 @@ impl CacheProvider for FileCache {
                     continue;
                 }
 
-                // Skip temp files
+                // Unfinished writes are skipped; ones abandoned by a writer
+                // that died before publishing are reclaimed.
                 if path.extension().is_some_and(|ext| ext == "tmp") {
+                    if let Ok(metadata) = fs::metadata(&path).await
+                        && let Ok(modified) = metadata.modified()
+                        && now
+                            .duration_since(modified)
+                            .is_ok_and(|age| age >= STALE_TEMP_FILE_AGE)
+                    {
+                        Self::remove_file_best_effort(&path, "abandoned temporary cache entry")
+                            .await;
+                    }
                     continue;
                 }
 
-                let meta_path = path.with_extension("meta");
-
-                // Get file size
-                let file_size = match fs::metadata(&path).await {
-                    Ok(m) => m.len(),
-                    Err(_) => continue,
-                };
-
-                let meta_size = match fs::metadata(&meta_path).await {
-                    Ok(m) => m.len(),
-                    Err(_) => continue, // Skip entries without valid metadata
-                };
-
-                // Read metadata to get cached_at timestamp
-                let metadata_bytes = match fs::read(&meta_path).await {
-                    Ok(bytes) => bytes,
-                    Err(_) => continue,
-                };
-
-                let metadata: CacheMetadata = match serde_json::from_slice(&metadata_bytes) {
-                    Ok(m) => m,
-                    Err(_) => continue, // Skip entries with invalid metadata
-                };
-
-                let entry_size = file_size + meta_size;
-                total_size += entry_size;
-                entries.push((path, meta_path, entry_size, metadata.cached_at));
+                if path.extension().is_some_and(|ext| ext == "entry") {
+                    let mut file = match fs::File::open(&path).await {
+                        Ok(file) => file,
+                        Err(_) => continue,
+                    };
+                    // Size and identity come from the opened handle, so they
+                    // describe the same generation as the metadata read below.
+                    let observed = match file.metadata().await {
+                        Ok(m) if m.is_file() => m,
+                        _ => continue,
+                    };
+                    let file_size = observed.len();
+                    // Invalid entries are oldest for eviction, so corrupt
+                    // files cannot escape the disk-size bound.
+                    let cached_at = match Self::read_metadata(&mut file).await {
+                        Ok(metadata) if metadata.is_expired() => {
+                            // Expired entries are never served as hits, so
+                            // reclaim them whether or not a size limit is set.
+                            drop(file);
+                            Self::remove_if_unchanged(&path, &observed, "expired cache entry")
+                                .await;
+                            continue;
+                        }
+                        Ok(metadata) => metadata.cached_at,
+                        Err(_) => 0,
+                    };
+                    total_size += file_size;
+                    entries.push((path, None, file_size, cached_at));
+                } else if path.extension().is_none() {
+                    let file_size = match fs::metadata(&path).await {
+                        Ok(m) if m.is_file() => m.len(),
+                        _ => continue,
+                    };
+                    let meta_path = path.with_extension("meta");
+                    let meta_size = match fs::metadata(&meta_path).await {
+                        Ok(metadata) => metadata.len(),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+                        Err(_) => continue,
+                    };
+                    let entry_size = file_size + meta_size;
+                    total_size += entry_size;
+                    // Legacy pairs are no longer read; evict them first.
+                    entries.push((path, Some(meta_path), entry_size, 0));
+                }
             }
         }
 
-        // Check if we're over the limit
-        if total_size <= self.max_size {
+        // Check if we're over the limit (0 = unlimited)
+        if self.max_size == 0 || total_size <= self.max_size {
             debug!(
                 total_size = total_size,
                 max_size = self.max_size,
@@ -458,14 +512,15 @@ impl CacheProvider for FileCache {
                 break;
             }
 
-            // Remove both data and metadata files
+            // Removing a current-format entry cannot strand a metadata half.
             if let Err(e) = fs::remove_file(&data_path).await
                 && e.kind() != io::ErrorKind::NotFound
             {
                 warn!(path = ?data_path, error = %e, "Failed to remove cache data file during sweep");
             }
 
-            if let Err(e) = fs::remove_file(&meta_path).await
+            if let Some(meta_path) = meta_path
+                && let Err(e) = fs::remove_file(&meta_path).await
                 && e.kind() != io::ErrorKind::NotFound
             {
                 warn!(path = ?meta_path, error = %e, "Failed to remove cache metadata file during sweep");
@@ -492,6 +547,10 @@ impl CacheProvider for FileCache {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use crate::cache::types::CacheResourceType;
+
     use super::*;
 
     #[tokio::test]
@@ -509,5 +568,290 @@ mod tests {
 
         assert!(cache.initialized.load(Ordering::Acquire));
         assert!(fs::try_exists(cache_dir.join("Content")).await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn independent_caches_publish_consistent_generations_under_contention() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let key = CacheKey::new(
+            CacheResourceType::Content,
+            "https://example.com/shared",
+            None,
+        );
+        let barrier = Arc::new(tokio::sync::Barrier::new(8));
+        let mut tasks = tokio::task::JoinSet::new();
+        for writer in 1..=8_u8 {
+            // Separate instances must work without a shared in-process lock.
+            let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+            let key = key.clone();
+            let barrier = barrier.clone();
+            tasks.spawn(async move {
+                for round in 0..16 {
+                    let data = Bytes::from(vec![writer; 512 + writer as usize * 32 + round]);
+                    let metadata = CacheMetadata::new(data.len() as u64)
+                        .with_etag(format!("{writer}:{}", data.len()));
+                    barrier.wait().await;
+                    cache.put(key.clone(), data, metadata).await.unwrap();
+                    let (data, metadata, status) =
+                        cache.get(&key).await.unwrap().expect("complete entry");
+                    assert_eq!(status, CacheStatus::Hit);
+                    assert_eq!(data.len() as u64, metadata.size);
+                    assert!(data.iter().all(|byte| *byte == data[0]));
+                    assert_eq!(metadata.etag, Some(format!("{}:{}", data[0], data.len())));
+                }
+            });
+        }
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while let Some(result) = tasks.join_next().await {
+                result.unwrap();
+            }
+        })
+        .await
+        .expect("concurrent cache operations finish");
+
+        let probe = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let mut dir = fs::read_dir(probe.get_cache_path(&key).parent().unwrap())
+            .await
+            .unwrap();
+        let mut names = Vec::new();
+        while let Some(entry) = dir.next_entry().await.unwrap() {
+            names.push(entry.file_name());
+        }
+        assert_eq!(
+            names,
+            [probe
+                .get_cache_path(&key)
+                .file_name()
+                .unwrap()
+                .to_os_string()],
+            "every publication leaves exactly the entry file, no temp files"
+        );
+    }
+
+    #[tokio::test]
+    async fn entries_persist_across_instances_and_replacement_wins() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"expired"),
+                CacheMetadata::new(7).with_expiration(Duration::ZERO),
+            )
+            .await
+            .unwrap();
+
+        let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let (_, _, status) = reopened.get(&key).await.unwrap().unwrap();
+        assert_eq!(status, CacheStatus::Expired);
+        reopened
+            .put(
+                key.clone(),
+                Bytes::from_static(b"fresh"),
+                CacheMetadata::new(5).with_etag("new"),
+            )
+            .await
+            .unwrap();
+
+        let (data, metadata, status) = cache.get(&key).await.unwrap().unwrap();
+        assert_eq!(data, b"fresh"[..]);
+        assert_eq!(metadata.etag.as_deref(), Some("new"));
+        assert_eq!(status, CacheStatus::Hit);
+    }
+
+    #[tokio::test]
+    async fn remove_is_idempotent_and_visible_to_other_instances() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"data"),
+                CacheMetadata::new(4),
+            )
+            .await
+            .unwrap();
+
+        cache.remove(&key).await.unwrap();
+        cache.remove(&key).await.unwrap();
+
+        assert!(!reopened.contains(&key).await.unwrap());
+        assert!(reopened.get(&key).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn clear_leaves_the_cache_usable_by_other_instances() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"again"),
+                CacheMetadata::new(5),
+            )
+            .await
+            .unwrap();
+
+        cache.clear().await.unwrap();
+
+        assert!(reopened.get(&key).await.unwrap().is_none());
+        reopened
+            .put(
+                key.clone(),
+                Bytes::from_static(b"after clear"),
+                CacheMetadata::new(11),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            cache.get(&key).await.unwrap().unwrap().0,
+            b"after clear"[..]
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_entries_are_misses_and_remain_evictable() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 1);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"payload"),
+                CacheMetadata::new(7),
+            )
+            .await
+            .unwrap();
+        let path = cache.get_cache_path(&key);
+        let valid = fs::read(&path).await.unwrap();
+        let mut oversized_header = ENTRY_MAGIC.to_vec();
+        oversized_header.extend_from_slice(&u32::MAX.to_be_bytes());
+        for corrupt in [
+            b"bad cache format".to_vec(),
+            oversized_header,
+            valid[..valid.len() - 1].to_vec(),
+        ] {
+            fs::write(&path, corrupt).await.unwrap();
+            assert!(cache.get(&key).await.unwrap().is_none());
+            cache.sweep().await.unwrap();
+            assert!(!cache.contains(&key).await.unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn sweep_reclaims_legacy_pairs_without_reading_them_or_unfinished_writes() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 4096);
+        cache.ensure_initialized().await.unwrap();
+        let old_key = CacheKey::new(CacheResourceType::Content, "https://example.com/old", None);
+        let old_path = temp_dir.path().join("Content").join(old_key.to_filename());
+        let old_meta_path = old_path.with_extension("meta");
+        fs::write(&old_path, vec![0; 8192]).await.unwrap();
+        fs::write(
+            &old_meta_path,
+            serde_json::to_vec(&CacheMetadata::new(8192)).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(cache.get(&old_key).await.unwrap().is_none());
+        assert!(!cache.contains(&old_key).await.unwrap());
+
+        let key = CacheKey::new(
+            CacheResourceType::Content,
+            "https://example.com/current",
+            None,
+        );
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"fresh"),
+                CacheMetadata::new(5),
+            )
+            .await
+            .unwrap();
+        let unfinished = temp_path_for(&cache.get_cache_path(&key));
+        fs::write(&unfinished, vec![0; 8192]).await.unwrap();
+        cache.sweep().await.unwrap();
+
+        assert!(!fs::try_exists(&old_path).await.unwrap());
+        assert!(!fs::try_exists(&old_meta_path).await.unwrap());
+        assert!(fs::try_exists(&unfinished).await.unwrap());
+        assert_eq!(cache.get(&key).await.unwrap().unwrap().0, b"fresh"[..]);
+    }
+
+    #[tokio::test]
+    async fn put_rejects_metadata_size_that_does_not_match_payload() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+
+        let error = cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"payload"),
+                CacheMetadata::new(3),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!cache.contains(&key).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn sweep_reclaims_expired_entries_without_a_size_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let expired = CacheKey::new(CacheResourceType::Content, "https://example.com/old", None);
+        let fresh = CacheKey::new(CacheResourceType::Content, "https://example.com/new", None);
+        cache
+            .put(
+                expired.clone(),
+                Bytes::from_static(b"old"),
+                CacheMetadata::new(3).with_expiration(Duration::ZERO),
+            )
+            .await
+            .unwrap();
+        cache
+            .put(
+                fresh.clone(),
+                Bytes::from_static(b"new"),
+                CacheMetadata::new(3),
+            )
+            .await
+            .unwrap();
+
+        cache.sweep().await.unwrap();
+
+        assert!(!cache.contains(&expired).await.unwrap());
+        assert_eq!(cache.get(&fresh).await.unwrap().unwrap().0, b"new"[..]);
+    }
+
+    #[tokio::test]
+    async fn sweep_reclaims_abandoned_temp_files_but_keeps_recent_ones() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        cache.ensure_initialized().await.unwrap();
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        let abandoned = temp_path_for(&cache.get_cache_path(&key));
+        let recent = temp_path_for(&cache.get_cache_path(&key));
+        fs::write(&abandoned, b"partial").await.unwrap();
+        fs::write(&recent, b"partial").await.unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&abandoned)
+            .unwrap()
+            .set_modified(SystemTime::now() - STALE_TEMP_FILE_AGE - Duration::from_secs(60))
+            .unwrap();
+
+        cache.sweep().await.unwrap();
+
+        assert!(!fs::try_exists(&abandoned).await.unwrap());
+        assert!(fs::try_exists(&recent).await.unwrap());
     }
 }
