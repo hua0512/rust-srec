@@ -1650,7 +1650,7 @@ mod tests {
                 "https://e.com/seg103.m4s",
             ]
         );
-        let _ = h.join.await;
+        h.join.await.unwrap();
     }
 
     #[tokio::test]
@@ -1680,7 +1680,7 @@ mod tests {
                 "https://e.com/seg103.m4s",
             ]
         );
-        let _ = h.join.await;
+        h.join.await.unwrap();
     }
 
     #[tokio::test]
@@ -1736,7 +1736,7 @@ mod tests {
                 "https://e.com/seg12.m4s",
             ]
         );
-        let _ = h.join.await;
+        h.join.await.unwrap();
     }
 
     /// Data URIs emitted before `StreamEnded`, and whether a discontinuity

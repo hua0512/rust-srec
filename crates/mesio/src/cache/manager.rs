@@ -324,9 +324,7 @@ mod tests {
         .unwrap();
         // Occupy the resource-type directory with a file so the disk write fails.
         let content_dir = temp_dir.path().join("Content");
-        if content_dir.exists() {
-            tokio::fs::remove_dir_all(&content_dir).await.unwrap();
-        }
+        tokio::fs::remove_dir_all(&content_dir).await.unwrap();
         tokio::fs::write(&content_dir, b"not a directory")
             .await
             .unwrap();

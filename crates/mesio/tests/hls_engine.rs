@@ -1156,7 +1156,15 @@ async fn mesio_downloader_hls_sources_finish_when_consumer_drops_items() {
         .expect("first item")
         .expect("stream yields")
         .expect("no stream error");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait until every segment was fetched, so more media is pending than the
+    // item buffer holds and the drop lands while the task is forwarding.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while names.iter().map(|name| origin.hits(name)).sum::<u64>() < names.len() as u64 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("origin serves every segment");
     drop(items);
 
     let joined = tokio::time::timeout(Duration::from_secs(5), session.handle.join())

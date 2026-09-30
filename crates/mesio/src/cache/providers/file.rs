@@ -570,42 +570,6 @@ mod tests {
         assert!(fs::try_exists(cache_dir.join("Content")).await.unwrap());
     }
 
-    #[tokio::test]
-    async fn put_then_get_round_trips_data_and_metadata() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let cache = FileCache::new(temp_dir.path().join("cache"), true, 0);
-        let key = CacheKey::new(
-            crate::cache::types::CacheResourceType::Content,
-            "https://example.com/seg.ts".to_string(),
-            None,
-        );
-        let data = Bytes::from_static(b"segment payload");
-
-        cache
-            .put(
-                key.clone(),
-                data.clone(),
-                CacheMetadata::new(data.len() as u64),
-            )
-            .await
-            .unwrap();
-
-        let (cached, metadata, _) = cache.get(&key).await.unwrap().expect("entry cached");
-        assert_eq!(cached, data);
-        assert_eq!(metadata.size, data.len() as u64);
-
-        let mut leftover_tmp = 0;
-        let mut dir = fs::read_dir(cache.get_cache_path(&key).parent().unwrap())
-            .await
-            .unwrap();
-        while let Some(entry) = dir.next_entry().await.unwrap() {
-            if entry.path().extension().is_some_and(|ext| ext == "tmp") {
-                leftover_tmp += 1;
-            }
-        }
-        assert_eq!(leftover_tmp, 0);
-    }
-
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn independent_caches_publish_consistent_generations_under_contention() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -644,10 +608,28 @@ mod tests {
         })
         .await
         .expect("concurrent cache operations finish");
+
+        let probe = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let mut dir = fs::read_dir(probe.get_cache_path(&key).parent().unwrap())
+            .await
+            .unwrap();
+        let mut names = Vec::new();
+        while let Some(entry) = dir.next_entry().await.unwrap() {
+            names.push(entry.file_name());
+        }
+        assert_eq!(
+            names,
+            [probe
+                .get_cache_path(&key)
+                .file_name()
+                .unwrap()
+                .to_os_string()],
+            "every publication leaves exactly the entry file, no temp files"
+        );
     }
 
     #[tokio::test]
-    async fn persisted_entries_support_expiration_replacement_remove_and_clear() {
+    async fn entries_persist_across_instances_and_replacement_wins() {
         let temp_dir = tempfile::tempdir().unwrap();
         let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
         let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
@@ -661,7 +643,6 @@ mod tests {
             .unwrap();
 
         let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
-        assert!(reopened.contains(&key).await.unwrap());
         let (_, _, status) = reopened.get(&key).await.unwrap().unwrap();
         assert_eq!(status, CacheStatus::Expired);
         reopened
@@ -672,15 +653,41 @@ mod tests {
             )
             .await
             .unwrap();
+
         let (data, metadata, status) = cache.get(&key).await.unwrap().unwrap();
         assert_eq!(data, b"fresh"[..]);
         assert_eq!(metadata.etag.as_deref(), Some("new"));
         assert_eq!(status, CacheStatus::Hit);
+    }
+
+    #[tokio::test]
+    async fn remove_is_idempotent_and_visible_to_other_instances() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"data"),
+                CacheMetadata::new(4),
+            )
+            .await
+            .unwrap();
+
         cache.remove(&key).await.unwrap();
         cache.remove(&key).await.unwrap();
+
         assert!(!reopened.contains(&key).await.unwrap());
         assert!(reopened.get(&key).await.unwrap().is_none());
+    }
 
+    #[tokio::test]
+    async fn clear_leaves_the_cache_usable_by_other_instances() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let reopened = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
         cache
             .put(
                 key.clone(),
@@ -689,7 +696,9 @@ mod tests {
             )
             .await
             .unwrap();
+
         cache.clear().await.unwrap();
+
         assert!(reopened.get(&key).await.unwrap().is_none());
         reopened
             .put(
