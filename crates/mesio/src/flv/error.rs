@@ -24,11 +24,14 @@ impl From<FlvDownloadError> for DownloadError {
         match err {
             FlvDownloadError::Download(e) => e,
             FlvDownloadError::Decoder(FlvError::Io(e))
-                if e.kind() == ErrorKind::ConnectionAborted =>
+                if matches!(e.kind(), ErrorKind::ConnectionAborted | ErrorKind::TimedOut) =>
             {
-                DownloadError::StreamNetwork {
-                    reason: e.to_string(),
-                }
+                let reason = if e.kind() == ErrorKind::TimedOut {
+                    format!("stream read timed out: {e}")
+                } else {
+                    e.to_string()
+                };
+                DownloadError::StreamNetwork { reason }
             }
             FlvDownloadError::Decoder(e) => DownloadError::FlvDecode { source: e },
             FlvDownloadError::AllSourcesFailed(msg) => DownloadError::source_exhausted(msg),
@@ -50,6 +53,19 @@ mod tests {
         assert!(matches!(
             DownloadError::from(error),
             DownloadError::StreamNetwork { reason } if reason.contains("stream reset")
+        ));
+    }
+
+    #[test]
+    fn timed_out_decoder_io_maps_to_a_stream_network_timeout() {
+        let error = FlvDownloadError::Decoder(FlvError::Io(std::io::Error::new(
+            ErrorKind::TimedOut,
+            "operation timed out",
+        )));
+
+        assert!(matches!(
+            DownloadError::from(error),
+            DownloadError::StreamNetwork { reason } if reason.starts_with("stream read timed out")
         ));
     }
 

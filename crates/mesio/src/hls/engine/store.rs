@@ -310,6 +310,12 @@ impl SegmentStateStore {
                 let stale_entry = match record.state {
                     SegmentState::Completed { .. } | SegmentState::TerminalFailed { .. } => {
                         // Never fetched again; nothing volatile to refresh.
+                        // An init's MSN does move forward, though: it records
+                        // where the map still applies, which is what keeps a
+                        // long-lived init from being trimmed while in use.
+                        if key.kind == SegmentKind::Init && descriptor.msn > record.descriptor.msn {
+                            record.descriptor = Arc::new(descriptor);
+                        }
                         stats.deduplicated += 1;
                         self.dedup_hits += 1;
                         continue;
@@ -578,8 +584,16 @@ impl SegmentStateStore {
                     | FailureClass::Oversize => false,
                 };
 
-                if retryable && record.reschedules < self.config.retry_budget {
-                    record.reschedules += 1;
+                // Budget contention says nothing about the segment: it only
+                // means other downloads hold the budget right now, so it does
+                // not spend the retry budget. It still ends: a size that can
+                // never fit is terminal at the fetch, contention clears as
+                // siblings finish, and a live backlog is bounded.
+                let spends_budget = class != FailureClass::OverBudget;
+                if retryable && (!spends_budget || record.reschedules < self.config.retry_budget) {
+                    if spends_budget {
+                        record.reschedules += 1;
+                    }
                     let reschedules = record.reschedules;
                     let exp = reschedules.saturating_sub(1).min(16);
                     let delay = self
@@ -1372,6 +1386,83 @@ mod tests {
                 .any(|k| k.uri.as_ref() == "https://e.com/i10.mp4"),
             "in-window init must survive the retention trim"
         );
+    }
+
+    #[test]
+    fn completed_init_still_in_the_window_survives_the_retention_trim() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            max_retained_inits: 0,
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/init.mp4", 1, SegmentKind::Init)],
+            Instant::now(),
+        );
+        let job = take_one(&mut s, &b).expect("admitted");
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: job.descriptor.key.clone(),
+                msn: 1,
+                payload: payload_for(&job.descriptor),
+            },
+            Instant::now(),
+        );
+        // A later window still uses the same map.
+        s.ingest(
+            vec![descriptor("https://e.com/init.mp4", 20, SegmentKind::Init)],
+            Instant::now(),
+        );
+
+        s.prune_below(15, 10);
+
+        assert!(
+            s.records.contains_key(&job.descriptor.key),
+            "trimming it would make the next refresh re-download it"
+        );
+    }
+
+    #[test]
+    fn budget_contention_does_not_spend_the_retry_budget() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_budget: 1,
+            retry_delay_base: Duration::ZERO,
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/big.ts", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let fail = |s: &mut SegmentStateStore, class| {
+            let job = take_one(s, &b).expect("admitted");
+            s.apply_outcome(
+                SegmentOutcome::Failed {
+                    key: job.descriptor.key.clone(),
+                    msn: 1,
+                    class,
+                    reason: Arc::from("failed"),
+                },
+                Instant::now(),
+            )
+        };
+
+        for _ in 0..5 {
+            let effects = fail(&mut s, FailureClass::OverBudget);
+            assert!(effects.assembler_inputs.is_empty(), "still retrying");
+        }
+        // The one real retry is still available, then the segment ends.
+        assert!(
+            fail(&mut s, FailureClass::Timeout)
+                .assembler_inputs
+                .is_empty()
+        );
+        assert!(matches!(
+            fail(&mut s, FailureClass::Timeout)
+                .assembler_inputs
+                .as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
     }
 
     fn skipped_ranges(inputs: &[AssemblerInput]) -> Vec<(u64, u64)> {

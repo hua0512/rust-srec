@@ -45,13 +45,6 @@ pub struct FlvDecoder {
     resyncing: bool,
 }
 
-/// Whether `byte` can start a tag: the two reserved high bits are zero and the
-/// low five bits are an audio, video, or script type (the filter bit may be set).
-#[inline]
-fn is_tag_start(byte: u8) -> bool {
-    byte & 0xC0 == 0 && matches!(byte & 0x1F, 8 | 9 | 18)
-}
-
 impl FlvDecoder {
     /// Get the current byte position in the stream
     pub fn position(&self) -> u64 {
@@ -62,7 +55,7 @@ impl FlvDecoder {
     // Returns true if resync advanced the buffer, false otherwise.
     fn try_resync(&mut self, src: &mut BytesMut) -> bool {
         self.resyncing = true;
-        if let Some(pos) = src.iter().position(|&b| is_tag_start(b)) {
+        if let Some(pos) = src.iter().position(|&b| framing::is_tag_start(b)) {
             // Discard bytes before the potential tag start
             src.advance(pos);
             self.position += pos as u64;
@@ -309,7 +302,9 @@ impl Decoder for FlvDecoder {
         if self.resyncing {
             // Confirm the candidate before trusting its DataSize: StreamID is
             // always 0, and the PreviousTagSize after the data must match.
-            if src[0] & 0xC0 != 0 || header.stream_id != 0 {
+            let mut header_bytes = [0u8; TAG_HEADER_SIZE];
+            header_bytes.copy_from_slice(&src[..TAG_HEADER_SIZE]);
+            if !framing::is_plausible_tag_header(&header_bytes) {
                 return Ok(self.reject_resync_candidate(src));
             }
             let confirmed_len = total_tag_size + PREV_TAG_SIZE_FIELD_SIZE;

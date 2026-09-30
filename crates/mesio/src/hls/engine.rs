@@ -124,13 +124,19 @@ pub async fn start_with_events(
                 .select_media_playlist(&initial, &config.playlist_config.variant_selection_policy)
                 .await?;
             let url = Url::parse(&details.url).map_err(|e| HlsDownloaderError::Playlist {
-                reason: format!("invalid media playlist URL {}: {e}", details.url),
+                reason: format!(
+                    "invalid media playlist URL {}: {e}",
+                    crate::redact::redact_url_str(&details.url)
+                ),
             })?;
             (details.playlist, details.base_url, url)
         }
         InitialPlaylist::Media(playlist, base) => {
             let url = Url::parse(&initial_url).map_err(|e| HlsDownloaderError::Playlist {
-                reason: format!("invalid playlist URL {initial_url}: {e}"),
+                reason: format!(
+                    "invalid playlist URL {}: {e}",
+                    crate::redact::redact_url_str(&initial_url)
+                ),
             })?;
             (playlist.clone(), base.clone(), url)
         }
@@ -140,7 +146,7 @@ pub async fn start_with_events(
     info!(
         live = is_live,
         media_sequence = initial_media_sequence,
-        url = %media_playlist_url,
+        url = %crate::redact::Redacted(&media_playlist_url),
         "starting HLS engine"
     );
 

@@ -13,6 +13,20 @@ pub struct ParsedTagHeader {
     pub stream_id: u32,
 }
 
+/// Whether `byte` can start a tag: the two reserved high bits are zero and the
+/// low five bits are an audio, video, or script type (the filter bit may be set).
+#[inline]
+pub fn is_tag_start(byte: u8) -> bool {
+    byte & 0xC0 == 0 && matches!(byte & 0x1F, 8 | 9 | 18)
+}
+
+/// Whether an 11-byte tag header is plausible without trusting its DataSize:
+/// a valid tag start and the StreamID that the format fixes at 0.
+#[inline]
+pub fn is_plausible_tag_header(header: &[u8; TAG_HEADER_SIZE]) -> bool {
+    is_tag_start(header[0]) && header[8..11] == [0, 0, 0]
+}
+
 pub fn parse_prev_tag_size(bytes: [u8; PREV_TAG_SIZE_FIELD_SIZE]) -> u32 {
     u32::from_be_bytes(bytes)
 }

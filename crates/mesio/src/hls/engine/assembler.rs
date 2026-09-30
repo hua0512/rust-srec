@@ -406,7 +406,9 @@ impl SequenceAssembler {
             return InitState::Ready;
         };
         if !matches!(buffered.payload, SegmentPayload::Mp4Media { .. }) {
-            // TS (and any non-fMP4 media) needs no init.
+            // TS media repeats its PAT/PMT, so it decodes without its map and
+            // is never held for it; the map is still emitted first when it has
+            // arrived (see emit_payload).
             return InitState::Ready;
         }
         match buffered.payload.descriptor().init_key.as_ref() {
@@ -1016,7 +1018,7 @@ impl SequenceAssembler {
         }
 
         let init_key = payload.descriptor().init_key.clone();
-        if payload.is_fmp4() {
+        if payload.is_fmp4() || init_key.is_some() {
             self.emit_governing_init_segment(init_key.as_ref(), discontinuity)
                 .await?;
         }
@@ -1621,6 +1623,55 @@ mod tests {
         );
         h.cancel.cancel();
         let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn ts_map_section_precedes_ts_media_as_ts_data() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let key = init_key("https://e.com/pat-pmt.ts");
+        h.input_tx
+            .send(AssemblerInput::Payload(SegmentPayload::TsInit {
+                data: Bytes::from_static(&[0x47, 0x40, 0x00, 0x10]),
+                descriptor: descriptor("https://e.com/pat-pmt.ts", 100, SegmentKind::Init),
+            }))
+            .await
+            .unwrap();
+        let mut media = (*descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media)).clone();
+        media.init_key = Some(key);
+        h.input_tx
+            .send(AssemblerInput::Payload(SegmentPayload::Ts {
+                data: Bytes::from_static(&[0x47, 0x01, 0x00, 0x10]),
+                descriptor: Arc::new(media),
+            }))
+            .await
+            .unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+
+        let mut emitted = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(event) = h.event_rx.recv().await {
+                match event {
+                    Ok(HlsStreamEvent::Data(data)) => emitted.push((
+                        data.media_segment()
+                            .map(|s| s.uri.clone())
+                            .unwrap_or_default(),
+                        data.segment_type(),
+                    )),
+                    Ok(HlsStreamEvent::StreamEnded) => break,
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("stream ends");
+        assert_eq!(
+            emitted,
+            [
+                ("https://e.com/pat-pmt.ts".to_string(), hls::SegmentType::Ts),
+                ("https://e.com/seg100.ts".to_string(), hls::SegmentType::Ts),
+            ]
+        );
+        h.join.await.unwrap();
     }
 
     #[tokio::test]

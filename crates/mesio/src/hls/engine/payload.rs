@@ -21,6 +21,11 @@ pub enum SegmentPayload {
         data: Bytes,
         descriptor: Arc<SegmentDescriptor>,
     },
+    /// An `EXT-X-MAP` section of an MPEG-TS stream (PAT/PMT packets).
+    TsInit {
+        data: Bytes,
+        descriptor: Arc<SegmentDescriptor>,
+    },
     Mp4Media {
         data: Bytes,
         descriptor: Arc<SegmentDescriptor>,
@@ -32,6 +37,7 @@ impl SegmentPayload {
         match self {
             Self::Ts { descriptor, .. }
             | Self::Mp4Init { descriptor, .. }
+            | Self::TsInit { descriptor, .. }
             | Self::Mp4Media { descriptor, .. } => descriptor,
         }
     }
@@ -42,9 +48,10 @@ impl SegmentPayload {
 
     pub fn len(&self) -> usize {
         match self {
-            Self::Ts { data, .. } | Self::Mp4Init { data, .. } | Self::Mp4Media { data, .. } => {
-                data.len()
-            }
+            Self::Ts { data, .. }
+            | Self::Mp4Init { data, .. }
+            | Self::TsInit { data, .. }
+            | Self::Mp4Media { data, .. } => data.len(),
         }
     }
 
@@ -53,7 +60,7 @@ impl SegmentPayload {
     }
 
     pub fn is_init(&self) -> bool {
-        matches!(self, Self::Mp4Init { .. })
+        matches!(self, Self::Mp4Init { .. } | Self::TsInit { .. })
     }
 
     pub fn is_fmp4(&self) -> bool {
@@ -68,7 +75,8 @@ impl SegmentPayload {
     /// metadata-only; the media `Bytes` moves as a handle.
     pub fn into_hls_data(self) -> HlsData {
         match self {
-            Self::Ts { data, descriptor } => {
+            // A TS init section is TS packets; consumers take it as TS data.
+            Self::Ts { data, descriptor } | Self::TsInit { data, descriptor } => {
                 HlsData::ts(descriptor.media_segment.as_ref().clone(), data)
             }
             Self::Mp4Init { data, descriptor } => {

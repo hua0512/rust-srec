@@ -101,6 +101,16 @@ pub struct CacheMetadata {
     pub size: u64,
 }
 
+/// Expiry in whole seconds, the resolution metadata is stored at. A fractional
+/// TTL rounds up, so a sub-second TTL keeps its entry for up to a second
+/// instead of expiring it at once; a huge TTL saturates instead of overflowing.
+fn expiry_after(cached_at: u64, ttl: Duration) -> u64 {
+    let secs = ttl
+        .as_secs()
+        .saturating_add(u64::from(ttl.subsec_nanos() > 0));
+    cached_at.saturating_add(secs)
+}
+
 impl CacheMetadata {
     /// Create new metadata for a resource
     pub fn new(size: u64) -> Self {
@@ -119,7 +129,7 @@ impl CacheMetadata {
 
     /// Set the expiration time
     pub fn with_expiration(mut self, duration: Duration) -> Self {
-        self.expires_at = Some(self.cached_at + duration.as_secs());
+        self.expires_at = Some(expiry_after(self.cached_at, duration));
         self
     }
 
@@ -135,7 +145,7 @@ impl CacheMetadata {
             _ => config.default_ttl,
         };
 
-        self.expires_at = Some(self.cached_at + ttl.as_secs());
+        self.expires_at = Some(expiry_after(self.cached_at, ttl));
         self
     }
 
@@ -234,6 +244,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+
+    #[test]
+    fn fractional_ttls_round_up_and_huge_ttls_saturate() {
+        let metadata = CacheMetadata::new(1).with_expiration(Duration::from_millis(500));
+        assert_eq!(metadata.expires_at, Some(metadata.cached_at + 1));
+
+        let forever = CacheMetadata::new(1).with_expiration(Duration::MAX);
+        assert_eq!(forever.expires_at, Some(u64::MAX));
+        assert!(!forever.is_expired());
+
+        let immediate = CacheMetadata::new(1).with_expiration(Duration::ZERO);
+        assert!(immediate.is_expired());
+    }
 
     #[test]
     fn expiration_includes_the_deadline() {

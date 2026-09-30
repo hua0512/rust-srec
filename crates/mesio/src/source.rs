@@ -367,22 +367,10 @@ impl SourceManager {
         }
     }
 
-    /// Client errors that can clear without the URL changing leave the source
-    /// to the circuit breaker: expired signed URLs (401/403) get refreshed, a
-    /// live playlist may not be published yet (404), and timeouts or rate
-    /// limits (408/425/429) pass. Other 4xx mean the URL itself is invalid.
+    /// Only a permanent client error deactivates the source; transient ones
+    /// are left to the circuit breaker.
     fn status_disposition(status: reqwest::StatusCode) -> SourceFailureDisposition {
-        use reqwest::StatusCode;
-        let transient = matches!(
-            status,
-            StatusCode::UNAUTHORIZED
-                | StatusCode::FORBIDDEN
-                | StatusCode::NOT_FOUND
-                | StatusCode::REQUEST_TIMEOUT
-                | StatusCode::TOO_EARLY
-                | StatusCode::TOO_MANY_REQUESTS
-        );
-        if status.is_client_error() && !transient {
+        if crate::error::is_permanent_client_error(status) {
             SourceFailureDisposition::DeactivateSource
         } else {
             SourceFailureDisposition::TryNextSource
