@@ -13,17 +13,18 @@
 //! emits nothing.
 //!
 //! fMP4 ordering contract, relied on by downstream processing (`hls-fix`):
-//! - An init is emitted only immediately before the first media it governs,
-//!   and at most once per distinct EXT-X-MAP. A map that stays the same across
-//!   a discontinuity is not re-emitted.
-//! - An init whose media never arrives, or that is superseded before any media
-//!   is emitted, is dropped. Consumers never see an init followed by a
-//!   discontinuity, the end of the stream, or another init.
+//! - An init is emitted only immediately before media it governs (matched by
+//!   the media's `init_key`, never by MSN), and only when it differs from the
+//!   last emitted init. A map that stays the same across a discontinuity is
+//!   not re-emitted; a map the stream switches back to is.
+//! - An init that no emitted media references is never emitted. Consumers
+//!   never see an init followed by a discontinuity, the end of the stream, or
+//!   another init.
 //! - A discontinuity event precedes the init and media it applies to.
 //! - Media whose init is missing or failed is skipped as a gap and never
 //!   emitted without that init.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -128,6 +129,78 @@ impl BoundedKeySet {
     }
 }
 
+/// Received init payloads by key, retained so an init can be emitted — again,
+/// if the stream switches back to it — whenever media at the cursor needs it.
+/// The store never re-downloads a completed init, so this is the only copy.
+/// Bounded least-recently-used; an evicted key is unresolved again, with the
+/// same fail-safes as [`BoundedKeySet`].
+#[derive(Debug)]
+struct RetainedInits {
+    /// `0` disables the limit.
+    cap: usize,
+    order: VecDeque<SegmentKey>,
+    entries: HashMap<SegmentKey, RetainedInit>,
+}
+
+#[derive(Debug)]
+struct RetainedInit {
+    payload: SegmentPayload,
+    emitted: bool,
+}
+
+impl RetainedInits {
+    fn new(cap: usize) -> Self {
+        Self {
+            cap,
+            order: VecDeque::new(),
+            entries: HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, payload: SegmentPayload) {
+        let key = payload.descriptor().key.clone();
+        match self.entries.get_mut(&key) {
+            Some(entry) => entry.payload = payload,
+            None => {
+                self.entries.insert(
+                    key.clone(),
+                    RetainedInit {
+                        payload,
+                        emitted: false,
+                    },
+                );
+            }
+        }
+        self.touch(key);
+        while self.cap > 0 && self.order.len() > self.cap {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+
+    fn contains(&self, key: &SegmentKey) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    /// A copy of the payload to emit, and whether this is its first emission.
+    fn take_for_emission(&mut self, key: &SegmentKey) -> Option<(SegmentPayload, bool)> {
+        let entry = self.entries.get_mut(key)?;
+        let first = !entry.emitted;
+        entry.emitted = true;
+        let payload = entry.payload.clone();
+        self.touch(key.clone());
+        Some((payload, first))
+    }
+
+    fn touch(&mut self, key: SegmentKey) {
+        if let Some(pos) = self.order.iter().position(|k| *k == key) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(key);
+    }
+}
+
 // --- Reorder-buffer metrics (aggregated, bounded cardinality) ---
 
 #[derive(Debug, Default)]
@@ -219,27 +292,25 @@ pub struct SequenceAssembler {
     input_rx: mpsc::Receiver<AssemblerInput>,
     event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
     reorder_buffer: BTreeMap<u64, BufferedPayload>,
-    /// fMP4 init segments keyed by the MSN at which they become applicable;
-    /// kept out of `reorder_buffer` because it is keyed by MSN and an init
-    /// and a media segment can share one.
-    pending_init_segments: BTreeMap<u64, BufferedPayload>,
-    /// fMP4 media is gated until its governing init arrives; emitting media
-    /// first makes downstream consumers buffer or drop it.
-    has_seen_init_segment: bool,
+    /// fMP4 init payloads that have arrived, kept out of `reorder_buffer`
+    /// because an init is not part of the media sequence. A media segment
+    /// whose `descriptor.init_key` is retained here (or is the active init)
+    /// may be emitted; one whose init is not here is gated (not just the first
+    /// init — every rotation), so a rotated init cannot lose the race against
+    /// the first media it covers. If an eviction makes a key unknown again
+    /// while dependent media is still buffered, the live buffer-pressure and
+    /// ENDLIST flush paths surface that media as a visible gap instead of
+    /// stalling or emitting it under the wrong init.
+    inits: RetainedInits,
+    /// The init most recently emitted: the one consumers decode media with.
+    active_init_key: Option<SegmentKey>,
+    /// The init most recently received, for fMP4 media without an `init_key`.
+    latest_init_key: Option<SegmentKey>,
     is_fmp4_stream: bool,
-    /// Init keys whose payload has arrived. A media segment whose
-    /// `descriptor.init_key` is in this set may be emitted; one whose init is
-    /// not yet here is gated (not just the first init — every rotation), so a
-    /// rotated init cannot lose the race against the first media it covers.
-    /// This set is intentionally bounded; if an eviction makes an old key
-    /// unknown again while dependent media is still buffered, the live
-    /// buffer-pressure and ENDLIST flush paths surface that media as a visible
-    /// gap instead of stalling or dropping it silently.
-    seen_init_keys: BoundedKeySet,
     /// Init keys that terminally failed. Media depending on a failed init can
     /// never be decoded, so it is skipped (a visible gap) rather than gating
-    /// the stream forever. This is bounded for the same reason as
-    /// `seen_init_keys`; eviction is fail-safe at the cursor and on flush.
+    /// the stream forever. This is bounded to keep memory flat on long
+    /// streams; eviction is fail-safe at the cursor and on flush.
     failed_init_keys: BoundedKeySet,
     /// Count-based gap skipping is suppressed on fMP4 streams until the first
     /// media emission: out-of-order completion under download concurrency
@@ -265,15 +336,16 @@ impl SequenceAssembler {
         initial_media_sequence: u64,
         cancel: CancellationToken,
     ) -> Self {
+        let max_retained_inits = config.output_config.max_pending_init_segments;
         Self {
             config,
             input_rx,
             event_tx,
             reorder_buffer: BTreeMap::new(),
-            pending_init_segments: BTreeMap::new(),
-            has_seen_init_segment: false,
+            inits: RetainedInits::new(max_retained_inits),
+            active_init_key: None,
+            latest_init_key: None,
             is_fmp4_stream: false,
-            seen_init_keys: BoundedKeySet::new(256),
             failed_init_keys: BoundedKeySet::new(256),
             has_emitted_media_segment: false,
             is_live_stream,
@@ -321,7 +393,7 @@ impl SequenceAssembler {
         }
         match buffered.payload.descriptor().init_key.as_ref() {
             Some(key) => {
-                if self.seen_init_keys.contains(key) {
+                if self.active_init_key.as_ref() == Some(key) || self.inits.contains(key) {
                     InitState::Ready
                 } else if self.failed_init_keys.contains(key) {
                     InitState::Failed
@@ -333,7 +405,12 @@ impl SequenceAssembler {
             // "any init seen" gate so a malformed descriptor cannot emit
             // media before the stream's first init.
             None => {
-                if self.has_seen_init_segment {
+                if self.active_init_key.is_some()
+                    || self
+                        .latest_init_key
+                        .as_ref()
+                        .is_some_and(|key| self.inits.contains(key))
+                {
                     InitState::Ready
                 } else {
                     InitState::Gated
@@ -552,22 +629,11 @@ impl SequenceAssembler {
         }
 
         // fMP4 init segments are not part of the media sequence progression;
-        // track them separately and emit them when the first applicable media
-        // segment (MSN >= init's MSN) is emitted.
+        // retain them by key and emit one when media referencing it is
+        // emitted. Not counted in current_buffer_bytes: they are not media.
         if payload.is_init() {
-            self.has_seen_init_segment = true;
-            self.seen_init_keys.insert(payload.descriptor().key.clone());
-            // pending_init_segments are not counted in current_buffer_bytes
-            // (they are emitted as init events, not media), so a plain insert
-            // is correct here.
-            self.pending_init_segments
-                .insert(msn, BufferedPayload::new(payload));
-            let cap = self.config.output_config.max_pending_init_segments;
-            if cap > 0 {
-                while self.pending_init_segments.len() > cap {
-                    self.pending_init_segments.pop_first();
-                }
-            }
+            self.latest_init_key = Some(payload.descriptor().key.clone());
+            self.inits.insert(payload);
             // An init can unblock already-buffered media gated on its key.
             return self.try_emit().await;
         }
@@ -931,8 +997,11 @@ impl SequenceAssembler {
             }
         }
 
-        self.emit_applicable_init_segment(msn, discontinuity)
-            .await?;
+        let init_key = payload.descriptor().init_key.clone();
+        if payload.is_fmp4() {
+            self.emit_governing_init_segment(init_key.as_ref(), discontinuity)
+                .await?;
+        }
 
         let is_media = !payload.is_init();
         if self
@@ -952,27 +1021,33 @@ impl SequenceAssembler {
         Ok(())
     }
 
-    /// Emit the most recent init segment applicable to `msn` (the active init
-    /// state), dropping superseded ones.
-    async fn emit_applicable_init_segment(
+    /// Emit the init governing the media about to be emitted, unless it is
+    /// already the active one. Media without an `init_key` uses the latest
+    /// received init if none is active yet.
+    async fn emit_governing_init_segment(
         &mut self,
-        msn: u64,
+        init_key: Option<&SegmentKey>,
         discontinuity_already_emitted: bool,
     ) -> Result<(), ()> {
-        let keys: Vec<u64> = self
-            .pending_init_segments
-            .range(..=msn)
-            .map(|(&k, _)| k)
-            .collect();
-        let mut last: Option<BufferedPayload> = None;
-        for k in keys {
-            last = self.pending_init_segments.remove(&k);
-        }
-        let Some(buffered_init) = last else {
+        let key = match init_key {
+            Some(key) if self.active_init_key.as_ref() == Some(key) => return Ok(()),
+            Some(key) => key.clone(),
+            None if self.active_init_key.is_some() => return Ok(()),
+            None => match self.latest_init_key.clone() {
+                Some(key) => key,
+                None => return Ok(()),
+            },
+        };
+        // init_state() only reports Ready when this payload is retained.
+        let Some((init_payload, first_emission)) = self.inits.take_for_emission(&key) else {
             return Ok(());
         };
+        self.active_init_key = Some(key);
 
-        if buffered_init.payload.discontinuity()
+        // The init's own discontinuity flag was captured when it was first
+        // planned; it only applies to its first appearance.
+        if first_emission
+            && init_payload.discontinuity()
             && !discontinuity_already_emitted
             && self
                 .event_tx
@@ -986,7 +1061,7 @@ impl SequenceAssembler {
         if self
             .event_tx
             .send(Ok(HlsStreamEvent::Data(Box::new(
-                buffered_init.payload.into_hls_data(),
+                init_payload.into_hls_data(),
             ))))
             .await
             .is_err()
@@ -1523,6 +1598,90 @@ mod tests {
             ["https://e.com/init2.mp4", "https://e.com/seg101.m4s"]
         );
         h.cancel.cancel();
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn switching_back_to_an_earlier_init_re_emits_it() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let (init_a, key_a) = mp4_init_keyed("https://e.com/a.mp4", 100);
+        let (init_b, key_b) = mp4_init_keyed("https://e.com/b.mp4", 101);
+        h.input_tx.send(init_a).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(100, &key_a)).await.unwrap();
+        h.input_tx.send(init_b).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key_b)).await.unwrap();
+        // The store never re-downloads init A; its media must still be
+        // preceded by it again, not decoded under B.
+        h.input_tx.send(mp4_media_keyed(102, &key_a)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(103, &key_a)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/a.mp4",
+                "https://e.com/seg100.m4s",
+                "https://e.com/b.mp4",
+                "https://e.com/seg101.m4s",
+                "https://e.com/a.mp4",
+                "https://e.com/seg102.m4s",
+                "https://e.com/seg103.m4s",
+            ]
+        );
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn unreferenced_init_is_not_emitted_before_later_media() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let (init_a, key_a) = mp4_init_keyed("https://e.com/a.mp4", 100);
+        // An ad block's init at MSN 101; its media is skipped upstream.
+        let (ad_init, _) = mp4_init_keyed("https://e.com/ad.mp4", 101);
+        h.input_tx.send(init_a).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(100, &key_a)).await.unwrap();
+        h.input_tx.send(ad_init).await.unwrap();
+        h.input_tx
+            .send(AssemblerInput::Skipped {
+                from_msn: 101,
+                to_msn: 102,
+            })
+            .await
+            .unwrap();
+        h.input_tx.send(mp4_media_keyed(103, &key_a)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/a.mp4",
+                "https://e.com/seg100.m4s",
+                "https://e.com/seg103.m4s",
+            ]
+        );
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn init_stamped_with_a_later_msn_still_precedes_its_earliest_media() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 10);
+        // A retried init fetch was re-planned from a later window and carries
+        // MSN 12, but media 10 and 11 depend on it.
+        let (init, key) = mp4_init_keyed("https://e.com/init.mp4", 12);
+        h.input_tx.send(mp4_media_keyed(10, &key)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(11, &key)).await.unwrap();
+        h.input_tx.send(init).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(12, &key)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/init.mp4",
+                "https://e.com/seg10.m4s",
+                "https://e.com/seg11.m4s",
+                "https://e.com/seg12.m4s",
+            ]
+        );
         let _ = h.join.await;
     }
 

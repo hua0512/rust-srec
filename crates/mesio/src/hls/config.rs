@@ -304,10 +304,12 @@ pub struct HlsOutputConfig {
     /// This ensures duration-based gap skipping and VOD timeouts can trigger even
     /// if no new segments arrive (or input is paused by backpressure).
     pub gap_evaluation_interval: Duration,
-    /// Maximum number of pending fMP4 init segments to keep.
+    /// Maximum number of distinct fMP4 init segments to keep.
     ///
     /// Init segments are tracked separately from the media reorder buffer and
-    /// can otherwise grow without bound on long-running streams.
+    /// retained so a stream switching back to an earlier init can re-emit it;
+    /// they can otherwise grow without bound on long-running streams. Media
+    /// whose init was evicted is skipped as a gap.
     ///
     /// `0` disables the limit.
     pub max_pending_init_segments: usize,

@@ -47,6 +47,10 @@ struct OriginState {
     playlist_fail_after: Option<u32>,
     files: HashMap<String, FileEntry>,
     hits: HashMap<String, u64>,
+    /// Path -> absolute path answered with a 302 before any other routing.
+    redirects: HashMap<String, String>,
+    /// Path the scripted playlist generations are served at; `live.m3u8` if unset.
+    playlist_path: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -81,6 +85,18 @@ impl Origin {
                 fail_times: times,
             },
         );
+    }
+
+    fn redirect(&self, path: &str, location: &str) {
+        self.0
+            .lock()
+            .unwrap()
+            .redirects
+            .insert(path.to_string(), location.to_string());
+    }
+
+    fn serve_playlists_at(&self, path: &str) {
+        self.0.lock().unwrap().playlist_path = Some(path.to_string());
     }
 
     fn fail_playlist_after(&self, successful_serves: u32) {
@@ -120,7 +136,15 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
             .expect("response builds")
     };
 
-    if path == "live.m3u8" {
+    if let Some(location) = state.redirects.get(&path) {
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header("location", location.as_str())
+            .body(Body::empty())
+            .expect("response builds");
+    }
+
+    if path == state.playlist_path.as_deref().unwrap_or("live.m3u8") {
         if state.playlist_failures_remaining > 0 {
             state.playlist_failures_remaining -= 1;
             return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
@@ -315,6 +339,41 @@ async fn live_stream_emits_ordered_segments_and_drains_on_endlist() {
             "seg{i} must download exactly once across refreshes"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn redirected_playlists_resolve_uris_against_the_served_location() {
+    let origin = Origin::new();
+    origin.redirect("live.m3u8", "/cdn/master.m3u8");
+    origin.add_file(
+        "cdn/master.m3u8",
+        "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nv/index.m3u8\n",
+    );
+    // Every refresh of the variant is redirected again, to the edge that
+    // actually hosts its segments.
+    origin.redirect("cdn/v/index.m3u8", "/edge/v/index.m3u8");
+    origin.serve_playlists_at("edge/v/index.m3u8");
+    origin.push_playlist(playlist(0, &["seg0.ts"], false));
+    origin.push_playlist(playlist(0, &["seg0.ts", "seg1.ts"], true));
+    origin.add_file("edge/v/seg0.ts", b"zero".to_vec());
+    origin.add_file("edge/v/seg1.ts", b"one".to_vec());
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, fast_config()).await;
+
+    assert_eq!(
+        data_uris(&events),
+        vec![
+            format!("{base}/edge/v/seg0.ts"),
+            format!("{base}/edge/v/seg1.ts"),
+        ]
+    );
+    assert!(ends_with_stream_ended(&events));
+    assert_eq!(origin.hits("cdn/v/seg0.ts"), 0);
+    assert!(
+        origin.hits("cdn/v/index.m3u8") >= 2,
+        "refreshes use the requested URL"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1026,6 +1085,58 @@ async fn mesio_downloader_hls_source_exhaustion_does_not_emit_extra_discontinuit
         vec![hls::SegmentType::Ts],
         "a discontinuity marker is only valid between two source sessions"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_sources_finish_when_consumer_drops_items() {
+    use futures::StreamExt;
+
+    // More segments than the session's item buffer, so the failover task is
+    // blocked forwarding media when the consumer goes away.
+    let origin = Origin::new();
+    let names: Vec<String> = (0..64).map(|i| format!("seg{i}.ts")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    origin.push_playlist(playlist(0, &refs, false));
+    for name in &names {
+        origin.add_file(name, name.as_bytes().to_vec());
+    }
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{base}/live.m3u8"), 0));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("first item")
+        .expect("stream yields")
+        .expect("no stream error");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    drop(items);
+
+    let joined = tokio::time::timeout(Duration::from_secs(5), session.handle.join())
+        .await
+        .expect("failover task finishes after the consumer drops items");
+    assert!(matches!(
+        joined,
+        Some(Ok(DownloadTerminal::DownstreamClosed))
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while events.next().await.is_some() {}
+    })
+    .await
+    .expect("event stream ends after the consumer drops items");
 }
 
 #[tokio::test(flavor = "multi_thread")]

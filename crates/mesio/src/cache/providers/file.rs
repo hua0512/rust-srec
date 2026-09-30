@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -17,6 +17,21 @@ use tracing::{debug, warn};
 use crate::cache::types::{CacheKey, CacheLookupResult, CacheMetadata, CacheResult, CacheStatus};
 
 use super::CacheProvider;
+
+/// Distinguishes temp files of concurrent puts within this process.
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Temp path for an atomic write of `final_path`. The data and metadata files
+/// share a stem, so the full file name (not just the stem) must be kept to keep
+/// their temp files apart; the pid and counter keep concurrent puts of the same
+/// key, including from other processes sharing the directory, apart too. The
+/// `tmp` extension lets the sweep skip in-progress writes.
+fn temp_path_for(final_path: &Path) -> PathBuf {
+    let mut name = final_path.file_name().unwrap_or_default().to_os_string();
+    let n = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    name.push(format!(".{}.{n}.tmp", std::process::id()));
+    final_path.with_file_name(name)
+}
 
 #[derive(Debug, Clone)]
 pub struct FileCache {
@@ -72,7 +87,7 @@ impl FileCache {
             crate::cache::types::CacheResourceType::Content,
             crate::cache::types::CacheResourceType::Response,
             crate::cache::types::CacheResourceType::Playlist,
-            crate::cache::types::CacheResourceType::Segment,
+            crate::cache::types::CacheResourceType::Content,
             crate::cache::types::CacheResourceType::Key,
         ] {
             fs::create_dir_all(self.cache_dir.join(format!("{res_type:?}"))).await?;
@@ -223,8 +238,8 @@ impl CacheProvider for FileCache {
 
         // Write data and metadata atomically if possible
         // First write to temporary files then rename
-        let temp_data_path = data_path.with_extension("tmp");
-        let temp_meta_path = meta_path.with_extension("tmp");
+        let temp_data_path = temp_path_for(&data_path);
+        let temp_meta_path = temp_path_for(&meta_path);
 
         // Write data file
         match fs::write(&temp_data_path, &data).await {
@@ -509,5 +524,41 @@ mod tests {
 
         assert!(cache.initialized.load(Ordering::Acquire));
         assert!(fs::try_exists(cache_dir.join("Content")).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn put_then_get_round_trips_data_and_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().join("cache"), true, 0);
+        let key = CacheKey::new(
+            crate::cache::types::CacheResourceType::Content,
+            "https://example.com/seg.ts".to_string(),
+            None,
+        );
+        let data = Bytes::from_static(b"segment payload");
+
+        cache
+            .put(
+                key.clone(),
+                data.clone(),
+                CacheMetadata::new(data.len() as u64),
+            )
+            .await
+            .unwrap();
+
+        let (cached, metadata, _) = cache.get(&key).await.unwrap().expect("entry cached");
+        assert_eq!(cached, data);
+        assert_eq!(metadata.size, data.len() as u64);
+
+        let mut leftover_tmp = 0;
+        let mut dir = fs::read_dir(cache.get_cache_path(&key).parent().unwrap())
+            .await
+            .unwrap();
+        while let Some(entry) = dir.next_entry().await.unwrap() {
+            if entry.path().extension().is_some_and(|ext| ext == "tmp") {
+                leftover_tmp += 1;
+            }
+        }
+        assert_eq!(leftover_tmp, 0);
     }
 }

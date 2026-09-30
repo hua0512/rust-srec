@@ -1,4 +1,7 @@
+use std::fmt;
+
 use reqwest::Proxy;
+use url::Url;
 
 /// Proxy configuration types
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -13,7 +16,7 @@ pub enum ProxyType {
 }
 
 /// Proxy authentication type
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProxyAuth {
     /// Username for proxy authentication
     pub username: String,
@@ -21,8 +24,17 @@ pub struct ProxyAuth {
     pub password: String,
 }
 
+impl fmt::Debug for ProxyAuth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProxyAuth")
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Proxy configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProxyConfig {
     /// Proxy server URL (for example, <http://proxy.example.com:8080>)
     pub url: String,
@@ -33,6 +45,34 @@ pub struct ProxyConfig {
     pub proxy_type: ProxyType,
     /// Authentication for the proxy (optional)
     pub auth: Option<ProxyAuth>,
+}
+
+impl ProxyConfig {
+    /// The proxy URL with any embedded credentials masked, for logging.
+    pub fn redacted_url(&self) -> String {
+        match Url::parse(&normalize_proxy_url(&self.url, self.proxy_type)) {
+            Ok(mut url) => {
+                if (!url.username().is_empty() || url.password().is_some())
+                    && (url.set_username("***").is_err() || url.set_password(None).is_err())
+                {
+                    return "<invalid proxy URL>".to_string();
+                }
+                url.to_string()
+            }
+            // An unparseable URL may still contain credentials; show none of it.
+            Err(_) => "<invalid proxy URL>".to_string(),
+        }
+    }
+}
+
+impl fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProxyConfig")
+            .field("url", &self.redacted_url())
+            .field("proxy_type", &self.proxy_type)
+            .field("auth", &self.auth)
+            .finish()
+    }
 }
 
 fn normalize_proxy_url(proxy_url: &str, proxy_type: ProxyType) -> String {
@@ -121,5 +161,33 @@ mod tests {
         };
 
         build_proxy_from_config(&config).expect("socks5h proxy should build");
+    }
+
+    #[test]
+    fn redacted_url_masks_embedded_credentials() {
+        let config = ProxyConfig {
+            url: "http://user:secret@proxy.example.com:8080".to_string(),
+            proxy_type: ProxyType::Http,
+            auth: Some(ProxyAuth {
+                username: "user".to_string(),
+                password: "hunter2".to_string(),
+            }),
+        };
+
+        assert_eq!(config.redacted_url(), "http://***@proxy.example.com:8080/");
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("secret"), "{debug}");
+        assert!(!debug.contains("hunter2"), "{debug}");
+    }
+
+    #[test]
+    fn redacted_url_keeps_credential_free_urls() {
+        let config = ProxyConfig {
+            url: "proxy.example.com:1080".to_string(),
+            proxy_type: ProxyType::Socks5,
+            auth: None,
+        };
+
+        assert_eq!(config.redacted_url(), "socks5://proxy.example.com:1080");
     }
 }

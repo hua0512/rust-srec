@@ -111,7 +111,7 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
             Err(e) => return Err(DownloadError::proxy_configuration(e)),
         };
         client_builder = client_builder.proxy(proxy);
-        info!(proxy_url = %proxy_config.url, "Using explicitly configured proxy for downloads");
+        info!(proxy_url = %proxy_config.redacted_url(), "Using explicitly configured proxy for downloads");
     } else if config.use_system_proxy {
         // No explicit proxy but system proxy enabled
         // reqwest will use system proxy settings by default when we don't call no_proxy()
@@ -308,7 +308,7 @@ fn create_client_with_backend(
             Err(e) => return Err(DownloadError::proxy_configuration(e)),
         };
         client_builder = client_builder.proxy(proxy);
-        info!(proxy_url = %proxy_config.url, "Using explicitly configured proxy for downloads");
+        info!(proxy_url = %proxy_config.redacted_url(), "Using explicitly configured proxy for downloads");
     } else if config.use_system_proxy {
         info!(?backend, "Using system proxy settings for downloads");
     } else {

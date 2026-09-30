@@ -392,8 +392,15 @@ Responsibilities:
   slow-to-fetch init cannot lose the race against the first media it covers. An
   init that terminally fails marks its key failed, and dependent media is then
   skipped as a visible gap rather than gating the stream forever (this also
-  covers a first init failing before any media payload arrives). The arrived and
-  failed init-key sets are bounded; if very high init rotation evicts an old key
+  covers a first init failing before any media payload arrives). Which init is
+  emitted is decided by the same key, never by MSN: before each media segment
+  the assembler emits that segment's init if it differs from the last one
+  emitted. Arrived inits are retained by key, because the store never
+  re-downloads a completed init, so a stream that switches back to an earlier
+  map (for example after an inserted ad) re-emits it, and an init no emitted
+  media references (a skipped ad's map) is never emitted. The retained inits
+  (`max_pending_init_segments`) and the failed init-key set are bounded; if
+  very high init rotation evicts an old key
   while dependent media is still buffered, the media is treated as unresolved:
   live streams wait until the reorder buffer reaches its configured limit and
   then force a visible `GapSkipped`, while ENDLIST/VOD flush emits a visible
@@ -574,11 +581,12 @@ exists, it merges by lifecycle state:
 This is the same identity-stable / fetch-volatile split applied over time rather
 than across the prefetch→media transition.
 
-For `SegmentKind::Init`, `msn` is the media sequence number of the first segment
-the init map covers (its `EXT-X-MAP` position), used by the sequence assembler to
-decide which media an init applies to. It is ordering metadata only and never
-participates in identity, so a rotated init across a discontinuity is a new
-`SegmentKey` (new URI) carrying the MSN at which it takes effect.
+For `SegmentKind::Init`, `msn` is the MSN of the first segment the map governs
+in the playlist window it was most recently planned from. It is diagnostic and pruning metadata only: it never participates
+in identity, and the sequence assembler matches inits to media by
+`SegmentDescriptor::init_key`, not by MSN, because a re-planned init (for
+example a retry after the window slid) can carry a later MSN than the earliest
+media it governs.
 
 ### EncryptionDescriptor
 

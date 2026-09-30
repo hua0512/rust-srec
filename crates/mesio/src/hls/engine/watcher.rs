@@ -24,6 +24,7 @@ use url::Url;
 use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
+use crate::hls::playlist::document_base_url;
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
@@ -130,6 +131,9 @@ impl PlaylistWatcher {
         let mut generation: u64 = 0;
         let mut retries: u32 = 0;
         let mut last_playlist_bytes: Option<bytes::Bytes> = None;
+        // Follows redirects per refresh: the playlist URL may be re-routed to
+        // a different edge, and its relative URIs resolve against that edge.
+        let mut base_url = Arc::clone(&self.base_url);
         let mut current_target_duration = tx.borrow().playlist.target_duration as f64;
         // Tracks the end of the highest window seen, to feed the adaptive
         // refresh tracker with "how many segments were new this refresh".
@@ -162,8 +166,14 @@ impl PlaylistWatcher {
                 _ = tokio::time::sleep(refresh_delay) => {}
             }
 
-            match self.fetch_and_parse(&last_playlist_bytes).await {
-                Ok(Some((playlist, raw_bytes))) => {
+            match self.fetch_and_parse(&last_playlist_bytes, &base_url).await {
+                Ok(Some(refreshed)) => {
+                    let RefreshedPlaylist {
+                        playlist,
+                        bytes: raw_bytes,
+                        base_url: refreshed_base_url,
+                    } = refreshed;
+                    base_url = refreshed_base_url;
                     retries = 0;
                     generation += 1;
                     current_target_duration = playlist.target_duration as f64;
@@ -180,7 +190,7 @@ impl PlaylistWatcher {
                     let snapshot = PlaylistSnapshot {
                         generation,
                         playlist: Arc::new(playlist),
-                        base_url: Arc::clone(&self.base_url),
+                        base_url: Arc::clone(&base_url),
                         parent_query: parent_query.clone(),
                         terminal,
                     };
@@ -231,11 +241,12 @@ impl PlaylistWatcher {
     }
 
     /// Fetch and parse one refresh. `Ok(None)` means byte-identical to the
-    /// previous fetch (parse skipped).
+    /// previous fetch and served from the same base (parse skipped).
     async fn fetch_and_parse(
         &self,
         last_playlist_bytes: &Option<bytes::Bytes>,
-    ) -> Result<Option<(MediaPlaylist, bytes::Bytes)>, HlsDownloaderError> {
+        last_base_url: &Arc<str>,
+    ) -> Result<Option<RefreshedPlaylist>, HlsDownloaderError> {
         if self.cancel.is_cancelled() {
             return Err(HlsDownloaderError::Cancelled);
         }
@@ -272,6 +283,15 @@ impl PlaylistWatcher {
                 ),
             });
         }
+        let base_url = match document_base_url(response.url()) {
+            Ok(base) if base.as_str() == last_base_url.as_ref() => Arc::clone(last_base_url),
+            Ok(base) => Arc::from(base),
+            Err(e) => {
+                return Err(HlsDownloaderError::Playlist {
+                    reason: format!("Bad base URL for refreshed playlist: {e}"),
+                });
+            }
+        };
 
         let playlist_bytes = tokio::select! {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
@@ -289,12 +309,15 @@ impl PlaylistWatcher {
 
         if let Some(last_bytes) = last_playlist_bytes.as_ref()
             && last_bytes == &playlist_bytes
+            && Arc::ptr_eq(&base_url, last_base_url)
         {
             return Ok(None);
         }
 
         let playlist_bytes_to_parse: Cow<[u8]> =
-            if TwitchPlaylistProcessor::is_twitch_playlist(self.playlist_url.as_str()) {
+            if TwitchPlaylistProcessor::is_twitch_playlist(self.playlist_url.as_str())
+                || TwitchPlaylistProcessor::is_twitch_playlist(&base_url)
+            {
                 let playlist_content = String::from_utf8_lossy(&playlist_bytes);
                 Cow::Owned(preprocess_twitch_playlist(&playlist_content).into_bytes())
             } else {
@@ -302,7 +325,11 @@ impl PlaylistWatcher {
             };
 
         match m3u8_rs::parse_playlist_res(&playlist_bytes_to_parse) {
-            Ok(m3u8_rs::Playlist::MediaPlaylist(new_mp)) => Ok(Some((new_mp, playlist_bytes))),
+            Ok(m3u8_rs::Playlist::MediaPlaylist(new_mp)) => Ok(Some(RefreshedPlaylist {
+                playlist: new_mp,
+                bytes: playlist_bytes,
+                base_url,
+            })),
             Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::Playlist {
                 reason: format!(
                     "Expected media playlist, got master for {}",
@@ -317,6 +344,12 @@ impl PlaylistWatcher {
             }),
         }
     }
+}
+
+struct RefreshedPlaylist {
+    playlist: MediaPlaylist,
+    bytes: bytes::Bytes,
+    base_url: Arc<str>,
 }
 
 fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
