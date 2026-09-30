@@ -24,7 +24,7 @@
 //! - Media whose init is missing or failed is skipped as a gap and never
 //!   emitted without that init.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -138,7 +138,9 @@ impl BoundedKeySet {
 struct RetainedInits {
     /// `0` disables the limit.
     cap: usize,
-    order: VecDeque<SegmentKey>,
+    /// Logical clock for recency: touching an entry is O(1) on every media
+    /// emission; only an over-cap insert scans for the least recent entry.
+    clock: u64,
     entries: HashMap<SegmentKey, RetainedInit>,
 }
 
@@ -146,36 +148,51 @@ struct RetainedInits {
 struct RetainedInit {
     payload: SegmentPayload,
     emitted: bool,
+    last_used: u64,
 }
 
 impl RetainedInits {
     fn new(cap: usize) -> Self {
         Self {
             cap,
-            order: VecDeque::new(),
+            clock: 0,
             entries: HashMap::new(),
         }
     }
 
+    fn tick(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+
     fn insert(&mut self, payload: SegmentPayload) {
         let key = payload.descriptor().key.clone();
+        let now = self.tick();
         match self.entries.get_mut(&key) {
-            Some(entry) => entry.payload = payload,
+            Some(entry) => {
+                entry.payload = payload;
+                entry.last_used = now;
+            }
             None => {
                 self.entries.insert(
-                    key.clone(),
+                    key,
                     RetainedInit {
                         payload,
                         emitted: false,
+                        last_used: now,
                     },
                 );
             }
         }
-        self.touch(key);
-        while self.cap > 0 && self.order.len() > self.cap {
-            if let Some(oldest) = self.order.pop_front() {
-                self.entries.remove(&oldest);
-            }
+        if self.cap > 0
+            && self.entries.len() > self.cap
+            && let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone())
+        {
+            self.entries.remove(&oldest);
         }
     }
 
@@ -185,19 +202,20 @@ impl RetainedInits {
 
     /// A copy of the payload to emit, and whether this is its first emission.
     fn take_for_emission(&mut self, key: &SegmentKey) -> Option<(SegmentPayload, bool)> {
+        let now = self.tick();
         let entry = self.entries.get_mut(key)?;
         let first = !entry.emitted;
         entry.emitted = true;
-        let payload = entry.payload.clone();
-        self.touch(key.clone());
-        Some((payload, first))
+        entry.last_used = now;
+        Some((entry.payload.clone(), first))
     }
 
-    fn touch(&mut self, key: SegmentKey) {
-        if let Some(pos) = self.order.iter().position(|k| *k == key) {
-            self.order.remove(pos);
+    /// Mark `key` as used; a no-op if it is not retained.
+    fn touch(&mut self, key: &SegmentKey) {
+        let now = self.tick();
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.last_used = now;
         }
-        self.order.push_back(key);
     }
 }
 
@@ -1039,9 +1057,7 @@ impl SequenceAssembler {
         if self.active_init_key.as_ref() == Some(&key) {
             // Using the active init still counts as an access: otherwise
             // unused prefetched maps can evict it before a switch back.
-            if self.inits.contains(&key) {
-                self.inits.touch(key);
-            }
+            self.inits.touch(&key);
             return Ok(());
         }
         // init_state() only reports Ready when this payload is retained.

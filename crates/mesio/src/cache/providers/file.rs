@@ -11,6 +11,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
@@ -32,6 +33,10 @@ const ENTRY_MAGIC: &[u8; 8] = b"MESIOC01";
 // Metadata contains only timestamps, size, and a few HTTP header values. Bound
 // its length before allocating so a corrupt header cannot request gigabytes.
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
+/// Temp files untouched for this long belong to a writer that died before
+/// publishing. A live write keeps modifying its file, and cache payloads are
+/// written in one pass, so this is far beyond any in-progress write.
+const STALE_TEMP_FILE_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// The pid and counter separate concurrent writes, including across cache
 /// instances/processes; the `tmp` extension lets sweep skip unfinished files.
@@ -140,6 +145,19 @@ impl FileCache {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
+    /// Remove `path` only if it is still the file sweep inspected. A put that
+    /// published a fresh generation in between replaced the file, so its
+    /// identity differs and it is kept. The check narrows, but cannot close,
+    /// the window before removal; losing an entry there only costs a miss.
+    async fn remove_if_unchanged(path: &Path, observed: &std::fs::Metadata, context: &'static str) {
+        let Ok(current) = fs::metadata(path).await else {
+            return;
+        };
+        if same_file_generation(&current, observed) {
+            Self::remove_file_best_effort(path, context).await;
+        }
+    }
+
     async fn write_entry(path: &Path, data: &Bytes, metadata_json: &[u8]) -> io::Result<()> {
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -155,6 +173,17 @@ impl FileCache {
         // returns. Finish it before closing and publishing the file.
         file.flush().await
     }
+}
+
+#[cfg(unix)]
+fn same_file_generation(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    a.dev() == b.dev() && a.ino() == b.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file_generation(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    a.len() == b.len() && a.modified().ok() == b.modified().ok()
 }
 
 impl CacheProvider for FileCache {
@@ -241,6 +270,19 @@ impl CacheProvider for FileCache {
                 ));
             }
         };
+
+        // get() rejects a payload whose length differs from metadata.size, so
+        // such an entry could never be read back.
+        if metadata.size != data.len() as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Cache metadata size {} does not match payload length {}",
+                    metadata.size,
+                    data.len()
+                ),
+            ));
+        }
 
         if metadata_json.len() > MAX_METADATA_BYTES {
             return Err(io::Error::new(
@@ -349,12 +391,8 @@ impl CacheProvider for FileCache {
             return Ok(());
         }
 
-        // No limit configured, nothing to sweep
-        if self.max_size == 0 {
-            return Ok(());
-        }
-
         self.ensure_initialized().await?;
+        let now = SystemTime::now();
 
         // Collect all cached entries with their metadata
         // Legacy entries retain their sidecar path only for eviction.
@@ -389,31 +427,54 @@ impl CacheProvider for FileCache {
                     continue;
                 }
 
-                // Skip temp files
+                // Unfinished writes are skipped; ones abandoned by a writer
+                // that died before publishing are reclaimed.
                 if path.extension().is_some_and(|ext| ext == "tmp") {
+                    if let Ok(metadata) = fs::metadata(&path).await
+                        && let Ok(modified) = metadata.modified()
+                        && now
+                            .duration_since(modified)
+                            .is_ok_and(|age| age >= STALE_TEMP_FILE_AGE)
+                    {
+                        Self::remove_file_best_effort(&path, "abandoned temporary cache entry")
+                            .await;
+                    }
                     continue;
                 }
-
-                // Get file size
-                let file_size = match fs::metadata(&path).await {
-                    Ok(m) if m.is_file() => m.len(),
-                    _ => continue,
-                };
 
                 if path.extension().is_some_and(|ext| ext == "entry") {
                     let mut file = match fs::File::open(&path).await {
                         Ok(file) => file,
                         Err(_) => continue,
                     };
+                    // Size and identity come from the opened handle, so they
+                    // describe the same generation as the metadata read below.
+                    let observed = match file.metadata().await {
+                        Ok(m) if m.is_file() => m,
+                        _ => continue,
+                    };
+                    let file_size = observed.len();
                     // Invalid entries are oldest for eviction, so corrupt
                     // files cannot escape the disk-size bound.
-                    let cached_at = Self::read_metadata(&mut file)
-                        .await
-                        .map(|metadata| metadata.cached_at)
-                        .unwrap_or(0);
+                    let cached_at = match Self::read_metadata(&mut file).await {
+                        Ok(metadata) if metadata.is_expired() => {
+                            // Expired entries are never served as hits, so
+                            // reclaim them whether or not a size limit is set.
+                            drop(file);
+                            Self::remove_if_unchanged(&path, &observed, "expired cache entry")
+                                .await;
+                            continue;
+                        }
+                        Ok(metadata) => metadata.cached_at,
+                        Err(_) => 0,
+                    };
                     total_size += file_size;
                     entries.push((path, None, file_size, cached_at));
                 } else if path.extension().is_none() {
+                    let file_size = match fs::metadata(&path).await {
+                        Ok(m) if m.is_file() => m.len(),
+                        _ => continue,
+                    };
                     let meta_path = path.with_extension("meta");
                     let meta_size = match fs::metadata(&meta_path).await {
                         Ok(metadata) => metadata.len(),
@@ -428,8 +489,8 @@ impl CacheProvider for FileCache {
             }
         }
 
-        // Check if we're over the limit
-        if total_size <= self.max_size {
+        // Check if we're over the limit (0 = unlimited)
+        if self.max_size == 0 || total_size <= self.max_size {
             debug!(
                 total_size = total_size,
                 max_size = self.max_size,
@@ -712,5 +773,76 @@ mod tests {
         assert!(!fs::try_exists(&old_meta_path).await.unwrap());
         assert!(fs::try_exists(&unfinished).await.unwrap());
         assert_eq!(cache.get(&key).await.unwrap().unwrap().0, b"fresh"[..]);
+    }
+
+    #[tokio::test]
+    async fn put_rejects_metadata_size_that_does_not_match_payload() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+
+        let error = cache
+            .put(
+                key.clone(),
+                Bytes::from_static(b"payload"),
+                CacheMetadata::new(3),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!cache.contains(&key).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn sweep_reclaims_expired_entries_without_a_size_limit() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        let expired = CacheKey::new(CacheResourceType::Content, "https://example.com/old", None);
+        let fresh = CacheKey::new(CacheResourceType::Content, "https://example.com/new", None);
+        cache
+            .put(
+                expired.clone(),
+                Bytes::from_static(b"old"),
+                CacheMetadata::new(3).with_expiration(Duration::ZERO),
+            )
+            .await
+            .unwrap();
+        cache
+            .put(
+                fresh.clone(),
+                Bytes::from_static(b"new"),
+                CacheMetadata::new(3),
+            )
+            .await
+            .unwrap();
+
+        cache.sweep().await.unwrap();
+
+        assert!(!cache.contains(&expired).await.unwrap());
+        assert_eq!(cache.get(&fresh).await.unwrap().unwrap().0, b"new"[..]);
+    }
+
+    #[tokio::test]
+    async fn sweep_reclaims_abandoned_temp_files_but_keeps_recent_ones() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache = FileCache::new(temp_dir.path().to_path_buf(), true, 0);
+        cache.ensure_initialized().await.unwrap();
+        let key = CacheKey::new(CacheResourceType::Content, "https://example.com/a", None);
+        let abandoned = temp_path_for(&cache.get_cache_path(&key));
+        let recent = temp_path_for(&cache.get_cache_path(&key));
+        fs::write(&abandoned, b"partial").await.unwrap();
+        fs::write(&recent, b"partial").await.unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&abandoned)
+            .unwrap()
+            .set_modified(SystemTime::now() - STALE_TEMP_FILE_AGE - Duration::from_secs(60))
+            .unwrap();
+
+        cache.sweep().await.unwrap();
+
+        assert!(!fs::try_exists(&abandoned).await.unwrap());
+        assert!(fs::try_exists(&recent).await.unwrap());
     }
 }
