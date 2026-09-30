@@ -6,6 +6,7 @@ pub enum DownloadError {
     #[error("download cancelled")]
     Cancelled,
 
+    /// `input` is redacted (see [`crate::redact`]).
     #[error("invalid URL `{input}`: {reason}")]
     InvalidUrl { input: String, reason: String },
 
@@ -88,7 +89,7 @@ pub enum DownloadError {
 impl DownloadError {
     pub fn invalid_url(input: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::InvalidUrl {
-            input: input.into(),
+            input: crate::redact::redact_url_str(&input.into()),
             reason: reason.into(),
         }
     }
@@ -181,5 +182,19 @@ mod tests {
         ] {
             assert!(!error(status).is_non_recoverable_source_error(), "{status}");
         }
+    }
+
+    #[test]
+    fn invalid_url_errors_do_not_echo_signed_url_tokens() {
+        // Unparseable, so no caller can redact it as a `Url` first.
+        let error = DownloadError::invalid_url(
+            "https://user:pw@[bad-host/live.flv?token=secret",
+            "invalid IPv6 address",
+        );
+
+        let message = error.to_string();
+        assert!(!message.contains("secret"), "{message}");
+        assert!(!message.contains("pw"), "{message}");
+        assert!(message.contains("live.flv?token=***"), "{message}");
     }
 }
