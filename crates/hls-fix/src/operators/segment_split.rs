@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use hls::{
-    HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfileOptions, TsAnalysis,
-    TsSegmentData,
+    HlsData, M4sData, M4sInitSegmentData, ProgramInfo, Resolution, StreamEntry,
+    StreamProfileOptions, TsAnalysis, TsSegmentData, TsStreamInfo,
 };
-use pipeline_common::{PipelineError, Processor, SplitReason, StreamerContext, crc32};
+use pipeline_common::{
+    AudioCodecInfo, PipelineError, Processor, SplitReason, StreamerContext, VideoCodecInfo, crc32,
+};
 use tracing::{debug, info, warn};
 
 /// An operator that splits HLS segments when meaningful stream parameters change.
@@ -120,170 +122,25 @@ impl SegmentSplitOperator {
         }
 
         let current_stream_info = &analysis.stream_info;
-        let mut resolution = analysis.resolution;
-        if self.last_resolution.is_some() && !analysis.has_random_access {
-            resolution = None;
-        }
-        if current_stream_info
-            .programs
-            .iter()
-            .any(|p| !p.video_streams.is_empty())
-            && include_resolution
+        // Once a baseline exists, only a random-access segment may move it.
+        let resolution = analysis
+            .resolution
+            .filter(|_| self.last_resolution.is_none() || analysis.has_random_access);
+        if self.last_resolution.is_none()
             && resolution.is_none()
-            && self.last_resolution.is_none()
-            && self.resolution_probe_remaining > 0
+            && current_stream_info
+                .programs
+                .iter()
+                .any(|p| !p.video_streams.is_empty())
         {
             self.resolution_probe_remaining = self.resolution_probe_remaining.saturating_sub(1);
         }
 
-        let mut split_reason: Option<SplitReason> = None;
-
-        // Compare with previous stream information
-        if let Some(previous_analysis) = &self.last_ts_analysis {
-            let previous_info = &previous_analysis.stream_info;
-            // Check for program changes
-            if previous_info.program_count != current_stream_info.program_count {
-                info!(
-                    "{} Program count changed: {} -> {}",
-                    self.context.name,
-                    previous_info.program_count,
-                    current_stream_info.program_count
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "program count changed: {} -> {}",
-                        previous_info.program_count, current_stream_info.program_count
-                    ),
-                });
-            }
-
-            // Check for transport stream ID changes
-            if previous_info.transport_stream_id != current_stream_info.transport_stream_id {
-                info!(
-                    "{} Transport Stream ID changed: {} -> {}",
-                    self.context.name,
-                    previous_info.transport_stream_id,
-                    current_stream_info.transport_stream_id
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "transport stream ID changed: {} -> {}",
-                        previous_info.transport_stream_id, current_stream_info.transport_stream_id
-                    ),
-                });
-            }
-
-            // Compare stream layouts within programs
-            if split_reason.is_none()
-                && previous_info.programs.len() != current_stream_info.programs.len()
-            {
-                info!(
-                    "{} Number of programs changed: {} -> {}",
-                    self.context.name,
-                    previous_info.programs.len(),
-                    current_stream_info.programs.len()
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "number of programs changed: {} -> {}",
-                        previous_info.programs.len(),
-                        current_stream_info.programs.len()
-                    ),
-                });
-            }
-
-            // Check individual program changes
-            if split_reason.is_none() {
-                for (prev_prog, curr_prog) in previous_info
-                    .programs
-                    .iter()
-                    .zip(current_stream_info.programs.iter())
-                {
-                    if prev_prog.program_number != curr_prog.program_number {
-                        info!(
-                            "{} Program number changed: {} -> {}",
-                            self.context.name, prev_prog.program_number, curr_prog.program_number
-                        );
-                        split_reason = Some(SplitReason::StreamStructureChange {
-                            description: format!(
-                                "program number changed: {} -> {}",
-                                prev_prog.program_number, curr_prog.program_number
-                            ),
-                        });
-                        break;
-                    }
-
-                    // Check for codec changes in video streams
-                    for (prev_stream, curr_stream) in prev_prog
-                        .video_streams
-                        .iter()
-                        .zip(curr_prog.video_streams.iter())
-                    {
-                        if prev_stream.stream_type != curr_stream.stream_type {
-                            info!(
-                                "{} Video codec changed for program {}: {:?} -> {:?}",
-                                self.context.name,
-                                curr_prog.program_number,
-                                prev_stream.stream_type,
-                                curr_stream.stream_type
-                            );
-                            split_reason = Some(SplitReason::VideoCodecChange {
-                                from: pipeline_common::VideoCodecInfo {
-                                    codec: format!("{:?}", prev_stream.stream_type),
-                                    profile: None,
-                                    level: None,
-                                    width: None,
-                                    height: None,
-                                    signature: 0,
-                                },
-                                to: pipeline_common::VideoCodecInfo {
-                                    codec: format!("{:?}", curr_stream.stream_type),
-                                    profile: None,
-                                    level: None,
-                                    width: None,
-                                    height: None,
-                                    signature: 0,
-                                },
-                            });
-                            break;
-                        }
-                    }
-
-                    // Check for codec changes in audio streams
-                    if split_reason.is_none() {
-                        for (prev_stream, curr_stream) in prev_prog
-                            .audio_streams
-                            .iter()
-                            .zip(curr_prog.audio_streams.iter())
-                        {
-                            if prev_stream.stream_type != curr_stream.stream_type {
-                                info!(
-                                    "{} Audio codec changed for program {}: {:?} -> {:?}",
-                                    self.context.name,
-                                    curr_prog.program_number,
-                                    prev_stream.stream_type,
-                                    curr_stream.stream_type
-                                );
-                                split_reason = Some(SplitReason::AudioCodecChange {
-                                    from: pipeline_common::AudioCodecInfo {
-                                        codec: format!("{:?}", prev_stream.stream_type),
-                                        sample_rate: None,
-                                        channels: None,
-                                        signature: 0,
-                                    },
-                                    to: pipeline_common::AudioCodecInfo {
-                                        codec: format!("{:?}", curr_stream.stream_type),
-                                        sample_rate: None,
-                                        channels: None,
-                                        signature: 0,
-                                    },
-                                });
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+        let mut split_reason = self.last_ts_analysis.as_ref().and_then(|previous| {
+            Self::structure_change(&previous.stream_info, current_stream_info)
+        });
+        if let Some(reason) = &split_reason {
+            info!(stream = %self.context.name, ?reason, "TS program structure changed");
         }
 
         // Update the baseline even if a codec/program change already selected a
@@ -311,6 +168,87 @@ impl SegmentSplitOperator {
         self.last_ts_analysis = Some(analysis);
 
         split_reason
+    }
+
+    /// Compares program layouts. PCR PID and stream-count changes are not
+    /// structural: which PID carries timing, or which tracks a segment happens
+    /// to include, does not change how the program decodes.
+    fn structure_change(previous: &TsStreamInfo, current: &TsStreamInfo) -> Option<SplitReason> {
+        let structure =
+            |description: String| Some(SplitReason::StreamStructureChange { description });
+        if previous.transport_stream_id != current.transport_stream_id {
+            return structure(format!(
+                "transport stream ID changed: {} -> {}",
+                previous.transport_stream_id, current.transport_stream_id
+            ));
+        }
+        if previous.program_count != current.program_count {
+            return structure(format!(
+                "program count changed: {} -> {}",
+                previous.program_count, current.program_count
+            ));
+        }
+        if previous.programs.len() != current.programs.len() {
+            return structure(format!(
+                "number of programs changed: {} -> {}",
+                previous.programs.len(),
+                current.programs.len()
+            ));
+        }
+        previous
+            .programs
+            .iter()
+            .zip(&current.programs)
+            .find_map(|(previous, current)| Self::program_change(previous, current))
+    }
+
+    fn program_change(previous: &ProgramInfo, current: &ProgramInfo) -> Option<SplitReason> {
+        if previous.program_number != current.program_number {
+            return Some(SplitReason::StreamStructureChange {
+                description: format!(
+                    "program number changed: {} -> {}",
+                    previous.program_number, current.program_number
+                ),
+            });
+        }
+        let changed_codec = |previous: &[StreamEntry], current: &[StreamEntry]| {
+            previous
+                .iter()
+                .zip(current)
+                .find(|(previous, current)| previous.stream_type != current.stream_type)
+                .map(|(previous, current)| {
+                    (
+                        format!("{:?}", previous.stream_type),
+                        format!("{:?}", current.stream_type),
+                    )
+                })
+        };
+        if let Some((from, to)) = changed_codec(&previous.video_streams, &current.video_streams) {
+            let codec = |codec| VideoCodecInfo {
+                codec,
+                profile: None,
+                level: None,
+                width: None,
+                height: None,
+                signature: 0,
+            };
+            return Some(SplitReason::VideoCodecChange {
+                from: codec(from),
+                to: codec(to),
+            });
+        }
+        changed_codec(&previous.audio_streams, &current.audio_streams).map(|(from, to)| {
+            let codec = |codec| AudioCodecInfo {
+                codec,
+                sample_rate: None,
+                channels: None,
+                signature: 0,
+            };
+            SplitReason::AudioCodecChange {
+                from: codec(from),
+                to: codec(to),
+            }
+        })
     }
 
     // Reset operator state
