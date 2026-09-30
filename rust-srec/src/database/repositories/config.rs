@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_global_config_metadata_never_creates_default_rows() {
+    async fn empty_global_config_read_never_creates_default_rows() {
         tokio::time::timeout(Duration::from_secs(20), async {
             let dir = tempfile::tempdir().unwrap();
             let url = format!("sqlite:{}", dir.path().join("config.db").display());
@@ -305,26 +305,36 @@ mod tests {
             let repo = SqlxConfigRepository::new(reader.clone(), writer.clone());
             let original = repo.get_global_config().await.unwrap();
 
-            // Reusing this cached SELECT after an external schema change makes
-            // SQLx 0.9's worker panic and its row stream appear empty. Future
-            // drivers may recover; neither outcome should insert defaults.
-            sqlx::query("ALTER TABLE global_config ADD COLUMN regression_extra INTEGER")
-                .execute(&writer)
-                .await
-                .unwrap();
-            if let Ok(config) = repo.get_global_config().await {
-                assert_eq!(config.id, original.id);
-            }
+            // Shadow the table on this reader only to model an interrupted
+            // worker's empty row stream without depending on driver panic
+            // diagnostics or cleanup. The writer still sees the saved row.
+            sqlx::query(
+                "CREATE TEMP VIEW global_config AS SELECT * FROM main.global_config WHERE 0",
+            )
+            .execute(&reader)
+            .await
+            .unwrap();
+            assert!(matches!(
+                repo.get_global_config().await,
+                Err(Error::DatabaseSqlx(sqlx::Error::RowNotFound))
+            ));
             let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM global_config")
                 .fetch_all(&writer)
                 .await
                 .unwrap();
             assert_eq!(ids, vec![original.id]);
+            sqlx::query("DROP VIEW temp.global_config")
+                .execute(&reader)
+                .await
+                .unwrap();
+            let recovered = repo.get_global_config().await.unwrap();
+            assert_eq!(recovered.id, ids[0]);
+            assert_eq!(recovered.output_folder, original.output_folder);
             reader.close().await;
             writer.close().await;
         })
         .await
-        .expect("stale metadata must not hang configuration loading");
+        .expect("empty-read regression must finish");
     }
 
     #[test]
