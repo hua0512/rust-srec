@@ -12,7 +12,7 @@ use reqwest::{Response, StatusCode, Url};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, info, warn};
@@ -196,37 +196,22 @@ impl FlvDownloader {
             opened = self.open_stream(&url, &events) => opened?,
         };
         let (tx, rx) = mpsc::channel(2);
-
-        // Send the first chunk we already read
-        let first_chunk_for_send = first_chunk.clone();
+        let mut progress = ProgressMeter {
+            events: events.clone(),
+            resource_url: Arc::from(url.as_str()),
+            min_bytes: self.config.progress_emit_min_bytes,
+            min_interval: self.config.progress_emit_min_interval,
+            total: 0,
+            pending: 0,
+            last_emit: Instant::now(),
+        };
         let stream_token = token.clone();
-        let forward_events = events.clone();
-        let resource_url: Arc<str> = Arc::from(url.as_str());
-        let progress_emit_min_bytes = self.config.progress_emit_min_bytes;
-        let progress_emit_min_interval = self.config.progress_emit_min_interval;
         tokio::spawn(async move {
-            // First, send the chunk we already validated
-            let mut bytes_total = first_chunk_for_send.len() as u64;
-            let mut progress_since_last = first_chunk_for_send.len() as u64;
-            let mut last_progress_emit = Instant::now();
-            if progress_emit_min_bytes == 0 || progress_emit_min_interval.is_zero() {
-                emit_event(
-                    &forward_events,
-                    DownloadEvent::Progress {
-                        resource: ResourceId::FlvStream {
-                            url: Arc::clone(&resource_url),
-                        },
-                        bytes_delta: progress_since_last,
-                        bytes_total,
-                    },
-                );
-                progress_since_last = 0;
-            }
-            if tx.send(Ok(first_chunk_for_send)).await.is_err() {
+            progress.record(first_chunk.len());
+            if tx.send(Ok(first_chunk)).await.is_err() {
                 return;
             }
 
-            // Then continue with the rest of the stream
             loop {
                 tokio::select! {
                     _ = stream_token.cancelled() => {
@@ -234,63 +219,18 @@ impl FlvDownloader {
                         break;
                     }
                     data = byte_stream.next() => {
-                        match data {
-                            Some(item) => {
-                                if let Ok(bytes) = &item {
-                                    bytes_total += bytes.len() as u64;
-                                    progress_since_last += bytes.len() as u64;
-                                    let elapsed = last_progress_emit.elapsed();
-                                    if progress_emit_min_bytes == 0
-                                        || progress_emit_min_interval.is_zero()
-                                        || progress_since_last >= progress_emit_min_bytes
-                                        || elapsed >= progress_emit_min_interval
-                                    {
-                                        emit_event(
-                                            &forward_events,
-                                            DownloadEvent::Progress {
-                                                resource: ResourceId::FlvStream {
-                                                    url: Arc::clone(&resource_url),
-                                                },
-                                                bytes_delta: progress_since_last,
-                                                bytes_total,
-                                            },
-                                        );
-                                        progress_since_last = 0;
-                                        last_progress_emit = Instant::now();
-                                    }
-                                }
-                                // A body error ends the resource: it was not
-                                // finished, so no ResourceFinished follows it.
-                                let failed = item.is_err();
-                                if tx.send(item).await.is_err() || failed {
-                                    break;
-                                }
-                            }
-                            None => {
-                                if progress_since_last > 0 {
-                                    emit_event(
-                                        &forward_events,
-                                        DownloadEvent::Progress {
-                                            resource: ResourceId::FlvStream {
-                                                url: Arc::clone(&resource_url),
-                                            },
-                                            bytes_delta: progress_since_last,
-                                            bytes_total,
-                                        },
-                                    );
-                                }
-                                emit_event(
-                                    &forward_events,
-                                    DownloadEvent::ResourceFinished {
-                                        resource: ResourceId::FlvStream {
-                                            url: Arc::clone(&resource_url),
-                                        },
-                                        bytes: bytes_total,
-                                        from_cache: false,
-                                    },
-                                );
-                                break;
-                            }
+                        let Some(item) = data else {
+                            progress.finish();
+                            break;
+                        };
+                        if let Ok(bytes) = &item {
+                            progress.record(bytes.len());
+                        }
+                        // A body error ends the resource: it was not
+                        // finished, so no ResourceFinished follows it.
+                        let failed = item.is_err();
+                        if tx.send(item).await.is_err() || failed {
+                            break;
                         }
                     }
                 }
@@ -420,6 +360,67 @@ fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
     })
 }
 
+/// Byte accounting for one FLV stream, emitting `Progress` at most once per
+/// `min_bytes` or `min_interval` (either being zero disables throttling).
+struct ProgressMeter {
+    events: Option<EventSink>,
+    resource_url: Arc<str>,
+    min_bytes: u64,
+    min_interval: Duration,
+    total: u64,
+    pending: u64,
+    last_emit: Instant,
+}
+
+impl ProgressMeter {
+    fn resource(&self) -> ResourceId {
+        ResourceId::FlvStream {
+            url: Arc::clone(&self.resource_url),
+        }
+    }
+
+    fn record(&mut self, len: usize) {
+        self.total += len as u64;
+        self.pending += len as u64;
+        if self.min_bytes == 0
+            || self.min_interval.is_zero()
+            || self.pending >= self.min_bytes
+            || self.last_emit.elapsed() >= self.min_interval
+        {
+            self.flush();
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.pending == 0 {
+            return;
+        }
+        emit_event(
+            &self.events,
+            DownloadEvent::Progress {
+                resource: self.resource(),
+                bytes_delta: self.pending,
+                bytes_total: self.total,
+            },
+        );
+        self.pending = 0;
+        self.last_emit = Instant::now();
+    }
+
+    /// Flush the remainder and report the stream as fully received.
+    fn finish(mut self) {
+        self.flush();
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceFinished {
+                resource: self.resource(),
+                bytes: self.total,
+                from_cache: false,
+            },
+        );
+    }
+}
+
 fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
     if let Some(events) = events {
         events.emit(event);
@@ -437,5 +438,52 @@ impl MediaEngine for FlvDownloader {
             request.protocol = ProtocolSelection::Flv(Default::default());
         }
         self.start_session(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn progress(event: &DownloadEvent) -> Option<(u64, u64)> {
+        match event {
+            DownloadEvent::Progress {
+                bytes_delta,
+                bytes_total,
+                ..
+            } => Some((*bytes_delta, *bytes_total)),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn throttled_progress_batches_bytes_and_flushes_the_rest_on_finish() {
+        let (sink, events) = EventSink::channel(16);
+        let mut meter = ProgressMeter {
+            events: Some(sink),
+            resource_url: Arc::from("https://cdn.example.com/live.flv"),
+            min_bytes: 10,
+            min_interval: Duration::from_secs(3600),
+            total: 0,
+            pending: 0,
+            last_emit: Instant::now(),
+        };
+
+        meter.record(4);
+        meter.record(7);
+        meter.record(3);
+        meter.finish();
+
+        let events: Vec<_> = events.collect().await;
+        let progress: Vec<_> = events.iter().filter_map(progress).collect();
+        assert_eq!(progress, [(11, 11), (3, 14)]);
+        assert!(matches!(
+            events.last(),
+            Some(DownloadEvent::ResourceFinished {
+                bytes: 14,
+                from_cache: false,
+                ..
+            })
+        ));
     }
 }
