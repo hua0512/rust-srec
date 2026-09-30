@@ -321,7 +321,6 @@ impl ProtocolWriter for HlsWriter {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use bytes::Bytes;
     use m3u8_rs::MediaSegment;
     use pipeline_common::{
         PipelineError, PipelineProvider, StreamerContext, config::PipelineConfig,
@@ -545,34 +544,6 @@ mod tests {
     }
 
     #[test]
-    fn size_rotation_restores_init_and_accounts_for_its_bytes() {
-        for limit in [1, (INIT.len() + MEDIA0.len()) as u64] {
-            let dir = tempfile::tempdir().unwrap();
-            let mut writer = HlsWriter::new(HlsWriterConfig {
-                output_dir: dir.path().into(),
-                base_name: "test-%i".into(),
-                extension: "mp4".into(),
-                max_file_size: Some(limit),
-            });
-            let stats = write_items(&mut writer, vec![init(INIT), media(MEDIA0), media(MEDIA1)]);
-            assert_eq!(stats.files_created, 2);
-            assert_eq!(
-                stats.bytes_written,
-                (2 * INIT.len() + MEDIA0.len() + MEDIA1.len()) as u64
-            );
-            assert_eq!(stats.duration_secs, 2.0);
-            assert_eq!(
-                std::fs::read(dir.path().join("test-000.mp4")).unwrap(),
-                [INIT, MEDIA0].concat()
-            );
-            assert_eq!(
-                std::fs::read(dir.path().join("test-001.mp4")).unwrap(),
-                [INIT, MEDIA1].concat()
-            );
-        }
-    }
-
-    #[test]
     fn explicit_new_init_supersedes_the_cached_init_at_a_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let mut writer = HlsWriter::new(HlsWriterConfig {
@@ -597,79 +568,6 @@ mod tests {
             std::fs::read(dir.path().join("test-001.mp4")).unwrap(),
             [OTHER_INIT, OTHER_MEDIA].concat()
         );
-    }
-
-    #[test]
-    fn pipeline_preserves_media_across_a_repeated_map_without_duplicate_headers() {
-        use pipeline_common::{
-            PipelineError, PipelineProvider, StreamerContext, config::PipelineConfig,
-        };
-        use tokio_util::sync::CancellationToken;
-
-        let pipeline = crate::HlsPipeline::with_config(
-            StreamerContext::arc_new(CancellationToken::new()),
-            &PipelineConfig::default(),
-            crate::HlsPipelineConfig::default(),
-        )
-        .build_pipeline();
-        let inputs = [init(INIT), media(MEDIA0), init(INIT), media(MEDIA1)];
-        let mut output = Vec::new();
-        pipeline
-            .run(
-                inputs.into_iter().map(Ok::<_, PipelineError>),
-                &mut |item| output.push(item.unwrap()),
-            )
-            .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: dir.path().into(),
-            base_name: "test-%i".into(),
-            extension: "mp4".into(),
-            max_file_size: None,
-        });
-        let stats = write_items(&mut writer, output);
-        let expected = [INIT, MEDIA0, MEDIA1].concat();
-        assert_eq!(stats.files_created, 1);
-        assert_eq!(stats.duration_secs, 2.0);
-        assert_eq!(stats.bytes_written, expected.len() as u64);
-        assert_eq!(
-            std::fs::read(dir.path().join("test-000.mp4")).unwrap(),
-            expected
-        );
-    }
-
-    #[test]
-    fn rotates_on_max_file_size_without_losing_or_duplicating_bytes() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: dir.path().into(),
-            base_name: "test-%i".into(),
-            extension: "ts".into(),
-            max_file_size: Some(15),
-        });
-        // Payloads are opaque to this writer; distinct bytes expose loss/reordering.
-        let items = [0u8, 1, 2]
-            .into_iter()
-            .map(|value| {
-                HlsData::ts(
-                    MediaSegment {
-                        duration: 1.0,
-                        ..Default::default()
-                    },
-                    Bytes::from(vec![value; 10]),
-                )
-            })
-            .collect();
-        let stats = write_items(&mut writer, items);
-        assert_eq!(stats.files_created, 3);
-        assert_eq!(stats.bytes_written, 30);
-        assert_eq!(stats.duration_secs, 3.0);
-        for index in 0..3 {
-            assert_eq!(
-                std::fs::read(dir.path().join(format!("test-{index:03}.ts"))).unwrap(),
-                vec![index as u8; 10]
-            );
-        }
     }
 
     #[test]

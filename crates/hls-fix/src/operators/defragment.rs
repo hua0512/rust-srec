@@ -547,73 +547,32 @@ mod tests {
     }
 
     #[test]
-    fn passes_through_ts_without_psi_and_no_split_at_first_psi() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
+    fn forwards_ts_and_end_markers_unchanged() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let mut operator = DefragmentOperator::new(context.clone());
-
+        let inputs = [
+            make_ts_segment_without_psi(),
+            make_ts_segment_with_pat_pmt(),
+            HlsData::end_marker(),
+            make_ts_segment_without_psi(),
+        ];
+        let expected: Vec<Option<Bytes>> = inputs.iter().map(|item| item.data().cloned()).collect();
         let mut out = Vec::new();
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
+        for item in inputs {
             operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
-                .unwrap();
-            operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
                 .unwrap();
         }
-        assert_eq!(out.len(), 2);
-
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, make_ts_segment_with_pat_pmt(), &mut output)
-                .unwrap();
-        }
-
-        assert_eq!(out.len(), 3);
-        assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::TsData(_)));
-        assert!(matches!(out[2], HlsData::TsData(_)));
-    }
-
-    #[test]
-    fn forwards_end_marker_after_ts_without_psi() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = DefragmentOperator::new(context.clone());
-
-        let mut out = Vec::new();
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
-                .unwrap();
-        }
-        assert_eq!(out.len(), 1);
-
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, HlsData::end_marker(), &mut output)
-                .unwrap();
-        }
-
-        assert_eq!(out.len(), 2);
-        assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::EndMarker(_)));
+        assert!(matches!(out[2], HlsData::EndMarker(None)));
+        assert_eq!(
+            out.iter()
+                .map(|item| item.data().cloned())
+                .collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[test]
