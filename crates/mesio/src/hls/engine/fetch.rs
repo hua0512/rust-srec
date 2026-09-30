@@ -27,7 +27,9 @@ use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 use super::budget::{ByteBudget, ByteReservation};
 use super::crypto::{CryptoExecutor, KeyCache, validate_key_bytes};
-use super::descriptor::{EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat};
+use super::descriptor::{
+    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentSource,
+};
 use super::identity::{ByteRangeKey, SegmentKind};
 use super::payload::SegmentPayload;
 use super::store::{FailureClass, ReadyJob, SegmentOutcome};
@@ -117,6 +119,11 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         metrics.record_cache_miss();
     }
 
+    let is_prefetch = descriptor.source == SegmentSource::PlaylistPrefetch;
+    if is_prefetch && let Some(metrics) = &ctx.metrics {
+        metrics.record_prefetch_initiated();
+    }
+
     // --- Download (attempt-level retry, deliberately tight) ---
     let raw = match download_body(
         &ctx,
@@ -185,15 +192,27 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     // Release the output reservation only now, after wrap: from here the
     // payload is accounted by the reactor's pending budget.
     drop(output_reservation);
+    if is_prefetch && let Some(metrics) = &ctx.metrics {
+        metrics.record_prefetch_used();
+    }
     SegmentOutcome::Completed { key, msn, payload }
 }
 
+/// Keyed like `SegmentKey`: an init and a media segment at the same URI and
+/// range are distinct identities, so they must not share a cache entry.
 fn segment_cache_key(key: &super::identity::SegmentKey) -> CacheKey {
+    let kind = match key.kind {
+        SegmentKind::Init => "init",
+        SegmentKind::Media => "media",
+    };
+    let identifier = match key.byte_range {
+        Some(range) => format!("{kind}:br={}@{}", range.length, range.offset),
+        None => kind.to_string(),
+    };
     CacheKey::new(
         CacheResourceType::Segment,
         key.uri.to_string(),
-        key.byte_range
-            .map(|range| format!("br={}@{}", range.length, range.offset)),
+        Some(identifier),
     )
 }
 
@@ -202,13 +221,32 @@ fn wrap_payload(
     descriptor: &Arc<super::descriptor::SegmentDescriptor>,
 ) -> SegmentPayload {
     let descriptor = Arc::clone(descriptor);
+    // RFC 8216 allows EXT-X-MAP for MPEG-TS too, so a map says nothing about
+    // the container; the bytes do.
+    let is_ts = is_mpeg_ts(&data);
     if descriptor.key.kind == SegmentKind::Init {
-        SegmentPayload::Mp4Init { data, descriptor }
-    } else if descriptor.init_key.is_some() || is_m4s_segment(&descriptor.parsed_url) {
+        if is_ts {
+            SegmentPayload::TsInit { data, descriptor }
+        } else {
+            SegmentPayload::Mp4Init { data, descriptor }
+        }
+    } else if !is_ts && (descriptor.init_key.is_some() || is_m4s_segment(&descriptor.parsed_url)) {
         SegmentPayload::Mp4Media { data, descriptor }
     } else {
         SegmentPayload::Ts { data, descriptor }
     }
+}
+
+/// MPEG-TS packets are 188 bytes, each starting with the 0x47 sync byte. An
+/// fMP4 box starts with a big-endian size, so a leading 0x47 would mean a box
+/// over 1 GiB; checking the next packet's sync byte too rules out chance.
+fn is_mpeg_ts(data: &[u8]) -> bool {
+    const TS_PACKET_SIZE: usize = 188;
+    const SYNC_BYTE: u8 = 0x47;
+    data.first() == Some(&SYNC_BYTE)
+        && data
+            .get(TS_PACKET_SIZE)
+            .is_none_or(|&byte| byte == SYNC_BYTE)
 }
 
 /// Download with attempt-level retry. The attempt budget is tight on purpose:
@@ -321,6 +359,7 @@ async fn download_once(
     }
     let range_mode = validate_range_response(status, response.headers(), key.byte_range)
         .map_err(|e| (e, false))?;
+    let http_version = response.version();
     let content_length = response.content_length();
     emit_event(
         ctx,
@@ -338,9 +377,20 @@ async fn download_once(
     let budget_capacity = ctx.budget.download.capacity();
     let can_never_fit = |size: u64| -> bool { budget_capacity > 0 && size > budget_capacity };
 
+    // A server that ignored Range sends the whole resource, but only the
+    // requested window is kept (see `RangeWindow`), so size checks apply to it.
+    let expected_len = match range_mode {
+        RangeMode::Full(range) => Some(range.length),
+        RangeMode::None | RangeMode::Partial(_) => content_length,
+    };
+    let mut window = match range_mode {
+        RangeMode::Full(range) => Some(RangeWindow::new(range)),
+        RangeMode::None | RangeMode::Partial(_) => None,
+    };
+
     // First reconcile point: response headers. Content-Length was unknowable
     // at admission; grow (or shrink later) toward it now.
-    if let Some(content_length) = content_length {
+    if let Some(content_length) = expected_len {
         if (max_segment_size > 0 && content_length > max_segment_size)
             || can_never_fit(content_length)
         {
@@ -369,7 +419,7 @@ async fn download_once(
     // Stream the body, enforcing the reservation at chunk granularity: a
     // chunked or lying response cannot blow the budget one chunk at a time.
     let mut buffer = BytesMut::with_capacity(
-        usize::try_from(content_length.unwrap_or(8 * 1024)).unwrap_or(8 * 1024),
+        usize::try_from(expected_len.unwrap_or(8 * 1024)).unwrap_or(8 * 1024),
     );
     let mut stream = response.bytes_stream();
     let mut progress_since_last = 0_u64;
@@ -386,6 +436,10 @@ async fn download_once(
             let class = classify_reqwest(&e);
             (Failure::new(class, e.to_string()), true)
         })?;
+        let chunk = match window.as_mut() {
+            Some(window) => window.keep(chunk),
+            None => chunk,
+        };
 
         let new_len = buffer.len() as u64 + chunk.len() as u64;
         progress_since_last += chunk.len() as u64;
@@ -435,6 +489,10 @@ async fn download_once(
             }
         }
         buffer.extend_from_slice(&chunk);
+        if window.as_ref().is_some_and(RangeWindow::is_complete) {
+            // The rest of the ignored-Range resource is not needed.
+            break;
+        }
     }
 
     let bytes = materialize_range(buffer.freeze(), range_mode).map_err(|e| (e, false))?;
@@ -452,6 +510,11 @@ async fn download_once(
 
     if let Some(metrics) = &ctx.metrics {
         metrics.record_download(bytes.len() as u64, started.elapsed().as_millis() as u64);
+        metrics.record_request_with_host(
+            http_version,
+            bytes.len() as u64,
+            url.host_str().unwrap_or_default(),
+        );
     }
     emit_event(
         ctx,
@@ -477,9 +540,8 @@ enum RangeMode {
     /// The server honored the Range request and returned exactly the requested
     /// sub-resource.
     Partial(ByteRangeKey),
-    /// The server ignored Range and returned the full resource. We must copy
-    /// out the requested bytes so the retained `Bytes` allocation is the range,
-    /// not the whole backing object.
+    /// The server ignored Range and returned the full resource. Only the
+    /// requested bytes are kept as the body streams in (see `RangeWindow`).
     Full(ByteRangeKey),
 }
 
@@ -539,6 +601,45 @@ fn parse_content_range(value: &HeaderValue) -> Option<(u64, u64)> {
     (start <= end).then_some((start, end))
 }
 
+/// The requested byte range within a full response whose server ignored the
+/// Range header. Bytes outside it are dropped as they stream in, so memory and
+/// the download budget are charged only for the range.
+struct RangeWindow {
+    /// Position in the full resource of the next byte to arrive.
+    position: u64,
+    start: u64,
+    end: u64,
+}
+
+impl RangeWindow {
+    fn new(range: ByteRangeKey) -> Self {
+        Self {
+            position: 0,
+            start: range.offset,
+            end: range.offset.saturating_add(range.length),
+        }
+    }
+
+    fn keep(&mut self, chunk: Bytes) -> Bytes {
+        let chunk_start = self.position;
+        self.position = self.position.saturating_add(chunk.len() as u64);
+        let from = self
+            .start
+            .saturating_sub(chunk_start)
+            .min(chunk.len() as u64);
+        let to = self.end.saturating_sub(chunk_start).min(chunk.len() as u64);
+        if from >= to {
+            return Bytes::new();
+        }
+        // Both bounds are within chunk.len(), so they fit in usize.
+        chunk.slice(from as usize..to as usize)
+    }
+
+    fn is_complete(&self) -> bool {
+        self.position >= self.end
+    }
+}
+
 fn materialize_range(bytes: Bytes, mode: RangeMode) -> Result<Bytes, Failure> {
     match mode {
         RangeMode::None => Ok(bytes),
@@ -556,39 +657,21 @@ fn materialize_range(bytes: Bytes, mode: RangeMode) -> Result<Bytes, Failure> {
                 ))
             }
         }
+        // The body was already narrowed to the window while streaming.
         RangeMode::Full(range) => {
-            let start = usize::try_from(range.offset).map_err(|_| {
-                Failure::new(
-                    FailureClass::InvalidFormat,
-                    format!("byte range offset {} cannot be represented", range.offset),
-                )
-            })?;
-            let length = usize::try_from(range.length).map_err(|_| {
-                Failure::new(
-                    FailureClass::InvalidFormat,
-                    format!("byte range length {} cannot be represented", range.length),
-                )
-            })?;
-            let end = start.checked_add(length).ok_or_else(|| {
-                Failure::new(
+            if bytes.len() as u64 == range.length {
+                Ok(bytes)
+            } else {
+                Err(Failure::new(
                     FailureClass::InvalidFormat,
                     format!(
-                        "byte range length={} offset={} overflows",
-                        range.length, range.offset
+                        "full response does not contain requested byte range {}-{} (got {} bytes of it)",
+                        range.offset,
+                        range.offset.saturating_add(range.length),
+                        bytes.len()
                     ),
-                )
-            })?;
-            let Some(slice) = bytes.get(start..end) else {
-                return Err(Failure::new(
-                    FailureClass::InvalidFormat,
-                    format!(
-                        "full response length {} does not contain requested byte range {}-{end}",
-                        bytes.len(),
-                        range.offset
-                    ),
-                ));
-            };
-            Ok(Bytes::copy_from_slice(slice))
+                ))
+            }
         }
     }
 }
@@ -668,25 +751,27 @@ async fn decrypt_segment(
 async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8; 16], Failure> {
     let identity = Arc::clone(&enc.key_identity_uri);
     let fetch_url = Arc::clone(&enc.key_fetch_url);
-    emit_event(
-        ctx,
-        DownloadEvent::ResourceStarted {
-            resource: ResourceId::HlsKey {
-                uri: Arc::clone(&identity),
-            },
-            display_url: Arc::from(fetch_url.as_str()),
-            content_length: None,
-        },
-    );
+    // Key resource events describe the one real fetch, not every segment
+    // that reads the cached key.
     let result = ctx
         .key_cache
         .get_with(Arc::clone(&identity), {
+            let events = ctx.events.clone();
             let ctx_clients = Arc::clone(&ctx.clients);
             let fetcher = ctx.config.fetcher_config.clone();
             let params = ctx.config.base.params.clone();
             let cancel = ctx.cancel.clone();
             let identity = Arc::clone(&identity);
             async move {
+                if let Some(events) = &events {
+                    events.emit(DownloadEvent::ResourceStarted {
+                        resource: ResourceId::HlsKey {
+                            uri: Arc::clone(&identity),
+                        },
+                        display_url: Arc::from(fetch_url.as_str()),
+                        content_length: None,
+                    });
+                }
                 let client = ctx_clients.client_for_url(&fetch_url);
                 let mut retries = 0;
                 loop {
@@ -736,15 +821,17 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
         .await;
 
     match result {
-        Ok(key) => {
-            emit_event(
-                ctx,
-                DownloadEvent::ResourceFinished {
-                    resource: ResourceId::HlsKey { uri: identity },
-                    bytes: key.len() as u64,
-                    from_cache: false,
-                },
-            );
+        Ok((key, fetched)) => {
+            if fetched {
+                emit_event(
+                    ctx,
+                    DownloadEvent::ResourceFinished {
+                        resource: ResourceId::HlsKey { uri: identity },
+                        bytes: key.len() as u64,
+                        from_cache: false,
+                    },
+                );
+            }
             Ok(key)
         }
         Err(e) => Err(match e.as_ref() {
@@ -787,5 +874,100 @@ fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
         FailureClass::Timeout
     } else {
         FailureClass::Network
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hls::engine::descriptor::SegmentDescriptor;
+    use crate::hls::engine::identity::SegmentKey;
+
+    fn descriptor(
+        uri: &str,
+        kind: SegmentKind,
+        init_key: Option<SegmentKey>,
+    ) -> Arc<SegmentDescriptor> {
+        Arc::new(SegmentDescriptor {
+            key: SegmentKey {
+                kind,
+                uri: Arc::from(uri),
+                byte_range: None,
+            },
+            msn: 1,
+            source: SegmentSource::Playlist,
+            parsed_url: Arc::new(Url::parse(uri).unwrap()),
+            discontinuity: false,
+            encryption: None,
+            init_key,
+            media_segment: Arc::new(m3u8_rs::MediaSegment {
+                uri: uri.to_string(),
+                ..Default::default()
+            }),
+        })
+    }
+
+    fn ts_packets(count: usize) -> Bytes {
+        let mut data = vec![0u8; 188 * count];
+        for packet in data.chunks_mut(188) {
+            packet[0] = 0x47;
+        }
+        Bytes::from(data)
+    }
+
+    #[test]
+    fn ts_stream_with_a_map_stays_ts() {
+        let map = descriptor("https://e.com/map.ts", SegmentKind::Init, None);
+        let media = descriptor(
+            "https://e.com/seg.ts",
+            SegmentKind::Media,
+            Some(map.key.clone()),
+        );
+
+        assert!(matches!(
+            wrap_payload(ts_packets(2), &map),
+            SegmentPayload::TsInit { .. }
+        ));
+        assert!(matches!(
+            wrap_payload(ts_packets(3), &media),
+            SegmentPayload::Ts { .. }
+        ));
+    }
+
+    #[test]
+    fn fmp4_with_a_map_stays_fmp4() {
+        let map = descriptor("https://e.com/init.mp4", SegmentKind::Init, None);
+        let media = descriptor(
+            "https://e.com/seg.m4s",
+            SegmentKind::Media,
+            Some(map.key.clone()),
+        );
+        let ftyp = Bytes::from_static(b"\x00\x00\x00\x18ftypiso6");
+        let moof = Bytes::from_static(b"\x00\x00\x00\x10moof");
+
+        assert!(matches!(
+            wrap_payload(ftyp, &map),
+            SegmentPayload::Mp4Init { .. }
+        ));
+        assert!(matches!(
+            wrap_payload(moof, &media),
+            SegmentPayload::Mp4Media { .. }
+        ));
+    }
+
+    #[test]
+    fn a_lone_sync_byte_followed_by_non_ts_data_is_not_ts() {
+        let mut data = vec![0u8; 400];
+        data[0] = 0x47;
+        assert!(!is_mpeg_ts(&data));
+        assert!(is_mpeg_ts(&ts_packets(1)));
+    }
+
+    #[test]
+    fn init_and_media_at_the_same_uri_use_distinct_cache_entries() {
+        let media = descriptor("https://e.com/same.mp4", SegmentKind::Media, None);
+        let init = descriptor("https://e.com/same.mp4", SegmentKind::Init, None);
+
+        assert_ne!(segment_cache_key(&media.key), segment_cache_key(&init.key));
     }
 }

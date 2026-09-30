@@ -639,6 +639,66 @@ async fn encrypted_stream_decrypts_with_single_key_fetch() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn key_resource_events_describe_the_one_real_fetch() {
+    use futures::StreamExt;
+    use mesio_engine::hls::HlsDownloader;
+
+    let origin = encrypted_origin(0, 0);
+    let base = origin.clone().serve().await;
+    let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        if item.expect("no stream error").segment_type() == hls::SegmentType::EndMarker {
+            break;
+        }
+    }
+    let mut captured = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        captured.push(event);
+    }
+
+    let key_started = captured
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                DownloadEvent::ResourceStarted {
+                    resource: ResourceId::HlsKey { .. },
+                    ..
+                }
+            )
+        })
+        .count();
+    let key_finished: Vec<bool> = captured
+        .iter()
+        .filter_map(|event| match event {
+            DownloadEvent::ResourceFinished {
+                resource: ResourceId::HlsKey { .. },
+                from_cache,
+                ..
+            } => Some(*from_cache),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(origin.hits("key.bin"), 1);
+    // Three segments share one fetched key: one start, one network finish.
+    assert_eq!(key_started, 1);
+    assert_eq!(key_finished, [false]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn transient_key_failures_are_retried_within_one_fetch() {
     let origin = encrypted_origin(503, 2);
     let mut config = fast_config();
@@ -700,6 +760,47 @@ async fn byterange_segments_emit_requested_slices_when_origin_ignores_range() {
         payloads,
         vec![Bytes::from_static(b"CDEF"), Bytes::from_static(b"GHI")]
     );
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ignored_range_is_budgeted_by_the_range_not_the_whole_file() {
+    let origin = Origin::new();
+    // A 1 MiB single-file stream whose origin ignores Range; each segment is
+    // a 1000-byte range of it.
+    let file: Vec<u8> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
+    let mut body = String::from(
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n",
+    );
+    for i in 0..3 {
+        body.push_str(&format!(
+            "#EXTINF:0.5,\n#EXT-X-BYTERANGE:1000@{}\nfile.ts\n",
+            i * 1000
+        ));
+    }
+    body.push_str("#EXT-X-ENDLIST\n");
+    origin.push_playlist(body);
+    origin.add_file("file.ts", file.clone());
+
+    let mut config = fast_config();
+    // Far smaller than the file, ample for any one range.
+    config.engine_config.max_inflight_download_bytes = 64 * 1024;
+    config.engine_config.initial_segment_size_estimate = 1000;
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, config).await;
+
+    let payloads: Vec<Bytes> = events
+        .iter()
+        .filter_map(|e| match e {
+            Ok(HlsStreamEvent::Data(data)) => data.data().cloned(),
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<Bytes> = (0..3)
+        .map(|i| Bytes::copy_from_slice(&file[i * 1000..(i + 1) * 1000]))
+        .collect();
+    assert_eq!(payloads, expected);
     assert!(ends_with_stream_ended(&events));
 }
 

@@ -114,15 +114,20 @@ impl KeyCache {
     /// callers for the same identity share one in-flight load. `load` receives
     /// the *latest* fetch URL from its captor, so a TTL-expired entry re-fetches
     /// with the freshest signed URL, not the one the key was first fetched with.
+    ///
+    /// The flag is true only for the caller whose `load` ran; cache hits and
+    /// callers that waited on another's load get false.
     pub async fn get_with<F>(
         &self,
         identity: Arc<str>,
         load: F,
-    ) -> Result<[u8; 16], Arc<HlsDownloaderError>>
+    ) -> Result<([u8; 16], bool), Arc<HlsDownloaderError>>
     where
         F: Future<Output = Result<[u8; 16], HlsDownloaderError>>,
     {
-        self.cache.try_get_with(identity, load).await
+        let entry = self.cache.entry(identity).or_try_insert_with(load).await?;
+        let loaded = entry.is_fresh();
+        Ok((entry.into_value(), loaded))
     }
 }
 
@@ -193,14 +198,18 @@ mod tests {
                     .await
             }));
         }
+        let mut loaders = 0;
         for t in tasks {
-            assert_eq!(t.await.unwrap().unwrap(), [7u8; 16]);
+            let (key, loaded) = t.await.unwrap().unwrap();
+            assert_eq!(key, [7u8; 16]);
+            loaders += usize::from(loaded);
         }
         assert_eq!(
             loads.load(Ordering::SeqCst),
             1,
             "concurrent gets for one identity must share a single load"
         );
+        assert_eq!(loaders, 1, "only the caller whose load ran reports it");
     }
 
     #[tokio::test]
@@ -218,8 +227,13 @@ mod tests {
         assert!(err.is_err());
 
         // A later load must run again and can succeed.
-        let ok = cache.get_with(identity, async { Ok([1u8; 16]) }).await;
-        assert_eq!(ok.unwrap(), [1u8; 16]);
+        let ok = cache
+            .get_with(Arc::clone(&identity), async { Ok([1u8; 16]) })
+            .await;
+        assert_eq!(ok.unwrap(), ([1u8; 16], true));
+        // Served from the cache now.
+        let hit = cache.get_with(identity, async { Ok([2u8; 16]) }).await;
+        assert_eq!(hit.unwrap(), ([1u8; 16], false));
     }
 
     #[test]
