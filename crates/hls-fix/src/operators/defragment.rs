@@ -8,6 +8,9 @@
 //! This operator preserves item boundaries; it does not validate or repair the
 //! encoded media within an item.
 //!
+//! Input from mesio already pairs each init with its media (see `HlsPipeline`),
+//! so the superseded-init and pre-init paths only matter for other producers.
+//!
 //! ## License
 //!
 //! MIT License
