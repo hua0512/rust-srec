@@ -1029,15 +1029,21 @@ impl SequenceAssembler {
         init_key: Option<&SegmentKey>,
         discontinuity_already_emitted: bool,
     ) -> Result<(), ()> {
-        let key = match init_key {
-            Some(key) if self.active_init_key.as_ref() == Some(key) => return Ok(()),
-            Some(key) => key.clone(),
-            None if self.active_init_key.is_some() => return Ok(()),
-            None => match self.latest_init_key.clone() {
-                Some(key) => key,
-                None => return Ok(()),
-            },
+        let Some(key) = init_key
+            .or(self.active_init_key.as_ref())
+            .or(self.latest_init_key.as_ref())
+            .cloned()
+        else {
+            return Ok(());
         };
+        if self.active_init_key.as_ref() == Some(&key) {
+            // Using the active init still counts as an access: otherwise
+            // unused prefetched maps can evict it before a switch back.
+            if self.inits.contains(&key) {
+                self.inits.touch(key);
+            }
+            return Ok(());
+        }
         // init_state() only reports Ready when this payload is retained.
         let Some((init_payload, first_emission)) = self.inits.take_for_emission(&key) else {
             return Ok(());
@@ -1659,6 +1665,38 @@ mod tests {
             ]
         );
         let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn active_init_use_keeps_it_ahead_of_unused_inits_in_lru() {
+        let mut config = HlsConfig::default();
+        config.output_config.max_pending_init_segments = 2;
+        let mut h = spawn_assembler(config, true, 100);
+        let (init_a, key_a) = mp4_init_keyed("https://e.com/a.mp4", 100);
+        let (unused_init, _) = mp4_init_keyed("https://e.com/unused.mp4", 101);
+        let (init_c, key_c) = mp4_init_keyed("https://e.com/c.mp4", 102);
+        h.input_tx.send(init_a).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(100, &key_a)).await.unwrap();
+        h.input_tx.send(unused_init).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key_a)).await.unwrap();
+        h.input_tx.send(init_c).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(102, &key_c)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(103, &key_a)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/a.mp4",
+                "https://e.com/seg100.m4s",
+                "https://e.com/seg101.m4s",
+                "https://e.com/c.mp4",
+                "https://e.com/seg102.m4s",
+                "https://e.com/a.mp4",
+                "https://e.com/seg103.m4s",
+            ]
+        );
+        h.join.await.unwrap();
     }
 
     #[tokio::test]

@@ -392,6 +392,40 @@ async fn vod_playlist_drains_fully_and_ends() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn first_redirected_twitch_variant_keeps_prefetch_segments() {
+    let origin = Origin::new();
+    origin.redirect("live.m3u8", "/master.m3u8");
+    origin.add_file(
+        "master.m3u8",
+        "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8\n",
+    );
+    // Platform detection accepts the CDN marker anywhere in the URL, so a
+    // local path exercises redirect-target detection without external DNS.
+    origin.redirect("variant.m3u8", "/ttvnw.net/index.m3u8");
+    origin.serve_playlists_at("ttvnw.net/index.m3u8");
+    origin.push_playlist(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n\
+         #EXTINF:0.1,\nseg0.ts\n#EXT-X-TWITCH-PREFETCH:seg1.ts\n",
+    );
+    origin.push_playlist(playlist(2, &["seg2.ts"], true));
+    origin.add_file("ttvnw.net/seg0.ts", b"zero".to_vec());
+    origin.add_file("ttvnw.net/seg1.ts", b"one".to_vec());
+    origin.add_file("ttvnw.net/seg2.ts", b"two".to_vec());
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, fast_config()).await;
+
+    assert_eq!(
+        data_uris(&events),
+        [
+            format!("{base}/ttvnw.net/seg0.ts"),
+            format!("{base}/ttvnw.net/seg1.ts"),
+            format!("{base}/ttvnw.net/seg2.ts"),
+        ]
+    );
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rotated_auth_tokens_download_each_segment_once() {
     let origin = Origin::new();
     origin.push_playlist(playlist(0, &["seg0.ts?token=a", "seg1.ts?token=a"], false));

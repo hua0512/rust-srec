@@ -306,7 +306,9 @@ impl PlaylistEngine {
             },
         );
         let playlist_bytes_to_parse: Cow<[u8]> =
-            if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
+            if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str())
+                || TwitchPlaylistProcessor::is_twitch_playlist(document_url.as_str())
+            {
                 let playlist_content = String::from_utf8_lossy(&playlist_bytes);
                 Cow::Owned(preprocess_twitch_playlist(&playlist_content).into_bytes())
             } else {
