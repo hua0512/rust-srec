@@ -128,7 +128,7 @@ impl PlaylistEngine {
             && document_base_url(&document_url).ok() == document_base_url(&playlist_url).ok()
         {
             let metadata = CacheMetadata::new(playlist_bytes.len() as u64)
-                .with_expiration(self.config.playlist_config.initial_playlist_fetch_timeout);
+                .with_expiration(self.config.cache_config.playlist_ttl);
             // Caching is an optimisation; a failed write must not abort the download.
             if let Err(error) = cache_service
                 .put(cache_key, playlist_bytes.clone(), metadata)

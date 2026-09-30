@@ -310,6 +310,12 @@ impl SegmentStateStore {
                 let stale_entry = match record.state {
                     SegmentState::Completed { .. } | SegmentState::TerminalFailed { .. } => {
                         // Never fetched again; nothing volatile to refresh.
+                        // An init's MSN does move forward, though: it records
+                        // where the map still applies, which is what keeps a
+                        // long-lived init from being trimmed while in use.
+                        if key.kind == SegmentKind::Init && descriptor.msn > record.descriptor.msn {
+                            record.descriptor = Arc::new(descriptor);
+                        }
                         stats.deduplicated += 1;
                         self.dedup_hits += 1;
                         continue;
@@ -1379,6 +1385,40 @@ mod tests {
                 .keys()
                 .any(|k| k.uri.as_ref() == "https://e.com/i10.mp4"),
             "in-window init must survive the retention trim"
+        );
+    }
+
+    #[test]
+    fn completed_init_still_in_the_window_survives_the_retention_trim() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            max_retained_inits: 0,
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/init.mp4", 1, SegmentKind::Init)],
+            Instant::now(),
+        );
+        let job = take_one(&mut s, &b).expect("admitted");
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: job.descriptor.key.clone(),
+                msn: 1,
+                payload: payload_for(&job.descriptor),
+            },
+            Instant::now(),
+        );
+        // A later window still uses the same map.
+        s.ingest(
+            vec![descriptor("https://e.com/init.mp4", 20, SegmentKind::Init)],
+            Instant::now(),
+        );
+
+        s.prune_below(15, 10);
+
+        assert!(
+            s.records.contains_key(&job.descriptor.key),
+            "trimming it would make the next refresh re-download it"
         );
     }
 

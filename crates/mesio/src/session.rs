@@ -300,8 +300,16 @@ pub struct EventSink {
 
 impl EventSink {
     pub fn channel(capacity: usize) -> (Self, DownloadEventStream) {
+        Self::channel_counting_into(capacity, Arc::new(AtomicU64::new(0)))
+    }
+
+    /// A channel whose drops add to an existing counter, so a sink that
+    /// re-emits another session's events reports one combined total.
+    pub(crate) fn channel_counting_into(
+        capacity: usize,
+        dropped: Arc<AtomicU64>,
+    ) -> (Self, DownloadEventStream) {
         let (tx, rx) = mpsc::channel(capacity.max(1));
-        let dropped = Arc::new(AtomicU64::new(0));
         let unreported_dropped = Arc::new(AtomicU64::new(0));
         (
             Self {
@@ -774,13 +782,16 @@ fn wrap_flv_source_session(
     session: DownloadSession<flv::data::FlvData>,
     source: SelectedSource,
 ) -> Result<DownloadSession<flv::data::FlvData>, DownloadError> {
-    let (events, event_stream) = EventSink::channel(256);
+    // Drops in the inner session and in this re-emitting sink both count
+    // toward the handle's total.
+    let dropped_counter = Arc::clone(&session.handle.dropped_events);
+    let (events, event_stream) =
+        EventSink::channel_counting_into(256, Arc::clone(&dropped_counter));
     events.emit(DownloadEvent::SourceSelected {
         url: Arc::from(source.original_url.as_str()),
         priority: source.priority,
         attempt: 1,
     });
-    let dropped_counter = events.dropped_counter();
     let forward_events = events.clone();
     tokio::spawn(forward_event_stream(session.events, forward_events));
 
@@ -840,6 +851,32 @@ impl<T> Drop for SessionCancelOnDropStream<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn wrapped_flv_session_reports_the_inner_sessions_dropped_events() {
+        let (inner_sink, inner_events) = EventSink::channel(1);
+        inner_sink.emit(DownloadEvent::Lagged { dropped: 0 });
+        inner_sink.emit(DownloadEvent::Lagged { dropped: 0 }); // dropped: full
+        let inner = DownloadSession {
+            items: Box::pin(futures::stream::empty()),
+            events: inner_events,
+            handle: DownloadHandle::new(
+                CancellationToken::new(),
+                None,
+                inner_sink.dropped_counter(),
+                None,
+            ),
+        };
+        let source = SelectedSource {
+            url: Url::parse("https://e.com/stream.flv").unwrap(),
+            original_url: "https://e.com/stream.flv".to_string(),
+            priority: 0,
+        };
+
+        let wrapped = wrap_flv_source_session(inner, source).unwrap();
+
+        assert_eq!(wrapped.handle.dropped_events(), 1);
+    }
 
     #[test]
     fn event_sink_counts_dropped_events() {

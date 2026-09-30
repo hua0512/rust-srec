@@ -119,7 +119,7 @@ impl DownloadError {
 
     pub fn is_non_recoverable_source_error(&self) -> bool {
         match self {
-            Self::HttpStatus { status, .. } => status.is_client_error(),
+            Self::HttpStatus { status, .. } => is_permanent_client_error(*status),
             Self::InvalidUrl { .. }
             | Self::UnsupportedProtocol { .. }
             | Self::ProtocolDetectionFailed { .. }
@@ -130,6 +130,23 @@ impl DownloadError {
             _ => false,
         }
     }
+}
+
+/// A 4xx that means the URL itself is invalid. Statuses that can clear
+/// without the URL changing are excluded: expired signed URLs (401/403) get
+/// refreshed, a live playlist may not be published yet (404), and timeouts or
+/// rate limits (408/425/429) pass.
+pub(crate) fn is_permanent_client_error(status: StatusCode) -> bool {
+    status.is_client_error()
+        && !matches!(
+            status,
+            StatusCode::UNAUTHORIZED
+                | StatusCode::FORBIDDEN
+                | StatusCode::NOT_FOUND
+                | StatusCode::REQUEST_TIMEOUT
+                | StatusCode::TOO_EARLY
+                | StatusCode::TOO_MANY_REQUESTS
+        )
 }
 
 impl From<reqwest::Error> for DownloadError {
@@ -143,5 +160,26 @@ impl From<reqwest::Error> for DownloadError {
 impl From<DownloadError> for FlvError {
     fn from(err: DownloadError) -> Self {
         FlvError::Io(std::io::Error::other(format!("Download error: {err}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_permanent_client_errors_are_non_recoverable() {
+        let error = |status| DownloadError::http_status(status, "https://e.com/a", "test");
+        for status in [StatusCode::BAD_REQUEST, StatusCode::GONE] {
+            assert!(error(status).is_non_recoverable_source_error(), "{status}");
+        }
+        for status in [
+            StatusCode::NOT_FOUND,
+            StatusCode::FORBIDDEN,
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::BAD_GATEWAY,
+        ] {
+            assert!(!error(status).is_non_recoverable_source_error(), "{status}");
+        }
     }
 }

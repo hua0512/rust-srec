@@ -1813,3 +1813,45 @@ async fn hls_playlist_errors_do_not_echo_signed_url_tokens() {
     let message = error.to_string();
     assert!(!message.contains("topsecret"), "{message}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_read_timeout_surfaces_as_a_stream_timeout() {
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    // The header arrives, then the body stalls past the read timeout.
+    let url = serve_flv_body(|| {
+        Body::from_stream(
+            futures::stream::once(async { Ok(Bytes::from(minimal_flv_bytes())) })
+                .chain(futures::stream::pending::<Result<Bytes, std::io::Error>>()),
+        )
+    })
+    .await;
+    let mut config = FlvProtocolConfig::default();
+    config.base.read_timeout = Duration::from_millis(200);
+    let downloader = FlvDownloader::with_config(config).expect("downloader builds");
+    let mut items = downloader
+        .start_session(flv_request(&url))
+        .await
+        .expect("download starts")
+        .items;
+
+    let error = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match items.next().await {
+                Some(Err(error)) => return error,
+                Some(Ok(_)) => {}
+                None => panic!("stream ended without the timeout error"),
+            }
+        }
+    })
+    .await
+    .expect("the read timeout fires");
+    assert!(
+        matches!(
+            &error,
+            mesio_engine::DownloadError::StreamNetwork { reason } if reason.starts_with("stream read timed out")
+        ),
+        "{error:?}"
+    );
+}

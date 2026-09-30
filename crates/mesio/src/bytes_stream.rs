@@ -54,9 +54,16 @@ impl AsyncRead for BytesStreamReader {
                     // Continue the loop to process this chunk
                 }
                 Poll::Ready(Some(Err(e))) => {
+                    // Keep the timeout/reset distinction in the kind and the
+                    // (redacted) reqwest error as the source.
+                    let kind = if e.is_timeout() {
+                        std::io::ErrorKind::TimedOut
+                    } else {
+                        std::io::ErrorKind::ConnectionAborted
+                    };
                     return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::ConnectionAborted,
-                        format!("FLV network stream error: {e}"),
+                        kind,
+                        crate::redact::redact_reqwest(e),
                     )));
                 }
                 Poll::Ready(None) => {
