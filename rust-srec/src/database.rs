@@ -190,6 +190,14 @@ pub async fn init_pool(database_url: &str) -> Result<DbPool, sqlx::Error> {
     init_pool_with_size(database_url, default_read_pool_size()).await
 }
 
+/// Open a single-connection pool for migrations and first-run initialization.
+///
+/// Close this pool before opening the runtime pools: connections opened before
+/// schema changes can retain stale SQLite/SQLx column metadata for `SELECT *`.
+pub async fn init_migration_pool(database_url: &str) -> Result<DbPool, sqlx::Error> {
+    init_pool_with_size(database_url, 1).await
+}
+
 /// Initialize a serialized write pool with `max_connections = 1`.
 ///
 /// All write operations that use `BEGIN IMMEDIATE` should go through this pool

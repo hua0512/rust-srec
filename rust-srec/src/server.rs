@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use crate::backend::{
-    NotificationEvent, ServiceContainer, init_database_pools, init_logging, install_panic_hook,
-    install_rustls_provider, run_migrations,
+    NotificationEvent, ServiceContainer, init_database_pools, init_logging, init_migration_pool,
+    install_panic_hook, install_rustls_provider, run_migrations,
 };
 use crate::runtime::{
     RuntimeTermination, WorkerShutdownReason, is_worker_process, supervise_current_executable,
@@ -213,11 +213,17 @@ async fn initialize_database(
     database_url: &str,
     output_dir: Option<&str>,
 ) -> crate::Result<(crate::database::DbPool, crate::database::WritePool)> {
-    let (pool, write_pool) = init_database_pools(database_url).await?;
-    prepare_initial_output(&pool, &write_pool, output_dir).await?;
-    run_migrations(&pool).await?;
-    finish_initial_output(&write_pool).await?;
-    Ok((pool, write_pool))
+    let migration_pool = init_migration_pool(database_url).await?;
+    let initialization: crate::Result<()> = async {
+        prepare_initial_output(&migration_pool, &migration_pool, output_dir).await?;
+        run_migrations(&migration_pool).await?;
+        finish_initial_output(&migration_pool).await
+    }
+    .await;
+    migration_pool.close().await;
+    initialization?;
+
+    Ok(init_database_pools(database_url).await?)
 }
 
 async fn prepare_initial_output(
@@ -392,6 +398,68 @@ mod tests {
             .fetch_one(pool)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn upgraded_database_pools_read_new_columns_without_replacing_config() {
+        use crate::database::models::GlobalConfigDbModel;
+        use crate::database::repositories::{ConfigRepository, SqlxConfigRepository};
+
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let dir = tempfile::tempdir().unwrap();
+            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+            let old_pool = init_migration_pool(&database_url).await.unwrap();
+            let migrator = sqlx::migrate!("./migrations");
+            Migrator::with_migrations(
+                migrator
+                    .iter()
+                    .take_while(|migration| migration.version < 20260805000000)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+            .run(&old_pool)
+            .await
+            .unwrap();
+            sqlx::query("UPDATE global_config SET output_folder = './saved recordings', max_concurrent_downloads = 3")
+                .execute(&old_pool)
+                .await
+                .unwrap();
+            old_pool.close().await;
+
+            let (pool, write_pool) = initialize_database(&database_url, Some("./replacement"))
+                .await
+                .unwrap();
+            let repo = SqlxConfigRepository::new(pool.clone(), write_pool.clone());
+            let config = repo.get_global_config().await.unwrap();
+            assert_eq!(config.id, "global-configuration");
+            assert_eq!(config.output_folder, "./saved recordings");
+            assert_eq!(config.max_concurrent_downloads, 3);
+
+            // Exercise every reader and the writer: all must see the post-upgrade
+            // schema, including the fields added since the old 31-column table.
+            for runtime_pool in [&pool, &write_pool] {
+                let mut connections = Vec::new();
+                for _ in 0..runtime_pool.options().get_max_connections() {
+                    let mut connection = runtime_pool.acquire().await.unwrap();
+                    let configs = sqlx::query_as::<_, GlobalConfigDbModel>(
+                        "SELECT * FROM global_config",
+                    )
+                    .fetch_all(&mut *connection)
+                    .await
+                    .unwrap();
+                    assert_eq!(configs.len(), 1);
+                    assert_eq!(configs[0].id, config.id);
+                    assert_eq!(configs[0].output_retention_days, 0);
+                    assert!(!configs[0].output_retention_delete_files);
+                    assert!(configs[0].danmu_statistics.is_none());
+                    connections.push(connection);
+                }
+            }
+            write_pool.close().await;
+            pool.close().await;
+        })
+        .await
+        .expect("database upgrade must finish");
     }
 
     #[tokio::test]

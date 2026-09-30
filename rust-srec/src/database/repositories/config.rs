@@ -79,19 +79,14 @@ impl SqlxConfigRepository {
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
-        let config =
+        // Migrations seed this row. SQLx can report an interrupted worker's row
+        // stream as empty; treating that as first-run initialization would insert
+        // another configuration and start services with unintended defaults.
+        Ok(
             sqlx::query_as::<_, GlobalConfigDbModel>("SELECT * FROM global_config LIMIT 1")
-                .fetch_optional(&self.pool)
-                .await?;
-
-        match config {
-            Some(c) => Ok(c),
-            None => {
-                let default_config = GlobalConfigDbModel::default();
-                self.create_global_config(&default_config).await?;
-                Ok(default_config)
-            }
-        }
+                .fetch_one(&self.pool)
+                .await?,
+        )
     }
 
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
@@ -274,7 +269,73 @@ impl ConfigRepository for SqlxConfigRepository {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+
+    #[tokio::test]
+    async fn missing_global_config_is_an_error_without_inserting_defaults() {
+        let pool = crate::database::init_migration_pool("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        sqlx::query("DELETE FROM global_config")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let repo = SqlxConfigRepository::new(pool.clone(), pool.clone());
+
+        assert!(repo.get_global_config().await.is_err());
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM global_config")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn empty_global_config_read_never_creates_default_rows() {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let dir = tempfile::tempdir().unwrap();
+            let url = format!("sqlite:{}", dir.path().join("config.db").display());
+            let writer = crate::database::init_migration_pool(&url).await.unwrap();
+            crate::database::run_migrations(&writer).await.unwrap();
+            let reader = crate::database::init_pool_with_size(&url, 1).await.unwrap();
+            let repo = SqlxConfigRepository::new(reader.clone(), writer.clone());
+            let original = repo.get_global_config().await.unwrap();
+
+            // Shadow the table on this reader only to model an interrupted
+            // worker's empty row stream without depending on driver panic
+            // diagnostics or cleanup. The writer still sees the saved row.
+            sqlx::query(
+                "CREATE TEMP VIEW global_config AS SELECT * FROM main.global_config WHERE 0",
+            )
+            .execute(&reader)
+            .await
+            .unwrap();
+            assert!(matches!(
+                repo.get_global_config().await,
+                Err(Error::DatabaseSqlx(sqlx::Error::RowNotFound))
+            ));
+            let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM global_config")
+                .fetch_all(&writer)
+                .await
+                .unwrap();
+            assert_eq!(ids, vec![original.id]);
+            sqlx::query("DROP VIEW temp.global_config")
+                .execute(&reader)
+                .await
+                .unwrap();
+            let recovered = repo.get_global_config().await.unwrap();
+            assert_eq!(recovered.id, ids[0]);
+            assert_eq!(recovered.output_folder, original.output_folder);
+            reader.close().await;
+            writer.close().await;
+        })
+        .await
+        .expect("empty-read regression must finish");
+    }
 
     #[test]
     fn global_retention_validation_rejects_negative_values() {
