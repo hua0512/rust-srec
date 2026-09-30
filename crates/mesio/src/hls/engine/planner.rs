@@ -120,6 +120,10 @@ struct ByteChain {
     next_msn: u64,
 }
 
+/// Smallest regression below the watermark treated as a media-sequence reset
+/// rather than a stale window, however short the window is.
+const MIN_RESET_REGRESSION: u64 = 16;
+
 pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     let mut planned = Planned::default();
     let playlist = snapshot.playlist.as_ref();
@@ -138,9 +142,12 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
             );
             planned.missing.push((next_undecided, window_start - 1));
         } else if window_end < next_undecided {
-            let window_len = (playlist.segments.len() as u64).max(1);
             let regression = next_undecided - window_end;
-            if regression > window_len * 4 {
+            // An empty window has nothing to re-base, so it cannot prove a
+            // reset; a short one gets a floor so one lagging edge serving a
+            // 1-2 segment window does not end the recording.
+            let reset_threshold = (playlist.segments.len() as u64 * 4).max(MIN_RESET_REGRESSION);
+            if !playlist.segments.is_empty() && regression > reset_threshold {
                 // A genuine media-sequence reset (playlist restart). The
                 // assembler's emit cursor cannot regress, so every re-based
                 // payload would be stale-rejected and the stream would
@@ -1083,6 +1090,34 @@ mod tests {
         assert!(planned.reset, "reset must be flagged");
         assert!(planned.descriptors.is_empty());
         assert!(planned.missing.is_empty());
+    }
+
+    #[test]
+    fn empty_or_short_stale_window_does_not_reset() {
+        let mut c = ctx();
+        // Watermark 106 (segments 100..=105).
+        let mut live = String::from(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:100\n",
+        );
+        for msn in 100..106 {
+            live.push_str(&format!("#EXTINF:2.0,\ns{msn}.ts\n"));
+        }
+        plan(&snapshot(0, &live), &mut c);
+
+        // A transiently empty playlist and a one-segment window served 7
+        // segments stale are both lagging edges, not a restart.
+        for (generation, body) in [
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:100\n",
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:98\n#EXTINF:2.0,\ns98.ts\n",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let planned = plan(&snapshot(generation as u64 + 1, body), &mut c);
+            assert!(!planned.reset, "generation {generation} must not reset");
+            assert!(planned.descriptors.is_empty());
+            assert!(planned.missing.is_empty());
+        }
     }
 
     #[test]

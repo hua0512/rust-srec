@@ -280,9 +280,11 @@ Responsibilities:
   evict an entry whose `SegmentKey` can still appear in the playlist window**.
   Evicting a `Completed` entry still inside the window makes the next refresh
   re-discover and re-download it, breaking the no-duplicate guarantee — so
-  pruning removes only entries below the current window's first MSN, keeping
-  init entries and in-flight work (as `SegmentLifecycleRegistry::prune_before_msn`
-  does today). The init-retention cap (`max_retained_inits`) is itself subject to
+  pruning removes only finished entries below the current window's first MSN,
+  keeping init entries and unfinished work. A discovered, queued, in-flight, or
+  retrying segment that slid out of the window is kept until it completes or
+  terminalizes, since the assembler waits on every planned MSN and only those
+  outcomes tell it what happened. The init-retention cap (`max_retained_inits`) is itself subject to
   the invariant: it may evict only init records *below* the window start, never an
   in-window init (which the next refresh would otherwise re-discover and
   re-download). `max_state_entries` is a backstop applied *within* that rule, not a

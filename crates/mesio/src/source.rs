@@ -355,36 +355,37 @@ impl SourceManager {
     fn source_failure_disposition(error: &DownloadError) -> SourceFailureDisposition {
         match error {
             DownloadError::StreamNetwork { .. } => SourceFailureDisposition::TryNextSource,
-            DownloadError::Network { source } => {
-                source
-                    .status()
-                    .map_or(SourceFailureDisposition::TryNextSource, |status| {
-                        if status == reqwest::StatusCode::UNAUTHORIZED
-                            || status == reqwest::StatusCode::FORBIDDEN
-                        {
-                            SourceFailureDisposition::TryNextSource
-                        } else if status.is_client_error() {
-                            SourceFailureDisposition::DeactivateSource
-                        } else {
-                            SourceFailureDisposition::TryNextSource
-                        }
-                    })
-            }
-            DownloadError::HttpStatus { status, .. } => {
-                if *status == reqwest::StatusCode::UNAUTHORIZED
-                    || *status == reqwest::StatusCode::FORBIDDEN
-                {
-                    SourceFailureDisposition::TryNextSource
-                } else if status.is_client_error() {
-                    SourceFailureDisposition::DeactivateSource
-                } else {
-                    SourceFailureDisposition::TryNextSource
-                }
-            }
+            DownloadError::Network { source } => source.status().map_or(
+                SourceFailureDisposition::TryNextSource,
+                Self::status_disposition,
+            ),
+            DownloadError::HttpStatus { status, .. } => Self::status_disposition(*status),
             _ if error.is_non_recoverable_source_error() => {
                 SourceFailureDisposition::DeactivateSource
             }
             _ => SourceFailureDisposition::TryNextSource,
+        }
+    }
+
+    /// Client errors that can clear without the URL changing leave the source
+    /// to the circuit breaker: expired signed URLs (401/403) get refreshed, a
+    /// live playlist may not be published yet (404), and timeouts or rate
+    /// limits (408/425/429) pass. Other 4xx mean the URL itself is invalid.
+    fn status_disposition(status: reqwest::StatusCode) -> SourceFailureDisposition {
+        use reqwest::StatusCode;
+        let transient = matches!(
+            status,
+            StatusCode::UNAUTHORIZED
+                | StatusCode::FORBIDDEN
+                | StatusCode::NOT_FOUND
+                | StatusCode::REQUEST_TIMEOUT
+                | StatusCode::TOO_EARLY
+                | StatusCode::TOO_MANY_REQUESTS
+        );
+        if status.is_client_error() && !transient {
+            SourceFailureDisposition::DeactivateSource
+        } else {
+            SourceFailureDisposition::TryNextSource
         }
     }
 
@@ -413,13 +414,16 @@ impl SourceManager {
             health.consecutive_failures += 1;
         }
 
-        // Update response time with weighted average
+        // Only successes measure speed: a failure's duration is a timeout, an
+        // instant refusal, or how long a stream ran before breaking.
         let time_ms = response_time.as_millis() as u64;
-        if health.avg_response_time == 0 {
-            health.avg_response_time = time_ms;
-        } else {
-            // 70% old value, 30% new value for smoothing
-            health.avg_response_time = (health.avg_response_time * 7 + time_ms * 3) / 10;
+        if success {
+            if health.avg_response_time == 0 {
+                health.avg_response_time = time_ms;
+            } else {
+                // 70% old value, 30% new value for smoothing
+                health.avg_response_time = (health.avg_response_time * 7 + time_ms * 3) / 10;
+            }
         }
 
         // Calculate health score
@@ -444,14 +448,10 @@ impl SourceManager {
             );
         }
 
-        // Update active status based on health score (but not too restrictive for fast failures)
-        health.active = if health.successes == 0 && health.failures > 0 {
-            // If we have only failures, deactivate permanently after many attempts
-            health.failures < 10
-        } else {
-            // Normal health score calculation
-            health.score > 20
-        };
+        // Poor health is handled by the circuit breaker above, never by
+        // clearing `active`: an inactive source is never selected again, so
+        // it could never record the success that would reactivate it.
+        // `active` is reserved for permanent deactivation.
 
         trace!(
             url = url,
@@ -578,8 +578,15 @@ mod tests {
     use reqwest::StatusCode;
 
     #[test]
-    fn record_failure_keeps_unauthorized_and_forbidden_sources_available() {
-        for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+    fn record_failure_keeps_sources_with_transient_client_errors_available() {
+        for status in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+            StatusCode::REQUEST_TIMEOUT,
+            StatusCode::TOO_EARLY,
+            StatusCode::TOO_MANY_REQUESTS,
+        ] {
             let url = format!("https://cdn.example/stream.m3u8?token={}", status.as_u16());
             let mut manager = SourceManager::new();
             manager.add_url(&url, 0);
@@ -590,26 +597,79 @@ mod tests {
             assert_eq!(
                 manager.healthy_count(),
                 1,
-                "{status} should not permanently deactivate signed URL sources"
+                "{status} should not permanently deactivate the source"
             );
             assert_eq!(
                 manager.select_source().map(|source| source.url),
                 Some(url),
-                "{status} source should remain selectable for a future refreshed URL attempt"
+                "{status} source should remain selectable for a later attempt"
             );
         }
     }
 
     #[test]
     fn record_failure_deactivates_other_client_errors() {
-        let url = "https://cdn.example/missing.m3u8";
+        for status in [StatusCode::BAD_REQUEST, StatusCode::GONE] {
+            let url = "https://cdn.example/missing.m3u8";
+            let mut manager = SourceManager::new();
+            manager.add_url(url, 0);
+
+            let error = DownloadError::http_status(status, url, "initial_request");
+            manager.record_failure(url, &error, Duration::from_millis(10));
+
+            assert_eq!(manager.healthy_count(), 0, "{status}");
+            assert!(manager.select_source().is_none(), "{status}");
+        }
+    }
+
+    fn server_error(url: &str) -> DownloadError {
+        DownloadError::http_status(StatusCode::BAD_GATEWAY, url, "initial_request")
+    }
+
+    #[test]
+    fn unhealthy_source_backs_off_and_becomes_selectable_again() {
+        let url = "https://cdn.example/live.m3u8";
         let mut manager = SourceManager::new();
         manager.add_url(url, 0);
+        manager.record_success(url, Duration::from_millis(2000));
+        for _ in 0..4 {
+            manager.record_failure(url, &server_error(url), Duration::from_millis(10));
+        }
+        // 1 success in 5 at ~2 s: a health score this low used to deactivate
+        // the source for good.
+        assert!(manager.get_source_health(url).unwrap().0 <= 20);
+        assert!(manager.select_source().is_none(), "circuit breaker is open");
 
-        let error = DownloadError::http_status(StatusCode::NOT_FOUND, url, "initial_request");
-        manager.record_failure(url, &error, Duration::from_millis(10));
+        // Once the backoff elapses the source is offered again.
+        manager.health.get_mut(url).unwrap().disabled_until =
+            Some(Instant::now() - Duration::from_secs(1));
+        assert_eq!(manager.select_source().map(|s| s.url).as_deref(), Some(url));
+    }
 
-        assert_eq!(manager.healthy_count(), 0);
-        assert!(manager.select_source().is_none());
+    #[test]
+    fn repeated_failures_without_success_never_deactivate_permanently() {
+        let url = "https://cdn.example/live.m3u8";
+        let mut manager = SourceManager::new();
+        manager.add_url(url, 0);
+        for _ in 0..12 {
+            manager.record_failure(url, &server_error(url), Duration::from_millis(10));
+        }
+
+        let (_, _, active) = manager.get_source_health(url).unwrap();
+        assert!(active);
+        let disabled_until = manager.health[url].disabled_until.expect("backing off");
+        assert!(disabled_until <= Instant::now() + Duration::from_secs(300));
+    }
+
+    #[test]
+    fn failure_durations_do_not_skew_the_average_response_time() {
+        let url = "https://cdn.example/live.m3u8";
+        let mut manager = SourceManager::new();
+        manager.add_url(url, 0);
+        manager.record_success(url, Duration::from_millis(200));
+        // A stream that ran for an hour before breaking.
+        manager.record_failure(url, &server_error(url), Duration::from_secs(3600));
+
+        assert_eq!(manager.get_source_health(url).unwrap().1, 200);
     }
 }

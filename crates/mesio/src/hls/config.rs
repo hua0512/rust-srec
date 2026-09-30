@@ -64,7 +64,7 @@ pub enum IdentityPolicyConfig {
     StripQueryKeys(Vec<String>),
 }
 
-/// Byte budgets, pending bounds, and lifecycle retry settings for the
+/// Byte budgets and pending bounds for the
 /// scheduler reactor.
 #[derive(Debug, Clone)]
 pub struct HlsEngineConfig {
@@ -87,11 +87,6 @@ pub struct HlsEngineConfig {
     /// Hard per-segment cap (0 = disabled); a body exceeding it terminalizes
     /// as oversize.
     pub max_segment_size_bytes: u64,
-    /// Lifecycle reschedule budget per segment (distinct from the tight
-    /// per-attempt HTTP retries inside the fetch task).
-    pub lifecycle_retry_budget: u32,
-    pub lifecycle_retry_delay_base: Duration,
-    pub lifecycle_retry_delay_max: Duration,
     /// Control-plane record backstop (applied within the window-prune
     /// invariant).
     pub max_state_entries: usize,
@@ -112,9 +107,6 @@ impl Default for HlsEngineConfig {
             max_pending_items: 1024,
             initial_segment_size_estimate: 2 * 1024 * 1024,
             max_segment_size_bytes: 0,
-            lifecycle_retry_budget: 3,
-            lifecycle_retry_delay_base: Duration::from_millis(500),
-            lifecycle_retry_delay_max: Duration::from_secs(10),
             max_state_entries: 2048,
             max_retained_inits: 8,
             identity_policy: IdentityPolicyConfig::default(),
@@ -135,7 +127,8 @@ pub struct HlsConfig {
     pub decryption_config: HlsDecryptionConfig,
     pub cache_config: HlsCacheConfig,
     pub output_config: HlsOutputConfig,
-    /// Scheduler-reactor budgets and lifecycle retry settings.
+    /// Scheduler-reactor budgets. Segment retry settings live in
+    /// `fetcher_config`.
     pub engine_config: HlsEngineConfig,
 }
 
@@ -210,13 +203,22 @@ impl Default for HlsSchedulerConfig {
 #[derive(Debug, Clone)]
 pub struct HlsFetcherConfig {
     pub segment_download_timeout: Duration,
+    /// How many times a failed segment is rescheduled before it is skipped
+    /// as a gap. Each reschedule re-reads the latest playlist URL. Within one
+    /// attempt, network errors and 5xx responses are also retried up to twice
+    /// quickly, since the attempt holds a download slot.
     pub max_segment_retries: u32,
-    pub segment_retry_delay_base: Duration, // Base for exponential backoff
-    pub max_segment_retry_delay: Duration,  // Hard cap on exponential backoff growth
+    /// Base delay of the exponential backoff between segment reschedules.
+    pub segment_retry_delay_base: Duration,
+    /// Cap on the segment reschedule backoff.
+    pub max_segment_retry_delay: Duration,
     pub key_download_timeout: Duration,
+    /// Retries of a failed key fetch (network errors, timeouts, 5xx, 429).
     pub max_key_retries: u32,
+    /// Base delay of the exponential backoff between key fetch retries.
     pub key_retry_delay_base: Duration,
-    pub max_key_retry_delay: Duration, // Hard cap on key retry backoff growth
+    /// Cap on the key fetch retry backoff.
+    pub max_key_retry_delay: Duration,
     /// Minimum bytes accumulated before a `DownloadEvent::Progress` is emitted.
     /// Set to `0` to emit once per network chunk.
     pub progress_emit_min_bytes: u64,

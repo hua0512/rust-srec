@@ -4,8 +4,8 @@
 //! budget, and scheduling priority. Owned by the reactor task and never shared
 //! — not an `Arc<Mutex<..>>`. The `HashMap` is the single source of truth; the
 //! ready index and retry heap are advisory and re-validated on pop (lazy
-//! tombstones), because pruning can evict a record whose key still sits in an
-//! index.
+//! tombstones), because an entry goes stale when its record changes state or
+//! is removed while its key still sits in an index.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap, HashMap};
@@ -653,14 +653,19 @@ impl SegmentStateStore {
     /// Prune for long-running live streams under one invariant: **never evict
     /// an entry whose key can still appear in the playlist window** — evicting
     /// a `Completed` record still in the window would make the next refresh
-    /// re-download it. Only records below `window_start_msn` are eligible,
-    /// in-flight work is always kept, and init records are retained up to
-    /// `max_retained_inits` (newest first). `max_state_entries` is a backstop
-    /// within that rule: when nothing is safely evictable, state temporarily
-    /// exceeds the cap.
+    /// re-download it. Only finished records below `window_start_msn` are
+    /// eligible, and init records are retained up to `max_retained_inits`
+    /// (newest first). `max_state_entries` is a backstop within that rule:
+    /// when nothing is safely evictable, state temporarily exceeds the cap.
+    ///
+    /// Unfinished work (discovered, queued, in flight, or awaiting a retry)
+    /// is never evicted, even below the window: the assembler waits on every
+    /// planned MSN, and only a completion or terminal failure tells it the
+    /// outcome. A segment that slid out of the playlist is usually still
+    /// served for a while; if not, its retry budget terminalizes it.
     pub fn prune_below(&mut self, window_start_msn: u64) {
         self.records.retain(|_, record| {
-            matches!(record.state, SegmentState::InFlight { .. })
+            record.state.is_unfinished()
                 || record.descriptor.key.kind == SegmentKind::Init
                 || record.descriptor.msn >= window_start_msn
         });
@@ -668,14 +673,14 @@ impl SegmentStateStore {
         // Retain only the newest N init records, but never evict one that can
         // still appear in the window (msn >= window_start_msn) — that would
         // make the next refresh re-discover and re-download it, breaking the
-        // same prune invariant the media retain above upholds. In-flight inits
-        // are never evicted either.
+        // same prune invariant the media retain above upholds. Unfinished
+        // inits are never evicted either: dependent media is gated on them.
         let mut init_msns: Vec<(u64, SegmentKey)> = self
             .records
             .iter()
             .filter(|(_, r)| {
                 r.descriptor.key.kind == SegmentKind::Init
-                    && !matches!(r.state, SegmentState::InFlight { .. })
+                    && !r.state.is_unfinished()
                     && r.descriptor.msn < window_start_msn
             })
             .map(|(k, r)| (r.descriptor.msn, k.clone()))
@@ -1293,43 +1298,68 @@ mod tests {
     }
 
     #[test]
-    fn pruned_keys_in_indices_never_schedule() {
+    fn queued_segment_below_the_window_survives_prune_and_still_schedules() {
         let mut s = store();
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/old.ts", 1, SegmentKind::Media)],
             Instant::now(),
         );
-        // Key sits in the ready index; prune evicts the record.
+        // The window slides past it before it was admitted.
         s.prune_below(100);
+
         let (jobs, inputs) = s.next_ready_jobs(8, Instant::now(), &b);
-        assert!(jobs.is_empty(), "tombstoned entry must not schedule");
+        assert_eq!(jobs.len(), 1, "the assembler is still waiting on msn 1");
+        assert_eq!(jobs[0].descriptor.msn, 1);
         assert!(inputs.is_empty());
     }
 
     #[test]
-    fn next_retry_deadline_skips_stale_entries() {
-        let mut s = store();
+    fn retrying_segment_below_the_window_keeps_its_retry_and_reports_the_outcome() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_budget: 1,
+            retry_delay_base: Duration::ZERO,
+            ..StoreConfig::default()
+        });
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
             Instant::now(),
         );
+        let fail = |s: &mut SegmentStateStore, key: &SegmentKey| {
+            s.apply_outcome(
+                SegmentOutcome::Failed {
+                    key: key.clone(),
+                    msn: 1,
+                    class: FailureClass::Http(404),
+                    reason: Arc::from("gone"),
+                },
+                Instant::now(),
+            )
+        };
         let key = take_one(&mut s, &b).unwrap().descriptor.key.clone();
-        let now = Instant::now();
-        s.apply_outcome(
-            SegmentOutcome::Failed {
-                key: key.clone(),
-                msn: 1,
-                class: FailureClass::Timeout,
-                reason: Arc::from("t"),
-            },
-            now,
-        );
-        assert!(s.next_retry_deadline().is_some());
+        fail(&mut s, &key);
 
-        // Prune the record: the heap entry is now stale and must be skipped.
         s.prune_below(100);
-        assert!(s.next_retry_deadline().is_none());
+        assert!(
+            s.next_retry_deadline().is_some(),
+            "retry survives the slide"
+        );
+        assert!(s.has_unfinished_work());
+
+        // The retry fails too: the terminal failure reaches the assembler
+        // instead of the MSN vanishing.
+        let retried = take_one(&mut s, &b).expect("retry is admitted");
+        let effects = fail(&mut s, &retried.descriptor.key);
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
+        s.prune_below(100);
+        assert!(!s.has_unfinished_work());
+        assert!(
+            s.records.is_empty(),
+            "finished below-window records are pruned"
+        );
     }
 }
