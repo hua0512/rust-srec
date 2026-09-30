@@ -798,16 +798,16 @@ async fn run_desktop_backend_init(
     emit_boot_progress(&app_handle, "Initializing...", 0.1);
 
     let database_url = desktop_database_url(&data_dir);
-    // Parallelize logging init and database pool creation for faster startup.
+    // Parallelize logging init and migration pool creation for faster startup.
     let log_and_pool_start = Instant::now();
     let log_dir_str_clone = log_dir_str.clone();
     let logging_future =
         tokio::task::spawn_blocking(move || backend::init_logging(&log_dir_str_clone));
 
-    let database_pools_future = async {
+    let migration_pool_future = async {
         let mut retry_count = 0_u32;
         loop {
-            let result = backend::init_database_pools(&database_url).await;
+            let result = backend::init_migration_pool(&database_url).await;
             let should_retry = result.as_ref().is_err_and(|error| {
                 classify_boot_failure(BootFailureStage::Database, &error.to_string())
                     == BootFailureKind::DatabaseBusy
@@ -823,8 +823,8 @@ async fn run_desktop_backend_init(
         }
     };
 
-    let (logging_result, database_pools_result) =
-        tokio::join!(logging_future, database_pools_future);
+    let (logging_result, migration_pool_result) =
+        tokio::join!(logging_future, migration_pool_future);
 
     // Handle logging result
     let (logging_config, log_guard) = match logging_result {
@@ -858,8 +858,8 @@ async fn run_desktop_backend_init(
     let log_and_pool_ms = log_and_pool_start.elapsed().as_millis();
     log::info!("Desktop init: logging + db pool took {}ms", log_and_pool_ms);
 
-    let (pool, write_pool) = match database_pools_result {
-        Ok(pools) => pools,
+    let migration_pool = match migration_pool_result {
+        Ok(pool) => pool,
         Err(e) => {
             show_boot_error_window(
                 &app_handle,
@@ -881,7 +881,9 @@ async fn run_desktop_backend_init(
 
     let migrations_start = Instant::now();
 
-    if let Err(e) = backend::run_migrations(&pool).await {
+    let migrations_result = backend::run_migrations(&migration_pool).await;
+    migration_pool.close().await;
+    if let Err(e) = migrations_result {
         show_boot_error_window(
             &app_handle,
             BootFailurePayload::new(
@@ -895,6 +897,25 @@ async fn run_desktop_backend_init(
 
     let migrations_ms = migrations_start.elapsed().as_millis();
     log::info!("Desktop init: migrations took {}ms", migrations_ms);
+
+    if init_cancel.is_cancelled() {
+        return;
+    }
+
+    let (pool, write_pool) = match backend::init_database_pools(&database_url).await {
+        Ok(pools) => pools,
+        Err(e) => {
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Database,
+                    format!("Failed to open database: {e}"),
+                ),
+            )
+            .await;
+            return;
+        }
+    };
 
     if init_cancel.is_cancelled() {
         return;
