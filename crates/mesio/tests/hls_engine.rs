@@ -1504,3 +1504,166 @@ async fn hls_download_handle_join_reports_authoritative_end() {
         DownloadTerminal::AuthoritativeEnd
     );
 }
+
+// --- FLV open and body edge cases ---
+
+/// Serve `body` at `/stream.flv` with no Content-Type.
+async fn serve_flv_body(body: impl Fn() -> Body + Clone + Send + Sync + 'static) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock origin");
+    let addr = listener.local_addr().expect("local addr");
+    let app = Router::new().route(
+        "/stream.flv",
+        axum::routing::get(move || {
+            let body = body.clone();
+            async move { Response::new(body()) }
+        }),
+    );
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}/stream.flv")
+}
+
+fn flv_request(url: &str) -> DownloadRequest {
+    DownloadRequest::from_url(url)
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_cancel_is_honoured_while_waiting_for_the_first_body_bytes() {
+    use mesio_engine::flv::FlvDownloader;
+
+    // Headers arrive, then the body stalls.
+    let url = serve_flv_body(|| {
+        Body::from_stream(futures::stream::pending::<Result<Bytes, std::io::Error>>())
+    })
+    .await;
+    let cancel = CancellationToken::new();
+    let downloader = FlvDownloader::new().expect("downloader builds");
+    let start = tokio::spawn({
+        let request = flv_request(&url).with_cancel(cancel.clone());
+        async move { downloader.start_session(request).await.map(|_| ()) }
+    });
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    cancel.cancel();
+
+    // Well before the 30 s default read timeout.
+    let result = tokio::time::timeout(Duration::from_secs(2), start)
+        .await
+        .expect("cancel ends the stalled open")
+        .expect("task completes");
+    assert!(
+        matches!(result, Err(mesio_engine::DownloadError::Cancelled)),
+        "{result:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_text_error_body_without_content_type_is_rejected() {
+    use mesio_engine::flv::FlvDownloader;
+
+    // 'I' carries tag type 9 in its low bits.
+    let url = serve_flv_body(|| Body::from("Invalid token: signature expired")).await;
+    let downloader = FlvDownloader::new().expect("downloader builds");
+
+    let result = downloader.start_session(flv_request(&url)).await;
+
+    assert!(
+        matches!(
+            result,
+            Err(mesio_engine::DownloadError::InvalidContent { .. })
+        ),
+        "{:?}",
+        result.map(|_| ())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_signature_split_across_tiny_first_chunks_is_accepted() {
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    let url = serve_flv_body(|| {
+        let bytes = minimal_flv_bytes();
+        let chunks = vec![
+            Bytes::copy_from_slice(&bytes[..1]),
+            Bytes::copy_from_slice(&bytes[1..2]),
+            Bytes::copy_from_slice(&bytes[2..]),
+        ];
+        Body::from_stream(futures::stream::iter(chunks).then(|chunk| async move {
+            // Separate writes, so the client sees separate chunks.
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            Ok::<_, std::io::Error>(chunk)
+        }))
+    })
+    .await;
+    let downloader = FlvDownloader::new().expect("downloader builds");
+    let mut items = downloader
+        .start_session(flv_request(&url))
+        .await
+        .expect("a split FLV signature is still FLV")
+        .items;
+
+    let mut saw_tag = false;
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(5), items.next())
+        .await
+        .expect("stream item")
+    {
+        saw_tag |= matches!(item.expect("no stream error"), FlvData::Tag(_));
+    }
+    assert!(saw_tag);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_body_error_is_not_reported_as_a_finished_resource() {
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    let url = serve_flv_body(|| {
+        // The reset comes after the headers and the first bytes were sent.
+        let reset = async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Err(std::io::Error::other("connection reset"))
+        };
+        Body::from_stream(
+            futures::stream::once(async { Ok(Bytes::from(minimal_flv_bytes())) })
+                .chain(futures::stream::once(reset)),
+        )
+    })
+    .await;
+    let downloader = FlvDownloader::new().expect("downloader builds");
+    let session = downloader
+        .start_session(flv_request(&url))
+        .await
+        .expect("download starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    let mut saw_error = false;
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(5), items.next())
+        .await
+        .expect("stream item")
+    {
+        saw_error |= item.is_err();
+    }
+    assert!(saw_error, "the broken body surfaces as an error");
+
+    let collected: Vec<DownloadEvent> = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut collected = Vec::new();
+        while let Some(event) = events.next().await {
+            collected.push(event);
+        }
+        collected
+    })
+    .await
+    .expect("event stream ends");
+    assert!(
+        !collected
+            .iter()
+            .any(|event| matches!(event, DownloadEvent::ResourceFinished { .. })),
+        "{collected:?}"
+    );
+}

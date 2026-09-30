@@ -4,8 +4,10 @@
 //! It uses reqwest to download data in chunks and pipes it directly to the FLV parser,
 //! minimizing memory usage and providing a seamless integration with the processing pipeline.
 
+use bytes::{Bytes, BytesMut};
 use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use reqwest::{Response, StatusCode, Url};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -182,203 +184,161 @@ impl FlvDownloader {
         token: CancellationToken,
         events: Option<EventSink>,
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
-        tokio::select! {
+        // The request and the content probe both wait on the network, so both
+        // race cancellation: a server that sends headers and then stalls must
+        // not hold a cancel until the read timeout.
+        let (mut byte_stream, first_chunk) = tokio::select! {
             _ = token.cancelled() => {
                 info!(url = %url, "Download cancelled");
-                Err(DownloadError::Cancelled)
+                return Err(DownloadError::Cancelled);
             }
-            response = self.start_download_request(&url) => {
-                let response = response?;
-                let content_length = response.content_length();
+            opened = self.open_stream(&url, &events) => opened?,
+        };
+        let (tx, rx) = mpsc::channel(2);
+
+        // Send the first chunk we already read
+        let first_chunk_for_send = first_chunk.clone();
+        let stream_token = token.clone();
+        let forward_events = events.clone();
+        let resource_url: Arc<str> = Arc::from(url.as_str());
+        let progress_emit_min_bytes = self.config.progress_emit_min_bytes;
+        let progress_emit_min_interval = self.config.progress_emit_min_interval;
+        tokio::spawn(async move {
+            // First, send the chunk we already validated
+            let mut bytes_total = first_chunk_for_send.len() as u64;
+            let mut progress_since_last = first_chunk_for_send.len() as u64;
+            let mut last_progress_emit = Instant::now();
+            if progress_emit_min_bytes == 0 || progress_emit_min_interval.is_zero() {
                 emit_event(
-                    &events,
-                    DownloadEvent::ResourceStarted {
+                    &forward_events,
+                    DownloadEvent::Progress {
                         resource: ResourceId::FlvStream {
-                            url: Arc::from(url.as_str()),
+                            url: Arc::clone(&resource_url),
                         },
-                        display_url: Arc::from(url.as_str()),
-                        content_length,
+                        bytes_delta: progress_since_last,
+                        bytes_total,
                     },
                 );
-                let mut byte_stream = response.bytes_stream();
+                progress_since_last = 0;
+            }
+            if tx.send(Ok(first_chunk_for_send)).await.is_err() {
+                return;
+            }
 
-                // Read the first chunk to validate it's FLV binary data
-                let first_chunk = match byte_stream.next().await {
-                    Some(Ok(chunk)) => chunk,
-                    Some(Err(e)) => return Err(DownloadError::Network { source: e }),
-                    None => return Err(DownloadError::InvalidContent {
-                        protocol: "flv",
-                        reason: "Empty response received".to_string(),
-                    }),
-                };
-
-                // Validate FLV signature (first 3 bytes should be "FLV" = 0x46 0x4C 0x56)
-                // OR first byte is a valid FLV tag type (for mid-stream CDN joins)
-                if first_chunk.is_empty() {
-                    warn!(url = %url, "Empty first chunk received");
-                    return Err(DownloadError::InvalidContent {
-                        protocol: "flv",
-                        reason: "Empty response received".to_string(),
-                    });
-                }
-
-                // Check for FLV magic bytes OR valid FLV tag types
-                const FLV_SIGNATURE: [u8; 3] = [0x46, 0x4C, 0x56]; // "FLV"
-                const TAG_TYPE_AUDIO: u8 = 8;
-                const TAG_TYPE_VIDEO: u8 = 9;
-                const TAG_TYPE_SCRIPT: u8 = 18;
-
-                let first_byte = first_chunk[0];
-                let is_header = first_chunk.len() >= 3 && first_chunk[0..3] == FLV_SIGNATURE;
-                let is_valid_flv = if is_header {
-                    true
-                } else {
-                    // Check if first byte is a valid FLV tag type (for mid-stream CDN joins)
-                    // The lower 5 bits contain the tag type (ignore filter bit)
-                    let tag_type = first_byte & 0x1F;
-                    tag_type == TAG_TYPE_AUDIO || tag_type == TAG_TYPE_VIDEO || tag_type == TAG_TYPE_SCRIPT
-                };
-
-                if !is_valid_flv {
-                    // Check if it looks like text/HTML content
-                    let is_text = first_chunk.iter().take(64).all(|&b| {
-                        b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || b.is_ascii_punctuation()
-                    });
-
-                    let preview = if is_text {
-                        // Convert to string for readable error message
-                        String::from_utf8_lossy(&first_chunk[..first_chunk.len().min(128)]).to_string()
-                    } else {
-                        format!("{:02X?}", &first_chunk[..first_chunk.len().min(32)])
-                    };
-
-                    warn!(
-                        url = %url,
-                        preview = %preview,
-                        first_byte = format!("0x{:02X}", first_byte),
-                        is_text = is_text,
-                        "Invalid FLV content: expected FLV signature or valid tag type"
-                    );
-                    return Err(DownloadError::InvalidContent {
-                        protocol: "flv",
-                        reason: format!(
-                            "Invalid FLV content: expected FLV signature or valid tag type: 0x{:02X}",
-                            first_byte
-                        ),
-                    });
-                }
-
-                // Log validation result once (header vs mid-stream)
-                debug!(
-                    url = %url,
-                    is_header = is_header,
-                    "FLV content validated, starting stream"
-                );
-
-                let (tx, rx) = mpsc::channel(2);
-
-                // Send the first chunk we already read
-                let first_chunk_for_send = first_chunk.clone();
-                let stream_token = token.clone();
-                let forward_events = events.clone();
-                let resource_url: Arc<str> = Arc::from(url.as_str());
-                let progress_emit_min_bytes = self.config.progress_emit_min_bytes;
-                let progress_emit_min_interval = self.config.progress_emit_min_interval;
-                tokio::spawn(async move {
-                    // First, send the chunk we already validated
-                    let mut bytes_total = first_chunk_for_send.len() as u64;
-                    let mut progress_since_last = first_chunk_for_send.len() as u64;
-                    let mut last_progress_emit = Instant::now();
-                    if progress_emit_min_bytes == 0 || progress_emit_min_interval.is_zero() {
-                        emit_event(
-                            &forward_events,
-                            DownloadEvent::Progress {
-                                resource: ResourceId::FlvStream {
-                                    url: Arc::clone(&resource_url),
-                                },
-                                bytes_delta: progress_since_last,
-                                bytes_total,
-                            },
-                        );
-                        progress_since_last = 0;
+            // Then continue with the rest of the stream
+            loop {
+                tokio::select! {
+                    _ = stream_token.cancelled() => {
+                        debug!("FLV download stream cancelled");
+                        break;
                     }
-                    if tx.send(Ok(first_chunk_for_send)).await.is_err() {
-                        return;
-                    }
-
-                    // Then continue with the rest of the stream
-                    loop {
-                        tokio::select! {
-                            _ = stream_token.cancelled() => {
-                                debug!("FLV download stream cancelled");
-                                break;
-                            }
-                            data = byte_stream.next() => {
-                                match data {
-                                    Some(item) => {
-                                        if let Ok(bytes) = &item {
-                                            bytes_total += bytes.len() as u64;
-                                            progress_since_last += bytes.len() as u64;
-                                            let elapsed = last_progress_emit.elapsed();
-                                            if progress_emit_min_bytes == 0
-                                                || progress_emit_min_interval.is_zero()
-                                                || progress_since_last >= progress_emit_min_bytes
-                                                || elapsed >= progress_emit_min_interval
-                                            {
-                                                emit_event(
-                                                    &forward_events,
-                                                    DownloadEvent::Progress {
-                                                        resource: ResourceId::FlvStream {
-                                                            url: Arc::clone(&resource_url),
-                                                        },
-                                                        bytes_delta: progress_since_last,
-                                                        bytes_total,
-                                                    },
-                                                );
-                                                progress_since_last = 0;
-                                                last_progress_emit = Instant::now();
-                                            }
-                                        }
-                                        if tx.send(item).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    None => {
-                                        if progress_since_last > 0 {
-                                            emit_event(
-                                                &forward_events,
-                                                DownloadEvent::Progress {
-                                                    resource: ResourceId::FlvStream {
-                                                        url: Arc::clone(&resource_url),
-                                                    },
-                                                    bytes_delta: progress_since_last,
-                                                    bytes_total,
-                                                },
-                                            );
-                                        }
+                    data = byte_stream.next() => {
+                        match data {
+                            Some(item) => {
+                                if let Ok(bytes) = &item {
+                                    bytes_total += bytes.len() as u64;
+                                    progress_since_last += bytes.len() as u64;
+                                    let elapsed = last_progress_emit.elapsed();
+                                    if progress_emit_min_bytes == 0
+                                        || progress_emit_min_interval.is_zero()
+                                        || progress_since_last >= progress_emit_min_bytes
+                                        || elapsed >= progress_emit_min_interval
+                                    {
                                         emit_event(
                                             &forward_events,
-                                            DownloadEvent::ResourceFinished {
+                                            DownloadEvent::Progress {
                                                 resource: ResourceId::FlvStream {
                                                     url: Arc::clone(&resource_url),
                                                 },
-                                                bytes: bytes_total,
-                                                from_cache: false,
+                                                bytes_delta: progress_since_last,
+                                                bytes_total,
                                             },
                                         );
-                                        break;
+                                        progress_since_last = 0;
+                                        last_progress_emit = Instant::now();
                                     }
                                 }
+                                // A body error ends the resource: it was not
+                                // finished, so no ResourceFinished follows it.
+                                let failed = item.is_err();
+                                if tx.send(item).await.is_err() || failed {
+                                    break;
+                                }
+                            }
+                            None => {
+                                if progress_since_last > 0 {
+                                    emit_event(
+                                        &forward_events,
+                                        DownloadEvent::Progress {
+                                            resource: ResourceId::FlvStream {
+                                                url: Arc::clone(&resource_url),
+                                            },
+                                            bytes_delta: progress_since_last,
+                                            bytes_total,
+                                        },
+                                    );
+                                }
+                                emit_event(
+                                    &forward_events,
+                                    DownloadEvent::ResourceFinished {
+                                        resource: ResourceId::FlvStream {
+                                            url: Arc::clone(&resource_url),
+                                        },
+                                        bytes: bytes_total,
+                                        from_cache: false,
+                                    },
+                                );
+                                break;
                             }
                         }
                     }
-                });
+                }
+            }
+        });
 
-                let stream = ReceiverStream::new(rx);
-                let reader = BytesStreamReader::new(stream.boxed());
-                Ok(self.create_decoder_stream(reader))
+        let stream = ReceiverStream::new(rx);
+        let reader = BytesStreamReader::new(stream.boxed());
+        Ok(self.create_decoder_stream(reader))
+    }
+
+    /// Send the request and read enough of the body to tell FLV from an
+    /// error page. Returns the rest of the body and the bytes already read.
+    async fn open_stream(
+        &self,
+        url: &Url,
+        events: &Option<EventSink>,
+    ) -> Result<(BoxStream<'static, reqwest::Result<Bytes>>, Bytes), DownloadError> {
+        let response = self.start_download_request(url).await?;
+        emit_event(
+            events,
+            DownloadEvent::ResourceStarted {
+                resource: ResourceId::FlvStream {
+                    url: Arc::from(url.as_str()),
+                },
+                display_url: Arc::from(url.as_str()),
+                content_length: response.content_length(),
+            },
+        );
+        let mut byte_stream = response.bytes_stream().boxed();
+
+        // A server may flush the first bytes in tiny chunks, so collect a
+        // whole tag header's worth before judging the content.
+        let mut probe = BytesMut::new();
+        while probe.len() < PROBE_LEN {
+            match byte_stream.next().await {
+                Some(Ok(chunk)) if probe.is_empty() && chunk.len() >= PROBE_LEN => {
+                    // Common case: the first chunk suffices, so no copy.
+                    probe_flv_content(url, &chunk)?;
+                    return Ok((byte_stream, chunk));
+                }
+                Some(Ok(chunk)) => probe.extend_from_slice(&chunk),
+                Some(Err(e)) => return Err(DownloadError::Network { source: e }),
+                None => break,
             }
         }
+        let probe = probe.freeze();
+        probe_flv_content(url, &probe)?;
+        Ok((byte_stream, probe))
     }
 
     pub async fn start_session(
@@ -406,6 +366,57 @@ impl FlvDownloader {
             handle: crate::DownloadHandle::new(stream_token, None, events.dropped_counter(), None),
         })
     }
+}
+
+/// Bytes read before judging the content: one FLV tag header, which also
+/// covers the 9-byte file header plus the first PreviousTagSize.
+const PROBE_LEN: usize = flv::framing::TAG_HEADER_SIZE;
+
+/// Accept a body that starts with the FLV signature, or with a plausible tag
+/// header (a CDN joining mid-stream). The tag check includes the reserved bits
+/// and StreamID, so text such as "Invalid token" is not mistaken for a tag.
+fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
+    const FLV_SIGNATURE: &[u8; 3] = b"FLV";
+    if probe.is_empty() {
+        warn!(url = %url, "Empty FLV response");
+        return Err(DownloadError::InvalidContent {
+            protocol: "flv",
+            reason: "Empty response received".to_string(),
+        });
+    }
+    let is_header = probe.starts_with(FLV_SIGNATURE);
+    let is_tag = probe
+        .get(..flv::framing::TAG_HEADER_SIZE)
+        .and_then(|header| <&[u8; flv::framing::TAG_HEADER_SIZE]>::try_from(header).ok())
+        .is_some_and(flv::framing::is_plausible_tag_header);
+    if is_header || is_tag {
+        debug!(url = %url, is_header, "FLV content validated, starting stream");
+        return Ok(());
+    }
+
+    let is_text = probe
+        .iter()
+        .take(64)
+        .all(|&b| b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || b.is_ascii_punctuation());
+    let preview = if is_text {
+        String::from_utf8_lossy(&probe[..probe.len().min(128)]).to_string()
+    } else {
+        format!("{:02X?}", &probe[..probe.len().min(32)])
+    };
+    warn!(
+        url = %url,
+        preview = %preview,
+        first_byte = format!("0x{:02X}", probe[0]),
+        is_text,
+        "Invalid FLV content: expected FLV signature or valid tag header"
+    );
+    Err(DownloadError::InvalidContent {
+        protocol: "flv",
+        reason: format!(
+            "Invalid FLV content: expected FLV signature or valid tag header: 0x{:02X}",
+            probe[0]
+        ),
+    })
 }
 
 fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
