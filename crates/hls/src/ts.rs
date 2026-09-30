@@ -330,33 +330,57 @@ impl TsSegmentData {
 
                 let mut builder = builder.borrow_mut();
                 builder.has_psi = true;
-                builder.pcr_pids.insert(program_info.pcr_pid);
-                for stream in program_info
-                    .video_streams
-                    .iter()
-                    .chain(program_info.audio_streams.iter())
-                    .chain(program_info.other_streams.iter())
-                {
-                    builder.stream_pids.insert(stream.pid);
-                }
                 if let Some(detector) = &mut builder.resolution_detector {
                     for stream in &program_info.video_streams {
                         detector.add_video_stream(stream.pid, stream.stream_type);
                     }
                 }
-                builder.programs.push(program_info);
+                // A PMT version updates the definition of one program (H.222.0
+                // 2.4.4.10); it does not declare another program in this segment.
+                if let Some(previous) = builder
+                    .programs
+                    .iter_mut()
+                    .find(|program| program.program_number == program_info.program_number)
+                {
+                    *previous = program_info;
+                } else {
+                    builder.programs.push(program_info);
+                }
+                let TsAnalysisBuilder {
+                    programs,
+                    pcr_pids,
+                    stream_pids,
+                    ..
+                } = &mut *builder;
+                pcr_pids.clear();
+                pcr_pids.extend(programs.iter().map(|p| p.pcr_pid));
+                stream_pids.clear();
+                stream_pids.extend(programs.iter().flat_map(|program| {
+                    program
+                        .video_streams
+                        .iter()
+                        .chain(&program.audio_streams)
+                        .chain(&program.other_streams)
+                        .map(|stream| stream.pid)
+                }));
                 Ok(())
             },
             Some(|packet: &TsPacketRef| {
-                let mut builder = builder.borrow_mut();
-                if packet.payload().is_some() {
-                    let initialized = builder.has_pat && builder.stream_pids.contains(&packet.pid);
-                    builder.first_payloads.entry(packet.pid).or_insert((
-                        initialized && packet.payload_unit_start_indicator,
-                        packet.has_random_access_indicator(),
-                    ));
+                let builder = &mut *builder.borrow_mut();
+                if packet.payload_slice().is_some() {
+                    let has_pat = builder.has_pat;
+                    let stream_pids = &builder.stream_pids;
+                    builder.first_payloads.entry(packet.pid).or_insert_with(|| {
+                        (
+                            has_pat
+                                && stream_pids.contains(&packet.pid)
+                                && packet.payload_unit_start_indicator,
+                            packet.has_random_access_indicator(),
+                        )
+                    });
                 }
-                builder.has_random_access |= packet.has_random_access_indicator();
+                builder.has_random_access =
+                    builder.has_random_access || packet.has_random_access_indicator();
                 if let Some(detector) = &mut builder.resolution_detector {
                     detector.push_packet(packet);
                 }
@@ -375,8 +399,8 @@ impl TsSegmentData {
                 if packet.payload_unit_start_indicator
                     && builder.stream_pids.contains(&packet.pid)
                     && !builder.first_pts_by_pid.contains_key(&packet.pid)
-                    && let Some(payload) = packet.payload()
-                    && let Ok(pes) = PesHeader::parse(&payload)
+                    && let Some(payload) = packet.payload_slice()
+                    && let Ok(pes) = PesHeader::parse(payload)
                     && let Some(pts) = pes.pts
                 {
                     builder.first_pts_by_pid.insert(packet.pid, pts);
@@ -529,14 +553,57 @@ pub struct StreamEntry {
 mod tests {
     use super::*;
 
+    fn psi(pid: u16, section: &[u8], counter: u8) -> Vec<u8> {
+        let mut packet = vec![0xff; 188];
+        packet[..5].copy_from_slice(&[0x47, 0x40 | (pid >> 8) as u8, pid as u8, 0x10 | counter, 0]);
+        packet[5..5 + section.len()].copy_from_slice(section);
+        let crc = ts::mpeg2_crc32(section);
+        packet[5 + section.len()..9 + section.len()].copy_from_slice(&crc.to_be_bytes());
+        packet
+    }
+
+    #[test]
+    fn pmt_versions_replace_the_program_definition() {
+        let pat = psi(0, &[0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0], 0);
+        let old_pmt = psi(
+            0x1000,
+            &[
+                2, 0xb0, 18, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, 0x1b, 0xe1, 0, 0xf0, 0,
+            ],
+            0,
+        );
+        let new_pmt = psi(
+            0x1000,
+            &[
+                2, 0xb0, 18, 0, 1, 0xc3, 0, 0, 0xe1, 2, 0xf0, 0, 0x24, 0xe1, 2, 0xf0, 0,
+            ],
+            1,
+        );
+        let segment = TsSegmentData::new(
+            make_media_segment(),
+            [pat, old_pmt, new_pmt].concat().into(),
+        )
+        .with_crc_validation(true)
+        .with_strict_continuity(true);
+        let analysis = segment
+            .analysis(StreamProfileOptions {
+                include_resolution: false,
+            })
+            .unwrap();
+        assert_eq!(analysis.stream_info.program_count, 1);
+        assert_eq!(analysis.stream_info.programs.len(), 1);
+        let program = &analysis.stream_info.programs[0];
+        assert_eq!(program.program_number, 1);
+        assert_eq!(program.pcr_pid, 0x102);
+        assert_eq!(program.video_streams.len(), 1);
+        assert_eq!(program.video_streams[0].pid, 0x102);
+        assert_eq!(program.video_streams[0].stream_type, StreamType::H265);
+        let profile = analysis.stream_profile();
+        assert!(profile.has_h265 && !profile.has_h264);
+    }
+
     #[test]
     fn manual_cut_requires_program_tables_and_random_access_on_the_first_video_pes() {
-        fn psi(pid: u16, section: &[u8]) -> Vec<u8> {
-            let mut packet = vec![0xff; 188];
-            packet[..5].copy_from_slice(&[0x47, 0x40 | (pid >> 8) as u8, pid as u8, 0x10, 0]);
-            packet[5..5 + section.len()].copy_from_slice(section);
-            packet
-        }
         fn video(random_access: bool, counter: u8) -> Vec<u8> {
             let mut packet = vec![0xff; 188];
             packet[..6].copy_from_slice(&[
@@ -550,15 +617,13 @@ mod tests {
             packet[6..15].copy_from_slice(&[0, 0, 1, 0xe0, 0, 0, 0x80, 0, 0]);
             packet
         }
-        let pat = psi(
-            0,
-            &[0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0, 0, 0, 0, 0],
-        );
+        let pat = psi(0, &[0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0], 0);
         let pmt = psi(
             0x1000,
             &[
-                2, 0xb0, 18, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, 0x1b, 0xe1, 0, 0xf0, 0, 0, 0, 0, 0,
+                2, 0xb0, 18, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, 0x1b, 0xe1, 0, 0xf0, 0,
             ],
+            0,
         );
         for (packets, expected) in [
             (vec![pat.clone(), pmt.clone(), video(true, 0)], true),
@@ -573,7 +638,8 @@ mod tests {
             (vec![video(true, 0)], false),
         ] {
             let segment = TsSegmentData::new(make_media_segment(), packets.concat().into())
-                .with_continuity_check(false);
+                .with_crc_validation(true)
+                .with_strict_continuity(true);
             let analysis = segment
                 .analysis(StreamProfileOptions {
                     include_resolution: false,
@@ -595,13 +661,9 @@ mod tests {
     fn test_parse_psi_tables_empty_data() {
         let segment = TsSegmentData::new(make_media_segment(), Bytes::new())
             .with_continuity_mode(ts::ContinuityMode::Disabled);
-        // Empty data should return an error or empty result
-        let result = segment.parse_psi_tables();
-        // Empty bytes should parse without error but produce no programs
-        // An error is also acceptable for empty data.
-        if let Ok(info) = result {
-            assert!(info.programs.is_empty());
-        }
+        let info = segment.parse_psi_tables().unwrap();
+        assert_eq!(info.program_count, 0);
+        assert!(info.programs.is_empty());
     }
 
     #[test]
@@ -746,7 +808,8 @@ mod tests {
             })
             .unwrap();
 
-        *segment.data_mut() = Bytes::new();
+        *segment.data_mut() =
+            Bytes::from_static(include_bytes!("../tests/fixtures/avc-640x352.ts"));
         let second = segment
             .analysis(crate::StreamProfileOptions {
                 include_resolution: false,
@@ -754,5 +817,8 @@ mod tests {
             .unwrap();
 
         assert!(!Arc::ptr_eq(&first, &second));
+        assert!(!first.has_psi);
+        assert!(second.has_psi);
+        assert_eq!(second.stream_info.programs.len(), 1);
     }
 }

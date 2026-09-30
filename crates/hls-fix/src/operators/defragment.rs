@@ -1,26 +1,15 @@
 //! # DefragmentOperator
 //!
-//! The DefragmentOperator is responsible for reorganizing fragmented HLS stream data into
-//! coherent, complete segments. It addresses common issues in HLS streams such as:
+//! Buffers fMP4 initialization and media items and forwards TS items unchanged.
+//! A new initialization section preserves media already paired with the preceding
+//! section. Pre-init buffering is bounded; if the limit is exceeded, media is
+//! emitted for recovery and a later init starts a new output sequence.
 //!
-//! - Incomplete or fragmented media segments
-//! - Missing initialization segments in fMP4 streams
-//! - Corrupted or partial TS segments lacking PAT/PMT tables
+//! This operator preserves item boundaries; it does not validate or repair the
+//! encoded media within an item.
 //!
-//! ## How it works
-//!
-//! The operator buffers incoming data until it has collected enough information to constitute
-//! a complete segment, then outputs the segment as a unit. This ensures downstream operators
-//! receive only well-formed segments containing all necessary structural elements.
-//!
-//! For TS segments, it uses optimized zero-copy parsing to validate PSI tables and stream
-//! completeness. For fMP4 segments, it validates that init segments are present before media segments.
-//!
-//! ## Configuration
-//!
-//! The operator maintains state about the current segment type (TS or fMP4) and automatically
-//! adapts to format changes in the stream. It leverages stream profiling for intelligent
-//! segment validation.
+//! Input from mesio already pairs each init with its media (see `HlsPipeline`),
+//! so the superseded-init and pre-init paths only matter for other producers.
 //!
 //! ## License
 //!
@@ -90,29 +79,40 @@ impl DefragmentOperator {
         &mut self,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        let items = std::mem::take(&mut self.buffer);
         self.buffered_bytes = 0;
-        for item in items {
+        for item in self.buffer.drain(..) {
             output(item)?;
         }
         Ok(())
     }
 
-    // Handle cases for FMP4s init segment.
-    //
-    // Any non-empty buffer is dropped when a new init arrives and gathering restarts
-    // from this init: pre-init media is encoded against an unknown configuration, and
-    // a still-gathering init+media group cut short by a config change loses its
-    // buffered items here too. handle_end_of_playlist still emits pre-init media if
-    // the stream ends before an init ever arrives.
-    fn handle_new_header(&mut self, data: HlsData) {
+    // EXT-X-MAP applies forward (RFC 8216 4.3.2.5). Media already gathered
+    // with an init still belongs to that init, even if another arrives early.
+    // An init with no media is superseded: emitting it would open an output
+    // with a header and nothing to decode against it.
+    fn handle_new_header(
+        &mut self,
+        data: HlsData,
+        output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
         if !self.buffer.is_empty() {
-            warn!(
-                "{} Discarded {} items, total size: {}",
-                self.context.name,
-                self.buffer.len(),
-                self.buffered_bytes
-            );
+            if self.has_init_segment {
+                if self.buffer.iter().any(HlsData::is_mp4_media) {
+                    self.flush_buffer(output)?;
+                } else {
+                    debug!(
+                        stream = %self.context.name,
+                        "Dropping initialization superseded before any media"
+                    );
+                }
+            } else {
+                warn!(
+                    stream = %self.context.name,
+                    items = self.buffer.len(),
+                    bytes = self.buffered_bytes,
+                    "Discarding media received before its initialization was known"
+                );
+            }
             self.reset();
         }
         self.is_gathering = true;
@@ -123,6 +123,7 @@ impl DefragmentOperator {
             "{} Received init segment, start gathering...",
             self.context.name
         );
+        Ok(())
     }
 
     // Handle end of playlist
@@ -188,6 +189,7 @@ impl DefragmentOperator {
 
                     // Consider it at end of playlist marker
                     self.handle_end_of_playlist(None, output)?;
+                    self.has_init_segment = false;
 
                     // Continue processing the segment
                 } else {
@@ -217,8 +219,7 @@ impl DefragmentOperator {
                     },
                 ))?;
             }
-            self.handle_new_header(data);
-            return Ok(());
+            return self.handle_new_header(data, output);
         }
 
         // For M4S segments, wait for init segment if we haven't seen one
@@ -358,108 +359,104 @@ mod tests {
     use pipeline_common::StreamerContext;
     use tokio_util::sync::CancellationToken;
 
+    use crate::test_support::{INIT, MEDIA0, MEDIA1, OTHER_INIT, OTHER_MEDIA, init, media};
+
+    #[test]
+    fn new_init_preserves_the_short_group_encoded_against_the_previous_init() {
+        for (next_init, next_media) in [(INIT, MEDIA1), (OTHER_INIT, OTHER_MEDIA)] {
+            let context = StreamerContext::arc_new(CancellationToken::new());
+            let mut operator = DefragmentOperator::new(context.clone());
+            let mut out = Vec::new();
+            for item in [
+                init(INIT),
+                media(MEDIA0),
+                init(next_init),
+                media(next_media),
+            ] {
+                operator
+                    .process(&context, item, &mut |item| {
+                        out.push(item);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            operator
+                .finish(&context, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(out.len(), 4);
+            assert!(out[0].is_mp4_init() && out[2].is_mp4_init());
+            assert!(out[1].is_mp4_media() && out[3].is_mp4_media());
+            assert_eq!(
+                out.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
+                [INIT, MEDIA0, next_init, next_media]
+            );
+        }
+    }
+
+    #[test]
+    fn init_superseded_before_any_media_is_not_emitted() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = DefragmentOperator::new(context.clone());
+        let mut out = Vec::new();
+        for item in [init(INIT), init(OTHER_INIT), media(OTHER_MEDIA)] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        operator
+            .finish(&context, &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            out.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
+            [OTHER_INIT, OTHER_MEDIA]
+        );
+    }
+
+    #[test]
+    fn first_init_does_not_relabel_media_with_an_unknown_configuration() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = DefragmentOperator::new(context.clone());
+        let mut out = Vec::new();
+        for item in [media(MEDIA0), init(OTHER_INIT), media(OTHER_MEDIA)] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        operator
+            .finish(&context, &mut |item| {
+                out.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            out.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
+            [OTHER_INIT, OTHER_MEDIA]
+        );
+    }
+
     fn make_ts_segment_without_psi() -> HlsData {
-        let mut data = vec![0u8; 188 * 2];
-        data[0] = 0x47;
-        data[188] = 0x47;
-        HlsData::ts(MediaSegment::empty(), Bytes::from(data))
+        let mut packet = vec![0xff; 188];
+        packet[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]); // Null PID, payload only.
+        HlsData::ts(MediaSegment::empty(), packet.into())
     }
 
     fn make_ts_segment_with_pat_pmt() -> HlsData {
-        fn make_pat_packet(pmt_pid: u16) -> [u8; 188] {
-            let mut packet = [0xFFu8; 188];
-            packet[0] = 0x47;
-            packet[1] = 0x40; // PUSI=1, PID=0
-            packet[2] = 0x00;
-            packet[3] = 0x10; // payload only
-
-            let section_length: u16 = 13;
-            let mut i = 4;
-            packet[i] = 0x00; // pointer_field
-            i += 1;
-            packet[i] = 0x00; // table_id
-            i += 1;
-            packet[i] = 0xB0 | ((section_length >> 8) as u8 & 0x0F);
-            i += 1;
-            packet[i] = (section_length & 0xFF) as u8;
-            i += 1;
-            packet[i] = 0x00;
-            packet[i + 1] = 0x01; // transport_stream_id
-            i += 2;
-            packet[i] = 0xC1; // version=0, current_next=1
-            i += 1;
-            packet[i] = 0x00; // section_number
-            i += 1;
-            packet[i] = 0x00; // last_section_number
-            i += 1;
-            packet[i] = 0x00;
-            packet[i + 1] = 0x01; // program_number=1
-            i += 2;
-            packet[i] = 0xE0 | ((pmt_pid >> 8) as u8 & 0x1F);
-            packet[i + 1] = (pmt_pid & 0xFF) as u8;
-            i += 2;
-            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 placeholder
-            // Compute real MPEG-2 CRC-32 over the section (table_id through before CRC)
-            let section_start = 5; // after pointer_field
-            let crc = ts::mpeg2_crc32(&packet[section_start..i]);
-            packet[i..i + 4].copy_from_slice(&crc.to_be_bytes());
-            packet
-        }
-
-        fn make_pmt_packet(program_number: u16, pmt_pid: u16, video_pid: u16) -> [u8; 188] {
-            let mut packet = [0xFFu8; 188];
-            packet[0] = 0x47;
-            packet[1] = 0x40 | ((pmt_pid >> 8) as u8 & 0x1F); // PUSI=1
-            packet[2] = (pmt_pid & 0xFF) as u8;
-            packet[3] = 0x10; // payload only
-
-            let section_length: u16 = 18;
-            let mut i = 4;
-            packet[i] = 0x00; // pointer_field
-            i += 1;
-            packet[i] = 0x02; // table_id
-            i += 1;
-            packet[i] = 0xB0 | ((section_length >> 8) as u8 & 0x0F);
-            i += 1;
-            packet[i] = (section_length & 0xFF) as u8;
-            i += 1;
-            packet[i] = (program_number >> 8) as u8;
-            packet[i + 1] = (program_number & 0xFF) as u8;
-            i += 2;
-            packet[i] = 0xC1; // version=0, current_next=1
-            i += 1;
-            packet[i] = 0x00; // section_number
-            i += 1;
-            packet[i] = 0x00; // last_section_number
-            i += 1;
-            packet[i] = 0xE0 | ((video_pid >> 8) as u8 & 0x1F); // PCR PID = video_pid
-            packet[i + 1] = (video_pid & 0xFF) as u8;
-            i += 2;
-            packet[i] = 0xF0; // program_info_length = 0
-            packet[i + 1] = 0x00;
-            i += 2;
-            packet[i] = 0x1B; // stream_type H.264
-            i += 1;
-            packet[i] = 0xE0 | ((video_pid >> 8) as u8 & 0x1F);
-            packet[i + 1] = (video_pid & 0xFF) as u8;
-            i += 2;
-            packet[i] = 0xF0; // ES_info_length = 0
-            packet[i + 1] = 0x00;
-            i += 2;
-            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 placeholder
-            // Compute real MPEG-2 CRC-32 over the section (table_id through before CRC)
-            let section_start = 5; // after pointer_field
-            let crc = ts::mpeg2_crc32(&packet[section_start..i]);
-            packet[i..i + 4].copy_from_slice(&crc.to_be_bytes());
-            packet
-        }
-
-        let pat = make_pat_packet(0x0100);
-        let pmt = make_pmt_packet(1, 0x0100, 0x0101);
-        let mut data = Vec::with_capacity(188 * 2);
-        data.extend_from_slice(&pat);
-        data.extend_from_slice(&pmt);
-        HlsData::ts(MediaSegment::empty(), Bytes::from(data))
+        HlsData::ts(
+            MediaSegment::empty(),
+            Bytes::from_static(include_bytes!("../../../hls/tests/fixtures/avc-640x352.ts")),
+        )
     }
 
     fn make_m4s_media(size: usize) -> HlsData {
@@ -550,73 +547,32 @@ mod tests {
     }
 
     #[test]
-    fn passes_through_ts_without_psi_and_no_split_at_first_psi() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
+    fn forwards_ts_and_end_markers_unchanged() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
         let mut operator = DefragmentOperator::new(context.clone());
-
+        let inputs = [
+            make_ts_segment_without_psi(),
+            make_ts_segment_with_pat_pmt(),
+            HlsData::end_marker(),
+            make_ts_segment_without_psi(),
+        ];
+        let expected: Vec<Option<Bytes>> = inputs.iter().map(|item| item.data().cloned()).collect();
         let mut out = Vec::new();
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
+        for item in inputs {
             operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
-                .unwrap();
-            operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
                 .unwrap();
         }
-        assert_eq!(out.len(), 2);
-
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, make_ts_segment_with_pat_pmt(), &mut output)
-                .unwrap();
-        }
-
-        assert_eq!(out.len(), 3);
-        assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::TsData(_)));
-        assert!(matches!(out[2], HlsData::TsData(_)));
-    }
-
-    #[test]
-    fn flushes_ts_without_psi_on_playlist_end() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = DefragmentOperator::new(context.clone());
-
-        let mut out = Vec::new();
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, make_ts_segment_without_psi(), &mut output)
-                .unwrap();
-        }
-        assert_eq!(out.len(), 1);
-
-        {
-            let mut output = |item: HlsData| -> Result<(), PipelineError> {
-                out.push(item);
-                Ok(())
-            };
-            operator
-                .process(&context, HlsData::end_marker(), &mut output)
-                .unwrap();
-        }
-
-        assert_eq!(out.len(), 2);
-        assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::EndMarker(_)));
+        assert!(matches!(out[2], HlsData::EndMarker(None)));
+        assert_eq!(
+            out.iter()
+                .map(|item| item.data().cloned())
+                .collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[test]

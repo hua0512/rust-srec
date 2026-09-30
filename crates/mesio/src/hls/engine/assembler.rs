@@ -11,6 +11,17 @@
 //! drains the buffer in order and emits `StreamEnded`; `Fatal` drops the
 //! buffer and emits the error; a channel close without either is a cancel and
 //! emits nothing.
+//!
+//! fMP4 ordering contract, relied on by downstream processing (`hls-fix`):
+//! - An init is emitted only immediately before the first media it governs,
+//!   and at most once per distinct EXT-X-MAP. A map that stays the same across
+//!   a discontinuity is not re-emitted.
+//! - An init whose media never arrives, or that is superseded before any media
+//!   is emitted, is dropped. Consumers never see an init followed by a
+//!   discontinuity, the end of the stream, or another init.
+//! - A discontinuity event precedes the init and media it applies to.
+//! - Media whose init is missing or failed is skipped as a gap and never
+//!   emitted without that init.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -1512,6 +1523,85 @@ mod tests {
             ["https://e.com/init2.mp4", "https://e.com/seg101.m4s"]
         );
         h.cancel.cancel();
+        let _ = h.join.await;
+    }
+
+    /// Data URIs emitted before `StreamEnded`, and whether a discontinuity
+    /// event was observed.
+    async fn collect_until_stream_end(h: &mut Harness) -> (Vec<String>, bool) {
+        let mut uris = Vec::new();
+        let mut discontinuity = false;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(event) = h.event_rx.recv().await {
+                match event {
+                    Ok(HlsStreamEvent::Data(data)) => uris.push(
+                        data.media_segment()
+                            .map(|s| s.uri.clone())
+                            .unwrap_or_default(),
+                    ),
+                    Ok(HlsStreamEvent::DiscontinuityTagEncountered {}) => discontinuity = true,
+                    Ok(HlsStreamEvent::StreamEnded) => break,
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for StreamEnded");
+        (uris, discontinuity)
+    }
+
+    fn media_failure(msn: u64) -> AssemblerInput {
+        AssemblerInput::TerminalFailed {
+            key: SegmentKey {
+                kind: SegmentKind::Media,
+                uri: Arc::from(format!("https://e.com/seg{msn}.m4s")),
+                byte_range: None,
+            },
+            msn,
+        }
+    }
+
+    // hls-fix relies on these orderings; see the module-level contract.
+    #[tokio::test]
+    async fn init_whose_media_fails_is_superseded_without_emission() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let (init1, _) = mp4_init_keyed("https://e.com/init1.mp4", 100);
+        let (init2, key2) = mp4_init_keyed("https://e.com/init2.mp4", 101);
+        h.input_tx.send(init1).await.unwrap();
+        h.input_tx.send(media_failure(100)).await.unwrap();
+        h.input_tx.send(init2).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key2)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            ["https://e.com/init2.mp4", "https://e.com/seg101.m4s"]
+        );
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn init_without_media_is_not_emitted_at_stream_end() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let (init, key) = mp4_init_keyed("https://e.com/init.mp4", 100);
+        h.input_tx.send(init).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(100, &key)).await.unwrap();
+        let (mut next_init, _) = mp4_init_keyed("https://e.com/init2.mp4", 101);
+        if let AssemblerInput::Payload(SegmentPayload::Mp4Init { descriptor, .. }) = &mut next_init
+        {
+            let mut d = (**descriptor).clone();
+            d.discontinuity = true;
+            *descriptor = Arc::new(d);
+        }
+        h.input_tx.send(next_init).await.unwrap();
+        h.input_tx.send(media_failure(101)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, discontinuity) = collect_until_stream_end(&mut h).await;
+        assert_eq!(uris, ["https://e.com/init.mp4", "https://e.com/seg100.m4s"]);
+        assert!(
+            !discontinuity,
+            "a discontinuity is only emitted ahead of the init and media it applies to"
+        );
         let _ = h.join.await;
     }
 

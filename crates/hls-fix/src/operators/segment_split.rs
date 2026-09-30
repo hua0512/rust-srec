@@ -1,12 +1,13 @@
-use hls::{
-    HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfile, StreamProfileOptions,
-    TsStreamInfo,
-};
-use pipeline_common::{PipelineError, Processor, SplitReason, StreamerContext};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
 
-use pipeline_common::crc32;
+use hls::{
+    HlsData, M4sData, M4sInitSegmentData, ProgramInfo, Resolution, StreamEntry,
+    StreamProfileOptions, TsAnalysis, TsSegmentData, TsStreamInfo,
+};
+use pipeline_common::{
+    AudioCodecInfo, PipelineError, Processor, SplitReason, StreamerContext, VideoCodecInfo, crc32,
+};
+use tracing::{debug, info, warn};
 
 /// An operator that splits HLS segments when meaningful stream parameters change.
 ///
@@ -21,27 +22,14 @@ use pipeline_common::crc32;
 /// - **Transport Stream ID changes**: Indicates a different stream source
 /// - **Elementary stream codec type changes**: e.g., H.264 → H.265 at PMT level
 ///
-/// # Ignored Changes (normal in live HLS, no split)
-///
-/// The following are NOT split triggers because they occur normally in live streams:
-///
-/// - **PCR PID changes**: Only indicates which PID carries timing reference
-/// - **Stream count fluctuations**: Segments between keyframes may only have audio
-/// - **Stream profile fluctuations**: Audio-only segments show `has_video: false`
-/// - **Codec presence fluctuations**: Profile-level detection varies per segment
-///
-/// # Design Rationale
-///
-/// In live HLS with MPEG-TS segments, not every segment contains all elementary
-/// streams. Segments between video keyframes often contain only audio data, causing
-/// the PMT and stream profile to temporarily show fewer streams. This is normal
-/// behavior, not a stream discontinuity. Only changes that would cause decoder
-/// errors or visual artifacts should trigger a split.
+/// Missing PSI is tolerated without replacing the last known program layout.
+/// Playlist discontinuities are handled upstream: RFC 8216 4.3.2.3 requires
+/// them for changes in track count, type, identifiers, or timestamp sequence.
+/// A PMT describes the program, not just the packets present in one segment.
 pub struct SegmentSplitOperator {
     context: Arc<StreamerContext>,
     last_init_segment_crc: Option<u32>,
-    last_stream_profile: Option<StreamProfile>,
-    last_ts_stream_info: Option<TsStreamInfo>,
+    last_ts_analysis: Option<Arc<TsAnalysis>>,
     last_resolution: Option<Resolution>,
     last_init_segment: Option<M4sInitSegmentData>,
     /// Best-effort budget for TS resolution probing until we establish a baseline.
@@ -61,8 +49,7 @@ impl SegmentSplitOperator {
         Self {
             context,
             last_init_segment_crc: None,
-            last_stream_profile: None,
-            last_ts_stream_info: None,
+            last_ts_analysis: None,
             last_resolution: None,
             last_init_segment: None,
             resolution_probe_remaining: 50,
@@ -75,21 +62,7 @@ impl SegmentSplitOperator {
     }
 
     // Handle MP4 init segment - returns Some(reason) if a split is needed
-    fn handle_init_segment(
-        &mut self,
-        input: &HlsData,
-    ) -> Result<Option<SplitReason>, PipelineError> {
-        // Get data from HlsData
-        let data = match input {
-            HlsData::M4sData(M4sData::InitSegment(init)) => init,
-            _ => {
-                return Err(PipelineError::Strategy(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Expected MP4 init segment",
-                ))));
-            }
-        };
-
+    fn handle_init_segment(&mut self, data: &M4sInitSegmentData) -> Option<SplitReason> {
         let crc = Self::calculate_crc(&data.data);
         let mut split_reason = None;
 
@@ -112,27 +85,19 @@ impl SegmentSplitOperator {
         self.last_init_segment = Some(data.clone());
         self.last_init_segment_crc = Some(crc);
 
-        Ok(split_reason)
+        split_reason
     }
 
     // Handle TS segment
     // Returns Some(reason) if a split is needed
-    fn handle_ts_segment(&mut self, input: &HlsData) -> Result<Option<SplitReason>, PipelineError> {
+    fn handle_ts_segment(&mut self, input: &TsSegmentData) -> Option<SplitReason> {
         let include_resolution =
             self.last_resolution.is_some() || self.resolution_probe_remaining > 0;
-        let analysis = match input {
-            HlsData::TsData(ts_data) => {
-                match ts_data.analysis(StreamProfileOptions { include_resolution }) {
-                    Ok(analysis) => analysis,
-                    Err(e) => {
-                        warn!("{} Failed to analyze TS segment: {}", self.context.name, e);
-                        return Ok(None);
-                    }
-                }
-            }
-            _ => {
-                debug!("{} Not a TS segment", self.context.name);
-                return Ok(None);
+        let analysis = match input.analysis(StreamProfileOptions { include_resolution }) {
+            Ok(analysis) => analysis,
+            Err(error) => {
+                warn!(stream = %self.context.name, %error, "Failed to analyze TS segment");
+                return None;
             }
         };
 
@@ -141,342 +106,155 @@ impl SegmentSplitOperator {
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
             );
-            return Ok(None);
+            return None;
         }
 
         // has_psi is set by a PAT alone; an empty programs list means the PMT was absent,
         // cut across the segment boundary, or failed CRC. Comparing an empty layout against
-        // last_ts_stream_info would emit a spurious StreamStructureChange, so treat it like the
-        // no-PSI case and leave last_ts_stream_info untouched.
+        // the previous layout would emit a spurious StreamStructureChange, so treat it like the
+        // no-PSI case and retain the last complete analysis.
         if analysis.stream_info.programs.is_empty() {
             debug!(
                 "{} TS segment has PAT but no parsed PMT, skipping structural comparison",
                 self.context.name
             );
-            return Ok(None);
+            return None;
         }
 
-        let current_stream_info = analysis.stream_info.clone();
-        let mut profile = analysis.stream_profile();
-        if self.last_resolution.is_some() && !analysis.has_random_access {
-            profile.resolution = None;
-        }
-        if profile.has_video
-            && include_resolution
-            && profile.resolution.is_none()
-            && self.last_resolution.is_none()
-            && self.resolution_probe_remaining > 0
+        let current_stream_info = &analysis.stream_info;
+        // Once a baseline exists, only a random-access segment may move it.
+        let resolution = analysis
+            .resolution
+            .filter(|_| self.last_resolution.is_none() || analysis.has_random_access);
+        if self.last_resolution.is_none()
+            && resolution.is_none()
+            && current_stream_info
+                .programs
+                .iter()
+                .any(|p| !p.video_streams.is_empty())
         {
             self.resolution_probe_remaining = self.resolution_probe_remaining.saturating_sub(1);
         }
-        let current_profile = Some(profile);
 
-        let mut split_reason: Option<SplitReason> = None;
-
-        // Compare with previous stream information
-        if let Some(previous_info) = &self.last_ts_stream_info {
-            // Check for program changes
-            if previous_info.program_count != current_stream_info.program_count {
-                info!(
-                    "{} Program count changed: {} -> {}",
-                    self.context.name,
-                    previous_info.program_count,
-                    current_stream_info.program_count
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "program count changed: {} -> {}",
-                        previous_info.program_count, current_stream_info.program_count
-                    ),
-                });
-            }
-
-            // Check for transport stream ID changes
-            if previous_info.transport_stream_id != current_stream_info.transport_stream_id {
-                info!(
-                    "{} Transport Stream ID changed: {} -> {}",
-                    self.context.name,
-                    previous_info.transport_stream_id,
-                    current_stream_info.transport_stream_id
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "transport stream ID changed: {} -> {}",
-                        previous_info.transport_stream_id, current_stream_info.transport_stream_id
-                    ),
-                });
-            }
-
-            // Compare stream layouts within programs
-            if split_reason.is_none()
-                && previous_info.programs.len() != current_stream_info.programs.len()
-            {
-                info!(
-                    "{} Number of programs changed: {} -> {}",
-                    self.context.name,
-                    previous_info.programs.len(),
-                    current_stream_info.programs.len()
-                );
-                split_reason = Some(SplitReason::StreamStructureChange {
-                    description: format!(
-                        "number of programs changed: {} -> {}",
-                        previous_info.programs.len(),
-                        current_stream_info.programs.len()
-                    ),
-                });
-            }
-
-            // Check individual program changes
-            if split_reason.is_none() {
-                for (prev_prog, curr_prog) in previous_info
-                    .programs
-                    .iter()
-                    .zip(current_stream_info.programs.iter())
-                {
-                    if prev_prog.program_number != curr_prog.program_number {
-                        info!(
-                            "{} Program number changed: {} -> {}",
-                            self.context.name, prev_prog.program_number, curr_prog.program_number
-                        );
-                        split_reason = Some(SplitReason::StreamStructureChange {
-                            description: format!(
-                                "program number changed: {} -> {}",
-                                prev_prog.program_number, curr_prog.program_number
-                            ),
-                        });
-                        break;
-                    }
-
-                    // Note: PCR PID changes are NOT a reason to split.
-                    // Per MPEG-TS spec (ISO/IEC 13818-1), PCR PID changes simply indicate
-                    // which elementary stream carries the timing reference. The decoder
-                    // handles this transparently via the discontinuity_indicator flag.
-                    // Common in live streams when encoder/CDN reassigns timing source.
-                    if prev_prog.pcr_pid != curr_prog.pcr_pid {
-                        debug!(
-                            "{} PCR PID changed for program {}: 0x{:04X} -> 0x{:04X}",
-                            self.context.name,
-                            curr_prog.program_number,
-                            prev_prog.pcr_pid,
-                            curr_prog.pcr_pid
-                        );
-                    }
-
-                    // Note: Stream count changes are NOT a reliable indicator for splitting.
-                    // In live HLS, not every TS segment contains all streams:
-                    // - Some segments may only have audio (between video keyframes)
-                    // - PMT reflects what's in that specific segment, not the overall stream
-                    // This causes normal fluctuations like 2->1->2->1 that aren't real changes.
-                    // Actual codec and stream type changes are checked separately via
-                    // the stream profile comparison which handles additions/removals properly.
-                    let prev_stream_count = prev_prog.video_streams.len()
-                        + prev_prog.audio_streams.len()
-                        + prev_prog.other_streams.len();
-                    let curr_stream_count = curr_prog.video_streams.len()
-                        + curr_prog.audio_streams.len()
-                        + curr_prog.other_streams.len();
-
-                    if curr_stream_count != prev_stream_count {
-                        debug!(
-                            "{} Stream count changed for program {}: {} -> {} (normal fluctuation, no split)",
-                            self.context.name,
-                            curr_prog.program_number,
-                            prev_stream_count,
-                            curr_stream_count
-                        );
-                        // Do NOT split - this is normal in live HLS
-                    }
-
-                    // Check for codec changes in video streams
-                    for (prev_stream, curr_stream) in prev_prog
-                        .video_streams
-                        .iter()
-                        .zip(curr_prog.video_streams.iter())
-                    {
-                        if prev_stream.stream_type != curr_stream.stream_type {
-                            info!(
-                                "{} Video codec changed for program {}: {:?} -> {:?}",
-                                self.context.name,
-                                curr_prog.program_number,
-                                prev_stream.stream_type,
-                                curr_stream.stream_type
-                            );
-                            split_reason = Some(SplitReason::VideoCodecChange {
-                                from: pipeline_common::VideoCodecInfo {
-                                    codec: format!("{:?}", prev_stream.stream_type),
-                                    profile: None,
-                                    level: None,
-                                    width: None,
-                                    height: None,
-                                    signature: 0,
-                                },
-                                to: pipeline_common::VideoCodecInfo {
-                                    codec: format!("{:?}", curr_stream.stream_type),
-                                    profile: None,
-                                    level: None,
-                                    width: None,
-                                    height: None,
-                                    signature: 0,
-                                },
-                            });
-                            break;
-                        }
-                    }
-
-                    // Check for codec changes in audio streams
-                    if split_reason.is_none() {
-                        for (prev_stream, curr_stream) in prev_prog
-                            .audio_streams
-                            .iter()
-                            .zip(curr_prog.audio_streams.iter())
-                        {
-                            if prev_stream.stream_type != curr_stream.stream_type {
-                                info!(
-                                    "{} Audio codec changed for program {}: {:?} -> {:?}",
-                                    self.context.name,
-                                    curr_prog.program_number,
-                                    prev_stream.stream_type,
-                                    curr_stream.stream_type
-                                );
-                                split_reason = Some(SplitReason::AudioCodecChange {
-                                    from: pipeline_common::AudioCodecInfo {
-                                        codec: format!("{:?}", prev_stream.stream_type),
-                                        sample_rate: None,
-                                        channels: None,
-                                        signature: 0,
-                                    },
-                                    to: pipeline_common::AudioCodecInfo {
-                                        codec: format!("{:?}", curr_stream.stream_type),
-                                        sample_rate: None,
-                                        channels: None,
-                                        signature: 0,
-                                    },
-                                });
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+        let mut split_reason = self.last_ts_analysis.as_ref().and_then(|previous| {
+            Self::structure_change(&previous.stream_info, current_stream_info)
+        });
+        if let Some(reason) = &split_reason {
+            info!(stream = %self.context.name, ?reason, "TS program structure changed");
         }
 
-        // Compare stream profiles for high-level changes
-        if let (Some(current_profile), Some(previous_profile)) =
-            (&current_profile, &self.last_stream_profile)
-            && split_reason.is_none()
-        {
-            // Note: Profile-level codec and stream type checks are NOT reliable for splitting.
-            // In live HLS, individual TS segments may only contain audio data (between video
-            // keyframes), causing the profile to temporarily show has_video: false.
-            // This is the same fluctuation pattern as stream count changes.
-            // Real codec changes are already detected at the PMT level above.
-
-            // Check for codec changes (log only, no split)
-            let h264_removed = previous_profile.has_h264 && !current_profile.has_h264;
-            let h265_removed = previous_profile.has_h265 && !current_profile.has_h265;
-            let aac_removed = previous_profile.has_aac && !current_profile.has_aac;
-            let ac3_removed = previous_profile.has_ac3 && !current_profile.has_ac3;
-
-            if h264_removed || h265_removed || aac_removed || ac3_removed {
-                debug!(
-                    "{} Stream codec not present in segment (normal fluctuation)",
-                    self.context.name
-                );
-                // Do NOT split - this is normal segment-level fluctuation
-            } else if current_profile.has_h264 != previous_profile.has_h264
-                || current_profile.has_h265 != previous_profile.has_h265
-                || current_profile.has_aac != previous_profile.has_aac
-                || current_profile.has_ac3 != previous_profile.has_ac3
-            {
-                debug!("{} Stream codec added (late detection)", self.context.name);
-            }
-
-            // Check for stream type changes (log only, no split)
-            let video_removed = previous_profile.has_video && !current_profile.has_video;
-            let audio_removed = previous_profile.has_audio && !current_profile.has_audio;
-
-            if video_removed || audio_removed {
-                debug!(
-                    "{} Stream type not present in segment (normal fluctuation): video: {} -> {}, audio: {} -> {}",
-                    self.context.name,
-                    previous_profile.has_video,
-                    current_profile.has_video,
-                    previous_profile.has_audio,
-                    current_profile.has_audio
-                );
-                // Do NOT split - segments between keyframes may only contain audio
-            } else if current_profile.has_video != previous_profile.has_video
-                || current_profile.has_audio != previous_profile.has_audio
-            {
-                debug!(
-                    "{} Stream type added (late arrival): video: {} -> {}, audio: {} -> {}",
-                    self.context.name,
-                    previous_profile.has_video,
-                    current_profile.has_video,
-                    previous_profile.has_audio,
-                    current_profile.has_audio
-                );
-            }
-
-            // Check for resolution changes using StreamProfile
-            if let (Some(current_res), Some(previous_res)) =
-                (&current_profile.resolution, &previous_profile.resolution)
-                && current_res != previous_res
+        // Update the baseline even if a codec/program change already selected a
+        // split. Otherwise the following unchanged segment would split again.
+        if let Some(current_resolution) = resolution {
+            if split_reason.is_none()
+                && let Some(previous) = self.last_resolution
+                && previous != current_resolution
             {
                 info!(
-                    "{} Video resolution changed via profile: {} -> {}",
-                    self.context.name, previous_res, current_res
+                    stream = %self.context.name,
+                    from = %previous,
+                    to = %current_resolution,
+                    "Video resolution changed"
                 );
                 split_reason = Some(SplitReason::ResolutionChange {
-                    from: (previous_res.width, previous_res.height),
-                    to: (current_res.width, current_res.height),
+                    from: (previous.width, previous.height),
+                    to: (current_resolution.width, current_resolution.height),
                 });
-            }
-        }
-
-        // Additional resolution change check (if video streams are present)
-        if split_reason.is_none()
-            && (current_stream_info
-                .programs
-                .iter()
-                .any(|p| !p.video_streams.is_empty()))
-            && let Some(current_resolution) = current_profile.as_ref().and_then(|p| p.resolution)
-        {
-            if let Some(last_resolution) = self.last_resolution {
-                if last_resolution != current_resolution {
-                    info!(
-                        "{} Video resolution changed: {} -> {}",
-                        self.context.name, last_resolution, current_resolution
-                    );
-                    split_reason = Some(SplitReason::ResolutionChange {
-                        from: (last_resolution.width, last_resolution.height),
-                        to: (current_resolution.width, current_resolution.height),
-                    });
-                }
-            } else {
-                // First time we detect resolution
-                info!(
-                    "{} Detected video resolution: {}",
-                    self.context.name, current_resolution
-                );
             }
             self.last_resolution = Some(current_resolution);
         }
+        // The analysis owns metadata only, not the segment bytes. Sharing it
+        // avoids cloning every program, stream, language and splice event.
+        self.last_ts_analysis = Some(analysis);
 
-        // Update stored information
-        self.last_ts_stream_info = Some(current_stream_info);
-        if let Some(profile) = current_profile {
-            self.last_stream_profile = Some(profile);
+        split_reason
+    }
+
+    /// Compares program layouts. PCR PID and stream-count changes are not
+    /// structural: which PID carries timing, or which tracks a segment happens
+    /// to include, does not change how the program decodes.
+    fn structure_change(previous: &TsStreamInfo, current: &TsStreamInfo) -> Option<SplitReason> {
+        let structure =
+            |description: String| Some(SplitReason::StreamStructureChange { description });
+        if previous.transport_stream_id != current.transport_stream_id {
+            return structure(format!(
+                "transport stream ID changed: {} -> {}",
+                previous.transport_stream_id, current.transport_stream_id
+            ));
         }
+        if previous.program_count != current.program_count {
+            return structure(format!(
+                "program count changed: {} -> {}",
+                previous.program_count, current.program_count
+            ));
+        }
+        if previous.programs.len() != current.programs.len() {
+            return structure(format!(
+                "number of programs changed: {} -> {}",
+                previous.programs.len(),
+                current.programs.len()
+            ));
+        }
+        previous
+            .programs
+            .iter()
+            .zip(&current.programs)
+            .find_map(|(previous, current)| Self::program_change(previous, current))
+    }
 
-        Ok(split_reason)
+    fn program_change(previous: &ProgramInfo, current: &ProgramInfo) -> Option<SplitReason> {
+        if previous.program_number != current.program_number {
+            return Some(SplitReason::StreamStructureChange {
+                description: format!(
+                    "program number changed: {} -> {}",
+                    previous.program_number, current.program_number
+                ),
+            });
+        }
+        let changed_codec = |previous: &[StreamEntry], current: &[StreamEntry]| {
+            previous
+                .iter()
+                .zip(current)
+                .find(|(previous, current)| previous.stream_type != current.stream_type)
+                .map(|(previous, current)| {
+                    (
+                        format!("{:?}", previous.stream_type),
+                        format!("{:?}", current.stream_type),
+                    )
+                })
+        };
+        if let Some((from, to)) = changed_codec(&previous.video_streams, &current.video_streams) {
+            let codec = |codec| VideoCodecInfo {
+                codec,
+                profile: None,
+                level: None,
+                width: None,
+                height: None,
+                signature: 0,
+            };
+            return Some(SplitReason::VideoCodecChange {
+                from: codec(from),
+                to: codec(to),
+            });
+        }
+        changed_codec(&previous.audio_streams, &current.audio_streams).map(|(from, to)| {
+            let codec = |codec| AudioCodecInfo {
+                codec,
+                sample_rate: None,
+                channels: None,
+                signature: 0,
+            };
+            SplitReason::AudioCodecChange {
+                from: codec(from),
+                to: codec(to),
+            }
+        })
     }
 
     // Reset operator state
     fn reset(&mut self) {
         self.last_init_segment_crc = None;
-        self.last_stream_profile = None;
-        self.last_ts_stream_info = None;
+        self.last_ts_analysis = None;
         self.last_resolution = None;
         self.last_init_segment = None;
         self.resolution_probe_remaining = 50;
@@ -497,12 +275,12 @@ impl Processor<HlsData> for SegmentSplitOperator {
 
         // Check if we need to split based on segment type
         match &input {
-            HlsData::M4sData(M4sData::InitSegment(_)) => {
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
                 debug!("Init segment received");
-                split_reason = self.handle_init_segment(&input)?;
+                split_reason = self.handle_init_segment(init);
             }
-            HlsData::TsData(_) => {
-                split_reason = self.handle_ts_segment(&input)?;
+            HlsData::TsData(segment) => {
+                split_reason = self.handle_ts_segment(segment);
             }
             HlsData::EndMarker(_) => {
                 // Reset state when we see an end marker
@@ -552,463 +330,195 @@ impl Processor<HlsData> for SegmentSplitOperator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
-    use pipeline_common::init_test_tracing;
     use tokio_util::sync::CancellationToken;
 
-    // Helper function to create a working TS data with specific codec combinations
-    fn create_ts_data_with_codecs(video_codec: u8, audio_codec: u8, program_num: u16) -> Vec<u8> {
-        let mut ts_data = Vec::new();
+    use super::*;
+    use crate::test_support::{INIT, OTHER_INIT, init};
 
-        // PAT packet (188 bytes)
-        let mut pat_packet = vec![0u8; 188];
-        pat_packet[0] = 0x47; // Sync byte
-        pat_packet[1] = 0x40; // PUSI set, PID = 0 (PAT)
-        pat_packet[2] = 0x00;
-        pat_packet[3] = 0x10; // No scrambling, payload only
-
-        // Simple PAT payload
-        pat_packet[4] = 0x00; // Pointer field
-        pat_packet[5] = 0x00; // Table ID (PAT)
-        pat_packet[6] = 0x80; // Section syntax indicator
-        pat_packet[7] = 0x0D; // Section length (13 bytes)
-        pat_packet[8] = 0x00;
-        pat_packet[9] = 0x01; // Transport stream ID
-        pat_packet[10] = 0x01; // Version 0 + current/next = 1
-        pat_packet[11] = 0x00;
-        pat_packet[12] = 0x00; // Section numbers
-        // Program entry
-        pat_packet[13] = (program_num >> 8) as u8;
-        pat_packet[14] = (program_num & 0xFF) as u8;
-        pat_packet[15] = 0xE1;
-        pat_packet[16] = 0x00; // PMT PID 0x100
-
-        // PMT packet (188 bytes)
-        let mut pmt_packet = vec![0u8; 188];
-        pmt_packet[0] = 0x47; // Sync byte
-        pmt_packet[1] = 0x41; // PUSI set, PID = 0x100
-        pmt_packet[2] = 0x00;
-        pmt_packet[3] = 0x10; // No scrambling, payload only
-
-        pmt_packet[4] = 0x00; // Pointer field
-        pmt_packet[5] = 0x02; // Table ID (PMT)
-        pmt_packet[6] = 0x80; // Section syntax indicator
-        pmt_packet[7] = 0x17; // Section length (23 bytes for 2 streams)
-        pmt_packet[8] = (program_num >> 8) as u8;
-        pmt_packet[9] = (program_num & 0xFF) as u8;
-        pmt_packet[10] = 0x01; // Version 0 + current/next = 1
-        pmt_packet[11] = 0x00;
-        pmt_packet[12] = 0x00; // Section numbers
-        pmt_packet[13] = 0xE1;
-        pmt_packet[14] = 0x00; // PCR PID 0x100
-        pmt_packet[15] = 0x00;
-        pmt_packet[16] = 0x00; // Program info length
-        // Video stream
-        pmt_packet[17] = video_codec;
-        pmt_packet[18] = 0xE1;
-        pmt_packet[19] = 0x00; // Elementary PID 0x100
-        pmt_packet[20] = 0x00;
-        pmt_packet[21] = 0x00; // ES info length
-        // Audio stream
-        pmt_packet[22] = audio_codec;
-        pmt_packet[23] = 0xE1;
-        pmt_packet[24] = 0x01; // Elementary PID 0x101
-        pmt_packet[25] = 0x00;
-        pmt_packet[26] = 0x00; // ES info length
-
-        ts_data.extend_from_slice(&pat_packet);
-        ts_data.extend_from_slice(&pmt_packet);
-        ts_data
+    fn psi_packet(pid: u16, mut section: Vec<u8>) -> Vec<u8> {
+        section.extend_from_slice(&ts::mpeg2_crc32(&section).to_be_bytes());
+        let mut packet = vec![0xff; 188];
+        packet[..5].copy_from_slice(&[0x47, 0x40 | (pid >> 8) as u8, pid as u8, 0x10, 0]);
+        packet[5..5 + section.len()].copy_from_slice(&section);
+        packet
     }
 
-    fn make_ts_packet_header(pid: u16, pusi: bool, adaptation_field_control: u8) -> [u8; 4] {
-        // sync
-        let mut header = [0u8; 4];
-        header[0] = 0x47;
-        header[1] = ((pusi as u8) << 6) | ((pid >> 8) as u8 & 0x1F);
-        header[2] = (pid & 0xFF) as u8;
-        // no scrambling, afc + continuity 0
-        header[3] = adaptation_field_control << 4;
-        header
+    // PSI-only inputs exercise metadata comparison without pretending to carry
+    // decodable video. PMT, video and audio use distinct PIDs and valid CRCs.
+    fn tables(video: u8, audio: u8, program: u16) -> Vec<u8> {
+        let [hi, lo] = program.to_be_bytes();
+        [
+            psi_packet(0, vec![0, 0xb0, 13, 0, 1, 0xc1, 0, 0, hi, lo, 0xf0, 0]),
+            psi_packet(
+                0x1000,
+                vec![
+                    2, 0xb0, 23, hi, lo, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, video, 0xe1, 0, 0xf0, 0,
+                    audio, 0xe1, 1, 0xf0, 0,
+                ],
+            ),
+        ]
+        .concat()
     }
 
-    fn make_ts_packet_with_rai(pid: u16, rai: bool, payload: &[u8]) -> [u8; 188] {
-        // adaptation_field_control=0x03 (adaptation + payload)
-        let mut pkt = [0u8; 188];
-        let header = make_ts_packet_header(pid, true, 0x03);
-        pkt[..4].copy_from_slice(&header);
+    fn ts(data: Vec<u8>) -> HlsData {
+        HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), data.into())
+                .with_crc_validation(true)
+                .with_strict_continuity(true),
+        )
+    }
 
-        // Adaptation field: length + flags byte.
-        // We only need the flags byte for RAI; no PCR.
-        pkt[4] = 1; // adaptation_field_length
-        pkt[5] = if rai { 0x40 } else { 0x00 };
-
-        let payload_start = 6;
-        let max_payload = 188 - payload_start;
-        let payload_len = payload.len().min(max_payload);
-        pkt[payload_start..payload_start + payload_len].copy_from_slice(&payload[..payload_len]);
-        for b in &mut pkt[payload_start + payload_len..] {
-            *b = 0xFF;
+    fn video(width: u32, random_access: bool) -> HlsData {
+        let bytes: &[u8] = match width {
+            640 => include_bytes!("../../../hls/tests/fixtures/avc-640x352.ts"),
+            1280 => include_bytes!("../../../hls/tests/fixtures/avc-1280x720.ts"),
+            _ => panic!("unknown fixture"),
+        };
+        let mut data = bytes.to_vec();
+        if !random_access {
+            for packet in data.as_chunks_mut::<188>().0 {
+                if packet[3] & 0x20 != 0 && packet[4] > 0 {
+                    packet[5] &= !0x40;
+                }
+            }
         }
-        pkt
+        ts(data)
     }
 
-    fn make_fake_h264_sps_nal(width: u32, height: u32) -> Vec<u8> {
-        // Generate a valid H.264 SPS NAL unit that our h264 crate can parse.
-        // Start code is NOT included here.
-        use bytes_util::BitWriter;
-        use expgolomb::BitWriterExpGolombExt;
-
+    fn process(items: Vec<HlsData>) -> Vec<HlsData> {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = SegmentSplitOperator::new(context.clone());
         let mut out = Vec::new();
-        let mut w = BitWriter::new(&mut out);
-
-        // NAL header (forbidden_zero_bit=0, nal_ref_idc=0, nal_unit_type=7)
-        w.write_bit(false).unwrap();
-        w.write_bits(0, 2).unwrap();
-        w.write_bits(7, 5).unwrap();
-
-        // profile_idc 77 (Main), constraint flags 0, level_idc 0
-        w.write_bits(77, 8).unwrap();
-        w.write_bits(0, 8).unwrap();
-        w.write_bits(0, 8).unwrap();
-
-        // seq_parameter_set_id
-        w.write_exp_golomb(0).unwrap();
-        // log2_max_frame_num_minus4
-        w.write_exp_golomb(0).unwrap();
-        // pic_order_cnt_type
-        w.write_exp_golomb(0).unwrap();
-        // log2_max_pic_order_cnt_lsb_minus4
-        w.write_exp_golomb(0).unwrap();
-
-        // max_num_ref_frames
-        w.write_exp_golomb(0).unwrap();
-        // gaps_in_frame_num_value_allowed_flag
-        w.write_bit(false).unwrap();
-
-        // pic_width_in_mbs_minus1, pic_height_in_map_units_minus1
-        let width_mbs = (width / 16).saturating_sub(1) as u64;
-        let height_map_units = (height / 16).saturating_sub(1) as u64;
-        w.write_exp_golomb(width_mbs).unwrap();
-        w.write_exp_golomb(height_map_units).unwrap();
-
-        // frame_mbs_only_flag (progressive)
-        w.write_bit(true).unwrap();
-        // direct_8x8_inference_flag
-        w.write_bit(false).unwrap();
-        // frame_cropping_flag
-        w.write_bit(false).unwrap();
-        // vui_parameters_present_flag
-        w.write_bit(false).unwrap();
-
-        w.finish().unwrap();
+        for item in items {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
         out
     }
 
-    fn make_fake_h264_pes_with_sps(width: u32, height: u32) -> Vec<u8> {
-        // Minimal PES header + start code prefix + SPS NAL.
-        // Our detector scans payloads for start codes.
-        let mut out = Vec::new();
-        // PES start code prefix
-        out.extend_from_slice(&[0x00, 0x00, 0x01]);
-        // stream_id (video)
-        out.push(0xE0);
-        // PES_packet_length = 0 (unknown)
-        out.extend_from_slice(&[0x00, 0x00]);
-        // flags: '10' + no scrambling etc.
-        out.push(0x80);
-        // PTS/DTS flags 00
-        out.push(0x00);
-        // header_data_length 0
-        out.push(0x00);
-
-        // Annex B start code + SPS
-        out.extend_from_slice(&[0x00, 0x00, 0x01]);
-        out.extend_from_slice(&make_fake_h264_sps_nal(width, height));
-        out
-    }
-
-    fn create_ts_data_with_rai_and_sps(
-        video_pid: u16,
-        rai: bool,
-        width: u32,
-        height: u32,
-    ) -> Vec<u8> {
-        // Reuse PAT/PMT from helper, then append one video packet with PES/SPS.
-        let mut ts_data = create_ts_data_with_codecs(0x1B, 0x0F, 1);
-        let pes = make_fake_h264_pes_with_sps(width, height);
-        let video_packet = make_ts_packet_with_rai(video_pid, rai, &pes);
-        ts_data.extend_from_slice(&video_packet);
-        ts_data
-    }
-
     #[test]
-    fn test_stream_change_detection() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Create initial TS segment with H.264 + AAC
-        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
-        let ts_segment1 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the initial segment
-        operator
-            .process(&context, ts_segment1, &mut output_fn)
-            .unwrap();
-
-        // Create second TS segment with H.265 + AC-3 (different codecs)
-        let ts_data2 = create_ts_data_with_codecs(0x24, 0x81, 1); // H.265 + AC-3
-        let ts_segment2 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the modified segment
-        operator
-            .process(&context, ts_segment2, &mut output_fn)
-            .unwrap();
-
-        // Should have split the stream (segment1 + end marker + segment2)
-        assert_eq!(output_items.len(), 3);
-        match &output_items[1] {
-            HlsData::EndMarker(_) => {}
-            _ => panic!("Expected EndMarker"),
+    fn codec_changes_report_the_changed_codec_and_preserve_media() {
+        for (video, audio) in [(0x24, 0x0f), (0x1b, 0x81)] {
+            let before = tables(0x1b, 0x0f, 1);
+            let after = tables(video, audio, 1);
+            let out = process(vec![ts(before.clone()), ts(after.clone())]);
+            assert_eq!(out.len(), 3);
+            assert_eq!(out[0].as_ref(), before);
+            assert_eq!(out[2].as_ref(), after);
+            match &out[1] {
+                HlsData::EndMarker(Some(SplitReason::VideoCodecChange { from, to }))
+                    if video == 0x24 =>
+                {
+                    assert_eq!((&*from.codec, &*to.codec), ("H264", "H265"));
+                }
+                HlsData::EndMarker(Some(SplitReason::AudioCodecChange { from, to }))
+                    if audio == 0x81 =>
+                {
+                    assert_eq!((&*from.codec, &*to.codec), ("AdtsAac", "Ac3"));
+                }
+                other => panic!("unexpected boundary: {other:?}"),
+            }
         }
     }
 
     #[test]
-    fn test_program_change_detection() {
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Create initial TS segment with program 1
-        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC, program 1
-        let ts_segment1 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the initial segment
-        operator
-            .process(&context, ts_segment1, &mut output_fn)
-            .unwrap();
-
-        // Create second TS segment with program 2 (different program number)
-        let ts_data2 = create_ts_data_with_codecs(0x1B, 0x0F, 2); // H.264 + AAC, program 2
-        let ts_segment2 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the segment with different program
-        operator
-            .process(&context, ts_segment2, &mut output_fn)
-            .unwrap();
-
-        // Should have split the stream (segment1 + end marker + segment2)
-        assert_eq!(output_items.len(), 3);
-        match &output_items[1] {
-            HlsData::EndMarker(_) => {}
-            _ => panic!("Expected EndMarker"),
-        }
-    }
-
-    #[test]
-    fn test_resolution_change_detection() {
-        init_test_tracing!();
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Create initial TS segment with H.264 (which typically defaults to 1920x1080)
-        let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
-        let ts_segment1 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the initial segment
-        operator
-            .process(&context, ts_segment1, &mut output_fn)
-            .unwrap();
-
-        // Create second TS segment with H.265 (which typically defaults to 3840x2160)
-        let ts_data2 = create_ts_data_with_codecs(0x24, 0x0F, 1); // H.265 + AAC
-        let ts_segment2 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-
-        // Process the segment with different codec (and implied resolution)
-        operator
-            .process(&context, ts_segment2, &mut output_fn)
-            .unwrap();
-
-        // Should have split the stream due to both codec and resolution change
-        // (segment1 + end marker + segment2)
-        assert_eq!(output_items.len(), 3);
-        match &output_items[1] {
-            HlsData::EndMarker(_) => {}
-            _ => panic!("Expected EndMarker after resolution change"),
-        }
-    }
-
-    #[test]
-    fn test_resolution_probe_gated_by_rai_when_baseline_exists() {
-        init_test_tracing!();
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Segment 1: establish baseline resolution with RAI + 640x352 SPS.
-        // Video PID in our test PMT helper is 0x100.
-        let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
-        let ts_segment1 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-        operator
-            .process(&context, ts_segment1, &mut output_fn)
-            .unwrap();
-        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
-
-        // Segment 2: contains a different SPS (1280x720) but NO RAI.
-        // With baseline existing, resolution probing should be skipped; no split.
-        let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, false, 1280, 720);
-        let ts_segment2 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-        operator
-            .process(&context, ts_segment2, &mut output_fn)
-            .unwrap();
-
-        // No end marker should have been emitted.
+    fn program_change_splits_once() {
+        let out = process(vec![
+            ts(tables(0x1b, 0x0f, 1)),
+            ts(tables(0x1b, 0x0f, 2)),
+            ts(tables(0x1b, 0x0f, 2)),
+        ]);
+        assert_eq!(out.len(), 4);
         assert!(
-            output_items
-                .iter()
-                .all(|i| !matches!(i, HlsData::EndMarker(_)))
+            matches!(&out[1], HlsData::EndMarker(Some(SplitReason::StreamStructureChange { description })) if description == "program number changed: 1 -> 2")
         );
-        // Baseline should remain unchanged.
-        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
+        assert!(out[2..].iter().all(HlsData::is_ts));
     }
 
     #[test]
-    fn test_resolution_change_with_rai_triggers_split() {
-        init_test_tracing!();
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Establish baseline resolution (RAI + SPS).
-        let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
-        let ts_segment1 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
-        );
-        operator
-            .process(&context, ts_segment1, &mut |item: HlsData| {
-                output_items.push(item);
-                Ok(())
+    fn resolution_change_updates_the_baseline_without_an_extra_split() {
+        // Include an intervening segment without RAI: it must not erase the
+        // baseline, and repeated 720p segments must not create extra files.
+        let inputs = vec![
+            video(640, true),
+            video(1280, true),
+            video(1280, false),
+            video(1280, true),
+            video(640, true),
+        ];
+        let expected_media: Vec<Bytes> = inputs
+            .iter()
+            .map(|item| item.data().unwrap().clone())
+            .collect();
+        let out = process(inputs);
+        let reasons: Vec<_> = out
+            .iter()
+            .filter_map(|item| match item {
+                HlsData::EndMarker(Some(SplitReason::ResolutionChange { from, to })) => {
+                    Some((*from, *to))
+                }
+                _ => None,
             })
-            .unwrap();
-        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
-        assert_eq!(output_items.len(), 1);
-
-        // Second segment: RAI present and SPS indicates a different resolution.
-        // With baseline established, this should be probed and should trigger a split.
-        let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, true, 1280, 720);
-        let ts_segment2 = HlsData::TsData(
-            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
-                .with_continuity_mode(ts::ContinuityMode::Warn),
+            .collect();
+        assert_eq!(out.len(), 7);
+        assert_eq!(
+            reasons,
+            [((640, 352), (1280, 720)), ((1280, 720), (640, 352))]
         );
-        operator
-            .process(&context, ts_segment2, &mut |item: HlsData| {
-                output_items.push(item);
-                Ok(())
-            })
-            .unwrap();
-
-        assert_eq!(output_items.len(), 3);
-        assert!(matches!(&output_items[1], HlsData::EndMarker(_)));
+        assert_eq!(
+            out.iter()
+                .filter_map(HlsData::data)
+                .cloned()
+                .collect::<Vec<_>>(),
+            expected_media
+        );
     }
 
     #[test]
-    fn pat_without_pmt_does_not_split() {
-        init_test_tracing!();
-        let token = CancellationToken::new();
-        let context = StreamerContext::arc_new(token);
-        let mut operator = SegmentSplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
+    fn resolution_without_random_access_does_not_advance_the_baseline() {
+        let out = process(vec![
+            video(640, true),
+            video(1280, false),
+            video(1280, true),
+        ]);
+        assert_eq!(out.len(), 4);
+        assert!(out[..2].iter().all(HlsData::is_ts));
+        assert!(matches!(
+            out[2],
+            HlsData::EndMarker(Some(SplitReason::ResolutionChange {
+                from: (640, 352),
+                to: (1280, 720)
+            }))
+        ));
+    }
 
-        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
+    #[test]
+    fn incomplete_psi_does_not_replace_the_last_program_layout() {
+        let full = tables(0x1b, 0x0f, 1);
+        let out = process(vec![ts(full.clone()), ts(full[..188].to_vec()), ts(full)]);
+        assert_eq!(out.len(), 3);
+        assert!(out.iter().all(HlsData::is_ts));
+    }
 
-        let seg = |data: Vec<u8>| {
-            HlsData::TsData(
-                hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(data))
-                    .with_continuity_mode(ts::ContinuityMode::Warn),
-            )
-        };
-
-        // Full PSI: PAT + PMT describing one program.
-        let full = create_ts_data_with_codecs(0x1B, 0x0F, 1);
-        // PAT packet alone: has_psi is true but no program layout gets parsed.
-        let pat_only = full[..188].to_vec();
-
-        operator
-            .process(&context, seg(full.clone()), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, seg(pat_only), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, seg(full), &mut output_fn)
-            .unwrap();
-
-        // Neither the PMT-less segment nor the following full-PSI segment may split.
-        assert_eq!(output_items.len(), 3);
+    #[test]
+    fn init_changes_split_before_the_new_header() {
+        let out = process(vec![
+            init(INIT),
+            init(INIT),
+            init(OTHER_INIT),
+            init(OTHER_INIT),
+        ]);
+        assert_eq!(out.len(), 5);
         assert!(
-            output_items
-                .iter()
-                .all(|i| !matches!(i, HlsData::EndMarker(_)))
+            matches!(&out[2], HlsData::EndMarker(Some(SplitReason::StreamStructureChange { description })) if description == "init segment changed")
         );
+        assert_eq!(out[3].as_ref(), OTHER_INIT);
+        assert_eq!(out[4].as_ref(), OTHER_INIT);
     }
 }

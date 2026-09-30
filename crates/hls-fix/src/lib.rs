@@ -14,8 +14,12 @@
 
 pub mod analyzer;
 pub mod operators;
+mod output_state;
 pub mod pipeline;
 mod writer_task;
+
+#[cfg(test)]
+mod test_support;
 
 pub use pipeline::{HlsPipeline, HlsPipelineConfig};
 pub use writer_task::{HlsWriter, HlsWriterConfig};

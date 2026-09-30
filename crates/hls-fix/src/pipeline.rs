@@ -55,6 +55,13 @@ impl Default for HlsPipelineConfigBuilder {
     }
 }
 
+/// Processes HLS items in download order.
+///
+/// Input from mesio already pairs every fMP4 init with the media it governs:
+/// an init is emitted once per distinct EXT-X-MAP, immediately before its first
+/// media, and is never followed directly by an end marker or another init.
+/// Media is never emitted ahead of its init. `DefragmentOperator` enforces the
+/// same pairing for producers that do not make these guarantees.
 pub struct HlsPipeline {
     context: Arc<StreamerContext>,
     config: HlsPipelineConfig,

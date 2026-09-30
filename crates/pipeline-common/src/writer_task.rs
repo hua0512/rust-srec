@@ -85,6 +85,9 @@ pub enum PostWriteAction {
     Close,
     /// Rotate the current file.
     Rotate,
+    /// Close now and open the next sequence only when another item arrives.
+    /// Unlike `Rotate`, an end marker at EOF does not create an empty file.
+    RotateOnNextItem,
 }
 
 /// Configuration for the writer task.
@@ -254,6 +257,19 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     /// Determines if the current file should be rotated based on the state and config.
     fn should_rotate_file(&self, config: &WriterConfig, state: &WriterState) -> bool;
 
+    /// Check rotation with the incoming item available. The default preserves
+    /// state-only strategies; formats may override this to predict output size
+    /// or give control markers priority over automatic rotation. A strategy can
+    /// record a close reason here before `on_file_close` is called.
+    fn should_rotate_before_item(
+        &mut self,
+        _item: &D,
+        config: &WriterConfig,
+        state: &WriterState,
+    ) -> bool {
+        self.should_rotate_file(config, state)
+    }
+
     /// Generates the path for the next output file.
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf;
 
@@ -320,6 +336,7 @@ pub struct WriterTask<D, S: FormatStrategy<D>> {
     state: WriterState,
     strategy: S,
     writer: Option<S::Writer>,
+    pending_rotation: bool,
     on_file_open_callback: Option<FileOpenCallback>,
     on_file_close_callback: Option<FileCloseCallback>,
     on_progress_callback: Option<ProgressCallback>,
@@ -390,6 +407,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             state: WriterState::default(),
             strategy,
             writer: None,
+            pending_rotation: false,
             on_file_open_callback: None,
             on_file_close_callback: None,
             on_progress_callback: None,
@@ -438,10 +456,17 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         self.last_progress_time_ms = 0;
     }
 
-    fn ensure_writer_open(&mut self) -> Result<(), TaskError<S::StrategyError>> {
+    fn ensure_writer_open(&mut self, item: &D) -> Result<(), TaskError<S::StrategyError>> {
         if self.writer.is_none() {
+            if self.pending_rotation {
+                self.state.file_sequence_number += 1;
+                self.pending_rotation = false;
+            }
             self.open_initial_writer()?;
-        } else if self.strategy.should_rotate_file(&self.config, &self.state) {
+        } else if self
+            .strategy
+            .should_rotate_before_item(item, &self.config, &self.state)
+        {
             self.rotate_file()?;
         }
         Ok(())
@@ -569,7 +594,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     fn process_item_inner(&mut self, item: D) -> Result<(), TaskError<S::StrategyError>> {
-        self.ensure_writer_open()?;
+        self.ensure_writer_open(&item)?;
 
         if let Some(writer) = self.writer.as_mut() {
             match self.strategy.write_item(writer, &item) {
@@ -597,6 +622,10 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                         }
                         PostWriteAction::Rotate => {
                             self.rotate_file()?;
+                        }
+                        PostWriteAction::RotateOnNextItem => {
+                            self.close_inner()?;
+                            self.pending_rotation = true;
                         }
                     }
                     Ok(())

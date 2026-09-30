@@ -2759,8 +2759,7 @@ name = "hls-fix"
 version = "0.1.7"
 dependencies = [
  "bytes",
- "bytes-util",
- "expgolomb",
+ "criterion",
  "hls",
  "m3u8-rs",
  "mp4",
