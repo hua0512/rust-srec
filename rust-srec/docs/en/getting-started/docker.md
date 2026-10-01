@@ -116,6 +116,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 docker exec rust-srec nvidia-smi
 ```
 
+The override requests the `gpu`, `compute`, `video`, and `utility` capabilities. `utility` provides `nvidia-smi`, which System Health uses to show the GPU. If you write your own override, keep all four. Docker 29.1 and later can use the toolkit's generated device specification (CDI) instead, which decides what the container receives and ignores this list.
+
 GPU access only enables compatible processors; select an NVENC processor in the pipeline and monitor the GPU component on **System Health**.
 
 ## Storage Cleanup

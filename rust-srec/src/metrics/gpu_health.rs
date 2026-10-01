@@ -48,6 +48,10 @@ use crate::notification::{NotificationEvent, NotificationService};
 
 /// Each probe call is bounded by this timeout.
 const PROBE_TIMEOUT_SECS: u64 = 5;
+/// Timeout for the first probe after startup. With persistence mode off,
+/// the first NVML initialisation on an idle GPU can take several seconds,
+/// which should not be reported as an outage.
+const FIRST_PROBE_TIMEOUT_SECS: u64 = 15;
 /// Truncation cap for stderr/stdout captured into the snapshot. Keeps the
 /// snapshot footprint bounded if `nvidia-smi` ever emits a long error.
 const MAX_DIAG_CHARS: usize = 256;
@@ -58,9 +62,6 @@ const MIN_INTERVAL_SECS: u64 = 1;
 /// [`crate::downloader::DEFAULT_GATE_COOLDOWN_SECS`] so operators only
 /// need to remember one cadence.
 pub const DEFAULT_PROBE_INTERVAL_SECS: u64 = 30;
-/// Bound for the startup `--version` gate that decides whether to
-/// register the monitor at all.
-const STARTUP_GATE_TIMEOUT_SECS: u64 = 2;
 /// Component name used in `/api/health`. Must match the frontend
 /// formatter (`formatComponentName('gpu')`).
 const COMPONENT_NAME: &str = "gpu";
@@ -181,65 +182,47 @@ pub struct GpuHealthMonitor {
 }
 
 impl GpuHealthMonitor {
-    /// Probe `nvidia-smi --version` with a short timeout. Returns
-    /// `Some(monitor)` only when the binary is on `$PATH` and exits 0.
-    /// Callers should skip registration when this returns `None`.
+    /// Returns `Some(monitor)` when `nvidia-smi` is on `$PATH`. Callers
+    /// should skip registration when this returns `None`.
     ///
-    /// Two-stage gate: a pure-`stat()` `$PATH` walk first short-circuits
-    /// the no-GPU majority (~10 µs of syscalls vs. a ~1–5 ms
-    /// `posix_spawn` of a binary that doesn't exist), and only when the
-    /// binary is present do we actually spawn `--version` to confirm it
-    /// runs (catches "binary on PATH but driver missing" cases too).
-    pub async fn detect(
+    /// Presence is the only gate: whether the binary actually works is
+    /// left to the probe loop, which reports a failing or slow driver as
+    /// an `Unhealthy` component instead of hiding it. Health probes are
+    /// frozen when the checker starts, so a GPU rejected here can never
+    /// surface later; a cold NVML initialisation (persistence mode off,
+    /// idle GPU, container still starting) can take several seconds and
+    /// must not be mistaken for "no GPU".
+    ///
+    /// The check is a pure-`stat()` `$PATH` walk (~10 µs), so the no-GPU
+    /// majority never pays for a process spawn.
+    pub fn detect(
         notification_service: Weak<NotificationService>,
         initial_interval_secs: u64,
     ) -> Option<Arc<Self>> {
         if !binary_on_path("nvidia-smi") {
-            debug!("GpuHealthMonitor: nvidia-smi not on PATH, skipping registration");
+            if nvidia_device_present() {
+                // Device nodes without the userspace tools is the
+                // signature of a container started with a GPU but without
+                // the `utility` driver capability (NVIDIA Container
+                // Toolkit legacy mode), which also omits NVML.
+                info!(
+                    "GpuHealthMonitor: /dev/nvidiactl exists but nvidia-smi is not on PATH; \
+                     GPU health is not monitored. In Docker, request the `utility` and \
+                     `compute` capabilities alongside `video`"
+                );
+            } else {
+                debug!("GpuHealthMonitor: nvidia-smi not on PATH, skipping registration");
+            }
             return None;
         }
 
-        let probe = tokio::time::timeout(
-            Duration::from_secs(STARTUP_GATE_TIMEOUT_SECS),
-            process_utils::tokio_command("nvidia-smi")
-                .arg("--version")
-                .kill_on_drop(true)
-                .output(),
-        )
-        .await;
-
-        match probe {
-            Ok(Ok(out)) if out.status.success() => {
-                let interval = initial_interval_secs.max(MIN_INTERVAL_SECS);
-                Some(Arc::new(Self {
-                    interval_secs: AtomicU64::new(interval),
-                    state: AtomicU8::new(STATE_UNKNOWN),
-                    snapshot: ArcSwap::from_pointee(GpuSnapshot::unknown()),
-                    notification_service,
-                }))
-            }
-            Ok(Ok(out)) => {
-                debug!(
-                    code = out.status.code().unwrap_or(-1),
-                    "GpuHealthMonitor: nvidia-smi --version exited non-zero, skipping registration"
-                );
-                None
-            }
-            Ok(Err(e)) => {
-                debug!(
-                    error = %e,
-                    "GpuHealthMonitor: nvidia-smi disappeared between PATH check and exec, skipping registration"
-                );
-                None
-            }
-            Err(_) => {
-                debug!(
-                    timeout_secs = STARTUP_GATE_TIMEOUT_SECS,
-                    "GpuHealthMonitor: nvidia-smi --version timed out, skipping registration"
-                );
-                None
-            }
-        }
+        let interval = initial_interval_secs.max(MIN_INTERVAL_SECS);
+        Some(Arc::new(Self {
+            interval_secs: AtomicU64::new(interval),
+            state: AtomicU8::new(STATE_UNKNOWN),
+            snapshot: ArcSwap::from_pointee(GpuSnapshot::unknown()),
+            notification_service,
+        }))
     }
 
     /// Update the probe interval. The change applies on the next tick;
@@ -270,7 +253,9 @@ impl GpuHealthMonitor {
         tokio::spawn(async move {
             // First probe immediately so /api/health is populated within
             // seconds of startup, not 30 s later.
-            monitor.probe_once().await;
+            monitor
+                .probe_once(Duration::from_secs(FIRST_PROBE_TIMEOUT_SECS))
+                .await;
 
             let mut last_interval = monitor.interval_secs.load(Ordering::Acquire);
             let mut ticker = build_interval(last_interval);
@@ -288,15 +273,17 @@ impl GpuHealthMonitor {
                             ticker = build_interval(current);
                             last_interval = current;
                         }
-                        monitor.probe_once().await;
+                        monitor
+                            .probe_once(Duration::from_secs(PROBE_TIMEOUT_SECS))
+                            .await;
                     }
                 }
             }
         })
     }
 
-    async fn probe_once(self: &Arc<Self>) {
-        let (new_state, snapshot) = self.run_probe().await;
+    async fn probe_once(self: &Arc<Self>, timeout: Duration) {
+        let (new_state, snapshot) = self.run_probe(timeout).await;
         // Swap the snapshot before the state flip so any concurrent
         // /api/health read sees the new payload alongside the old state at
         // worst — never the new state with a stale payload.
@@ -304,15 +291,27 @@ impl GpuHealthMonitor {
         let prev_state = self.state.swap(new_state, Ordering::AcqRel);
         if prev_state == STATE_HEALTHY && new_state == STATE_UNHEALTHY {
             self.spawn_notification();
+        } else if prev_state == STATE_UNKNOWN && new_state == STATE_UNHEALTHY {
+            // No notification: there was no healthy state to lose. Log so
+            // a GPU that never comes up is diagnosable without debug logs.
+            warn!(
+                detail = self
+                    .snapshot()
+                    .health
+                    .message
+                    .as_deref()
+                    .unwrap_or_default(),
+                "GpuHealthMonitor: initial GPU probe failed"
+            );
         } else if prev_state == STATE_UNHEALTHY && new_state == STATE_HEALTHY {
             info!("GpuHealthMonitor: GPU recovered (Unhealthy -> Healthy)");
         }
     }
 
-    async fn run_probe(&self) -> (u8, GpuSnapshot) {
+    async fn run_probe(&self, timeout: Duration) -> (u8, GpuSnapshot) {
         let started = std::time::Instant::now();
         let exec = tokio::time::timeout(
-            Duration::from_secs(PROBE_TIMEOUT_SECS),
+            timeout,
             process_utils::tokio_command("nvidia-smi")
                 .args([
                     "--query-gpu=name,driver_version,utilization.gpu,memory.used,memory.total,temperature.gpu",
@@ -338,7 +337,7 @@ impl GpuHealthMonitor {
         match exec {
             Err(_) => {
                 let kind = GpuErrorKind::TimedOut;
-                let detail = format!("GPU probe timed out after {PROBE_TIMEOUT_SECS}s");
+                let detail = format!("GPU probe timed out after {}s", timeout.as_secs());
                 (
                     STATE_UNHEALTHY,
                     GpuSnapshot {
@@ -500,6 +499,12 @@ fn executable_candidates(name: &str) -> Vec<OsString> {
 #[cfg(not(windows))]
 fn executable_candidates(name: &str) -> Vec<OsString> {
     vec![OsString::from(name)]
+}
+
+/// NVIDIA's control device node, present whenever the kernel driver is
+/// loaded and (inside a container) a GPU has been passed through.
+fn nvidia_device_present() -> bool {
+    cfg!(unix) && std::path::Path::new("/dev/nvidiactl").exists()
 }
 
 /// Builds an interval whose first tick occurs after the full period.
