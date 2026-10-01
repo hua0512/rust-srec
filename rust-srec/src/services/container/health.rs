@@ -686,10 +686,8 @@ impl ServiceContainer {
         let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(
             Arc::downgrade(&self.notification_service),
             initial_interval,
-        )
-        .await
-        else {
-            debug!("GPU health monitor not registered: nvidia-smi unavailable at startup");
+        ) else {
+            debug!("GPU health monitor not registered: nvidia-smi not on PATH at startup");
             return;
         };
 

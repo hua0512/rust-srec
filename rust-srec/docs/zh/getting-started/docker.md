@@ -116,6 +116,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 docker exec rust-srec nvidia-smi
 ```
 
+该覆盖文件请求 `gpu`、`compute`、`video` 和 `utility` 四项能力。其中 `utility` 提供 `nvidia-smi`，系统健康页面依赖它显示 GPU。自行编写覆盖文件时请保留全部四项。Docker 29.1 及更高版本可改用工具包生成的设备规范（CDI），此时容器获得的内容由该规范决定，此列表将被忽略。
+
 容器能访问 GPU 仅代表兼容处理器可用；还需在管道中选择 NVENC 处理器，并监控**系统健康**中的 GPU 组件。
 
 ## 清理存储
