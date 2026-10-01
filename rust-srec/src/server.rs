@@ -405,9 +405,13 @@ mod tests {
         use crate::database::models::GlobalConfigDbModel;
         use crate::database::repositories::{ConfigRepository, SqlxConfigRepository};
 
-        tokio::time::timeout(Duration::from_secs(20), async {
-            let dir = tempfile::tempdir().unwrap();
-            let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+        let dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
+
+        // Building and upgrading the database is fsync-bound and can take
+        // minutes on a slow CI disk, so bound it loosely; the hang this test
+        // guards against is in the post-upgrade reads below.
+        let (pool, write_pool) = tokio::time::timeout(Duration::from_secs(300), async {
             let old_pool = init_migration_pool(&database_url).await.unwrap();
             let migrator = sqlx::migrate!("./migrations");
             Migrator::with_migrations(
@@ -426,9 +430,17 @@ mod tests {
                 .unwrap();
             old_pool.close().await;
 
-            let (pool, write_pool) = initialize_database(&database_url, Some("./replacement"))
+            initialize_database(&database_url, Some("./replacement"))
                 .await
-                .unwrap();
+                .unwrap()
+        })
+        .await
+        .expect("database upgrade must finish");
+
+        // Stale column metadata on a runtime connection panics the SQLx worker,
+        // leaving the read unresolved instead of failing it, so these reads
+        // need their own bound.
+        tokio::time::timeout(Duration::from_secs(20), async {
             let repo = SqlxConfigRepository::new(pool.clone(), write_pool.clone());
             let config = repo.get_global_config().await.unwrap();
             assert_eq!(config.id, "global-configuration");
@@ -441,12 +453,11 @@ mod tests {
                 let mut connections = Vec::new();
                 for _ in 0..runtime_pool.options().get_max_connections() {
                     let mut connection = runtime_pool.acquire().await.unwrap();
-                    let configs = sqlx::query_as::<_, GlobalConfigDbModel>(
-                        "SELECT * FROM global_config",
-                    )
-                    .fetch_all(&mut *connection)
-                    .await
-                    .unwrap();
+                    let configs =
+                        sqlx::query_as::<_, GlobalConfigDbModel>("SELECT * FROM global_config")
+                            .fetch_all(&mut *connection)
+                            .await
+                            .unwrap();
                     assert_eq!(configs.len(), 1);
                     assert_eq!(configs[0].id, config.id);
                     assert_eq!(configs[0].output_retention_days, 0);
@@ -455,11 +466,11 @@ mod tests {
                     connections.push(connection);
                 }
             }
-            write_pool.close().await;
-            pool.close().await;
         })
         .await
-        .expect("database upgrade must finish");
+        .expect("upgraded runtime pools must read the new schema");
+        write_pool.close().await;
+        pool.close().await;
     }
 
     #[tokio::test]
