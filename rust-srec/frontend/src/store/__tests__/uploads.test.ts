@@ -79,6 +79,39 @@ describe('useUploadStore failures', () => {
     useUploadStore.getState().clearAll();
   });
 
+  it('clears failures for retries restored by a snapshot while preserving other failures', () => {
+    const store = useUploadStore.getState();
+    for (const jobId of ['retried-job', 'failed-job']) {
+      store.upsertStarted(startedInput(jobId));
+      store.fail({
+        jobId,
+        streamerId: 'streamer-1',
+        error: 'quota exceeded',
+        filesSucceeded: 0,
+        filesFailed: 1,
+      });
+    }
+    const unrelatedFailure = store
+      .getFailedUploads()
+      .find((upload) => upload.jobId === 'failed-job');
+
+    // The retry's STARTED event was missed during a disconnect.
+    store.setSnapshot(
+      [{ ...startedInput('retried-job'), startedAtMs: 1n }],
+      [{ jobId: 'retried-job', streamerId: 'streamer-1', percent: 50 }],
+    );
+
+    expect(store.getActiveUploads()).toMatchObject([
+      { jobId: 'retried-job', startedAtMs: 1n, percent: 50 },
+    ]);
+    expect(store.getFailedUploads()).toEqual([unrelatedFailure]);
+
+    // Successful completion must not leave the earlier failure visible.
+    store.remove('retried-job');
+    expect(store.getActiveUploads()).toEqual([]);
+    expect(store.getFailedUploads()).toEqual([unrelatedFailure]);
+  });
+
   it('keeps a failure through reconnect snapshots until the job is retried', () => {
     const store = useUploadStore.getState();
     store.upsertStarted(startedInput('job-1'));

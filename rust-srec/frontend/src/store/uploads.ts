@@ -102,8 +102,8 @@ interface UploadStoreState {
   // the map stays bounded across a long-lived connection.
   terminatedIds: Map<string, number>;
   // Uploads that failed during this session, oldest first, kept until
-  // dismissed or retried. Snapshots only describe running jobs, so they
-  // leave this map alone; it is emptied on sign-out.
+  // dismissed or retried. Snapshots clear failures for running jobs and
+  // preserve unrelated failures; the map is emptied on sign-out.
   failedByJobId: Map<string, FailedUploadView>;
   // Upload jobs waiting for a worker.
   pendingCount: number;
@@ -146,6 +146,8 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       state.terminatedIds.clear();
       const now = Date.now();
       for (const started of uploads) {
+        // A retry may have started while the socket was disconnected.
+        state.failedByJobId.delete(started.jobId);
         state.uploadsByJobId.set(started.jobId, {
           ...started,
           lastEventAtMs: now,
@@ -160,6 +162,7 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       return {
         uploadsByJobId: state.uploadsByJobId,
         terminatedIds: state.terminatedIds,
+        failedByJobId: state.failedByJobId,
         pendingCount,
         version: state.version + 1,
       };
