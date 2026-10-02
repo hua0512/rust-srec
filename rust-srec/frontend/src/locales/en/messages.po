@@ -1324,7 +1324,7 @@ msgstr "Cache"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:257
+#: src/components/filters/FilterDialog.tsx:284
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:454
@@ -1557,7 +1557,7 @@ msgstr "Choose how this streamer handles proxy connections."
 msgid "Choose timezone"
 msgstr "Choose timezone"
 
-#: src/components/filters/FilterDialog.tsx:212
+#: src/components/filters/FilterDialog.tsx:239
 msgid "Choose when this streamer should be recorded."
 msgstr "Choose when this streamer should be recorded."
 
@@ -2132,7 +2132,7 @@ msgstr "Create engine"
 msgid "Create Engine"
 msgstr "Create Engine"
 
-#: src/components/filters/FilterDialog.tsx:273
+#: src/components/filters/FilterDialog.tsx:300
 msgid "Create filter"
 msgstr "Create filter"
 
@@ -3115,7 +3115,7 @@ msgid "Edit Engine"
 msgstr "Edit Engine"
 
 #: src/components/filters/FilterCard.tsx:203
-#: src/components/filters/FilterDialog.tsx:206
+#: src/components/filters/FilterDialog.tsx:233
 msgid "Edit filter"
 msgstr "Edit filter"
 
@@ -3216,6 +3216,10 @@ msgstr "End Stream On Danmu Close"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:782
 msgid "End Time"
 msgstr "End Time"
+
+#: src/components/filters/FilterDialog.tsx:62
+msgid "End time must differ from start time."
+msgstr "End time must differ from start time."
 
 #: src/components/player/playback-state.ts:21
 #: src/components/sessions/overview-tab.tsx:230
@@ -3629,7 +3633,7 @@ msgstr "Failed to create API key"
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
-#: src/components/filters/FilterDialog.tsx:151
+#: src/components/filters/FilterDialog.tsx:178
 msgid "Failed to create filter"
 msgstr "Failed to create filter"
 
@@ -3849,7 +3853,7 @@ msgstr "Failed to send test notification"
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/components/filters/FilterDialog.tsx:166
+#: src/components/filters/FilterDialog.tsx:193
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
@@ -4021,7 +4025,7 @@ msgstr "Filter"
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
 
-#: src/components/filters/FilterDialog.tsx:144
+#: src/components/filters/FilterDialog.tsx:171
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
@@ -4041,7 +4045,7 @@ msgstr "Filter Interactive Games"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
 
-#: src/components/filters/FilterDialog.tsx:233
+#: src/components/filters/FilterDialog.tsx:260
 msgid "Filter Type"
 msgstr "Filter Type"
 
@@ -4050,7 +4054,7 @@ msgstr "Filter Type"
 msgid "Filter Type"
 msgstr "Filter Type"
 
-#: src/components/filters/FilterDialog.tsx:159
+#: src/components/filters/FilterDialog.tsx:186
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
@@ -5784,7 +5788,7 @@ msgstr "New password (min 8 chars)"
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/components/filters/FilterDialog.tsx:208
+#: src/components/filters/FilterDialog.tsx:235
 msgid "New recording filter"
 msgstr "New recording filter"
 
@@ -8015,7 +8019,7 @@ msgid "Saturday"
 msgstr "Saturday"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:271
+#: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:305
@@ -8043,7 +8047,7 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/filters/FilterDialog.tsx:268
+#: src/components/filters/FilterDialog.tsx:295
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "Saving"
@@ -8250,6 +8254,10 @@ msgstr "Select an engine"
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:64
 msgid "Select API Mode"
 msgstr "Select API Mode"
+
+#: src/components/filters/FilterDialog.tsx:55
+msgid "Select at least one day."
+msgstr "Select at least one day."
 
 #: src/components/config/shared/record-danmu-card.tsx:92
 msgid "Select behavior"
@@ -8521,7 +8529,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:240
+#: src/components/filters/FilterDialog.tsx:267
 #: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:107

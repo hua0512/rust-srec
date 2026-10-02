@@ -86,6 +86,9 @@ describe('filter dialog timezone submissions', () => {
     async (label) => {
       renderDialog();
       fireEvent.click(screen.getByRole('radio', { name: new RegExp(label) }));
+      if (label === 'Time Based') {
+        fireEvent.click(screen.getByRole('button', { name: 'Monday' }));
+      }
       fireEvent.click(screen.getByRole('button', { name: 'Create filter' }));
 
       await waitFor(() => expect(createFilter).toHaveBeenCalledTimes(1));
@@ -103,13 +106,14 @@ describe('filter dialog timezone submissions', () => {
       config: { expression: '0 0 19 * * *', timezone: 'Europe/Madrid' },
     });
     fireEvent.click(screen.getByRole('radio', { name: /Time Based/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Monday' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(updateFilter).toHaveBeenCalledTimes(1));
     expect(vi.mocked(updateFilter).mock.calls[0][0].data.data).toEqual({
       filter_type: 'TIME_BASED',
       config: {
-        days_of_week: [],
+        days_of_week: ['Monday'],
         start_time: '00:00:00',
         end_time: '23:59:59',
         timezone: 'UTC',

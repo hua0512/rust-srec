@@ -27,10 +27,11 @@ import { TimeBasedFilterForm } from './forms/TimeBasedFilterForm';
 import { KeywordFilterForm } from './forms/KeywordFilterForm';
 import { CronFilterForm } from './forms/CronFilterForm';
 import { RegexFilterForm } from './forms/RegexFilterForm';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
+import type { I18n } from '@lingui/core';
 
 type FormInput = z.input<typeof CreateFilterRequestSchema>;
 type FormOutput = z.infer<typeof CreateFilterRequestSchema>;
@@ -38,6 +39,31 @@ type FormOutput = z.infer<typeof CreateFilterRequestSchema>;
 type FilterConfigInput = FormInput['config'];
 
 type Filter = z.infer<typeof FilterSchema>;
+
+/**
+ * The request schema plus time-window checks the backend also enforces. Kept out of
+ * the shared schema so saved filters that predate the checks still render.
+ */
+export function getFilterFormSchema(i18n: I18n) {
+  return CreateFilterRequestSchema.superRefine((data, ctx) => {
+    if (data.filter_type !== 'TIME_BASED') return;
+    const { days_of_week, start_time, end_time } = data.config;
+    if (days_of_week.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['config', 'days_of_week'],
+        message: i18n._(msg`Select at least one day.`),
+      });
+    }
+    if (start_time === end_time) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['config', 'end_time'],
+        message: i18n._(msg`End time must differ from start time.`),
+      });
+    }
+  });
+}
 
 interface FilterDialogProps {
   streamerId: string;
@@ -56,8 +82,9 @@ export function FilterDialog({
   const queryClient = useQueryClient();
   const isEditing = !!filterToEdit;
 
+  const formSchema = useMemo(() => getFilterFormSchema(i18n), [i18n]);
   const form = useForm<FormInput, any, FormOutput>({
-    resolver: zodResolver(CreateFilterRequestSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       filter_type: 'KEYWORD',
       config: { include: [], exclude: [] },
