@@ -29,6 +29,12 @@ pub enum FilterValidationError {
 
     #[error("Invalid day of week: '{0}' (expected Monday..Sunday)")]
     InvalidDayOfWeek(String),
+
+    #[error("At least one day of week is required")]
+    NoDaysOfWeek,
+
+    #[error("Start and end time must differ: '{0}'")]
+    EmptyTimeRange(String),
 }
 
 /// Trait for validating filter configurations.
@@ -213,18 +219,28 @@ impl FilterConfigValidator for TimeBasedFilterConfig {
             }
         }
 
-        if normalize_time_hh_mm_ss(&self.start_time).is_none() {
+        // Neither shape can produce a window, so the filter would block every
+        // recording without reporting why.
+        if self.days_of_week.is_empty() {
+            return Err(FilterValidationError::NoDaysOfWeek);
+        }
+
+        let Some(start) = normalize_time_hh_mm_ss(&self.start_time) else {
             return Err(FilterValidationError::InvalidTimeFormat {
                 field: "start_time",
                 value: self.start_time.clone(),
             });
-        }
+        };
 
-        if normalize_time_hh_mm_ss(&self.end_time).is_none() {
+        let Some(end) = normalize_time_hh_mm_ss(&self.end_time) else {
             return Err(FilterValidationError::InvalidTimeFormat {
                 field: "end_time",
                 value: self.end_time.clone(),
             });
+        };
+
+        if start == end {
+            return Err(FilterValidationError::EmptyTimeRange(start));
         }
 
         Ok(())
@@ -431,6 +447,38 @@ mod tests {
         assert_eq!(config.start_time, "09:00:00");
         assert_eq!(config.end_time, "17:30:59");
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_time_based_filter_rejects_empty_days() {
+        // Unknown names are dropped by normalization, leaving no days.
+        for days in [vec![], vec!["Funday".to_string()]] {
+            let mut config = TimeBasedFilterConfig {
+                timezone: None,
+                days_of_week: days,
+                start_time: "21:00".to_string(),
+                end_time: "06:00".to_string(),
+            };
+            config.normalize();
+            assert!(matches!(
+                config.validate(),
+                Err(FilterValidationError::NoDaysOfWeek)
+            ));
+        }
+    }
+
+    #[test]
+    fn test_time_based_filter_rejects_equal_start_and_end() {
+        let config = TimeBasedFilterConfig {
+            timezone: None,
+            days_of_week: vec!["Monday".to_string()],
+            start_time: "21:00".to_string(),
+            end_time: "21:00:00".to_string(),
+        };
+        assert!(matches!(
+            config.validate(),
+            Err(FilterValidationError::EmptyTimeRange(time)) if time == "21:00:00"
+        ));
     }
 
     #[test]

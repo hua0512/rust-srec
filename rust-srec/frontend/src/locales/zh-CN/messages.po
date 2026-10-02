@@ -1324,7 +1324,7 @@ msgstr "缓存"
 #: src/components/config/engines/engine-card.tsx:189
 #: src/components/config/global/backup-restore-card.tsx:509
 #: src/components/config/templates/template-card.tsx:198
-#: src/components/filters/FilterDialog.tsx:257
+#: src/components/filters/FilterDialog.tsx:284
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:454
@@ -1557,7 +1557,7 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose timezone"
 msgstr "选择时区"
 
-#: src/components/filters/FilterDialog.tsx:212
+#: src/components/filters/FilterDialog.tsx:239
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
@@ -2132,7 +2132,7 @@ msgstr "创建引擎"
 msgid "Create Engine"
 msgstr "创建引擎"
 
-#: src/components/filters/FilterDialog.tsx:273
+#: src/components/filters/FilterDialog.tsx:300
 msgid "Create filter"
 msgstr "创建过滤器"
 
@@ -3115,7 +3115,7 @@ msgid "Edit Engine"
 msgstr "编辑引擎"
 
 #: src/components/filters/FilterCard.tsx:203
-#: src/components/filters/FilterDialog.tsx:206
+#: src/components/filters/FilterDialog.tsx:233
 msgid "Edit filter"
 msgstr "编辑过滤器"
 
@@ -3216,6 +3216,10 @@ msgstr "弹幕关闭时结束录制"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:782
 msgid "End Time"
 msgstr "结束时间"
+
+#: src/components/filters/FilterDialog.tsx:62
+msgid "End time must differ from start time."
+msgstr "结束时间不能与开始时间相同。"
 
 #: src/components/player/playback-state.ts:21
 #: src/components/sessions/overview-tab.tsx:230
@@ -3629,7 +3633,7 @@ msgstr "创建 API 密钥失败"
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:151
+#: src/components/filters/FilterDialog.tsx:178
 msgid "Failed to create filter"
 msgstr "创建过滤器失败"
 
@@ -3849,7 +3853,7 @@ msgstr "发送测试通知失败"
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/components/filters/FilterDialog.tsx:166
+#: src/components/filters/FilterDialog.tsx:193
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
@@ -4021,7 +4025,7 @@ msgstr "筛选"
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
 
-#: src/components/filters/FilterDialog.tsx:144
+#: src/components/filters/FilterDialog.tsx:171
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
@@ -4041,7 +4045,7 @@ msgstr "过滤互动玩法"
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
 
-#: src/components/filters/FilterDialog.tsx:233
+#: src/components/filters/FilterDialog.tsx:260
 msgid "Filter Type"
 msgstr "过滤器类型"
 
@@ -4050,7 +4054,7 @@ msgstr "过滤器类型"
 msgid "Filter Type"
 msgstr "过滤器类型"
 
-#: src/components/filters/FilterDialog.tsx:159
+#: src/components/filters/FilterDialog.tsx:186
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
@@ -5784,7 +5788,7 @@ msgstr "新密码（至少 8 个字符）"
 msgid "New Preset Name"
 msgstr "新预设名称"
 
-#: src/components/filters/FilterDialog.tsx:208
+#: src/components/filters/FilterDialog.tsx:235
 msgid "New recording filter"
 msgstr "新建录制过滤器"
 
@@ -8015,7 +8019,7 @@ msgid "Saturday"
 msgstr "星期六"
 
 #: src/components/config/engines/engine-editor.tsx:276
-#: src/components/filters/FilterDialog.tsx:271
+#: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:305
@@ -8043,7 +8047,7 @@ msgstr "删除检查尚未完成，仍要保存吗？"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/filters/FilterDialog.tsx:268
+#: src/components/filters/FilterDialog.tsx:295
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "保存中"
@@ -8250,6 +8254,10 @@ msgstr "选择引擎"
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:64
 msgid "Select API Mode"
 msgstr "选择 API 模式"
+
+#: src/components/filters/FilterDialog.tsx:55
+msgid "Select at least one day."
+msgstr "请至少选择一天。"
 
 #: src/components/config/shared/record-danmu-card.tsx:92
 msgid "Select behavior"
@@ -8521,7 +8529,7 @@ msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:89
-#: src/components/filters/FilterDialog.tsx:240
+#: src/components/filters/FilterDialog.tsx:267
 #: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:107

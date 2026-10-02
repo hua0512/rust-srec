@@ -97,6 +97,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 
 - Fixed Bilibili and Douyin forms saving overrides for untouched settings. Inherited settings remain inherited, and platform defaults are displayed correctly.
 - Added timezone selection to both time-based filter editors. Matching and wakeups use consistent overnight and daylight-saving boundaries, including repeated hours. Saved timezones survive edits, and backup schema 0.1.8 exports explicit zones.
+- Time-based filters must now include at least one day and different start and end times. Filters saved without these never matched, so the streamer was silently never recorded; edit them to choose days and a real time range.
 - Fixed invalid global and platform values being saved. Validation checks types, negative values, and overflow while preserving supported zero/default meanings. Platform edits cannot change the canonical name used for URL lookup.
 - Fixed the global settings page warning about unsaved changes right after a successful save. After saving, the page shows the settings as the server stored them.
 - Template platform overrides now offer only the settings that take effect there: pipelines and platform options. Other settings entered in a template's platform override were never applied; set them on the template, the platform, or the streamer instead.
