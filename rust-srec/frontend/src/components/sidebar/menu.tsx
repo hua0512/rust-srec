@@ -7,6 +7,7 @@ import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 import { getMenuList } from '@/lib/menu-list';
 import { Button } from '@/components/ui/button';
+import { NotificationBadge } from '@/components/ui/notification-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CollapseMenuButton } from '@/components/sidebar/collapse-menu-button';
 import { UserMenu } from '@/components/sidebar/user-menu';
@@ -67,21 +68,15 @@ const MenuItem = React.memo(function MenuItem({
               <span className="relative mr-4 transition-transform duration-200 group-hover/row:scale-110 shrink-0">
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
                 {showDot !== undefined && (
-                  <span
-                    aria-hidden
-                    data-open={showDot}
-                    data-entering={dotEntering || undefined}
-                    className="rs-notification-badge absolute -top-1 -right-1"
-                    onAnimationEnd={(e) => {
-                      // The ping's animationend bubbles up from the child.
-                      if (e.target === e.currentTarget) onDotEntered?.();
-                    }}
+                  <NotificationBadge
+                    open={showDot}
+                    entering={dotEntering}
+                    onEntered={onDotEntered}
+                    className="-top-1 -right-1"
                   >
-                    <span className="rs-notification-badge-dot flex items-center justify-center">
-                      <span className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
-                      <span className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
-                    </span>
-                  </span>
+                    <span className="rs-notification-ping absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]" />
+                    <span className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
+                  </NotificationBadge>
                 )}
               </span>
               <p

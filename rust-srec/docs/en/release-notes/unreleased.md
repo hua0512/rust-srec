@@ -26,6 +26,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - **Batch pipeline actions:** Added selection and batch cancel, retry, and delete actions to **Pipeline Jobs**. Failed items remain selected for another attempt.
 - **Media deletion:** Added single and batch deletion to **Media Outputs**. Entries are removed by default; **Also delete files from disk** removes the recordings too. Session sizes update accordingly.
 - **Storage display:** System Health now shows free space and usage for recording disks, including configured overrides. The dashboard shows free space on the fullest disk.
+- **Upload status in the header:** The top bar now shows running and queued uploads on every page, with overall progress. Open it to see each upload's streamer, progress, speed, remaining time, and file count, to cancel an upload, or to go to its job. Uploads that fail stay listed with their error until you dismiss them.
 
 ## Recording and recovery
 

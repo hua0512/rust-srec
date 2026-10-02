@@ -27,6 +27,11 @@ pub struct JobProgressSnapshot {
     pub eta_secs: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub out_time_ms: Option<u64>,
+    /// Files finished so far, for uploaders that report job-wide file counts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_done: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_total: Option<u64>,
     #[serde(default)]
     pub raw: serde_json::Value,
 }
@@ -42,6 +47,8 @@ impl JobProgressSnapshot {
             speed_bytes_per_sec: None,
             eta_secs: None,
             out_time_ms: None,
+            files_done: None,
+            files_total: None,
             raw: serde_json::Value::Null,
         }
     }

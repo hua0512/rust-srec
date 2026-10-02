@@ -4,6 +4,8 @@ function startedInput(jobId: string) {
   return {
     jobId,
     streamerId: 'streamer-1',
+    streamerName: 'Streamer One',
+    streamerAvatar: '',
     sessionId: 'session-1',
     uploader: 'rclone',
     filesTotal: 1,
@@ -69,6 +71,39 @@ describe('useUploadStore', () => {
     sweepStaleUploads(Date.now() + STALE_AFTER_MS + 1);
     expect(useUploadStore.getState().terminatedIds.size).toBe(0);
     expect(useUploadStore.getState().version).toBe(versionBefore);
+  });
+});
+
+describe('useUploadStore failures', () => {
+  beforeEach(() => {
+    useUploadStore.getState().clearAll();
+  });
+
+  it('keeps a failure through reconnect snapshots until the job is retried', () => {
+    const store = useUploadStore.getState();
+    store.upsertStarted(startedInput('job-1'));
+    store.fail({
+      jobId: 'job-1',
+      streamerId: 'streamer-1',
+      error: 'quota exceeded',
+      filesSucceeded: 0,
+      filesFailed: 1,
+    });
+
+    // A reconnect replays only running jobs.
+    store.setSnapshot([], [], 3);
+    const [failed] = useUploadStore.getState().getFailedUploads();
+    expect(failed).toMatchObject({
+      jobId: 'job-1',
+      streamerName: 'Streamer One',
+      streamerAvatar: '',
+      error: 'quota exceeded',
+    });
+    expect(useUploadStore.getState().pendingCount).toBe(3);
+
+    store.upsertStarted(startedInput('job-1'));
+    expect(useUploadStore.getState().getFailedUploads()).toEqual([]);
+    expect(useUploadStore.getState().uploadsByJobId.has('job-1')).toBe(true);
   });
 });
 

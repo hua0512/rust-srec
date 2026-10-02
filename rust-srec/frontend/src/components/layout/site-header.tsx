@@ -5,6 +5,7 @@ import { MenuIcon } from 'lucide-react';
 
 import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { UploadStatusIndicator } from '@/components/upload-status-indicator';
 import { ModeToggle } from '@/components/sidebar/mode-toggle';
 import { Button } from '@/components/ui/button';
 import { useSidebarConfig } from '@/contexts/sidebar-context';
@@ -110,6 +111,7 @@ export function SiteHeader() {
           </Breadcrumb>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
+          <UploadStatusIndicator />
           <ConnectionStatusIndicator />
           <LanguageSwitcher />
           <ModeToggle />

@@ -307,8 +307,13 @@ impl ServiceContainer {
         // lives here so the pipeline module never depends on crate::api.
         let upload_status_broadcaster = {
             use prost::Message;
-            let encoder: crate::pipeline::UploadWsEncoder = Arc::new(|event| {
-                let msg = crate::api::routes::downloads::map_upload_event_to_protobuf(event);
+            let streamer_avatar =
+                crate::api::routes::downloads::streamer_avatar_lookup(streamer_manager.clone());
+            let encoder: crate::pipeline::UploadWsEncoder = Arc::new(move |event| {
+                let msg = crate::api::routes::downloads::map_upload_event_to_protobuf(
+                    event,
+                    &streamer_avatar,
+                );
                 bytes::Bytes::from(msg.encode_to_vec())
             });
             crate::pipeline::UploadStatusBroadcaster::new(encoder)

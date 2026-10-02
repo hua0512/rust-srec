@@ -30,6 +30,7 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 
 use crate::api::error::ApiError;
+use crate::api::proto::SnapshotUploads;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
     EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_snapshot_message,
@@ -41,7 +42,7 @@ use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
 use crate::domain::streamer::{CheckOutcome, CheckRecord};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
-use crate::pipeline::{ActiveUploadInfo, PipelineManager, UploadStatusEvent, UploadTerminalStatus};
+use crate::pipeline::{PipelineManager, UploadStatusEvent, UploadTerminalStatus};
 
 #[derive(Clone)]
 pub struct DownloadRouteState {
@@ -51,6 +52,22 @@ pub struct DownloadRouteState {
     upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
     /// Source of the snapshot's `uploads` slice (`list_active_uploads`).
     pipeline_manager: std::sync::Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    streamer_avatar: StreamerAvatarLookup,
+}
+
+/// Streamer id to avatar URL. Upload jobs carry the streamer's name but not
+/// its avatar, so the API layer adds it from the streamer manager's cache.
+pub type StreamerAvatarLookup = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
+pub fn streamer_avatar_lookup(
+    streamer_manager: std::sync::Arc<crate::streamer::StreamerManager<SqlxStreamerRepository>>,
+) -> StreamerAvatarLookup {
+    std::sync::Arc::new(move |streamer_id| {
+        streamer_manager
+            .get_streamer(streamer_id)
+            .and_then(|streamer| streamer.avatar_url)
+            .filter(|url| !url.is_empty())
+    })
 }
 
 impl FromRef<AppState> for DownloadRouteState {
@@ -61,6 +78,7 @@ impl FromRef<AppState> for DownloadRouteState {
             check_history_broadcaster: state.check_history_broadcaster.clone(),
             upload_status_broadcaster: state.upload_status_broadcaster.clone(),
             pipeline_manager: state.pipeline_manager.clone(),
+            streamer_avatar: streamer_avatar_lookup(state.streamer_manager.clone()),
         }
     }
 }
@@ -175,24 +193,41 @@ async fn download_progress_ws(
     }))
 }
 
-/// Active upload jobs for the snapshot, optionally filtered to one streamer.
-/// Best-effort: a repository error degrades to an empty slice rather than
-/// failing the snapshot — download state is still worth delivering.
+/// All active upload jobs and the number waiting for a worker, for the
+/// snapshot. Never narrowed by the connection's streamer subscription: the
+/// client keeps one global uploads store (the header's upload status) and
+/// replaces it from every snapshot, so a filtered slice would drop other
+/// streamers' uploads.
+/// Best-effort: a repository error degrades to an empty slice / zero rather
+/// than failing the snapshot — download state is still worth delivering.
 async fn snapshot_uploads(
     pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
-    filter: &Option<String>,
-) -> Vec<ActiveUploadInfo> {
-    let mut uploads = pipeline_manager
+    streamer_avatar: &StreamerAvatarLookup,
+) -> SnapshotUploads {
+    let active = pipeline_manager
         .list_active_uploads()
         .await
         .unwrap_or_else(|e| {
             warn!("Failed to list active uploads for WS snapshot: {}", e);
             Vec::new()
         });
-    if let Some(streamer_id) = filter {
-        uploads.retain(|u| u.streamer_id.as_deref() == Some(streamer_id.as_str()));
+    let pending = pipeline_manager
+        .count_pending_uploads()
+        .await
+        .unwrap_or_else(|e| {
+            warn!("Failed to count pending uploads for WS snapshot: {}", e);
+            0
+        });
+    let streamer_avatars = active
+        .iter()
+        .filter_map(|upload| upload.streamer_id.as_deref())
+        .filter_map(|id| Some((id.to_string(), streamer_avatar(id)?)))
+        .collect();
+    SnapshotUploads {
+        active,
+        pending,
+        streamer_avatars,
     }
-    uploads
 }
 
 /// Handle an established WebSocket connection.
@@ -214,7 +249,7 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // 2. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
     let queued = download_manager.snapshot_pending();
-    let uploads = snapshot_uploads(&state.pipeline_manager, &None).await;
+    let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
     let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
     let bytes = snapshot_msg.encode_to_vec();
 
@@ -256,7 +291,7 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                                 downloads.retain(|d| &d.streamer_id == streamer_id);
                                                 queued.retain(|q| &q.streamer_id == streamer_id);
                                             }
-                                            let uploads = snapshot_uploads(&state.pipeline_manager, &filter).await;
+                                            let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
                                             let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
@@ -271,7 +306,7 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                         if SNAPSHOT_ON_SUBSCRIBE {
                                             let downloads = download_manager.get_active_downloads();
                                             let queued = download_manager.snapshot_pending();
-                                            let uploads = snapshot_uploads(&state.pipeline_manager, &None).await;
+                                            let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
                                             let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
@@ -371,23 +406,15 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
             }
 
             // Upload status events (started/progress/terminal), pre-encoded
-            // once by the UploadStatusBroadcaster's encoder. Filtered against
-            // the same per-connection streamer subscription as download
-            // events; streamer-less uploads pass only when no filter is set.
+            // once by the UploadStatusBroadcaster's encoder. Unlike download
+            // events these ignore the streamer subscription, for the same
+            // reason as `snapshot_uploads`.
             envelope = upload_rx.recv() => {
                 match envelope {
                     Ok(envelope) => {
-                        let passes = match (&filter, envelope.event.streamer_id()) {
-                            (None, _) => true,
-                            (Some(f), Some(streamer_id)) => f == streamer_id,
-                            // Streamer-scoped subscription never sees
-                            // streamer-less uploads (manual jobs).
-                            (Some(_), None) => false,
-                        };
-                        if passes
-                            && let Err(e) = sender
-                                .send(Message::Binary(envelope.ws_bytes.clone()))
-                                .await
+                        if let Err(e) = sender
+                            .send(Message::Binary(envelope.ws_bytes.clone()))
+                            .await
                         {
                             debug!("Failed to send upload status message: {}", e);
                         }
@@ -747,11 +774,15 @@ pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
 /// `UploadStatusBroadcaster`, keeping proto knowledge out of the pipeline
 /// module. Absent `streamer_id`/`session_id` become empty strings (proto3
 /// scalar-default convention, same as check-history fields).
-pub fn map_upload_event_to_protobuf(event: &UploadStatusEvent) -> WsMessage {
+pub fn map_upload_event_to_protobuf(
+    event: &UploadStatusEvent,
+    streamer_avatar: &StreamerAvatarLookup,
+) -> WsMessage {
     match event {
         UploadStatusEvent::Started {
             job_id,
             streamer_id,
+            streamer_name,
             session_id,
             uploader,
             files_total,
@@ -765,6 +796,11 @@ pub fn map_upload_event_to_protobuf(event: &UploadStatusEvent) -> WsMessage {
                 uploader: uploader.to_string(),
                 files_total: *files_total,
                 started_at_ms: *started_at_ms,
+                streamer_name: streamer_name.clone().unwrap_or_default(),
+                streamer_avatar: streamer_id
+                    .as_deref()
+                    .and_then(|id| streamer_avatar(id))
+                    .unwrap_or_default(),
             })),
         },
         UploadStatusEvent::Progress {
@@ -810,6 +846,12 @@ pub fn map_upload_event_to_protobuf(event: &UploadStatusEvent) -> WsMessage {
                 })),
             }
         }
+        UploadStatusEvent::Queue { pending } => WsMessage {
+            event_type: EventType::UploadQueue as i32,
+            payload: Some(Payload::UploadQueue(crate::api::proto::UploadQueue {
+                pending: *pending,
+            })),
+        },
     }
 }
 
@@ -853,6 +895,7 @@ mod tests {
                 |_| Bytes::new(),
             )),
             pipeline_manager: Arc::new(PipelineManager::new()),
+            streamer_avatar: Arc::new(|_| None),
         };
         let app = Router::new()
             .route(
@@ -938,6 +981,7 @@ mod tests {
                 |_| Bytes::new(),
             )),
             pipeline_manager: Arc::new(PipelineManager::new()),
+            streamer_avatar: Arc::new(|_| None),
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1248,5 +1292,94 @@ mod tests {
         let decoded = ClientMessage::decode(bytes.as_slice()).unwrap();
 
         assert!(matches!(decoded.action, Some(Action::Unsubscribe(_))));
+    }
+
+    /// The header's upload status keeps one global uploads list, so a socket
+    /// that a page has narrowed to one streamer must still carry every
+    /// streamer's uploads, names and avatars included.
+    #[tokio::test]
+    async fn streamer_filtered_socket_still_receives_other_streamers_uploads() {
+        use crate::api::proto::download_progress::SubscribeRequest;
+        use std::sync::Arc;
+        use tokio_tungstenite::tungstenite::Message as Frame;
+
+        let streamer_avatar: StreamerAvatarLookup =
+            Arc::new(|id| (id == "other").then(|| "https://example.com/other.png".to_string()));
+        let upload_status_broadcaster = {
+            let streamer_avatar = streamer_avatar.clone();
+            crate::pipeline::UploadStatusBroadcaster::new(Arc::new(move |event| {
+                Bytes::from(map_upload_event_to_protobuf(event, &streamer_avatar).encode_to_vec())
+            }))
+        };
+        let state = DownloadRouteState {
+            auth_service: None,
+            download_manager: Arc::new(crate::downloader::DownloadManager::new()),
+            check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            upload_status_broadcaster: upload_status_broadcaster.clone(),
+            pipeline_manager: Arc::new(PipelineManager::new()),
+            streamer_avatar,
+        };
+        let app = Router::new()
+            .route("/ws", get(download_progress_ws))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let _server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws"))
+            .await
+            .unwrap();
+        let (mut outgoing, mut incoming) = socket.split();
+        let mut next_message = async || {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Frame::Binary(data) = incoming.next().await.unwrap().unwrap() {
+                        return WsMessage::decode(data).unwrap();
+                    }
+                }
+            })
+            .await
+            .expect("socket message must arrive")
+        };
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
+
+        let subscribe = ClientMessage {
+            action: Some(Action::Subscribe(SubscribeRequest {
+                streamer_id: "watched".to_string(),
+            })),
+        };
+        outgoing
+            .send(Frame::Binary(subscribe.encode_to_vec().into()))
+            .await
+            .unwrap();
+        // The subscribe snapshot is sent after the filter is applied, so the
+        // upload below is judged against the narrowed subscription.
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
+
+        upload_status_broadcaster.send(UploadStatusEvent::Started {
+            job_id: "job".to_string(),
+            streamer_id: Some("other".to_string()),
+            streamer_name: Some("Other Streamer".to_string()),
+            session_id: None,
+            uploader: "rclone",
+            files_total: 1,
+            started_at_ms: 0,
+        });
+        let Some(Payload::UploadStarted(started)) = next_message().await.payload else {
+            panic!("expected the other streamer's upload");
+        };
+        assert_eq!(started.streamer_id, "other");
+        assert_eq!(started.streamer_name, "Other Streamer");
+        assert_eq!(started.streamer_avatar, "https://example.com/other.png");
     }
 }

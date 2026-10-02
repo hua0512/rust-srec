@@ -119,6 +119,8 @@ function seedLiveTransfers() {
       {
         jobId: 'job-1',
         streamerId: 'streamer-1',
+        streamerName: 'Streamer One',
+        streamerAvatar: '',
         sessionId: 'session-1',
         uploader: 'rclone',
         filesTotal: 2,

@@ -149,6 +149,9 @@ pub trait JobRepository: Send + Sync {
     }
     /// Count pending jobs, optionally filtered by job types.
     async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64>;
+    /// Pending job counts grouped by exact `job_type`, for callers that
+    /// classify job types with rules SQL cannot express.
+    async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>>;
     /// Upsert (replace) the latest execution progress snapshot for a job.
     async fn upsert_job_execution_progress(
         &self,
@@ -467,6 +470,19 @@ impl JobRepository for SqlxJobRepository {
 
         let count = query.fetch_one(&self.pool).await?;
         Ok(count.max(0) as u64)
+    }
+
+    async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>> {
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT job_type, COUNT(*) FROM job WHERE status = ? GROUP BY job_type",
+        )
+        .bind(JobStatus::Pending.as_str())
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(job_type, count)| (job_type, count.max(0) as u64))
+            .collect())
     }
 
     async fn upsert_job_execution_progress(

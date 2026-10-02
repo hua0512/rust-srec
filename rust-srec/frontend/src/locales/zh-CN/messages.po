@@ -69,11 +69,6 @@ msgstr "（镜像源端）"
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
-#. placeholder {0}: uploads.length
-#: src/components/streamers/card/upload-indicator.tsx:49
-msgid "{0, plural, one {# active upload} other {# active uploads}}"
-msgstr "{0, plural, other {# 个进行中的上传}}"
-
 #. placeholder {0}: filteredEventTypes?.length || 0
 #: src/components/notifications/subscription-manager.tsx:460
 msgid "{0, plural, one {# available} other {# available}}"
@@ -94,13 +89,23 @@ msgstr "{0, plural, other {# 已完成}}"
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
+#. placeholder {0}: failed.length
+#: src/components/upload-status-indicator.tsx:145
+msgid "{0, plural, one {# failed upload} other {# failed uploads}}"
+msgstr "{0, plural, other {# 个上传失败}}"
+
 #. placeholder {0}: pipeline.failed_steps
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:342
 msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
+#. placeholder {0}: upload.filesFailed
+#: src/components/upload-status-indicator.tsx:431
+msgid "{0, plural, one {# file failed} other {# files failed}}"
+msgstr "{0, plural, other {# 个文件失败}}"
+
 #. placeholder {0}: upload.filesTotal
-#: src/components/streamers/card/upload-indicator.tsx:61
+#: src/components/streamers/card/upload-indicator.tsx:68
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, other {# 个文件}}"
 
@@ -211,9 +216,21 @@ msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
 msgid "{chat} chat · {gift} gift"
 msgstr "{chat} 条弹幕 · {gift} 个礼物"
 
+#: src/lib/upload-format.ts:33
+msgid "{count, plural, one {# active upload} other {# active uploads}}"
+msgstr "{count, plural, other {# 个进行中的上传}}"
+
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:50
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
+
+#: src/components/upload-status-indicator.tsx:378
+msgid "{eta} left"
+msgstr "剩余 {eta}"
+
+#: src/components/upload-status-indicator.tsx:375
+msgid "{filesDone}/{filesTotal} files"
+msgstr "{filesDone}/{filesTotal} 个文件"
 
 #: src/components/health/storage-usage-card.tsx:146
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:290
@@ -227,6 +244,14 @@ msgstr "{hours} 小时"
 #: src/components/streamers/edit/status-check-history.tsx:474
 msgid "{minutes}m"
 msgstr "{minutes} 分钟"
+
+#: src/components/upload-status-indicator.tsx:148
+msgid "{pending, plural, one {# queued upload} other {# queued uploads}}"
+msgstr "{pending, plural, other {# 个上传排队中}}"
+
+#: src/components/upload-status-indicator.tsx:151
+msgid "{pending} queued"
+msgstr "{pending} 个排队中"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:99
 msgid "{retryableCount, plural, one {Retry # failed or cancelled pipeline} other {Retry # failed or cancelled pipelines}}"
@@ -279,6 +304,10 @@ msgstr "<1>已选</1><0>{selectedCount}</0>"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:579
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> 表示不限速（rclone 默认值）。例如：当服务方将你限制为每秒 10 次请求时，可设为 <1>10</1>。"
+
+#: src/components/upload-status-indicator.tsx:286
+msgid "~{eta} left"
+msgstr "约剩 {eta}"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:103
 msgid "0 (None) - 9 (Best)"
@@ -1061,7 +1090,7 @@ msgstr "回跳阈值"
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
-#: src/components/layout/site-header.tsx:41
+#: src/components/layout/site-header.tsx:42
 msgid "Backup"
 msgstr "备份"
 
@@ -1367,6 +1396,15 @@ msgstr "取消处理管道？"
 msgid "Cancel selected"
 msgstr "取消所选"
 
+#: src/components/upload-status-indicator.tsx:553
+msgid "Cancel this upload?"
+msgstr "取消此上传？"
+
+#: src/components/upload-status-indicator.tsx:411
+#: src/components/upload-status-indicator.tsx:572
+msgid "Cancel upload"
+msgstr "取消上传"
+
 #: src/components/pipeline/status-config.ts:107
 #: src/components/streamers/card/use-streamer-status.tsx:46
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
@@ -1424,7 +1462,7 @@ msgstr "原因："
 msgid "CDN"
 msgstr "CDN"
 
-#: src/components/layout/site-header.tsx:34
+#: src/components/layout/site-header.tsx:35
 #: src/components/sidebar/user-menu.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:278
@@ -1753,7 +1791,7 @@ msgstr "并发校验数（--checkers）。"
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
-#: src/components/layout/site-header.tsx:32
+#: src/components/layout/site-header.tsx:33
 msgid "Config"
 msgstr "配置"
 
@@ -2427,7 +2465,7 @@ msgstr "弹幕数"
 msgid "Dark"
 msgstr "深色"
 
-#: src/components/layout/site-header.tsx:28
+#: src/components/layout/site-header.tsx:29
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
 msgstr "仪表盘"
@@ -2874,6 +2912,10 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
+#: src/components/upload-status-indicator.tsx:462
+msgid "Dismiss"
+msgstr "忽略"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
@@ -3098,7 +3140,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:118
-#: src/components/layout/site-header.tsx:54
+#: src/components/layout/site-header.tsx:55
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:95
@@ -3279,7 +3321,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:389
 #: src/components/config/global/backup-restore-card.tsx:394
 #: src/components/config/templates/template-editor.tsx:273
-#: src/components/layout/site-header.tsx:42
+#: src/components/layout/site-header.tsx:43
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
 msgid "Engines"
 msgstr "引擎列表"
@@ -3382,7 +3424,7 @@ msgstr "事件类型"
 msgid "Event Types"
 msgstr "事件类型"
 
-#: src/components/layout/site-header.tsx:38
+#: src/components/layout/site-header.tsx:39
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:370
 msgid "Events"
 msgstr "事件"
@@ -3452,7 +3494,7 @@ msgstr "执行设置"
 msgid "Execution time (default)"
 msgstr "执行时间（默认）"
 
-#: src/components/layout/site-header.tsx:47
+#: src/components/layout/site-header.tsx:48
 msgid "Executions"
 msgstr "执行记录"
 
@@ -3571,6 +3613,7 @@ msgstr "五"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
+#: src/components/upload-status-indicator.tsx:434
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:472
@@ -3598,6 +3641,10 @@ msgstr "取消处理任务失败"
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:230
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
+
+#: src/components/upload-status-indicator.tsx:539
+msgid "Failed to cancel upload"
+msgstr "取消上传失败"
 
 #: src/routes/_authed/change-password.lazy.tsx:82
 msgid "Failed to change password"
@@ -4309,7 +4356,7 @@ msgid "Gift items"
 msgstr "礼物数"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:201
-#: src/components/layout/site-header.tsx:46
+#: src/components/layout/site-header.tsx:47
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:43
 msgid "Global"
 msgstr "全局"
@@ -4443,7 +4490,7 @@ msgstr "收到头部"
 msgid "Header Value"
 msgstr "Header 值"
 
-#: src/components/layout/site-header.tsx:52
+#: src/components/layout/site-header.tsx:53
 msgid "Health"
 msgstr "健康"
 
@@ -4536,7 +4583,7 @@ msgid "HLS Tuning"
 msgstr "HLS 调优"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/layout/site-header.tsx:83
+#: src/components/layout/site-header.tsx:84
 msgid "Home"
 msgstr "主页"
 
@@ -4929,7 +4976,7 @@ msgstr "已开始重试处理任务"
 msgid "Job Timeouts"
 msgstr "任务超时"
 
-#: src/components/layout/site-header.tsx:48
+#: src/components/layout/site-header.tsx:49
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:348
 msgid "Jobs"
@@ -4970,6 +5017,10 @@ msgstr "保留目录结构"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:247
 msgid "Keep Running"
 msgstr "保持运行"
+
+#: src/components/upload-status-indicator.tsx:564
+msgid "Keep uploading"
+msgstr "继续上传"
 
 #: src/components/notifications/forms/webhook-form.tsx:420
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:113
@@ -5232,7 +5283,7 @@ msgstr "登录失败"
 msgid "Login successful!"
 msgstr "登录成功！"
 
-#: src/components/layout/site-header.tsx:33
+#: src/components/layout/site-header.tsx:34
 msgid "Logs"
 msgstr "日志"
 
@@ -5328,6 +5379,10 @@ msgstr "管理你监控的主播及录制"
 #: src/lib/split-reason.ts:45
 msgid "Manual cut"
 msgstr "手动分段"
+
+#: src/components/upload-status-indicator.tsx:351
+msgid "Manual job"
+msgstr "手动任务"
 
 #: src/components/config/shared/network-settings-card.tsx:299
 msgid "Manual update required"
@@ -5764,7 +5819,7 @@ msgstr "网络与系统"
 msgid "Never"
 msgstr "永不"
 
-#: src/components/layout/site-header.tsx:53
+#: src/components/layout/site-header.tsx:54
 msgid "New"
 msgstr "新建"
 
@@ -6172,7 +6227,7 @@ msgstr "通知保留"
 msgid "Notification Service"
 msgstr "通知服务"
 
-#: src/components/layout/site-header.tsx:37
+#: src/components/layout/site-header.tsx:38
 #: src/lib/menu-list.ts:119
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:356
 msgid "Notifications"
@@ -6469,7 +6524,7 @@ msgstr "输出保留时间（天）"
 msgid "Output Settings"
 msgstr "输出设置"
 
-#: src/components/layout/site-header.tsx:49
+#: src/components/layout/site-header.tsx:50
 #: src/components/sessions/overview-tab.tsx:130
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:470
@@ -6746,7 +6801,7 @@ msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
 #: src/components/config/shared-config-editor.tsx:200
-#: src/components/layout/site-header.tsx:36
+#: src/components/layout/site-header.tsx:37
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:508
 msgid "Pipeline"
@@ -6907,7 +6962,7 @@ msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:401
 #: src/components/config/templates/template-editor.tsx:283
-#: src/components/layout/site-header.tsx:43
+#: src/components/layout/site-header.tsx:44
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "Platforms"
 msgstr "平台"
@@ -6942,7 +6997,7 @@ msgstr "播放错误"
 msgid "Playback stalled while seeking. Retry to reload the video."
 msgstr "跳转时播放停滞。请重试以重新加载视频。"
 
-#: src/components/layout/site-header.tsx:39
+#: src/components/layout/site-header.tsx:40
 #: src/lib/menu-list.ts:97
 msgid "Player"
 msgstr "播放器"
@@ -7065,6 +7120,10 @@ msgstr "首选视频编码"
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
+#: src/components/upload-status-indicator.tsx:381
+msgid "Preparing…"
+msgstr "准备中…"
+
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:128
 msgid "Preserve Paths"
 msgstr "保留路径"
@@ -7107,7 +7166,7 @@ msgstr "预设"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:146
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
-#: src/components/layout/site-header.tsx:50
+#: src/components/layout/site-header.tsx:51
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:219
 msgid "Presets"
@@ -8505,7 +8564,7 @@ msgstr "会话已启动。其他详细信息不可用。"
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
-#: src/components/layout/site-header.tsx:29
+#: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:261
 msgid "Sessions"
@@ -8530,7 +8589,7 @@ msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:89
 #: src/components/filters/FilterDialog.tsx:267
-#: src/components/layout/site-header.tsx:30
+#: src/components/layout/site-header.tsx:31
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
 msgid "Settings"
@@ -8978,7 +9037,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:367
 #: src/components/config/global/backup-restore-card.tsx:372
 #: src/components/config/global/backup-restore-card.tsx:377
-#: src/components/layout/site-header.tsx:31
+#: src/components/layout/site-header.tsx:32
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:394
 msgid "Streamers"
@@ -9084,7 +9143,7 @@ msgstr "切换模式会清除之前的命令，或程序和参数。"
 msgid "Sync"
 msgstr "同步"
 
-#: src/components/layout/site-header.tsx:40
+#: src/components/layout/site-header.tsx:41
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:139
 msgid "System"
 msgstr "系统"
@@ -9181,7 +9240,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:350
 #: src/components/config/global/backup-restore-card.tsx:355
 #: src/components/config/global/backup-restore-card.tsx:360
-#: src/components/layout/site-header.tsx:44
+#: src/components/layout/site-header.tsx:45
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:55
 msgid "Templates"
 msgstr "模板"
@@ -9280,7 +9339,11 @@ msgstr "服务器无法连接直播源。请重试或切换直播源。"
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
-#: src/components/layout/site-header.tsx:45
+#: src/components/upload-status-indicator.tsx:556
+msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
+msgstr "{name} 的上传将立即停止。已完成的文件会保留在目标位置，之后可以重试该任务。"
+
+#: src/components/layout/site-header.tsx:46
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:79
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:108
 msgid "Theme"
@@ -9533,7 +9596,7 @@ msgstr "今天"
 msgid "Toggle"
 msgstr "切换"
 
-#: src/components/layout/site-header.tsx:71
+#: src/components/layout/site-header.tsx:72
 msgid "Toggle navigation menu"
 msgstr "切换导航菜单"
 
@@ -9890,7 +9953,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
-#: src/components/streamers/card/upload-indicator.tsx:57
+#: src/lib/upload-format.ts:29
 msgid "upload"
 msgstr "上传"
 
@@ -9921,6 +9984,10 @@ msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:399
 msgid "Upload Behavior"
 msgstr "上传行为"
+
+#: src/components/upload-status-indicator.tsx:536
+msgid "Upload cancelled"
+msgstr "上传已取消"
 
 #. placeholder {0}: upload.uploader
 #: src/components/pipeline/outputs/output-card.tsx:181
@@ -10038,7 +10105,7 @@ msgstr "用户名"
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
-#: src/components/layout/site-header.tsx:35
+#: src/components/layout/site-header.tsx:36
 msgid "Users"
 msgstr "用户"
 
@@ -10154,6 +10221,10 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
+#: src/components/upload-status-indicator.tsx:335
+msgid "View processing jobs"
+msgstr "查看处理中的任务"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1564
 msgid "VOD Gap Strategy"
 msgstr "点播缺口策略"
@@ -10178,6 +10249,10 @@ msgstr "无限等待"
 #: src/components/config/platforms/tabs/general-tab.tsx:102
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
+
+#: src/components/upload-status-indicator.tsx:324
+msgid "Waiting for a free upload worker."
+msgstr "正在等待空闲的上传工作线程。"
 
 #: src/components/streamers/card/lossless-cut-action.tsx:140
 msgid "Waiting for a safe cut..."
@@ -10328,7 +10403,7 @@ msgstr "工作流更新成功"
 msgid "workflows"
 msgstr "工作流"
 
-#: src/components/layout/site-header.tsx:51
+#: src/components/layout/site-header.tsx:52
 #: src/components/pipeline/workflows/step-library.tsx:286
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:141
