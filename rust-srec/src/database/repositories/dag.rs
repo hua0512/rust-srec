@@ -508,7 +508,7 @@ const DAG_SEARCH_CONDITION: &str = r"(dag.id LIKE ? ESCAPE '\'
         WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ? ESCAPE '\'
     ))";
 
-/// `WHERE` clause for `filter`. Bind its values with [`bind_dag_list_filter`].
+/// `WHERE` clause for `filter`. Bind its values with `bind_dag_list_filter!`.
 fn dag_list_where_clause(filter: &DagListFilter<'_>) -> String {
     let mut conditions: Vec<&str> = Vec::new();
     if let Some(status) = filter.status {
