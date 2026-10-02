@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 
 // Live upload jobs pushed over the downloads WebSocket
-// (UPLOAD_STARTED / UPLOAD_PROGRESS / UPLOAD_TERMINAL plus the
-// DownloadSnapshot.uploads slice on connect/subscribe).
+// (UPLOAD_STARTED / UPLOAD_PROGRESS / UPLOAD_TERMINAL / UPLOAD_QUEUE plus the
+// DownloadSnapshot.uploads slice on connect/subscribe), and the uploads that
+// failed while this session was watching.
 //
 // Kept separate from useDownloadStore on purpose: that store's setSnapshot
 // clears every map it owns and its `version` counter re-renders all
@@ -12,6 +13,10 @@ import { create } from 'zustand';
 export interface UploadView {
   jobId: string;
   streamerId: string;
+  // Empty when the job has no streamer or its name could not be resolved.
+  streamerName: string;
+  // Empty when the streamer has no avatar.
+  streamerAvatar: string;
   sessionId: string;
   uploader: string;
   filesTotal: number;
@@ -23,14 +28,36 @@ export interface UploadView {
   bytesTotal?: bigint;
   speedBytesPerSec?: number;
   etaSecs?: number;
+  // Job-wide counters from uploaders that report them (rclone batches).
+  // Separate from filesTotal, the job's input count, because progress
+  // patches replace these fields wholesale.
+  progressFilesDone?: number;
+  progressFilesTotal?: number;
 
   // Wall-clock ms of the last event applied; drives the staleness guard.
   lastEventAtMs: number;
 }
 
+export interface FailedUploadView extends UploadView {
+  error: string;
+  filesSucceeded: number;
+  filesFailed: number;
+  failedAtMs: number;
+}
+
+export interface UploadFailedInput {
+  jobId: string;
+  streamerId: string;
+  error: string;
+  filesSucceeded: number;
+  filesFailed: number;
+}
+
 export interface UploadStartedInput {
   jobId: string;
   streamerId: string;
+  streamerName: string;
+  streamerAvatar: string;
   sessionId: string;
   uploader: string;
   filesTotal: number;
@@ -45,14 +72,20 @@ export interface UploadProgressInput {
   bytesTotal?: bigint;
   speedBytesPerSec?: number;
   etaSecs?: number;
+  progressFilesDone?: number;
+  progressFilesTotal?: number;
 }
 
 // A terminal event dropped by broadcast lag would leave a job stuck in the
 // store forever; entries older than this are skipped by the selectors.
-// Rclone reports stats every second while transferring, so a live upload
-// never comes close to this threshold. Also the retention window for
+// The server repeats every running upload's state at least every 30 s, even
+// while the uploader itself is silent, so a live upload never comes close
+// to this threshold. Also the retention window for
 // terminatedIds entries in sweepStaleUploads.
 export const STALE_AFTER_MS = 2 * 60 * 1000;
+
+// Failures are only dismissed by hand, so cap how many pile up.
+const MAX_FAILED_UPLOADS = 20;
 
 function isFresh(view: UploadView, nowMs: number): boolean {
   return nowMs - view.lastEventAtMs < STALE_AFTER_MS;
@@ -68,34 +101,53 @@ interface UploadStoreState {
   // entries older than STALE_AFTER_MS are dropped by sweepStaleUploads so
   // the map stays bounded across a long-lived connection.
   terminatedIds: Map<string, number>;
+  // Uploads that failed during this session, oldest first, kept until
+  // dismissed or retried. Snapshots clear failures for running jobs and
+  // preserve unrelated failures; the map is emptied on sign-out.
+  failedByJobId: Map<string, FailedUploadView>;
+  // Upload jobs waiting for a worker.
+  pendingCount: number;
   // Bumps on any mutation; can be selected to force rerenders.
   version: number;
 
   setSnapshot: (
     uploads: UploadStartedInput[],
     progress: UploadProgressInput[],
+    pendingCount?: number,
   ) => void;
   upsertStarted: (started: UploadStartedInput) => void;
   upsertProgress: (progress: UploadProgressInput) => void;
   // Applies progress in arrival order as one store update.
   upsertProgressBatch: (batch: UploadProgressInput[]) => void;
   remove: (jobId: string) => void;
+  // Like remove, but keeps the upload on screen as failed.
+  fail: (failed: UploadFailedInput) => void;
+  dismissFailed: (jobId: string) => void;
+  setPendingCount: (pendingCount: number) => void;
   clearAll: () => void;
 
   getActiveUploadsByStreamer: (streamerId: string) => UploadView[];
+  // Every fresh upload, oldest first.
+  getActiveUploads: () => UploadView[];
+  // Failed uploads, newest first.
+  getFailedUploads: () => FailedUploadView[];
 }
 
 export const useUploadStore = create<UploadStoreState>((set, get) => ({
   uploadsByJobId: new Map(),
   terminatedIds: new Map(),
+  failedByJobId: new Map(),
+  pendingCount: 0,
   version: 0,
 
-  setSnapshot: (uploads, progress) =>
+  setSnapshot: (uploads, progress, pendingCount = 0) =>
     set((state) => {
       state.uploadsByJobId.clear();
       state.terminatedIds.clear();
       const now = Date.now();
       for (const started of uploads) {
+        // A retry may have started while the socket was disconnected.
+        state.failedByJobId.delete(started.jobId);
         state.uploadsByJobId.set(started.jobId, {
           ...started,
           lastEventAtMs: now,
@@ -110,6 +162,8 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       return {
         uploadsByJobId: state.uploadsByJobId,
         terminatedIds: state.terminatedIds,
+        failedByJobId: state.failedByJobId,
+        pendingCount,
         version: state.version + 1,
       };
     }),
@@ -118,8 +172,10 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     set((state) => {
       // A retried job reuses its job id, and STARTED is only ever emitted
       // after the previous run's terminal event (same broadcast channel,
-      // FIFO per connection) — so STARTED authoritatively un-terminates.
+      // FIFO per connection) — so STARTED authoritatively un-terminates,
+      // and a retry replaces the earlier failure.
       state.terminatedIds.delete(started.jobId);
+      state.failedByJobId.delete(started.jobId);
       state.uploadsByJobId.set(started.jobId, {
         ...started,
         lastEventAtMs: Date.now(),
@@ -127,6 +183,7 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       return {
         uploadsByJobId: state.uploadsByJobId,
         terminatedIds: state.terminatedIds,
+        failedByJobId: state.failedByJobId,
         version: state.version + 1,
       };
     }),
@@ -148,9 +205,11 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
           });
         } else {
           // Progress for an unknown job (its STARTED event predates this
-          // connection and no snapshot carried it, e.g. a subscribe-filter
-          // race). Synthesize a minimal entry so the indicator still shows.
+          // connection and no snapshot carried it). Synthesize a minimal
+          // entry so the indicators still show.
           state.uploadsByJobId.set(progress.jobId, {
+            streamerName: '',
+            streamerAvatar: '',
             sessionId: '',
             uploader: '',
             filesTotal: 0,
@@ -179,13 +238,63 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       };
     }),
 
+  fail: (failed) =>
+    set((state) => {
+      const now = Date.now();
+      state.terminatedIds.set(failed.jobId, now);
+      const view = state.uploadsByJobId.get(failed.jobId);
+      state.uploadsByJobId.delete(failed.jobId);
+      // Re-inserting moves a repeat failure to the end (newest).
+      state.failedByJobId.delete(failed.jobId);
+      state.failedByJobId.set(failed.jobId, {
+        // The failure can be the first this session hears of the job.
+        streamerName: '',
+        streamerAvatar: '',
+        sessionId: '',
+        uploader: '',
+        filesTotal: 0,
+        startedAtMs: 0n,
+        ...view,
+        ...failed,
+        lastEventAtMs: now,
+        failedAtMs: now,
+      });
+      for (const jobId of state.failedByJobId.keys()) {
+        if (state.failedByJobId.size <= MAX_FAILED_UPLOADS) break;
+        state.failedByJobId.delete(jobId);
+      }
+      return {
+        uploadsByJobId: state.uploadsByJobId,
+        terminatedIds: state.terminatedIds,
+        failedByJobId: state.failedByJobId,
+        version: state.version + 1,
+      };
+    }),
+
+  dismissFailed: (jobId) =>
+    set((state) => {
+      if (!state.failedByJobId.delete(jobId)) return state;
+      return {
+        failedByJobId: state.failedByJobId,
+        version: state.version + 1,
+      };
+    }),
+
+  setPendingCount: (pendingCount) =>
+    set((state) =>
+      state.pendingCount === pendingCount ? state : { pendingCount },
+    ),
+
   clearAll: () =>
     set((state) => {
       state.uploadsByJobId.clear();
       state.terminatedIds.clear();
+      state.failedByJobId.clear();
       return {
         uploadsByJobId: state.uploadsByJobId,
         terminatedIds: state.terminatedIds,
+        failedByJobId: state.failedByJobId,
+        pendingCount: 0,
         version: state.version + 1,
       };
     }),
@@ -200,6 +309,15 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     }
     return result;
   },
+
+  getActiveUploads: () => {
+    const now = Date.now();
+    return [...get().uploadsByJobId.values()]
+      .filter((view) => isFresh(view, now))
+      .sort((a, b) => Number(a.startedAtMs - b.startedAtMs));
+  },
+
+  getFailedUploads: () => [...get().failedByJobId.values()].reverse(),
 }));
 
 // Selectors only re-run on store mutations, so without a sweep an entry

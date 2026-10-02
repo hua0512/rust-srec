@@ -712,6 +712,10 @@ fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
     };
     snapshot.speed_bytes_per_sec = stats.speed;
     snapshot.eta_secs = stats.eta;
+    // Counted across the whole `--files-from` batch, so they describe the
+    // job rather than the file in flight.
+    snapshot.files_done = stats.transfers;
+    snapshot.files_total = stats.total_transfers.filter(|total| *total > 0);
     // File counters only — see the raw-size note on parse_rclone_stats_line.
     snapshot.raw = serde_json::json!({
         "transfers": stats.transfers,
@@ -1227,6 +1231,10 @@ mod tests {
         assert!((percent - 45.08).abs() < 0.05, "got {percent}");
         assert_eq!(snapshot.speed_bytes_per_sec, Some(131072.0));
         assert_eq!(snapshot.eta_secs, Some(2.0));
+        assert_eq!(
+            (snapshot.files_done, snapshot.files_total),
+            (Some(0), Some(1))
+        );
         // Only the file counters survive into raw; `transferring` and the
         // human msg must not.
         assert_eq!(
@@ -1246,6 +1254,7 @@ mod tests {
         assert_eq!(snapshot.bytes_total, None, "totalBytes=0 means unknown");
         assert_eq!(snapshot.percent, None);
         assert_eq!(snapshot.eta_secs, None);
+        assert_eq!(snapshot.files_total, None, "totalTransfers=0 means unknown");
     }
 
     #[test]

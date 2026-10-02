@@ -1909,6 +1909,10 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
+        async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>> {
+            unimplemented!("not needed for these tests")
+        }
+
         async fn upsert_job_execution_progress(
             &self,
             _progress: &crate::database::models::JobExecutionProgressDbModel,

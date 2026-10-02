@@ -3,8 +3,8 @@
 //! `JobQueue` publishes one event per upload-job lifecycle transition
 //! (dequeue → `Started`, progress-aggregator flush → `Progress`,
 //! complete/fail/cancel → `Terminal`). The `/api/downloads/ws` route
-//! subscribes and forwards the pre-encoded bytes to connected clients,
-//! applying its per-connection streamer filter on the Rust event.
+//! subscribes and forwards the pre-encoded bytes to every connected client
+//! (upload events are not narrowed by the per-connection streamer filter).
 //!
 //! Mirrors `monitor::check_history_writer::CheckHistoryBroadcaster`:
 //! protobuf encoding runs **once per event** in the producer (not once per
@@ -41,6 +41,7 @@ pub enum UploadStatusEvent {
     Started {
         job_id: String,
         streamer_id: Option<String>,
+        streamer_name: Option<String>,
         session_id: Option<String>,
         /// Upload kind from `job_queue::upload_kind_for_job_type` ("rclone").
         uploader: &'static str,
@@ -61,25 +62,27 @@ pub enum UploadStatusEvent {
         files_skipped: u32,
         error: Option<String>,
     },
+    /// The number of upload jobs waiting for a worker changed.
+    Queue { pending: u32 },
 }
 
 impl UploadStatusEvent {
-    /// Streamer the event belongs to; the WS route's per-connection filter
-    /// compares against this (same contract as
-    /// `DownloadManagerEvent::streamer_id`).
+    /// Streamer the event belongs to, when the job has one.
     pub fn streamer_id(&self) -> Option<&str> {
         match self {
             UploadStatusEvent::Started { streamer_id, .. }
             | UploadStatusEvent::Progress { streamer_id, .. }
             | UploadStatusEvent::Terminal { streamer_id, .. } => streamer_id.as_deref(),
+            UploadStatusEvent::Queue { .. } => None,
         }
     }
 
-    pub fn job_id(&self) -> &str {
+    pub fn job_id(&self) -> Option<&str> {
         match self {
             UploadStatusEvent::Started { job_id, .. }
             | UploadStatusEvent::Progress { job_id, .. }
-            | UploadStatusEvent::Terminal { job_id, .. } => job_id,
+            | UploadStatusEvent::Terminal { job_id, .. } => Some(job_id),
+            UploadStatusEvent::Queue { .. } => None,
         }
     }
 }
@@ -143,6 +146,7 @@ mod tests {
         UploadStatusEvent::Started {
             job_id: job_id.to_string(),
             streamer_id: streamer_id.map(str::to_string),
+            streamer_name: None,
             session_id: None,
             uploader: "rclone",
             files_total: 3,
@@ -151,7 +155,7 @@ mod tests {
     }
 
     fn test_encoder() -> UploadWsEncoder {
-        Arc::new(|event| Bytes::from(format!("encoded:{}", event.job_id())))
+        Arc::new(|event| Bytes::from(format!("encoded:{}", event.job_id().unwrap_or_default())))
     }
 
     #[tokio::test]

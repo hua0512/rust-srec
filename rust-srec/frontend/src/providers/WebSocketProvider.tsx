@@ -9,10 +9,15 @@ import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
-import type { UploadProgressInput, UploadStartedInput } from '@/store/uploads';
+import type {
+  UploadFailedInput,
+  UploadProgressInput,
+  UploadStartedInput,
+} from '@/store/uploads';
 import type {
   UploadProgress as WireUploadProgress,
   UploadStarted as WireUploadStarted,
+  UploadTerminal as WireUploadTerminal,
 } from '@/api/proto/gen/download_progress_pb.js';
 import {
   WsMessageSchema,
@@ -20,6 +25,7 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   EventType,
+  UploadTerminalStatus,
 } from '@/api/proto/gen/download_progress_pb.js';
 import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
 import { WebSocketContext } from './WebSocketContext';
@@ -39,12 +45,33 @@ export const PROGRESS_FLUSH_MS = 500;
 
 export async function handleUploadTerminal(
   queryClient: QueryClient,
-  jobId: string,
-  removeUpload: (jobId: string) => void,
+  terminal: Pick<
+    WireUploadTerminal,
+    | 'jobId'
+    | 'streamerId'
+    | 'status'
+    | 'error'
+    | 'filesSucceeded'
+    | 'filesFailed'
+  >,
+  actions: {
+    removeUpload: (jobId: string) => void;
+    failUpload: (failed: UploadFailedInput) => void;
+  },
 ) {
-  removeUpload(jobId);
+  if (terminal.status === UploadTerminalStatus.FAILED) {
+    actions.failUpload({
+      jobId: terminal.jobId,
+      streamerId: terminal.streamerId,
+      error: terminal.error,
+      filesSucceeded: terminal.filesSucceeded,
+      filesFailed: terminal.filesFailed,
+    });
+  } else {
+    actions.removeUpload(terminal.jobId);
+  }
   await queryClient.invalidateQueries({
-    queryKey: ['pipeline', 'job', jobId, 'uploads'],
+    queryKey: ['pipeline', 'job', terminal.jobId, 'uploads'],
   });
 }
 
@@ -90,6 +117,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     (state) => state.upsertProgressBatch,
   );
   const removeUpload = useUploadStore((state) => state.remove);
+  const failUpload = useUploadStore((state) => state.fail);
+  const setPendingUploads = useUploadStore((state) => state.setPendingCount);
   const clearAllUploads = useUploadStore((state) => state.clearAll);
 
   // Query cache used for the check-history strip's React Query state.
@@ -225,7 +254,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                   uploadProgress.push(wireUploadProgress(u.progress));
                 }
               }
-              setUploadSnapshot(uploadStarted, uploadProgress);
+              setUploadSnapshot(
+                uploadStarted,
+                uploadProgress,
+                message.payload.value.pendingUploads,
+              );
             }
             break;
 
@@ -248,11 +281,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             // The backend publishes this only after durable per-file results
             // have been written, so it is the authoritative refetch point.
             if (message.payload.case === 'uploadTerminal') {
-              void handleUploadTerminal(
-                queryClient,
-                message.payload.value.jobId,
+              void handleUploadTerminal(queryClient, message.payload.value, {
                 removeUpload,
-              );
+                failUpload,
+              });
+            }
+            break;
+
+          case EventType.UPLOAD_QUEUE:
+            if (message.payload.case === 'uploadQueue') {
+              setPendingUploads(message.payload.value.pending);
             }
             break;
 
@@ -396,6 +434,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       setUploadSnapshot,
       upsertUploadStarted,
       removeUpload,
+      failUpload,
+      setPendingUploads,
       queryClient,
       flushProgress,
       scheduleProgressFlush,
@@ -473,6 +513,8 @@ function wireUploadStarted(wire: WireUploadStarted): UploadStartedInput {
   return {
     jobId: wire.jobId,
     streamerId: wire.streamerId,
+    streamerName: wire.streamerName,
+    streamerAvatar: wire.streamerAvatar,
     sessionId: wire.sessionId,
     uploader: wire.uploader,
     filesTotal: wire.filesTotal,
@@ -492,6 +534,8 @@ function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
     bytesTotal: wire.bytesTotal,
     speedBytesPerSec: wire.speedBytesPerSec,
     etaSecs: wire.etaSecs,
+    progressFilesDone: wire.filesDone,
+    progressFilesTotal: wire.filesTotal,
   };
 }
 

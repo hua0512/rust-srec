@@ -1,5 +1,4 @@
 import { CloudUpload } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
 import { plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 
@@ -8,7 +7,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { formatBytes, formatSpeed } from '@/lib/format';
+import { formatSpeed } from '@/lib/format';
+import {
+  activeUploadsLabel,
+  formatUploadBytes,
+  uploaderLabel,
+  uploadPercent,
+} from '@/lib/upload-format';
 import { useShallow } from 'zustand/react/shallow';
 import { useUploadStore } from '@/store/uploads';
 
@@ -26,16 +31,17 @@ export function UploadIndicator({ streamerId }: { streamerId: string }) {
 
   if (uploads.length === 0) return null;
 
-  const singleUpload = uploads.length === 1 ? uploads[0] : undefined;
+  const singlePercent =
+    uploads.length === 1 ? uploadPercent(uploads[0]) : undefined;
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex h-6 items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 text-sky-600 dark:text-sky-400">
           <CloudUpload className="h-3 w-3 animate-pulse" />
-          {singleUpload?.percent != null ? (
+          {singlePercent != null ? (
             <span className="font-mono text-[10px] font-semibold tabular-nums">
-              {Math.min(singleUpload.percent, 100).toFixed(0)}%
+              {singlePercent.toFixed(0)}%
             </span>
           ) : uploads.length > 1 ? (
             <span className="font-mono text-[10px] font-semibold tabular-nums">
@@ -46,44 +52,42 @@ export function UploadIndicator({ streamerId }: { streamerId: string }) {
       </TooltipTrigger>
       <TooltipContent className="space-y-1.5">
         <div className="text-xs font-medium">
-          {t(
-            i18n,
-          )`${plural(uploads.length, { one: '# active upload', other: '# active uploads' })}`}
+          {activeUploadsLabel(uploads.length, i18n)}
         </div>
-        {uploads.map((upload) => (
-          <div key={upload.jobId} className="text-xs space-y-0.5">
-            <div className="flex items-center justify-between gap-4">
-              <span className="opacity-70">
-                {upload.uploader || <Trans>upload</Trans>}
-                {upload.filesTotal > 0 && (
-                  <>
-                    {' · '}
-                    {t(
-                      i18n,
-                    )`${plural(upload.filesTotal, { one: '# file', other: '# files' })}`}
-                  </>
-                )}
-              </span>
-              {upload.percent != null && (
-                <span className="font-mono font-semibold">
-                  {Math.min(upload.percent, 100).toFixed(1)}%
+        {uploads.map((upload) => {
+          const percent = uploadPercent(upload);
+          const bytes = formatUploadBytes(upload);
+          return (
+            <div key={upload.jobId} className="text-xs space-y-0.5">
+              <div className="flex items-center justify-between gap-4">
+                <span className="opacity-70">
+                  {uploaderLabel(upload, i18n)}
+                  {upload.filesTotal > 0 && (
+                    <>
+                      {' · '}
+                      {t(
+                        i18n,
+                      )`${plural(upload.filesTotal, { one: '# file', other: '# files' })}`}
+                    </>
+                  )}
                 </span>
-              )}
-            </div>
-            {(upload.bytesDone != null || upload.speedBytesPerSec != null) && (
-              <div className="flex items-center justify-between gap-4 font-mono opacity-60">
-                <span>
-                  {upload.bytesDone != null && formatBytes(upload.bytesDone)}
-                  {upload.bytesTotal != null &&
-                    ` / ${formatBytes(upload.bytesTotal)}`}
-                </span>
-                {upload.speedBytesPerSec != null && (
-                  <span>{formatSpeed(upload.speedBytesPerSec)}</span>
+                {percent != null && (
+                  <span className="font-mono font-semibold">
+                    {percent.toFixed(1)}%
+                  </span>
                 )}
               </div>
-            )}
-          </div>
-        ))}
+              {(bytes != null || upload.speedBytesPerSec != null) && (
+                <div className="flex items-center justify-between gap-4 font-mono opacity-60">
+                  <span>{bytes}</span>
+                  {upload.speedBytesPerSec != null && (
+                    <span>{formatSpeed(upload.speedBytesPerSec)}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </TooltipContent>
     </Tooltip>
   );

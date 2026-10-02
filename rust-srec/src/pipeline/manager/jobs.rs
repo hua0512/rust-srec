@@ -108,6 +108,11 @@ where
         self.job_queue.list_active_uploads().await
     }
 
+    /// Upload jobs waiting for a worker. Feeds `DownloadSnapshot.pending_uploads`.
+    pub async fn count_pending_uploads(&self) -> Result<u32> {
+        self.job_queue.count_pending_uploads().await
+    }
+
     /// Get a job by ID.
     /// Retrieves job from repository.
     pub async fn get_job(&self, id: &str) -> Result<Option<Job>> {

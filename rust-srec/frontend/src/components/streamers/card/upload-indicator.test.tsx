@@ -22,6 +22,8 @@ function createUpload(overrides: Partial<UploadView> = {}): UploadView {
   return {
     jobId: 'job-1',
     streamerId: 'streamer-1',
+    streamerName: 'Streamer One',
+    streamerAvatar: '',
     sessionId: 'session-1',
     uploader: 'rclone',
     filesTotal: 2,

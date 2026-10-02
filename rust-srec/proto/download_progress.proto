@@ -38,13 +38,18 @@ enum EventType {
   // progress-aggregator flush (coalesced server-side, ~4/s max per job),
   // TERMINAL on complete/fail/cancel. Frontend keys its uploads store by
   // job_id: STARTED inserts, PROGRESS patches, TERMINAL removes.
+  // While a job runs, the server repeats its latest PROGRESS (or STARTED,
+  // before any progress) at least every 30 s, so a client can treat a job
+  // silent for longer than that as lost.
   //
   // NOTE: enum values and WsMessage oneof field numbers have drifted
-  // (value 11 is a hole); pick each independently. Next free enum: 18.
+  // (value 11 is a hole); pick each independently. Next free enum: 19.
   EVENT_TYPE_UPLOAD_STARTED = 14;
   EVENT_TYPE_UPLOAD_PROGRESS = 15;
   EVENT_TYPE_UPLOAD_TERMINAL = 16;
   EVENT_TYPE_DOWNLOAD_SPLIT = 17;
+  // Number of upload jobs waiting for a worker changed.
+  EVENT_TYPE_UPLOAD_QUEUE = 18;
 }
 
 // Server-to-client message envelope
@@ -67,7 +72,8 @@ message WsMessage {
     UploadProgress upload_progress = 15;
     UploadTerminal upload_terminal = 16;
     DownloadSplit download_split = 17;
-    // Next free oneof field: 18.
+    UploadQueue upload_queue = 18;
+    // Next free oneof field: 19.
   }
 }
 
@@ -97,6 +103,8 @@ message DownloadSnapshot {
   // on disconnect, so without this slice an upload started before the
   // connection would stay invisible until its next PROGRESS event.
   repeated UploadState uploads = 3;
+  // Upload jobs waiting for a worker; later changes arrive as UPLOAD_QUEUE.
+  uint32 pending_uploads = 4;
 }
 
 // A complete download state, split into metadata and metrics.
@@ -288,6 +296,11 @@ message UploadStarted {
   string uploader = 4;
   uint32 files_total = 5;
   int64 started_at_ms = 6;
+  // Display name for the streamer; empty when the job has none or it
+  // could not be resolved.
+  string streamer_name = 7;
+  // Streamer avatar URL; empty when the streamer has none or is unknown.
+  string streamer_avatar = 8;
 }
 
 // Coalesced live progress for one upload job. Numeric fields use proto3
@@ -303,6 +316,10 @@ message UploadProgress {
   optional double speed_bytes_per_sec = 6;
   optional double eta_secs = 7;
   int64 updated_at_ms = 8;
+  // Job-wide file counters; absent when the uploader only reports the
+  // file in flight.
+  optional uint32 files_done = 9;
+  optional uint32 files_total = 10;
 }
 
 enum UploadTerminalStatus {
@@ -324,6 +341,11 @@ message UploadTerminal {
   uint32 files_skipped = 6;
   // Empty when status != FAILED.
   string error = 7;
+}
+
+// Upload jobs (any streamer) that are PENDING, i.e. waiting for a worker.
+message UploadQueue {
+  uint32 pending = 1;
 }
 
 // Snapshot slice: one in-flight upload job, optionally with its latest
