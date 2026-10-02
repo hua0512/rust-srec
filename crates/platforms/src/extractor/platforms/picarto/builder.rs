@@ -54,7 +54,7 @@ impl Picarto {
 
         let data = response.json::<PicartoResponse>().await?;
 
-        debug!("Picarto response: {:?}", data);
+        debug!("Decoded Picarto response");
 
         let Some(channel) = data.channel else {
             return Err(ExtractorError::StreamerNotFound);
@@ -99,7 +99,7 @@ impl Picarto {
             .replace("{file_name}", &stream.stream_name);
         let hls_url = hls_url.replace("http://", "https://");
 
-        debug!("HLS URL: {}", hls_url);
+        debug!("Resolved Picarto HLS stream");
 
         let headers = self.extractor.get_platform_headers().clone();
         let mut streams = self

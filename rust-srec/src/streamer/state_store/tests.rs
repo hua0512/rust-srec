@@ -376,6 +376,8 @@ async fn stale_credential_refresh_cannot_publish_over_a_new_login() {
 
 fn start() -> StartSessionInputs {
     StartSessionInputs {
+        credential_binding: None,
+
         streamer_id: "state-test".into(),
         streamer_name: "Original".into(),
         streamer_url: "https://example.test/original".into(),

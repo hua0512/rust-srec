@@ -266,8 +266,28 @@ pub(crate) enum CollectionCommand {
     },
     /// End the current segment file
     EndSegment { segment_id: String },
+    /// Replace the account material the collection connects with. The runner
+    /// reconnects at once when it differs from the material in use.
+    UpdateAuthentication(DanmuAuthentication),
     /// Stop collection entirely
     Stop(CollectionStopReason),
+}
+
+/// Account material for a collection's connection. `Debug` never prints it.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct DanmuAuthentication {
+    pub cookies: Option<String>,
+    pub extras: Option<std::collections::HashMap<String, String>>,
+}
+
+impl std::fmt::Debug for DanmuAuthentication {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DanmuAuthentication")
+            .field("cookies", &self.cookies.as_ref().map(|_| "[redacted]"))
+            .field("extras", &self.extras.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
 }
 
 #[cfg(test)]

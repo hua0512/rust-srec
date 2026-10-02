@@ -59,6 +59,28 @@ pub(super) struct ConfigurationWork {
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     pub(super) fn queue_configuration(&mut self, event: ConfigUpdateEvent) {
         match event {
+            ConfigUpdateEvent::CredentialMaterialChanged { owner } => {
+                let ids: Vec<String> = match owner {
+                    crate::credentials::CredentialOwner::Platform { platform_id } => self
+                        .streamer_manager
+                        .get_by_platform(&platform_id)
+                        .into_iter()
+                        .map(|metadata| metadata.id)
+                        .collect(),
+                    crate::credentials::CredentialOwner::Template { template_id } => self
+                        .streamer_manager
+                        .get_by_template(&template_id)
+                        .into_iter()
+                        .map(|metadata| metadata.id)
+                        .collect(),
+                    crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                        vec![streamer_id]
+                    }
+                };
+                for id in ids {
+                    self.feedback.request_check(&id);
+                }
+            }
             ConfigUpdateEvent::GlobalUpdated => {
                 self.configuration.global_revision =
                     self.configuration.global_revision.saturating_add(1);

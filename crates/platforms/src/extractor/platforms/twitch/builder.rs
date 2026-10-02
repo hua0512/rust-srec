@@ -83,7 +83,7 @@ impl Twitch {
 
     const GPL_API_URL: &str = "https://gql.twitch.tv/gql";
 
-    async fn post_gql<T: for<'de> serde::Deserialize<'de> + std::fmt::Debug>(
+    async fn post_gql<T: for<'de> serde::Deserialize<'de>>(
         &self,
         body: String,
     ) -> Result<Vec<T>, ExtractorError> {
@@ -94,23 +94,28 @@ impl Twitch {
             .send()
             .await?;
         let body = response.text().await?;
-        debug!("body: {}", body);
+        debug!(
+            response_bytes = body.len(),
+            "Received Twitch GraphQL response"
+        );
 
         // Try to parse as array first, then as single object if that fails
         let responses: Vec<T> = match serde_json::from_str::<Vec<T>>(&body) {
             Ok(responses) => responses,
             Err(e) => {
-                debug!("Failed to parse as array: {}", e);
+                debug!(category = ?e.classify(), "Failed to parse Twitch response as array");
                 // If parsing as array fails, try parsing as single object
-                let single_response: T = serde_json::from_str(&body).map_err(|e2| {
-                    debug!("Failed to parse as single object: {}", e2);
-                    e2
+                let single_response: T = serde_json::from_str(&body).inspect_err(|e2| {
+                    debug!(category = ?e2.classify(), "Failed to parse Twitch response as single object");
                 })?;
                 vec![single_response]
             }
         };
 
-        debug!("responses: {:?}", responses);
+        debug!(
+            response_count = responses.len(),
+            "Decoded Twitch GraphQL response"
+        );
         Ok(responses)
     }
 
@@ -135,10 +140,13 @@ impl Twitch {
         );
         let queries_string = format!("[{channel_shell_query},{stream_metadata_query}]");
 
-        debug!("queries_string: {}", queries_string);
+        debug!("Requesting Twitch channel metadata");
 
         let response = self.post_gql::<TwitchResponse>(queries_string).await?;
-        debug!("response: {:?}", response);
+        debug!(
+            response_count = response.len(),
+            "Received Twitch channel metadata"
+        );
 
         let mut valid_responses = response.iter().filter(|r| r.data.is_some());
         let Some(channel_shell) = valid_responses.next() else {
@@ -284,7 +292,7 @@ impl Twitch {
             )
             .await?;
 
-        // debug!("response: {:?}", response);
+        // debug!(response_count = response.len(), "Received Twitch channel metadata");
         Ok(streams)
     }
 }

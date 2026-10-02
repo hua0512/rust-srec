@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::time::DelayQueue;
 use tracing::{debug, info, trace, warn};
 
-use crate::credentials::CredentialRefreshService;
+use crate::credentials::{CredentialRefreshService, OperationDeadline, PlatformAdmission};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
     SessionTxOps, StreamerRepository, StreamerTxOps,
@@ -35,7 +35,6 @@ use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::FatalErrorType;
 
 use super::events::{MonitorEvent, MonitorEventBroadcaster, MonitorEventDelivery};
-use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 
 /// Result of [`StreamMonitor::process_status`].
 ///
@@ -94,6 +93,8 @@ const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 /// to temporarily reusing the most recent result for the same streamer.
 const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 
+type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
+
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
 pub struct StreamMonitorConfig {
@@ -109,6 +110,7 @@ pub struct StreamMonitorConfig {
 
 pub(crate) struct StreamMonitorRuntimeConfig {
     pub monitor: StreamMonitorConfig,
+    pub admission: Option<Arc<PlatformAdmission>>,
     pub required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
     pub task_supervisor: Arc<TaskSupervisor>,
 }
@@ -145,11 +147,11 @@ pub struct StreamMonitor<
     /// Batch detector.
     batch_detector: BatchDetector,
     /// Rate limiter manager.
-    rate_limiter: RateLimiterManager,
+    admission: Arc<PlatformAdmission>,
     /// In-flight request deduplication.
-    in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+    in_flight: Arc<DashMap<CredentialCheckKey, Arc<OnceCell<LiveStatus>>>>,
     /// Sender for in-flight cleanup requests (single worker processes these).
-    cleanup_tx: mpsc::Sender<String>,
+    cleanup_tx: mpsc::Sender<CredentialCheckKey>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
     /// Required runtime consumer for state-changing monitor events.
@@ -171,10 +173,59 @@ pub struct StreamMonitor<
     config: StreamMonitorConfig,
     /// Optional credential refresh service for automatic cookie refresh.
     credential_service: Option<Arc<CredentialRefreshService>>,
+    execution_service: std::sync::OnceLock<Arc<crate::credentials::CredentialExecutionService>>,
+    pending_credential_recovery: std::sync::OnceLock<PendingCredentialRecovery>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CredentialCheckPurpose {
+    Discovery,
+    BoundPoll,
+    QueueStart,
+    Recovery,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CredentialCheckKey {
+    streamer_id: String,
+    purpose: CredentialCheckPurpose,
+    generation: Option<String>,
+    session_id: Option<String>,
+    epoch: Option<u64>,
+    revision: Option<u64>,
+}
+
+impl CredentialCheckKey {
+    /// Only equivalent operations share one in-flight result. A discovery while
+    /// a session exists is that session's bound poll; queue-start and recovery
+    /// may switch accounts, so neither shares a bound poll's result. A changed
+    /// policy, binding epoch or revision is a different operation.
+    fn new(
+        streamer_id: &str,
+        requested: CredentialCheckPurpose,
+        policy: Option<&crate::credentials::ResolvedCredentialPolicy>,
+        session_id: Option<String>,
+        binding: Option<&crate::credentials::CredentialBinding>,
+    ) -> Self {
+        let purpose = if requested == CredentialCheckPurpose::Discovery && session_id.is_some() {
+            CredentialCheckPurpose::BoundPoll
+        } else {
+            requested
+        };
+        Self {
+            streamer_id: streamer_id.to_owned(),
+            purpose,
+            generation: policy.map(|policy| policy.generation.clone()),
+            session_id,
+            epoch: binding.map(|binding| binding.epoch),
+            revision: binding.map(|binding| binding.revision),
+        }
+    }
 }
 
 /// Details for a streamer going live.
 pub(crate) struct LiveStatusDetails {
+    pub credential_binding: Option<crate::credentials::CredentialBinding>,
     pub title: String,
     pub category: Option<String>,
     pub avatar: Option<String>,
@@ -289,6 +340,7 @@ impl<
             session_lifecycle,
             StreamMonitorRuntimeConfig {
                 monitor: config,
+                admission: None,
                 required_event_sender: None,
                 task_supervisor: Arc::new(TaskSupervisor::new()),
             },
@@ -309,45 +361,26 @@ impl<
         }
         let StreamMonitorRuntimeConfig {
             monitor: config,
+            admission,
             required_event_sender,
             task_supervisor,
         } = runtime;
-        // Create rate limiter with platform-specific configs
-        let default_rate_config = RateLimiterConfig::with_rps(config.default_rate_limit)
-            .unwrap_or_else(|e| {
-                warn!(
-                    "Invalid default rate limit {}: {}. Falling back to defaults.",
-                    config.default_rate_limit, e
-                );
-                RateLimiterConfig::default()
-            });
-        let mut rate_limiter = RateLimiterManager::with_config(default_rate_config);
-
-        for (platform, rps) in &config.platform_rate_limits {
-            match RateLimiterConfig::with_rps(*rps) {
-                Ok(cfg) => rate_limiter.set_platform_config(platform, cfg),
-                Err(e) => {
-                    warn!(
-                        "Invalid rate limit for platform {} ({}): {}. Skipping override.",
-                        platform, rps, e
-                    );
-                }
-            }
-        }
+        let admission =
+            admission.unwrap_or_else(|| Arc::new(PlatformAdmission::from_config(&config)));
 
         let detector = Arc::new(StreamDetector::with_http_config(
             config.request_timeout,
             config.max_concurrent_requests,
         ));
 
-        let batch_detector = BatchDetector::new(rate_limiter.clone());
+        let batch_detector = BatchDetector::new(admission.limiter());
 
         let outbox_notify = Arc::new(Notify::new());
         let cancellation = CancellationToken::new();
 
         // Create bounded channel for cleanup requests (single worker pattern)
         // Buffer size of 4096 should be plenty for typical concurrent request counts.
-        let (cleanup_tx, cleanup_rx) = mpsc::channel::<String>(4096);
+        let (cleanup_tx, cleanup_rx) = mpsc::channel::<CredentialCheckKey>(4096);
         let in_flight = Arc::new(DashMap::new());
 
         let filter_store = config_service.filter_store_for(filter_repo);
@@ -359,7 +392,7 @@ impl<
             config_service,
             detector,
             batch_detector,
-            rate_limiter,
+            admission,
             in_flight: in_flight.clone(),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
@@ -371,6 +404,8 @@ impl<
             _task_supervisor: task_supervisor.clone(),
             config,
             credential_service: None,
+            execution_service: std::sync::OnceLock::new(),
+            pending_credential_recovery: std::sync::OnceLock::new(),
         };
 
         monitor.spawn_outbox_publisher(
@@ -386,6 +421,99 @@ impl<
     /// Subscribe to monitor events.
     pub fn subscribe_events(&self) -> tokio::sync::broadcast::Receiver<MonitorEvent> {
         self.event_broadcaster.subscribe()
+    }
+
+    pub fn set_execution_service(
+        &self,
+        service: Arc<crate::credentials::CredentialExecutionService>,
+    ) {
+        self.execution_service.get_or_init(|| service);
+    }
+
+    pub(crate) fn set_pending_credential_recovery(&self, recovery: PendingCredentialRecovery) {
+        self.pending_credential_recovery.get_or_init(|| recovery);
+    }
+
+    pub(crate) async fn session_credential_binding(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<crate::credentials::CredentialBinding>> {
+        let raw: Option<String> = sqlx::query_scalar(
+            "SELECT credential_binding FROM live_sessions WHERE id = ? AND end_time IS NULL",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.write_pool)
+        .await?
+        .flatten();
+        Ok(raw.as_deref().map(serde_json::from_str).transpose()?)
+    }
+
+    pub(crate) async fn retiring_credential_session(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<(String, crate::credentials::CredentialBinding)>> {
+        let row: Option<(String, String)> = sqlx::query_as("SELECT s.id, s.credential_binding FROM live_sessions s JOIN retirement_credential_profiles r ON r.profile_id = json_extract(s.credential_binding, '$.identity.profile_id') WHERE s.streamer_id = ? AND s.end_time IS NULL").bind(streamer_id).fetch_optional(&self.write_pool).await?;
+        row.map(|(id, raw)| serde_json::from_str(&raw).map(|binding| (id, binding)))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn validate_download_binding(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        binding: &crate::credentials::CredentialBinding,
+    ) -> Result<()> {
+        let current = self
+            .session_credential_binding(session_id)
+            .await?
+            .ok_or(crate::credentials::ProfileError::SourceChanged)?;
+        if current != *binding {
+            return Err(crate::credentials::ProfileError::SourceChanged.into());
+        }
+        let context = self
+            .config_service
+            .get_context_for_streamer(streamer_id)
+            .await?;
+        if context
+            .config
+            .credential_policy
+            .as_ref()
+            .map(|policy| &policy.generation)
+            != Some(&binding.policy.generation)
+        {
+            return Err(crate::credentials::ProfileError::SourceChanged.into());
+        }
+        let executor = self
+            .execution_service
+            .get()
+            .ok_or_else(|| Error::config("Managed credential execution is unavailable"))?;
+        executor
+            .repository()
+            .validate_selection(&binding.policy)
+            .await?;
+        if let crate::credentials::CredentialIdentity::Profile { profile_id } = &binding.identity {
+            let profile = executor.repository().get(profile_id).await?;
+            if !profile.enabled || profile.revision as u64 != binding.revision {
+                return Err(crate::credentials::ProfileError::SourceChanged.into());
+            }
+            let health = executor.repository().health(profile_id).await?;
+            if health.as_ref().is_some_and(|health| {
+                health.validity == "invalid"
+                    || health
+                        .cooldown_until
+                        .is_some_and(|until| until > crate::database::time::now_ms())
+            }) {
+                return Err(Error::CredentialUnavailable(
+                    crate::credentials::CredentialUnavailable {
+                        reason: "bound_profile_unavailable".into(),
+                        policy_generation: binding.policy.generation.clone(),
+                        retry_at: health.and_then(|health| health.cooldown_until),
+                    },
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Get the event broadcaster for external use.
@@ -412,8 +540,8 @@ impl<
 
     /// Spawn a single cleanup worker that processes delayed removal requests.
     fn spawn_cleanup_worker(
-        in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
-        mut cleanup_rx: mpsc::Receiver<String>,
+        in_flight: Arc<DashMap<CredentialCheckKey, Arc<OnceCell<LiveStatus>>>>,
+        mut cleanup_rx: mpsc::Receiver<CredentialCheckKey>,
         cancellation_token: CancellationToken,
         task_supervisor: Arc<TaskSupervisor>,
     ) {
@@ -491,6 +619,32 @@ impl<
     /// only one will perform the actual HTTP check and others will wait
     /// for and share the result.
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
+        let result = self
+            .check_streamer_for(streamer, CredentialCheckPurpose::Discovery)
+            .await;
+        // A cooldown can expire without a config event, and a login event may
+        // arrive while a previous startup still owns its reservation. A healthy
+        // bound poll must also wake an idle recording; Live -> Live emits no
+        // new session event. The coordinator rejects active/queued/hysteresis work.
+        if matches!(
+            &result,
+            Err(Error::CredentialUnavailable(_))
+                | Ok(LiveStatus::Live {
+                    credential_binding: Some(_),
+                    ..
+                })
+        ) && let Some(recovery) = self.pending_credential_recovery.get()
+        {
+            recovery(streamer.id.clone()).await;
+        }
+        result
+    }
+
+    pub async fn check_streamer_for(
+        &self,
+        streamer: &StreamerMetadata,
+        requested_purpose: CredentialCheckPurpose,
+    ) -> Result<LiveStatus> {
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
@@ -518,54 +672,88 @@ impl<
         // STREAM_CHECK_HARD_TIMEOUT; only a request_timeout deliberately set larger than it
         // raises the ceiling.
         let hard_timeout = std::cmp::max(STREAM_CHECK_HARD_TIMEOUT, self.config.request_timeout);
+        let deadline = OperationDeadline::new(hard_timeout);
+
+        let (context, active) = tokio::time::timeout_at(deadline.instant(), async {
+            let context = self.config_service.get_context_for_streamer(&streamer.id).await?;
+            let active: Option<(String, Option<String>)> = sqlx::query_as("SELECT id, credential_binding FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL").bind(&streamer.id).fetch_optional(&self.write_pool).await?;
+            Ok::<_, Error>((context, active))
+        }).await.map_err(|_| Error::Monitor("Credential context deadline exceeded".into()))??;
+        let binding = active
+            .as_ref()
+            .and_then(|(_, raw)| raw.as_deref())
+            .map(serde_json::from_str::<crate::credentials::CredentialBinding>)
+            .transpose()?;
+        let key = CredentialCheckKey::new(
+            &streamer.id,
+            requested_purpose,
+            context.config.credential_policy.as_ref(),
+            active.map(|(id, _)| id),
+            binding.as_ref(),
+        );
+        let purpose = key.purpose;
 
         // Get or create the deduplication cell for this streamer
         let cell = self
             .in_flight
-            .entry(streamer.id.clone())
+            .entry(key.clone())
             .or_insert_with(|| Arc::new(OnceCell::new()))
             .clone();
 
         // Clone what we need for the async closure
-        let rate_limiter = self.rate_limiter.clone();
+        let admission = self.admission.clone();
         let filter_store = self.filter_store.clone();
         let config_service = self.config_service.clone();
         let detector = self.detector.clone();
         let credential_service = self.credential_service.clone();
+        let execution_service = self.execution_service.get().cloned();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
-        let platform_id = streamer.platform();
+        let platform_id = &streamer.platform_config_id;
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
-        let result = cell
+        let result = tokio::time::timeout_at(deadline.instant(), cell
             .get_or_try_init(|| async move {
-                // Acquire rate limit token
-                let wait_time = rate_limiter.acquire(platform_id).await;
-                if !wait_time.is_zero() {
-                    debug!(
-                        platform_id = %platform_id,
-                        streamer_id = %streamer_id_owned,
-                        wait = ?wait_time,
-                        "rate limited"
-                    );
-                }
-
                 let check = async {
                     // Load filters for this streamer
                     let filters = filter_store.get(streamer_id).await?;
 
                     // Get resolved context (merged config + credential source provenance).
-                    let context = config_service.get_context_for_streamer(streamer_id).await?;
                     let config = &context.config;
+
+                    if let Some(policy) = &config.credential_policy {
+                        let execution = execution_service.as_ref().ok_or_else(|| Error::config("Managed credential execution is unavailable"))?;
+                        let result = execution.execute(policy, binding.as_ref(), purpose != CredentialCheckPurpose::BoundPoll, deadline, |snapshot| {
+                            let extras = crate::credentials::managed_authentication_extras(streamer.platform(), config.platform_extras.clone(), &snapshot.material);
+                            let filters = &filters;
+                            let detector = &detector;
+                            async move {
+                                let status = detector.check_status_with_filters(streamer, filters, CheckContext { cookies: Some(snapshot.material.cookies), selection_config: Some(&config.stream_selection), platform_extras: extras, proxy_config: &config.proxy_config, extractor: config.extractor }).await?;
+                                let session_cookies = match &status { LiveStatus::Live { media_extras, .. } => media_extras.as_ref().and_then(|extras| extras.get("session_cookies")).filter(|cookies| !cookies.is_empty()).cloned(), _ => None };
+                                Ok(crate::credentials::Extracted { preserve_health: !status.is_live(), value: status, session_cookies })
+                            }
+                        }).await?;
+                        let current = config_service.get_context_for_streamer(streamer_id).await?;
+                        if current.config.credential_policy.as_ref().map(|policy| &policy.generation) != Some(&policy.generation) { return Err(crate::credentials::ProfileError::SourceChanged.into()); }
+                        let mut status = result.value;
+                        if let LiveStatus::Live { credential_binding, credential_snapshot, media_extras, .. } = &mut status {
+                            *credential_binding = Some(Box::new(result.snapshot.binding.clone()));
+                            *credential_snapshot = Some(Arc::new(result.snapshot));
+                            if let Some(extras) = media_extras { extras.remove("session_cookies"); }
+                        }
+                        return Ok(status);
+                    }
 
                     // Use cookies from config, but attempt best-effort refresh first (non-fatal).
                     let mut cookies = config.cookies.clone();
+                    let mut extraction_source = context.credential_source.clone();
                     if let Some(ref credential_service) = credential_service
                         && let Some(ref source) = context.credential_source
                     {
-                        match credential_service.check_and_refresh_source(source).await {
+                        match credential_service.check_and_refresh_source_until(source, deadline).await {
                             Ok(Some(new_cookies)) => {
+                                extraction_source = Some(credential_service.capture_source_for_extraction(source, &new_cookies).await.map_err(|error| match error { crate::credentials::CredentialError::Database(error) => Error::DatabaseSqlx(error), crate::credentials::CredentialError::SourceChanged | crate::credentials::CredentialError::NoCredentials => Error::CredentialProfile(crate::credentials::ProfileError::SourceChanged), _ => Error::Monitor("Could not capture refreshed credentials".into()) })?);
                                 // Use refreshed cookies immediately for this check, and invalidate
                                 // cached config so subsequent reads pick up the DB update.
                                 cookies = Some(new_cookies);
@@ -615,8 +803,9 @@ impl<
                         }
                     }
 
+                    admission.admit(platform_id, deadline).await.map_err(|error| Error::Monitor(error.to_string()))?;
                     // Check status with filters, cookies, selection config, and platform extras
-                    detector
+                    let mut status = detector
                         .check_status_with_filters(
                             streamer,
                             &filters,
@@ -629,9 +818,16 @@ impl<
                             },
                         )
                         .await
+                        .inspect_err(|error| {
+                            if let Error::Extractor(error) = error {
+                                admission.observe(platform_id, error);
+                            }
+                        })?;
+                    self.persist_legacy_extracted_cookies(extraction_source.as_ref(), &mut status).await?;
+                    Ok(status)
                 };
 
-                tokio::time::timeout(hard_timeout, check)
+                tokio::time::timeout_at(deadline.instant(), check)
                     .await
                     .map_err(|_| {
                         Error::Monitor(format!(
@@ -639,16 +835,18 @@ impl<
                             hard_timeout, streamer_id_owned
                         ))
                     })?
-            })
-            .await;
+            }))
+            .await
+            .map_err(|_| Error::Monitor("Stream monitor deadline exceeded during admission or check".into()))
+            .and_then(|result| result);
 
         // Schedule delayed cleanup BEFORE checking result to ensure cleanup
         // happens regardless of success or error. This prevents in_flight map
         // from leaking entries when errors occur.
         // Use the cleanup worker (DelayQueue) to avoid spawning per-entry tasks.
         // If the channel is saturated, fall back to immediate cleanup (dedup is best-effort).
-        if self.cleanup_tx.try_send(streamer.id.clone()).is_err() {
-            self.in_flight.remove(&streamer.id);
+        if self.cleanup_tx.try_send(key.clone()).is_err() {
+            self.in_flight.remove(&key);
         }
 
         // Now check result - cleanup is already scheduled
@@ -672,6 +870,58 @@ impl<
         self.batch_detector
             .batch_check(platform_id, streamers)
             .await
+    }
+
+    /// Persist against the exact legacy source captured before extraction.
+    async fn persist_legacy_extracted_cookies(
+        &self,
+        source: Option<&crate::credentials::CredentialSource>,
+        status: &mut LiveStatus,
+    ) -> Result<()> {
+        let Some(source) = source else {
+            return Ok(());
+        };
+        let Some(service) = &self.credential_service else {
+            return Ok(());
+        };
+        let LiveStatus::Live {
+            media_extras: Some(extras),
+            ..
+        } = status
+        else {
+            return Ok(());
+        };
+        let Some(cookies) = extras
+            .remove("session_cookies")
+            .filter(|cookies| !cookies.trim().is_empty())
+        else {
+            return Ok(());
+        };
+        service
+            .persist_session_cookies(source, cookies)
+            .await
+            .map_err(|error| match error {
+                crate::credentials::CredentialError::SourceChanged
+                | crate::credentials::CredentialError::NoCredentials => {
+                    Error::CredentialProfile(crate::credentials::ProfileError::SourceChanged)
+                }
+                crate::credentials::CredentialError::Database(error) => Error::DatabaseSqlx(error),
+                _ => Error::Monitor("Could not persist extracted session credentials".into()),
+            })?;
+        match &source.scope {
+            crate::credentials::CredentialScope::Streamer { streamer_id, .. } => {
+                self.config_service.invalidate_streamer(streamer_id);
+                self.reload_streamer_cache(streamer_id, "session cookie persist")
+                    .await;
+            }
+            crate::credentials::CredentialScope::Template { template_id, .. } => {
+                self.config_service.invalidate_template(template_id).await?
+            }
+            crate::credentials::CredentialScope::Platform { platform_id, .. } => {
+                self.config_service.invalidate_platform(platform_id).await?
+            }
+        }
+        Ok(())
     }
 
     /// Process a status check result and update state.
@@ -720,6 +970,7 @@ impl<
 
         match status {
             LiveStatus::Live {
+                credential_binding,
                 title,
                 category,
                 avatar,
@@ -729,100 +980,21 @@ impl<
                 media_extras,
                 ..
             } => {
-                // Persist SOOP (etc.) session cookies minted by reactive login
-                // during extract so the next poll can reuse them.
-                if let Some(session_cookies) = media_extras
-                    .as_ref()
-                    .and_then(|e| e.get("session_cookies"))
-                    .map(String::as_str)
-                    .filter(|s| !s.is_empty())
-                    && let Some(ref credential_service) = self.credential_service
-                {
-                    match self
-                        .config_service
-                        .get_context_for_streamer(&streamer.id)
-                        .await
-                    {
-                        Ok(context) => {
-                            if let Some(ref source) = context.credential_source {
-                                if let Err(e) = credential_service
-                                    .persist_session_cookies(source, session_cookies.to_string())
-                                    .await
-                                {
-                                    warn!(
-                                        error = %e,
-                                        streamer_id = %streamer.id,
-                                        "Failed to persist session cookies from extract"
-                                    );
-                                } else {
-                                    match &source.scope {
-                                        crate::credentials::CredentialScope::Streamer {
-                                            ..
-                                        } => {
-                                            self.config_service.invalidate_streamer(&streamer.id);
-                                            // Custom repositories may still need reconciliation;
-                                            // the concrete committed store needs no second query.
-                                            self.reload_streamer_cache(
-                                                &streamer.id,
-                                                "session cookie persist",
-                                            )
-                                            .await;
-                                        }
-                                        crate::credentials::CredentialScope::Template {
-                                            template_id,
-                                            ..
-                                        } => {
-                                            if let Err(e) = self
-                                                .config_service
-                                                .invalidate_template(template_id)
-                                                .await
-                                            {
-                                                warn!(
-                                                    error = %e,
-                                                    %template_id,
-                                                    "Failed to invalidate template config after credential refresh"
-                                                );
-                                            }
-                                        }
-                                        crate::credentials::CredentialScope::Platform {
-                                            platform_id,
-                                            ..
-                                        } => {
-                                            if let Err(e) = self
-                                                .config_service
-                                                .invalidate_platform(platform_id)
-                                                .await
-                                            {
-                                                warn!(
-                                                    error = %e,
-                                                    %platform_id,
-                                                    "Failed to invalidate platform config after credential refresh"
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!(
-                                error = %e,
-                                streamer_id = %streamer.id,
-                                "Failed to load context while persisting session cookies"
-                            );
-                        }
-                    }
+                let mut media_extras = media_extras;
+                if let Some(extras) = &mut media_extras {
+                    extras.remove("session_cookies");
                 }
 
                 self.handle_live(
                     streamer,
                     LiveStatusDetails {
+                        credential_binding: credential_binding.map(|binding| *binding),
                         title,
                         category,
                         avatar,
                         streams,
                         media_headers,
-                        media_extras,
+                        media_extras: media_extras.map(|extras| *extras),
                     },
                 )
                 .await?;
@@ -895,6 +1067,7 @@ impl<
         details: LiveStatusDetails,
     ) -> Result<()> {
         let LiveStatusDetails {
+            credential_binding,
             title,
             category,
             avatar,
@@ -920,6 +1093,7 @@ impl<
         // on success.
         self.session_lifecycle
             .on_live_detected(crate::session::LiveDetectedArgs {
+                credential_binding: credential_binding.as_ref(),
                 streamer_id: &streamer.id,
                 streamer_name: &streamer.name,
                 streamer_url: &streamer.url,
@@ -1630,6 +1804,7 @@ fn status_summary(status: &LiveStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    mod credential_checks;
     use super::*;
 
     use std::sync::Arc;
@@ -1645,6 +1820,117 @@ mod tests {
     use crate::database::{init_pool_with_size, run_migrations};
     use crate::session::{SessionEventPayload, TerminalCauseDto};
     use crate::streamer::StreamerManager;
+
+    #[test]
+    fn concurrent_checks_share_results_only_within_one_purpose_and_binding() {
+        use crate::credentials::{
+            CredentialBinding, CredentialIdentity, CredentialOwner, CredentialSelection,
+            ResolvedCredentialPolicy,
+        };
+        let policy = ResolvedCredentialPolicy::new(
+            "platform".into(),
+            CredentialOwner::Platform {
+                platform_id: "platform".into(),
+            },
+            CredentialSelection::Pool {
+                credential_ids: vec!["a".into(), "b".into()],
+                strategy: crate::credentials::PoolStrategy::RoundRobin,
+                failover: true,
+                max_attempts: 3,
+            },
+        )
+        .unwrap();
+        let binding = CredentialBinding {
+            identity: CredentialIdentity::Profile {
+                profile_id: "a".into(),
+            },
+            revision: 1,
+            policy: policy.clone(),
+            epoch: 1,
+        };
+        let key = |purpose, session: Option<&str>, binding: Option<&CredentialBinding>| {
+            CredentialCheckKey::new(
+                "streamer",
+                purpose,
+                Some(&policy),
+                session.map(str::to_owned),
+                binding,
+            )
+        };
+        // Unbound discovery, queue-start and the recording's bound poll run at once.
+        let discovery = key(CredentialCheckPurpose::Discovery, None, None);
+        let queue_start = key(
+            CredentialCheckPurpose::QueueStart,
+            Some("session"),
+            Some(&binding),
+        );
+        let bound_poll = key(
+            CredentialCheckPurpose::Discovery,
+            Some("session"),
+            Some(&binding),
+        );
+        let recovery = key(
+            CredentialCheckPurpose::Recovery,
+            Some("session"),
+            Some(&binding),
+        );
+        assert_eq!(bound_poll.purpose, CredentialCheckPurpose::BoundPoll);
+        let keys = [&discovery, &queue_start, &bound_poll, &recovery];
+        for (index, left) in keys.iter().enumerate() {
+            for right in &keys[index + 1..] {
+                assert_ne!(
+                    left, right,
+                    "{left:?} must not borrow {right:?}'s account result"
+                );
+            }
+        }
+        assert_eq!(
+            bound_poll,
+            key(
+                CredentialCheckPurpose::BoundPoll,
+                Some("session"),
+                Some(&binding)
+            ),
+            "two polls of the same pinned account share one extraction"
+        );
+        for changed in [
+            CredentialBinding {
+                epoch: 2,
+                ..binding.clone()
+            },
+            CredentialBinding {
+                revision: 2,
+                ..binding.clone()
+            },
+        ] {
+            assert_ne!(
+                bound_poll,
+                key(
+                    CredentialCheckPurpose::BoundPoll,
+                    Some("session"),
+                    Some(&changed)
+                )
+            );
+        }
+        let other_policy = ResolvedCredentialPolicy::new(
+            "platform".into(),
+            CredentialOwner::Platform {
+                platform_id: "platform".into(),
+            },
+            CredentialSelection::None,
+        )
+        .unwrap();
+        assert_ne!(
+            discovery,
+            CredentialCheckKey::new(
+                "streamer",
+                CredentialCheckPurpose::Discovery,
+                Some(&other_policy),
+                None,
+                None
+            )
+        );
+    }
 
     #[tokio::test]
     async fn committed_admin_authority_wins_over_checks_waiting_with_stale_cache() {
@@ -2074,6 +2360,9 @@ mod tests {
         assert_eq!(status_summary(&LiveStatus::Offline), "Offline");
 
         let live_status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
+
             title: "Test".to_string(),
             avatar: None,
             category: None,
@@ -2190,6 +2479,8 @@ mod tests {
             .handle_live(
                 &streamer,
                 LiveStatusDetails {
+                    credential_binding: None,
+
                     title: "Next broadcast".to_string(),
                     category: None,
                     avatar: None,
@@ -2224,6 +2515,8 @@ mod tests {
             .handle_live(
                 &streamer,
                 LiveStatusDetails {
+                    credential_binding: None,
+
                     title: "Continuing broadcast".to_string(),
                     category: None,
                     avatar: None,
@@ -2400,6 +2693,8 @@ mod tests {
         monitor
             .session_lifecycle
             .on_live_detected(crate::session::LiveDetectedArgs {
+                credential_binding: None,
+
                 streamer_id: "streamer-4",
                 streamer_name: "Test Streamer",
                 streamer_url: "https://example.com/streamer-4",
@@ -2497,6 +2792,8 @@ mod tests {
         monitor
             .session_lifecycle
             .on_live_detected(crate::session::LiveDetectedArgs {
+                credential_binding: None,
+
                 streamer_id: "streamer-5",
                 streamer_name: "Test Streamer",
                 streamer_url: "https://example.com/streamer-5",
@@ -2701,6 +2998,9 @@ mod tests {
             .process_status(
                 &streamer,
                 LiveStatus::Live {
+                    credential_binding: None,
+                    credential_snapshot: None,
+
                     title: "Suppressed Live".to_string(),
                     category: None,
                     avatar: None,
@@ -2768,6 +3068,9 @@ mod tests {
             .process_status(
                 &streamer,
                 LiveStatus::Live {
+                    credential_binding: None,
+                    credential_snapshot: None,
+
                     title: "Should Stay Disabled".to_string(),
                     category: None,
                     avatar: None,
@@ -2837,39 +3140,47 @@ mod tests {
             .get_streamer(&model.id)
             .expect("hydrated");
 
-        monitor
-            .process_status(
-                &streamer,
-                LiveStatus::Live {
-                    title: "Live".to_string(),
-                    category: None,
-                    avatar: None,
-                    started_at: None,
-                    viewer_count: None,
-                    streams: vec![platforms_parser::media::StreamInfo {
-                        url: "https://example.com/stream.m3u8".to_string(),
-                        stream_format: platforms_parser::media::StreamFormat::Flv,
-                        media_format: platforms_parser::media::formats::MediaFormat::Flv,
-                        quality: "best".to_string(),
-                        bitrate: 5_000_000,
-                        priority: 1,
-                        extras: None,
-                        codec: "h264".to_string(),
-                        fps: 30.0,
-                        is_headers_needed: false,
-                        is_audio_only: false,
-                    }],
-                    media_headers: None,
-                    media_extras: Some(std::collections::HashMap::from([(
-                        "session_cookies".to_string(),
-                        "SESSION=new".to_string(),
-                    )])),
-                    next_check_hint: None,
-                    candidates: vec![],
-                },
-            )
+        let context = monitor
+            .config_service
+            .get_context_for_streamer(&model.id)
             .await
             .unwrap();
+        let source = context.credential_source.as_ref().unwrap();
+        let mut status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
+
+            title: "Live".to_string(),
+            category: None,
+            avatar: None,
+            started_at: None,
+            viewer_count: None,
+            streams: vec![platforms_parser::media::StreamInfo {
+                url: "https://example.com/stream.m3u8".to_string(),
+                stream_format: platforms_parser::media::StreamFormat::Flv,
+                media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                quality: "best".to_string(),
+                bitrate: 5_000_000,
+                priority: 1,
+                extras: None,
+                codec: "h264".to_string(),
+                fps: 30.0,
+                is_headers_needed: false,
+                is_audio_only: false,
+            }],
+            media_headers: None,
+            media_extras: Some(Box::new(std::collections::HashMap::from([(
+                "session_cookies".to_string(),
+                "SESSION=new".to_string(),
+            )]))),
+            next_check_hint: None,
+            candidates: vec![],
+        };
+        monitor
+            .persist_legacy_extracted_cookies(Some(source), &mut status)
+            .await
+            .unwrap();
+        monitor.process_status(&streamer, status).await.unwrap();
 
         // A later edit rebuilds the whole streamers row from the manager's metadata cache.
         monitor
@@ -2896,6 +3207,87 @@ mod tests {
         .expect("config document is valid JSON");
         assert_eq!(config["cookies"], "SESSION=new");
 
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn legacy_reactive_result_cannot_overwrite_a_login_replaced_during_extraction() {
+        let pool = setup_monitor_test_db().await;
+        let mut model = StreamerDbModel::new(
+            "Legacy race",
+            "https://play.sooplive.co.kr/race",
+            "platform-soop",
+        );
+        model.id = "legacy-reactive-race".into();
+        model.streamer_specific_config = Some(r#"{"cookies":"SESSION=original"}"#.into());
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&model)
+            .await
+            .unwrap();
+        let mut monitor = build_test_monitor(&pool).await;
+        monitor.set_credential_service(Arc::new(
+            crate::credentials::CredentialRefreshService::new(Arc::new(
+                crate::database::repositories::SqlxCredentialStore::new(pool.clone(), pool.clone()),
+            )),
+        ));
+        let captured = monitor
+            .config_service
+            .get_context_for_streamer(&model.id)
+            .await
+            .unwrap()
+            .credential_source
+            .clone()
+            .unwrap();
+        monitor
+            .streamer_manager
+            .partial_update_streamer(crate::streamer::manager::StreamerUpdateParams {
+                id: model.id.clone(),
+                name: None,
+                url: None,
+                platform_config_id: None,
+                template_config_id: None,
+                priority: None,
+                state: None,
+                streamer_specific_config: Some(Some(
+                    serde_json::json!({"cookies":"SESSION=replacement"}).to_string(),
+                )),
+            })
+            .await
+            .unwrap();
+        let mut result = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
+            title: "Live".into(),
+            category: None,
+            avatar: None,
+            started_at: None,
+            viewer_count: None,
+            streams: Vec::new(),
+            media_headers: None,
+            media_extras: Some(Box::new(std::collections::HashMap::from([(
+                "session_cookies".into(),
+                "SESSION=stale-extractor".into(),
+            )]))),
+            next_check_hint: None,
+            candidates: Vec::new(),
+        };
+        assert!(matches!(
+            monitor
+                .persist_legacy_extracted_cookies(Some(&captured), &mut result)
+                .await,
+            Err(Error::CredentialProfile(
+                crate::credentials::ProfileError::SourceChanged
+            ))
+        ));
+        let row = get_streamer(&pool, &model.id).await;
+        let stored: serde_json::Value =
+            serde_json::from_str(row.streamer_specific_config.as_deref().unwrap()).unwrap();
+        assert_eq!(stored["cookies"], "SESSION=replacement");
+        assert!(
+            !serde_json::to_string(&result)
+                .unwrap()
+                .contains("stale-extractor")
+        );
         monitor.stop();
     }
 }

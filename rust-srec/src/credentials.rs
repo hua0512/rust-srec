@@ -13,8 +13,15 @@
 //! Credential sources are resolved alongside recording configuration by
 //! [`crate::config::ConfigService`].
 
+mod admission;
+pub mod conversion;
 mod error;
+mod execution;
+pub mod login_sessions;
 mod manager;
+mod profile;
+mod resolution;
+mod selection;
 mod service;
 mod store;
 #[cfg(test)]
@@ -25,8 +32,30 @@ mod types;
 // Platform-specific implementations
 pub mod platforms;
 
+pub use admission::{OperationDeadline, PlatformAdmission};
 pub use error::CredentialError;
+pub use execution::{
+    CredentialExecution, CredentialExecutionService, CredentialSnapshot, Exclusions, Extracted,
+    ProfileActionResult,
+};
 pub use manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
+pub use profile::{
+    CredentialMaterial, CredentialProfile, CredentialProfileHealth, CredentialProfileSummary,
+    CredentialUnavailable, ProfileError,
+};
+pub(crate) use resolution::legacy_account_extras;
+pub(crate) use resolution::resolve_authentication;
+pub use resolution::{
+    isolate_authentication_extras, isolate_platform_authentication_extras,
+    managed_authentication_extras, merge_cookie_updates,
+};
+pub use selection::{
+    CredentialBinding, CredentialIdentity, CredentialOwner, CredentialSelection, PoolStrategy,
+    ResolvedCredentialPolicy,
+};
+pub(crate) use selection::{
+    canonical_document_text, canonical_overrides_text, canonical_selection_text,
+};
 pub use service::CredentialRefreshService;
 pub use store::CredentialStore;
 pub use tracker::{DailyCheckTracker, RefreshFailureTracker};

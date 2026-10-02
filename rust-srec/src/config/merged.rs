@@ -33,6 +33,8 @@ pub struct MergedConfig {
     // Network settings
     pub proxy_config: ProxyConfig,
     pub cookies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_policy: Option<crate::credentials::ResolvedCredentialPolicy>,
 
     // Engine settings
     pub download_engine: String,
@@ -731,6 +733,7 @@ impl MergedConfigBuilder {
             danmu_statistics,
             proxy_config: self.proxy_config.unwrap_or_default(),
             cookies: self.cookies,
+            credential_policy: None,
             download_engine,
             extractor,
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),

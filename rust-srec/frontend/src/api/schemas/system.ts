@@ -265,31 +265,79 @@ export type ExtractMetadataResponse = z.infer<
 >;
 
 // --- Parse URL Schemas ---
-export const ParseUrlRequestSchema = z.object({
-  url: z.string(),
-  cookies: z.string().optional(),
-});
+export const ParseUrlRequestSchema = z
+  .object({
+    url: z.string(),
+    cookies: z.string().optional(),
+    credential_id: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.cookies === undefined || value.credential_id === undefined,
+    { message: 'Choose a profile or raw cookies, not both' },
+  );
 export type ParseUrlRequest = z.infer<typeof ParseUrlRequestSchema>;
+
+export const ManagedPlaybackSchema = z.object({
+  handle: z.string().min(1),
+  binding: z.object({
+    identity: z.object({ kind: z.string(), profile_id: z.string().optional() }),
+    revision: z.number(),
+    epoch: z.number(),
+  }),
+  title: z.string(),
+  artist: z.string().nullable().optional(),
+  is_live: z.boolean(),
+  streams: z.array(
+    z.object({
+      id: z.string(),
+      quality: z.string(),
+      stream_format: z.string(),
+      media_format: z.string(),
+      codec: z.string().nullable().optional(),
+      bitrate: z.number().nullable().optional(),
+      fps: z.number().nullable().optional(),
+      is_audio_only: z.boolean(),
+    }),
+  ),
+});
+export const ManagedResolveRequestSchema = z
+  .object({ playback_handle: z.string().min(1), stream_id: z.string().min(1) })
+  .strict();
 
 export const ParseUrlResponseSchema = z.object({
   success: z.boolean(),
   is_live: z.boolean(),
   media_info: z.any().optional(),
+  playback: ManagedPlaybackSchema.nullable().optional(),
   error: z.string().nullable().optional(),
 });
 export type ParseUrlResponse = z.infer<typeof ParseUrlResponseSchema>;
 
 // --- Resolve URL Schemas ---
-export const ResolveUrlRequestSchema = z.object({
-  url: z.string(),
-  stream_info: z.any(),
-  cookies: z.string().optional(),
-});
+export const ResolveUrlRequestSchema = z.union([
+  ManagedResolveRequestSchema,
+  z
+    .object({
+      url: z.string(),
+      stream_info: z.any(),
+      cookies: z.string().optional(),
+    })
+    .strict(),
+]);
 export type ResolveUrlRequest = z.infer<typeof ResolveUrlRequestSchema>;
 
 export const ResolveUrlResponseSchema = z.object({
   success: z.boolean(),
   stream_info: z.any().optional(),
+  playback: z
+    .object({
+      handle: z.string(),
+      stream_id: z.string(),
+      resource_id: z.string(),
+    })
+    .nullable()
+    .optional(),
   error: z.string().nullable().optional(),
 });
 export type ResolveUrlResponse = z.infer<typeof ResolveUrlResponseSchema>;

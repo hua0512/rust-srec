@@ -46,6 +46,7 @@ use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 /// DB rows are final, so a later live observation creates a fresh row.
 #[derive(Debug, Clone)]
 pub struct StartSessionInputs {
+    pub credential_binding: Option<crate::credentials::CredentialBinding>,
     pub streamer_id: String,
     pub streamer_name: String,
     pub streamer_url: String,
@@ -144,6 +145,69 @@ pub struct SessionLifecycleRepository {
 }
 
 impl SessionLifecycleRepository {
+    pub(crate) async fn active_session_started_at(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let started: Option<i64> = sqlx::query_scalar(
+            "SELECT start_time FROM live_sessions WHERE id = ? AND end_time IS NULL",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.write_pool)
+        .await?;
+        Ok(started.and_then(DateTime::from_timestamp_millis))
+    }
+    pub(crate) async fn credential_binding_is_retiring(
+        &self,
+        session_id: &str,
+        binding: &crate::credentials::CredentialBinding,
+    ) -> Result<bool> {
+        let crate::credentials::CredentialIdentity::Profile { profile_id } = &binding.identity
+        else {
+            return Ok(false);
+        };
+        Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM live_sessions s JOIN retirement_credential_profiles r ON r.profile_id = json_extract(s.credential_binding, '$.identity.profile_id') WHERE s.id = ? AND s.end_time IS NULL AND r.profile_id = ? AND json_extract(s.credential_binding, '$.epoch') = ?)").bind(session_id).bind(profile_id).bind(binding.epoch as i64).fetch_one(&self.write_pool).await?)
+    }
+    pub(crate) async fn commit_credential_binding(
+        &self,
+        session_id: String,
+        streamer_id: String,
+        binding: crate::credentials::CredentialBinding,
+    ) -> Result<crate::credentials::CredentialBinding> {
+        if let Some(store) = self.committed_state.get() {
+            return store
+                .writer
+                .transaction(
+                    "commit recording credential binding",
+                    move |connection| {
+                        Box::pin(async move {
+                            super::credential_profiles::commit_session_binding(
+                                connection,
+                                &session_id,
+                                &streamer_id,
+                                &binding,
+                                true,
+                            )
+                            .await
+                        })
+                    },
+                    |_| {},
+                )
+                .await;
+        }
+        let mut transaction = begin_immediate(&self.write_pool).await?;
+        let binding = super::credential_profiles::commit_session_binding(
+            &mut transaction,
+            &session_id,
+            &streamer_id,
+            &binding,
+            true,
+        )
+        .await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        transaction.commit().await?;
+        Ok(binding)
+    }
     pub(crate) fn bind_committed_state(&self, state: Arc<CommittedStreamerState>) {
         self.committed_state.get_or_init(|| state);
     }
@@ -383,16 +447,46 @@ impl SessionLifecycleRepository {
                 StreamerTxOps::update_avatar_row(&mut *tx, &inputs.streamer_id, new_avatar).await?;
         }
 
+        let credential_binding = if let Some(binding) = inputs.credential_binding {
+            Some(
+                super::credential_profiles::commit_session_binding(
+                    tx,
+                    outcome.session_id(),
+                    &inputs.streamer_id,
+                    &binding,
+                    false,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        let managed = credential_binding.is_some();
         let event = MonitorEvent::StreamerLive {
+            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+            credential_binding: credential_binding.map(Box::new),
+
             streamer_id: inputs.streamer_id.clone(),
             session_id: outcome.session_id().to_string(),
             streamer_name: inputs.streamer_name.clone(),
             streamer_url: inputs.streamer_url.clone(),
             title: inputs.title.clone(),
             category: inputs.category.clone(),
-            streams: inputs.streams.clone(),
-            media_headers: inputs.media_headers.clone(),
-            media_extras: inputs.media_extras.clone(),
+            streams: if managed {
+                Vec::new()
+            } else {
+                inputs.streams.clone()
+            },
+            media_headers: if managed {
+                None
+            } else {
+                inputs.media_headers.clone()
+            },
+            media_extras: if managed {
+                None
+            } else {
+                inputs.media_extras.clone().map(Box::new)
+            },
             timestamp: inputs.now,
         };
         MonitorOutboxTxOps::enqueue_event(&mut *tx, &inputs.streamer_id, &event).await?;
@@ -989,6 +1083,8 @@ mod tests {
 
     fn start_inputs(now: DateTime<Utc>) -> StartSessionInputs {
         StartSessionInputs {
+            credential_binding: None,
+
             streamer_id: STREAMER_ID.to_string(),
             streamer_name: "Test".to_string(),
             streamer_url: format!("https://example.com/{STREAMER_ID}"),

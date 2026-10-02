@@ -134,6 +134,14 @@ impl StreamerActor {
                             }
                         }
                         Err(e) => {
+                            if e.credential_unavailable {
+                                self.state = previous_runtime_state;
+                                self.state
+                                    .schedule_next_check(&self.config, self.get_error_count());
+                                self.live_watchdog_backoff_until =
+                                    Some(Instant::now() + self.live_watchdog_error_backoff());
+                                return Ok(());
+                            }
                             warn!("StreamerActor {} failed to process status: {}", self.id, e);
                             // Revert Live state to prevent the actor from getting stuck in
                             // the watchdog path when no session/download was actually created.
@@ -171,6 +179,14 @@ impl StreamerActor {
                 Ok(())
             }
             Err(e) => {
+                if e.credential_unavailable {
+                    self.state
+                        .schedule_next_check(&self.config, self.get_error_count());
+                    self.live_watchdog_backoff_until =
+                        Some(Instant::now() + self.live_watchdog_error_backoff());
+                    debug!(streamer_id = %self.id, "Credential acquisition unavailable; keeping streamer state and error count");
+                    return Ok(());
+                }
                 if is_live_watchdog {
                     // Do not call status_checker.handle_error() and do not record an Error state:
                     // this would increment consecutive error counts, potentially set disabled_until,

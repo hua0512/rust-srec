@@ -38,7 +38,7 @@ pub enum CacheResourceType {
 }
 
 /// Cache key for identifying resources
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CacheKey {
     /// Type of resource
     pub resource_type: CacheResourceType,
@@ -46,6 +46,16 @@ pub struct CacheKey {
     pub url: String,
     /// Optional identifier for the resource
     pub identifier: Option<String>,
+}
+
+impl std::fmt::Debug for CacheKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheKey")
+            .field("resource_type", &self.resource_type)
+            .field("url", &crate::redact::redact_url_for_log(&self.url))
+            .field("identifier", &"[redacted]")
+            .finish()
+    }
 }
 
 impl CacheKey {

@@ -188,10 +188,16 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         .await
         .map_err(ApiError::from)?;
 
-    let templates = config_service
+    let mut templates = config_service
         .list_template_configs()
         .await
         .map_err(ApiError::from)?;
+    let retired_templates = state
+        .configuration_import_service
+        .retired_template_ids()
+        .await
+        .map_err(ApiError::from)?;
+    templates.retain(|template| !retired_templates.contains(&template.id));
 
     let engines = config_service
         .list_engine_configs()
@@ -244,7 +250,12 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     .await;
     let channel_exports = export_channels(&channels, notification_repo.as_ref()).await;
 
-    let export = ConfigExport {
+    let credential_profiles = state
+        .configuration_import_service
+        .export_profiles()
+        .await
+        .map_err(ApiError::from)?;
+    let mut export = ConfigExport {
         version: EXPORT_SCHEMA_VERSION.to_string(),
         exported_at: Utc::now().to_rfc3339(),
         global_config: GlobalConfigExport {
@@ -320,31 +331,45 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             .collect(),
         platforms: platforms
             .iter()
-            .map(|p| PlatformExport {
-                platform_name: p.platform_name.clone(),
-                fetch_delay_ms: p.fetch_delay_ms,
-                download_delay_ms: p.download_delay_ms,
-                cookies: p.cookies.clone(),
-                platform_specific_config: p.platform_specific_config.clone().map(parse_db_config),
-                proxy_config: p.proxy_config.clone().map(parse_db_config),
-                record_danmu: p.record_danmu,
-                danmu_statistics: p.danmu_statistics.clone(),
-                output_folder: p.output_folder.clone(),
-                output_filename_template: p.output_filename_template.clone(),
-                download_engine: p.download_engine.clone(),
-                stream_selection_config: p.stream_selection_config.clone().map(parse_db_config),
-                output_file_format: p.output_file_format.clone(),
-                min_segment_size_bytes: p.min_segment_size_bytes,
-                max_download_duration_secs: p.max_download_duration_secs,
-                max_part_size_bytes: p.max_part_size_bytes,
-                download_retry_policy: p.download_retry_policy.clone().map(parse_db_config),
-                pipeline: p.pipeline.clone().map(parse_db_config),
-                session_complete_pipeline: p.session_complete_pipeline.clone().map(parse_db_config),
-                paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
-                offline_check_count: p.offline_check_count,
-                offline_check_delay_ms: p.offline_check_delay_ms,
+            .map(|p| -> Result<PlatformExport, ApiError> {
+                Ok(PlatformExport {
+                    platform_name: p.platform_name.clone(),
+                    fetch_delay_ms: p.fetch_delay_ms,
+                    download_delay_ms: p.download_delay_ms,
+                    cookies: p.cookies.clone(),
+                    credential_selection: p
+                        .credential_selection
+                        .as_deref()
+                        .map(serde_json::from_str)
+                        .transpose()
+                        .map_err(ApiError::from)?,
+                    platform_specific_config: p
+                        .platform_specific_config
+                        .clone()
+                        .map(parse_db_config),
+                    proxy_config: p.proxy_config.clone().map(parse_db_config),
+                    record_danmu: p.record_danmu,
+                    danmu_statistics: p.danmu_statistics.clone(),
+                    output_folder: p.output_folder.clone(),
+                    output_filename_template: p.output_filename_template.clone(),
+                    download_engine: p.download_engine.clone(),
+                    stream_selection_config: p.stream_selection_config.clone().map(parse_db_config),
+                    output_file_format: p.output_file_format.clone(),
+                    min_segment_size_bytes: p.min_segment_size_bytes,
+                    max_download_duration_secs: p.max_download_duration_secs,
+                    max_part_size_bytes: p.max_part_size_bytes,
+                    download_retry_policy: p.download_retry_policy.clone().map(parse_db_config),
+                    pipeline: p.pipeline.clone().map(parse_db_config),
+                    session_complete_pipeline: p
+                        .session_complete_pipeline
+                        .clone()
+                        .map(parse_db_config),
+                    paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
+                    offline_check_count: p.offline_check_count,
+                    offline_check_delay_ms: p.offline_check_delay_ms,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, _>>()?,
         notification_channels: channel_exports,
         job_presets: job_presets
             .into_iter()
@@ -367,7 +392,10 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             })
             .collect(),
         users: user_exports,
+        credential_profiles,
     };
+    export.update_schema_version();
+    export.validate_credential_graph().map_err(ApiError::from)?;
 
     let json = serde_json::to_string_pretty(&export).map_err(ApiError::from)?;
 
@@ -413,6 +441,9 @@ pub async fn import_config(
         .map_err(|error| match error {
             crate::services::config_import::ConfigurationImportError::Validation(message) => {
                 ApiError::bad_request(message)
+            }
+            crate::services::config_import::ConfigurationImportError::Conflict(message) => {
+                ApiError::conflict(message)
             }
             crate::services::config_import::ConfigurationImportError::Database(error) => {
                 ApiError::from(error)

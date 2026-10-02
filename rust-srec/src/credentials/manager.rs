@@ -44,7 +44,7 @@ impl CredentialStatus {
 }
 
 /// Result of a successful credential refresh.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RefreshedCredentials {
     /// New cookie string (semicolon-separated key=value pairs).
     pub cookies: String,
@@ -57,7 +57,7 @@ pub struct RefreshedCredentials {
 }
 
 /// State required to perform a refresh.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RefreshState {
     /// Current cookies (may be partially expired).
     pub cookies: String,
@@ -65,6 +65,25 @@ pub struct RefreshState {
     pub refresh_token: Option<String>,
     /// Platform-specific state (e.g., additional tokens).
     pub extra: Option<serde_json::Value>,
+}
+
+impl std::fmt::Debug for RefreshedCredentials {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RefreshedCredentials")
+            .field("material", &"[redacted]")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for RefreshState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RefreshState")
+            .field("material", &"[redacted]")
+            .finish()
+    }
 }
 
 impl RefreshState {

@@ -13,6 +13,37 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it('relays only opaque managed resource identities and rejects mixed raw requests', async () => {
+  fetchMock.mockResolvedValue(new Response('segment'));
+  const response = await handleStreamProxyRequest(
+    new Request(
+      'https://app.example/stream-proxy?playback_handle=opaque&resource_id=segment',
+    ),
+  );
+  expect(response.status).toBe(200);
+  const backend = new URL(fetchMock.mock.calls[0][0] as string);
+  expect(backend.searchParams.get('playback_handle')).toBe('opaque');
+  expect(backend.searchParams.get('resource_id')).toBe('segment');
+  expect(backend.searchParams.has('url')).toBe(false);
+  expect(backend.searchParams.has('headers')).toBe(false);
+  expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  fetchMock.mockClear();
+  for (const extra of [
+    'url=https://evil.invalid',
+    'headers={}',
+    'cookies=secret',
+    'source_url=https://evil.invalid',
+  ]) {
+    const rejected = await handleStreamProxyRequest(
+      new Request(
+        `https://app.example/stream-proxy?playback_handle=opaque&resource_id=segment&${extra}`,
+      ),
+    );
+    expect(rejected.status).toBe(400);
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 it('requires a web session before contacting the backend', async () => {
   ensureValidTokenMock.mockResolvedValue(null);
   const response = await handleStreamProxyRequest(

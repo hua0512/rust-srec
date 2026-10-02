@@ -5,6 +5,10 @@ use thiserror::Error;
 /// Errors that can occur during credential operations.
 #[derive(Debug, Error)]
 pub enum CredentialError {
+    #[error(
+        "Credential operation deadline exceeded while waiting for platform admission or provider work"
+    )]
+    DeadlineExceeded,
     /// Missing required cookie.
     #[error("Missing required cookie: {0}")]
     MissingCookie(&'static str),
@@ -51,7 +55,9 @@ pub enum CredentialError {
 
     /// Rate limited - try again later.
     #[error("Rate limited - try again later")]
-    RateLimited,
+    RateLimited {
+        retry_after: Option<std::time::Duration>,
+    },
 
     /// No credentials configured.
     #[error("No credentials configured for this scope")]
@@ -83,8 +89,23 @@ impl CredentialError {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            Self::Network(_) | Self::RateLimited | Self::ParseError(_) | Self::SourceChanged
+            Self::Network(_)
+                | Self::RateLimited { .. }
+                | Self::ParseError(_)
+                | Self::SourceChanged
+                | Self::DeadlineExceeded
         )
+    }
+}
+
+impl From<platforms_parser::extractor::error::ExtractorError> for CredentialError {
+    fn from(error: platforms_parser::extractor::error::ExtractorError) -> Self {
+        use platforms_parser::extractor::error::ExtractorError;
+        match error {
+            ExtractorError::RateLimited { retry_after, .. } => Self::RateLimited { retry_after },
+            ExtractorError::HttpError(error) => Self::Network(error.without_url()),
+            _ => Self::RefreshFailed("Credential provider request failed".into()),
+        }
     }
 }
 

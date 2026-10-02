@@ -30,6 +30,65 @@
       "user_id"
     ]
   },
+  "credential_login_sessions": {
+    "required_epoch_ms": [
+      "created_at",
+      "expires_at"
+    ],
+    "nullable_epoch_ms": [
+      "completed_at"
+    ],
+    "non_timestamp_columns": [
+      "id",
+      "principal",
+      "platform_config_id",
+      "target",
+      "provider_auth_code",
+      "state",
+      "result_profile_id",
+      "result_version"
+    ]
+  },
+  "credential_profile_health": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [
+      "last_check_at",
+      "last_refresh_at",
+      "cooldown_until",
+      "last_failure_at"
+    ],
+    "non_timestamp_columns": [
+      "profile_id",
+      "revision",
+      "validity",
+      "throttle_count",
+      "refresh_failure_count",
+      "last_notified_failure_count",
+      "reason_code"
+    ]
+  },
+  "credential_profiles": {
+    "required_epoch_ms": [
+      "created_at",
+      "updated_at"
+    ],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "id",
+      "platform_config_id",
+      "owner_kind",
+      "template_id",
+      "streamer_id",
+      "label",
+      "enabled",
+      "cookies",
+      "refresh_token",
+      "access_token",
+      "reauth_config",
+      "revision",
+      "version"
+    ]
+  },
   "dag_execution": {
     "required_epoch_ms": [
       "created_at",
@@ -246,7 +305,8 @@
       "titles",
       "danmu_statistics_id",
       "total_size_bytes",
-      "session_complete_dispatched"
+      "session_complete_dispatched",
+      "credential_binding"
     ]
   },
   "media_outputs": {
@@ -367,7 +427,8 @@
       "offline_check_count",
       "offline_check_delay_ms",
       "extractor",
-      "danmu_statistics"
+      "danmu_statistics",
+      "credential_selection"
     ]
   },
   "refresh_tokens": {
@@ -392,6 +453,13 @@
     "non_timestamp_columns": [
       "kind",
       "config_id"
+    ]
+  },
+  "retirement_credential_profiles": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "profile_id"
     ]
   },
   "session_events": {

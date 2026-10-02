@@ -33,6 +33,30 @@ This library provides a unified interface to extract streaming media information
 
 ## Usage
 
+### Extractor error compatibility
+
+`ExtractorError` now includes `Authentication { code }` and
+`RateLimited { scope, code, retry_after }`. Downstream exhaustive matches must
+handle these new variants. Both `extract` and `get_url` can return them; preserve
+the variants when wrapping errors. Only an explicit account authentication
+failure or `ThrottleScope::Account` is evidence for account recovery. A generic
+HTTP 401/403, age restriction, or unknown throttle scope does not establish that
+an account is invalid. SOOP login-required and Bilibili login-expired response
+codes retain typed evidence; ambiguous platform failures remain ordinary errors.
+
+Use `category()` for logs that must not include upstream bodies or signed URLs.
+`retry_after` can exceed a caller's default backoff cap and should be honored.
+
+`ExtractorError::check_response` also exposes this HTTP classification to provider
+adapters. Bilibili `QrLoginError` and `TokenRefreshError` include a `Response`
+variant carrying it; exhaustive matches must handle that variant. QR, token and
+cookie validation retain HTTP 429 and its retry delay before decoding the body.
+
+Bilibili `QrGenerateResponse` now also has an optional `expires_in` field (seconds)
+with a deserialization default for providers that omit it. Callers constructing
+this struct must supply the field. QR response `Debug` output redacts login
+material; retain provider expiry when storing a login-session deadline.
+
 Add `platforms-parser` and `reqwest` to your `Cargo.toml` dependencies.
 
 ```rust
@@ -92,3 +116,8 @@ This project is licensed under either of the following, at your option:
 
 * MIT License
 * Apache License, Version 2.0
+
+Extraction diagnostics now log response sizes, counts and safe error categories
+instead of authentication-bearing bodies, signed URLs, request builders or cookie
+values. `Extractor`'s `Debug` view reports the platform and field counts while
+redacting network material; its request/response cookie behavior is unchanged.

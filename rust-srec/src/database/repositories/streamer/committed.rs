@@ -58,6 +58,14 @@ async fn write_with_publication(
             };
         }
         let deleted = matches!(mutation, Mutation::DeleteMarked);
+        let changes_configuration = matches!(mutation, Mutation::Insert(_) | Mutation::Update(_) | Mutation::Patch(_));
+        let mut mutation = mutation;
+        if let Mutation::Update(ref mut model) = mutation
+            && let Some(current) = row!("SELECT * FROM streamers WHERE id = ?")
+        {
+            crate::database::repositories::credential_profiles::preserve_streamer_policy(&current, model)?;
+            crate::database::repositories::credential_profiles::guard_streamer_legacy(&current, model)?;
+        }
         let row = match mutation {
             Mutation::Insert(model) => super::writes::write_streamer(connection, &model, WriteMode::Insert, model.updated_at).await.map_err(|error| translate(error, &model.url))?,
             Mutation::Update(model) => super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| translate(error, &model.url))?,
@@ -74,6 +82,10 @@ async fn write_with_publication(
             Mutation::Avatar(avatar) => row!("UPDATE streamers SET avatar = ? WHERE id = ? RETURNING *", avatar),
             Mutation::MarkDeleted(time) => row!("UPDATE streamers SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING *", time),
             Mutation::DeleteMarked => {
+                let retiring: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM streamers WHERE id = ? AND deleted_at IS NOT NULL)").bind(&id).fetch_one(&mut *connection).await?;
+                if retiring {
+                    crate::database::repositories::credential_profiles::delete_owner_profiles(connection, &crate::credentials::CredentialOwner::Streamer { streamer_id: id.clone() }).await?;
+                }
                 let row = row!("DELETE FROM streamers WHERE id = ? AND deleted_at IS NOT NULL RETURNING *");
                 crate::database::repositories::config_retirement::reap(connection).await?;
                 row
@@ -84,10 +96,14 @@ async fn write_with_publication(
             Mutation::Success(None) => row!("UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ? RETURNING *"),
             Mutation::Patch(patch) => {
                 let mut model = sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?").bind(&id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("Streamer", &id))?;
+                let current = model.clone();
                 apply_patch(&mut model, patch);
+                crate::database::repositories::credential_profiles::preserve_streamer_policy(&current, &mut model)?;
+                crate::database::repositories::credential_profiles::guard_streamer_legacy(&current, &model)?;
                 super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| translate(error, &model.url))?
             }
         };
+        if changes_configuration { crate::database::repositories::credential_profiles::validate_graph(connection).await?; }
         let mut change = StateChange::row(row.clone(), if deleted { None } else { row.clone() });
         if deleted && row.is_some() { change.removed.push(id); }
         Ok(change)

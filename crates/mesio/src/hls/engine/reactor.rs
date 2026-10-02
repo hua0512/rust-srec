@@ -31,7 +31,6 @@ use super::watcher::{PlaylistSnapshot, TerminalCause};
 /// Why the reactor stopped. Reported to the runtime for logging; the
 /// consumer-visible effect (StreamEnded / nothing / `Err`) is delivered
 /// through the assembler channel before this returns.
-#[derive(Debug)]
 pub enum Terminal {
     /// ENDLIST drained: every known segment completed, terminalized, or was
     /// skipped, and `AssemblerInput::End` was forwarded.
@@ -43,6 +42,17 @@ pub enum Terminal {
     /// Watcher failure, task panic, or other pipeline error. The error itself
     /// was forwarded as `AssemblerInput::Fatal`.
     PipelineError(Arc<str>),
+}
+
+impl std::fmt::Debug for Terminal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::AuthoritativeEnd => "AuthoritativeEnd",
+            Self::Cancelled => "Cancelled",
+            Self::DownstreamClosed => "DownstreamClosed",
+            Self::PipelineError(_) => "PipelineError([redacted])",
+        })
+    }
 }
 
 pub struct ReactorConfig {
@@ -245,7 +255,7 @@ pub async fn run_reactor(
             warn!("assembler channel closed; reactor stopping with error");
         }
         Terminal::PipelineError(reason) => {
-            warn!(%reason, "reactor stopping on pipeline error");
+            warn!(reason = %crate::redact::redact_diagnostic(reason), "reactor stopping on pipeline error");
         }
     }
 
@@ -272,6 +282,15 @@ fn process_snapshot(
     ending: &mut bool,
 ) -> Option<HlsDownloaderError> {
     match &snapshot.terminal {
+        Some(TerminalCause::HttpFailure {
+            status,
+            url,
+            operation,
+        }) => Some(HlsDownloaderError::HttpStatus {
+            status: *status,
+            url: url.to_string(),
+            operation,
+        }),
         Some(TerminalCause::Failed(reason)) => Some(HlsDownloaderError::Playlist {
             reason: format!("playlist refresh failed: {reason}"),
         }),

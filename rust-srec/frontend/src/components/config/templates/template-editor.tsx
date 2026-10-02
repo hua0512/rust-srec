@@ -284,7 +284,9 @@ export function TemplateEditor({
                   </span>
                 ),
                 icon: Settings,
-                content: <PlatformOverridesTab form={form} />,
+                content: (
+                  <PlatformOverridesTab form={form} templateId={template?.id} />
+                ),
               },
             ]}
             defaultTab="general"

@@ -1,10 +1,43 @@
 import {
   extractStreams,
+  renewalNeedsNewParse,
   selectRefreshedStream,
   selectStreamLevel,
   streamLevelOptions,
 } from '../stream-source';
 import { classifyPlaybackError } from '../playback-state';
+
+it('maps managed display sources to opaque resolve requests without upstream material', () => {
+  const result = extractStreams({
+    handle: 'opaque',
+    binding: {
+      identity: { kind: 'profile', profile_id: 'a' },
+      revision: 1,
+      epoch: 1,
+    },
+    title: 'Live',
+    artist: 'Creator',
+    is_live: true,
+    streams: [
+      {
+        id: 'stream-a',
+        quality: '1080p',
+        stream_format: 'hls',
+        media_format: 'ts',
+        is_audio_only: false,
+        url: 'https://cdn.invalid/private?secret=sentinel',
+        headers: { Cookie: 'sentinel' },
+      },
+    ],
+  });
+  expect(result).toHaveLength(1);
+  expect(result[0].data).toEqual({
+    playback_handle: 'opaque',
+    stream_id: 'stream-a',
+  });
+  expect(result[0].headers).toBeUndefined();
+  expect(JSON.stringify(result)).not.toContain('sentinel');
+});
 
 describe('stream selection across refreshes', () => {
   const hls = {
@@ -143,4 +176,22 @@ describe('actionable playback errors', () => {
       expect(classifyPlaybackError(type, status, proxy)).toBe(expected);
     },
   );
+});
+
+it('falls back to a new parse only when the bound playback cannot be renewed', () => {
+  const failure = (status: number, code: string) =>
+    Object.assign(new Error(code), { status, body: { code } });
+  expect(renewalNeedsNewParse(failure(410, 'PLAYBACK_CONTEXT_EXPIRED'))).toBe(
+    true,
+  );
+  expect(renewalNeedsNewParse(failure(409, 'PLAYBACK_RENEWAL_REQUIRED'))).toBe(
+    true,
+  );
+  expect(renewalNeedsNewParse(failure(503, 'CREDENTIAL_UNAVAILABLE'))).toBe(
+    true,
+  );
+  expect(renewalNeedsNewParse(failure(403, 'PLAYBACK_CONTEXT_FORBIDDEN'))).toBe(
+    false,
+  );
+  expect(renewalNeedsNewParse(new Error('network'))).toBe(false);
 });

@@ -61,7 +61,7 @@ version. New integrations must use `offline_check_count` and `offline_check_dela
 
 ### Cookies: "present wins" (including empty strings) {#cookies-present-wins-including-empty-strings}
 
-Cookies are treated as a single optional string. If a higher layer provides `cookies`, it
+For unconverted legacy scopes, cookies are treated as a single optional string. If a higher layer provides `cookies`, it
 overrides lower layers.
 
 ::: tip Cookies best practice
@@ -127,7 +127,7 @@ carries credentials.
 
 ## Credentials (`cookies` + `refresh_token`) are resolved separately {#credentials-cookies-refresh-token-are-resolved-separately}
 
-The runtime derives a `credential_source` (a sidecar on `ResolvedStreamerContext`) for
+For unconverted legacy scopes, the runtime derives a `credential_source` (a sidecar on `ResolvedStreamerContext`) for
 authentication and refresh-token handling. It is intentionally not part of `MergedConfig` and
 must not be exposed via serialized config APIs.
 
@@ -241,3 +241,35 @@ selected engine ID. If so, it:
 `engines_override` removes a key when the override sets it to `null`, whereas `platform_extras`
 ignores `null` in the overlay.
 :::
+
+## Credential selection JSON
+
+Managed selection is stored at `platform_config.credential_selection`,
+`template_config.platform_overrides[canonical_platform_name].credential_selection`,
+or `streamer_specific_config.credential_selection`. Platform names are case-sensitive here;
+use the exact name returned by platform configuration. Omitted update fields keep the stored
+policy, whereas `{ "mode": "inherit" }` explicitly skips the local legacy source. This holds for
+platform, template and streamer saves alike: a template override or streamer document without
+`credential_selection` keeps the stored selection.
+
+```json
+{
+  "credential_selection": {
+    "mode": "pool",
+    "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
+    "strategy": "round_robin",
+    "failover": true,
+    "max_attempts": 3
+  }
+}
+```
+
+Other policies are `{ "mode": "none" }`, `{ "mode": "inherit" }`, and
+`{ "mode": "fixed", "credential_id": "profile-uuid-a" }`. Pools accept `round_robin`
+or `priority`, require a nonempty unique ordered ID list, and accept 1–10 total attempts.
+Omitted `strategy`, `failover` and `max_attempts` default to `round_robin`, `true` and `3`.
+A one-member pool is valid. Unknown modes/fields, inaccessible owners, wrong platforms and
+missing profile IDs are rejected. Disabled profiles may remain referenced, but are unavailable
+at execution time. A change that would leave a stored selection unable to use its profiles, such
+as moving a streamer to a template whose profiles it selects no longer, fails with HTTP 409
+`CREDENTIAL_REFERENCE_INACCESSIBLE` and lists the referring configurations. See [selection and inheritance](../concepts/configuration.md#account-profiles-and-selection).

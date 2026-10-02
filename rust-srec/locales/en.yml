@@ -135,6 +135,17 @@ notification:
 
   # ============ Credential events ============
   credential:
+    scope_with_account: "%{scope}, account %{account}"
+    unavailable:
+      title: "🔐 %{platform} credentials unavailable (%{scope})"
+      message: "Credential selection is waiting for an eligible account. Scope: %{scope}. Reason: %{reason}. Retry time: %{retry_at}."
+      reason:
+        cooling_down: "every account is cooling down after being throttled"
+        login_required: "every usable account needs a new login"
+        profiles_disabled: "every selected account is disabled"
+        bound_profile_unavailable: "the account pinned to the recording is unavailable"
+        binding_policy_changed: "the account selection changed during the recording"
+        attempts_exhausted: "every attempt allowed for this check failed"
     refreshed:
       title: "🔐 %{platform} credentials refreshed (%{scope})"
       message: "✅ %{platform} credentials refreshed successfully (%{scope})"

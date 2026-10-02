@@ -8,9 +8,7 @@ use platforms_parser::extractor::factory::ExtractorSelection;
 use tracing::{debug, warn};
 
 use crate::Error;
-use crate::credentials::{
-    CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
-};
+use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
@@ -165,7 +163,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             .config_repo
             .get_platform_config(&streamer.platform_config_id)
             .await?;
-        let platform_name = platform_config.platform_name.clone();
         let platform_proxy: Option<ProxyConfig> = json::parse_optional(
             platform_config.proxy_config.as_deref(),
             JsonContext::StreamerConfig {
@@ -207,14 +204,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
-        let platform_refresh_token = platform_specific.as_ref().and_then(|v| {
-            v.get("refresh_token")
-                .and_then(|t| t.as_str())
-                .map(String::from)
-        });
-        // Capture re-login material before stripping credential fields for extractors.
-        let reauth_extra =
-            platform_reauth_extra(&platform_config.platform_name, platform_specific.as_ref());
         // `platform_specific_config` can also contain credential metadata (e.g. refresh_token),
         // but extractor `platform_extras` must not carry credentials.
         let platform_extras = platform_specific.map(extractor_platform_extras);
@@ -284,33 +273,11 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             offline_check_delay_ms: platform_config.offline_check_delay_ms,
         });
 
-        let mut credential_source: Option<CredentialSource> = streamer
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|config| config.get("cookies").and_then(|v| v.as_str()))
-            .map(str::to_string)
-            .filter(|cookies| !cookies.trim().is_empty())
-            .map(|cookies| {
-                let refresh_token = streamer
-                    .streamer_specific_config
-                    .as_ref()
-                    .and_then(|config| config.get("refresh_token").and_then(|v| v.as_str()))
-                    .map(String::from);
-
-                CredentialSource::new(
-                    CredentialScope::Streamer {
-                        streamer_id: streamer.id.clone(),
-                        streamer_name: streamer.name.clone(),
-                    },
-                    cookies,
-                    refresh_token,
-                    platform_name.clone(),
-                )
-            });
-
         // Layer 3: Template config (if assigned)
+        let mut authentication_template = None;
         if let Some(ref template_id) = streamer.template_config_id {
             let template_config = self.config_repo.get_template_config(template_id).await?;
+            authentication_template = Some(template_config.clone());
 
             // Parse JSON fields
             let template_proxy: Option<ProxyConfig> = json::parse_optional(
@@ -367,13 +334,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             );
-            let template_refresh_token = template_platform_overrides
-                .as_ref()
-                .and_then(|map| map.get(&platform_name))
-                .and_then(|entry| entry.get("refresh_token"))
-                .and_then(|t| t.as_str())
-                .map(String::from);
-
             let mut tpl_po_pipeline: Option<DagPipelineDefinition> = None;
             let mut tpl_po_session_complete: Option<DagPipelineDefinition> = None;
             let mut tpl_po_paired_segment: Option<DagPipelineDefinition> = None;
@@ -402,25 +362,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                     extractor_platform_extras(entry)
                 });
 
-            let template_credential_candidate = if credential_source.is_none() {
-                if let Some(cookies) = template_config.cookies.as_ref()
-                    && !cookies.trim().is_empty()
-                {
-                    Some(CredentialSource::new(
-                        CredentialScope::Template {
-                            template_id: template_id.clone(),
-                            template_name: template_config.name.clone(),
-                        },
-                        cookies.clone(),
-                        template_refresh_token,
-                        platform_name.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
             let template_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
                 template_config.pipeline.as_deref(),
                 JsonContext::StreamerConfig {
@@ -498,50 +439,61 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             if let Some(pipe) = tpl_po_paired_segment {
                 builder = builder.override_paired_segment_pipeline(pipe);
             }
-
-            if credential_source.is_none() {
-                credential_source = template_credential_candidate;
-            }
-        }
-
-        if credential_source.is_none()
-            && let Some(cookies) = platform_config.cookies.as_ref()
-            && !cookies.trim().is_empty()
-        {
-            credential_source = Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: streamer.platform_config_id.clone(),
-                    platform_name: platform_name.clone(),
-                },
-                cookies.clone(),
-                platform_refresh_token,
-                platform_name.clone(),
-            ));
-        }
-
-        // SOOP: username/password without cookies still produce a credential
-        // source so the manager can mint and persist session cookies.
-        if credential_source.is_none() && reauth_extra.is_some() {
-            credential_source = Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: streamer.platform_config_id.clone(),
-                    platform_name: platform_name.clone(),
-                },
-                String::new(),
-                None,
-                platform_name.clone(),
-            ));
-        }
-        if let Some(source) = credential_source.as_mut() {
-            source.reauth_extra = reauth_extra;
         }
 
         // Layer 4: Streamer-specific config
         builder = builder.with_streamer(streamer.streamer_specific_config.as_ref());
 
+        let authentication = crate::credentials::resolve_authentication(
+            streamer,
+            &platform_config,
+            authentication_template.as_ref(),
+        )?;
+        let mut config = builder.build();
+        config.cookies = authentication.cookies;
+        config.credential_policy = authentication.policy;
+        if authentication.isolated {
+            config.platform_extras = config.platform_extras.map(|extras| {
+                crate::credentials::isolate_platform_authentication_extras(
+                    &platform_config.platform_name,
+                    extras,
+                )
+            });
+            if config.credential_policy.is_none() {
+                let legacy_auth = crate::credentials::legacy_account_extras(
+                    streamer,
+                    &platform_config,
+                    authentication_template.as_ref(),
+                );
+                if let Some(authentication) =
+                    legacy_auth.as_object().filter(|fields| !fields.is_empty())
+                {
+                    let extras = config
+                        .platform_extras
+                        .get_or_insert_with(|| serde_json::json!({}));
+                    if let Some(fields) = extras.as_object_mut() {
+                        fields.extend(authentication.clone());
+                    }
+                }
+            }
+            if config.credential_policy.is_none()
+                && let Some(reauth) = authentication
+                    .source
+                    .as_ref()
+                    .and_then(|source| source.reauth_extra.as_ref())
+                    .and_then(serde_json::Value::as_object)
+            {
+                let extras = config
+                    .platform_extras
+                    .get_or_insert_with(|| serde_json::json!({}));
+                if let Some(fields) = extras.as_object_mut() {
+                    fields.extend(reauth.clone());
+                }
+            }
+        }
         Ok(ResolvedStreamerContext {
-            config: Arc::new(builder.build()),
-            credential_source,
+            config: Arc::new(config),
+            credential_source: authentication.source,
         })
     }
 }

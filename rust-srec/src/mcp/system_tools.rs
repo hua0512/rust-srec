@@ -74,9 +74,24 @@ impl SrecMcpServer {
         self.require_full_access(&context)?;
         let state = ParseRouteState::from_ref(&self.app_state);
         let request = ParseUrlRequest {
+            credential_id: None,
             url: params.url,
             cookies: params.cookies,
         };
-        tool_json(parse::parse_url(State(state), Json(request)).await)
+        let identity = context
+            .extensions
+            .get::<axum::http::request::Parts>()
+            .and_then(|parts| {
+                parts
+                    .extensions
+                    .get::<crate::api::auth_service::AuthPrincipal>()
+            })
+            .cloned()
+            .map(axum::Extension);
+        tool_json(
+            parse::parse_url(State(state), identity, Json(request))
+                .await
+                .map(|(_, json)| json),
+        )
     }
 }

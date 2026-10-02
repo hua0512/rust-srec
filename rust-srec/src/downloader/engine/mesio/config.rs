@@ -430,6 +430,8 @@ mod tests {
 
     fn create_test_download_config() -> DownloadConfig {
         DownloadConfig {
+            managed_credentials: false,
+            credential_binding: None,
             url: "https://example.com/stream.m3u8".to_string(),
             output_dir: PathBuf::from("/tmp/downloads"),
             filename_template: "test-stream".to_string(),

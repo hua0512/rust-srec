@@ -43,7 +43,7 @@ use tracing::debug;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Extractor {
     // url to extract from, e.g., "https://www.huya.com/123456"
     pub url: String,
@@ -57,6 +57,18 @@ pub struct Extractor {
     /// Cookie storage for the extractor. Each extractor instance maintains
     /// its own cookies for platform-specific session management.
     pub cookies: FxHashMap<String, String>,
+}
+
+impl std::fmt::Debug for Extractor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Extractor")
+            .field("platform_name", &self.platform_name)
+            .field("header_count", &self.platform_headers.len())
+            .field("parameter_count", &self.platform_params.len())
+            .field("cookie_count", &self.cookies.len())
+            .field("network_material", &"[redacted]")
+            .finish()
+    }
 }
 
 impl Extractor {
@@ -368,7 +380,7 @@ impl Extractor {
                 if name.is_empty() || value.is_empty() {
                     continue;
                 }
-                debug!("Auto-storing cookie: {}={}", name, value);
+                debug!("Storing response cookie");
                 self.cookies.insert(name.to_owned(), value.to_owned());
             }
         }
@@ -404,8 +416,12 @@ impl Extractor {
             && let Some(cookie_header) = self.build_cookie_header()
         {
             match reqwest::header::HeaderValue::from_str(&cookie_header) {
-                Ok(value) => {
-                    debug!("Adding cookies to request: {:?}", value);
+                Ok(mut value) => {
+                    value.set_sensitive(true);
+                    debug!(
+                        cookie_count = self.cookies.len(),
+                        "Adding stored cookies to request"
+                    );
                     headers.insert(reqwest::header::COOKIE, value);
                 }
                 Err(e) => {
@@ -459,5 +475,75 @@ pub trait PlatformExtractor: Send + Sync {
     async fn get_url(&self, _stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         // Default implementation, can be overridden by specific extractors
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_privacy_tests {
+    use super::*;
+
+    #[test]
+    fn cookie_request_and_response_logs_hide_material_without_changing_requests() {
+        #[derive(Clone, Default)]
+        struct Capture(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Capture {
+            type Writer = Self;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+        let capture = Capture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(capture.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let mut extractor = Extractor::new(
+            "test",
+            "https://cdn.invalid/path-sentinel?signature=query-sentinel",
+            crate::extractor::default::default_client(),
+        );
+        extractor.add_header_typed(reqwest::header::AUTHORIZATION, "Bearer auth-sentinel");
+        extractor.add_cookie("session", "cookie-sentinel");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::SET_COOKIE,
+            HeaderValue::from_static("new-session=response-cookie-sentinel; HttpOnly"),
+        );
+        extractor.parse_and_store_cookies(&headers);
+        let request = extractor.get(&extractor.url).build().unwrap();
+        assert!(
+            request.headers()[reqwest::header::COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("cookie-sentinel")
+        );
+        assert!(
+            request.headers()[reqwest::header::COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("response-cookie-sentinel")
+        );
+        assert_eq!(
+            request.headers()[reqwest::header::AUTHORIZATION],
+            "Bearer auth-sentinel"
+        );
+        let rendered = format!(
+            "{} {extractor:?}",
+            String::from_utf8_lossy(&capture.0.lock())
+        );
+        assert!(rendered.contains("Storing response cookie"));
+        assert!(rendered.contains("Adding stored cookies to request"));
+        assert!(!rendered.contains("sentinel"), "{rendered}");
     }
 }

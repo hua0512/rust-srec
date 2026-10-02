@@ -108,6 +108,12 @@ impl ServiceContainer {
             logging_download_tokens: Arc::new(DashMap::new()),
             logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
             credential_service: self.credential_service.clone(),
+            platform_admission: self.platform_admission.clone(),
+            credential_profiles: self.credential_profiles.clone(),
+            credential_execution: self.credential_execution.clone(),
+            playback_contexts: self.playback_contexts.clone(),
+            credential_conversion: self.credential_conversion.clone(),
+            credential_login_sessions: self.credential_login_sessions.clone(),
             configuration_import_service: self.configuration_import_service.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
         };

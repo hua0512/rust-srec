@@ -209,6 +209,16 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         ],
     },
     NotificationEventTypeInfo {
+        event_type: "credential_unavailable",
+        label: "Credentials Unavailable",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "credential_unavailable",
+            "credential.unavailable",
+            "CredentialUnavailable",
+        ],
+    },
+    NotificationEventTypeInfo {
         event_type: "credential_expiring",
         label: "Credential Expiring Soon",
         priority: NotificationPriority::Normal,

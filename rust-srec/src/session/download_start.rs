@@ -44,8 +44,9 @@ use platforms_parser::media::StreamInfo;
 /// `platforms_parser` doesn't implement them and we don't want to
 /// constrain the upstream crate's contract for a sidecar that doesn't
 /// need value comparison.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DownloadStartPayload {
+    pub credential_binding: Option<crate::credentials::CredentialBinding>,
     /// Streamer URL — feeds the engine config + audit log.
     pub streamer_url: String,
     /// Available stream candidates from the platform's status check.
@@ -57,4 +58,40 @@ pub struct DownloadStartPayload {
     /// Optional platform-specific extras (e.g. Douyu `tt`/`vrid`,
     /// Bilibili `ksy_play_url_seq` overrides).
     pub media_extras: Option<HashMap<String, String>>,
+}
+
+impl std::fmt::Debug for DownloadStartPayload {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DownloadStartPayload")
+            .field("credential_binding", &self.credential_binding)
+            .field("stream_count", &self.streams.len())
+            .field("network_material", &"[redacted]")
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_never_exposes_snapshot_headers_extras_or_signed_urls() {
+        let payload = DownloadStartPayload {
+            credential_binding: None,
+            streamer_url: "https://example.test/?signed=secret-sentinel".into(),
+            streams: Vec::new(),
+            media_headers: Some(HashMap::from([(
+                "Cookie".into(),
+                "cookie=secret-sentinel".into(),
+            )])),
+            media_extras: Some(HashMap::from([(
+                "session_cookies".into(),
+                "secret-sentinel".into(),
+            )])),
+        };
+        let rendered = format!("{payload:?}");
+        assert!(!rendered.contains("secret-sentinel"));
+        assert!(rendered.contains("[redacted]"));
+    }
 }

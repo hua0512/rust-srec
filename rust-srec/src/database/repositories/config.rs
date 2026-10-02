@@ -1,5 +1,6 @@
 //! Configuration repository.
 
+mod cloning;
 mod writes;
 pub(crate) use writes::{
     delete_engine, import_engine, import_global, import_platform, import_template,
@@ -7,6 +8,7 @@ pub(crate) use writes::{
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use std::sync::{Arc, OnceLock};
 
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays,
@@ -53,6 +55,11 @@ pub trait ConfigRepository: Send + Sync {
     async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel>;
     async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>>;
     async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
+    async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel>;
     async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
     async fn delete_template_config(&self, id: &str) -> Result<()>;
 
@@ -68,16 +75,197 @@ pub trait ConfigRepository: Send + Sync {
 pub struct SqlxConfigRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
+    writer: Arc<crate::database::CommittedWriter>,
+    publication: OnceLock<Arc<dyn Fn(crate::credentials::CredentialOwner) + Send + Sync>>,
 }
 
 impl SqlxConfigRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+        let writer = Arc::new(crate::database::CommittedWriter::for_invalidation(
+            write_pool.clone(),
+            Arc::new(crate::utils::task_supervisor::TaskSupervisor::for_committed_work()),
+        ));
+        Self {
+            pool,
+            write_pool,
+            writer,
+            publication: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn with_committed_writer(
+        mut self,
+        writer: Arc<crate::database::CommittedWriter>,
+    ) -> Self {
+        self.writer = writer;
+        self
+    }
+
+    pub(crate) fn bind_publication(
+        &self,
+        publication: Arc<dyn Fn(crate::credentials::CredentialOwner) + Send + Sync>,
+    ) {
+        self.publication.get_or_init(|| publication);
+    }
+
+    async fn write_platform_owned(
+        &self,
+        config: &PlatformConfigDbModel,
+        create: bool,
+    ) -> Result<()> {
+        let model = config.clone();
+        let owner = crate::credentials::CredentialOwner::Platform {
+            platform_id: model.id.clone(),
+        };
+        let publication = self.publication.get().cloned();
+        self.writer
+            .transaction(
+                "write platform configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        // Update never creates: a missing platform is a zero-row update.
+                        if !create
+                            && let Some(current) = sqlx::query_as::<_, PlatformConfigDbModel>(
+                                "SELECT * FROM platform_config WHERE id = ?",
+                            )
+                            .bind(&model.id)
+                            .fetch_optional(&mut *connection)
+                            .await?
+                        {
+                            super::credential_profiles::guard_platform_legacy(&current, &model)?;
+                        }
+                        writes::write_platform(
+                            connection,
+                            &model,
+                            if create {
+                                super::row_write::WriteMode::Insert
+                            } else {
+                                super::row_write::WriteMode::Update
+                            },
+                        )
+                        .await?;
+                        super::credential_profiles::validate_graph(connection).await
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(owner);
+                    }
+                },
+            )
+            .await
+    }
+
+    /// Removes the owner with its own profiles in one transaction. Publication
+    /// runs after commit even if the caller is cancelled, so caches and the
+    /// runtime never keep the deleted owner or its profiles.
+    async fn delete_owned(&self, owner: crate::credentials::CredentialOwner) -> Result<()> {
+        let publication = self.publication.get().cloned();
+        let published = owner.clone();
+        self.writer
+            .transaction(
+                "delete configuration owner",
+                move |connection| {
+                    Box::pin(async move {
+                        super::credential_profiles::delete_owner_profiles(connection, &owner)
+                            .await?;
+                        let query = match owner {
+                            crate::credentials::CredentialOwner::Platform { .. } => {
+                                "DELETE FROM platform_config WHERE id = ?"
+                            }
+                            crate::credentials::CredentialOwner::Template { .. } => {
+                                "DELETE FROM template_config WHERE id = ?"
+                            }
+                            crate::credentials::CredentialOwner::Streamer { .. } => {
+                                return Err(Error::validation(
+                                    "streamers are removed through their retirement",
+                                ));
+                            }
+                        };
+                        sqlx::query(query)
+                            .bind(owner.id())
+                            .execute(&mut *connection)
+                            .await?;
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(published);
+                    }
+                },
+            )
+            .await
+    }
+
+    async fn write_template_owned(
+        &self,
+        config: &TemplateConfigDbModel,
+        create: bool,
+    ) -> Result<()> {
+        let model = config.clone();
+        let owner = crate::credentials::CredentialOwner::Template {
+            template_id: model.id.clone(),
+        };
+        let publication = self.publication.get().cloned();
+        self.writer
+            .transaction(
+                "write template configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        let mut model = model;
+                        // Update never creates: a missing template is a zero-row update.
+                        if !create
+                            && let Some(current) = sqlx::query_as::<_, TemplateConfigDbModel>(
+                                "SELECT * FROM template_config WHERE id = ?",
+                            )
+                            .bind(&model.id)
+                            .fetch_optional(&mut *connection)
+                            .await?
+                        {
+                            super::credential_profiles::preserve_template_policies(
+                                &current, &mut model,
+                            )?;
+                            super::credential_profiles::guard_template_legacy_in(
+                                connection, &current, &model,
+                            )
+                            .await?;
+                        }
+                        let (mode, updated_at) = if create {
+                            (
+                                super::row_write::WriteMode::Insert,
+                                model.updated_at.timestamp_millis(),
+                            )
+                        } else {
+                            (
+                                super::row_write::WriteMode::Update,
+                                crate::database::time::now_ms(),
+                            )
+                        };
+                        writes::write_template(connection, &model, mode, updated_at).await?;
+                        super::credential_profiles::validate_graph(connection).await
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(owner);
+                    }
+                },
+            )
+            .await
     }
 }
 
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
+    async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel> {
+        self.clone_template_owned(source_id, new_name).await
+    }
+
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
         // Migrations seed this row. SQLx can report an interrupted worker's row
         // stream as empty; treating that as first-run initialization would insert
@@ -139,31 +327,18 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        writes::write_platform(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-        )
-        .await?;
-        Ok(())
+        self.write_platform_owned(config, true).await
     }
 
     async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        writes::write_platform(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
-        )
-        .await?;
-        Ok(())
+        self.write_platform_owned(config, false).await
     }
 
     async fn delete_platform_config(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM platform_config WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
+        self.delete_owned(crate::credentials::CredentialOwner::Platform {
+            platform_id: id.to_owned(),
+        })
+        .await
     }
 
     async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel> {
@@ -192,34 +367,18 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        writes::write_template(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-            config.updated_at.timestamp_millis(),
-        )
-        .await?;
-        Ok(())
+        self.write_template_owned(config, true).await
     }
 
     async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        let updated_at = crate::database::time::now_ms();
-        writes::write_template(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
-            updated_at,
-        )
-        .await?;
-        Ok(())
+        self.write_template_owned(config, false).await
     }
 
     async fn delete_template_config(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM template_config WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
+        self.delete_owned(crate::credentials::CredentialOwner::Template {
+            template_id: id.to_owned(),
+        })
+        .await
     }
 
     async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel> {
@@ -272,6 +431,136 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[tokio::test]
+    async fn cancelled_platform_and_template_deletes_publish_after_commit() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for template in [false, true] {
+                let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                    .await
+                    .unwrap();
+                crate::database::run_migrations(&pool).await.unwrap();
+                let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+                sqlx::query(
+                    "INSERT INTO template_config(id,name) VALUES ('deleted-template','Deleted')",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO platform_config(id, platform_name) VALUES ('deleted-platform', 'deleted')")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                repository.bind_publication(Arc::new(move |owner| {
+                    published.send(owner).unwrap();
+                }));
+                let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
+                repository.writer.set_commit_gate(
+                    crate::database::committed_writer::CommitPhase::AfterCommit,
+                    Some(gate.clone()),
+                );
+                let task_repository = repository.clone();
+                let caller = tokio::spawn(async move {
+                    if template {
+                        task_repository
+                            .delete_template_config("deleted-template")
+                            .await
+                    } else {
+                        task_repository
+                            .delete_platform_config("deleted-platform")
+                            .await
+                    }
+                });
+                gate.started.notified().await;
+                caller.abort();
+                assert!(caller.await.unwrap_err().is_cancelled());
+                gate.release.notify_one();
+                let owner = receiver.recv().await.unwrap();
+                assert_eq!(owner.kind(), if template { "template" } else { "platform" });
+                assert!(if template {
+                    repository.get_template_config("deleted-template").await.is_err()
+                } else {
+                    repository.get_platform_config("deleted-platform").await.is_err()
+                });
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_platform_and_template_requests_publish_after_commit() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for template in [false, true] {
+                let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                    .await
+                    .unwrap();
+                crate::database::run_migrations(&pool).await.unwrap();
+                let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+                sqlx::query(
+                    "INSERT INTO template_config(id,name) VALUES ('committed-template','Original')",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                repository.bind_publication(Arc::new(move |owner| {
+                    published.send(owner).unwrap();
+                }));
+                let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
+                repository.writer.set_commit_gate(
+                    crate::database::committed_writer::CommitPhase::AfterCommit,
+                    Some(gate.clone()),
+                );
+                let task_repository = repository.clone();
+                let caller = tokio::spawn(async move {
+                    if template {
+                        let mut config = task_repository
+                            .get_template_config("committed-template")
+                            .await
+                            .unwrap();
+                        config.name = "Edited".into();
+                        task_repository.update_template_config(&config).await
+                    } else {
+                        let mut config = task_repository
+                            .get_platform_config("platform-huya")
+                            .await
+                            .unwrap();
+                        config.fetch_delay_ms = Some(1234);
+                        task_repository.update_platform_config(&config).await
+                    }
+                });
+                gate.started.notified().await;
+                caller.abort();
+                assert!(caller.await.unwrap_err().is_cancelled());
+                gate.release.notify_one();
+                let owner = receiver.recv().await.unwrap();
+                assert_eq!(owner.kind(), if template { "template" } else { "platform" });
+                if template {
+                    assert_eq!(
+                        repository
+                            .get_template_config("committed-template")
+                            .await
+                            .unwrap()
+                            .name,
+                        "Edited"
+                    );
+                } else {
+                    assert_eq!(
+                        repository
+                            .get_platform_config("platform-huya")
+                            .await
+                            .unwrap()
+                            .fetch_delay_ms,
+                        Some(1234)
+                    );
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
 
     #[tokio::test]
     async fn missing_global_config_is_an_error_without_inserting_defaults() {

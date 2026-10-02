@@ -113,13 +113,21 @@ impl DownloadEngine for MesioEngine {
         let protocol_type = Self::detect_protocol(&config_snapshot.url).map_err(|e| {
             EngineStartError::new(
                 DownloadFailureKind::Configuration,
-                format!("Protocol detection failed: {}", e),
+                crate::downloader::engine::utils::sanitize_engine_message(
+                    &format!("Protocol detection failed: {}", e),
+                    config_snapshot.managed_credentials,
+                ),
             )
         })?;
 
         debug!(
             "Detected protocol {:?} for URL: {}",
-            protocol_type, config_snapshot.url
+            protocol_type,
+            if config_snapshot.managed_credentials {
+                "[managed URL redacted]"
+            } else {
+                &config_snapshot.url
+            }
         );
 
         // Delegate to appropriate downloader based on protocol type
@@ -155,6 +163,14 @@ impl DownloadEngine for MesioEngine {
                 ));
             }
         };
+
+        let download_result = download_result.map_err(|mut error| {
+            error.message = crate::downloader::engine::utils::sanitize_engine_message(
+                &error.message,
+                config_snapshot.managed_credentials,
+            );
+            error
+        });
 
         // Log any errors (downloaders emit their own events internally)
         if let Err(e) = &download_result {

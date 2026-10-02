@@ -20,10 +20,11 @@ pub use batch_detector::{BatchDetector, BatchFailure, BatchResult};
 pub(crate) use check_history_writer::{CheckHistoryBroadcaster, CheckHistoryWriter};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub(crate) use events::MonitorEventDelivery;
+pub(crate) use events::runtime_instance_id;
 pub use events::{MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};
 pub(crate) use service::StreamMonitorRuntimeConfig;
 pub use service::{
-    InfraBlockReason, ProcessStatusResult, ProcessStatusSuppression, StreamMonitor,
-    StreamMonitorConfig,
+    CredentialCheckPurpose, InfraBlockReason, ProcessStatusResult, ProcessStatusSuppression,
+    StreamMonitor, StreamMonitorConfig,
 };

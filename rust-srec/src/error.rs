@@ -62,6 +62,17 @@ pub enum Error {
     #[error("Monitor error: {0}")]
     Monitor(String),
 
+    /// Retain provider evidence for credential handling without displaying
+    /// upstream bodies or signed URLs in scheduler and API diagnostics.
+    #[error("Extraction failed ({})", .0.category())]
+    Extractor(#[from] platforms_parser::extractor::error::ExtractorError),
+
+    #[error(transparent)]
+    CredentialProfile(#[from] crate::credentials::ProfileError),
+
+    #[error(transparent)]
+    CredentialUnavailable(crate::credentials::CredentialUnavailable),
+
     #[error("Pipeline error: {0}")]
     PipelineError(String),
 

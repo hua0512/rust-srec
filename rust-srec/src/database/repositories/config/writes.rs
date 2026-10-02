@@ -162,6 +162,8 @@ pub(crate) async fn write_template(
         WriteMode::Update => Mutation::Update,
         WriteMode::Import => Mutation::Upsert,
     };
+    let platform_overrides =
+        crate::credentials::canonical_overrides_text(model.platform_overrides.as_deref());
     let mut row = RowWrite::new("template_config", mutation, &model.id)?;
     row.field("name", &model.name, true)?;
     row.field("output_folder", &model.output_folder, true)?;
@@ -181,7 +183,7 @@ pub(crate) async fn write_template(
     row.field("max_part_size_bytes", model.max_part_size_bytes, true)?;
     row.field("record_danmu", model.record_danmu, true)?;
     row.field("danmu_statistics", &model.danmu_statistics, true)?;
-    row.field("platform_overrides", &model.platform_overrides, true)?;
+    row.field("platform_overrides", &platform_overrides, true)?;
     row.field("download_retry_policy", &model.download_retry_policy, true)?;
     row.field("download_engine", &model.download_engine, true)?;
     if mode != WriteMode::Import {
@@ -235,8 +237,11 @@ pub(crate) async fn write_platform(
         WriteMode::Update => Mutation::Update,
         WriteMode::Import => Mutation::Update,
     };
+    let credential_selection =
+        crate::credentials::canonical_selection_text(model.credential_selection.as_deref());
     let mut row = RowWrite::new("platform_config", mutation, &model.id)?;
     row.field("platform_name", &model.platform_name, true)?;
+    row.field("credential_selection", &credential_selection, true)?;
     row.field("fetch_delay_ms", model.fetch_delay_ms, true)?;
     row.field("download_delay_ms", model.download_delay_ms, true)?;
     row.field("cookies", &model.cookies, true)?;

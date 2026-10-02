@@ -16,11 +16,13 @@ use super::manager::{CredentialManager, CredentialStatus, RefreshState, Refreshe
 use super::store::CredentialStore;
 use super::tracker::{DailyCheckTracker, RefreshFailureTracker};
 use super::types::{CredentialEvent, CredentialScope, CredentialSource};
+use super::{OperationDeadline, PlatformAdmission};
 
 /// Credential refresh service.
 ///
 /// Orchestrates detection, refresh, and persistence of platform credentials.
 pub struct CredentialRefreshService {
+    admission: Arc<PlatformAdmission>,
     store: Arc<dyn CredentialStore>,
     managers: HashMap<String, Arc<dyn CredentialManager>>,
     daily_tracker: Arc<DailyCheckTracker>,
@@ -42,6 +44,9 @@ impl CredentialRefreshService {
     /// Create a new credential refresh service.
     pub fn new(store: Arc<dyn CredentialStore>) -> Self {
         Self {
+            admission: Arc::new(PlatformAdmission::from_config(
+                &crate::monitor::StreamMonitorConfig::default(),
+            )),
             store,
             managers: HashMap::new(),
             daily_tracker: Arc::new(DailyCheckTracker::new()),
@@ -49,6 +54,19 @@ impl CredentialRefreshService {
             refresh_locks: dashmap::DashMap::new(),
             notification_service: OnceLock::new(),
         }
+    }
+
+    pub fn with_admission(mut self, admission: Arc<PlatformAdmission>) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    pub fn admission(&self) -> Arc<PlatformAdmission> {
+        self.admission.clone()
+    }
+
+    pub(crate) fn manager(&self, platform_name: &str) -> Option<Arc<dyn CredentialManager>> {
+        self.get_manager(platform_name).ok().cloned()
     }
 
     /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
@@ -88,6 +106,48 @@ impl CredentialRefreshService {
         &self,
         source: &CredentialSource,
     ) -> Result<Option<String>, CredentialError> {
+        self.check_and_refresh_source_until(source, OperationDeadline::default())
+            .await
+    }
+
+    pub async fn check_and_refresh_source_until(
+        &self,
+        source: &CredentialSource,
+        deadline: OperationDeadline,
+    ) -> Result<Option<String>, CredentialError> {
+        deadline
+            .run(self.check_and_refresh_source_inner(source, deadline))
+            .await
+    }
+
+    /// Capture the post-refresh bundle at the original scope before extraction.
+    /// Token rotations belong to the new cookie, while login inputs may not be
+    /// silently replaced by a concurrent administrative edit.
+    pub(crate) async fn capture_source_for_extraction(
+        &self,
+        source: &CredentialSource,
+        cookies: &str,
+    ) -> Result<CredentialSource, CredentialError> {
+        let lock = self.get_refresh_lock(&source.scope);
+        let _guard = lock.lock().await;
+        let current = self.store.reload_source(source).await?;
+        if current.scope.cache_key() != source.scope.cache_key()
+            || !current
+                .platform_name
+                .eq_ignore_ascii_case(&source.platform_name)
+            || current.cookies != cookies
+            || current.reauth_extra != source.reauth_extra
+        {
+            return Err(CredentialError::SourceChanged);
+        }
+        Ok(current)
+    }
+
+    async fn check_and_refresh_source_inner(
+        &self,
+        source: &CredentialSource,
+        deadline: OperationDeadline,
+    ) -> Result<Option<String>, CredentialError> {
         // Skip platforms without a registered credential manager (unsupported for auto-refresh).
         let platform_key = source.platform_name.to_ascii_lowercase();
         if !self.managers.contains_key(&platform_key)
@@ -107,9 +167,10 @@ impl CredentialRefreshService {
 
         let current = self.store.reload_source(source).await?;
         let refreshed = if let Some(status) = self.daily_tracker.get_cached_status(&current) {
-            self.handle_cached_status(&current, status).await?
+            self.handle_cached_status(&current, status, deadline)
+                .await?
         } else {
-            self.perform_check_and_refresh(&current).await?
+            self.perform_check_and_refresh(&current, deadline).await?
         };
         // Waiters may still hold an extractor configuration assembled before
         // the owner rotated its cookies. Return the committed cookies to them
@@ -122,6 +183,7 @@ impl CredentialRefreshService {
         &self,
         source: &CredentialSource,
         status: CredentialStatus,
+        deadline: OperationDeadline,
     ) -> Result<Option<String>, CredentialError> {
         match status {
             CredentialStatus::Valid => {
@@ -131,7 +193,7 @@ impl CredentialRefreshService {
             CredentialStatus::NeedsRefresh { .. } => {
                 debug!("Cached status indicates refresh needed");
                 // Attempt refresh
-                self.perform_refresh(source).await
+                self.perform_refresh(source, deadline).await
             }
             CredentialStatus::Invalid { reason, .. } => {
                 debug!("Cached status indicates invalid credentials");
@@ -144,6 +206,7 @@ impl CredentialRefreshService {
     async fn perform_check_and_refresh(
         &self,
         source: &CredentialSource,
+        deadline: OperationDeadline,
     ) -> Result<Option<String>, CredentialError> {
         let manager = self.get_manager(&source.platform_name)?;
 
@@ -153,10 +216,12 @@ impl CredentialRefreshService {
             "Checking credential status"
         );
 
-        let status = match manager.check_status(&source.cookies).await {
+        self.admission.admit_source(source, deadline).await?;
+        let status = match deadline.run(manager.check_status(&source.cookies)).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(error = %e, "Status check failed");
+                self.admission.observe_source(source, &e).await;
                 // Don't cache failures - allow retry
                 return Err(e);
             }
@@ -180,13 +245,15 @@ impl CredentialRefreshService {
             }
             CredentialStatus::NeedsRefresh { refresh_deadline } => {
                 info!(?refresh_deadline, "Credentials need refresh");
-                self.perform_refresh(source).await
+                self.perform_refresh(source, deadline).await
             }
             CredentialStatus::Invalid { reason, error_code } => {
                 error!(%reason, ?error_code, "Credentials are invalid - manual re-login required");
 
                 // Emit a notification event once per day (this path runs only on uncached checks).
                 self.maybe_notify_credential_event(CredentialEvent::Invalid {
+                    profile_id: None,
+                    profile_label: None,
                     scope: source.scope.clone(),
                     platform: source.platform_name.clone(),
                     reason: reason.clone(),
@@ -199,7 +266,7 @@ impl CredentialRefreshService {
         }
     }
 
-    fn maybe_notify_credential_event(&self, event: CredentialEvent) {
+    pub(crate) fn maybe_notify_credential_event(&self, event: CredentialEvent) {
         let Some(service) = self.notification_service.get().cloned() else {
             return;
         };
@@ -240,6 +307,7 @@ impl CredentialRefreshService {
     async fn perform_refresh(
         &self,
         source: &CredentialSource,
+        deadline: OperationDeadline,
     ) -> Result<Option<String>, CredentialError> {
         let manager = self.get_manager(&source.platform_name)?;
 
@@ -271,7 +339,8 @@ impl CredentialRefreshService {
             state.extra = Some(serde_json::Value::Object(extra));
         }
 
-        match manager.refresh(&state).await {
+        self.admission.admit_source(source, deadline).await?;
+        match deadline.run(manager.refresh(&state)).await {
             Ok(new_creds) => {
                 info!(
                     expires_at = ?new_creds.expires_at,
@@ -295,6 +364,7 @@ impl CredentialRefreshService {
                 Ok(Some(new_creds.cookies))
             }
             Err(e) => {
+                self.admission.observe_source(source, &e).await;
                 // Provider failures describe the inputs it received, not a newer login.
                 let current = self.store.reload_source(source).await?;
                 if !source.same_credentials(&current) {
@@ -408,6 +478,8 @@ impl CredentialRefreshService {
         let failure_count = self.failure_tracker.failure_count(&source.scope);
 
         CredentialEvent::RefreshFailed {
+            profile_id: None,
+            profile_label: None,
             scope: source.scope.clone(),
             platform: source.platform_name.clone(),
             error: error.to_string(),
@@ -424,6 +496,8 @@ impl CredentialRefreshService {
         credentials: &RefreshedCredentials,
     ) -> CredentialEvent {
         CredentialEvent::Refreshed {
+            profile_id: None,
+            profile_label: None,
             scope: source.scope.clone(),
             platform: source.platform_name.clone(),
             expires_at: credentials.expires_at,

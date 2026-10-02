@@ -168,6 +168,204 @@ pub struct ConfigExport {
     /// All users (authentication accounts).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<UserExport>,
+    /// Secret-bearing profiles, present only in the managed-credential format.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_profiles: Vec<CredentialProfileExport>,
+}
+
+/// Portable owner identity; database IDs for owners are resolved during import.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CredentialOwnerExport {
+    Platform { platform_name: String },
+    Template { template_name: String },
+    Streamer { streamer_url: String },
+}
+
+/// Explicit sensitive backup representation. Ordinary profile DTOs never serialize material.
+#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialProfileExport {
+    pub id: String,
+    pub platform: String,
+    pub owner: CredentialOwnerExport,
+    pub label: String,
+    pub enabled: bool,
+    pub cookies: String,
+    pub refresh_token: Option<String>,
+    pub access_token: Option<String>,
+    pub reauth_config: Option<serde_json::Value>,
+}
+
+impl std::fmt::Debug for CredentialProfileExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialProfileExport")
+            .field("id", &self.id)
+            .field("material", &"[redacted]")
+            .finish()
+    }
+}
+
+impl ConfigExport {
+    /// Filtering callers must keep profile dependencies or reject the incomplete
+    /// graph. This also prevents a concurrent owner deletion producing a lossy backup.
+    pub fn validate_credential_graph(&self) -> crate::Result<()> {
+        use std::collections::HashMap;
+        let profiles: HashMap<_, _> = self
+            .credential_profiles
+            .iter()
+            .map(|p| (p.id.as_str(), p))
+            .collect();
+        if profiles.len() != self.credential_profiles.len() {
+            return Err(crate::Error::validation(
+                "duplicate credential profile in export",
+            ));
+        }
+        for profile in profiles.values() {
+            let owner_exists = match &profile.owner {
+                CredentialOwnerExport::Platform { platform_name } => {
+                    platform_name == &profile.platform
+                }
+                CredentialOwnerExport::Template { template_name } => {
+                    self.templates.iter().any(|t| &t.name == template_name)
+                }
+                CredentialOwnerExport::Streamer { streamer_url } => self
+                    .streamers
+                    .iter()
+                    .any(|s| &s.url == streamer_url && s.platform == profile.platform),
+            };
+            if !owner_exists
+                || !self
+                    .platforms
+                    .iter()
+                    .any(|p| p.platform_name == profile.platform)
+            {
+                return Err(crate::Error::validation(
+                    "export omits a credential profile owner or platform",
+                ));
+            }
+        }
+        let check = |selection: &crate::credentials::CredentialSelection,
+                     platform: &str,
+                     template: Option<&str>,
+                     streamer: Option<&str>|
+         -> crate::Result<()> {
+            selection.validate()?;
+            for id in selection.profile_ids() {
+                let profile = profiles.get(id).ok_or_else(|| {
+                    crate::Error::validation("export omits a referenced credential profile")
+                })?;
+                let accessible = match &profile.owner {
+                    CredentialOwnerExport::Platform { platform_name } => platform_name == platform,
+                    CredentialOwnerExport::Template { template_name } => {
+                        template == Some(template_name.as_str())
+                    }
+                    CredentialOwnerExport::Streamer { streamer_url } => {
+                        streamer == Some(streamer_url.as_str())
+                    }
+                };
+                if profile.platform != platform || !accessible {
+                    return Err(crate::Error::validation(
+                        "export contains an inaccessible credential profile reference",
+                    ));
+                }
+            }
+            Ok(())
+        };
+        for platform in &self.platforms {
+            if let Some(selection) = &platform.credential_selection {
+                check(selection, &platform.platform_name, None, None)?;
+            }
+        }
+        for template in &self.templates {
+            if let Some(entries) = template
+                .platform_overrides
+                .as_ref()
+                .and_then(serde_json::Value::as_object)
+            {
+                for (platform, value) in entries {
+                    if let Some(selection) = value.get("credential_selection") {
+                        if !self.platforms.iter().any(|p| p.platform_name == *platform) {
+                            return Err(crate::Error::validation(
+                                "export omits a template policy platform",
+                            ));
+                        }
+                        check(
+                            &crate::credentials::CredentialSelection::from_value(
+                                selection.clone(),
+                            )?,
+                            platform,
+                            Some(&template.name),
+                            None,
+                        )?;
+                    }
+                }
+            }
+        }
+        for streamer in &self.streamers {
+            if let Some(selection) = streamer
+                .streamer_specific_config
+                .as_ref()
+                .and_then(|v| v.get("credential_selection"))
+            {
+                if !self
+                    .platforms
+                    .iter()
+                    .any(|p| p.platform_name == streamer.platform)
+                    || streamer
+                        .template
+                        .as_ref()
+                        .is_some_and(|name| !self.templates.iter().any(|t| &t.name == name))
+                {
+                    return Err(crate::Error::validation(
+                        "export omits a streamer policy dependency",
+                    ));
+                }
+                check(
+                    &crate::credentials::CredentialSelection::from_value(selection.clone())?,
+                    &streamer.platform,
+                    streamer.template.as_deref(),
+                    Some(&streamer.url),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Compute from the selected graph, including explicit inherit/none policies.
+    pub fn has_managed_credentials(&self) -> bool {
+        !self.credential_profiles.is_empty()
+            || self
+                .platforms
+                .iter()
+                .any(|p| p.credential_selection.is_some())
+            || self.templates.iter().any(|t| {
+                t.platform_overrides
+                    .as_ref()
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(|entries| entries.values().any(has_selection))
+            })
+            || self.streamers.iter().any(|s| {
+                s.streamer_specific_config
+                    .as_ref()
+                    .is_some_and(has_selection)
+            })
+    }
+
+    pub fn update_schema_version(&mut self) {
+        self.version = if self.has_managed_credentials() {
+            "1.0.0"
+        } else {
+            EXPORT_SCHEMA_VERSION
+        }
+        .to_owned();
+    }
+}
+
+fn has_selection(value: &serde_json::Value) -> bool {
+    value
+        .get("credential_selection")
+        .is_some_and(|policy| !policy.is_null())
 }
 
 /// Global configuration for export (excludes internal ID).
@@ -310,6 +508,8 @@ pub struct PlatformExport {
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
     pub cookies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_selection: Option<crate::credentials::CredentialSelection>,
     pub platform_specific_config: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
     pub record_danmu: Option<bool>,

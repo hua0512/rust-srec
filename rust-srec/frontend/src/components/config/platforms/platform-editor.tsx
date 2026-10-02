@@ -53,6 +53,7 @@ function toPlatformFormValues(
     record_danmu: platform.record_danmu,
     danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
     cookies: platform.cookies,
+    credential_selection: platform.credential_selection ?? undefined,
     platform_specific_config: displayedPlatformOptions(platform),
     proxy_config: platform.proxy_config,
     output_folder: platform.output_folder,
@@ -184,6 +185,7 @@ export function PlatformEditor({
             paths={{
               streamSelection: 'stream_selection_config',
               cookies: 'cookies',
+              credentialSelection: 'credential_selection',
               proxy: 'proxy_config',
               retryPolicy: 'download_retry_policy',
               output: '',

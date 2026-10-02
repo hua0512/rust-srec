@@ -189,7 +189,11 @@ impl Douyu {
             match self.has_interactive_game(room.room_id).await {
                 Ok(true) => is_live = false,
                 Ok(false) => {}
-                Err(e) => debug!(rid, error = %e, "Could not check Douyu interactive game status"),
+                Err(e) => debug!(
+                    rid,
+                    category = e.category(),
+                    "Could not check Douyu interactive game status"
+                ),
             }
         }
         let streams = if is_live {

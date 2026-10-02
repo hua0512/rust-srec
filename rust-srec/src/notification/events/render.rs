@@ -430,18 +430,22 @@ impl NotificationEvent {
 /// `requires_relogin` branching in `RefreshFailed`); inlining it would
 /// have made the main `title()` match unreadable.
 fn credential_title(event: &CredentialEvent, locale: &str) -> String {
+    let scope_text = event.scope_text_in(locale);
     match event {
-        CredentialEvent::Refreshed {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::Unavailable { platform, .. } => crate::t_str_in!(
+            locale,
+            "notification.credential.unavailable.title",
+            platform = platform.as_str(),
+            scope = scope_text.as_str()
+        ),
+        CredentialEvent::Refreshed { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.refreshed.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
         ),
         CredentialEvent::RefreshFailed {
             platform,
-            scope,
             requires_relogin,
             ..
         } => {
@@ -454,24 +458,20 @@ fn credential_title(event: &CredentialEvent, locale: &str) -> String {
                 locale,
                 key,
                 platform = platform.as_str(),
-                scope = scope.describe().as_str(),
+                scope = scope_text.as_str(),
             )
         }
-        CredentialEvent::Invalid {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::Invalid { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.invalid.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
         ),
-        CredentialEvent::ExpiringSoon {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::ExpiringSoon { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.expiring_soon.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
         ),
     }
 }

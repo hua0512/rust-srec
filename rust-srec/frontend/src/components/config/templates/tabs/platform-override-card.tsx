@@ -24,15 +24,18 @@ import {
 } from '../../shared-config-editor';
 import { configPath } from '../../shared/form-path';
 import type { TemplateFormValues } from '../template-editor';
+import { CredentialSettingsField } from '@/components/credentials/credential-settings-field';
 
 interface PlatformOverrideCardProps {
   platformName: string;
+  templateId?: string;
   form: UseFormReturn<TemplateFormValues>;
   onRemove: () => void;
 }
 
 export function PlatformOverrideCard({
   platformName,
+  templateId,
   form,
   onRemove,
 }: PlatformOverrideCardProps) {
@@ -69,6 +72,21 @@ export function PlatformOverrideCard({
   };
 
   const extraTabs: ExtraTab[] = [
+    {
+      value: 'accounts',
+      label: <Trans>Account profiles</Trans>,
+      content: (
+        <CredentialSettingsField
+          form={form}
+          name={configPath<TemplateFormValues>(
+            basePath,
+            'credential_selection',
+          )}
+          scope={templateId ? { type: 'template', id: templateId } : undefined}
+          platformName={platformName}
+        />
+      ),
+    },
     {
       value: 'specific',
       label: <Trans>Specific</Trans>,

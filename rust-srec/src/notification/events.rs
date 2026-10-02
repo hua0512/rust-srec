@@ -454,7 +454,8 @@ impl NotificationEvent {
             | Self::SystemShutdown { timestamp, .. }
             | Self::BaiduPcsReloginFailed { timestamp, .. } => *timestamp,
             Self::Credential { event } => match event {
-                CredentialEvent::Refreshed { timestamp, .. }
+                CredentialEvent::Unavailable { timestamp, .. }
+                | CredentialEvent::Refreshed { timestamp, .. }
                 | CredentialEvent::RefreshFailed { timestamp, .. }
                 | CredentialEvent::Invalid { timestamp, .. }
                 | CredentialEvent::ExpiringSoon { timestamp, .. } => *timestamp,

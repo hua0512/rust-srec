@@ -375,6 +375,8 @@ fn live_args<'a>(now: DateTime<Utc>) -> LiveDetectedArgs<'a> {
         std::sync::OnceLock::new();
     let streams = EMPTY_STREAMS.get_or_init(Vec::new);
     LiveDetectedArgs {
+        credential_binding: None,
+
         streamer_id: STREAMER_ID,
         streamer_name: "Test",
         streamer_url: "https://example.com",
@@ -844,6 +846,8 @@ async fn multi_session_isolation_across_streamers() {
     // Build a separate LiveDetectedArgs for streamer B (clone + swap id).
     let streams_b: Vec<crate::monitor::StreamInfo> = vec![];
     let args_b = LiveDetectedArgs {
+        credential_binding: None,
+
         streamer_id: "streamer-b",
         streamer_name: "B",
         streamer_url: "https://example.com/b",

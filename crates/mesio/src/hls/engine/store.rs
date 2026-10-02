@@ -482,7 +482,7 @@ impl SegmentStateStore {
                 let record = self.records.get_mut(&key).expect("validated above");
                 record.ready_entry = None;
                 let msn = record.descriptor.msn;
-                warn!(msn, %reason, "segment oversize at admission");
+                warn!(msn, reason = %crate::redact::redact_diagnostic(&reason), "segment oversize at admission");
                 record.state = SegmentState::TerminalFailed {
                     class: FailureClass::Oversize,
                     reason,
@@ -613,7 +613,7 @@ impl SegmentStateStore {
                     debug!(
                         msn,
                         ?class,
-                        %reason,
+                        reason = %crate::redact::redact_diagnostic(&reason),
                         reschedules,
                         delay_ms = delay.as_millis() as u64,
                         "segment scheduled for lifecycle retry"
@@ -640,7 +640,7 @@ impl SegmentStateStore {
                         reason: Arc::clone(&reason),
                     };
                     self.terminal_failures += 1;
-                    warn!(msn, ?class, %reason, "segment terminally failed");
+                    warn!(msn, ?class, reason = %crate::redact::redact_diagnostic(&reason), "segment terminally failed");
                     // Media and init terminal failures are both surfaced; the
                     // assembler decides whether the stream can continue (a
                     // failed init on an fMP4 stream is fatal, a failed media

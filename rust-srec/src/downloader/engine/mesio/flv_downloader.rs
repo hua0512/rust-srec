@@ -195,6 +195,7 @@ impl FlvDownloader {
             flv_stream,
             &pipeline_input_tx,
             helpers::StreamConsumeContext {
+                managed_credentials: config.managed_credentials,
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
@@ -213,6 +214,7 @@ impl FlvDownloader {
             stream_error,
             processing_tasks,
             helpers::WriterSettleContext {
+                managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
@@ -272,6 +274,7 @@ impl FlvDownloader {
             flv_stream,
             &tx,
             helpers::StreamConsumeContext {
+                managed_credentials: config.managed_credentials,
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
@@ -290,6 +293,7 @@ impl FlvDownloader {
             stream_error,
             vec![],
             helpers::WriterSettleContext {
+                managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "FLV",

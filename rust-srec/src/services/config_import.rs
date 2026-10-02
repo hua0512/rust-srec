@@ -48,10 +48,15 @@ use crate::streamer::state_store::{StateChange, StatePublication};
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamerManager = StreamerManager<SqlxStreamerRepository>;
 
+mod profiles;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigurationImportError {
     #[error("{0}")]
     Validation(String),
+    /// The import would rewrite credentials a converted scope now manages.
+    #[error("{0}")]
+    Conflict(String),
     #[error("configuration import database operation failed: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -103,6 +108,7 @@ struct CommittedImport {
     invalidated_credentials: Vec<CredentialScope>,
     streamers: StreamerImportDiff,
     retained_definitions: i64,
+    credential_retirement_streamers: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -117,6 +123,21 @@ pub(crate) struct ConfigurationImportService {
 }
 
 impl ConfigurationImportService {
+    pub(crate) async fn retired_template_ids(&self) -> crate::Result<HashSet<String>> {
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT config_id FROM retirement_config_deletions WHERE kind = 'template'",
+        )
+        .fetch_all(&self.write_pool)
+        .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    pub(crate) async fn export_profiles(
+        &self,
+    ) -> crate::Result<Vec<crate::config::backup::CredentialProfileExport>> {
+        profiles::export_profiles(&self.write_pool).await
+    }
+
     pub fn new(
         write_pool: SqlitePool,
         config_service: Arc<RuntimeConfigService>,
@@ -173,13 +194,16 @@ impl ConfigurationImportService {
                             apply_import(tx, &snapshot, &config, mode).await?;
                         let retained_definitions =
                             sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
-                                .fetch_one(tx)
+                                .fetch_one(&mut *tx)
                                 .await?;
+                        let credential_retirement_streamers = sqlx::query_scalar("SELECT DISTINCT s.streamer_id FROM live_sessions s JOIN retirement_credential_profiles r ON json_extract(s.credential_binding, '$.identity.profile_id') = r.profile_id WHERE s.end_time IS NULL AND s.streamer_id IS NOT NULL")
+                            .fetch_all(&mut *tx).await?;
                         Ok(CommittedImport {
                             stats,
                             invalidated_credentials,
                             streamers,
                             retained_definitions,
+                            credential_retirement_streamers,
                         })
                     })
                 },
@@ -192,7 +216,7 @@ impl ConfigurationImportService {
                         },
                         StatePublication::Silent,
                     );
-                    config_service.invalidate_all_filter_snapshots();
+                    config_service.invalidate_import_caches();
                 },
                 move |committed| {
                     Box::pin(async move {
@@ -213,6 +237,7 @@ impl ConfigurationImportService {
             invalidated_credentials,
             streamers,
             retained_definitions,
+            credential_retirement_streamers,
         } = committed;
         for scope in invalidated_credentials {
             self.credential_service.invalidate(&scope);
@@ -251,6 +276,26 @@ impl ConfigurationImportService {
             );
         }
 
+        self.config_service.notify_import_committed();
+
+        for streamer_id in credential_retirement_streamers {
+            self.runtime_coordinator
+                .settle_credential_retirement(&streamer_id)
+                .await;
+        }
+        let reaped = async {
+            let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
+            crate::database::repositories::config_retirement::reap_retired_profiles(
+                &mut transaction,
+            )
+            .await?;
+            transaction.commit().await
+        }
+        .await;
+        if let Err(error) = reaped {
+            warnings.push(format!("credential retirement cleanup deferred: {error}"));
+        }
+
         // Stops each removed streamer's actor, download and session, and removes
         // the row where nothing is left in flight. `OBSERVE_RETIREMENT` because
         // a Replace bundle can remove any number of streamers and per-streamer
@@ -275,8 +320,6 @@ impl ConfigurationImportService {
         if let Err(error) = self.notification_service.reload_from_db().await {
             warnings.push(format!("notification runtime reload failed: {error}"));
         }
-        self.config_service.notify_import_committed();
-
         Ok(ConfigurationImportOutcome { stats, warnings })
     }
 }
@@ -565,6 +608,18 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
     ConfigurationImportError::Validation(message.into())
 }
 
+/// A legacy value that would replace a managed selection conflicts with the
+/// stored configuration; it is not malformed input.
+fn legacy_guard_error(error: crate::Error) -> ConfigurationImportError {
+    match error {
+        crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
+        crate::Error::CredentialProfile(error) => ConfigurationImportError::Conflict(format!(
+            "Import cannot change credentials of a scope that uses managed profiles: {error}"
+        )),
+        error => validation_error(error.to_string()),
+    }
+}
+
 fn validation<T>(message: impl Into<String>) -> Result<T, ConfigurationImportError> {
     Err(validation_error(message))
 }
@@ -573,12 +628,13 @@ fn validate_import(
     config: &ConfigExport,
     mode: ImportMode,
 ) -> Result<(), ConfigurationImportError> {
-    if !config.version.starts_with("0.") {
+    if !config.version.starts_with("0.") && config.version != "1.0.0" {
         return validation(format!(
-            "Unsupported schema version: {}. Expected 0.x",
+            "Unsupported schema version: {}. Expected 0.x or 1.0.0",
             config.version
         ));
     }
+    profiles::validate(config)?;
     RetentionDays::try_from(config.global_config.job_history_retention_days)
         .map_err(|error| validation_error(error.to_string()))?;
     RetentionDays::try_from(config.global_config.notification_event_log_retention_days)
@@ -988,7 +1044,7 @@ async fn apply_import(
 
     apply_engines(tx, snapshot, config, replace, &mut changes.stats).await?;
     let template_ids = apply_templates(tx, snapshot, config, replace, &mut changes).await?;
-    let platform_ids = apply_platforms(tx, snapshot, config, &mut changes).await?;
+    let platform_ids = apply_platforms(tx, snapshot, config, replace, &mut changes).await?;
     apply_streamers(
         tx,
         snapshot,
@@ -1000,6 +1056,7 @@ async fn apply_import(
     )
     .await?;
     delete_unimported_templates(tx, snapshot, config, replace, &mut changes).await?;
+    profiles::apply(tx, config, mode, &template_ids, &platform_ids).await?;
 
     apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;
     apply_job_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
@@ -1084,7 +1141,17 @@ async fn apply_templates(
     };
     for item in &config.templates {
         let existing = snapshot.templates.get(&item.name);
-        let model = template_model(existing, item);
+        let mut model = template_model(existing, item);
+        if !replace && let Some(existing) = existing {
+            profiles::preserve_template_policies(existing, &mut model)?;
+        }
+        if let Some(existing) = existing {
+            crate::database::repositories::credential_profiles::guard_template_legacy_in(
+                tx, existing, &model,
+            )
+            .await
+            .map_err(legacy_guard_error)?;
+        }
         persist_template(tx, &model).await?;
         template_ids.insert(model.name.clone(), model.id.clone());
         changes
@@ -1110,6 +1177,7 @@ async fn apply_platforms(
     tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
+    replace: bool,
     changes: &mut ImportChanges,
 ) -> Result<HashMap<String, String>, ConfigurationImportError> {
     let mut platform_ids: HashMap<String, String> = snapshot
@@ -1121,7 +1189,12 @@ async fn apply_platforms(
         let existing = snapshot.platforms.get(&item.platform_name).ok_or_else(|| {
             validation_error(format!("Unknown platform '{}'", item.platform_name))
         })?;
-        let model = platform_model(existing, item);
+        let mut model = platform_model(existing, item)?;
+        if !replace && model.credential_selection.is_none() {
+            model.credential_selection = existing.credential_selection.clone();
+        }
+        crate::database::repositories::credential_profiles::guard_platform_legacy(existing, &model)
+            .map_err(legacy_guard_error)?;
         persist_platform(tx, &model).await?;
         platform_ids.insert(model.platform_name.clone(), model.id.clone());
         changes
@@ -1168,7 +1241,16 @@ async fn apply_streamers(
                 })
             })
             .transpose()?;
-        let model = streamer_model(existing, item, platform_id, template_id);
+        let mut model = streamer_model(existing, item, platform_id, template_id);
+        if !replace && let Some(existing) = existing {
+            profiles::preserve_streamer_policy(existing, &mut model)?;
+        }
+        if let Some(existing) = existing {
+            crate::database::repositories::credential_profiles::guard_streamer_legacy(
+                existing, &model,
+            )
+            .map_err(legacy_guard_error)?;
+        }
         if let Some(row) = persist_streamer_row(tx, &model).await? {
             changes.streamers.record_row(existing, row);
         }
@@ -1354,12 +1436,18 @@ fn template_model(
 fn platform_model(
     existing: &PlatformConfigDbModel,
     source: &crate::config::backup::PlatformExport,
-) -> PlatformConfigDbModel {
+) -> Result<PlatformConfigDbModel, ConfigurationImportError> {
     let mut model = existing.clone();
     model.fetch_delay_ms = source.fetch_delay_ms;
     model.download_delay_ms = source.download_delay_ms;
     model.cookies = source.cookies.clone();
     model.platform_specific_config = source.platform_specific_config.clone().map(db_json);
+    model.credential_selection = source
+        .credential_selection
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| validation_error(error.to_string()))?;
     model.proxy_config = source.proxy_config.clone().map(db_json);
     model.record_danmu = source.record_danmu;
     model.danmu_statistics = source.danmu_statistics.clone();
@@ -1377,7 +1465,7 @@ fn platform_model(
     model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
     model.offline_check_count = source.offline_check_count;
     model.offline_check_delay_ms = source.offline_check_delay_ms;
-    model
+    Ok(model)
 }
 
 fn streamer_model(
@@ -1723,6 +1811,7 @@ async fn apply_users(
 
 #[cfg(test)]
 mod tests {
+    mod credential_profiles;
     mod email_validation;
     mod timezone_import;
     use super::*;
@@ -1845,6 +1934,7 @@ mod tests {
             job_presets: Vec::new(),
             pipeline_presets: Vec::new(),
             users: Vec::new(),
+            credential_profiles: Vec::new(),
         }
     }
 

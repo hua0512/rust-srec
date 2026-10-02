@@ -394,6 +394,8 @@ pub struct PlatformConfigResponse {
     /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
     pub danmu_statistics: Option<String>,
     pub cookies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_selection: Option<String>,
     pub platform_specific_config: Option<String>,
     pub proxy_config: Option<String>,
     pub output_folder: Option<String>,
@@ -427,6 +429,7 @@ impl From<crate::database::models::PlatformConfigDbModel> for PlatformConfigResp
             record_danmu: config.record_danmu,
             danmu_statistics: config.danmu_statistics,
             cookies: config.cookies,
+            credential_selection: config.credential_selection,
             platform_specific_config: config.platform_specific_config,
             proxy_config: config.proxy_config,
             output_folder: config.output_folder,
@@ -1166,32 +1169,49 @@ pub struct ExtractMetadataResponse {
 }
 
 /// Request to parse a URL and extract media info.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
 pub struct ParseUrlRequest {
     /// URL to parse
     pub url: String,
     /// Optional cookies for authentication
     pub cookies: Option<String>,
+    /// Explicit accessible profile; mutually exclusive with raw cookies.
+    pub credential_id: Option<String>,
 }
 
-/// Response from URL parsing with full media info.
-///
-/// This returns the complete MediaInfo from platforms_parser crate as JSON.
+/// Managed sources return safe playback metadata; legacy sources return media info.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ParseUrlResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback: Option<crate::services::playback_context::ManagedPlayback>,
     /// Whether extraction was successful
     pub success: bool,
     /// Whether the stream is currently live
     pub is_live: bool,
-    /// The full media info from platforms_parser (serialized)
+    /// Legacy media info; absent for managed playback.
     pub media_info: Option<serde_json::Value>,
     /// Error message if extraction failed
     pub error: Option<String>,
 }
 
 /// Request to resolve the true URL for a stream.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
-pub struct ResolveUrlRequest {
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[serde(untagged)]
+pub enum ResolveUrlRequest {
+    Managed(ManagedResolveUrlRequest),
+    Legacy(LegacyResolveUrlRequest),
+}
+
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ManagedResolveUrlRequest {
+    pub playback_handle: String,
+    pub stream_id: String,
+}
+
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyResolveUrlRequest {
     /// The page URL (needed to create the extractor)
     pub url: String,
     /// The stream info object (as JSON) containing the stream to resolve
@@ -1203,6 +1223,8 @@ pub struct ResolveUrlRequest {
 /// Response with the resolved stream info.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ResolveUrlResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback: Option<crate::services::playback_context::PlaybackResolved>,
     /// Whether resolution was successful
     pub success: bool,
     /// The updated stream info object (as JSON)

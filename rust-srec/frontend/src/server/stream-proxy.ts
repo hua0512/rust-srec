@@ -13,11 +13,27 @@ export async function handleStreamProxyRequest(
 
   const incoming = new URL(request.url);
   const target = incoming.searchParams.get('url');
-  if (!target) return new Response('Missing url parameter', { status: 400 });
-  const query = new URLSearchParams({ url: target, web: 'true' });
-  for (const name of ['headers', 'source_url']) {
-    const value = incoming.searchParams.get(name);
-    if (value != null) query.set(name, value);
+  const handle = incoming.searchParams.get('playback_handle');
+  const resource = incoming.searchParams.get('resource_id');
+  const query = new URLSearchParams({ web: 'true' });
+  if (handle !== null || resource !== null) {
+    if (
+      !handle ||
+      !resource ||
+      ['url', 'headers', 'source_url', 'cookies', 'credential_id'].some(
+        (name) => incoming.searchParams.has(name),
+      )
+    )
+      return new Response('Invalid managed playback request', { status: 400 });
+    query.set('playback_handle', handle);
+    query.set('resource_id', resource);
+  } else {
+    if (!target) return new Response('Missing url parameter', { status: 400 });
+    query.set('url', target);
+    for (const name of ['headers', 'source_url']) {
+      const value = incoming.searchParams.get(name);
+      if (value != null) query.set(name, value);
+    }
   }
   const headers = new Headers({
     Authorization: `Bearer ${user.token.access_token}`,
@@ -40,7 +56,10 @@ export async function handleStreamProxyRequest(
       await response.body?.cancel();
       return new Response('Unexpected backend redirect', { status: 502 });
     }
-    const outputHeaders = new Headers({ 'Cache-Control': 'private, no-store' });
+    const outputHeaders = new Headers({
+      'Cache-Control': 'private, no-store',
+      'Referrer-Policy': 'no-referrer',
+    });
     for (const name of [
       'Content-Type',
       'Content-Length',

@@ -295,7 +295,7 @@ impl Douyu {
                         "Betard API attempt {} failed for room {}: {}",
                         attempt + 1,
                         rid,
-                        e
+                        e.category()
                     );
 
                     // Don't retry if the error indicates room doesn't exist (not transient)
@@ -384,10 +384,7 @@ impl Douyu {
                 Ok(has_game)
             }
             Err(e) => {
-                debug!(
-                    "Failed to parse interactive game response for room {}: {}",
-                    rid, e
-                );
+                debug!(rid, category = ?e.classify(), "Failed to parse Douyu interactive game response");
                 // If we can't parse, assume no interactive game
                 Ok(false)
             }
@@ -492,11 +489,7 @@ impl Douyu {
 
         let status = response.status();
         let body = response.text().await.map_err(ExtractorError::from)?;
-        debug!(
-            "Encryption key response (status {}): {}",
-            status,
-            &body[..body.len().min(500)]
-        );
+        debug!(%status, response_bytes = body.len(), "Received Douyu encryption key response");
 
         let enc_response: DouyuEncryptionResponse = serde_json::from_str(&body).map_err(|e| {
             ExtractorError::ValidationError(format!(
@@ -517,10 +510,7 @@ impl Douyu {
             ExtractorError::ValidationError("Encryption API returned no data".to_string())
         })?;
 
-        debug!(
-            "Encryption key fetched: rand_str={}, enc_time={}, is_special={}",
-            data.rand_str, data.enc_time, data.is_special
-        );
+        debug!(is_special = data.is_special, "Fetched Douyu encryption key");
 
         Ok(CachedEncryptionKey::new(data, user_agent))
     }
@@ -647,8 +637,8 @@ impl Douyu {
         for attempt in 0..2 {
             if attempt == 1 {
                 debug!(
-                    "Retrying getH5PlayV1 after auth failure by refreshing encryption key (rid={}, did={})",
-                    rid, did
+                    rid,
+                    "Refreshing Douyu encryption key after authentication failure"
                 );
                 Self::invalidate_encryption_key(did);
             }
@@ -671,12 +661,7 @@ impl Douyu {
             form_data.insert("sov", "0".to_string());
 
             // Fallback auth always uses V1 API with POST
-            debug!(
-                "Requesting getH5PlayV1 with auth={}, ts={}, did={}",
-                form_data.get("auth").unwrap_or(&String::new()),
-                form_data.get("tt").unwrap_or(&String::new()),
-                did
-            );
+            debug!(rid, attempt, "Requesting Douyu getH5PlayV1");
 
             let api_response = self
                 .extractor
@@ -690,7 +675,7 @@ impl Douyu {
 
             let status = api_response.status();
             let body = api_response.text().await?;
-            debug!("getH5PlayV1 response (status {}): {}", status, body);
+            debug!(%status, response_bytes = body.len(), "Received Douyu getH5PlayV1 response");
 
             if is_douyu_auth_failed(status, &body) {
                 if attempt == 0 {
@@ -723,8 +708,8 @@ impl Douyu {
                         // `parse_web_response` matches on `NoStreamsFound` to recover the
                         // went-offline race without inspecting message text.
                         debug!(
-                            "getH5PlayV1 reports room unavailable (error {}): {}",
-                            resp.error, resp.msg
+                            code = resp.error,
+                            "Douyu getH5PlayV1 reports room unavailable"
                         );
                         return Err(ExtractorError::NoStreamsFound);
                     }
@@ -883,7 +868,11 @@ impl Douyu {
                     avatar_url = Some(room_info.data.avatar);
                 }
                 Err(e) => {
-                    debug!("Failed to fetch RoomApi metadata for {}: {}", rid, e);
+                    debug!(
+                        "Failed to fetch RoomApi metadata for {}: {}",
+                        rid,
+                        e.category()
+                    );
                 }
             }
 
@@ -927,7 +916,7 @@ impl Douyu {
                 )
             }
             Err(e) => {
-                debug!("Betard API failed, falling back: {}", e);
+                debug!("Betard API failed, falling back: {}", e.category());
 
                 let live = live_from_html.unwrap_or(true);
 
@@ -945,7 +934,7 @@ impl Douyu {
                         Some(room_info.data.avatar),
                     ),
                     Err(e) => {
-                        debug!("RoomApi failed for {}: {}", rid, e);
+                        debug!("RoomApi failed for {}: {}", rid, e.category());
                         (live, false, "Douyu".to_string(), String::new(), None, None)
                     }
                 }
@@ -987,7 +976,7 @@ impl Douyu {
                 }
                 Err(e) => {
                     // Log the error but continue - don't fail the whole extraction
-                    debug!("Failed to check interactive game status: {}", e);
+                    debug!("Failed to check interactive game status: {}", e.category());
                 }
             }
         }

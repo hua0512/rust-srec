@@ -29,6 +29,7 @@ async fn create_test_platform(pool: &DbPool, prefix: &str) -> String {
         fetch_delay_ms: Some(60_000),
         download_delay_ms: Some(1_000),
         cookies: None,
+        credential_selection: None,
         platform_specific_config: None,
         proxy_config: None,
         record_danmu: None,
@@ -1489,6 +1490,9 @@ mod end_to_end_tests {
 
         // Simulate live status detection
         let live_status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
+
             title: "Playing Rust!".to_string(),
             category: Some("Gaming".to_string()),
             avatar: None,
@@ -1676,6 +1680,8 @@ mod end_to_end_tests {
         let now = Utc::now();
         let streams = Vec::new();
         let live_args = LiveDetectedArgs {
+            credential_binding: None,
+
             streamer_id: &streamer_id,
             streamer_name: "TestStreamer",
             streamer_url: "https://twitch.tv/teststreamer",
@@ -1732,6 +1738,8 @@ mod end_to_end_tests {
         let later = now + chrono::Duration::seconds(5);
         let streams2 = Vec::new();
         let relive_args = LiveDetectedArgs {
+            credential_binding: None,
+
             streamer_id: &streamer_id,
             streamer_name: "TestStreamer",
             streamer_url: "https://twitch.tv/teststreamer",

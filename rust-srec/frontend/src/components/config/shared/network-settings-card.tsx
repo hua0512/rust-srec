@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useWatch } from 'react-hook-form';
+import { CredentialSettingsField } from '@/components/credentials/credential-settings-field';
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import {
   Card,
@@ -50,6 +52,7 @@ interface NetworkSettingsCardProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
   paths: {
     cookies: Path<TFieldValues>;
+    credentialSelection?: Path<TFieldValues>;
     retryPolicy: Path<TFieldValues>;
   };
   configMode?: 'json' | 'object';
@@ -69,6 +72,11 @@ function NetworkSettingsCardImpl<TFieldValues extends FieldValues>({
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const selection = useWatch({
+    control: form.control,
+    name: paths.credentialSelection ?? paths.cookies,
+  });
+  const managed = Boolean(paths.credentialSelection && selection != null);
 
   const scope: CredentialSaveScope | null =
     credentialScope ??
@@ -99,7 +107,7 @@ function NetworkSettingsCardImpl<TFieldValues extends FieldValues>({
           });
       }
     },
-    enabled: !!scope,
+    enabled: !!scope && !managed,
   });
 
   // Determine if this is a bilibili platform for QR login
@@ -163,7 +171,7 @@ function NetworkSettingsCardImpl<TFieldValues extends FieldValues>({
             </div>
             <div className="flex items-center gap-2">
               {/* QR Login button - only for bilibili */}
-              {scope && isBilibili && (
+              {scope && isBilibili && !managed && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -176,7 +184,7 @@ function NetworkSettingsCardImpl<TFieldValues extends FieldValues>({
                 </Button>
               )}
               {/* Refresh button */}
-              {scope && (
+              {scope && !managed && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -198,46 +206,64 @@ function NetworkSettingsCardImpl<TFieldValues extends FieldValues>({
           </div>
         </CardHeader>
         <CardContent className="px-6 pb-6 space-y-6">
-          <FormField
-            control={form.control}
-            name={paths.cookies}
-            render={({ field }) => (
-              <FormItem>
-                <div className="flex items-center justify-between">
-                  <ConfigFieldLabel>
-                    <Trans>Cookies</Trans>
-                  </ConfigFieldLabel>
-                  {field.value && (
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] py-0 h-4 bg-muted/50 font-mono"
-                    >
-                      {t(
-                        i18n,
-                      )`${plural(field.value.length, { one: '# char', other: '# chars' })}`}
-                    </Badge>
-                  )}
-                </div>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    placeholder="key=value; key2=value2"
-                    value={field.value ?? ''}
-                    className="font-mono text-sm bg-background/50 focus:bg-background min-h-[120px] resize-y rounded-xl"
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    HTTP cookies for authentication. These are automatically
-                    updated when refreshed.
-                  </Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {paths.credentialSelection && (
+            <CredentialSettingsField
+              form={form}
+              name={paths.credentialSelection}
+              scope={scope}
+              platformName={credentialPlatformNameHint}
+            />
+          )}
+          {!scope && !paths.credentialSelection && (
+            <p className="text-sm text-muted-foreground">
+              <Trans>
+                Save this template or streamer before adding local account
+                profiles.
+              </Trans>
+            </p>
+          )}
+          {!managed && (
+            <FormField
+              control={form.control}
+              name={paths.cookies}
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <ConfigFieldLabel>
+                      <Trans>Cookies</Trans>
+                    </ConfigFieldLabel>
+                    {field.value && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] py-0 h-4 bg-muted/50 font-mono"
+                      >
+                        {t(
+                          i18n,
+                        )`${plural(field.value.length, { one: '# char', other: '# chars' })}`}
+                      </Badge>
+                    )}
+                  </div>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      placeholder="key=value; key2=value2"
+                      value={field.value ?? ''}
+                      className="font-mono text-sm bg-background/50 focus:bg-background min-h-[120px] resize-y rounded-xl"
+                    />
+                  </FormControl>
+                  <FormDescription className={CONFIG_DESCRIPTION}>
+                    <Trans>
+                      HTTP cookies for authentication. These are automatically
+                      updated when refreshed.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
-          {scope && (
+          {scope && !managed && (
             <div className="pt-2 border-t border-border/50">
               <div className="flex items-center gap-2 mb-3">
                 <Info className="w-4 h-4 text-muted-foreground" />

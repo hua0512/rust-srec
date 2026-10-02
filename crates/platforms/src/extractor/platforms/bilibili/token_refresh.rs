@@ -21,6 +21,8 @@ const OAUTH2_REFRESH_URL: &str =
 
 #[derive(Debug, Error)]
 pub enum TokenRefreshError {
+    #[error("Provider response: {0}")]
+    Response(#[from] crate::extractor::error::ExtractorError),
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
     #[error("Parse error: {0}")]
@@ -79,6 +81,7 @@ pub async fn validate_token(
         .send()
         .await?;
 
+    let response = crate::extractor::error::ExtractorError::check_response(response)?;
     let body: serde_json::Value = response
         .json()
         .await
@@ -146,6 +149,7 @@ pub async fn refresh_token(
         .send()
         .await?;
 
+    let response = crate::extractor::error::ExtractorError::check_response(response)?;
     let body: serde_json::Value = response
         .json()
         .await

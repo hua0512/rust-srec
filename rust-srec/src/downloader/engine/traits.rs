@@ -90,8 +90,10 @@ impl DownloadProtocol {
 }
 
 /// Configuration for a download.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DownloadConfig {
+    pub managed_credentials: bool,
+    pub credential_binding: Option<crate::credentials::CredentialBinding>,
     /// Stream URL to download.
     pub url: String,
     /// Output directory.
@@ -156,6 +158,8 @@ impl DownloadConfig {
         session_id: impl Into<String>,
     ) -> Self {
         Self {
+            managed_credentials: false,
+            credential_binding: None,
             url: url.into(),
             output_dir: output_dir.into(),
             filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
@@ -305,6 +309,18 @@ impl DownloadConfig {
     /// Otherwise, returns the default FlvPipelineConfig.
     pub fn build_flv_pipeline_config(&self) -> FlvPipelineConfig {
         self.flv_pipeline_config.clone().unwrap_or_default()
+    }
+}
+
+impl std::fmt::Debug for DownloadConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DownloadConfig")
+            .field("streamer_id", &self.streamer_id)
+            .field("session_id", &self.session_id)
+            .field("managed_credentials", &self.managed_credentials)
+            .field("network_material", &"[redacted]")
+            .finish_non_exhaustive()
     }
 }
 
@@ -464,6 +480,10 @@ impl IoErrorKindSer {
 /// Classified error kind for download failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadFailureKind {
+    /// A bound diagnostic obtained fresh media; retry uses the session budget.
+    CredentialRecovery,
+    /// No eligible account; keep the logical session pending without circuit breaking.
+    CredentialUnavailable,
     /// HTTP 4xx client error (not rate-limiting). Resource permanently unavailable at this URL.
     HttpClientError { status: u16 },
     /// HTTP 429 Too Many Requests.
@@ -497,6 +517,18 @@ pub enum DownloadFailureKind {
 }
 
 impl DownloadFailureKind {
+    pub(crate) fn requests_credential_diagnostic(self, engine: EngineType) -> bool {
+        matches!(
+            (engine, self),
+            (
+                EngineType::Mesio,
+                Self::HttpClientError { status: 401 | 403 }
+            ) | (
+                EngineType::Ffmpeg | EngineType::Streamlink,
+                Self::ProcessExit { .. } | Self::Other
+            )
+        )
+    }
     /// Whether this failure should count toward the circuit breaker.
     ///
     /// Permanent HTTP client errors (4xx except 429) and configuration errors
@@ -512,6 +544,7 @@ impl DownloadFailureKind {
                 | Self::Configuration
                 | Self::Cancelled
                 | Self::OutputRootUnavailable { .. }
+                | Self::CredentialUnavailable
         )
     }
 
@@ -520,6 +553,8 @@ impl DownloadFailureKind {
         matches!(
             self,
             Self::RateLimited
+                | Self::CredentialRecovery
+                | Self::CredentialUnavailable
                 | Self::HttpServerError { .. }
                 | Self::Network
                 | Self::Io

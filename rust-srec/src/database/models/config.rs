@@ -209,6 +209,8 @@ pub struct PlatformConfigDbModel {
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
     pub cookies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_selection: Option<String>,
     /// JSON blob for platform-specific settings
     pub platform_specific_config: Option<String>,
     /// JSON serialized ProxyConfig

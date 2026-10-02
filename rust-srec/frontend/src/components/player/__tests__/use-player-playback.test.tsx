@@ -5,6 +5,27 @@ import {
   type UsePlayerPlaybackOptions,
 } from '../use-player-playback';
 
+it('managed playback always uses opaque proxy resources even in direct mode', () => {
+  for (const desktopBuild of [false, true]) {
+    const result = buildPlaybackUrl({
+      url: 'https://cdn.invalid/signed?secret=sentinel',
+      headers: { Cookie: 'sentinel' },
+      playback: { handle: 'handle-a', resource_id: 'resource-a' },
+      sourceUrl: 'https://source.invalid',
+      connectionMode: 'direct',
+      desktopBuild,
+      desktopToken: 'app-token',
+      baseUrl: 'https://backend.invalid/api',
+    });
+    const parsed = new URL(result, 'https://app.invalid');
+    expect(parsed.searchParams.get('playback_handle')).toBe('handle-a');
+    expect(parsed.searchParams.get('resource_id')).toBe('resource-a');
+    for (const field of ['headers', 'url', 'source_url'])
+      expect(parsed.searchParams.has(field)).toBe(false);
+    expect(result).not.toContain('sentinel');
+  }
+});
+
 const artplayerMock = vi.hoisted(() => {
   type EventHandler = (...args: unknown[]) => void;
 

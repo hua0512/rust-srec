@@ -37,8 +37,9 @@ pub(crate) async fn delete_or_defer(
     let needed: bool = match kind {
         RetiredConfigKind::Template => {
             sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM streamers WHERE template_config_id = ?)",
+                "SELECT EXISTS(SELECT 1 FROM streamers WHERE template_config_id = ?) OR EXISTS(SELECT 1 FROM live_sessions s JOIN credential_profiles p ON p.id = json_extract(s.credential_binding, '$.identity.profile_id') WHERE p.template_id = ? AND s.end_time IS NULL)",
             )
+            .bind(id)
             .bind(id)
             .fetch_one(&mut *conn)
             .await?
@@ -62,6 +63,16 @@ pub(crate) async fn delete_or_defer(
         .execute(&mut *conn)
         .await?;
     } else {
+        if matches!(kind, RetiredConfigKind::Template) {
+            super::credential_profiles::delete_owner_profiles(
+                conn,
+                &crate::credentials::CredentialOwner::Template {
+                    template_id: id.to_owned(),
+                },
+            )
+            .await
+            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        }
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DELETE FROM {} WHERE id = ?",
             kind.table()
@@ -76,9 +87,22 @@ pub(crate) async fn delete_or_defer(
 /// Runs in the transaction that reaps a streamer. Definition triggers remove
 /// the corresponding intent, making physical deletion and intent removal atomic.
 pub(crate) async fn reap(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "DELETE FROM template_config WHERE id IN (SELECT config_id FROM retirement_config_deletions WHERE kind = 'template') AND NOT EXISTS(SELECT 1 FROM streamers WHERE template_config_id = template_config.id)",
-    ).execute(&mut *conn).await?;
+    reap_retired_profiles(conn).await?;
+    let template_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM template_config WHERE id IN (SELECT config_id FROM retirement_config_deletions WHERE kind = 'template') AND NOT EXISTS(SELECT 1 FROM streamers WHERE template_config_id = template_config.id) AND NOT EXISTS(SELECT 1 FROM live_sessions s JOIN credential_profiles p ON p.id = json_extract(s.credential_binding, '$.identity.profile_id') WHERE p.template_id = template_config.id AND s.end_time IS NULL)").fetch_all(&mut *conn).await?;
+    for id in template_ids {
+        super::credential_profiles::delete_owner_profiles(
+            conn,
+            &crate::credentials::CredentialOwner::Template {
+                template_id: id.clone(),
+            },
+        )
+        .await
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        sqlx::query("DELETE FROM template_config WHERE id = ?")
+            .bind(id)
+            .execute(&mut *conn)
+            .await?;
+    }
     for kind in [
         RetiredConfigKind::JobPreset,
         RetiredConfigKind::PipelinePreset,
@@ -89,6 +113,27 @@ pub(crate) async fn reap(conn: &mut SqliteConnection) -> Result<(), sqlx::Error>
         .bind(kind.key())
         .execute(&mut *conn)
         .await?;
+    }
+    Ok(())
+}
+
+/// Remove only unreferenced retirement intents. Live sessions and policies keep
+/// their profile rows until runtime finalization and owner reaping have settled.
+pub(crate) async fn reap_retired_profiles(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    let ids: Vec<String> =
+        sqlx::query_scalar("SELECT profile_id FROM retirement_credential_profiles")
+            .fetch_all(&mut *conn)
+            .await?;
+    for id in ids {
+        let references = super::credential_profiles::references(conn, &id, None)
+            .await
+            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        if references.is_empty() {
+            sqlx::query("DELETE FROM credential_profiles WHERE id = ?")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
     }
     Ok(())
 }

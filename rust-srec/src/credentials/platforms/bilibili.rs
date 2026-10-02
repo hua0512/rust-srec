@@ -38,17 +38,25 @@ pub struct BilibiliCredentialManager {
 
 fn map_token_refresh_error(err: TokenRefreshError) -> CredentialError {
     match err {
-        TokenRefreshError::Network(e) => CredentialError::Network(e),
+        TokenRefreshError::Response(error) => error.into(),
+        TokenRefreshError::Network(e) => CredentialError::Network(e.without_url()),
         TokenRefreshError::Parse(e) => CredentialError::ParseError(e),
-        TokenRefreshError::Api { code, message } => match code {
-            -101 => CredentialError::InvalidCredentials(message),
-            -111 => CredentialError::InvalidCredentials(message),
-            -663 => CredentialError::InvalidRefreshToken,
-            _ => {
-                CredentialError::RefreshFailed(format!("Bilibili API error {}: {}", code, message))
+        TokenRefreshError::Api { code, .. } => match code {
+            -101 | -111 => {
+                CredentialError::InvalidCredentials(format!("Bilibili login required ({code})"))
             }
+            -663 => CredentialError::InvalidRefreshToken,
+            _ => CredentialError::RefreshFailed(format!("Bilibili API error {code}")),
         },
         TokenRefreshError::SystemTime => CredentialError::Internal("System time error".to_string()),
+    }
+}
+
+fn map_qr_error(error: QrLoginError) -> CredentialError {
+    match error {
+        QrLoginError::Response(error) => error.into(),
+        QrLoginError::Network(error) => CredentialError::Network(error.without_url()),
+        _ => CredentialError::RefreshFailed("Bilibili QR request failed".into()),
     }
 }
 
@@ -79,7 +87,7 @@ impl BilibiliCredentialManager {
     pub async fn generate_qr(&self) -> Result<QrGenerateResponse, CredentialError> {
         platforms_generate_qr(self.client())
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
+            .map_err(map_qr_error)
     }
 
     /// Poll the status of a QR code login.
@@ -88,7 +96,7 @@ impl BilibiliCredentialManager {
     pub async fn poll_qr(&self, auth_code: &str) -> Result<QrPollResult, CredentialError> {
         platforms_poll_qr(self.client(), auth_code)
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
+            .map_err(map_qr_error)
     }
 
     /// Validate cookies using NAV API (fallback for cookie-only users without access_token).
@@ -102,6 +110,8 @@ impl BilibiliCredentialManager {
             .send()
             .await?;
 
+        let response =
+            platforms_parser::extractor::error::ExtractorError::check_response(response)?;
         let body: serde_json::Value = response
             .json()
             .await
@@ -183,9 +193,15 @@ impl CredentialManager for BilibiliCredentialManager {
                         });
                     }
                 }
-                Err(e) => {
+                Err(error @ TokenRefreshError::Response(_))
+                | Err(error @ TokenRefreshError::Network(_)) => {
+                    // A transport failure or shared throttle cannot establish
+                    // token expiry and must not launch another provider request.
+                    return Err(map_token_refresh_error(error));
+                }
+                Err(_) => {
                     // Validation failed — token may be expired. Still try refreshing.
-                    warn!(error = %e, "Token validation failed, attempting refresh anyway");
+                    warn!("Token validation failed, attempting refresh anyway");
                 }
             }
 
@@ -217,5 +233,70 @@ impl CredentialManager for BilibiliCredentialManager {
 
     fn required_refresh_fields(&self) -> &'static [&'static str] {
         &["refresh_token", "access_token", "SESSDATA", "bili_jct"]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::credentials::{
+        CredentialScope, CredentialSource, OperationDeadline, PlatformAdmission,
+    };
+    use crate::monitor::RateLimiterManager;
+
+    #[tokio::test(start_paused = true)]
+    async fn qr_and_refresh_throttles_preserve_provider_delay_across_all_admission_paths() {
+        for qr in [true, false] {
+            let response = reqwest::Response::from(
+                axum::http::Response::builder()
+                    .status(429)
+                    .header("Retry-After", "7200")
+                    .body("private provider body")
+                    .unwrap(),
+            );
+            let error =
+                platforms_parser::extractor::error::ExtractorError::check_response(response)
+                    .unwrap_err();
+            let error = if qr {
+                map_qr_error(QrLoginError::Response(error))
+            } else {
+                map_token_refresh_error(TokenRefreshError::Response(error))
+            };
+            assert!(
+                matches!(error, CredentialError::RateLimited { retry_after: Some(delay) } if delay == std::time::Duration::from_secs(7200))
+            );
+            assert!(!error.to_string().contains("private"));
+            let admission = PlatformAdmission::new(RateLimiterManager::new());
+            let source = CredentialSource {
+                scope: CredentialScope::Platform {
+                    platform_id: "bilibili".into(),
+                    platform_name: "bilibili".into(),
+                },
+                platform_name: "bilibili".into(),
+                cookies: "account=A".into(),
+                refresh_token: None,
+                access_token: None,
+                reauth_extra: None,
+            };
+            admission.observe_source(&source, &error).await;
+            admission.observe_platform_name("bilibili", &error).await;
+            admission.observe_provider("bilibili", &error);
+            assert!(matches!(
+                admission
+                    .admit(
+                        "bilibili",
+                        OperationDeadline::new(std::time::Duration::from_secs(7199))
+                    )
+                    .await,
+                Err(CredentialError::DeadlineExceeded)
+            ));
+            admission
+                .admit(
+                    "bilibili",
+                    OperationDeadline::new(std::time::Duration::from_secs(2)),
+                )
+                .await
+                .unwrap();
+        }
     }
 }

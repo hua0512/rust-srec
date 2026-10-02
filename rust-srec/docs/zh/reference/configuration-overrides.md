@@ -223,3 +223,37 @@ extras，而不是被跳过。
 `engines_override` 中把某个键设为 `null` 表示删除该键，而 `platform_extras` 会忽略上层的
 `null`。
 :::
+
+## 凭据选择 JSON
+
+托管选择分别存储于 `platform_config.credential_selection`、
+`template_config.platform_overrides[规范平台名].credential_selection` 或
+`streamer_specific_config.credential_selection`。这里的平台名区分大小写，
+须使用平台配置返回的精确名称。更新时省略策略字段会保留已存策略，
+`{ "mode": "inherit" }` 则显式跳过本层旧版来源。平台、模板和主播的保存都遵循这一规则：
+不含 `credential_selection` 的模板覆盖或主播配置会保留已存的选择。
+
+```json
+{
+  "credential_selection": {
+    "mode": "pool",
+    "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
+    "strategy": "round_robin",
+    "failover": true,
+    "max_attempts": 3
+  }
+}
+```
+
+其他策略为 `{ "mode": "none" }`、`{ "mode": "inherit" }` 及
+`{ "mode": "fixed", "credential_id": "profile-uuid-a" }`。账号池支持 `round_robin`
+或 `priority`，有序 ID 列表必须非空且不重复，总尝试次数为 1–10。
+省略 `strategy`、`failover` 和 `max_attempts` 时，分别默认为 `round_robin`、`true` 和 `3`。
+单成员池有效。
+未知模式/字段、不可访问的所有者、错误平台及不存在的凭据 ID 都会被拒绝。
+禁用的凭据允许保留引用，但执行时不可用。若某项修改会使已存选择无法再使用其凭据，
+例如把主播移到另一个模板、使其选中的模板凭据不再可用，请求会以 HTTP 409
+`CREDENTIAL_REFERENCE_INACCESSIBLE` 失败，并列出引用这些凭据的配置。
+参见[选择和继承](../concepts/configuration.md#账号配置与选择)。
+
+上文关于单 Cookie 字符串以及 `credential_source` 的优先级说明仅适用于未转换的旧版作用域。
