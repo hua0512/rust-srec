@@ -780,6 +780,30 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
+    async fn list_dags_by_display_status(
+        &self,
+        _filter: &crate::database::repositories::DagListFilter<'_>,
+        _limit: u32,
+        _offset: u32,
+    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn count_dags_by_display_status(
+        &self,
+        _filter: &crate::database::repositories::DagListFilter<'_>,
+    ) -> Result<u64> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_display_counts(&self) -> Result<crate::database::models::DagDisplayCounts> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn delete_dag(&self, _id: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
@@ -1001,6 +1025,30 @@ impl DagRepository for TestDagRepository {
                 session_id.is_none_or(|session_id| dag.session_id.as_deref() == Some(session_id))
             })
             .count() as u64)
+    }
+
+    async fn list_dags_by_display_status(
+        &self,
+        _filter: &crate::database::repositories::DagListFilter<'_>,
+        _limit: u32,
+        _offset: u32,
+    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn count_dags_by_display_status(
+        &self,
+        _filter: &crate::database::repositories::DagListFilter<'_>,
+    ) -> Result<u64> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_display_counts(&self) -> Result<crate::database::models::DagDisplayCounts> {
+        unimplemented!("not needed for these tests")
     }
 
     async fn delete_dag(&self, _id: &str) -> Result<()> {

@@ -44,9 +44,9 @@ use crate::api::routes::pipeline::{
     BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse,
     BatchDeleteOutputsRequest, BatchDeleteOutputsResponse, CreatePipelinePresetRequest,
     CreatePipelineRequest, CreatePipelineResponse, DagCancelResponse, DagGraphResponse,
-    DagListResponse, DagRetryResponse, DagStatsResponse, DagStatusResponse, DeleteOutputResponse,
-    PipelinePresetListResponse, PipelinePresetResponse, PresetPreviewResponse,
-    UpdatePipelinePresetRequest, ValidateDagRequest, ValidateDagResponse,
+    DagListResponse, DagListStatsResponse, DagRetryResponse, DagStatsResponse, DagStatusResponse,
+    DeleteOutputResponse, PipelinePresetListResponse, PipelinePresetResponse,
+    PresetPreviewResponse, UpdatePipelinePresetRequest, ValidateDagRequest, ValidateDagResponse,
 };
 use crate::config::backup::{ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats};
 
@@ -174,6 +174,7 @@ pub struct MessageResponse {
         crate::api::routes::pipeline::presets::preview_pipeline_preset,
         // DAG endpoints
         crate::api::routes::pipeline::dag::list_dags,
+        crate::api::routes::pipeline::dag::get_dag_list_stats,
         crate::api::routes::pipeline::dag::retry_all_failed_dags,
         crate::api::routes::pipeline::dag::batch_dags,
         crate::api::routes::pipeline::jobs::delete_output,
@@ -388,6 +389,7 @@ pub struct MessageResponse {
             DagStatusResponse,
             DagGraphResponse,
             DagListResponse,
+            DagListStatsResponse,
             DagRetryResponse,
             DagCancelResponse,
             DagStatsResponse,

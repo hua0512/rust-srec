@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    DagExecutionDbModel, DagExecutionStats, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-    ReadyStep,
+    DagDisplayCounts, DagExecutionDbModel, DagExecutionStats, DagExecutionStatus,
+    DagStepExecutionDbModel, DagStepStatus, JobDbModel, ReadyStep,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -58,6 +58,24 @@ pub trait DagRepository: Send + Sync {
 
     /// Count DAG executions with optional status and session_id filters.
     async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
+
+    /// List DAG executions matching `filter`, newest first, each paired with
+    /// its display status (see [`DagDisplayCounts`]).
+    async fn list_dags_by_display_status(
+        &self,
+        filter: &DagListFilter<'_>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>>;
+
+    /// Count DAG executions matching `filter`.
+    async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64>;
+
+    /// Get a DAG execution's display status (see [`DagDisplayCounts`]).
+    async fn get_dag_display_status(&self, id: &str) -> Result<DagExecutionStatus>;
+
+    /// Count all DAG executions by display status.
+    async fn get_dag_display_counts(&self) -> Result<DagDisplayCounts>;
 
     /// Delete a DAG execution and all its steps.
     async fn delete_dag(&self, id: &str) -> Result<()>;
@@ -425,6 +443,119 @@ fn transitive_dependents(origin: &str, steps: &[DagStepExecutionDbModel]) -> Has
     result
 }
 
+/// SQL predicate, over `dag_execution AS dag`, that one of the DAG's jobs is
+/// running. A materialized step is PROCESSING while its job is still queued,
+/// so only the job row says whether a worker has picked it up.
+macro_rules! dag_has_running_job_sql {
+    () => {
+        "EXISTS (SELECT 1 FROM job WHERE job.pipeline_id = dag.id AND job.status = 'PROCESSING')"
+    };
+}
+
+/// SQL expression for a DAG's display status (see [`DagDisplayCounts`]).
+const DAG_DISPLAY_STATUS_SQL: &str = concat!(
+    "CASE WHEN dag.status IN ('PENDING', 'PROCESSING') THEN CASE WHEN ",
+    dag_has_running_job_sql!(),
+    " THEN 'PROCESSING' ELSE 'PENDING' END ELSE dag.status END"
+);
+
+/// SQL predicate selecting DAGs whose display status is `status`. Terminal
+/// statuses compare the stored column directly so they can use its index.
+fn dag_display_status_condition(status: DagExecutionStatus) -> &'static str {
+    match status {
+        DagExecutionStatus::Pending => concat!(
+            "dag.status IN ('PENDING', 'PROCESSING') AND NOT ",
+            dag_has_running_job_sql!()
+        ),
+        DagExecutionStatus::Processing => concat!(
+            "dag.status IN ('PENDING', 'PROCESSING') AND ",
+            dag_has_running_job_sql!()
+        ),
+        DagExecutionStatus::Completed => "dag.status = 'COMPLETED'",
+        DagExecutionStatus::Failed => "dag.status = 'FAILED'",
+        DagExecutionStatus::Cancelled => "dag.status = 'CANCELLED'",
+    }
+}
+
+/// Filters for listing DAG executions by display status.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DagListFilter<'a> {
+    /// Display status (see [`DagDisplayCounts`]).
+    pub status: Option<DagExecutionStatus>,
+    pub session_id: Option<&'a str>,
+    /// Case-insensitive substring of the DAG's ID, name, session ID, streamer
+    /// ID, or streamer name. Blank text matches every DAG.
+    pub search: Option<&'a str>,
+}
+
+impl DagListFilter<'_> {
+    fn search_pattern(&self) -> Option<String> {
+        self.search
+            .map(str::trim)
+            .filter(|search| !search.is_empty())
+            .map(super::literal_substring_pattern)
+    }
+}
+
+/// Number of `?` placeholders in [`DAG_SEARCH_CONDITION`].
+const DAG_SEARCH_BINDS: usize = 5;
+const DAG_SEARCH_CONDITION: &str = r"(dag.id LIKE ? ESCAPE '\'
+    OR json_extract(dag.dag_definition, '$.name') LIKE ? ESCAPE '\'
+    OR dag.session_id LIKE ? ESCAPE '\'
+    OR dag.streamer_id LIKE ? ESCAPE '\'
+    OR EXISTS (
+        SELECT 1 FROM streamers
+        WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ? ESCAPE '\'
+    ))";
+
+/// `WHERE` clause for `filter`. Bind its values with `bind_dag_list_filter!`.
+fn dag_list_where_clause(filter: &DagListFilter<'_>) -> String {
+    let mut conditions: Vec<&str> = Vec::new();
+    if let Some(status) = filter.status {
+        conditions.push(dag_display_status_condition(status));
+    }
+    if filter.session_id.is_some() {
+        conditions.push("dag.session_id = ?");
+    }
+    if filter.search_pattern().is_some() {
+        conditions.push(DAG_SEARCH_CONDITION);
+    }
+    if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    }
+}
+
+/// Bind `filter`'s values in the order [`dag_list_where_clause`] places them.
+/// A macro so it serves both `query_as` and `query_scalar` builders.
+macro_rules! bind_dag_list_filter {
+    ($query:expr, $filter:expr) => {{
+        let mut query = $query;
+        if let Some(session_id) = $filter.session_id {
+            query = query.bind(session_id);
+        }
+        if let Some(pattern) = $filter.search_pattern() {
+            for _ in 0..DAG_SEARCH_BINDS {
+                query = query.bind(pattern.clone());
+            }
+        }
+        query
+    }};
+}
+
+fn parse_display_status(dag_id: &str, status: &str) -> Result<DagExecutionStatus> {
+    DagExecutionStatus::parse(status)
+        .ok_or_else(|| Error::Database(format!("DAG {dag_id} has unknown status {status}")))
+}
+
+#[derive(sqlx::FromRow)]
+struct DagDisplayRow {
+    #[sqlx(flatten)]
+    dag: DagExecutionDbModel,
+    display_status: String,
+}
+
 #[async_trait]
 impl DagRepository for SqlxDagRepository {
     // ========================================================================
@@ -608,6 +739,92 @@ impl DagRepository for SqlxDagRepository {
 
         let count = query.fetch_one(&self.pool).await?;
         Ok(count as u64)
+    }
+
+    async fn list_dags_by_display_status(
+        &self,
+        filter: &DagListFilter<'_>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+        let sql = format!(
+            "SELECT dag.*, {DAG_DISPLAY_STATUS_SQL} AS display_status \
+             FROM dag_execution AS dag {} \
+             ORDER BY dag.created_at DESC LIMIT ? OFFSET ?",
+            dag_list_where_clause(filter)
+        );
+
+        let query = bind_dag_list_filter!(
+            sqlx::query_as::<_, DagDisplayRow>(sqlx::AssertSqlSafe(sql)),
+            filter
+        );
+        let rows = query.bind(limit).bind(offset).fetch_all(&self.pool).await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let display_status = parse_display_status(&row.dag.id, &row.display_status)?;
+                Ok((row.dag, display_status))
+            })
+            .collect()
+    }
+
+    async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64> {
+        let sql = format!(
+            "SELECT COUNT(*) FROM dag_execution AS dag {}",
+            dag_list_where_clause(filter)
+        );
+
+        let query = bind_dag_list_filter!(
+            sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql)),
+            filter
+        );
+        let count = query.fetch_one(&self.pool).await?;
+        Ok(count as u64)
+    }
+
+    async fn get_dag_display_status(&self, id: &str) -> Result<DagExecutionStatus> {
+        let status: Option<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT {DAG_DISPLAY_STATUS_SQL} FROM dag_execution AS dag WHERE dag.id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let status = status.ok_or_else(|| Error::not_found("DAG execution", id))?;
+        parse_display_status(id, &status)
+    }
+
+    async fn get_dag_display_counts(&self) -> Result<DagDisplayCounts> {
+        let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {DAG_DISPLAY_STATUS_SQL} AS display_status, COUNT(*) \
+             FROM dag_execution AS dag GROUP BY display_status"
+        )))
+        .fetch_all(&self.pool)
+        .await?;
+
+        let avg_duration_ms: Option<f64> = sqlx::query_scalar(
+            "SELECT AVG(completed_at - created_at) FROM dag_execution \
+             WHERE status = 'COMPLETED' AND completed_at IS NOT NULL",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let mut counts = DagDisplayCounts {
+            avg_duration_secs: avg_duration_ms.map(|ms| ms / 1000.0),
+            ..Default::default()
+        };
+        for (status, count) in rows {
+            let count = count as u64;
+            match DagExecutionStatus::parse(&status) {
+                Some(DagExecutionStatus::Pending) => counts.pending = count,
+                Some(DagExecutionStatus::Processing) => counts.processing = count,
+                Some(DagExecutionStatus::Completed) => counts.completed = count,
+                Some(DagExecutionStatus::Failed) => counts.failed = count,
+                Some(DagExecutionStatus::Cancelled) => counts.cancelled = count,
+                None => {}
+            }
+        }
+        Ok(counts)
     }
 
     async fn delete_dag(&self, id: &str) -> Result<()> {
@@ -1387,6 +1604,168 @@ mod tests {
         plain.status = DagExecutionStatus::Processing.as_str().to_string();
         repo.create_dag(&plain).await.unwrap();
         assert_eq!(repo.get_dag(&plain.id).await.unwrap().input_manifest, None);
+    }
+
+    /// An unfinished DAG lists, filters, and counts as PENDING until one of its
+    /// jobs is running, even though its stored status is PROCESSING.
+    #[tokio::test]
+    async fn display_status_reports_unfinished_dags_without_a_running_job_as_pending() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let jobs = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "display",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+
+        let mut queued = DagExecutionDbModel::new(&dag_def, None, None);
+        queued.status = DagExecutionStatus::Processing.as_str().to_string();
+        queued.created_at = 1_000;
+        let mut running = DagExecutionDbModel::new(&dag_def, None, None);
+        running.status = DagExecutionStatus::Processing.as_str().to_string();
+        running.created_at = 2_000;
+        let other_def = DagPipelineDefinition::new(
+            "Upload_Backup",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+        let mut completed = DagExecutionDbModel::new(&other_def, None, None);
+        completed.status = DagExecutionStatus::Completed.as_str().to_string();
+        completed.created_at = 3_000;
+        completed.completed_at = Some(7_000);
+        for dag in [&queued, &running, &completed] {
+            repo.create_dag(dag).await.unwrap();
+        }
+        for (dag, status) in [(&queued, "PENDING"), (&running, "PROCESSING")] {
+            let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
+            job.pipeline_id = Some(dag.id.clone());
+            job.status = status.to_string();
+            jobs.create_job(&job).await.unwrap();
+        }
+
+        let listed = repo
+            .list_dags_by_display_status(&DagListFilter::default(), 10, 0)
+            .await
+            .unwrap();
+        let listed: Vec<_> = listed
+            .iter()
+            .map(|(dag, status)| (dag.id.as_str(), *status))
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                (completed.id.as_str(), DagExecutionStatus::Completed),
+                (running.id.as_str(), DagExecutionStatus::Processing),
+                (queued.id.as_str(), DagExecutionStatus::Pending),
+            ]
+        );
+
+        for (status, expected) in [
+            (DagExecutionStatus::Pending, &queued),
+            (DagExecutionStatus::Processing, &running),
+            (DagExecutionStatus::Completed, &completed),
+        ] {
+            let filter = DagListFilter {
+                status: Some(status),
+                ..Default::default()
+            };
+            let filtered = repo
+                .list_dags_by_display_status(&filter, 10, 0)
+                .await
+                .unwrap();
+            assert_eq!(filtered.len(), 1, "{status}");
+            assert_eq!(filtered[0].0.id, expected.id, "{status}");
+            assert_eq!(
+                repo.count_dags_by_display_status(&filter).await.unwrap(),
+                1,
+                "{status}"
+            );
+            assert_eq!(
+                repo.get_dag_display_status(&expected.id).await.unwrap(),
+                status
+            );
+        }
+
+        assert_eq!(
+            repo.get_dag_display_counts().await.unwrap(),
+            DagDisplayCounts {
+                pending: 1,
+                processing: 1,
+                completed: 1,
+                failed: 0,
+                cancelled: 0,
+                avg_duration_secs: Some(4.0),
+            }
+        );
+    }
+
+    async fn search_dag_ids(
+        repo: &SqlxDagRepository,
+        search: &str,
+        status: Option<DagExecutionStatus>,
+    ) -> Vec<String> {
+        let filter = DagListFilter {
+            status,
+            search: Some(search),
+            ..Default::default()
+        };
+        let mut ids: Vec<String> = repo
+            .list_dags_by_display_status(&filter, 10, 0)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(dag, _)| dag.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            repo.count_dags_by_display_status(&filter).await.unwrap(),
+            ids.len() as u64
+        );
+        ids
+    }
+
+    /// Search matches a case-insensitive substring of the DAG name or ID, treats
+    /// LIKE wildcards literally, and combines with the status filter.
+    #[tokio::test]
+    async fn dag_list_search_matches_name_and_id_literally() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let upload = DagExecutionDbModel::new(
+            &DagPipelineDefinition::new(
+                "Upload_Backup",
+                vec![DagStep::new("A", PipelineStep::preset("remux"))],
+            ),
+            None,
+            None,
+        );
+        let mut remux = DagExecutionDbModel::new(
+            &DagPipelineDefinition::new(
+                "UploadXBackup",
+                vec![DagStep::new("A", PipelineStep::preset("remux"))],
+            ),
+            None,
+            None,
+        );
+        remux.status = DagExecutionStatus::Completed.as_str().to_string();
+        repo.create_dag(&upload).await.unwrap();
+        repo.create_dag(&remux).await.unwrap();
+
+        let mut both = vec![upload.id.clone(), remux.id.clone()];
+        both.sort();
+        assert_eq!(search_dag_ids(&repo, "upload", None).await, both);
+        assert_eq!(search_dag_ids(&repo, "  ", None).await, both);
+        assert_eq!(
+            search_dag_ids(&repo, "d_b", None).await,
+            vec![upload.id.clone()]
+        );
+        assert_eq!(
+            search_dag_ids(&repo, &upload.id[..8], None).await,
+            vec![upload.id.clone()]
+        );
+        assert_eq!(
+            search_dag_ids(&repo, "upload", Some(DagExecutionStatus::Completed)).await,
+            vec![remux.id.clone()]
+        );
+        assert!(search_dag_ids(&repo, "missing", None).await.is_empty());
     }
 
     /// The no-job completion transitions only a ready step that has no job in a

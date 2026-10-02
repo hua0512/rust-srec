@@ -16,7 +16,7 @@ import {
   retryAllFailedPipelines,
   batchPipelines,
 } from '@/server/functions';
-import type { BatchDagAction, DagSummary } from '@/api/schemas';
+import type { BatchDagAction, DagStatus, DagSummary } from '@/api/schemas';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
@@ -114,7 +114,7 @@ function PipelineJobsPage() {
 
   // Reset page when status changes
   const handleStatusChange = useCallback(
-    (newStatus: string | null) => {
+    (newStatus: DagStatus | null) => {
       updateSearch({ status: newStatus ?? undefined, page: undefined });
     },
     [updateSearch],
@@ -477,7 +477,7 @@ function PipelineJobsPage() {
               />
               <StatCard
                 title={<Trans>Avg. Duration</Trans>}
-                value={stats?.avg_processing_time_secs}
+                value={stats?.avg_duration_secs}
                 loading={isStatsLoading}
                 color="text-purple-500"
                 icon={<Timer className="h-4 w-4 text-purple-500" />}

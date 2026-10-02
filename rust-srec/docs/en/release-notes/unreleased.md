@@ -158,6 +158,7 @@ This release adds API keys and MCP access, Baidu Netdisk uploads, per-step workf
 - The navigation menu on phones and narrow windows now opens and closes instantly with a smooth slide, even on long pages such as the streamer list. Closing it returns keyboard focus to the menu button.
 - Collapsing or expanding the sidebar on wider screens is now one smooth motion: icons stay in place instead of jumping sideways, and labels fade with the edge. Hovering a menu entry now enlarges only that entry's icon rather than every icon in the sidebar.
 - Fixed text looking blurry on some browsers while hovering a settings card. Settings, health, and pipeline graph cards no longer grow when hovered; they highlight instead, so fields and workflow connections stay in place.
+- Fixed the **Pipeline Jobs** summary cards not matching the list below them. The cards, the status filters, and the dashboard now all count pipelines, and a pipeline shows as Pending while it waits for a free worker, so the Pending filter lists those pipelines. Average duration now covers whole pipelines, including time spent waiting. The search box now filters pipelines by name, streamer, session, or ID.
 
 ## Monitoring and maintenance
 
