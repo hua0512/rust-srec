@@ -6,13 +6,15 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
-use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
+use crate::database::models::job::{DagExecutionStatus, DagPipelineDefinition, PipelineStep};
+use crate::database::repositories::DagListFilter;
 
 use super::{
     BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse, DagCancelResponse,
     DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem, DagListResponse,
-    DagPaginationParams, DagRetryResponse, DagStatsResponse, DagStatusResponse,
-    DagStepStatusResponse, PipelineRouteState, ValidateDagRequest, ValidateDagResponse,
+    DagListStatsResponse, DagPaginationParams, DagRetryResponse, DagStatsResponse,
+    DagStatusResponse, DagStepStatusResponse, PipelineRouteState, ValidateDagRequest,
+    ValidateDagResponse,
 };
 
 /// Maximum number of DAG IDs accepted by `POST /api/pipeline/dags/batch`.
@@ -76,6 +78,12 @@ pub async fn get_dag_status(
         .await
         .map_err(ApiError::from)?;
 
+    // The same status the DAG list shows, so opening a listed DAG agrees with it.
+    let display_status = dag_scheduler
+        .get_dag_display_status(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
     // Get all steps
     let steps = dag_scheduler
         .get_dag_steps(&dag_id)
@@ -128,7 +136,7 @@ pub async fn get_dag_status(
     Ok(Json(DagStatusResponse {
         id: dag.id,
         name,
-        status: dag.status,
+        status: display_status.as_str().to_string(),
         streamer_id: dag.streamer_id,
         session_id: dag.session_id,
         total_steps: dag.total_steps,
@@ -301,35 +309,29 @@ pub async fn list_dags(
 
     let effective_limit = pagination.limit.min(100);
 
-    // Convert status string to match DAG execution status
+    // Filter by display status so the list agrees with `GET /api/pipeline/dags/stats`.
     let status_filter = filters
         .status
-        .as_ref()
-        .map(|s| match s.to_uppercase().as_str() {
-            "PENDING" => "PENDING",
-            "PROCESSING" => "PROCESSING",
-            "COMPLETED" => "COMPLETED",
-            "FAILED" => "FAILED",
-            "CANCELLED" => "CANCELLED",
-            _ => s.as_str(),
-        });
+        .as_deref()
+        .map(|status| {
+            DagExecutionStatus::parse(&status.to_uppercase())
+                .ok_or_else(|| ApiError::bad_request(format!("Invalid DAG status: {status}")))
+        })
+        .transpose()?;
 
-    let session_id_filter = filters.session_id.as_deref();
+    let filter = DagListFilter {
+        status: status_filter,
+        session_id: filters.session_id.as_deref(),
+        search: filters.search.as_deref(),
+    };
 
-    // List DAG executions from dag_execution table
     let dags = dag_scheduler
-        .list_dags(
-            status_filter,
-            session_id_filter,
-            effective_limit,
-            pagination.offset,
-        )
+        .list_dags_by_display_status(&filter, effective_limit, pagination.offset)
         .await
         .map_err(ApiError::from)?;
 
-    // Count total matching DAGs
     let total = dag_scheduler
-        .count_dags(status_filter, session_id_filter)
+        .count_dags_by_display_status(&filter)
         .await
         .map_err(ApiError::from)?;
 
@@ -337,7 +339,7 @@ pub async fn list_dags(
     // lookup only blanks the display names.
     let streamer_ids: Vec<String> = dags
         .iter()
-        .filter_map(|d| d.streamer_id.clone())
+        .filter_map(|(d, _)| d.streamer_id.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
@@ -356,7 +358,7 @@ pub async fn list_dags(
     // Convert to response format
     let dag_items: Vec<DagListItem> = dags
         .into_iter()
-        .map(|dag| {
+        .map(|(dag, display_status)| {
             let progress_percent = dag.progress_percent();
 
             let name = dag
@@ -371,7 +373,7 @@ pub async fn list_dags(
             DagListItem {
                 id: dag.id,
                 name,
-                status: dag.status,
+                status: display_status.as_str().to_string(),
                 streamer_id: dag.streamer_id,
                 streamer_name,
                 session_id: dag.session_id,
@@ -390,6 +392,42 @@ pub async fn list_dags(
         total,
         limit: effective_limit,
         offset: pagination.offset,
+    }))
+}
+
+/// Count DAG executions by the status shown in `GET /api/pipeline/dags`.
+///
+/// A DAG that is not finished counts as `PENDING` until one of its jobs is
+/// running on a worker.
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/dags/stats",
+    tag = "pipeline",
+    responses(
+        (status = 200, description = "DAG execution counts by status", body = DagListStatsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_dag_list_stats(
+    State(state): State<PipelineRouteState>,
+) -> ApiResult<Json<DagListStatsResponse>> {
+    let dag_scheduler = state
+        .pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+
+    let counts = dag_scheduler
+        .get_dag_display_counts()
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(DagListStatsResponse {
+        pending_count: counts.pending,
+        processing_count: counts.processing,
+        completed_count: counts.completed,
+        failed_count: counts.failed,
+        cancelled_count: counts.cancelled,
+        avg_duration_secs: counts.avg_duration_secs,
     }))
 }
 

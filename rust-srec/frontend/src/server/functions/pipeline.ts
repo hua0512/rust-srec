@@ -202,7 +202,7 @@ export const validateDagDefinition = createServerFn({ method: 'POST' })
 
 export const getPipelineStats = createServerFn({ method: 'GET' }).handler(
   async () => {
-    const json = await fetchBackend('/pipeline/stats');
+    const json = await fetchBackend('/pipeline/dags/stats');
     return PipelineStatsSchema.parse(json);
   },
 );

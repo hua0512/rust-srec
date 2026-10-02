@@ -203,13 +203,15 @@ export const HealthSchema = z.object({
   components: z.array(ComponentHealthSchema).default([]),
 });
 
+// Pipeline counts by the status the pipeline list filters on: an unfinished
+// pipeline counts as PENDING until one of its jobs is running.
 export const PipelineStatsSchema = z.object({
   pending_count: z.number(),
   processing_count: z.number(),
   completed_count: z.number(),
   failed_count: z.number(),
-  cancelled_count: z.number().optional(),
-  avg_processing_time_secs: z.number().nullable().optional(),
+  cancelled_count: z.number(),
+  avg_duration_secs: z.number().nullable().optional(),
 });
 
 // Upload annotation attached to a media output (backend omits the array

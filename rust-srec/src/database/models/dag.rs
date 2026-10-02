@@ -346,6 +346,23 @@ pub struct ReadyStep {
     pub merged_inputs: Vec<String>,
 }
 
+/// DAG execution counts by display status, plus the average wall-clock
+/// duration of completed DAGs.
+///
+/// A stored PENDING or PROCESSING DAG is displayed as PROCESSING only while one
+/// of its jobs is running; otherwise it is waiting for a worker and is
+/// displayed as PENDING.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DagDisplayCounts {
+    pub pending: u64,
+    pub processing: u64,
+    pub completed: u64,
+    pub failed: u64,
+    pub cancelled: u64,
+    /// Average time from creation to completion of completed DAGs, in seconds.
+    pub avg_duration_secs: Option<f64>,
+}
+
 /// DAG execution statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DagExecutionStats {

@@ -16,7 +16,7 @@ use crate::database::models::{
     DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
     DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
-use crate::database::repositories::{DagRepository, JobRepository};
+use crate::database::repositories::{DagListFilter, DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::{Job, JobFailureOutcome, JobQueue, JobStatus};
@@ -1616,6 +1616,37 @@ impl DagScheduler {
     /// Count DAG executions with optional status and session_id filters.
     pub async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
         self.dag_repository.count_dags(status, session_id).await
+    }
+
+    /// List DAG executions matching `filter`, each paired with its display status.
+    pub async fn list_dags_by_display_status(
+        &self,
+        filter: &DagListFilter<'_>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+        self.dag_repository
+            .list_dags_by_display_status(filter, limit, offset)
+            .await
+    }
+
+    /// Count DAG executions matching `filter`.
+    pub async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64> {
+        self.dag_repository
+            .count_dags_by_display_status(filter)
+            .await
+    }
+
+    /// Get a DAG execution's display status.
+    pub async fn get_dag_display_status(&self, dag_id: &str) -> Result<DagExecutionStatus> {
+        self.dag_repository.get_dag_display_status(dag_id).await
+    }
+
+    /// Count all DAG executions by display status.
+    pub async fn get_dag_display_counts(
+        &self,
+    ) -> Result<crate::database::models::DagDisplayCounts> {
+        self.dag_repository.get_dag_display_counts().await
     }
 
     /// Get statistics for a DAG execution.

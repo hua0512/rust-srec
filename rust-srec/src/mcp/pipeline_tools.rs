@@ -61,10 +61,13 @@ pub struct DagListParams {
     pub limit: Option<u32>,
     /// Number of items to skip (default 0)
     pub offset: Option<u32>,
-    /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED)
+    /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
+    /// A DAG that is not finished is PENDING until one of its jobs is running.
     pub status: Option<String>,
     /// Filter by session ID
     pub session_id: Option<String>,
+    /// Case-insensitive substring of the DAG's ID, name, session ID, streamer ID, or streamer name
+    pub search: Option<String>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -233,6 +236,7 @@ impl SrecMcpServer {
         let filters = DagFilterParams {
             status: params.status,
             session_id: params.session_id,
+            search: params.search,
         };
         let pagination = DagPaginationParams {
             limit: params.limit.unwrap_or(20),

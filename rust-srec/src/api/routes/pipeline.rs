@@ -73,8 +73,8 @@ pub(crate) mod presets;
 // `api::openapi::ApiDoc`) addresses handlers through the `dag`/`jobs`/
 // `presets` submodules directly, so no re-export is needed.
 use dag::{
-    batch_dags, cancel_dag, delete_dag, get_dag_graph, get_dag_stats, get_dag_status, list_dags,
-    retry_all_failed_dags, retry_dag, validate_dag,
+    batch_dags, cancel_dag, delete_dag, get_dag_graph, get_dag_list_stats, get_dag_stats,
+    get_dag_status, list_dags, retry_all_failed_dags, retry_dag, validate_dag,
 };
 use jobs::{
     batch_delete_outputs, cancel_job, cancel_pipeline, create_pipeline, delete_job, delete_output,
@@ -233,6 +233,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/presets/{id}/preview", get(preview_pipeline_preset))
         .route("/dags", get(list_dags))
+        .route("/dags/stats", get(get_dag_list_stats))
         .route("/dags/retry_failed", post(retry_all_failed_dags))
         .route("/dags/batch", post(batch_dags))
         .route("/dag/{dag_id}", get(get_dag_status).delete(cancel_dag))
@@ -475,7 +476,8 @@ pub struct DagStatusResponse {
     pub id: String,
     /// DAG name from definition.
     pub name: String,
-    /// Overall DAG status.
+    /// Overall DAG status; a DAG that is not finished is PENDING until one of
+    /// its jobs is running.
     pub status: String,
     /// Associated streamer ID.
     pub streamer_id: Option<String>,
@@ -624,9 +626,13 @@ pub struct PresetPreviewJob {
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
 pub struct DagFilterParams {
     /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
+    /// A DAG that is not finished is PENDING until one of its jobs is running.
     pub status: Option<String>,
     /// Filter by session ID.
     pub session_id: Option<String>,
+    /// Case-insensitive substring of the DAG's ID, name, session ID, streamer
+    /// ID, or streamer name.
+    pub search: Option<String>,
 }
 
 /// Pagination parameters for DAG list.
@@ -673,7 +679,8 @@ pub struct DagListItem {
     pub id: String,
     /// DAG name from definition.
     pub name: String,
-    /// Overall DAG status.
+    /// Overall DAG status; a DAG that is not finished is PENDING until one of
+    /// its jobs is running.
     pub status: String,
     /// Associated streamer ID.
     pub streamer_id: Option<String>,
@@ -704,6 +711,20 @@ pub struct DagCancelResponse {
     pub cancelled_steps: u64,
     /// Message describing the cancellation.
     pub message: String,
+}
+
+/// DAG execution counts by the status shown in the DAG list.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct DagListStatsResponse {
+    /// DAGs that are not finished and have no job running.
+    pub pending_count: u64,
+    /// DAGs with at least one job running.
+    pub processing_count: u64,
+    pub completed_count: u64,
+    pub failed_count: u64,
+    pub cancelled_count: u64,
+    /// Average time from creation to completion of completed DAGs, in seconds.
+    pub avg_duration_secs: Option<f64>,
 }
 
 /// Response for DAG step statistics.
