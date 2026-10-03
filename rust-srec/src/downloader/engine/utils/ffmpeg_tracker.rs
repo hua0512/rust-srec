@@ -14,7 +14,7 @@ use tracing::{debug, error, warn};
 
 use super::{
     OutputRecordReader, is_segment_start, observe_segment_event_send, output_io_error_kind,
-    parse_opened_path, parse_progress,
+    parse_opened_path, parse_progress, sanitize_engine_message,
 };
 use crate::downloader::EngineEndSignal;
 use crate::downloader::engine::{DownloadFailureKind, IoErrorKindSer, SegmentEvent, SegmentInfo};
@@ -233,6 +233,7 @@ impl SegmentTracker {
 }
 
 pub(crate) struct FfmpegEvents {
+    pub managed_credentials: bool,
     pub ignored_output_path: Option<PathBuf>,
     pub continuous_timestamps: bool,
     pub source: FfmpegSource,
@@ -277,13 +278,14 @@ impl FfmpegEvents {
                         if !self.ignored_output_path.as_ref().is_some_and(|ignored| parse_opened_path(&line).as_ref() == Some(ignored)) {
                             for event in tracker.observe(&line, Instant::now(), Utc::now()).await.into_events() { self.send(event).await; }
                         }
-                        if !line.starts_with("frame=") { debug!(streamer_id = %self.streamer_id, %line, "FFmpeg stderr"); }
+                        let safe_line = sanitize_engine_message(&line, self.managed_credentials);
+                        if !line.starts_with("frame=") { debug!(streamer_id = %self.streamer_id, line = %safe_line, "FFmpeg stderr"); }
                         if matches!(self.source, FfmpegSource::Direct) && (line.contains("Error") || line.contains("error")) {
-                            warn!(streamer_id = %self.streamer_id, %line, "FFmpeg error");
+                            warn!(streamer_id = %self.streamer_id, line = %safe_line, "FFmpeg error");
                         }
                         if output_io_kind.is_none() && let Some(io_kind) = output_io_error_kind(&line) {
                             output_io_kind = Some(io_kind);
-                            self.send(SegmentEvent::OutputIoError { output_dir: self.output_dir.clone(), io_kind, detail: format!("{}: {line}", self.source.output_name()) }).await;
+                            self.send(SegmentEvent::OutputIoError { output_dir: self.output_dir.clone(), io_kind, detail: format!("{}: {safe_line}", self.source.output_name()) }).await;
                         }
                     }
                     Ok(None) => break,
@@ -349,7 +351,7 @@ impl FfmpegEvents {
                     kind: output_io_kind.map_or(kind, |io_kind| {
                         DownloadFailureKind::OutputRootUnavailable { io_kind }
                     }),
-                    message,
+                    message: sanitize_engine_message(&message, self.managed_credentials),
                 }
             }
         };
@@ -367,6 +369,75 @@ mod tests {
     };
     use std::task::{Context, Poll};
     use tokio::io::ReadBuf;
+
+    #[tokio::test]
+    async fn managed_ffmpeg_diagnostics_hide_stderr_and_terminal_material_but_keep_io_kind() {
+        for source in [FfmpegSource::Direct, FfmpegSource::Streamlink] {
+            let captured = super::super::test_support::CapturedLog::default();
+            let subscriber = tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::TRACE)
+                .with_writer(captured.clone())
+                .finish();
+            let _guard = tracing::subscriber::set_default(subscriber);
+            let directory = tempfile::tempdir().unwrap();
+            let (event_tx, mut event_rx) = mpsc::channel(16);
+            let (exit_tx, exit_rx) = oneshot::channel::<RecordingExit>();
+            let raw = "Error writing: No space left on device; Cookie: cookie-sentinel Authorization: token-sentinel https://cdn.invalid/signed-path-sentinel?sig=query-sentinel\n";
+            assert!(
+                exit_tx
+                    .send(RecordingExit::Failed {
+                        kind: DownloadFailureKind::ProcessExit { code: Some(7) },
+                        message: raw.into()
+                    })
+                    .is_ok()
+            );
+            let events = FfmpegEvents {
+                managed_credentials: true,
+                ignored_output_path: None,
+                continuous_timestamps: false,
+                source,
+                segment_mode: false,
+                single_output_path: None,
+                started_instant: Instant::now(),
+                streamer_id: "managed".into(),
+                output_dir: directory.path().into(),
+                event_tx,
+                forced_settlement: CancellationToken::new(),
+            };
+            tokio::time::timeout(Duration::from_secs(2), events.run(raw.as_bytes(), exit_rx))
+                .await
+                .unwrap();
+            let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+            assert!(events.iter().any(|event| matches!(
+                event,
+                SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::OutputRootUnavailable {
+                        io_kind: IoErrorKindSer::StorageFull
+                    },
+                    ..
+                }
+            )));
+            assert!(events.iter().any(|event| matches!(
+                event,
+                SegmentEvent::OutputIoError {
+                    io_kind: IoErrorKindSer::StorageFull,
+                    ..
+                }
+            )));
+            let rendered = format!("{} {events:?}", captured.contents());
+            assert!(rendered.contains("FFmpeg stderr"));
+            assert!(rendered.contains("Managed engine diagnostic redacted"));
+            for sentinel in [
+                "cookie-sentinel",
+                "token-sentinel",
+                "signed-path-sentinel",
+                "query-sentinel",
+            ] {
+                assert!(!rendered.contains(sentinel), "{rendered}");
+            }
+        }
+    }
 
     #[tokio::test]
     async fn stderr_eof_waits_for_confirmed_exit_before_reading_the_final_file() {
@@ -399,6 +470,7 @@ mod tests {
                 result
             });
             let events = FfmpegEvents {
+                managed_credentials: false,
                 ignored_output_path: None,
                 continuous_timestamps: false,
                 source,
@@ -472,6 +544,7 @@ mod tests {
             drop(exit_tx);
         }
         FfmpegEvents {
+            managed_credentials: false,
             ignored_output_path: None,
             continuous_timestamps: false,
             source,

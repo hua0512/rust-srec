@@ -56,3 +56,12 @@ Login-gated adult rooms need cookies (or account credentials for video) before c
 - **Network**: Outside supported regions SOOP often returns a GDPR geo stub (`RESULT=0` with `GDPR=true`) instead of live metadata. Use a Korean network or proxy; rust-srec reports this as a region error rather than “offline”.
 - **Recording**: Placeholder “preloading” segments in SOOP playlists are skipped so they are not written into the file.
 :::
+
+## Separate account profiles
+
+Before conversion, legacy SOOP scopes may inherit the platform's username/password even
+when their cookie source is more specific. Explicit conversion copies the effective login
+material into the chosen profile. Afterwards, updating or re-login on one profile never
+changes another profile's material. Review the conversion preview, especially for a template
+shared across platforms. Use [fixed selection or a pool](../concepts/configuration.md#account-profiles-and-selection)
+to choose which account handles a recording.

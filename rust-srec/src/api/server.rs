@@ -144,6 +144,15 @@ pub struct ApiServices {
     pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
     /// Credential refresh service for API-triggered refresh and cookie resolution.
     pub credential_service: Arc<CredentialRefreshService>,
+    pub(crate) platform_admission: Arc<crate::credentials::PlatformAdmission>,
+    pub(crate) credential_profiles:
+        Arc<crate::database::repositories::credential_profiles::CredentialProfileRepository>,
+    pub(crate) credential_login_sessions:
+        Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
+    pub(crate) credential_execution: Arc<crate::credentials::CredentialExecutionService>,
+    pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
+    pub(crate) credential_conversion:
+        Arc<crate::credentials::conversion::CredentialConversionService>,
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,

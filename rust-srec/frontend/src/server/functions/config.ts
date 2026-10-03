@@ -11,6 +11,7 @@ import {
   UpdateTemplateRequestSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
+import { CredentialSelectionSchema } from '@/api/schemas/credential-profiles';
 
 // --- Global Config ---
 export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
@@ -91,6 +92,9 @@ const OVERRIDE_WRITE_FIELDS = {
 
 const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
   ...OVERRIDE_WRITE_FIELDS,
+  credential_selection: CredentialSelectionSchema.optional().transform(
+    (value) => (value === undefined ? undefined : JSON.stringify(value)),
+  ),
   platform_specific_config: jsonToString.optional(),
 });
 

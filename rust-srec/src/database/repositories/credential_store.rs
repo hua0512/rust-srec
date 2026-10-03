@@ -54,6 +54,18 @@ impl SqlxCredentialStore {
         connection: &mut sqlx::SqliteConnection,
         source: &CredentialSource,
     ) -> Result<CredentialSource, CredentialError> {
+        let converted: bool = match &source.scope {
+            CredentialScope::Platform { platform_id, .. } => sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM platform_config WHERE id = ? AND credential_selection IS NOT NULL)").bind(platform_id).fetch_one(&mut *connection).await?,
+            CredentialScope::Template { template_id, .. } => {
+                let raw: Option<String> = sqlx::query_scalar("SELECT platform_overrides FROM template_config WHERE id = ?").bind(template_id).fetch_optional(&mut *connection).await?.flatten();
+                let value: serde_json::Value = raw.as_deref().map(serde_json::from_str).transpose()?.unwrap_or_default();
+                value.get(&source.platform_name).and_then(|entry| entry.get("credential_selection")).is_some()
+            }
+            CredentialScope::Streamer { streamer_id, .. } => sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM streamers WHERE id = ? AND json_type(streamer_specific_config, '$.credential_selection') IS NOT NULL)").bind(streamer_id).fetch_one(&mut *connection).await?,
+        };
+        if converted {
+            return Err(CredentialError::SourceChanged);
+        }
         let (sql, id) = match &source.scope {
             CredentialScope::Platform { platform_id, .. } => (
                 "SELECT cookies, platform_specific_config FROM platform_config WHERE id = ?",
@@ -94,15 +106,36 @@ impl SqlxCredentialStore {
         if !matches!(source.scope, CredentialScope::Platform { .. })
             && source.platform_name.eq_ignore_ascii_case("soop")
         {
+            let blocked_by_template = if let CredentialScope::Streamer { streamer_id, .. } =
+                &source.scope
+            {
+                let raw: Option<String> = sqlx::query_scalar("SELECT t.platform_overrides FROM streamers s JOIN template_config t ON t.id = s.template_config_id WHERE s.id = ?").bind(streamer_id).fetch_optional(&mut *connection).await?.flatten();
+                let overrides: serde_json::Value = raw
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()?
+                    .unwrap_or_default();
+                overrides
+                    .get(&source.platform_name)
+                    .and_then(|entry| entry.get("credential_selection"))
+                    .is_some_and(|selection| {
+                        selection.get("mode").and_then(serde_json::Value::as_str) != Some("inherit")
+                    })
+            } else {
+                false
+            };
             let raw: Option<String> = sqlx::query_scalar(
-                "SELECT platform_specific_config FROM platform_config WHERE platform_name = ? COLLATE NOCASE",
+                "SELECT platform_specific_config FROM platform_config WHERE platform_name = ? COLLATE NOCASE AND credential_selection IS NULL",
             ).bind(&source.platform_name).fetch_optional(&mut *connection).await?.flatten();
             let config = raw
                 .as_deref()
                 .map(serde_json::from_str::<serde_json::Value>)
                 .transpose()?;
-            current.reauth_extra =
-                crate::credentials::platform_reauth_extra(&source.platform_name, config.as_ref());
+            current.reauth_extra = if blocked_by_template {
+                None
+            } else {
+                crate::credentials::platform_reauth_extra(&source.platform_name, config.as_ref())
+            };
         }
         Ok(current)
     }

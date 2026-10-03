@@ -29,7 +29,10 @@ use crate::error::{Error, Result};
 use crate::utils::task_supervisor::DrainedTasks;
 use platforms_parser::danmaku::ConnectionConfig;
 
-use super::events::{CollectionCommand, DanmuCoordinationSender, DanmuEvent, DanmuEventPublisher};
+use super::events::{
+    CollectionCommand, DanmuAuthentication, DanmuCoordinationSender, DanmuEvent,
+    DanmuEventPublisher,
+};
 use super::lifecycle::{
     CollectionExitReason, CollectionOutcome, CollectionSpec, CollectionStopReason,
 };
@@ -702,6 +705,32 @@ impl DanmuService {
                 session_id: session_id.to_string(),
                 command_tx: state.command_tx.clone(),
             })
+    }
+
+    /// Point a running collection at the account a later attempt of the same
+    /// recording uses. The collector reconnects at once when the material
+    /// differs, so danmu does not keep authenticating as a replaced account.
+    /// Returns `false` when no collection is registered for the session.
+    pub async fn update_authentication(
+        &self,
+        session_id: &str,
+        cookies: Option<String>,
+        extras: Option<std::collections::HashMap<String, String>>,
+    ) -> bool {
+        // Clone the sender out of the DashMap guard before awaiting.
+        let Some(command_tx) = self
+            .collections
+            .get(session_id)
+            .map(|state| state.command_tx.clone())
+        else {
+            return false;
+        };
+        command_tx
+            .send(CollectionCommand::UpdateAuthentication(
+                DanmuAuthentication { cookies, extras },
+            ))
+            .await
+            .is_ok()
     }
 
     /// Check if collection is active for a session.

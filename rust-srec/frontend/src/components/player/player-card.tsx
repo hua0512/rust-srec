@@ -1,4 +1,5 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { ManagedResolveRequestSchema } from '@/api/schemas/system';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -115,6 +116,7 @@ export function PlayerCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const automaticRenewal = useRef(false);
   const connectionId = useId();
   const presetId = useId();
   const {
@@ -149,10 +151,34 @@ export function PlayerCard({
   useEffect(() => {
     setRefreshFailed(false);
   }, [url, streamData]);
+  useEffect(() => {
+    if (playbackStatus === 'playing') automaticRenewal.current = false;
+    if (
+      !onRefreshSource ||
+      automaticRenewal.current ||
+      !ManagedResolveRequestSchema.safeParse(streamData).success ||
+      !playbackError ||
+      ![
+        'resolution',
+        'unavailable',
+        'authentication',
+        'network',
+        'unknown',
+      ].includes(playbackError)
+    )
+      return;
+    automaticRenewal.current = true;
+    setRefreshing(true);
+    void onRefreshSource()
+      .catch(() => setRefreshFailed(true))
+      .finally(() => setRefreshing(false));
+  }, [playbackStatus, playbackError, streamData, onRefreshSource]);
   const error = refreshFailed ? 'resolution' : playbackError;
   const status = refreshing ? 'resolving' : error ? 'error' : playbackStatus;
   const loading = refreshing || playbackLoading;
-  const hasHeaders = Object.keys(headers ?? {}).length > 0;
+  const hasHeaders =
+    Object.keys(headers ?? {}).length > 0 ||
+    ManagedResolveRequestSchema.safeParse(streamData).success;
   const hasPlaybackSettings = Boolean(sourceUrl) || isLive;
   const hasSettings = Boolean(settingsContent) || hasPlaybackSettings;
   const showTabs = Boolean(settingsContent) && hasPlaybackSettings;

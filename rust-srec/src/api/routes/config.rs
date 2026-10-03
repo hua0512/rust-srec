@@ -555,6 +555,7 @@ pub async fn replace_platform_config(
         record_danmu: request.record_danmu,
         danmu_statistics: request.danmu_statistics,
         cookies: request.cookies,
+        credential_selection: request.credential_selection.or(stored.credential_selection),
         platform_specific_config: request.platform_specific_config,
         proxy_config: request.proxy_config,
         output_folder: request.output_folder,

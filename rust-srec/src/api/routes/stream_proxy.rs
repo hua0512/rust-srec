@@ -5,6 +5,8 @@
 //! `/api/stream-proxy` that can forward media requests with custom headers and Range
 //! support.
 
+mod hls_variables;
+
 use axum::Router;
 use axum::extract::{FromRef, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -39,6 +41,7 @@ type SharedConfigService = Arc<
 
 #[derive(Clone)]
 pub struct StreamProxyState {
+    playback: Option<Arc<crate::services::playback_context::PlaybackContextService>>,
     auth_service: Option<Arc<AuthService>>,
     source_config: Option<ParseRouteState>,
     /// Used only when no application config resolver is available (tests).
@@ -56,6 +59,7 @@ pub struct StreamProxyState {
 impl FromRef<AppState> for StreamProxyState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            playback: Some(state.playback_contexts.clone()),
             auth_service: state.auth_service.clone(),
             source_config: Some(ParseRouteState::from_ref(state)),
             proxy_config: ProxyConfig::disabled(),
@@ -230,13 +234,38 @@ async fn fetch_upstream(
     headers: &reqwest::header::HeaderMap,
     allow_private_targets: bool,
 ) -> ApiResult<reqwest::Response> {
+    fetch_upstream_bound(client, initial_target, headers, allow_private_targets, None).await
+}
+
+async fn fetch_upstream_bound(
+    client: &reqwest::Client,
+    initial_target: url::Url,
+    headers: &reqwest::header::HeaderMap,
+    allow_private_targets: bool,
+    authentication: Option<(&crate::services::playback_context::PlaybackData, usize)>,
+) -> ApiResult<reqwest::Response> {
     let mut target = initial_target;
 
     for redirect_count in 0..=MAX_REDIRECTS {
         validate_target_url(&target, allow_private_targets).await?;
+        let request_headers = if authentication
+            .is_some_and(|(data, index)| !data.permits_authentication(&target, index))
+        {
+            let mut safe = reqwest::header::HeaderMap::new();
+            safe.insert(
+                reqwest::header::USER_AGENT,
+                HeaderValue::from_static(USER_AGENT),
+            );
+            if let Some(range) = headers.get(reqwest::header::RANGE) {
+                safe.insert(reqwest::header::RANGE, range.clone());
+            }
+            safe
+        } else {
+            headers.clone()
+        };
         let response = client
             .get(target.clone())
-            .headers(headers.clone())
+            .headers(request_headers)
             .send()
             .await
             .map_err(|error| {
@@ -336,7 +365,10 @@ fn find_uri_attribute(line: &str, from: usize) -> Option<(usize, usize)> {
     while let Some(relative_start) = line.get(search_from..)?.find("URI") {
         let attribute_start = search_from + relative_start;
         let preceding = line.get(..attribute_start)?.trim_end().chars().next_back();
-        if !matches!(preceding, Some(':') | Some(',')) {
+        let server_uri = line
+            .get(..attribute_start)
+            .is_some_and(|prefix| prefix.ends_with("SERVER-"));
+        if !matches!(preceding, Some(':') | Some(',')) && !server_uri {
             search_from = attribute_start + 3;
             continue;
         }
@@ -442,15 +474,32 @@ fn is_hls_content_type(headers: &reqwest::header::HeaderMap) -> bool {
     )
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StreamProxyQuery {
-    pub url: String,
+    pub url: Option<String>,
     pub headers: Option<String>,
     pub token: Option<String>,
     pub source_url: Option<String>,
+    pub playback_handle: Option<String>,
+    pub resource_id: Option<String>,
+    #[serde(rename = "_HLS_msn")]
+    pub hls_msn: Option<u64>,
+    #[serde(rename = "_HLS_part")]
+    pub hls_part: Option<u64>,
+    #[serde(rename = "_HLS_skip")]
+    pub hls_skip: Option<HlsSkip>,
     /// Web BFF requests cookie-authenticated links without exposing its bearer token.
     #[serde(default)]
     pub web: bool,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+pub enum HlsSkip {
+    #[serde(rename = "YES")]
+    Yes,
+    #[serde(rename = "v2")]
+    VersionTwo,
 }
 
 /// Create the stream proxy router.
@@ -472,14 +521,29 @@ pub async fn stream_proxy_get(
     req: Request,
 ) -> ApiResult<Response> {
     let headers_in = req.headers();
+    // These client delivery hints were historically ignored by this relay.
+    // Accept their typed forms without allowing them to choose an upstream URL.
+    let _ = (query.hls_msn, query.hls_part, query.hls_skip);
 
-    crate::api::auth_request::authorize_request(
+    let principal = crate::api::auth_request::authorize_request(
         state.auth_service.as_ref(),
         headers_in,
         query.token.as_deref(),
         crate::api::auth_request::AccessPolicy::Full,
     )
     .await?;
+    if query.playback_handle.is_some() || query.resource_id.is_some() {
+        if query.url.is_some() || query.headers.is_some() || query.source_url.is_some() {
+            return Err(ApiError::bad_request(
+                "Managed playback cannot contain raw URLs or headers",
+            ));
+        }
+        let principal = principal
+            .as_ref()
+            .map(|principal| principal.claims.sub.as_str())
+            .unwrap_or("local-anonymous");
+        return managed_stream_proxy(&state, &query, headers_in, principal).await;
+    }
     let relay_token = if state.auth_service.is_some() {
         Some(crate::api::auth_request::request_credential(
             headers_in,
@@ -501,8 +565,12 @@ pub async fn stream_proxy_get(
 
     // Validated by fetch_upstream, which checks the initial target and every
     // redirect hop with validate_target_url before fetching it.
+    let raw_url = query
+        .url
+        .as_deref()
+        .ok_or_else(|| ApiError::bad_request("URL is required"))?;
     let target =
-        url::Url::parse(&query.url).map_err(|_| ApiError::bad_request("Invalid url parameter"))?;
+        url::Url::parse(raw_url).map_err(|_| ApiError::bad_request("Invalid url parameter"))?;
 
     let mut custom_headers: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
@@ -554,7 +622,7 @@ pub async fn stream_proxy_get(
         upstream_headers.insert(reqwest::header::RANGE, value);
     }
 
-    let source_url = query.source_url.as_deref().unwrap_or(&query.url);
+    let source_url = query.source_url.as_deref().unwrap_or(raw_url);
     let source =
         url::Url::parse(source_url).map_err(|_| ApiError::bad_request("Invalid source URL"))?;
     if !matches!(source.scheme(), "http" | "https")
@@ -571,6 +639,402 @@ pub async fn stream_proxy_get(
     let upstream =
         fetch_upstream(&client, target, &upstream_headers, allow_private_targets).await?;
 
+    relay_upstream(
+        &state,
+        headers_in,
+        upstream,
+        false,
+        |manifest, final_url| {
+            Ok(rewrite_hls_manifest(
+                manifest,
+                final_url,
+                RelayContext {
+                    headers: query.headers.as_deref(),
+                    token: relay_token,
+                    source_url: Some(source_url),
+                    web: query.web,
+                },
+            ))
+        },
+    )
+    .await
+}
+
+async fn managed_stream_proxy(
+    state: &StreamProxyState,
+    query: &StreamProxyQuery,
+    incoming: &HeaderMap,
+    principal: &str,
+) -> ApiResult<Response> {
+    let handle = query
+        .playback_handle
+        .as_deref()
+        .ok_or_else(|| ApiError::bad_request("Playback handle is required"))?;
+    let resource = query
+        .resource_id
+        .as_deref()
+        .ok_or_else(|| ApiError::bad_request("Playback resource ID is required"))?;
+    let playback = state
+        .playback
+        .as_ref()
+        .ok_or(crate::services::playback_context::PlaybackError::Expired)?;
+    let config = state
+        .source_config
+        .as_ref()
+        .ok_or(crate::services::playback_context::PlaybackError::Expired)?;
+    let data = super::parse::validate_playback(config, handle, principal).await?;
+    let resource = playback.resource(handle, principal, resource)?;
+    let headers = managed_media_headers(&data, resource.stream_index, incoming)?;
+    let allow_private = match &state.config_service {
+        Some(service) => service
+            .get_cached_global_config()
+            .await
+            .map(|config| config.stream_proxy_allow_private_targets)
+            .unwrap_or(false),
+        None => state.allow_private_targets,
+    };
+    let proxy_config = resolve_proxy_config_for_url(config, &data.source.url).await;
+    let client = stream_proxy_client(allow_private, &proxy_config)?;
+    let upstream = fetch_upstream_bound(
+        &client,
+        resource.target,
+        &headers,
+        allow_private,
+        Some((&data, resource.stream_index)),
+    )
+    .await?;
+    if !upstream.status().is_success() {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "PLAYBACK_UPSTREAM_UNAVAILABLE",
+            "Upstream media is unavailable; renew playback",
+        ));
+    }
+    if upstream
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.starts_with("text/html") || value.starts_with("application/json")
+        })
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "PLAYBACK_UPSTREAM_UNAVAILABLE",
+            "Upstream returned a non-media response",
+        ));
+    }
+    let token = if state.auth_service.is_some() {
+        Some(crate::api::auth_request::request_credential(
+            incoming,
+            query.token.as_deref(),
+        )?)
+    } else {
+        None
+    };
+    let mut response = relay_upstream(state, incoming, upstream, true, |manifest, final_url| {
+        rewrite_managed_manifest(
+            manifest,
+            final_url,
+            &resource.variables,
+            |target, variables| {
+                let resource_id = playback.register_resource_with_variables(
+                    handle,
+                    principal,
+                    target,
+                    resource.stream_index,
+                    variables,
+                )?;
+                let mut parameters = url::form_urlencoded::Serializer::new(String::new());
+                parameters
+                    .append_pair("playback_handle", handle)
+                    .append_pair("resource_id", &resource_id);
+                if let Some(token) = token.filter(|_| !query.web) {
+                    parameters.append_pair("token", token);
+                }
+                let path = if query.web {
+                    "/stream-proxy"
+                } else {
+                    "/api/stream-proxy"
+                };
+                Ok(format!("{path}?{}", parameters.finish()))
+            },
+        )
+    })
+    .await?;
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    response.headers_mut().remove(axum::http::header::ETAG);
+    response
+        .headers_mut()
+        .remove(axum::http::header::LAST_MODIFIED);
+    Ok(response)
+}
+
+fn managed_media_headers(
+    data: &crate::services::playback_context::PlaybackData,
+    stream_index: usize,
+    incoming: &HeaderMap,
+) -> ApiResult<reqwest::header::HeaderMap> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        HeaderValue::from_static(USER_AGENT),
+    );
+    let common = data
+        .media
+        .headers
+        .iter()
+        .flat_map(|headers| headers.iter())
+        .map(|(name, value)| (name.as_str(), value.as_str()));
+    let specific = data
+        .media
+        .streams
+        .get(stream_index)
+        .and_then(|stream| stream.extras.as_ref())
+        .and_then(|extras| extras.get("headers"))
+        .and_then(serde_json::Value::as_object)
+        .into_iter()
+        .flat_map(|headers| headers.iter())
+        .filter_map(|(name, value)| value.as_str().map(|value| (name.as_str(), value)));
+    let mut cookie_updates = Vec::new();
+    for (index, (name, value)) in common.chain(specific).enumerate() {
+        if index >= 64 {
+            return Err(ApiError::bad_request("Too many media headers"));
+        }
+        if name.eq_ignore_ascii_case("cookie") {
+            cookie_updates.push(value);
+            continue;
+        }
+        if matches!(
+            name.to_ascii_lowercase().as_str(),
+            "connection"
+                | "content-length"
+                | "host"
+                | "keep-alive"
+                | "proxy-authenticate"
+                | "proxy-authorization"
+                | "te"
+                | "trailer"
+                | "transfer-encoding"
+                | "upgrade"
+        ) {
+            continue;
+        }
+        if name.len() > 256 || value.len() > 16_384 {
+            return Err(ApiError::bad_request("Media header is too large"));
+        }
+        let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| ApiError::bad_request("Invalid media header"))?;
+        let value = HeaderValue::from_str(value)
+            .map_err(|_| ApiError::bad_request("Invalid media header"))?;
+        headers.insert(name, value);
+    }
+    // The post-extraction snapshot includes any committed reactive login. It
+    // wins duplicate cookie names over stale extractor header copies.
+    let cookie =
+        crate::credentials::merge_cookie_updates(&data.snapshot.material.cookies, cookie_updates);
+    if !cookie.is_empty() {
+        headers.insert(
+            reqwest::header::COOKIE,
+            HeaderValue::from_str(&cookie)
+                .map_err(|_| ApiError::bad_request("Invalid media authentication"))?,
+        );
+    }
+    if let Some(range) = incoming.get(axum::http::header::RANGE) {
+        headers.insert(reqwest::header::RANGE, range.clone());
+    }
+    Ok(headers)
+}
+
+fn rewrite_managed_manifest(
+    manifest: &str,
+    base: &url::Url,
+    parent_variables: &crate::services::playback_context::PlaybackVariables,
+    register: impl Fn(
+        url::Url,
+        Arc<crate::services::playback_context::PlaybackVariables>,
+    ) -> ApiResult<String>,
+) -> ApiResult<String> {
+    let manifest = manifest.strip_prefix('\u{feff}').unwrap_or(manifest);
+    let variables = hls_variables::definitions(manifest, base, parent_variables)?;
+    let rewrite_uri = |uri: &str| -> ApiResult<String> {
+        let uri = hls_variables::expand_uri(uri, &variables)?;
+        let target = base
+            .join(&uri)
+            .map_err(|_| ApiError::bad_request("Invalid media manifest URI"))?;
+        if !matches!(target.scheme(), "http" | "https")
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return Err(ApiError::bad_request("Unsupported media manifest URI"));
+        }
+        register(target, variables.clone())
+    };
+    let mut result = String::with_capacity(manifest.len());
+    for line in manifest.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            result.push_str(line);
+            continue;
+        }
+        if trimmed.starts_with("#EXT-X-DEFINE:")
+            || (trimmed.starts_with('#') && !trimmed.starts_with("#EXT"))
+        {
+            continue;
+        }
+        let output_start = result.len();
+        if trimmed.starts_with('#') {
+            let ranges = managed_uri_attributes(line)?;
+            if carries_upstream_url(line, &ranges) {
+                let tag = trimmed.split(':').next().unwrap_or_default();
+                // A segment needs its EXTINF, so only the free-text title goes.
+                if tag == "#EXTINF" {
+                    let duration = trimmed
+                        .split_once(':')
+                        .map_or("", |(_, value)| value.split(',').next().unwrap_or(value));
+                    result.push_str("#EXTINF:");
+                    result.push_str(duration);
+                    result.push_str(",\n");
+                    continue;
+                }
+                // Vendor tags such as Twitch prefetch hints and non-URI attributes
+                // such as DATERANGE X-...-URL name upstream media directly.
+                // Players ignore tags they do not need, so the line is dropped.
+                tracing::debug!(
+                    tag,
+                    "Dropped a managed manifest tag that names upstream media"
+                );
+                continue;
+            }
+            let mut copied = 0;
+            for (start, end) in ranges {
+                result.push_str(&line[copied..start]);
+                result.push_str(&rewrite_uri(&line[start..end])?);
+                copied = end;
+            }
+            result.push_str(&line[copied..]);
+            if result[output_start..].contains("{$") {
+                return Err(ApiError::bad_request(
+                    "HLS variables outside URI fields are not supported for managed playback",
+                ));
+            }
+        } else {
+            result.push_str(&rewrite_uri(trimmed)?);
+            if line.ends_with("\r\n") {
+                result.push_str("\r\n");
+            } else if line.ends_with('\n') {
+                result.push('\n');
+            }
+        }
+        if result.len() > MAX_MANIFEST_BYTES {
+            return Err(ApiError::bad_request(
+                "Rewritten media manifest is too large",
+            ));
+        }
+    }
+    Ok(result)
+}
+
+/// Checks the text outside the rewritten URI attributes.
+fn carries_upstream_url(line: &str, uri_ranges: &[(usize, usize)]) -> bool {
+    // Twitch prefetch tags carry a bare URI, including relative signed paths.
+    // They are optional hints, not the segment URI lines the player requires.
+    if line.trim_start().starts_with("#EXT-X-TWITCH-PREFETCH:")
+        || line.trim_start().starts_with("#EXT-X-PREFETCH:")
+    {
+        return true;
+    }
+    let names_url = |text: &str| {
+        text.contains("://")
+            || text.contains("\"//")
+            || text.contains("=//")
+            || text.split(',').any(|attribute| {
+                attribute.split_once('=').is_some_and(|(key, _)| {
+                    let key = key.rsplit(':').next().unwrap_or(key).trim();
+                    key == "URL" || key.ends_with("-URL")
+                })
+            })
+    };
+    let mut outside = 0;
+    for &(start, end) in uri_ranges {
+        if names_url(&line[outside..start]) {
+            return true;
+        }
+        outside = end;
+    }
+    names_url(&line[outside..])
+}
+
+fn managed_uri_attributes(line: &str) -> ApiResult<Vec<(usize, usize)>> {
+    let Some(colon) = line.find(':') else {
+        return Ok(Vec::new());
+    };
+    if line[..colon].trim() == "#EXTINF" {
+        return Ok(Vec::new());
+    }
+    let mut ranges = Vec::new();
+    let mut start = colon + 1;
+    let mut quoted = false;
+    for (index, byte) in line
+        .bytes()
+        .enumerate()
+        .skip(start)
+        .chain(std::iter::once((line.len(), b',')))
+    {
+        if byte == b'"' {
+            quoted = !quoted;
+        }
+        if byte != b',' || quoted {
+            continue;
+        }
+        let attribute = &line[start..index];
+        if let Some(equal) = attribute.find('=') {
+            let key = attribute[..equal].trim();
+            if key == "URI" || key.ends_with("-URI") || key == "X-ASSET-LIST" {
+                let value = attribute[equal + 1..].trim();
+                let Some(value) = value
+                    .strip_prefix('"')
+                    .and_then(|value| value.strip_suffix('"'))
+                else {
+                    return Err(ApiError::bad_request(
+                        "Invalid media manifest URI attribute",
+                    ));
+                };
+                if value.contains('"') {
+                    return Err(ApiError::bad_request(
+                        "Invalid media manifest URI attribute",
+                    ));
+                }
+                let leading =
+                    attribute[equal + 1..].len() - attribute[equal + 1..].trim_start().len();
+                let value_start = start + equal + 1 + leading + 1;
+                ranges.push((value_start, value_start + value.len()));
+            }
+        }
+        start = index + 1;
+    }
+    if quoted {
+        return Err(ApiError::bad_request(
+            "Unterminated media manifest attribute",
+        ));
+    }
+    Ok(ranges)
+}
+
+async fn relay_upstream(
+    state: &StreamProxyState,
+    headers_in: &HeaderMap,
+    upstream: reqwest::Response,
+    strict_manifest: bool,
+    rewrite: impl Fn(&str, &url::Url) -> ApiResult<String>,
+) -> ApiResult<Response> {
     let status = upstream.status();
     let final_url = upstream.url().clone();
     let hls_content_type = is_hls_content_type(upstream.headers());
@@ -662,16 +1126,7 @@ pub async fn stream_proxy_get(
                     "Upstream HLS manifest is not UTF-8",
                 )
             })?;
-            let rewritten = rewrite_hls_manifest(
-                manifest,
-                &final_url,
-                RelayContext {
-                    headers: query.headers.as_deref(),
-                    token: relay_token,
-                    source_url: Some(source_url),
-                    web: query.web,
-                },
-            );
+            let rewritten = rewrite(manifest, &final_url)?;
             out_headers.remove(axum::http::header::CONTENT_LENGTH);
             out_headers.remove(axum::http::header::CONTENT_RANGE);
             out_headers.remove(axum::http::header::ACCEPT_RANGES);
@@ -683,6 +1138,13 @@ pub async fn stream_proxy_get(
             );
             axum::body::Body::from(rewritten)
         } else {
+            if strict_manifest {
+                return Err(ApiError::new(
+                    StatusCode::BAD_GATEWAY,
+                    "PLAYBACK_INVALID_MANIFEST",
+                    "Upstream returned an invalid media manifest",
+                ));
+            }
             axum::body::Body::from(manifest_bytes.freeze())
         }
     } else {
@@ -750,6 +1212,7 @@ mod tests {
 
     fn test_state(allow_private_targets: bool) -> StreamProxyState {
         StreamProxyState {
+            playback: None,
             auth_service: None,
             source_config: None,
             proxy_config: ProxyConfig::disabled(),
@@ -757,6 +1220,371 @@ mod tests {
             allow_private_targets,
             cors: CorsPolicy::AnyOrigin,
         }
+    }
+
+    #[test]
+    fn managed_manifest_rewrites_every_uri_form_without_upstream_material() {
+        let service = crate::services::playback_context::PlaybackContextService::default();
+        let (source, snapshot, media) = crate::services::playback_context::test_bundle(
+            "https://cdn.test/master.m3u8?secret=master",
+        );
+        let context = service.insert("alice", source, snapshot, media).unwrap();
+        let manifest = concat!(
+            "#EXTM3U\n",
+            "#EXT-X-MEDIA:TYPE=AUDIO,URI=\"audio.m3u8?secret=audio\"\n",
+            "#EXT-X-I-FRAME-STREAM-INF:URI=\"iframe.m3u8?secret=iframe\"\n",
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"https://other.test/key?secret=key\"\n",
+            "#EXT-X-MAP:URI=\"init.mp4?secret=init\"\n",
+            "#EXT-X-PART:DURATION=1,URI=\"part.ts?secret=part\"\n",
+            "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"next.ts?secret=next\"\n",
+            "#EXT-X-RENDITION-REPORT:URI=\"other.m3u8?secret=report\"\n",
+            "#EXT-X-CONTENT-STEERING:SERVER-URI=\"steering?secret=steer\"\n",
+            "#EXT-X-TWITCH-PREFETCH:https://cdn.test/prefetch.ts?secret=prefetch\n",
+            "#EXT-X-DATERANGE:ID=\"ad\",START-DATE=\"2026-01-01T00:00:00Z\",X-TV-TWITCH-AD-URL=\"https://ads.test/?secret=ad\"\n",
+            "#EXT-X-SESSION-DATA:DATA-ID=\"poster\",VALUE=\"//cdn.test/poster?secret=poster\"\n",
+            "video/index.m3u8?secret=nested\n",
+            "#EXTINF:2.000,https://cdn.test/title?secret=title\n",
+            "segment.ts?secret=segment\n",
+        );
+        let rewritten = rewrite_managed_manifest(
+            manifest,
+            &url::Url::parse("https://cdn.test/master.m3u8?secret=master").unwrap(),
+            &Default::default(),
+            |target, variables| {
+                let resource = service.register_resource_with_variables(
+                    &context.handle,
+                    "alice",
+                    target,
+                    0,
+                    variables,
+                )?;
+                Ok(format!(
+                    "/api/stream-proxy?playback_handle={}&resource_id={resource}",
+                    context.handle
+                ))
+            },
+        )
+        .unwrap();
+        assert!(!rewritten.contains("secret="));
+        assert!(!rewritten.contains("cdn.test"));
+        assert!(!rewritten.contains("other.test"));
+        assert!(!rewritten.contains("headers="));
+        assert!(!rewritten.contains("ads.test"));
+        assert!(!rewritten.contains("TWITCH-PREFETCH"));
+        assert!(rewritten.contains("#EXT-X-MEDIA:"));
+        assert!(rewritten.contains("#EXTINF:2.000,\n/api/stream-proxy?"));
+        assert_eq!(rewritten.matches("resource_id=").count(), 10);
+        assert!(
+            rewrite_managed_manifest(
+                "#EXTM3U\n#EXT-X-KEY:URI=unquoted-secret\n",
+                &url::Url::parse("https://cdn.test/").unwrap(),
+                &Default::default(),
+                |_, _| Ok("opaque".into())
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn managed_vendor_hints_never_expose_relative_signed_urls() {
+        let rewritten = rewrite_managed_manifest(
+            concat!(
+                "#EXTM3U\n",
+                "#EXT-X-TWITCH-PREFETCH:../next.ts?sig=private\n",
+                "#EXT-X-PREFETCH:/next.ts?sig=private\n",
+                "#EXT-X-DATERANGE:ID=\"ad\",X-ASSET-URL=\"ads.json?sig=private\"\n",
+                "#EXT-X-DATERANGE:ID=\"other\",X-ASSET-URL=\"//cdn.test/ads.json?sig=private\"\n",
+                "#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts?sig=private\n",
+            ),
+            &url::Url::parse("https://cdn.test/live/index.m3u8").unwrap(),
+            &Default::default(),
+            |_, _| Ok("/opaque-resource".into()),
+        )
+        .unwrap();
+        assert_eq!(
+            rewritten,
+            "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\n/opaque-resource\n"
+        );
+    }
+
+    #[test]
+    fn managed_variables_stay_server_side_across_nested_playlists_and_bom() {
+        let service = crate::services::playback_context::PlaybackContextService::default();
+        let (source, snapshot, media) = crate::services::playback_context::test_bundle(
+            "https://cdn.test/master.m3u8?token=secret-query",
+        );
+        let context = service.insert("alice", source, snapshot, media).unwrap();
+        let base = url::Url::parse("https://cdn.test/master.m3u8?token=secret-query").unwrap();
+        let registered = std::cell::RefCell::new(Vec::new());
+        let master = rewrite_managed_manifest(
+            "\u{feff}#EXTM3U\n# provider comment with secret-query\n#EXT-X-DEFINE:QUERYPARAM=\"token\"\n#EXT-X-DEFINE:NAME=\"base\",VALUE=\"https://cdn.test\"\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n{$base}/child.m3u8?sig={$token}\n",
+            &base, &Default::default(), |target, variables| {
+                let id = service.register_resource_with_variables(&context.handle, "alice", target, 0, variables)?;
+                registered.borrow_mut().push(id.clone());
+                Ok(format!("/stream-proxy?resource_id={id}"))
+            },
+        ).unwrap();
+        assert!(master.starts_with("#EXTM3U\n"));
+        for secret in ["DEFINE", "secret-query", "cdn.test", "{$"] {
+            assert!(!master.contains(secret));
+        }
+        let child = service
+            .resource(&context.handle, "alice", &registered.borrow()[0])
+            .unwrap();
+        assert_eq!(
+            child.target.as_str(),
+            "https://cdn.test/child.m3u8?sig=secret-query"
+        );
+        let nested = rewrite_managed_manifest(
+            "#EXTM3U\n#EXT-X-DEFINE:IMPORT=\"token\"\n#EXT-X-KEY:METHOD=AES-128,URI=\"key?sig={$token}\"\nsegment.ts?sig={$token}\n",
+            &child.target, &child.variables, |target, variables| {
+                let id = service.register_resource_with_variables(&context.handle, "alice", target, 0, variables)?;
+                Ok(format!("/stream-proxy?resource_id={id}"))
+            },
+        ).unwrap();
+        assert_eq!(nested.matches("resource_id=").count(), 2);
+        assert!(!nested.contains("secret-query"));
+        assert!(!nested.contains("DEFINE"));
+        assert!(
+            rewrite_managed_manifest(
+                "#EXTM3U\n{$missing}/segment.ts\n",
+                &base,
+                &Default::default(),
+                |_, _| Ok("unused".into())
+            )
+            .is_err()
+        );
+        assert!(
+            rewrite_managed_manifest(
+                "#EXTM3U\n#EXT-X-MEDIA:URI=\"safe\",X-ASSET-URI=unquoted-secret\n",
+                &base,
+                &Default::default(),
+                |_, _| Ok("opaque".into())
+            )
+            .is_err()
+        );
+        assert!(rewrite_managed_manifest("#EXTM3U\n#EXT-X-DEFINE:NAME=\"secret\",VALUE=\"private\"\n#EXT-X-MEDIA:NAME=\"{$secret}\",URI=\"a.m3u8\"\n", &base, &Default::default(), |_, _| Ok("opaque".into())).is_err());
+    }
+
+    #[test]
+    fn managed_resource_headers_keep_each_cdns_cookie_without_changing_the_account() {
+        let service = crate::services::playback_context::PlaybackContextService::default();
+        let (source, snapshot, mut media) =
+            crate::services::playback_context::test_bundle("https://cdn.test/a.m3u8");
+        let mut other = media.streams[0].clone();
+        media.streams[0].extras = Some(
+            serde_json::json!({"headers":{"Cookie":"session=stale; edge=cdn-a","Authorization":"Bearer cdn-a"}}),
+        );
+        other.extras = Some(
+            serde_json::json!({"headers":{"Cookie":"session=stale; edge=cdn-b","Authorization":"Bearer cdn-b"}}),
+        );
+        media.streams.push(other);
+        let context = service.insert("alice", source, snapshot, media).unwrap();
+        let data = service.get(&context.handle, "alice").unwrap();
+        let a = managed_media_headers(&data, 0, &HeaderMap::new()).unwrap();
+        let b = managed_media_headers(&data, 1, &HeaderMap::new()).unwrap();
+        assert!(a[header::COOKIE].to_str().unwrap().contains("edge=cdn-a"));
+        assert!(b[header::COOKIE].to_str().unwrap().contains("edge=cdn-b"));
+        assert!(
+            a[header::COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("session=secret-cookie")
+        );
+        assert!(
+            b[header::COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("session=secret-cookie")
+        );
+        assert_eq!(a[header::AUTHORIZATION], "Bearer cdn-a");
+        assert_eq!(b[header::AUTHORIZATION], "Bearer cdn-b");
+        assert_eq!(data.snapshot.material.cookies, "session=secret-cookie");
+    }
+
+    #[tokio::test]
+    async fn low_latency_hls_delivery_hints_are_typed_and_do_not_select_resources() {
+        use axum::extract::FromRequestParts;
+        let (mut parts, _) = HttpRequest::builder()
+            .uri(
+                "/?playback_handle=opaque&resource_id=resource&_HLS_msn=7&_HLS_part=1&_HLS_skip=v2",
+            )
+            .body(Body::empty())
+            .unwrap()
+            .into_parts();
+        let Query(query) = Query::<StreamProxyQuery>::from_request_parts(&mut parts, &())
+            .await
+            .unwrap();
+        assert_eq!(query.hls_msn, Some(7));
+        assert_eq!(query.hls_part, Some(1));
+        assert_eq!(query.resource_id.as_deref(), Some("resource"));
+        for query in [
+            "_HLS_msn=-1",
+            "_HLS_part=no",
+            "_HLS_skip=arbitrary",
+            "_HLS_msn=18446744073709551616",
+        ] {
+            let (mut parts, _) = HttpRequest::builder()
+                .uri(format!("/?{query}"))
+                .body(Body::empty())
+                .unwrap()
+                .into_parts();
+            assert!(
+                Query::<StreamProxyQuery>::from_request_parts(&mut parts, &())
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn managed_proxy_rejects_raw_mixtures_and_never_falls_back_after_expiry() {
+        let app = super::router::<StreamProxyState>().with_state(test_state(true));
+        for pairs in [
+            vec![
+                ("playback_handle", "handle"),
+                ("resource_id", "resource"),
+                ("url", "http://127.0.0.1/"),
+            ],
+            vec![
+                ("playback_handle", "handle"),
+                ("resource_id", "resource"),
+                ("headers", "{}"),
+            ],
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri(format!("/?{}", build_query(&pairs)))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+        let response = app
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/?playback_handle=expired&resource_id=resource")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::GONE);
+    }
+
+    #[tokio::test]
+    async fn managed_redirect_cannot_forward_authentication_to_another_variant_origin() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let destination_url = format!("http://{}/segment", destination.local_addr().unwrap());
+            let other_variant_url = destination_url.clone();
+            let destination_app = Router::new().route(
+                "/segment",
+                get(|headers: HeaderMap| async move {
+                    assert!(headers.get(header::COOKIE).is_none());
+                    assert!(headers.get(header::AUTHORIZATION).is_none());
+                    assert!(headers.get("x-provider-token").is_none());
+                    "segment"
+                }),
+            );
+            let destination_task = tokio::spawn(async move {
+                axum::serve(destination, destination_app).await.unwrap();
+            });
+            let source = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let source_url = format!("http://{}/master", source.local_addr().unwrap());
+            let source_app = Router::new().route(
+                "/master",
+                get(move |headers: HeaderMap| {
+                    let location = destination_url.clone();
+                    async move {
+                        assert_eq!(
+                            headers.get(header::COOKIE).unwrap(),
+                            "session=secret-cookie"
+                        );
+                        (StatusCode::FOUND, [(header::LOCATION, location)])
+                    }
+                }),
+            );
+            let source_task = tokio::spawn(async move {
+                axum::serve(source, source_app).await.unwrap();
+            });
+            let service = crate::services::playback_context::PlaybackContextService::default();
+            let (source, snapshot, mut media) =
+                crate::services::playback_context::test_bundle(&source_url);
+            let mut other_variant = media.streams[0].clone();
+            other_variant.url = other_variant_url;
+            media.streams.push(other_variant);
+            let context = service.insert("alice", source, snapshot, media).unwrap();
+            let data = service.get(&context.handle, "alice").unwrap();
+            let client = stream_proxy_client(true, &ProxyConfig::disabled()).unwrap();
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::COOKIE,
+                HeaderValue::from_static("session=secret-cookie"),
+            );
+            headers.insert(
+                header::AUTHORIZATION,
+                HeaderValue::from_static("Bearer secret"),
+            );
+            headers.insert("x-provider-token", HeaderValue::from_static("secret"));
+            let response = fetch_upstream_bound(
+                &client,
+                url::Url::parse(&source_url).unwrap(),
+                &headers,
+                true,
+                Some((&data, 0)),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.text().await.unwrap(), "segment");
+            source_task.abort();
+            destination_task.abort();
+        })
+        .await
+        .expect("redirect fixture must finish");
+    }
+
+    #[tokio::test]
+    async fn managed_manifest_rejects_non_manifest_body_without_changing_legacy_relay() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let target = format!("http://{}/manifest", listener.local_addr().unwrap());
+            let app = Router::new().route(
+                "/manifest",
+                get(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
+                        "private-provider-sentinel",
+                    )
+                }),
+            );
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            crate::utils::http_client::install_rustls_provider();
+            let client = reqwest::Client::new();
+            let state = test_state(true);
+            let incoming = HeaderMap::new();
+            let invalid = client.get(&target).send().await.unwrap();
+            let error = relay_upstream(&state, &incoming, invalid, true, |_, _| unreachable!())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "PLAYBACK_INVALID_MANIFEST");
+            assert!(!format!("{error:?}").contains("private-provider-sentinel"));
+            let legacy = client.get(&target).send().await.unwrap();
+            let response = relay_upstream(&state, &incoming, legacy, false, |_, _| unreachable!())
+                .await
+                .unwrap();
+            let body = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            assert_eq!(body.as_ref(), b"private-provider-sentinel");
+            server.abort();
+        })
+        .await
+        .expect("manifest fixture must finish");
     }
 
     #[tokio::test]

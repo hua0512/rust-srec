@@ -195,7 +195,10 @@ impl<'a> DouyinRequest<'a> {
             let pc_response = self.get_pc_response().await?;
             // Extract just the user info (sec_uid and room_id) from PC response
             if let Err(e) = self.extract_user_info_from_pc_response(&pc_response) {
-                debug!("Failed to extract user info from PC response: {:?}", e);
+                debug!(
+                    category = e.category(),
+                    "Failed to extract user info from Douyin PC response"
+                );
                 return Err(e);
             }
             let app_response = self.get_app_response().await?;
@@ -273,7 +276,7 @@ impl<'a> DouyinRequest<'a> {
         if !cookies.is_empty() {
             builder = builder.header(reqwest::header::COOKIE, cookies);
         }
-        // debug!("builder: {:?}", builder);
+        // debug!("Prepared Douyin request headers");
         builder
     }
 
@@ -310,7 +313,10 @@ impl<'a> DouyinRequest<'a> {
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>()
             .join("&");
-        debug!("params_str: {}", params_str);
+        debug!(
+            parameter_count = params.len(),
+            "Signing Douyin request parameters"
+        );
         let mut abogus = ABogus::new(None, Some(user_agent), None);
         let (final_params, _, _, _) = abogus.generate_abogus(&params_str, "");
         Ok(final_params)
@@ -323,7 +329,7 @@ impl<'a> DouyinRequest<'a> {
         params.insert("cookie_enabled", "true");
         let abogus = self.get_a_bogus_params(&params, DEFAULT_UA).await?;
         let url = format!("{WEBCAST_ENTER_URL}?{abogus}");
-        debug!("url: {}", url);
+        debug!("Prepared Douyin API request");
 
         let response = self
             .request(reqwest::Method::GET, &url)
@@ -358,7 +364,7 @@ impl<'a> DouyinRequest<'a> {
         let abogus = self.get_a_bogus_params(&params, DEFAULT_MOBILE_UA).await?;
 
         let url = format!("{APP_REFLOW_URL}?{abogus}");
-        debug!("url: {}", url);
+        debug!("Prepared Douyin API request");
 
         // Build request directly (avoid `Extractor::request()` which applies `platform_params`
         // via `.query(&self.platform_params)`. For signed URLs, extra query params can
@@ -382,7 +388,7 @@ impl<'a> DouyinRequest<'a> {
 
             builder = builder.header(reqwest::header::COOKIE, cookie_string);
         }
-        debug!("builder: {:?}", builder);
+        debug!("Prepared Douyin request headers");
         let response = builder.send().await.map_err(ExtractorError::HttpError)?;
 
         // Automatically parse and store new cookies from the response
@@ -470,8 +476,8 @@ impl<'a> DouyinRequest<'a> {
         let trimmed = body.trim_start();
         if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
             debug!(
-                "Received HTML instead of JSON. First 500 chars: {}",
-                &body[..body.len().min(500)]
+                response_bytes = body.len(),
+                "Received HTML instead of Douyin JSON"
             );
             return Err(ExtractorError::ValidationError(
                 "Received HTML error page instead of JSON - API may be rate limiting or blocking requests".to_string(),
@@ -481,11 +487,7 @@ impl<'a> DouyinRequest<'a> {
         let response: DouyinPcResponse = match serde_json::from_str(body) {
             Ok(resp) => resp,
             Err(e) => {
-                debug!(
-                    "Failed to parse JSON response. Error: {}. First 500 chars of body: {}",
-                    e,
-                    &body[..body.len().min(500)]
-                );
+                debug!(category = ?e.classify(), response_bytes = body.len(), "Failed to parse Douyin JSON response");
                 return Err(ExtractorError::JsonError(e));
             }
         };
@@ -494,7 +496,7 @@ impl<'a> DouyinRequest<'a> {
         if let Some(prompts) = &response.data.prompts
             && (prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内"))
         {
-            debug!("Stream ended or restricted with response: {:?}", response);
+            debug!("Douyin stream ended or visibility restricted");
             // If we have user info, we can return offline info
             // Try to get title from room data if available, otherwise use default
             let title = response
@@ -551,8 +553,8 @@ impl<'a> DouyinRequest<'a> {
         let trimmed = body.trim_start();
         if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
             debug!(
-                "Received HTML instead of JSON from APP API. First 500 chars: {}",
-                &body[..body.len().min(500)]
+                response_bytes = body.len(),
+                "Received HTML instead of Douyin APP JSON"
             );
             return Err(ExtractorError::ValidationError(
                 "Received HTML error page from APP API".to_string(),
@@ -562,18 +564,14 @@ impl<'a> DouyinRequest<'a> {
         let response: DouyinAppResponse = match serde_json::from_str(body) {
             Ok(resp) => resp,
             Err(e) => {
-                debug!(
-                    "Failed to parse APP JSON response. Error: {}. First 500 chars of body: {}",
-                    e,
-                    &body[..body.len().min(500)]
-                );
+                debug!(category = ?e.classify(), response_bytes = body.len(), "Failed to parse Douyin APP JSON response");
                 return Err(ExtractorError::JsonError(e));
             }
         };
         if let Some(prompts) = &response.data.prompts {
             if prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内")
             {
-                debug!("Stream ended or restricted with response: {:?}", response);
+                debug!("Douyin stream ended or visibility restricted");
                 let user = response.data.user.as_ref();
                 let title = response
                     .data
@@ -924,7 +922,7 @@ impl<'a> DouyinRequest<'a> {
 
         if let Some(pull_data) = double_screen_pull_data {
             stream_data = &pull_data.stream_data;
-            debug!("stream_data: {:#?}", stream_data);
+            debug!("Decoded Douyin stream data");
             // Use owned qualities from pull_data
             return self.extract_streams_with_owned_qualities(
                 stream_data,

@@ -34,9 +34,13 @@ import type { TemplateFormValues } from '../template-editor';
 
 interface PlatformOverridesTabProps {
   form: UseFormReturn<TemplateFormValues>;
+  templateId?: string;
 }
 
-export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
+export function PlatformOverridesTab({
+  form,
+  templateId,
+}: PlatformOverridesTabProps) {
   const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
 
@@ -139,6 +143,7 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
           <PlatformOverrideCard
             key={platformName}
             platformName={platformName}
+            templateId={templateId}
             form={form}
             onRemove={() => handleRemoveOverride(platformName)}
           />

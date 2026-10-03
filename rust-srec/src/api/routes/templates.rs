@@ -351,6 +351,11 @@ pub async fn update_template(
         .update_template_config(&template)
         .await
         .map_err(ApiError::from)?;
+    // The write keeps credential selections the request omitted.
+    let template = config_service
+        .get_template_config(&id)
+        .await
+        .map_err(ApiError::from)?;
 
     info!("Updated template '{}' (id: {})", template.name, id);
 
@@ -464,33 +469,8 @@ pub async fn clone_template(
         )));
     }
 
-    // Create the cloned template with a new ID and name
-    let mut cloned = TemplateConfigDbModel::new(&request.new_name);
-    cloned.output_folder = existing.output_folder;
-    cloned.output_filename_template = existing.output_filename_template;
-    cloned.output_file_format = existing.output_file_format;
-    cloned.download_engine = existing.download_engine;
-    cloned.extractor = existing.extractor;
-    cloned.record_danmu = existing.record_danmu;
-    cloned.danmu_statistics = existing.danmu_statistics.clone();
-    cloned.platform_overrides = existing.platform_overrides;
-    cloned.engines_override = existing.engines_override;
-    cloned.stream_selection_config = existing.stream_selection_config;
-    cloned.cookies = existing.cookies;
-    cloned.min_segment_size_bytes = existing.min_segment_size_bytes;
-    cloned.max_download_duration_secs = existing.max_download_duration_secs;
-    cloned.max_part_size_bytes = existing.max_part_size_bytes;
-    cloned.download_retry_policy = existing.download_retry_policy;
-    cloned.proxy_config = existing.proxy_config;
-    cloned.pipeline = existing.pipeline;
-    cloned.session_complete_pipeline = existing.session_complete_pipeline;
-    cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
-    cloned.offline_check_count = existing.offline_check_count;
-    cloned.offline_check_delay_ms = existing.offline_check_delay_ms;
-
-    // Create the cloned template
-    config_service
-        .create_template_config(&cloned)
+    let cloned = config_service
+        .clone_template_config(&id, &request.new_name)
         .await
         .map_err(ApiError::from)?;
 

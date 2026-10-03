@@ -271,7 +271,7 @@ impl PlatformExtractor for Huya {
 
         let flv_url = Self::extract_flv_url_from_extras(extras);
 
-        debug!("Getting WUP URL for stream: {}", stream_info.url);
+        debug!("Resolving Huya WUP stream URL");
 
         // Compute anticode
         let stream_name = Self::extract_stream_name_from_extras(extras)?;

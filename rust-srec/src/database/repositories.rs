@@ -8,6 +8,7 @@ pub(crate) mod row_write;
 pub mod api_key;
 pub mod config;
 pub(crate) mod config_retirement;
+pub mod credential_profiles;
 pub mod credential_store;
 pub mod dag;
 pub mod filter;
@@ -32,6 +33,7 @@ mod write_contract_tests;
 
 pub use api_key::*;
 pub use config::*;
+pub use credential_profiles::*;
 pub use credential_store::*;
 pub use dag::*;
 pub use filter::*;

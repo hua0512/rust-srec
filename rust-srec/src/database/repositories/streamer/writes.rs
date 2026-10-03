@@ -12,6 +12,8 @@ pub(crate) async fn write_streamer(
         WriteMode::Update => Mutation::Update,
         WriteMode::Import => Mutation::Upsert,
     };
+    let streamer_specific_config =
+        crate::credentials::canonical_document_text(model.streamer_specific_config.as_deref());
     let mut row = RowWrite::new("streamers", mutation, &model.id)?;
     row.field("name", &model.name, true)?;
     row.field("url", &model.url, true)?;
@@ -21,11 +23,7 @@ pub(crate) async fn write_streamer(
     row.field("priority", &model.priority, true)?;
     row.field("avatar", &model.avatar, true)?;
     row.field("last_live_time", model.last_live_time, true)?;
-    row.field(
-        "streamer_specific_config",
-        &model.streamer_specific_config,
-        true,
-    )?;
+    row.field("streamer_specific_config", &streamer_specific_config, true)?;
     row.field(
         "consecutive_error_count",
         model.consecutive_error_count,

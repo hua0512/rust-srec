@@ -11,6 +11,9 @@ fn monitor_mapping_only_emits_fatal_alerts_and_keeps_source_time() {
     let source = now();
     for event in [
         MonitorEvent::StreamerLive {
+            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+            credential_binding: None,
+
             streamer_id: "s".into(),
             session_id: "session".into(),
             streamer_name: "Name".into(),

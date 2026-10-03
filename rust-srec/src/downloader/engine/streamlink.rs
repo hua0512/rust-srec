@@ -19,8 +19,8 @@ use super::traits::{
     EngineType,
 };
 use super::utils::{
-    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit, redact_process_args,
-    settle_engine_tasks,
+    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
+    redact_download_process_args, sanitize_engine_message, settle_engine_tasks,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
 
@@ -673,7 +673,7 @@ impl StreamlinkEngine {
         info!(
             "Starting streamlink download for streamer {} with args: {:?}",
             config.streamer_id,
-            redact_process_args(&streamlink_args)
+            redact_download_process_args(&streamlink_args, config.managed_credentials)
         );
 
         // Spawn streamlink process
@@ -1149,6 +1149,7 @@ impl StreamlinkEngine {
         // Spawn task to monitor streamlink stderr
         let streamer_id_clone = streamer_id.clone();
         let stderr_forced_settlement = forced_settlement.clone();
+        let managed_credentials = config.managed_credentials;
         let streamlink_stderr_task = AbortOnDropHandle::new(tokio::spawn(async move {
             let reader = BufReader::new(streamlink_stderr);
             let mut lines = reader.lines();
@@ -1174,7 +1175,7 @@ impl StreamlinkEngine {
                                             info!("Streamlink stream ended for {}", streamer_id_clone);
                                         }
                                         StreamlinkStatus::Error(err) => {
-                                            warn!("Streamlink error for {}: {}", streamer_id_clone, err);
+                                            warn!("Streamlink error for {}: {}", streamer_id_clone, sanitize_engine_message(&err, managed_credentials));
                                         }
                                     }
                                 }
@@ -1192,6 +1193,7 @@ impl StreamlinkEngine {
 
         // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status
         let events = FfmpegEvents {
+            managed_credentials: config.managed_credentials,
             ignored_output_path: chunked.then(|| config.output_dir.join(super::chunked::LIST_NAME)),
             continuous_timestamps: chunked,
             source: FfmpegSource::Streamlink,

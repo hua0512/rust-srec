@@ -70,3 +70,13 @@ streamer deletion and global/lag reconciliation invalidate affected snapshots to
 already holds a snapshot finishes with that version; a retired load cannot publish over an
 invalidation. External SQL or writers outside the shared runtime may remain unseen for the
 30-second cache TTL; the first subsequent check refreshes expired data.
+
+## Managed credential persistence and execution
+
+Policies contain profile IDs, never copied secrets. Platform policy is stored in `credential_selection`; template policy lives under the exact canonical platform key in `platform_overrides`, and streamer policy lives in `streamer_specific_config`. SQL NULL/no field is legacy, while explicit `inherit` skips local legacy material and `none` terminates authentication inheritance. Cache resolved policy; obtain current secret material at execution time.
+
+Credential material revisions protect refresh, health and login writes from stale completion. Label edits have a separate optimistic version. Policy/profile/import mutations publish through owned post-commit work; HTTP request cancellation cannot undo publication after commit. Import uses portable owner keys, preserves free UUIDs and rejects foreign-owner UUID collisions without label/secret matching. Whole-graph validation runs within the same SQLite transaction as owner remapping and profile writes.
+
+Recording bindings persist identity, material revision, policy generation and epoch without secrets. Changed accounts/revisions require a new complete extraction bundle; old URLs must never receive current cookies. Active-session references block physical deletion. Replace imports persist retirement intent, settle work outside the transaction and reap profiles only after references disappear. Configuration backups exclude runtime bindings, managed profile health, selection cursors, QR sessions and playback contexts.
+
+Shared platform admission covers legacy, raw and managed extraction, refresh and QR operations. A logical deadline includes admission, lock and repair waits, with no nested double charge. Only typed account-specific failures permit failover; unknown throttles remain platform-scoped. Coordination is process-local: separate backends sharing SQLite are not guaranteed fair rotation or one provider refresh. SQLite revision checks prevent stale writes, not distributed execution.

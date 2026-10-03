@@ -22,7 +22,7 @@ pub enum HttpVersionPreference {
 }
 
 /// Configurable options for the downloader
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DownloaderConfig {
     /// Cache configuration
     pub cache_config: Option<CacheConfig>,
@@ -86,6 +86,18 @@ pub struct DownloaderConfig {
     /// Longer timeouts improve connection reuse for streaming
     /// Default: 30 seconds
     pub pool_idle_timeout: Duration,
+}
+
+impl std::fmt::Debug for DownloaderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloaderConfig")
+            .field("timeout", &self.timeout)
+            .field("http_version", &self.http_version)
+            .field("header_count", &self.headers.len())
+            .field("parameter_count", &self.params.len())
+            .field("network_material", &"[redacted]")
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for DownloaderConfig {

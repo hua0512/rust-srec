@@ -144,10 +144,16 @@ impl Soop {
         result == Self::RESULT_LOGIN_REQUIRED || result == Self::RESULT_ADULT_GATE
     }
 
-    fn login_required_error() -> ExtractorError {
-        ExtractorError::ValidationError(
-            "SOOP login required - set username/password or cookies in platform config".to_string(),
-        )
+    fn login_required_error(result: i64) -> ExtractorError {
+        // An age gate can reject an otherwise valid account. Only the explicit
+        // login-required response is evidence against the account itself.
+        if result == Self::RESULT_ADULT_GATE {
+            ExtractorError::AgeRestrictedContent
+        } else {
+            ExtractorError::Authentication {
+                code: result.to_string(),
+            }
+        }
     }
 
     /// Builds the Cookie header for SOOP requests. The session obtained by
@@ -215,12 +221,7 @@ impl Soop {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            return Err(ExtractorError::ValidationError(format!(
-                "SOOP player API returned HTTP {}",
-                response.status()
-            )));
-        }
+        let response = ExtractorError::check_response(response)?;
 
         Ok(response.json::<SoopPlayerResponse>().await?.channel)
     }
@@ -294,8 +295,8 @@ impl Soop {
                 );
                 None
             }
-            Err(e) => {
-                debug!(error = %e, "Failed to fetch SOOP station status");
+            Err(_) => {
+                debug!("Failed to fetch SOOP station status");
                 None
             }
         }
@@ -538,7 +539,7 @@ impl Soop {
 
         let (channel, _) = self.get_channel_info_with_login_retry(request).await?;
         if Self::needs_login(channel.result) {
-            return Err(Self::login_required_error());
+            return Err(Self::login_required_error(channel.result));
         }
         if channel.result != Self::RESULT_OK {
             return Err(ExtractorError::ValidationError(format!(
@@ -559,12 +560,7 @@ impl Soop {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            return Err(ExtractorError::ValidationError(format!(
-                "SOOP stream assign returned HTTP {}",
-                response.status()
-            )));
-        }
+        let response = ExtractorError::check_response(response)?;
 
         let stream_assign = response.json::<SoopStreamAssign>().await?;
         let view_url = stream_assign
@@ -600,7 +596,7 @@ impl PlatformExtractor for Soop {
 
         let (channel, login_cookie) = self.get_channel_info_with_login_retry(request).await?;
         if Self::needs_login(channel.result) {
-            return Err(Self::login_required_error());
+            return Err(Self::login_required_error(channel.result));
         }
 
         // Geo/GDPR stubs also use RESULT=0 but are not offline rooms.
@@ -719,6 +715,16 @@ impl PlatformExtractor for Soop {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn login_and_age_gate_have_distinct_failure_evidence() {
+        assert!(
+            matches!(super::Soop::login_required_error(-6), crate::extractor::error::ExtractorError::Authentication { code } if code == "-6")
+        );
+        assert!(matches!(
+            super::Soop::login_required_error(-8),
+            crate::extractor::error::ExtractorError::AgeRestrictedContent
+        ));
+    }
     use super::*;
     use crate::extractor::default::default_client;
     use crate::extractor::platform_extractor::PlatformExtractor;

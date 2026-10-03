@@ -151,7 +151,11 @@ impl From<&ActiveDownload> for DownloadInfo {
         Self {
             manual_split: download.handle.manual_split.snapshot(),
             id: download.handle.id.clone(),
-            url: config.url.clone(),
+            url: if config.managed_credentials {
+                String::new()
+            } else {
+                config.url.clone()
+            },
             streamer_id: config.streamer_id.clone(),
             session_id: config.session_id.clone(),
             engine_type: download.handle.engine_type,
@@ -183,7 +187,26 @@ impl AttemptPhase {
 }
 
 /// The Download Manager service.
+type CredentialDiagnostic = Arc<
+    dyn Fn(
+            DownloadTerminalEvent,
+        ) -> futures::future::BoxFuture<'static, Option<DownloadFailureKind>>
+        + Send
+        + Sync,
+>;
+type CredentialStartValidator = Arc<
+    dyn Fn(
+            String,
+            String,
+            crate::credentials::CredentialBinding,
+        ) -> futures::future::BoxFuture<'static, Result<()>>
+        + Send
+        + Sync,
+>;
+
 pub struct DownloadManager {
+    credential_start_validator: OnceLock<CredentialStartValidator>,
+    credential_diagnostic: OnceLock<CredentialDiagnostic>,
     /// Configuration.
     config: RwLock<DownloadManagerConfig>,
     /// Serializes configured-limit updates and temporary throttle changes through queue publication.
@@ -272,6 +295,12 @@ impl std::fmt::Debug for EngineHandle {
 }
 
 impl DownloadManager {
+    pub(crate) fn set_credential_start_validator(&self, validator: CredentialStartValidator) {
+        self.credential_start_validator.get_or_init(|| validator);
+    }
+    pub(crate) fn set_credential_diagnostic(&self, diagnostic: CredentialDiagnostic) {
+        self.credential_diagnostic.get_or_init(|| diagnostic);
+    }
     /// Create a new Download Manager.
     pub fn new() -> Self {
         Self::with_config(DownloadManagerConfig::default())
@@ -296,6 +325,8 @@ impl DownloadManager {
         );
 
         let manager = Self {
+            credential_start_validator: OnceLock::new(),
+            credential_diagnostic: OnceLock::new(),
             config: RwLock::new(config),
             throttle_factor: Mutex::new(None),
             queue,
@@ -727,6 +758,19 @@ impl DownloadManager {
             _ = cancel.cancelled() => return Ok(None),
             operation = self.begin_operation() => operation?,
         };
+        if config.managed_credentials {
+            let binding = config
+                .credential_binding
+                .clone()
+                .ok_or(crate::credentials::ProfileError::SourceChanged)?;
+            if let Some(validate) = self.credential_start_validator.get() {
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return Ok(None),
+                    result = validate(config.session_id.clone(), config.streamer_id.clone(), binding) => result?,
+                }
+            }
+        }
         let result = self
             .start_download_with_engine_and_slot(
                 config,

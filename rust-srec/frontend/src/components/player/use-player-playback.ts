@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { resolvePlayerMediaType, type PlayerMediaType } from '@/lib/media';
 import { resolveUrl } from '@/server/functions/parse';
+import { ManagedResolveRequestSchema } from '@/api/schemas/system';
 import { isDesktopBuild } from '@/utils/desktop';
 import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
@@ -29,6 +30,7 @@ type HlsInstance = InstanceType<(typeof import('hls.js'))['default']>;
 interface PlaybackSource {
   url: string;
   headers?: Record<string, string>;
+  playback?: { handle: string; resource_id: string };
 }
 
 interface SourceRequest {
@@ -109,7 +111,18 @@ export function buildPlaybackUrl({
   baseUrl,
   connectionMode = 'auto',
   sourceUrl,
+  playback,
 }: BuildPlaybackUrlOptions): string {
+  if (playback) {
+    const query = new URLSearchParams({
+      playback_handle: playback.handle,
+      resource_id: playback.resource_id,
+    });
+    if (!desktopBuild) return `/stream-proxy?${query}`;
+    if (!desktopToken) throw new PlaybackConfigurationError('session');
+    query.set('token', desktopToken);
+    return `${baseUrl.replace(/\/$/, '')}/stream-proxy?${query}`;
+  }
   const hasHeaders = Object.keys(headers ?? {}).length > 0;
   if (connectionMode === 'direct' && hasHeaders) {
     throw new PlaybackConfigurationError('headers');
@@ -166,16 +179,30 @@ function useResolvedSource(options: UseResolvedSourceOptions): {
 
     const resolve = async () => {
       try {
+        const managed = ManagedResolveRequestSchema.safeParse(streamData);
         const response = await resolveUrl({
-          data: {
-            url: title,
-            stream_info: streamData,
-            cookies: Object.entries(headers ?? {}).find(
-              ([name]) => name.toLowerCase() === 'cookie',
-            )?.[1],
-          },
+          data: managed.success
+            ? managed.data
+            : {
+                url: title,
+                stream_info: streamData,
+                cookies: Object.entries(headers ?? {}).find(
+                  ([name]) => name.toLowerCase() === 'cookie',
+                )?.[1],
+              },
         });
         if (disposed) return;
+        if (managed.success) {
+          setResolved({
+            request,
+            source:
+              response.success && response.playback
+                ? { url: '', playback: response.playback }
+                : null,
+            error: response.success && response.playback ? null : 'resolution',
+          });
+          return;
+        }
         if (!response.success || !response.stream_info?.url) {
           setResolved({ request, source: null, error: 'resolution' });
           return;
@@ -260,10 +287,9 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   });
   const desktopBuild = isDesktopBuild();
   const desktopToken = desktopBuild ? getDesktopAccessToken() : null;
-  const connection = effectiveConnection(
-    connectionMode,
-    source?.headers ?? headers,
-  );
+  const connection = source?.playback
+    ? 'proxy'
+    : effectiveConnection(connectionMode, source?.headers ?? headers);
   let playUrl: string | null = null;
   let configurationError: PlaybackError | null = null;
   if (source) {

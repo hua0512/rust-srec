@@ -926,6 +926,7 @@ mod tests {
             fetch_delay_ms: None,
             download_delay_ms: None,
             cookies: None,
+            credential_selection: None,
             platform_specific_config: None,
             proxy_config: None,
             record_danmu: None,

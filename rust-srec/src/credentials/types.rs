@@ -76,6 +76,24 @@ pub enum CredentialScope {
 }
 
 impl CredentialScope {
+    /// The scope of a profile owner, labelled with the owner's display name.
+    pub fn for_owner(owner: &super::CredentialOwner, name: String) -> Self {
+        match owner {
+            super::CredentialOwner::Platform { platform_id } => Self::Platform {
+                platform_id: platform_id.clone(),
+                platform_name: name,
+            },
+            super::CredentialOwner::Template { template_id } => Self::Template {
+                template_id: template_id.clone(),
+                template_name: name,
+            },
+            super::CredentialOwner::Streamer { streamer_id } => Self::Streamer {
+                streamer_id: streamer_id.clone(),
+                streamer_name: name,
+            },
+        }
+    }
+
     /// Returns the database table name for this scope.
     #[inline]
     pub fn table_name(&self) -> &'static str {
@@ -241,8 +259,20 @@ impl CredentialSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CredentialEvent {
+    /// Selection exhaustion does not assert that any individual account is invalid.
+    Unavailable {
+        scope: CredentialScope,
+        platform: String,
+        reason_code: String,
+        retry_at: Option<i64>,
+        timestamp: DateTime<Utc>,
+    },
     /// Credentials were successfully refreshed.
     Refreshed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         expires_at: Option<DateTime<Utc>>,
@@ -251,6 +281,10 @@ pub enum CredentialEvent {
 
     /// Credential refresh failed - action may be required.
     RefreshFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         error: String,
@@ -263,6 +297,10 @@ pub enum CredentialEvent {
 
     /// Credentials are invalid - manual re-login required.
     Invalid {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         reason: String,
@@ -273,6 +311,10 @@ pub enum CredentialEvent {
 
     /// Credentials are expiring soon - proactive warning.
     ExpiringSoon {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         expires_at: DateTime<Utc>,
@@ -285,6 +327,7 @@ impl CredentialEvent {
     /// Event name for notification subscription matching.
     pub fn event_name(&self) -> &'static str {
         match self {
+            Self::Unavailable { .. } => "credential_unavailable",
             Self::Refreshed { .. } => "credential_refreshed",
             Self::RefreshFailed { .. } => "credential_refresh_failed",
             Self::Invalid { .. } => "credential_invalid",
@@ -295,6 +338,7 @@ impl CredentialEvent {
     /// Severity level for filtering.
     pub fn severity(&self) -> NotificationPriority {
         match self {
+            Self::Unavailable { .. } => NotificationPriority::High,
             Self::Refreshed { .. } => NotificationPriority::Normal,
             Self::RefreshFailed {
                 requires_relogin: true,
@@ -312,6 +356,42 @@ impl CredentialEvent {
         }
     }
 
+    /// The scope as shown to users, naming the account for profile events.
+    pub fn scope_text_in(&self, locale: &str) -> String {
+        let (scope, label) = match self {
+            Self::Unavailable { scope, .. } => (scope, None),
+            Self::Refreshed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::RefreshFailed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::Invalid {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::ExpiringSoon {
+                scope,
+                profile_label,
+                ..
+            } => (scope, profile_label.as_deref()),
+        };
+        match label {
+            Some(label) => crate::t_str_in!(
+                locale,
+                "notification.credential.scope_with_account",
+                scope = scope.describe().as_str(),
+                account = label,
+            ),
+            None => scope.describe(),
+        }
+    }
+
     /// Generate a human-readable message for notifications, in the process-wide locale.
     pub fn to_message(&self) -> String {
         self.to_message_in(&crate::i18n::current_locale())
@@ -319,18 +399,39 @@ impl CredentialEvent {
 
     /// Generate a human-readable message for notifications, in `locale`.
     pub fn to_message_in(&self, locale: &str) -> String {
+        let scope_text = self.scope_text_in(locale);
         match self {
-            Self::Refreshed {
-                platform, scope, ..
-            } => crate::t_str_in!(
+            Self::Unavailable {
+                platform,
+                reason_code,
+                retry_at,
+                ..
+            } => {
+                let reason = unavailable_reason_key(reason_code)
+                    .map_or_else(|| reason_code.clone(), |key| crate::t_str_in!(locale, key));
+                let retry_at = retry_at
+                    .and_then(DateTime::<Utc>::from_timestamp_millis)
+                    .map_or_else(
+                        || "—".to_string(),
+                        |time| time.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                    );
+                crate::t_str_in!(
+                    locale,
+                    "notification.credential.unavailable.message",
+                    platform = platform.as_str(),
+                    scope = scope_text.as_str(),
+                    reason = reason.as_str(),
+                    retry_at = retry_at.as_str()
+                )
+            }
+            Self::Refreshed { platform, .. } => crate::t_str_in!(
                 locale,
                 "notification.credential.refreshed.message",
                 platform = platform.as_str(),
-                scope = scope.describe().as_str(),
+                scope = scope_text.as_str(),
             ),
             Self::RefreshFailed {
                 platform,
-                scope,
                 error,
                 requires_relogin,
                 failure_count,
@@ -345,14 +446,13 @@ impl CredentialEvent {
                     locale,
                     key,
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     error = error.as_str(),
                     failure_count = failure_count.to_string().as_str(),
                 )
             }
             Self::Invalid {
                 platform,
-                scope,
                 reason,
                 error_code,
                 ..
@@ -368,14 +468,13 @@ impl CredentialEvent {
                     locale,
                     "notification.credential.invalid.message",
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     reason = reason.as_str(),
                     error_code = error_code.as_str(),
                 )
             }
             Self::ExpiringSoon {
                 platform,
-                scope,
                 days_remaining,
                 expires_at,
                 ..
@@ -385,7 +484,7 @@ impl CredentialEvent {
                     locale,
                     "notification.credential.expiring_soon.message",
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     days_remaining = days_remaining.to_string().as_str(),
                     expires_at = expires_at.as_str(),
                 )
@@ -394,11 +493,82 @@ impl CredentialEvent {
     }
 }
 
+/// Unknown codes are shown as stored rather than hidden.
+fn unavailable_reason_key(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "cooling_down" => "notification.credential.unavailable.reason.cooling_down",
+        "login_required" => "notification.credential.unavailable.reason.login_required",
+        "profiles_disabled" => "notification.credential.unavailable.reason.profiles_disabled",
+        "bound_profile_unavailable" => {
+            "notification.credential.unavailable.reason.bound_profile_unavailable"
+        }
+        "binding_policy_changed" => {
+            "notification.credential.unavailable.reason.binding_policy_changed"
+        }
+        "attempts_exhausted" => "notification.credential.unavailable.reason.attempts_exhausted",
+        _ => return None,
+    })
+}
+
+/// Every reason code `CredentialExecutionService` can report.
+#[cfg(test)]
+pub(crate) const UNAVAILABLE_REASON_CODES: &[&str] = &[
+    "cooling_down",
+    "login_required",
+    "profiles_disabled",
+    "bound_profile_unavailable",
+    "binding_policy_changed",
+    "attempts_exhausted",
+];
+
 #[cfg(test)]
 mod tests {
     use super::{
         CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
     };
+
+    /// Unavailable notices read as text rather than codes or epoch values, and
+    /// profile events name the account beside the owner it belongs to.
+    #[test]
+    fn credential_notices_render_reasons_times_and_account_labels() {
+        use super::{CredentialEvent, UNAVAILABLE_REASON_CODES};
+        let scope = CredentialScope::Template {
+            template_id: "template-1".to_string(),
+            template_name: "Night shift".to_string(),
+        };
+        for locale in ["en", "zh-CN"] {
+            for code in UNAVAILABLE_REASON_CODES {
+                let message = CredentialEvent::Unavailable {
+                    scope: scope.clone(),
+                    platform: "bilibili".to_string(),
+                    reason_code: code.to_string(),
+                    retry_at: Some(1_788_784_496_123),
+                    timestamp: chrono::Utc::now(),
+                }
+                .to_message_in(locale);
+                assert!(!message.contains(code), "{locale}/{code}: {message}");
+                assert!(
+                    !message.contains("notification."),
+                    "{locale}/{code}: {message}"
+                );
+                assert!(message.contains("2026-09-07 12:34:56 UTC"), "{message}");
+                assert!(message.contains("Night shift"), "{message}");
+            }
+            let invalid = CredentialEvent::Invalid {
+                profile_id: Some("profile-1".to_string()),
+                profile_label: Some("Backup account".to_string()),
+                scope: scope.clone(),
+                platform: "bilibili".to_string(),
+                reason: "login_required".to_string(),
+                error_code: None,
+                timestamp: chrono::Utc::now(),
+            };
+            let text = invalid.scope_text_in(locale);
+            assert!(text.contains("Template: Night shift"), "{text}");
+            assert!(text.contains("Backup account"), "{text}");
+            assert!(invalid.to_message_in(locale).contains("Backup account"));
+        }
+    }
 
     #[test]
     fn debug_output_redacts_credential_material() {

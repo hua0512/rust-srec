@@ -6,11 +6,11 @@ Use two backup layers. A configuration export is portable and convenient, while 
 
 | Backup | Includes | Does not include |
 |---|---|---|
-| **Settings > Backup & Restore** export | Global settings, templates, streamers and filters, engines, platform settings, notification channels/subscriptions, job and pipeline presets, users and password hashes | Recording media, session/job history, logs, refresh-token sessions |
+| **Settings > Backup & Restore** export | Global settings, templates, streamers and filters, engines, platform settings, notification channels/subscriptions, job and pipeline presets, users and password hashes, credential profiles and selection policies | Recording media, session/job history, logs, refresh-token sessions |
 | Filesystem backup | Whatever you copy from `DATA_DIR`, `CONFIG_DIR`, `OUTPUT_DIR`, and optionally `LOG_DIR` | External upload destinations and notification services |
 
 ::: warning Sensitive Export
-The configuration export can contain platform cookies, notification credentials, channel settings, user metadata, and password hashes. Encrypt it, restrict access, and do not attach it to a public issue.
+The configuration export can contain platform cookies, profile refresh/access tokens and re-login material, notification credentials, channel settings, user metadata, and password hashes. Encrypt it, restrict access, and do not attach it to a public issue.
 :::
 
 ## Configuration Export
@@ -89,3 +89,13 @@ Record the restore time and the point-in-time loss observed. Those measurements 
 This section is now in [Persistence contracts](../development/persistence.md#import-persistence-ownership).
 
 </div>
+
+## Credential profiles and rollback {#credential-profiles-and-rollback}
+
+An export containing only legacy credentials keeps schema `0.1.8` and its existing JSON shape. Any saved profile or explicit selection policy, including `inherit` or `none` with no profiles, requires schema `1.0.0`. Older importers reject that version. This is a backup format version, not the application version. A filtered export must retain referenced profiles, their owners and platforms; incomplete credential graphs are rejected. Profiles contain cookies, refresh/access tokens and supported re-login material, so protect them like the live database.
+
+Profile UUIDs are preserved when free. An existing UUID is updated only if its resolved owner and platform match; otherwise the entire import fails. Accounts are never guessed from labels or cookie contents. Owners are resolved using platform names, template names and streamer URLs. Repeated imports update the same accounts. All profile/reference validation and configuration writes share one transaction. A legacy-format import cannot overwrite converted authentication fields or remove managed policies.
+
+Merge retains omitted profiles and omitted selection policies; use an explicit `inherit` policy to reset a selection. Replace retires omitted profiles and removed owners, stops affected recordings after commit, and retains material until active sessions settle before physical deletion. Runtime publication continues even if the HTTP client disconnects. Restored material receives a new revision so old refresh results cannot overwrite it; later download attempts obtain fresh media. Managed profile health, cooldowns, round-robin positions, session bindings, QR receipts and playback contexts are not configuration-backup data.
+
+Before upgrading or converting, take a consistent database backup. Running an older binary against an upgraded database is not a supported rollback: it may reject migration versions and cannot interpret managed policies. Restore the matching pre-upgrade database backup with the previous binary. There is no lossless pool-to-scalar downgrade export.

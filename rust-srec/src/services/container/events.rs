@@ -344,7 +344,12 @@ impl ConfigEventHandler {
                         );
                         self.stop_streamer_unless_retiring(&streamer_id).await;
                     }
-                    Some(_) => {}
+                    // A selection change can make a waiting recording startable.
+                    Some(_) => {
+                        self.runtime_coordinator
+                            .resume_pending_credentials(&streamer_id)
+                            .await;
+                    }
                     None => {
                         // Streamer not in memory (race with delete/hydration issues).
                         // Best-effort cleanup anyway.
@@ -369,7 +374,15 @@ impl ConfigEventHandler {
                     .map(|m| m.id)
                     .collect();
                 self.runtime_coordinator
-                    .refresh_metadata_offline_checks(affected)
+                    .refresh_metadata_offline_checks(affected.clone())
+                    .await;
+                self.runtime_coordinator
+                    .resume_pending_credentials_for(affected)
+                    .await;
+            }
+            ConfigUpdateEvent::CredentialMaterialChanged { owner } => {
+                self.runtime_coordinator
+                    .resume_pending_credentials_for_owner(&owner)
                     .await;
             }
             ConfigUpdateEvent::TemplateUpdated { template_id } => {
@@ -382,7 +395,10 @@ impl ConfigEventHandler {
                     .map(|m| m.id)
                     .collect();
                 self.runtime_coordinator
-                    .refresh_metadata_offline_checks(affected)
+                    .refresh_metadata_offline_checks(affected.clone())
+                    .await;
+                self.runtime_coordinator
+                    .resume_pending_credentials_for(affected)
                     .await;
             }
             ConfigUpdateEvent::GlobalUpdated => {
@@ -637,8 +653,10 @@ impl DownloadEventProcessor {
         if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
             ref streamer_id,
             ref error,
+            kind,
             ..
         }) = download_event
+            && kind != crate::downloader::DownloadFailureKind::CredentialUnavailable
             && let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
         {
             if let Err(e) = self.stream_monitor.handle_error(&metadata, error).await {

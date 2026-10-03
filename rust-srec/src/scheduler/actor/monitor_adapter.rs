@@ -96,6 +96,7 @@ pub struct CheckError {
     pub message: String,
     /// Whether this error is transient (can be retried).
     pub transient: bool,
+    pub credential_unavailable: bool,
 }
 
 impl CheckError {
@@ -104,6 +105,7 @@ impl CheckError {
         Self {
             message: message.into(),
             transient: true,
+            credential_unavailable: false,
         }
     }
 
@@ -112,12 +114,24 @@ impl CheckError {
         Self {
             message: message.into(),
             transient: false,
+            credential_unavailable: false,
         }
     }
 }
 
 impl From<crate::Error> for CheckError {
     fn from(err: crate::Error) -> Self {
+        if matches!(
+            err,
+            crate::Error::CredentialUnavailable(_)
+                | crate::Error::CredentialProfile(crate::credentials::ProfileError::SourceChanged)
+        ) {
+            return Self {
+                message: err.to_string(),
+                transient: true,
+                credential_unavailable: true,
+            };
+        }
         CheckError::transient(err.to_string())
     }
 }
@@ -565,6 +579,9 @@ mod tests {
     #[test]
     fn history_projection_excludes_stream_urls() {
         let status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
+
             title: "Playing Games".to_string(),
             category: Some("Gaming".to_string()),
             started_at: None,

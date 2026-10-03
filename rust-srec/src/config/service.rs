@@ -160,6 +160,29 @@ where
 
     // ========== Event Broadcasting ==========
 
+    /// Synchronous publication runs while the committed writer still owns the
+    /// lease, so a canceled API request cannot leave cached policies behind.
+    pub(crate) fn publish_credential_owner(&self, owner: crate::credentials::CredentialOwner) {
+        self.cache.invalidate_all();
+        let event = match owner {
+            crate::credentials::CredentialOwner::Platform { platform_id } => {
+                ConfigUpdateEvent::PlatformUpdated { platform_id }
+            }
+            crate::credentials::CredentialOwner::Template { template_id } => {
+                ConfigUpdateEvent::TemplateUpdated { template_id }
+            }
+            crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id }
+            }
+        };
+        self.broadcaster.publish(event);
+    }
+
+    pub(crate) fn publish_credential_material(&self, owner: crate::credentials::CredentialOwner) {
+        self.broadcaster
+            .publish(ConfigUpdateEvent::CredentialMaterialChanged { owner });
+    }
+
     /// Subscribe to configuration update events.
     pub fn subscribe(&self) -> broadcast::Receiver<ConfigUpdateEvent> {
         self.broadcaster.subscribe()
@@ -261,6 +284,23 @@ where
     /// List all template configurations.
     pub async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>> {
         self.config_repo.list_template_configs().await
+    }
+
+    /// Clone a template and its local accounts in one committed operation.
+    pub async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel> {
+        let cloned = self
+            .config_repo
+            .clone_template_config(source_id, new_name)
+            .await?;
+        self.broadcaster
+            .publish(ConfigUpdateEvent::TemplateUpdated {
+                template_id: cloned.id.clone(),
+            });
+        Ok(cloned)
     }
 
     /// Create a new template configuration.
@@ -548,10 +588,14 @@ where
             });
     }
 
-    pub(crate) fn notify_import_committed(&self) {
+    pub(crate) fn invalidate_import_caches(&self) {
         self.global_cache.invalidate();
         self.cache.invalidate_all();
         self.invalidate_all_filter_snapshots();
+    }
+
+    pub(crate) fn notify_import_committed(&self) {
+        self.invalidate_import_caches();
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
     }
 

@@ -81,13 +81,103 @@ pub struct Redacted<'a>(pub &'a Url);
 
 impl fmt::Display for Redacted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&redact_url(self.0), f)
+        f.write_str(&redact_url_for_log(self.0.as_str()))
     }
+}
+
+/// Log only the origin. Paths and even query keys can contain signed material.
+/// Relative and malformed URIs have no safe origin to retain.
+pub fn redact_url_for_log(input: &str) -> String {
+    match Url::parse(input) {
+        Ok(url) if url.has_host() => format!("{}/[redacted]", url.origin().ascii_serialization()),
+        _ => "[redacted URI]".to_owned(),
+    }
+}
+
+/// Provider and parser diagnostics may echo response bodies or authentication
+/// material. Callers retain typed categories and numeric status fields separately.
+pub fn redact_diagnostic(_detail: impl fmt::Display) -> &'static str {
+    "[upstream diagnostic redacted]"
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_health_logs_and_network_debug_views_hide_account_material() {
+        #[derive(Clone, Default)]
+        struct Capture(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Capture {
+            type Writer = Self;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+        let captured = Capture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(captured.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let raw =
+            "https://user:password-sentinel@cdn.example/path-sentinel?key-sentinel=value-sentinel";
+        let source = crate::ContentSource::new(raw, 1);
+        let mut manager = crate::SourceManager::new();
+        manager.add_source(source.clone());
+        let error =
+            crate::DownloadError::http_status(reqwest::StatusCode::FORBIDDEN, raw, "segment");
+        for _ in 0..3 {
+            manager.record_failure(raw, &error, std::time::Duration::from_millis(1));
+        }
+        manager.set_source_active(raw, true);
+        let mut config = crate::DownloaderConfig::default();
+        config.headers.insert(
+            "Authorization",
+            reqwest::header::HeaderValue::from_static("Bearer header-sentinel"),
+        );
+        config
+            .params
+            .push(("secret".into(), "parameter-sentinel".into()));
+        let key = crate::cache::CacheKey::new(
+            crate::cache::CacheResourceType::Segment,
+            raw,
+            Some("identifier-sentinel".into()),
+        );
+        let rendered = format!(
+            "{} {source:?} {manager:?} {config:?} {key:?}",
+            String::from_utf8_lossy(&captured.0.lock())
+        );
+        assert!(rendered.contains("Source health updated"), "{rendered}");
+        assert!(rendered.contains("temporarily disabled"), "{rendered}");
+        assert!(rendered.contains("cdn.example"));
+        assert!(!rendered.contains("sentinel"), "{rendered}");
+    }
+
+    #[test]
+    fn log_url_and_diagnostics_never_expose_signed_paths_keys_or_body_echoes() {
+        let raw = "https://user:password-sentinel@cdn.example/private-path-sentinel?query-key-sentinel=value-sentinel#fragment-sentinel";
+        let rendered = Redacted(&Url::parse(raw).unwrap()).to_string();
+        assert_eq!(rendered, "https://cdn.example/[redacted]");
+        assert_eq!(
+            redact_url_for_log("relative/path-sentinel?secret-sentinel"),
+            "[redacted URI]"
+        );
+        assert_eq!(
+            redact_diagnostic(format!("Authorization: token-sentinel {raw}")),
+            "[upstream diagnostic redacted]"
+        );
+    }
 
     #[test]
     fn masks_query_values_and_credentials_but_keeps_structure() {

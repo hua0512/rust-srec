@@ -147,6 +147,103 @@ impl From<Error> for ApiError {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
             }
             Error::Validation(msg) => ApiError::validation(msg),
+            Error::CredentialProfile(error) => {
+                use crate::credentials::ProfileError;
+                match error {
+                    ProfileError::Referenced(references) => {
+                        let mut error =
+                            ApiError::conflict("Credential profile is still referenced");
+                        error.code = "CREDENTIAL_PROFILE_REFERENCED".into();
+                        error.details = Some(serde_json::json!({"references": references}));
+                        error
+                    }
+                    ProfileError::InaccessibleReferences(references) => {
+                        let mut error = ApiError::new(
+                            StatusCode::CONFLICT,
+                            "CREDENTIAL_REFERENCE_INACCESSIBLE",
+                            "Update the listed configurations that select these credential profiles first",
+                        );
+                        error.details = Some(serde_json::json!({"references": references}));
+                        error
+                    }
+                    ProfileError::StaleVersion => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_STALE_VERSION",
+                        "The credential profile changed; reload before saving",
+                    ),
+                    ProfileError::SourceChanged => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_SOURCE_CHANGED",
+                        "Credentials changed; reload before retrying",
+                    ),
+                    ProfileError::ProviderUnavailable(reason) => {
+                        let mut error = ApiError::new(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "CREDENTIAL_PROVIDER_UNAVAILABLE",
+                            "The credential provider is unavailable; retry later",
+                        );
+                        error.details = Some(serde_json::json!({"reason": reason}));
+                        error
+                    }
+                    ProfileError::Disabled => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_PROFILE_DISABLED",
+                        "Enable the credential profile before using it",
+                    ),
+                    ProfileError::InvalidOwner => ApiError::validation(
+                        "Credential owner is missing, retired, or inaccessible",
+                    ),
+                    ProfileError::InvalidMaterial(message) => ApiError::validation(message),
+                }
+            }
+            Error::CredentialUnavailable(unavailable) => {
+                let mut error = ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "CREDENTIAL_UNAVAILABLE",
+                    "No eligible credentials are currently available",
+                );
+                error.details = Some(
+                    serde_json::json!({"reason": unavailable.reason, "retry_at": unavailable.retry_at}),
+                );
+                error.retry_after_secs = unavailable
+                    .retry_at
+                    .map(|until| {
+                        until.saturating_sub(crate::database::time::now_ms()).max(0) as u64
+                    })
+                    .map(|millis| millis.div_ceil(1000));
+                error
+            }
+            Error::Extractor(error) => {
+                use platforms_parser::extractor::error::ExtractorError;
+                match error {
+                    ExtractorError::Authentication { .. } => ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "PLATFORM_AUTHENTICATION_REQUIRED",
+                        "Platform authentication is required",
+                    ),
+                    ExtractorError::RateLimited { retry_after, .. } => ApiError::too_many_requests(
+                        "Platform requests are temporarily limited",
+                        retry_after.map_or(60, |delay| delay.as_secs().max(1)),
+                    ),
+                    ExtractorError::StreamerNotFound => {
+                        ApiError::not_found("Streamer not found on the platform")
+                    }
+                    ExtractorError::StreamerBanned
+                    | ExtractorError::PrivateContent
+                    | ExtractorError::AgeRestrictedContent
+                    | ExtractorError::RegionLockedContent
+                    | ExtractorError::NoStreamsFound => ApiError::new(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "PLATFORM_CONTENT_UNAVAILABLE",
+                        "Platform content is unavailable",
+                    ),
+                    _ => ApiError::new(
+                        StatusCode::BAD_GATEWAY,
+                        "PLATFORM_EXTRACTION_FAILED",
+                        "Platform extraction failed; retry later",
+                    ),
+                }
+            }
             Error::DagAlreadyTerminal { ref dag_id } => ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 DAG_ALREADY_TERMINAL_CODE,
@@ -279,9 +376,89 @@ impl From<AuthError> for ApiError {
 /// Result type for API handlers.
 pub type ApiResult<T> = Result<T, ApiError>;
 
+impl From<crate::services::playback_context::PlaybackError> for ApiError {
+    fn from(error: crate::services::playback_context::PlaybackError) -> Self {
+        use crate::services::playback_context::PlaybackError;
+        let (status, code) = match error {
+            PlaybackError::Expired => (StatusCode::GONE, "PLAYBACK_CONTEXT_EXPIRED"),
+            PlaybackError::Forbidden => (StatusCode::FORBIDDEN, "PLAYBACK_CONTEXT_FORBIDDEN"),
+            PlaybackError::RenewalRequired | PlaybackError::ResourceLimit => {
+                (StatusCode::CONFLICT, "PLAYBACK_RENEWAL_REQUIRED")
+            }
+            PlaybackError::InvalidResource => {
+                (StatusCode::BAD_REQUEST, "PLAYBACK_INVALID_RESOURCE")
+            }
+        };
+        ApiError::new(status, code, error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_errors_follow_one_status_and_code_mapping() {
+        use crate::credentials::ProfileError;
+        let cases = [
+            (
+                Error::not_found("Template", "missing"),
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+            ),
+            (
+                ProfileError::InvalidOwner.into(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "VALIDATION_ERROR",
+            ),
+            (
+                Error::validation("invalid credential selection"),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "VALIDATION_ERROR",
+            ),
+            (
+                ProfileError::StaleVersion.into(),
+                StatusCode::CONFLICT,
+                "CREDENTIAL_STALE_VERSION",
+            ),
+            (
+                ProfileError::SourceChanged.into(),
+                StatusCode::CONFLICT,
+                "CREDENTIAL_SOURCE_CHANGED",
+            ),
+            (
+                ProfileError::Referenced(vec!["streamer:a".into()]).into(),
+                StatusCode::CONFLICT,
+                "CREDENTIAL_PROFILE_REFERENCED",
+            ),
+            (
+                ProfileError::InaccessibleReferences(vec!["streamer:a".into()]).into(),
+                StatusCode::CONFLICT,
+                "CREDENTIAL_REFERENCE_INACCESSIBLE",
+            ),
+            (
+                ProfileError::ProviderUnavailable("deadline_exceeded").into(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "CREDENTIAL_PROVIDER_UNAVAILABLE",
+            ),
+        ];
+        for (error, status, code) in cases {
+            let rendered = error.to_string();
+            let error = ApiError::from(error);
+            assert_eq!(
+                (error.status, error.code.as_str()),
+                (status, code),
+                "{rendered}"
+            );
+        }
+        let error = ApiError::from(Error::from(ProfileError::InaccessibleReferences(vec![
+            "template:t:bilibili".into(),
+        ])));
+        assert_eq!(
+            error.details,
+            Some(serde_json::json!({"references": ["template:t:bilibili"]}))
+        );
+    }
 
     #[test]
     fn feedback_capacity_is_reported_as_retryable_without_exposing_streamer_identity() {

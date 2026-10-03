@@ -18,6 +18,10 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - Session: {0}"
 
+#: src/components/credentials/credential-selection-editor.tsx:112
+msgid " — disabled"
+msgstr " — disabled"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:998
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1018
 msgid "--flag value"
@@ -75,7 +79,7 @@ msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, one {# available} other {# available}}"
 
 #. placeholder {0}: field.value.length
-#: src/components/config/shared/network-settings-card.tsx:215
+#: src/components/config/shared/network-settings-card.tsx:240
 msgid "{0, plural, one {# char} other {# chars}}"
 msgstr "{0, plural, one {# char} other {# chars}}"
 
@@ -192,7 +196,7 @@ msgid "{0} s"
 msgstr "{0} s"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:199
 msgid "{0} stream(s) added successfully"
 msgstr "{0} stream(s) added successfully"
 
@@ -413,6 +417,10 @@ msgstr "Access"
 msgid "Access level"
 msgstr "Access level"
 
+#: src/components/credentials/credential-profiles-panel.tsx:705
+msgid "Access token"
+msgstr "Access token"
+
 #: src/components/player/playback-state.ts:26
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
@@ -421,6 +429,29 @@ msgstr "Access was denied. Refresh the stream URL or check the source credential
 #: src/components/streamers/card/use-streamer-status.tsx:183
 msgid "Account Not Found"
 msgstr "Account Not Found"
+
+#: src/components/credentials/credential-profiles-panel.tsx:172
+msgid "Account pinned to the active recording"
+msgstr "Account pinned to the active recording"
+
+#: src/components/credentials/credential-profiles-panel.tsx:256
+#: src/components/player/url-input-form.tsx:227
+#: src/components/player/url-input-form.tsx:341
+msgid "Account profile ID"
+msgstr "Account profile ID"
+
+#: src/components/config/templates/tabs/platform-override-card.tsx:77
+#: src/components/credentials/credential-profiles-panel.tsx:215
+msgid "Account profiles"
+msgstr "Account profiles"
+
+#: src/components/credentials/credential-selection-editor.tsx:64
+msgid "Account selection"
+msgstr "Account selection"
+
+#: src/components/credentials/credential-profiles-panel.tsx:523
+msgid "Account tokens or device identity will be copied into this profile. Later parent changes will no longer update this account."
+msgstr "Account tokens or device identity will be copied into this profile. Later parent changes will no longer update this account."
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:510
 msgid "Action"
@@ -464,7 +495,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:405
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:440
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
@@ -472,11 +503,15 @@ msgstr "Add a stream to start your viewing session."
 msgid "Add a streamer"
 msgstr "Add a streamer"
 
+#: src/components/credentials/credential-selection-editor.tsx:172
+msgid "Add account"
+msgstr "Add account"
+
 #: src/components/config/engines/engine-card.tsx:224
 msgid "Add an engine"
 msgstr "Add an engine"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:136
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "Add an override to customize behavior for specific platforms."
 
@@ -549,7 +584,7 @@ msgid "Add module..."
 msgstr "Add module..."
 
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:101
 msgid "Add Override"
 msgstr "Add Override"
 
@@ -560,6 +595,11 @@ msgstr "Add parameter"
 #: src/components/pipeline/workflows/step-library.tsx:265
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
+
+#: src/components/credentials/credential-profiles-panel.tsx:222
+#: src/components/credentials/credential-profiles-panel.tsx:654
+msgid "Add profile"
+msgstr "Add profile"
 
 #: src/components/config/shared/retry-policy-form.tsx:133
 msgid "Add randomness to retry delays to prevent thundering herd."
@@ -573,8 +613,8 @@ msgstr "Add rclone argument"
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:414
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:446
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:449
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:481
 msgid "Add Stream"
 msgstr "Add Stream"
 
@@ -614,8 +654,8 @@ msgstr "Advanced"
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
-#: src/components/player/url-input-form.tsx:186
-#: src/components/player/url-input-form.tsx:280
+#: src/components/player/url-input-form.tsx:210
+#: src/components/player/url-input-form.tsx:324
 msgid "Advanced Options"
 msgstr "Advanced Options"
 
@@ -788,7 +828,7 @@ msgstr "Appended before output filename"
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 
-#: src/components/player/url-input-form.tsx:308
+#: src/components/player/url-input-form.tsx:372
 msgid "Applied to all URLs"
 msgstr "Applied to all URLs"
 
@@ -942,14 +982,18 @@ msgstr "Auth Type"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
-#: src/components/config/shared/network-settings-card.tsx:157
+#: src/components/config/shared/network-settings-card.tsx:165
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "Authentication"
 
+#: src/components/credentials/credential-profiles-panel.tsx:76
+msgid "Authentication is temporarily unavailable. Check the account status and retry."
+msgstr "Authentication is temporarily unavailable. Check the account status and retry."
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
-#: src/components/player/player-card.tsx:222
+#: src/components/player/player-card.tsx:248
 msgid "Auto"
 msgstr "Auto"
 
@@ -973,7 +1017,7 @@ msgstr "Auto Thumbnail"
 msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 msgstr "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 
-#: src/components/config/shared/network-settings-card.tsx:282
+#: src/components/config/shared/network-settings-card.tsx:308
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
@@ -1031,7 +1075,7 @@ msgstr "Avg. Duration"
 msgid "Awaiting first check"
 msgstr "Awaiting first check"
 
-#: src/components/config/platforms/platform-editor.tsx:157
+#: src/components/config/platforms/platform-editor.tsx:158
 #: src/components/config/templates/template-editor.tsx:208
 #: src/components/config/templates/template-editor.tsx:211
 msgid "Back"
@@ -1078,7 +1122,7 @@ msgstr "Backend: {backendLabel}"
 msgid "Background"
 msgstr "Background"
 
-#: src/components/config/shared/network-settings-card.tsx:297
+#: src/components/config/shared/network-settings-card.tsx:323
 msgid "Background refresh enabled"
 msgstr "Background refresh enabled"
 
@@ -1126,7 +1170,7 @@ msgstr "Baidu Netdisk login failed"
 msgid "Baidu Netdisk logout failed"
 msgstr "Baidu Netdisk logout failed"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:44
 msgid "Baidu Netdisk re-login failed"
 msgstr "Baidu Netdisk re-login failed"
 
@@ -1151,7 +1195,7 @@ msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the bi
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
-#: src/components/player/player-card.tsx:264
+#: src/components/player/player-card.tsx:290
 msgid "Balanced"
 msgstr "Balanced"
 
@@ -1200,11 +1244,11 @@ msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
-#: src/components/player/url-input-form.tsx:137
+#: src/components/player/url-input-form.tsx:161
 msgid "Batch URLs"
 msgstr "Batch URLs"
 
@@ -1322,7 +1366,7 @@ msgstr "Buffered ahead"
 msgid "Buffering"
 msgstr "Buffering"
 
-#: src/components/player/player-card.tsx:250
+#: src/components/player/player-card.tsx:276
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "Buffering presets are unavailable for this playback path."
 
@@ -1422,6 +1466,10 @@ msgstr "Cancelled"
 msgid "Cancelled {0} steps in pipeline"
 msgstr "Cancelled {0} steps in pipeline"
 
+#: src/components/credentials/credential-profiles-panel.tsx:184
+msgid "Candidate accounts"
+msgstr "Candidate accounts"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:410
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "Caps overall transfer bandwidth (rclone --bwlimit)."
@@ -1473,7 +1521,7 @@ msgstr "Change Password"
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/components/player/player-card.tsx:520
+#: src/components/player/player-card.tsx:546
 msgid "Change source"
 msgstr "Change source"
 
@@ -1481,7 +1529,7 @@ msgstr "Change source"
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
-#: src/components/player/player-card.tsx:247
+#: src/components/player/player-card.tsx:273
 msgid "Changing this restarts the player."
 msgstr "Changing this restarts the player."
 
@@ -1583,6 +1631,11 @@ msgstr "Checking stream status..."
 msgid "Chinese Simplified"
 msgstr "Chinese Simplified"
 
+#: src/components/player/url-input-form.tsx:40
+#: src/components/player/url-input-form.tsx:52
+msgid "Choose a profile or raw cookies, not both"
+msgstr "Choose a profile or raw cookies, not both"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:161
 msgid "Choose how files are transferred to the remote."
 msgstr "Choose how files are transferred to the remote."
@@ -1667,7 +1720,7 @@ msgstr "Cloning..."
 msgid "Close"
 msgstr "Close"
 
-#: src/components/player/player-card.tsx:456
+#: src/components/player/player-card.tsx:482
 msgid "Close playback details"
 msgstr "Close playback details"
 
@@ -1919,7 +1972,7 @@ msgstr "Connecting"
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/player/player-card.tsx:201
+#: src/components/player/player-card.tsx:227
 msgid "Connection"
 msgstr "Connection"
 
@@ -1968,9 +2021,22 @@ msgstr "Continue"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
+#: src/components/credentials/credential-profiles-panel.tsx:488
+msgid "Conversion immediately saves one profile and a fixed selection, or explicitly disables authentication."
+msgstr "Conversion immediately saves one profile and a fixed selection, or explicitly disables authentication."
+
+#: src/components/credentials/credential-profiles-panel.tsx:578
+msgid "Convert and save now"
+msgstr "Convert and save now"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:87
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Pairs per segment and is batch-safe."
 msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Pairs per segment and is batch-safe."
+
+#: src/components/credentials/credential-profiles-panel.tsx:210
+#: src/components/credentials/credential-profiles-panel.tsx:485
+msgid "Convert legacy credentials"
+msgstr "Convert legacy credentials"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
 msgid "Convert only the danmu recorded for this session's segments"
@@ -1980,9 +2046,10 @@ msgstr "Convert only the danmu recorded for this session's segments"
 msgid "Cookie string"
 msgstr "Cookie string"
 
-#: src/components/config/shared/network-settings-card.tsx:208
-#: src/components/player/url-input-form.tsx:203
-#: src/components/player/url-input-form.tsx:297
+#: src/components/config/shared/network-settings-card.tsx:233
+#: src/components/credentials/credential-profiles-panel.tsx:685
+#: src/components/player/url-input-form.tsx:247
+#: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
 msgstr "Cookies"
 
@@ -1990,9 +2057,14 @@ msgstr "Cookies"
 msgid "Cookies (recommended)"
 msgstr "Cookies (recommended)"
 
-#: src/components/config/shared/network-settings-card.tsx:291
+#: src/components/config/shared/network-settings-card.tsx:317
 msgid "Cookies Only"
 msgstr "Cookies Only"
+
+#: src/components/credentials/credential-profiles-panel.tsx:193
+#: src/components/credentials/credential-profiles-panel.tsx:268
+msgid "Cooldown until"
+msgstr "Cooldown until"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:528
 msgid "Copied"
@@ -2236,7 +2308,7 @@ msgstr "Creating…"
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:43
 msgid "Credential expiring soon"
 msgstr "Credential expiring soon"
 
@@ -2252,7 +2324,7 @@ msgstr "Credential refresh failed"
 msgid "Credential refreshed"
 msgstr "Credential refreshed"
 
-#: src/components/config/shared/network-settings-card.tsx:245
+#: src/components/config/shared/network-settings-card.tsx:271
 msgid "Credential Source Status"
 msgstr "Credential Source Status"
 
@@ -2264,7 +2336,7 @@ msgstr "Credentials are handed to BaiduPCS-Go on the server; the login session p
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "Credentials could not be stored for automatic re-login"
 
-#: src/components/config/shared/network-settings-card.tsx:130
+#: src/components/config/shared/network-settings-card.tsx:138
 msgid "Credentials refreshed successfully"
 msgstr "Credentials refreshed successfully"
 
@@ -2272,9 +2344,14 @@ msgstr "Credentials refreshed successfully"
 msgid "Credentials remembered for automatic re-login"
 msgstr "Credentials remembered for automatic re-login"
 
-#: src/components/config/shared/network-settings-card.tsx:356
+#: src/components/config/shared/network-settings-card.tsx:382
+#: src/components/credentials/credential-login-dialog.tsx:129
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
+
+#: src/lib/notification-event-types.ts:42
+msgid "Credentials unavailable"
+msgstr "Credentials unavailable"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:106
 msgid "CRF (0-51)"
@@ -2426,7 +2503,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:189
+#: src/components/config/shared-config-editor.tsx:194
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -2595,6 +2672,7 @@ msgstr "Delay between the re-checks used to confirm a streamer has really gone o
 #: src/components/config/engines/engine-card.tsx:195
 #: src/components/config/templates/template-card.tsx:130
 #: src/components/config/templates/template-card.tsx:204
+#: src/components/credentials/credential-profiles-panel.tsx:359
 #: src/components/notifications/channel-card.tsx:209
 #: src/components/notifications/channel-card.tsx:232
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:182
@@ -2853,7 +2931,7 @@ msgstr "Device Model"
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/player/player-card.tsx:225
+#: src/components/player/player-card.tsx:251
 msgid "Direct"
 msgstr "Direct"
 
@@ -2869,6 +2947,7 @@ msgstr "Directory path copied"
 msgid "Directory to scan for new files after command execution"
 msgstr "Directory to scan for new files after command execution"
 
+#: src/components/credentials/credential-profiles-panel.tsx:345
 #: src/components/streamers/card/stream-actions-menu.tsx:57
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
@@ -2893,6 +2972,10 @@ msgstr "Disable selected"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:102
 msgid "Disabled"
 msgstr "Disabled"
+
+#: src/components/credentials/credential-profiles-panel.tsx:260
+msgid "Disabled accounts are unavailable for new operations."
+msgstr "Disabled accounts are unavailable for new operations."
 
 #: src/components/connection-status-indicator.tsx:32
 #: src/components/logging/log-viewer.tsx:400
@@ -2994,7 +3077,7 @@ msgstr "Download failed: {0}"
 msgid "Download Manager"
 msgstr "Download Manager"
 
-#: src/components/config/shared/network-settings-card.tsx:323
+#: src/components/config/shared/network-settings-card.tsx:349
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
@@ -3148,6 +3231,10 @@ msgstr "Earlier files are still being finalized, so the cut was not made. Record
 msgid "Edit"
 msgstr "Edit"
 
+#: src/components/credentials/credential-profiles-panel.tsx:652
+msgid "Edit account profile"
+msgstr "Edit account profile"
+
 #: src/components/notifications/channel-form.tsx:350
 msgid "Edit channel"
 msgstr "Edit channel"
@@ -3160,6 +3247,10 @@ msgstr "Edit Engine"
 #: src/components/filters/FilterDialog.tsx:233
 msgid "Edit filter"
 msgstr "Edit filter"
+
+#: src/components/credentials/credential-profiles-panel.tsx:323
+msgid "Edit label"
+msgstr "Edit label"
 
 #. placeholder {0}: preset.name
 #: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:85
@@ -3175,7 +3266,19 @@ msgstr "Edit Workflow: {0}"
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
-#: src/components/config/shared/network-settings-card.tsx:262
+#: src/components/credentials/credential-profiles-panel.tsx:506
+msgid "Effective cookies and the refresh account differ. Choose which material to convert."
+msgstr "Effective cookies and the refresh account differ. Choose which material to convert."
+
+#: src/components/credentials/credential-profiles-panel.tsx:497
+msgid "Effective cookies source"
+msgstr "Effective cookies source"
+
+#: src/components/credentials/credential-profiles-panel.tsx:182
+msgid "Effective policy owner"
+msgstr "Effective policy owner"
+
+#: src/components/config/shared/network-settings-card.tsx:288
 msgid "Effective Scope"
 msgstr "Effective Scope"
 
@@ -3183,6 +3286,7 @@ msgstr "Effective Scope"
 msgid "Empty pattern"
 msgstr "Empty pattern"
 
+#: src/components/credentials/credential-profiles-panel.tsx:347
 #: src/components/streamers/card/stream-actions-menu.tsx:64
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
@@ -3223,6 +3327,7 @@ msgstr "Enable selected"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:90
 #: src/components/config/shared/record-danmu-card.tsx:100
+#: src/components/credentials/credential-profiles-panel.tsx:672
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/forms/channel-delivery-fields.tsx:178
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:487
@@ -3330,6 +3435,10 @@ msgstr "Engines"
 msgid "English (International)"
 msgstr "English (International)"
 
+#: src/components/credentials/credential-profiles-panel.tsx:678
+msgid "Enter a complete replacement bundle. Empty token and login fields clear the previous values. Stored secrets are never displayed."
+msgstr "Enter a complete replacement bundle. Empty token and login fields clear the previous values. Stored secrets are never displayed."
+
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:459
 msgid "Enter a unique name"
@@ -3339,7 +3448,7 @@ msgstr "Enter a unique name"
 msgid "Enter a URL above"
 msgstr "Enter a URL above"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:449
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:484
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -3429,6 +3538,18 @@ msgstr "Event Types"
 msgid "Events"
 msgstr "Events"
 
+#: src/components/credentials/credential-profiles-panel.tsx:42
+msgid "Every selected account is cooling down after being throttled. Checks resume automatically."
+msgstr "Every selected account is cooling down after being throttled. Checks resume automatically."
+
+#: src/components/credentials/credential-profiles-panel.tsx:56
+msgid "Every selected account is disabled. Enable one or change the selection."
+msgstr "Every selected account is disabled. Enable one or change the selection."
+
+#: src/components/credentials/credential-profiles-panel.tsx:49
+msgid "Every usable account needs a new login. Log in again or replace an account's cookies."
+msgstr "Every usable account needs a new login. Log in again or replace an account's cookies."
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:378
 msgid "Examples:"
 msgstr "Examples:"
@@ -3498,8 +3619,8 @@ msgstr "Execution time (default)"
 msgid "Executions"
 msgstr "Executions"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:281
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:345
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:316
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:380
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -3610,6 +3731,10 @@ msgstr "ey..."
 msgctxt "Friday initial"
 msgid "F"
 msgstr "F"
+
+#: src/components/credentials/credential-selection-editor.tsx:185
+msgid "Fail over on confirmed account failure"
+msgstr "Fail over on confirmed account failure"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
@@ -3852,7 +3977,7 @@ msgstr "Failed to load workflows: {0}"
 msgid "Failed to parse danmu file"
 msgstr "Failed to parse danmu file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:131
 msgid "Failed to parse URL"
 msgstr "Failed to parse URL"
 
@@ -3868,7 +3993,7 @@ msgstr "Failed to process selected streamers"
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "Failed to query BaiduPCS-Go status."
 
-#: src/components/config/shared/network-settings-card.tsx:141
+#: src/components/config/shared/network-settings-card.tsx:149
 msgid "Failed to refresh credentials"
 msgstr "Failed to refresh credentials"
 
@@ -4118,7 +4243,7 @@ msgstr "Filtered"
 msgid "Filtered:"
 msgstr "Filtered:"
 
-#: src/components/config/shared-config-editor.tsx:145
+#: src/components/config/shared-config-editor.tsx:150
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:524
 msgid "Filters"
 msgstr "Filters"
@@ -4158,6 +4283,10 @@ msgstr "Fix FLV Streams"
 #: src/components/config/engines/forms/mesio-form.tsx:364
 msgid "Fix HLS Discontinuities"
 msgstr "Fix HLS Discontinuities"
+
+#: src/components/credentials/credential-selection-editor.tsx:88
+msgid "Fixed account"
+msgstr "Fixed account"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:122
 msgid "Fixed executable name or path on the server. Placeholders are expanded only in arguments. On Windows servers, use shell command mode for .bat or .cmd files."
@@ -4300,7 +4429,7 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:206
+#: src/components/config/platforms/platform-editor.tsx:208
 #: src/components/config/templates/template-editor.tsx:263
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
@@ -4343,10 +4472,12 @@ msgid "Generate multiple preview images at different timestamps for a gallery vi
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:191
+#: src/components/credentials/credential-login-dialog.tsx:151
 msgid "Generate new QR code"
 msgstr "Generate new QR code"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:146
+#: src/components/credentials/credential-login-dialog.tsx:114
 msgid "Generating QR code..."
 msgstr "Generating QR code..."
 
@@ -4603,7 +4734,7 @@ msgstr "Hours"
 msgid "How chat activity is summarised on the session page."
 msgstr "How chat activity is summarised on the session page."
 
-#: src/components/player/player-card.tsx:465
+#: src/components/player/player-card.tsx:491
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "How far playback trails the available stream, not the total broadcast delay."
 
@@ -4667,7 +4798,7 @@ msgstr "How the stream address is found. Switch to Streamlink when a site stops 
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
 
-#: src/components/config/shared/network-settings-card.tsx:230
+#: src/components/config/shared/network-settings-card.tsx:255
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
 msgstr "HTTP cookies for authentication. These are automatically updated when refreshed."
 
@@ -4759,7 +4890,7 @@ msgstr "Ignore streams below this bitrate."
 msgid "Ignored words"
 msgstr "Ignored words"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:350
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:385
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -4813,10 +4944,15 @@ msgstr "Include Keywords"
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
+#: src/components/credentials/credential-selection-editor.tsx:82
+msgid "Inherit"
+msgstr "Inherit"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
+#: src/components/credentials/credential-profiles-panel.tsx:248
 msgid "Inherited"
 msgstr "Inherited"
 
@@ -5045,6 +5181,11 @@ msgstr "Key Timeout (ms)"
 msgid "Keyword"
 msgstr "Keyword"
 
+#: src/components/credentials/credential-profiles-panel.tsx:531
+#: src/components/credentials/credential-profiles-panel.tsx:664
+msgid "Label"
+msgstr "Label"
+
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:91
 msgid "Language"
 msgstr "Language"
@@ -5074,7 +5215,7 @@ msgstr "Last Error Log"
 msgid "Last used"
 msgstr "Last used"
 
-#: src/components/player/player-card.tsx:242
+#: src/components/player/player-card.tsx:268
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:234
 msgid "Latency"
 msgstr "Latency"
@@ -5091,6 +5232,11 @@ msgstr "Leave attempts empty or at 1 for no automatic retry; the backoff doubles
 msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
+#: src/components/player/url-input-form.tsx:233
+#: src/components/player/url-input-form.tsx:347
+msgid "Leave empty to use the saved account selection."
+msgstr "Leave empty to use the saved account selection."
+
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:87
 msgid "Leave this off to only remove the records and keep the files where they are."
 msgstr "Leave this off to only remove the records and keep the files where they are."
@@ -5098,6 +5244,10 @@ msgstr "Leave this off to only remove the records and keep the files where they 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:392
 msgid "Left"
 msgstr "Left"
+
+#: src/components/credentials/credential-selection-editor.tsx:78
+msgid "Legacy credentials"
+msgstr "Legacy credentials"
 
 #: src/components/config/global/network-system-card.tsx:176
 msgid "Let the player proxy sources on private or local networks."
@@ -5143,7 +5293,7 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/player-card.tsx:306
+#: src/components/player/player-card.tsx:332
 #: src/components/sessions/session-card.tsx:167
 #: src/components/sessions/session-header.tsx:27
 msgid "LIVE"
@@ -5303,7 +5453,7 @@ msgstr "Lossless cutting will not be used"
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
-#: src/components/player/player-card.tsx:263
+#: src/components/player/player-card.tsx:289
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:590
@@ -5348,7 +5498,7 @@ msgstr "Main application"
 msgid "Maintenance"
 msgstr "Maintenance"
 
-#: src/components/config/shared/network-settings-card.tsx:160
+#: src/components/config/shared/network-settings-card.tsx:168
 msgid "Manage credentials and session cookies."
 msgstr "Manage credentials and session cookies."
 
@@ -5384,7 +5534,7 @@ msgstr "Manual cut"
 msgid "Manual job"
 msgstr "Manual job"
 
-#: src/components/config/shared/network-settings-card.tsx:299
+#: src/components/config/shared/network-settings-card.tsx:325
 msgid "Manual update required"
 msgstr "Manual update required"
 
@@ -5507,6 +5657,10 @@ msgstr "Max transactions/second to the remote API (--tpslimit)."
 #: src/components/config/global/concurrency-card.tsx:120
 msgid "Max Uploads"
 msgstr "Max Uploads"
+
+#: src/components/credentials/credential-selection-editor.tsx:192
+msgid "Maximum attempts (1–10)"
+msgstr "Maximum attempts (1–10)"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:379
 msgid "Maximum attempts for metadata and App playback requests."
@@ -5700,6 +5854,14 @@ msgstr "Morning"
 msgid "Move"
 msgstr "Move"
 
+#: src/components/credentials/credential-selection-editor.tsx:143
+msgid "Move account down"
+msgstr "Move account down"
+
+#: src/components/credentials/credential-selection-editor.tsx:133
+msgid "Move account up"
+msgstr "Move account up"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:18
 msgid "Move File"
 msgstr "Move File"
@@ -5801,7 +5963,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
-#: src/components/config/shared-config-editor.tsx:167
+#: src/components/config/shared-config-editor.tsx:172
 msgid "Network"
 msgstr "Network"
 
@@ -5876,6 +6038,11 @@ msgstr "No API keys yet. Create one to let scripts or AI assistants access this 
 msgid "No Archives Found"
 msgstr "No Archives Found"
 
+#: src/components/credentials/credential-profiles-panel.tsx:565
+#: src/components/credentials/credential-selection-editor.tsx:85
+msgid "No authentication"
+msgstr "No authentication"
+
 #: src/components/config/global/backup-restore-card.tsx:429
 msgid "No changes detected"
 msgstr "No changes detected"
@@ -5892,7 +6059,7 @@ msgstr "No configuration form available for this processor."
 msgid "No configuration."
 msgstr "No configuration."
 
-#: src/components/config/shared/network-settings-card.tsx:307
+#: src/components/config/shared/network-settings-card.tsx:333
 msgid "No credentials found."
 msgstr "No credentials found."
 
@@ -6027,11 +6194,11 @@ msgstr "No pipeline DAGs found."
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:109
 msgid "No platform found."
 msgstr "No platform found."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:133
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
@@ -6048,11 +6215,11 @@ msgstr "No platforms configured"
 msgid "No platforms found"
 msgstr "No platforms found"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:128
 msgid "No playable stream found in response"
 msgstr "No playable stream found in response"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:208
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
@@ -6077,7 +6244,7 @@ msgstr "No preview generated"
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
 
-#: src/components/config/shared/network-settings-card.tsx:137
+#: src/components/config/shared/network-settings-card.tsx:145
 msgid "No refresh needed or not supported"
 msgstr "No refresh needed or not supported"
 
@@ -6455,7 +6622,7 @@ msgstr "Out of Space"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1700
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:156
+#: src/components/config/shared-config-editor.tsx:161
 #: src/components/config/templates/template-card.tsx:163
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
@@ -6563,7 +6730,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:89
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "Override pipelines and platform options for specific platforms."
 
@@ -6631,16 +6798,16 @@ msgstr "Paired Segment Pipeline"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:331
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:366
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
-#: src/components/player/url-input-form.tsx:329
+#: src/components/player/url-input-form.tsx:393
 msgid "Parse Batch"
 msgstr "Parse Batch"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:137
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
 
@@ -6648,16 +6815,16 @@ msgstr "Parse error: {0}"
 msgid "Parse Mode"
 msgstr "Parse Mode"
 
-#: src/components/player/url-input-form.tsx:232
+#: src/components/player/url-input-form.tsx:276
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:415
 msgid "Parsing Stream..."
 msgstr "Parsing Stream..."
 
-#: src/components/player/url-input-form.tsx:227
-#: src/components/player/url-input-form.tsx:324
+#: src/components/player/url-input-form.tsx:271
+#: src/components/player/url-input-form.tsx:388
 msgid "Parsing..."
 msgstr "Parsing..."
 
@@ -6668,6 +6835,7 @@ msgstr "Passthrough Inputs"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:74
 #: src/components/config/shared/proxy-settings-card.tsx:204
+#: src/components/credentials/credential-profiles-panel.tsx:732
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
@@ -6800,7 +6968,7 @@ msgstr "Permission required"
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
-#: src/components/config/shared-config-editor.tsx:200
+#: src/components/config/shared-config-editor.tsx:205
 #: src/components/layout/site-header.tsx:37
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:508
@@ -6936,15 +7104,15 @@ msgstr "Platform name"
 msgid "Platform not found"
 msgstr "Platform not found"
 
-#: src/components/streamers/config/streamer-configuration.tsx:52
+#: src/components/streamers/config/streamer-configuration.tsx:53
 msgid "Platform options"
 msgstr "Platform options"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:127
+#: src/components/config/templates/tabs/platform-override-card.tsx:145
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:86
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
@@ -6971,7 +7139,7 @@ msgstr "Platforms"
 msgid "Play"
 msgstr "Play"
 
-#: src/components/player/player-card.tsx:408
+#: src/components/player/player-card.tsx:434
 msgid "Playback"
 msgstr "Playback"
 
@@ -6979,9 +7147,9 @@ msgstr "Playback"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "Playback could not start. Retry, refresh the stream URL, or choose another source."
 
-#: src/components/player/player-card.tsx:371
-#: src/components/player/player-card.tsx:372
-#: src/components/player/player-card.tsx:449
+#: src/components/player/player-card.tsx:397
+#: src/components/player/player-card.tsx:398
+#: src/components/player/player-card.tsx:475
 msgid "Playback details"
 msgstr "Playback details"
 
@@ -6989,7 +7157,7 @@ msgstr "Playback details"
 msgid "Playback error"
 msgstr "Playback error"
 
-#: src/components/player/player-card.tsx:483
+#: src/components/player/player-card.tsx:509
 msgid "Playback Error"
 msgstr "Playback Error"
 
@@ -7002,8 +7170,8 @@ msgstr "Playback stalled while seeking. Retry to reload the video."
 msgid "Player"
 msgstr "Player"
 
-#: src/components/player/player-card.tsx:383
-#: src/components/player/player-card.tsx:384
+#: src/components/player/player-card.tsx:409
+#: src/components/player/player-card.tsx:410
 msgid "Player settings"
 msgstr "Player settings"
 
@@ -7024,11 +7192,11 @@ msgstr "Playlist Gone"
 msgid "Playlist TTL (ms)"
 msgstr "Playlist TTL (ms)"
 
-#: src/components/player/url-input-form.tsx:32
+#: src/components/player/url-input-form.tsx:33
 msgid "Please enter a valid URL"
 msgstr "Please enter a valid URL"
 
-#: src/components/player/url-input-form.tsx:39
+#: src/components/player/url-input-form.tsx:46
 msgid "Please enter at least one URL"
 msgstr "Please enter at least one URL"
 
@@ -7048,7 +7216,7 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:383
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:418
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
@@ -7209,6 +7377,10 @@ msgstr "Primary"
 msgid "Primary Action"
 msgstr "Primary Action"
 
+#: src/components/credentials/credential-selection-editor.tsx:94
+msgid "Primary and backups"
+msgstr "Primary and backups"
+
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:44
 msgid "Prime Time"
 msgstr "Prime Time"
@@ -7303,6 +7475,10 @@ msgstr "Processor is required"
 msgid "Profile"
 msgstr "Profile"
 
+#: src/components/credentials/credential-profiles-panel.tsx:226
+msgid "Profile changes are saved immediately. Adding an account does not change the saved selection."
+msgstr "Profile changes are saved immediately. Adding an account does not change the saved selection."
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:111
 msgid "Program"
 msgstr "Program"
@@ -7333,7 +7509,7 @@ msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
 #: src/components/config/global/network-system-card.tsx:149
-#: src/components/config/shared-config-editor.tsx:178
+#: src/components/config/shared-config-editor.tsx:183
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -7351,10 +7527,14 @@ msgid "Proxy URL"
 msgstr "Proxy URL"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:188
+#: src/components/credentials/credential-login-dialog.tsx:142
 msgid "QR code expired"
 msgstr "QR code expired"
 
-#: src/components/config/shared/network-settings-card.tsx:175
+#: src/components/config/shared/network-settings-card.tsx:183
+#: src/components/credentials/credential-login-dialog.tsx:98
+#: src/components/credentials/credential-profiles-panel.tsx:374
+#: src/components/credentials/credential-profiles-panel.tsx:760
 msgid "QR Login"
 msgstr "QR Login"
 
@@ -7483,7 +7663,7 @@ msgstr "Ready"
 msgid "Ready to play"
 msgstr "Ready to play"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:402
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:437
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -7602,25 +7782,34 @@ msgstr "Recovering"
 msgid "Refine and sort streamers"
 msgstr "Refine and sort streamers"
 
-#: src/components/config/shared/network-settings-card.tsx:194
+#: src/components/config/shared/network-settings-card.tsx:202
+#: src/components/credentials/credential-profiles-panel.tsx:306
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:397
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:602
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:141
 msgid "Refresh"
 msgstr "Refresh"
 
-#: src/components/config/shared/network-settings-card.tsx:135
+#: src/components/config/shared/network-settings-card.tsx:143
 msgid "Refresh failed: Manual login required"
 msgstr "Refresh failed: Manual login required"
+
+#: src/components/credentials/credential-profiles-panel.tsx:501
+msgid "Refresh source"
+msgstr "Refresh source"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:133
 msgid "Refresh status"
 msgstr "Refresh status"
 
-#: src/components/player/player-card.tsx:284
-#: src/components/player/player-card.tsx:499
+#: src/components/player/player-card.tsx:310
+#: src/components/player/player-card.tsx:525
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
+
+#: src/components/credentials/credential-profiles-panel.tsx:694
+msgid "Refresh token"
+msgstr "Refresh token"
 
 #: src/components/filters/filter-types.ts:56
 msgid "Regex"
@@ -7639,8 +7828,8 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "Rejected"
 
-#: src/components/player/player-card.tsx:357
-#: src/components/player/player-card.tsx:358
+#: src/components/player/player-card.tsx:383
+#: src/components/player/player-card.tsx:384
 msgid "Reload Player"
 msgstr "Reload Player"
 
@@ -7660,6 +7849,10 @@ msgstr "Remove {item}"
 #: src/components/ui/tag-input.tsx:67
 msgid "Remove {tag}"
 msgstr "Remove {tag}"
+
+#: src/components/credentials/credential-selection-editor.tsx:158
+msgid "Remove account"
+msgstr "Remove account"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:196
 msgid "Remove argument {number}"
@@ -7682,12 +7875,12 @@ msgstr "Remove header"
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:144
+#: src/components/config/templates/tabs/platform-override-card.tsx:162
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
-#: src/components/player/player-card.tsx:430
-#: src/components/player/player-card.tsx:431
+#: src/components/player/player-card.tsx:456
+#: src/components/player/player-card.tsx:457
 msgid "Remove player"
 msgstr "Remove player"
 
@@ -7767,6 +7960,10 @@ msgstr "Replace All"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:137
 msgid "Replace configuration?"
 msgstr "Replace configuration?"
+
+#: src/components/credentials/credential-profiles-panel.tsx:333
+msgid "Replace credentials"
+msgstr "Replace credentials"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:236
 msgid "Replace destination files if they exist"
@@ -7903,7 +8100,7 @@ msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:491
+#: src/components/player/player-card.tsx:517
 #: src/components/sessions/danmu-stats-panel.tsx:240
 msgid "Retry"
 msgstr "Retry"
@@ -7977,6 +8174,10 @@ msgstr "Revoked"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:393
 msgid "Right"
 msgstr "Right"
+
+#: src/components/credentials/credential-selection-editor.tsx:91
+msgid "Round-robin pool"
+msgstr "Round-robin pool"
 
 #: src/components/config/shared/proxy-settings-card.tsx:128
 msgid "Route traffic through an intermediate server"
@@ -8085,7 +8286,7 @@ msgstr "Saturday"
 msgid "Save changes"
 msgstr "Save changes"
 
-#: src/components/config/platforms/platform-editor.tsx:175
+#: src/components/config/platforms/platform-editor.tsx:176
 #: src/components/config/templates/template-editor.tsx:232
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
@@ -8094,9 +8295,18 @@ msgstr "Save changes"
 msgid "Save Changes"
 msgstr "Save Changes"
 
+#: src/components/credentials/credential-profiles-panel.tsx:751
+msgid "Save profile"
+msgstr "Save profile"
+
 #: src/components/config/global/backup-restore-card.tsx:242
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
+
+#: src/components/config/shared/network-settings-card.tsx:219
+#: src/components/credentials/credential-settings-field.tsx:51
+msgid "Save this template or streamer before adding local account profiles."
+msgstr "Save this template or streamer before adding local account profiles."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:815
 msgid "Save with incomplete delete checks?"
@@ -8106,12 +8316,16 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
+#: src/components/credentials/credential-profiles-panel.tsx:658
+msgid "Saved immediately, independently of configuration changes."
+msgstr "Saved immediately, independently of configuration changes."
+
 #: src/components/filters/FilterDialog.tsx:295
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "Saving"
 
-#: src/components/config/platforms/platform-editor.tsx:173
+#: src/components/config/platforms/platform-editor.tsx:174
 #: src/components/config/templates/template-editor.tsx:228
 #: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
@@ -8131,10 +8345,12 @@ msgid "Scan the QR code with Bilibili app to login and save credentials"
 msgstr "Scan the QR code with Bilibili app to login and save credentials"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:158
+#: src/components/credentials/credential-login-dialog.tsx:119
 msgid "Scan with Bilibili mobile app"
 msgstr "Scan with Bilibili mobile app"
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:170
+#: src/components/credentials/credential-login-dialog.tsx:124
 msgid "Scanned! Please confirm on your phone"
 msgstr "Scanned! Please confirm on your phone"
 
@@ -8189,7 +8405,7 @@ msgstr "Search logs..."
 msgid "Search outputs..."
 msgstr "Search outputs..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:106
 msgid "Search platform..."
 msgstr "Search platform..."
 
@@ -8308,6 +8524,10 @@ msgstr "Select All"
 #: src/components/config/shared/output-settings-card.tsx:173
 msgid "Select an engine"
 msgstr "Select an engine"
+
+#: src/components/credentials/credential-settings-field.tsx:59
+msgid "Select an unambiguous platform to manage account profiles."
+msgstr "Select an unambiguous platform to manage account profiles."
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:79
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:64
@@ -8439,6 +8659,10 @@ msgstr "Selected"
 msgid "Selected stream"
 msgstr "Selected stream"
 
+#: src/components/credentials/credential-selection-editor.tsx:212
+msgid "Selection changes take effect when you save this configuration. A recording keeps its selected account."
+msgstr "Selection changes take effect when you save this configuration. A recording keeps its selected account."
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:86
 msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
 msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
@@ -8460,11 +8684,11 @@ msgstr "Server local uses the backend server's timezone. You can also enter an I
 msgid "Server not configured"
 msgstr "Server not configured"
 
-#: src/components/player/player-card.tsx:231
+#: src/components/player/player-card.tsx:257
 msgid "Server proxy"
 msgstr "Server proxy"
 
-#: src/components/player/player-card.tsx:208
+#: src/components/player/player-card.tsx:234
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 
@@ -8674,7 +8898,7 @@ msgstr "Signing in..."
 msgid "Since {0}"
 msgstr "Since {0}"
 
-#: src/components/player/url-input-form.tsx:117
+#: src/components/player/url-input-form.tsx:141
 msgid "Single URL"
 msgstr "Single URL"
 
@@ -8716,7 +8940,7 @@ msgstr "Skip Interactive Games"
 msgid "Skipped"
 msgstr "Skipped"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:204
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
@@ -8724,7 +8948,7 @@ msgstr "Skipped {skippedCount} duplicate stream(s)"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
-#: src/components/player/player-card.tsx:265
+#: src/components/player/player-card.tsx:291
 msgid "Smooth"
 msgstr "Smooth"
 
@@ -8757,8 +8981,8 @@ msgstr "Sort by"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:216
-#: src/components/config/templates/tabs/platform-override-card.tsx:74
+#: src/components/config/platforms/platform-editor.tsx:218
+#: src/components/config/templates/tabs/platform-override-card.tsx:92
 msgid "Specific"
 msgstr "Specific"
 
@@ -8903,7 +9127,7 @@ msgstr "Storage"
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 
-#: src/components/player/player-card.tsx:404
+#: src/components/player/player-card.tsx:430
 msgid "Stream"
 msgstr "Stream"
 
@@ -8935,7 +9159,7 @@ msgstr "Stream offline"
 msgid "Stream online"
 msgstr "Stream online"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:115
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
@@ -8946,11 +9170,11 @@ msgstr "Stream parsed successfully"
 msgid "Stream Password"
 msgstr "Stream Password"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:328
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:363
 msgid "Stream Player"
 msgstr "Stream Player"
 
-#: src/components/player/player-card.tsx:190
+#: src/components/player/player-card.tsx:216
 msgid "Stream source"
 msgstr "Stream source"
 
@@ -9112,7 +9336,7 @@ msgstr "Successfully processed {0} streamers"
 msgid "Sunday"
 msgstr "Sunday"
 
-#: src/components/config/shared/network-settings-card.tsx:287
+#: src/components/config/shared/network-settings-card.tsx:313
 msgid "Supported"
 msgstr "Supported"
 
@@ -9267,6 +9491,10 @@ msgstr "Test Notification"
 msgid "Test notification sent"
 msgstr "Test notification sent"
 
+#: src/components/credentials/credential-profiles-panel.tsx:63
+msgid "The account pinned to the active recording is unavailable."
+msgstr "The account pinned to the active recording is unavailable."
+
 #: src/components/player/playback-state.ts:31
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "The browser could not decode this stream. Choose another quality or format."
@@ -9303,13 +9531,25 @@ msgstr "The language this channel's messages are written in, whoever reads them.
 msgid "The page you are looking for does not exist."
 msgstr "The page you are looking for does not exist."
 
+#: src/components/credentials/credential-profiles-panel.tsx:514
+msgid "The platform login will be copied into this profile. Later platform password changes will no longer update this account."
+msgstr "The platform login will be copied into this profile. Later platform password changes will no longer update this account."
+
 #: src/components/streamers/card/use-streamer-status.tsx:187
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 
+#: src/components/credentials/credential-login-dialog.tsx:134
+msgid "The profile changed or its owner was removed. Reload before starting a new login."
+msgstr "The profile changed or its owner was removed. Reload before starting a new login."
+
 #: src/components/streamers/card/lossless-cut-action.tsx:94
 msgid "The recording ended before the cut completed."
 msgstr "The recording ended before the cut completed."
+
+#: src/components/credentials/credential-profiles-panel.tsx:69
+msgid "The selection changed during the active recording. Its next recovery uses the new selection."
+msgstr "The selection changed during the active recording. Its next recovery uses the new selection."
 
 #: src/components/player/playback-state.ts:28
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
@@ -9390,6 +9630,10 @@ msgstr "This is a default preset. Description cannot be modified."
 msgid "This job is a workflow step, so it restarts together with the rest of the workflow."
 msgstr "This job is a workflow step, so it restarts together with the rest of the workflow."
 
+#: src/components/credentials/credential-login-dialog.tsx:101
+msgid "This login updates only the selected profile. It does not change your account selection."
+msgstr "This login updates only the selected profile. It does not change your account selection."
+
 #: src/components/player/playback-state.ts:32
 msgid "This media format is not supported by your browser. Choose another format or browser."
 msgstr "This media format is not supported by your browser. Choose another format or browser."
@@ -9410,7 +9654,7 @@ msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 
-#: src/components/player/player-card.tsx:204
+#: src/components/player/player-card.tsx:230
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "This source needs request headers, so Direct is unavailable."
 
@@ -9426,7 +9670,7 @@ msgstr "This step is linked to the preset <0>{presetName}</0>."
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:103
 msgid "This stream is already active"
 msgstr "This stream is already active"
 
@@ -9592,7 +9836,7 @@ msgstr "To Addresses"
 msgid "Today"
 msgstr "Today"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:115
+#: src/components/config/templates/tabs/platform-override-card.tsx:133
 msgid "Toggle"
 msgstr "Toggle"
 
@@ -9817,7 +10061,7 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/player/player-card.tsx:508
+#: src/components/player/player-card.tsx:534
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
@@ -9832,6 +10076,10 @@ msgstr "Tuesday"
 #: src/components/config/engines/forms/streamlink-form.tsx:189
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
+
+#: src/components/credentials/credential-profiles-panel.tsx:716
+msgid "Twitch can authenticate with an access token without cookies."
+msgstr "Twitch can authenticate with an access token without cookies."
 
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:27
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
@@ -9907,8 +10155,8 @@ msgid "Unknown engine type: {engineType}"
 msgstr "Unknown engine type: {engineType}"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:137
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
 msgid "Unknown error"
 msgstr "Unknown error"
 
@@ -10039,13 +10287,17 @@ msgstr "Uptime <0>{0}</0>"
 msgid "URL"
 msgstr "URL"
 
-#: src/components/player/url-input-form.tsx:33
+#: src/components/player/url-input-form.tsx:34
 msgid "URL is required"
 msgstr "URL is required"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:909
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
+
+#: src/components/credentials/credential-profiles-panel.tsx:546
+msgid "Use effective cookies"
+msgstr "Use effective cookies"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:87
 #: src/components/config/engines/forms/streamlink-form.tsx:115
@@ -10059,6 +10311,10 @@ msgstr "Use environment default"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
+
+#: src/components/credentials/credential-profiles-panel.tsx:556
+msgid "Use refresh account"
+msgstr "Use refresh account"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:252
@@ -10081,6 +10337,10 @@ msgstr "Use the player's default balance of buffering and delay."
 msgid "Use TLS"
 msgstr "Use TLS"
 
+#: src/components/credentials/credential-profiles-panel.tsx:274
+msgid "Used by active recordings"
+msgstr "Used by active recordings"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:125
 #: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "User Agent"
@@ -10093,6 +10353,7 @@ msgstr "User Disabled"
 
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:45
 #: src/components/config/shared/proxy-settings-card.tsx:185
+#: src/components/credentials/credential-profiles-panel.tsx:724
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
@@ -10113,6 +10374,7 @@ msgstr "Users"
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 
+#: src/components/credentials/credential-profiles-panel.tsx:291
 #: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
 msgstr "Validate"
@@ -10120,6 +10382,10 @@ msgstr "Validate"
 #: src/components/pipeline/workflows/validation-feedback.tsx:56
 msgid "Validation Failed"
 msgstr "Validation Failed"
+
+#: src/components/credentials/credential-profiles-panel.tsx:310
+msgid "Validation is not supported by this platform."
+msgstr "Validation is not supported by this platform."
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:109
 msgid "Validation service unavailable"
@@ -10161,7 +10427,7 @@ msgstr "Version"
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/player/player-card.tsx:343
+#: src/components/player/player-card.tsx:369
 msgid "via server proxy"
 msgstr "via server proxy"
 
@@ -10187,7 +10453,7 @@ msgstr "Video codec change"
 msgid "Video only"
 msgstr "Video only"
 
-#: src/components/player/player-card.tsx:301
+#: src/components/player/player-card.tsx:327
 msgid "Video Player"
 msgstr "Video Player"
 

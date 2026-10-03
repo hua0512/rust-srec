@@ -1,4 +1,20 @@
 import { resolvePlayerMediaType } from '@/lib/media';
+import { ManagedPlaybackSchema } from '@/api/schemas/system';
+import { hasErrorCode, type BackendApiError } from '@/lib/api-error';
+
+// Renewal keeps the bound account. These answers mean that context is gone or
+// its selection changed, so only a new independent parse can continue.
+const NEW_PARSE_CODES = [
+  'PLAYBACK_CONTEXT_EXPIRED',
+  'PLAYBACK_RENEWAL_REQUIRED',
+  'CREDENTIAL_UNAVAILABLE',
+];
+
+export function renewalNeedsNewParse(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const body = (error as Partial<BackendApiError>).body;
+  return NEW_PARSE_CODES.some((code) => hasErrorCode(body, code));
+}
 
 export interface StreamOption {
   url: string;
@@ -19,6 +35,18 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
   const streams: StreamOption[] = [];
 
   if (!mediaInfo) return streams;
+  const managed = ManagedPlaybackSchema.safeParse(mediaInfo);
+  if (managed.success)
+    return managed.data.streams.map((stream) => ({
+      url: '',
+      data: { playback_handle: managed.data.handle, stream_id: stream.id },
+      quality: stream.quality,
+      format: stream.stream_format,
+      container: stream.media_format,
+      codec: stream.codec ?? undefined,
+      bitrate: stream.bitrate ?? undefined,
+      fps: stream.fps ?? undefined,
+    }));
   if (typeof mediaInfo === 'string')
     return [
       { url: mediaInfo, format: resolvePlayerMediaType(undefined, mediaInfo) },

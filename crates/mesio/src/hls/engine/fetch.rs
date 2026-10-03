@@ -185,7 +185,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         let metadata = CacheMetadata::new(final_bytes.len() as u64)
             .with_expiration(ctx.config.processor_config.processed_segment_ttl);
         if let Err(e) = cache.put(cache_key, final_bytes.clone(), metadata).await {
-            warn!(msn, "failed to cache segment: {e}");
+            warn!(msn, error = %crate::redact::redact_diagnostic(&e), "failed to cache segment");
         }
     }
 
@@ -293,7 +293,7 @@ async fn download_body(
                 trace!(
                     attempt,
                     class = ?failure.class,
-                    reason = %failure.reason,
+                    reason = %crate::redact::redact_diagnostic(&failure.reason),
                     "segment attempt failed; attempt-level retry"
                 );
                 last_failure = Some(failure);

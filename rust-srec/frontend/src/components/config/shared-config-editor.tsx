@@ -26,6 +26,7 @@ import type { CredentialSaveScope } from '@/server/functions/credentials';
 export interface SharedConfigPaths<T extends FieldValues> {
   streamSelection: Path<T>;
   cookies: Path<T>;
+  credentialSelection?: Path<T>;
   proxy: Path<T>;
   retryPolicy: Path<T>;
   // Output settings base path (folder, template, format, engine)
@@ -117,8 +118,12 @@ export function SharedConfigEditor<T extends FieldValues>({
   // `NetworkSettingsCard` is memoized, so a fresh object here would re-render it on every
   // render of this editor.
   const networkPaths = useMemo(
-    () => ({ cookies: paths.cookies, retryPolicy: paths.retryPolicy }),
-    [paths.cookies, paths.retryPolicy],
+    () => ({
+      cookies: paths.cookies,
+      retryPolicy: paths.retryPolicy,
+      credentialSelection: paths.credentialSelection,
+    }),
+    [paths.cookies, paths.retryPolicy, paths.credentialSelection],
   );
 
   return (

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CredentialSelectionSchema } from './credential-profiles';
 import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
@@ -83,7 +84,15 @@ export const CreateTemplateRequestSchema = z.object({
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   extractor: ExtractorSelectionSchema.nullable().optional(),
-  platform_overrides: z.any().nullable().optional(),
+  platform_overrides: z
+    .record(
+      z.string(),
+      z
+        .object({ credential_selection: CredentialSelectionSchema.optional() })
+        .catchall(z.any()),
+    )
+    .nullable()
+    .optional(),
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),

@@ -182,6 +182,13 @@ impl RateLimiterManager {
             .insert(platform_id.to_string(), config);
     }
 
+    /// Configure a stored platform ID with an existing name-based override.
+    pub fn alias_platform_config(&mut self, platform_id: &str, platform_name: &str) {
+        if let Some(config) = self.platform_configs.get(platform_name).cloned() {
+            self.platform_configs.insert(platform_id.to_owned(), config);
+        }
+    }
+
     /// Try to acquire a token for a platform.
     ///
     /// # Cancel Safety

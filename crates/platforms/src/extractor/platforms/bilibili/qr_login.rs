@@ -19,6 +19,8 @@ const TV_QR_POLL_URL: &str = "https://passport.bilibili.com/x/passport-tv-login/
 
 #[derive(Debug, Error)]
 pub enum QrLoginError {
+    #[error("Provider response: {0}")]
+    Response(#[from] crate::extractor::error::ExtractorError),
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
     #[error("Parse error: {0}")]
@@ -30,12 +32,25 @@ pub enum QrLoginError {
 }
 
 /// QR code generation response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct QrGenerateResponse {
     /// URL to encode as QR code
     pub url: String,
     /// Auth code for polling
     pub auth_code: String,
+    /// Provider lifetime in seconds, when supplied by the generation endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+}
+
+impl std::fmt::Debug for QrGenerateResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("QrGenerateResponse")
+            .field("login_material", &"[redacted]")
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
 }
 
 /// QR code poll status.
@@ -52,7 +67,7 @@ pub enum QrPollStatus {
 }
 
 /// QR code poll result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct QrPollResult {
     /// Poll status
     pub status: QrPollStatus,
@@ -64,6 +79,16 @@ pub struct QrPollResult {
     pub refresh_token: Option<String>,
     /// OAuth2 access token (if success, from token_info)
     pub access_token: Option<String>,
+}
+
+impl std::fmt::Debug for QrPollResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("QrPollResult")
+            .field("status", &self.status)
+            .field("material", &"[redacted]")
+            .finish()
+    }
 }
 
 /// Generate a QR code for Bilibili TV login.
@@ -91,6 +116,7 @@ pub async fn generate_qr(client: &Client) -> Result<QrGenerateResponse, QrLoginE
         .send()
         .await?;
 
+    let response = crate::extractor::error::ExtractorError::check_response(response)?;
     let body: serde_json::Value = response
         .json()
         .await
@@ -120,6 +146,7 @@ pub async fn generate_qr(client: &Client) -> Result<QrGenerateResponse, QrLoginE
     Ok(QrGenerateResponse {
         url: url.to_string(),
         auth_code: auth_code.to_string(),
+        expires_in: data.get("expires_in").and_then(serde_json::Value::as_u64),
     })
 }
 
@@ -149,6 +176,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
         .send()
         .await?;
 
+    let response = crate::extractor::error::ExtractorError::check_response(response)?;
     let body: serde_json::Value = response
         .json()
         .await

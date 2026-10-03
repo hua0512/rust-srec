@@ -42,6 +42,6 @@ describe('PlatformOverrideCard', () => {
 
     expect(
       screen.getAllByRole('tab').map((tab) => tab.textContent?.trim()),
-    ).toEqual(['Specific', 'Pipeline']);
+    ).toEqual(['Account profiles', 'Specific', 'Pipeline']);
   });
 });

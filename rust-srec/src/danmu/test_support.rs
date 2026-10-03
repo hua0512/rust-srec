@@ -22,6 +22,7 @@ pub(crate) struct FakeProvider {
     streams: Mutex<VecDeque<mpsc::Receiver<DanmuItem>>>,
     connects: AtomicUsize,
     disconnects: AtomicUsize,
+    cookies: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeProvider {
@@ -31,6 +32,7 @@ impl FakeProvider {
             streams: Mutex::new(streams.into()),
             connects: AtomicUsize::new(0),
             disconnects: AtomicUsize::new(0),
+            cookies: Mutex::new(Vec::new()),
         }
     }
 
@@ -44,6 +46,14 @@ impl FakeProvider {
     pub(crate) fn disconnects(&self) -> usize {
         self.disconnects.load(Ordering::SeqCst)
     }
+
+    /// The cookies each `connect` received, in order.
+    pub(crate) fn connected_cookies(&self) -> Vec<Option<String>> {
+        self.cookies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .clone()
+    }
 }
 
 #[async_trait]
@@ -52,12 +62,12 @@ impl DanmuProvider for FakeProvider {
         &self.platform
     }
 
-    async fn connect(
-        &self,
-        room_id: &str,
-        _config: ConnectionConfig,
-    ) -> DanmakuResult<DanmuStream> {
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> DanmakuResult<DanmuStream> {
         let attempt = self.connects.fetch_add(1, Ordering::SeqCst);
+        self.cookies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .push(config.cookies);
         // The guard is released by the end of this statement, before any await.
         let next = self
             .streams

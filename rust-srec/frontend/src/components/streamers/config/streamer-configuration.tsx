@@ -35,6 +35,7 @@ export function StreamerConfiguration({
       paths={{
         streamSelection: `${basePath}.stream_selection_config`,
         cookies: `${basePath}.cookies`,
+        credentialSelection: `${basePath}.credential_selection`,
         proxy: `${basePath}.proxy_config`,
         retryPolicy: `${basePath}.download_retry_policy`,
         output: basePath, // output_folder etc are in structure
@@ -67,7 +68,9 @@ export function StreamerConfiguration({
       configMode="object"
       proxyMode="object"
       streamerId={streamerId}
-      credentialPlatformNameHint={credentialPlatformNameHint}
+      credentialPlatformNameHint={
+        credentialPlatformNameHint ?? platform ?? undefined
+      }
     />
   );
 }

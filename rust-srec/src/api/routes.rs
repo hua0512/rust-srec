@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod baidupcs;
 pub mod config;
+pub mod credential_profiles;
 pub mod credentials;
 pub mod downloads;
 pub mod engines;

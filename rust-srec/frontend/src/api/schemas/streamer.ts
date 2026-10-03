@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CredentialSelectionSchema } from './credential-profiles';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
@@ -122,6 +123,7 @@ export const StreamerSpecificConfigSchema = z.object({
     .nullable()
     .optional(),
   record_danmu: z.boolean().nullable().optional(),
+  credential_selection: CredentialSelectionSchema.optional(),
   cookies: z
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
     .nullable()
@@ -161,6 +163,7 @@ export const StreamerSpecificConfigSchema = z.object({
 
 // Form-specific schema without preprocessors for proper type inference with react-hook-form
 export const StreamerSpecificConfigFormSchema = z.object({
+  credential_selection: CredentialSelectionSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   proxy_config: z.any().nullable().optional(),

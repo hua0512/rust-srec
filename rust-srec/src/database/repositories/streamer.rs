@@ -349,8 +349,9 @@ impl StreamerRepository for SqlxStreamerRepository {
             .map(|_| ());
         }
 
+        let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
         let result = writes::write_streamer(
-            &mut *self.write_pool.acquire().await?,
+            &mut transaction,
             streamer,
             super::row_write::WriteMode::Insert,
             streamer.updated_at,
@@ -358,7 +359,11 @@ impl StreamerRepository for SqlxStreamerRepository {
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                super::credential_profiles::validate_graph(&mut transaction).await?;
+                transaction.commit().await?;
+                Ok(())
+            }
             Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
                 Err(Error::duplicate_url(&streamer.url))
             }
@@ -377,16 +382,32 @@ impl StreamerRepository for SqlxStreamerRepository {
             .map(|_| ());
         }
 
+        let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
+        let mut streamer = streamer.clone();
+        // Update never creates: a missing streamer is a zero-row update.
+        if let Some(current) =
+            sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?")
+                .bind(&streamer.id)
+                .fetch_optional(&mut *transaction)
+                .await?
+        {
+            super::credential_profiles::preserve_streamer_policy(&current, &mut streamer)?;
+            super::credential_profiles::guard_streamer_legacy(&current, &streamer)?;
+        }
         let result = writes::write_streamer(
-            &mut *self.write_pool.acquire().await?,
-            streamer,
+            &mut transaction,
+            &streamer,
             super::row_write::WriteMode::Update,
             streamer.updated_at,
         )
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                super::credential_profiles::validate_graph(&mut transaction).await?;
+                transaction.commit().await?;
+                Ok(())
+            }
             Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
                 Err(Error::duplicate_url(&streamer.url))
             }
@@ -557,6 +578,21 @@ impl StreamerRepository for SqlxStreamerRepository {
         }
 
         let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        let retiring: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM streamers WHERE id = ? AND deleted_at IS NOT NULL)",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if retiring {
+            super::credential_profiles::delete_owner_profiles(
+                &mut tx,
+                &crate::credentials::CredentialOwner::Streamer {
+                    streamer_id: id.to_owned(),
+                },
+            )
+            .await?;
+        }
         let result = sqlx::query("DELETE FROM streamers WHERE id = ? AND deleted_at IS NOT NULL")
             .bind(id)
             .execute(&mut *tx)

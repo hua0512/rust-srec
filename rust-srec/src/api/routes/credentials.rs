@@ -35,7 +35,9 @@ fn credential_failure_message(error: &CredentialError) -> &'static str {
         CredentialError::UnsupportedPlatform(_) => {
             "Credential refresh is not supported for this platform"
         }
-        CredentialError::RateLimited => "Credential service rate limit reached; try again later",
+        CredentialError::RateLimited { .. } => {
+            "Credential service rate limit reached; try again later"
+        }
         CredentialError::NoCredentials => "No credentials configured for this scope",
         CredentialError::SourceChanged => {
             "Credentials changed during refresh; retry with the current credentials"
@@ -45,6 +47,12 @@ fn credential_failure_message(error: &CredentialError) -> &'static str {
 }
 
 fn credential_refresh_error(error: CredentialError) -> ApiError {
+    if let CredentialError::RateLimited { retry_after } = error {
+        return ApiError::too_many_requests(
+            "Credential provider is temporarily limited",
+            retry_after.map_or(60, |delay| delay.as_secs().max(1)),
+        );
+    }
     ApiError::bad_request(format!(
         "{} (requires_relogin={})",
         credential_failure_message(&error),
@@ -53,6 +61,9 @@ fn credential_refresh_error(error: CredentialError) -> ApiError {
 }
 
 fn credential_internal_error(error: CredentialError) -> ApiError {
+    if matches!(error, CredentialError::RateLimited { .. }) {
+        return credential_refresh_error(error);
+    }
     tracing::error!(
         reason = credential_failure_message(&error),
         "Credential API operation failed"
@@ -64,6 +75,7 @@ fn credential_internal_error(error: CredentialError) -> ApiError {
 pub struct CredentialRouteState {
     config_service: std::sync::Arc<CredentialConfigService>,
     credential_service: std::sync::Arc<crate::credentials::CredentialRefreshService>,
+    credential_execution: std::sync::Arc<crate::credentials::CredentialExecutionService>,
     /// Streamer-scoped credential writes use the manager's committed publication
     /// path so runtime metadata and configuration listeners see the updated row.
     streamer_manager: std::sync::Arc<CredentialStreamerManager>,
@@ -74,9 +86,171 @@ impl FromRef<AppState> for CredentialRouteState {
         Self {
             config_service: state.config_service.clone(),
             credential_service: state.credential_service.clone(),
+            credential_execution: state.credential_execution.clone(),
             streamer_manager: state.streamer_manager.clone(),
         }
     }
+}
+
+async fn managed_source(
+    state: &CredentialRouteState,
+    selection: &crate::credentials::CredentialSelection,
+) -> ApiResult<CredentialSourceResponse> {
+    let id = match selection {
+        crate::credentials::CredentialSelection::Fixed { credential_id } => credential_id,
+        crate::credentials::CredentialSelection::Pool { .. } => {
+            return Err(ApiError::new(
+                axum::http::StatusCode::CONFLICT,
+                "CREDENTIAL_PROFILE_REQUIRED",
+                "A pool requires an explicit profile ID; inspect /credentials/selection",
+            ));
+        }
+        _ => {
+            return Err(ApiError::not_found(
+                "This scope has no single authenticated account",
+            ));
+        }
+    };
+    let profile = state
+        .credential_execution
+        .repository()
+        .get(id)
+        .await
+        .map_err(super::credential_profiles::profile_error)?;
+    let owner = profile
+        .owner()
+        .map_err(|error| super::credential_profiles::profile_error(error.into()))?;
+    let platform = state
+        .config_service
+        .get_platform_config(&profile.platform_config_id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(CredentialSourceResponse {
+        platform: platform.platform_name,
+        scope_type: owner.kind().into(),
+        scope_id: owner.id().into(),
+        scope_name: profile.label,
+        has_refresh_token: profile.refresh_token.is_some(),
+        cookie_length: profile.cookies.len(),
+    })
+}
+
+fn template_selection(
+    raw: Option<&str>,
+    platform: Option<&str>,
+) -> ApiResult<Option<crate::credentials::CredentialSelection>> {
+    let overrides: serde_json::Value = raw
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(ApiError::from)?
+        .unwrap_or_default();
+    if let Some(platform) = platform {
+        return overrides
+            .get(platform)
+            .and_then(|fields| fields.get("credential_selection"))
+            .cloned()
+            .map(crate::credentials::CredentialSelection::from_value)
+            .transpose()
+            .map_err(ApiError::from);
+    }
+    if overrides.as_object().is_some_and(|fields| {
+        fields
+            .values()
+            .any(|fields| fields.get("credential_selection").is_some())
+    }) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::CONFLICT,
+            "CREDENTIAL_PLATFORM_REQUIRED",
+            "Managed template credentials require an explicit canonical platform",
+        ));
+    }
+    Ok(None)
+}
+
+async fn managed_refresh(
+    state: &CredentialRouteState,
+    selection: &crate::credentials::CredentialSelection,
+) -> ApiResult<CredentialRefreshResponse> {
+    let source = managed_source(state, selection).await?;
+    let crate::credentials::CredentialSelection::Fixed { credential_id } = selection else {
+        return Err(ApiError::conflict("An explicit profile is required"));
+    };
+    let original = state
+        .credential_execution
+        .repository()
+        .get(credential_id)
+        .await
+        .map_err(super::credential_profiles::profile_error)?;
+    let result = state
+        .credential_execution
+        .refresh_profile(
+            credential_id,
+            crate::credentials::OperationDeadline::default(),
+        )
+        .await
+        .map_err(super::credential_profiles::profile_error)?;
+    Ok(CredentialRefreshResponse {
+        refreshed: result.supported && original.revision != result.profile.revision,
+        requires_relogin: false,
+        source: Some(source),
+    })
+}
+
+async fn require_legacy_qr_target(
+    state: &CredentialRouteState,
+    scope: &CredentialSaveScope,
+) -> ApiResult<()> {
+    let converted = match scope {
+        CredentialSaveScope::Platform { id } => state
+            .config_service
+            .get_platform_config(id)
+            .await
+            .map_err(ApiError::from)?
+            .credential_selection
+            .is_some(),
+        CredentialSaveScope::Template { id } => {
+            let template = state
+                .config_service
+                .get_template_config(id)
+                .await
+                .map_err(ApiError::from)?;
+            let overrides: serde_json::Value = template
+                .platform_overrides
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(ApiError::from)?
+                .unwrap_or_default();
+            overrides.as_object().is_some_and(|fields| {
+                fields.iter().any(|(name, fields)| {
+                    name.eq_ignore_ascii_case("bilibili")
+                        && fields.get("credential_selection").is_some()
+                })
+            })
+        }
+        CredentialSaveScope::Streamer { id } => {
+            let metadata = state
+                .streamer_manager
+                .get_streamer(id)
+                .ok_or_else(|| ApiError::not_found("Streamer not found"))?;
+            let fields: serde_json::Value = metadata
+                .streamer_specific_config
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(ApiError::from)?
+                .unwrap_or_default();
+            fields.get("credential_selection").is_some()
+        }
+    };
+    if converted {
+        return Err(ApiError::new(
+            axum::http::StatusCode::CONFLICT,
+            "CREDENTIAL_PROFILE_REQUIRED",
+            "Managed credentials require a target-bound profile login",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -124,7 +298,7 @@ pub struct CredentialRefreshResponse {
     pub source: Option<CredentialSourceResponse>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Clone, Serialize, ToSchema)]
 pub struct QrGenerateApiResponse {
     pub url: String,
     pub auth_code: String,
@@ -138,7 +312,7 @@ pub enum CredentialSaveScope {
     Streamer { id: String },
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Clone, Deserialize, ToSchema)]
 pub struct QrPollRequest {
     pub auth_code: String,
     pub scope: CredentialSaveScope,
@@ -185,6 +359,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/bilibili/qr/generate", post(bilibili_qr_generate))
         .route("/bilibili/qr/poll", post(bilibili_qr_poll))
+        .merge(super::credential_profiles::router())
 }
 
 fn extract_platform_refresh_token(platform_specific_config: Option<&str>) -> Option<String> {
@@ -300,6 +475,11 @@ pub async fn get_streamer_credential_source(
         .await
         .map_err(ApiError::from)?;
 
+    if let Some(policy) = &context.config.credential_policy {
+        let source = managed_source(&state, &policy.selection).await?;
+        return Ok(Json(source));
+    }
+
     let source = context.credential_source.as_ref().ok_or_else(|| {
         ApiError::not_found(format!("No credentials configured for streamer {id}"))
     })?;
@@ -330,6 +510,12 @@ pub async fn get_platform_credential_source(
         .get_platform_config(&id)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(raw) = &platform.credential_selection {
+        let selection = serde_json::from_str(raw).map_err(ApiError::from)?;
+        let source = managed_source(&state, &selection).await?;
+        return Ok(Json(source));
+    }
 
     let cookies = platform.cookies.as_deref().unwrap_or_default().trim();
     if cookies.is_empty() {
@@ -380,6 +566,14 @@ pub async fn get_template_credential_source(
         .get_template_config(&id)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(selection) = template_selection(
+        template.platform_overrides.as_deref(),
+        query.platform.as_deref(),
+    )? {
+        let source = managed_source(&state, &selection).await?;
+        return Ok(Json(source));
+    }
 
     let cookies = template.cookies.as_deref().unwrap_or_default().trim();
     if cookies.is_empty() {
@@ -436,6 +630,10 @@ pub async fn refresh_streamer_credentials(
         .get_context_for_streamer(&id)
         .await
         .map_err(ApiError::from)?;
+    if let Some(policy) = &context.config.credential_policy {
+        return Ok(Json(managed_refresh(&state, &policy.selection).await?));
+    }
+
     let source = context.credential_source.as_ref().ok_or_else(|| {
         ApiError::not_found(format!("No credentials configured for streamer {id}"))
     })?;
@@ -503,6 +701,11 @@ pub async fn refresh_platform_credentials(
         .get_platform_config(&id)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(raw) = &platform.credential_selection {
+        let selection = serde_json::from_str(raw).map_err(ApiError::from)?;
+        return Ok(Json(managed_refresh(&state, &selection).await?));
+    }
 
     let cookies = platform.cookies.as_deref().unwrap_or_default().trim();
     if cookies.is_empty() {
@@ -572,6 +775,13 @@ pub async fn refresh_template_credentials(
         .get_template_config(&id)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(selection) = template_selection(
+        template.platform_overrides.as_deref(),
+        query.platform.as_deref(),
+    )? {
+        return Ok(Json(managed_refresh(&state, &selection).await?));
+    }
 
     let cookies = template.cookies.as_deref().unwrap_or_default().trim();
     if cookies.is_empty() {
@@ -757,13 +967,23 @@ fn bilibili_qr_manager() -> Result<BilibiliCredentialManager, ApiError> {
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn bilibili_qr_generate() -> ApiResult<Json<QrGenerateApiResponse>> {
+pub async fn bilibili_qr_generate(
+    State(state): State<CredentialRouteState>,
+) -> ApiResult<Json<QrGenerateApiResponse>> {
+    let deadline = crate::credentials::OperationDeadline::new(
+        crate::credentials::login_sessions::QR_REQUEST_BUDGET,
+    );
     let manager = bilibili_qr_manager()?;
-
-    let result = manager
-        .generate_qr()
+    let admission = state.credential_service.admission();
+    admission
+        .admit_platform_name("bilibili", deadline)
         .await
-        .map_err(credential_internal_error)?;
+        .map_err(credential_refresh_error)?;
+    let result = deadline.run(manager.generate_qr()).await;
+    if let Err(error) = &result {
+        admission.observe_platform_name("bilibili", error).await;
+    }
+    let result = result.map_err(credential_internal_error)?;
 
     Ok(Json(QrGenerateApiResponse {
         url: result.url,
@@ -786,36 +1006,30 @@ pub async fn bilibili_qr_poll(
     State(state): State<CredentialRouteState>,
     Json(body): Json<QrPollRequest>,
 ) -> ApiResult<Json<QrPollApiResponse>> {
+    require_legacy_qr_target(&state, &body.scope).await?;
+    let deadline = crate::credentials::OperationDeadline::new(
+        crate::credentials::login_sessions::QR_REQUEST_BUDGET,
+    );
     let manager = bilibili_qr_manager()?;
-
-    let result = manager
-        .poll_qr(&body.auth_code)
+    state
+        .credential_service
+        .admission()
+        .admit_platform_name("bilibili", deadline)
         .await
-        .map_err(credential_internal_error)?;
-
-    let api_message = if !result.message.is_empty() {
-        result.message.as_str()
-    } else {
-        ""
-    };
+        .map_err(credential_refresh_error)?;
+    let result = deadline.run(manager.poll_qr(&body.auth_code)).await;
+    if let Err(error) = &result {
+        state
+            .credential_service
+            .admission()
+            .observe_platform_name("bilibili", error)
+            .await;
+    }
+    let result = result.map_err(credential_internal_error)?;
 
     let (status, message) = match result.status {
-        QrPollStatus::NotScanned => (
-            "not_scanned",
-            if !api_message.is_empty() {
-                api_message
-            } else {
-                "Waiting for scan"
-            },
-        ),
-        QrPollStatus::ScannedNotConfirmed => (
-            "scanned",
-            if !api_message.is_empty() {
-                api_message
-            } else {
-                "Scanned, waiting for confirmation"
-            },
-        ),
+        QrPollStatus::NotScanned => ("not_scanned", "Waiting for scan"),
+        QrPollStatus::ScannedNotConfirmed => ("scanned", "Scanned, waiting for confirmation"),
         QrPollStatus::Expired => ("expired", "QR code expired"),
         QrPollStatus::Success => ("success", "Login successful"),
     };
@@ -1038,9 +1252,22 @@ mod tests {
                 refresh_token,
             )));
 
+            let credential_service = Arc::new(credential_service);
+            let profiles = Arc::new(
+                crate::database::repositories::CredentialProfileRepository::new(
+                    self.pool.clone(),
+                    self.pool.clone(),
+                ),
+            );
             CredentialRouteState {
                 config_service: self.config_service.clone(),
-                credential_service: Arc::new(credential_service),
+                credential_execution: Arc::new(
+                    crate::credentials::CredentialExecutionService::new(
+                        profiles,
+                        credential_service.clone(),
+                    ),
+                ),
+                credential_service,
                 streamer_manager: self.manager.clone(),
             }
         }

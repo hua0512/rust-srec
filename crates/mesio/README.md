@@ -126,3 +126,23 @@ HLS uses a reactor-based lifecycle internally:
 
 FLV uses a streaming byte forwarder into the FLV decoder. Both protocols expose
 the same session and event contract.
+
+HTTP failures while loading an initial or selected HLS playlist, or after live
+playlist refresh retries are exhausted, retain `DownloadError::HttpStatus`.
+Consumers can distinguish 401/403 for a bounded URL/account diagnostic without
+parsing messages or treating every HTTP error as recoverable. Playlist retry
+limits and cancellation still apply.
+
+## Diagnostic privacy
+
+The logging `Redacted` URL adapter now shows only an origin and a redaction marker;
+relative/malformed URIs are fully masked. `redact_url_for_log` provides the same
+behavior for strings. `redact_url`/`redact_url_str` retain their existing structural
+redaction for callers that need it. Source-health, playlist and retry logs retain
+counts, typed classes and numeric status information while omitting authentication
+material, response bodies and free-form upstream failure details.
+
+`Debug` for downloader configuration, content sources, source managers and cache
+keys omits network material. Requests, source identities and cache keys still use
+the original values. Consumers logging upstream errors can use `redact_diagnostic`
+to keep provider/parser messages out of log sinks.

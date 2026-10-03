@@ -37,6 +37,12 @@ pub enum TerminalCause {
     /// The watcher could not keep refreshing (fetch/parse failure after
     /// retries). A pipeline error, never a clean end.
     Failed(Arc<str>),
+    /// Preserve HTTP evidence across the watch channel after retries finish.
+    HttpFailure {
+        status: reqwest::StatusCode,
+        url: Arc<str>,
+        operation: &'static str,
+    },
 }
 
 /// One observed playlist generation. Cheap to clone — the reactor clones the
@@ -221,18 +227,28 @@ impl PlaylistWatcher {
                         return;
                     }
                     error!(
-                        "Error refreshing playlist {}: {e}",
-                        Redacted(&self.playlist_url)
+                        "Error refreshing playlist {}: {}",
+                        Redacted(&self.playlist_url),
+                        crate::redact::redact_diagnostic(&e)
                     );
                     retries += 1;
                     if retries > self.config.playlist_config.live_max_refresh_retries {
                         // Publish the explicit failure cause before dropping
                         // the sender, so the reactor can distinguish this from
                         // a clean end.
-                        tx.send_modify(|snapshot| {
-                            snapshot.terminal =
-                                Some(TerminalCause::Failed(Arc::from(e.to_string())));
-                        });
+                        let cause = match e {
+                            HlsDownloaderError::HttpStatus {
+                                status,
+                                url,
+                                operation,
+                            } => TerminalCause::HttpFailure {
+                                status,
+                                url: Arc::from(url),
+                                operation,
+                            },
+                            error => TerminalCause::Failed(Arc::from(error.to_string())),
+                        };
+                        tx.send_modify(|snapshot| snapshot.terminal = Some(cause));
                         return;
                     }
                     tokio::select! {
@@ -282,13 +298,11 @@ impl PlaylistWatcher {
         .map_err(HlsDownloaderError::from)?;
 
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::Playlist {
-                reason: format!(
-                    "Failed to fetch playlist {}: HTTP {}",
-                    Redacted(&self.playlist_url),
-                    response.status()
-                ),
-            });
+            return Err(HlsDownloaderError::http_status(
+                response.status(),
+                self.playlist_url.as_str(),
+                "playlist refresh",
+            ));
         }
         let base_url = match document_base_url(response.url()) {
             Ok(base) if base.as_str() == last_base_url.as_ref() => Arc::clone(last_base_url),

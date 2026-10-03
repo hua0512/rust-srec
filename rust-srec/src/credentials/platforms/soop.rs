@@ -83,10 +83,8 @@ impl CredentialManager for SoopCredentialManager {
                 })
             }
             Err(e) => {
-                warn!(error = %e, "SOOP session check failed");
-                Err(CredentialError::RefreshFailed(format!(
-                    "SOOP session check failed: {e}"
-                )))
+                warn!(category = e.category(), "SOOP session check failed");
+                Err(map_provider_error(e))
             }
         }
     }
@@ -94,8 +92,8 @@ impl CredentialManager for SoopCredentialManager {
     #[instrument(skip(self, state))]
     async fn refresh(&self, state: &RefreshState) -> Result<RefreshedCredentials, CredentialError> {
         let (username, password) = Self::username_password(state).ok_or_else(|| {
-            CredentialError::RefreshFailed(
-                "SOOP re-login requires username/password in platform config".to_string(),
+            CredentialError::InvalidCredentials(
+                "SOOP re-login requires this account's username and password".to_string(),
             )
         })?;
 
@@ -103,7 +101,7 @@ impl CredentialManager for SoopCredentialManager {
         if !state.cookies.trim().is_empty()
             && validate_session(self.client(), &state.cookies)
                 .await
-                .unwrap_or(false)
+                .map_err(map_provider_error)?
         {
             debug!("SOOP session still valid; skipping re-login");
             return Ok(RefreshedCredentials {
@@ -117,14 +115,7 @@ impl CredentialManager for SoopCredentialManager {
         debug!("SOOP re-login with configured username/password");
         let cookies = login_for_cookies(self.client(), &username, &password)
             .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("login failed") {
-                    CredentialError::InvalidCredentials(msg)
-                } else {
-                    CredentialError::RefreshFailed(msg)
-                }
-            })?;
+            .map_err(map_provider_error)?;
 
         Ok(RefreshedCredentials {
             cookies,
@@ -137,7 +128,7 @@ impl CredentialManager for SoopCredentialManager {
     async fn validate(&self, cookies: &str) -> Result<bool, CredentialError> {
         validate_session(self.client(), cookies)
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
+            .map_err(map_provider_error)
     }
 
     fn supports_auto_refresh(&self) -> bool {
@@ -146,5 +137,20 @@ impl CredentialManager for SoopCredentialManager {
 
     fn required_refresh_fields(&self) -> &'static [&'static str] {
         &["username", "password"]
+    }
+}
+
+fn map_provider_error(
+    error: platforms_parser::extractor::error::ExtractorError,
+) -> CredentialError {
+    use platforms_parser::extractor::error::ExtractorError;
+    match error {
+        ExtractorError::Authentication { .. } => {
+            CredentialError::InvalidCredentials("login_required".to_string())
+        }
+        ExtractorError::RateLimited { retry_after, .. } => {
+            CredentialError::RateLimited { retry_after }
+        }
+        _ => CredentialError::RefreshFailed("SOOP provider request failed".to_string()),
     }
 }

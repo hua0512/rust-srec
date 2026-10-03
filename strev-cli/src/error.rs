@@ -69,3 +69,27 @@ impl CliError {
 }
 
 pub type Result<T> = std::result::Result<T, CliError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platforms_parser::extractor::error::{ExtractorError, ThrottleScope};
+
+    #[test]
+    fn provider_evidence_survives_cli_error_conversion() {
+        let error = CliError::from(ExtractorError::Authentication {
+            code: "-101".into(),
+        });
+        assert!(
+            matches!(error, CliError::Extractor(ExtractorError::Authentication { code }) if code == "-101")
+        );
+        let error = CliError::from(ExtractorError::RateLimited {
+            scope: ThrottleScope::Unknown,
+            code: Some("429".into()),
+            retry_after: Some(std::time::Duration::from_secs(120)),
+        });
+        assert!(
+            matches!(error, CliError::Extractor(ExtractorError::RateLimited { scope: ThrottleScope::Unknown, retry_after: Some(delay), .. }) if delay.as_secs() == 120)
+        );
+    }
+}

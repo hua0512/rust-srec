@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CredentialSelectionSchema } from './credential-profiles';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
@@ -21,6 +22,10 @@ export const PlatformConfigSchema = z.object({
   download_delay_ms: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
   cookies: z.string().nullable().optional(),
+  credential_selection: jsonTextField(
+    'credential_selection',
+    CredentialSelectionSchema,
+  ),
   platform_specific_config: jsonTextField(
     'platform_specific_config',
     AllPlatformConfigsSchema,
@@ -69,6 +74,7 @@ export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
 // Schema for Forms (expects objects, not JSON strings)
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
+  credential_selection: CredentialSelectionSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   danmu_statistics: DanmuStatisticsOverrideSchema,

@@ -7,7 +7,9 @@ use tokio::sync::{Notify, oneshot};
 use super::ServiceContainer;
 use crate::api::server::{ApiServices, AppState};
 use crate::config::ConfigUpdateEvent;
-use crate::config::backup::{ConfigExport, ImportMode};
+use crate::config::backup::{
+    ConfigExport, CredentialOwnerExport, CredentialProfileExport, ImportMode,
+};
 use crate::database::committed_writer::{CommitPhase, CommitTestGate};
 use crate::database::models::StreamerDbModel;
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -48,6 +50,12 @@ async fn fixture() -> (
         logging_download_tokens: Arc::new(dashmap::DashMap::new()),
         logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
         credential_service: container.credential_service.clone(),
+        platform_admission: container.platform_admission.clone(),
+        credential_profiles: container.credential_profiles.clone(),
+        credential_execution: container.credential_execution.clone(),
+        playback_contexts: container.playback_contexts.clone(),
+        credential_conversion: container.credential_conversion.clone(),
+        credential_login_sessions: container.credential_login_sessions.clone(),
         configuration_import_service: container.configuration_import_service.clone(),
         runtime_coordinator: container.runtime_coordinator.clone(),
     });
@@ -76,6 +84,26 @@ async fn exported(state: &AppState) -> ConfigExport {
     let mut config: ConfigExport = serde_json::from_slice(&bytes).unwrap();
     config.users.clear();
     config.streamers[0].name = "After shutdown".into();
+    let profile_id = uuid::Uuid::new_v4().to_string();
+    config.credential_profiles.push(CredentialProfileExport {
+        id: profile_id.clone(),
+        platform: config.streamers[0].platform.clone(),
+        owner: CredentialOwnerExport::Streamer {
+            streamer_url: config.streamers[0].url.clone(),
+        },
+        label: "Imported account".into(),
+        enabled: true,
+        cookies: "session=managed-import".into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+    });
+    config.streamers[0]
+        .streamer_specific_config
+        .as_mut()
+        .unwrap()["credential_selection"] =
+        serde_json::json!({"mode":"fixed", "credential_id":profile_id});
+    config.update_schema_version();
     config
 }
 
@@ -231,6 +259,17 @@ async fn hard_cap_retains_manager_credential_and_import_commit_publication() {
                     assert!(matches!(events.try_recv().unwrap(),
                         ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } if streamer_id == row.id));
                     if matches!(mutation, Mutation::Import) {
+                        let policy = current.config.credential_policy.as_ref().unwrap();
+                        let profile_id = policy.selection.profile_ids()[0];
+                        let stored: String = sqlx::query_scalar(
+                            "SELECT cookies FROM credential_profiles WHERE id = ?",
+                        )
+                        .bind(profile_id)
+                        .fetch_one(&container.pool)
+                        .await
+                        .unwrap();
+                        assert_eq!(stored, "session=managed-import");
+                        assert!(current.config.cookies.is_none());
                         assert!(matches!(
                             events.try_recv().unwrap(),
                             ConfigUpdateEvent::GlobalUpdated

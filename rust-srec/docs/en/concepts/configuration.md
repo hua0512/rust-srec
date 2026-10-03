@@ -20,7 +20,7 @@ For example, if the global output format is `flv` and a template sets `mp4`, str
 3. Leave fields inherited unless that streamer needs a different value.
 4. Edit the template to update the group. Check the rules below for recordings already in progress.
 
-A template can also provide platform-specific overrides for pipelines and platform options (extractor settings). For streamers on that platform they take precedence over the template's own pipelines and are merged into its platform options. Other settings cannot be overridden per platform within a template.
+A template can also provide platform-specific overrides for pipelines, credential selection, and platform options (extractor settings). For streamers on that platform they take precedence over the template's own pipelines and are merged into its platform options. Other settings cannot be overridden per platform within a template.
 
 ## Important merge rules
 
@@ -169,3 +169,26 @@ This section is now in [Configuration layers](./configuration.md#when-a-change-r
 This section is now in [Recording schedules](../guides/schedules.md#filter-timezones-and-boundaries).
 
 </div>
+
+## Account profiles and selection
+
+A profile stores one account's complete cookies and supported refresh or login material for one platform. Save accounts separately; never concatenate cookies from different accounts. Profiles belong to a platform, template, or streamer. A streamer can use its own profiles, those of its assigned template, and shared platform profiles. Templates can use their own and platform profiles. Profiles cannot cross platforms or unrelated owners. Cloning a template creates independent copies of its local profiles, with new IDs; references to shared platform profiles stay shared.
+
+| Selection | Behavior |
+| --- | --- |
+| Legacy (no policy) | Preserves existing scalar-cookie behavior until explicit conversion. |
+| Inherit | Skips local legacy credentials and follows the next applicable layer. |
+| None | Stops inheritance and uses no stored account credentials or automatic re-login. |
+| Fixed | Uses exactly one profile; refresh and re-login target that account. |
+| Pool: round robin | Distributes independent checks across eligible profiles in saved order. |
+| Pool: priority | Starts with the first eligible profile in saved order. |
+
+Resolution walks the streamer, the template override for the exact platform name, then the platform. At each layer an explicit policy takes precedence over that layer's legacy material; without a policy, that layer retains its legacy cookie behavior. A pool replaces the inherited pool; lists are never combined. Global configuration does not store accounts. Pools have optional failover and a total attempt limit from 1 to 10; disabled, invalid, and cooling accounts are skipped. Fixed selection never switches accounts. Unavailable credentials do not silently fall back to anonymous access.
+
+A recording keeps its selected account through extraction, download startup, and chat collection. Ordinary polls cannot rotate a recording already running. If recovery switches the recording to another account, chat collection reconnects with that account. Account/material changes require fresh extraction for the next attempt; changing a policy or disabling a profile does not by itself stop an engine already running. Use the existing stop/disable action to stop immediately. Credential exhaustion backs off without counting as a generic streamer error or entering temporary disable. A recording that is waiting for credentials restarts as soon as an account is edited, re-enabled or logged in again, or its selection changes, without waiting for the next check.
+
+When no account can be used, the account status says why: every account is cooling down after a throttle (with the time checks resume), every usable account needs a new login, or every selected account is disabled.
+
+Profile saves happen immediately; selecting the saved profile in an unsaved configuration form still requires saving that form. Supplying new material replaces the whole bundle and clears any token it leaves out; an edit that supplies no material keeps the stored secrets. Ordinary profile views show presence/status indicators rather than secret values. Delete conflicts list policies or active sessions that must be settled first.
+
+Existing installations are not automatically converted. Preview and convert each scope/platform explicitly; a shared template may retain legacy material for other platforms. SOOP conversion copies effective login credentials into the chosen profile, after which its refresh and login material are independent. See [backup and rollback](../operations/backup-restore.md#credential-profiles-and-rollback).

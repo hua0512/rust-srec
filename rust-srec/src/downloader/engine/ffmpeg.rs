@@ -16,8 +16,8 @@ use super::traits::{
     EngineType,
 };
 use super::utils::{
-    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit, redact_process_args,
-    settle_engine_tasks, terminate_and_reap,
+    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
+    redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
 
@@ -279,7 +279,7 @@ impl FfmpegEngine {
         info!(
             "Starting ffmpeg download for streamer {} with args: {:?}",
             config.streamer_id,
-            redact_process_args(&args)
+            redact_download_process_args(&args, config.managed_credentials)
         );
 
         // Spawn ffmpeg process
@@ -441,6 +441,7 @@ impl FfmpegEngine {
         }));
 
         let events = FfmpegEvents {
+            managed_credentials: config.managed_credentials,
             ignored_output_path: chunked.then(|| config.output_dir.join(super::chunked::LIST_NAME)),
             continuous_timestamps: chunked,
             source: FfmpegSource::Direct,
