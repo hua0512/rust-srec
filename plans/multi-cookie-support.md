@@ -1,6 +1,6 @@
 # Multiple cookie profiles: decision record
 
-Status: implemented on `feat/multi-cookie-profiles` (unreleased). This record describes the design as it stands and the decisions behind it. User-facing behavior is documented in [configuration](../rust-srec/docs/en/concepts/configuration.md#account-profiles-and-selection) and the [override reference](../rust-srec/docs/en/reference/configuration-overrides.md).
+Status: implemented on `main` (unreleased). This record describes the design as it stands and the decisions behind it. User-facing behavior is documented in [configuration](../rust-srec/docs/en/concepts/configuration.md#account-profiles-and-selection) and the [override reference](../rust-srec/docs/en/reference/configuration-overrides.md).
 
 ## Scope
 
