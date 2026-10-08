@@ -104,6 +104,11 @@ beforeAll(() => {
   } as unknown as typeof ResizeObserver;
 });
 
+// Each case renders a full editor and queries it by accessible role, which is
+// CPU-bound in jsdom: the slowest case takes about 3 s of the default 5 s
+// budget in a normal parallel run and times out under any extra load.
+vi.setConfig({ testTimeout: 15_000 });
+
 describe.each<Editor>(['preset', 'workflow'])('Execute %s editor', (editor) => {
   it('loads and saves existing program arguments and null scan settings unchanged', async () => {
     const config = {

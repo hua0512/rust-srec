@@ -21,12 +21,22 @@ import {
   getPlatformColor,
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
+import { formatPlatformName } from '@/lib/format';
 import { SharedConfigEditor } from '../shared-config-editor';
+import type { ProxyRouteInherit } from '../shared/proxy-route-picker';
 import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';
-import { listEngines } from '@/server/functions';
+import { INHERIT_ROUTE } from '@/api/schemas/proxies';
+import type { CredentialOwner } from '@/api/schemas/credential-profiles';
+import { enginesQueryOptions } from '@/api/engines';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
+
+/** A platform that inherits takes the global route. */
+const GLOBAL_ROUTE: ProxyRouteInherit = {
+  kind: 'scope',
+  query: { scope_type: 'global' },
+};
 
 /**
  * Platform options to show for `platform`, with the extractor's own fallbacks filled in.
@@ -52,9 +62,9 @@ function toPlatformFormValues(
     download_delay_ms: platform.download_delay_ms,
     record_danmu: platform.record_danmu,
     danmu_statistics: danmuStatisticsFormValue(platform.danmu_statistics),
-    cookies: platform.cookies,
+    credential_selection: platform.credential_selection ?? undefined,
     platform_specific_config: displayedPlatformOptions(platform),
-    proxy_config: platform.proxy_config,
+    proxy_route: platform.proxy_route ?? INHERIT_ROUTE,
     output_folder: platform.output_folder,
     output_filename_template: platform.output_filename_template,
     download_engine: platform.download_engine,
@@ -83,10 +93,7 @@ export function PlatformEditor({
   onSubmit,
   isUpdating,
 }: PlatformEditorProps) {
-  const { data: engines = [] } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
+  const { data: engines = [] } = useQuery(enginesQueryOptions);
 
   const form = useForm({
     resolver: zodResolver(EditPlatformSchema),
@@ -105,8 +112,12 @@ export function PlatformEditor({
   // Memoized because the shared editor forwards it to a memoized card, which would otherwise
   // re-render for a new object of the same contents.
   const credentialScope = useMemo(
-    () => ({ type: 'platform', id: platform.id }) as const,
+    (): CredentialOwner => ({ type: 'platform', platform_id: platform.id }),
     [platform.id],
+  );
+  const credentialPlatform = useMemo(
+    () => ({ id: platform.id, name: platform.name }),
+    [platform.id, platform.name],
   );
 
   return (
@@ -122,8 +133,8 @@ export function PlatformEditor({
           className="max-w-7xl mx-auto space-y-6 sm:space-y-8 px-4 sm:px-6 lg:px-8 py-4 sm:py-8"
         >
           {/* Header Section */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-6">
+            <div className="flex min-w-0 items-center gap-4">
               <div
                 className={cn(
                   'p-2.5 sm:p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm shrink-0',
@@ -134,12 +145,12 @@ export function PlatformEditor({
               </div>
               <div className="min-w-0 space-y-1">
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">
-                  {platform.name}
+                  {formatPlatformName(platform.name)}
                 </h1>
                 <p className="text-muted-foreground text-sm flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
                     <span className="opacity-60">ID:</span>{' '}
-                    <span className="font-mono truncate max-w-[120px] sm:max-w-none">
+                    <span className="min-w-0 font-mono truncate max-w-[120px] sm:max-w-none">
                       {platform.id}
                     </span>
                   </span>
@@ -183,8 +194,8 @@ export function PlatformEditor({
             form={form}
             paths={{
               streamSelection: 'stream_selection_config',
-              cookies: 'cookies',
-              proxy: 'proxy_config',
+              credentialSelection: 'credential_selection',
+              proxyRoute: 'proxy_route',
               retryPolicy: 'download_retry_policy',
               output: '',
               limits: '',
@@ -196,7 +207,7 @@ export function PlatformEditor({
               offlineCheck: '',
             }}
             credentialScope={credentialScope}
-            credentialPlatformNameHint={platform.name}
+            credentialPlatform={credentialPlatform}
             engines={engines}
             extraTabs={[
               {
@@ -226,7 +237,7 @@ export function PlatformEditor({
               },
             ]}
             defaultTab="general"
-            proxyMode="object"
+            proxyInherit={GLOBAL_ROUTE}
             configMode="object"
             availableTabs={[
               'filters',

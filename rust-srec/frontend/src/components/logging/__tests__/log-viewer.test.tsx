@@ -163,16 +163,22 @@ describe('LogViewer', () => {
     expect(screen.getByText('log-39')).toBeInTheDocument();
   });
 
-  it('keeps only the newest entries once past the cap', () => {
-    const { container, socket } = renderViewer();
+  // Rendering and querying hundreds of rows in jsdom takes about half of the
+  // default 5 s budget in a normal parallel run, so extra load times it out.
+  it(
+    'keeps only the newest entries once past the cap',
+    { timeout: 15_000 },
+    () => {
+      const { container, socket } = renderViewer();
 
-    emitLogs(socket, MAX_LOG_ENTRIES + 20);
-    flush();
+      emitLogs(socket, MAX_LOG_ENTRIES + 20);
+      flush();
 
-    expect(renderedRowCount(container)).toBe(MAX_LOG_ENTRIES);
-    expect(screen.queryByText('log-0')).not.toBeInTheDocument();
-    expect(screen.getByText('log-519')).toBeInTheDocument();
-  });
+      expect(renderedRowCount(container)).toBe(MAX_LOG_ENTRIES);
+      expect(screen.queryByText('log-0')).not.toBeInTheDocument();
+      expect(screen.getByText('log-519')).toBeInTheDocument();
+    },
+  );
 
   it('holds frames back while paused and merges them on resume', () => {
     const { container, socket } = renderViewer();

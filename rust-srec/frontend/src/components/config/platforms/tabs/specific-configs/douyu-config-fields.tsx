@@ -238,11 +238,6 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
                 label: msg`Android Version`,
                 fallback: '14',
               },
-              {
-                key: 'device_id',
-                label: msg`Device ID`,
-                fallback: i18n._(msg`Automatic`),
-              },
             ].map(({ key, label, fallback }) => (
               <FormField
                 key={key}

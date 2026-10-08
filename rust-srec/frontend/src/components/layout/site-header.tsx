@@ -4,6 +4,7 @@ import { Trans } from '@lingui/react/macro';
 import { MenuIcon } from 'lucide-react';
 
 import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
+import { CredentialAttentionIndicator } from '@/components/credential-attention-indicator';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { UploadStatusIndicator } from '@/components/upload-status-indicator';
 import { ModeToggle } from '@/components/sidebar/mode-toggle';
@@ -41,6 +42,7 @@ export function SiteHeader() {
     system: <Trans>System</Trans>,
     backup: <Trans>Backup</Trans>,
     engines: <Trans>Engines</Trans>,
+    proxies: <Trans>Proxies</Trans>,
     platforms: <Trans>Platforms</Trans>,
     templates: <Trans>Templates</Trans>,
     theme: <Trans>Theme</Trans>,
@@ -111,6 +113,7 @@ export function SiteHeader() {
           </Breadcrumb>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
+          <CredentialAttentionIndicator />
           <UploadStatusIndicator />
           <ConnectionStatusIndicator />
           <LanguageSwitcher />

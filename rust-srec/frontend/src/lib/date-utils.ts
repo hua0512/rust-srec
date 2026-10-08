@@ -24,6 +24,35 @@ export function formatRelativeTime(
   });
 }
 
+const SHORT_RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 365 * 24 * 60 * 60_000],
+  ['month', 30 * 24 * 60 * 60_000],
+  ['day', 24 * 60 * 60_000],
+  ['hour', 60 * 60_000],
+  ['minute', 60_000],
+];
+
+/**
+ * A compact relative time for dense lists, in the largest whole unit (en
+ * "41m ago", "in 4d"; zh-CN "41分钟前"). Under a minute reads as this minute.
+ */
+export function formatShortRelativeTime(
+  date: string | number | Date,
+  locale: string = 'en',
+  now: number = Date.now(),
+): string {
+  const delta = new Date(date).getTime() - now;
+  const format = new Intl.RelativeTimeFormat(locale, {
+    style: 'narrow',
+    numeric: 'auto',
+  });
+  for (const [unit, size] of SHORT_RELATIVE_UNITS) {
+    const value = Math.trunc(delta / size);
+    if (value !== 0 || unit === 'minute') return format.format(value, unit);
+  }
+  return format.format(0, 'minute');
+}
+
 // Intl.DurationFormat is feature-detected at runtime and absent from the
 // project's TS lib, so it gets a minimal local type here.
 type DurationFormatCtor = new (

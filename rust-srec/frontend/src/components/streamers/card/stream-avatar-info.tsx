@@ -16,6 +16,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn, getPlatformFromUrl, getProxiedUrl } from '@/lib/utils';
+import { formatPlatformName } from '@/lib/format';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
@@ -94,7 +95,7 @@ export const StreamAvatarInfo = ({
             ) : (
               <Radio className="h-3 w-3" />
             )}
-            <span className="capitalize font-medium">{platform}</span>
+            <span className="font-medium">{formatPlatformName(platform)}</span>
           </div>
 
           {/* Consecutive errors */}

@@ -2,7 +2,7 @@ import { Trans } from '@lingui/react/macro';
 import { Info, TriangleAlert } from 'lucide-react';
 import { useWatch } from 'react-hook-form';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Callout } from '@/components/shared/callout';
 import { Badge } from '@/components/ui/badge';
 import {
   Disclosure,
@@ -110,30 +110,25 @@ export function LosslessCuttingField({
             </Trans>
           </FormDescription>
           {showDetails && blockedByArgs && (
-            <Alert
+            <Callout
+              tone="warning"
+              icon={TriangleAlert}
               role="alert"
-              className="bg-amber-500/5 border-amber-500/30 text-amber-700 dark:text-amber-400 *:data-[slot=alert-description]:text-amber-700/90 dark:*:data-[slot=alert-description]:text-amber-400/90"
+              title={<Trans>Lossless cutting will not be used</Trans>}
             >
-              <TriangleAlert />
-              <AlertTitle className="line-clamp-none">
-                <Trans>Lossless cutting will not be used</Trans>
-              </AlertTitle>
-              <AlertDescription>
-                {argsField === 'output_args' ? (
-                  <Trans>
-                    Custom FFmpeg output arguments are set. Remove them to
-                    record with lossless cutting; until then this engine records
-                    normally.
-                  </Trans>
-                ) : (
-                  <Trans>
-                    Extra Streamlink arguments are set. Remove them to record
-                    with lossless cutting; until then this engine records
-                    normally.
-                  </Trans>
-                )}
-              </AlertDescription>
-            </Alert>
+              {argsField === 'output_args' ? (
+                <Trans>
+                  Custom FFmpeg output arguments are set. Remove them to record
+                  with lossless cutting; until then this engine records
+                  normally.
+                </Trans>
+              ) : (
+                <Trans>
+                  Extra Streamlink arguments are set. Remove them to record with
+                  lossless cutting; until then this engine records normally.
+                </Trans>
+              )}
+            </Callout>
           )}
           {showDetails && <LosslessCuttingDetails />}
           <FormMessage />

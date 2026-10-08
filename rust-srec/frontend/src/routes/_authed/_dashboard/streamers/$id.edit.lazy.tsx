@@ -25,6 +25,7 @@ import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-
 import { StatusCheckHistory } from '@/components/streamers/edit/status-check-history';
 import { EditStreamerSkeleton } from '@/components/streamers/edit/edit-streamer-skeleton';
 import type { StreamerPayload } from '@/hooks/use-streamer-form';
+import { invalidateCredentialQueries } from '@/api/credential-profiles';
 
 const StreamerFiltersTab = lazy(() =>
   import('@/components/streamers/edit/streamer-filters-tab').then((m) => ({
@@ -74,6 +75,9 @@ function EditStreamerPage() {
       toast.success(i18n._(msg`Streamer updated successfully`));
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
       void queryClient.invalidateQueries({ queryKey: ['streamer', id] });
+      // The form also saves the account selection, and a changed URL can
+      // move the streamer to another platform.
+      void invalidateCredentialQueries(queryClient);
       void navigate({ to: '/streamers' });
     },
     onError: (error: any) => {

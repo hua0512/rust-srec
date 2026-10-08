@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useBlocker, useNavigate } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
@@ -26,7 +26,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { extractMetadata, listEngines } from '@/server/functions';
+import { extractMetadata, getPlatformConfig } from '@/server/functions';
 import { templatesQueryOptions } from '@/api/templates';
 import { useStreamerForm, StreamerPayload } from '@/hooks/use-streamer-form';
 import { getStreamer } from '@/server/functions';
@@ -36,6 +36,7 @@ import { StreamerGeneralSettings } from './config/streamer-general-settings';
 import { StreamerConfiguration } from './config/streamer-configuration';
 import { StreamerTabs, StreamerTab } from './config/streamer-tabs';
 import { SaveFab } from '@/components/shared/save-fab';
+import { enginesQueryOptions } from '@/api/engines';
 
 type Streamer = NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
 
@@ -84,10 +85,23 @@ export function StreamerEditor({
   } = useStreamerForm({ streamer });
 
   const { data: templates = [] } = useQuery(templatesQueryOptions);
-  const { data: engines } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
+  const { data: engines } = useQuery(enginesQueryOptions);
+
+  // Accounts are selected from the saved streamer's platform, the one its
+  // stored selection belongs to, even while an edited URL points elsewhere.
+  const platformConfigId = streamer?.platform_config_id;
+  const { data: platformConfig } = useQuery({
+    queryKey: ['config', 'platform', platformConfigId],
+    queryFn: () => getPlatformConfig({ data: platformConfigId ?? '' }),
+    enabled: Boolean(platformConfigId),
   });
+  const credentialPlatform = useMemo(
+    () =>
+      platformConfig
+        ? { id: platformConfig.id, name: platformConfig.name }
+        : undefined,
+    [platformConfig],
+  );
 
   const isDirty = form.formState.isDirty;
 
@@ -172,6 +186,7 @@ export function StreamerEditor({
             form={form}
             engines={engines}
             streamerId={streamer?.id}
+            credentialPlatform={credentialPlatform}
           />
         </TabCard>
       ),
@@ -329,11 +344,12 @@ function TabCard({
 }) {
   return (
     <Card className="border-border/40 bg-card/80 shadow-sm backdrop-blur-sm">
-      <CardHeader>
+      {/* Phones keep the padding of the cards nested inside small. */}
+      <CardHeader className="px-4 sm:px-6">
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="px-4 sm:px-6">{children}</CardContent>
     </Card>
   );
 }

@@ -1,7 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { listEngines } from '@/server/functions';
 import {
   EngineCard,
   CreateEngineCard,
@@ -12,6 +11,7 @@ import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { AlertCircle } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { enginesQueryOptions } from '@/api/engines';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/engines/')(
   {
@@ -20,14 +20,7 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/config/engines/')(
 );
 
 function EnginesConfigPage() {
-  const {
-    data: engines,
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
+  const { data: engines, isLoading, error } = useQuery(enginesQueryOptions);
 
   if (error) {
     return (

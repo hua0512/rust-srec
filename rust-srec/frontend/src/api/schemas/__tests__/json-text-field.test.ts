@@ -85,7 +85,7 @@ describe('config rows with unreadable JSON columns', () => {
       stream_selection_config: '{"preferred_formats":',
       danmu_statistics: 'null-ish garbage',
       download_retry_policy: '{"max_retries":"many"}',
-      proxy_config: '',
+      proxy_route: { kind: 'direct' },
       pipeline: '[not json]',
       session_complete_pipeline: '{',
       paired_segment_pipeline: 'undefined',
@@ -96,7 +96,7 @@ describe('config rows with unreadable JSON columns', () => {
     expect(parsed.stream_selection_config).toBeNull();
     expect(parsed.danmu_statistics).toBeNull();
     expect(parsed.download_retry_policy).toBeNull();
-    expect(parsed.proxy_config).toBeNull();
+    expect(parsed.proxy_route).toEqual({ kind: 'direct' });
     expect(parsed.pipeline).toBeNull();
     expect(parsed.session_complete_pipeline).toBeNull();
     expect(parsed.paired_segment_pipeline).toBeNull();
@@ -110,7 +110,7 @@ describe('config rows with unreadable JSON columns', () => {
       stream_selection_config: '{"preferred_qualities":',
       danmu_statistics: 'nope',
       download_retry_policy: '{',
-      proxy_config: '{"enabled":"maybe"}',
+      proxy_route: { kind: 'proxy', id: 'proxy-1' },
       pipeline: 'not json',
       session_complete_pipeline: '{',
       paired_segment_pipeline: '[',
@@ -122,7 +122,7 @@ describe('config rows with unreadable JSON columns', () => {
     expect(parsed.stream_selection_config).toBeNull();
     expect(parsed.danmu_statistics).toBeNull();
     expect(parsed.download_retry_policy).toBeNull();
-    expect(parsed.proxy_config).toBeNull();
+    expect(parsed.proxy_route).toEqual({ kind: 'proxy', id: 'proxy-1' });
     expect(parsed.pipeline).toBeNull();
     expect(parsed.session_complete_pipeline).toBeNull();
     expect(parsed.paired_segment_pipeline).toBeNull();
@@ -134,13 +134,12 @@ describe('config rows with unreadable JSON columns', () => {
     const parsed = TemplateSchema.parse({
       id: 'template-2',
       name: 'Mixed',
-      proxy_config: '{"enabled":true,"url":"http://proxy.example"}',
+      stream_selection_config: '{"preferred_qualities":["source"]}',
       danmu_statistics: '{"enabled":',
     });
 
-    expect(parsed.proxy_config).toMatchObject({
-      enabled: true,
-      url: 'http://proxy.example',
+    expect(parsed.stream_selection_config).toEqual({
+      preferred_qualities: ['source'],
     });
     expect(parsed.danmu_statistics).toBeNull();
   });

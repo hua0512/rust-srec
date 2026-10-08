@@ -1,10 +1,14 @@
+import { z } from 'zod';
 import {
   BackendApiError,
   DAG_ALREADY_TERMINAL_CODE,
+  errorBody,
+  errorDetails,
   hasErrorCode,
   isDagAlreadyTerminalError,
   isNotFoundError,
   isPasswordChangeRequiredError,
+  referencesFromConflict,
 } from '../api-error';
 
 /**
@@ -103,5 +107,55 @@ describe('isPasswordChangeRequiredError', () => {
         rethrownAcrossBoundary(422, { code: 'PASSWORD_CHANGE_REQUIRED' }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('error body helpers', () => {
+  it('reads the body and its details from a rethrown error', () => {
+    const body = { code: 'X', details: { name: 'proxy-a' } };
+    const error = rethrownAcrossBoundary(409, body);
+    expect(errorBody(error)).toBe(body);
+    expect(errorDetails(error)).toEqual({ name: 'proxy-a' });
+  });
+
+  it('has no details without an error or an object body', () => {
+    expect(errorBody('not an error')).toBeUndefined();
+    expect(errorDetails(rethrownAcrossBoundary(500, 'text'))).toBeUndefined();
+    expect(
+      errorDetails(rethrownAcrossBoundary(409, { details: 'text' })),
+    ).toBeUndefined();
+  });
+});
+
+describe('referencesFromConflict', () => {
+  const schema = z.object({ names: z.array(z.string()) });
+  const refused = (code: string, references: unknown) =>
+    rethrownAcrossBoundary(409, { code, details: { references } });
+
+  it('parses the references of the matching code', () => {
+    expect(
+      referencesFromConflict(
+        refused('IN_USE', { names: ['a'] }),
+        'IN_USE',
+        schema,
+      ),
+    ).toEqual({ names: ['a'] });
+  });
+
+  it('ignores another code or references of another shape', () => {
+    expect(
+      referencesFromConflict(
+        refused('OTHER', { names: ['a'] }),
+        'IN_USE',
+        schema,
+      ),
+    ).toBeUndefined();
+    expect(
+      referencesFromConflict(
+        refused('IN_USE', { names: 'a' }),
+        'IN_USE',
+        schema,
+      ),
+    ).toBeUndefined();
   });
 });

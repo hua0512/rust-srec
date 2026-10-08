@@ -28,6 +28,7 @@ import {
   getPlatformColor,
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
+import { formatPlatformName } from '@/lib/format';
 
 interface PlatformCardProps {
   platform: z.infer<typeof PlatformConfigSchema>;
@@ -54,7 +55,7 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
         </div>
         <div className="flex-1 min-w-0 space-y-1">
           <CardTitle className="text-base font-semibold tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {platform.name}
+            {formatPlatformName(platform.name)}
           </CardTitle>
           <div className="flex items-center gap-2">
             {platform.record_danmu && (
@@ -63,10 +64,12 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
                 <span>Danmu</span>
               </div>
             )}
-            {platform.cookies && (
+            {/* Only a selection that names accounts; inherit/none sign in anonymously. */}
+            {(platform.credential_selection?.mode === 'fixed' ||
+              platform.credential_selection?.mode === 'pool') && (
               <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full border border-orange-500/10">
                 <Cookie className="w-3 h-3" />
-                <span>Cookies</span>
+                <span>Accounts</span>
               </div>
             )}
           </div>

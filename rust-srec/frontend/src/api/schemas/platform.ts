@@ -1,12 +1,13 @@
 import { z } from 'zod';
+import { CredentialSelectionSchema } from './credential-profiles';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
-  ProxyConfigObjectSchema,
   jsonTextField,
 } from './common';
+import { ProxyRouteSchema } from './proxies';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import {
   AllPlatformConfigsSchema,
@@ -20,7 +21,10 @@ export const PlatformConfigSchema = z.object({
   fetch_delay_ms: z.number().nullable().optional(),
   download_delay_ms: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  cookies: z.string().nullable().optional(),
+  credential_selection: jsonTextField(
+    'credential_selection',
+    CredentialSelectionSchema,
+  ),
   platform_specific_config: jsonTextField(
     'platform_specific_config',
     AllPlatformConfigsSchema,
@@ -47,7 +51,8 @@ export const PlatformConfigSchema = z.object({
     'download_retry_policy',
     DownloadRetryPolicyObjectSchema,
   ),
-  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  /** The platform's route; absent on a write keeps the stored one. */
+  proxy_route: ProxyRouteSchema.optional(),
   pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
   session_complete_pipeline: jsonTextField(
     'session_complete_pipeline',
@@ -69,11 +74,11 @@ export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
 // Schema for Forms (expects objects, not JSON strings)
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
+  credential_selection: CredentialSelectionSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   danmu_statistics: DanmuStatisticsOverrideSchema,
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  proxy_config: ProxyConfigObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

@@ -32,7 +32,6 @@ import { toast } from 'sonner';
 import { deleteTemplate } from '@/server/functions';
 import {
   LayoutTemplate,
-  Cookie,
   Filter,
   MoreHorizontal,
   Edit,
@@ -86,12 +85,6 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
               {template.name}
             </CardTitle>
             <div className="flex items-center gap-2">
-              {template.cookies && (
-                <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-orange-600 dark:text-orange-400">
-                  <Cookie className="w-3 h-3" />
-                  <span>Cookies</span>
-                </div>
-              )}
               {template.stream_selection_config && (
                 <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-blue-600 dark:text-blue-400">
                   <Filter className="w-3 h-3" />

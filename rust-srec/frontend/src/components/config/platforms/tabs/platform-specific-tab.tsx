@@ -35,6 +35,7 @@ import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-f
 import { SoopConfigFields } from './specific-configs/soop-config-fields';
 import { BigoConfigFields } from './specific-configs/bigo-config-fields';
 import { configPath } from '@/components/config/shared/form-path';
+import { formatPlatformName } from '@/lib/format';
 
 const PLATFORM_SCHEMAS: Record<string, z.ZodType> = {
   huya: HuyaConfigSchema,
@@ -223,6 +224,10 @@ export function PlatformSpecificTab<TFieldValues extends FieldValues>({
     }
   }, [hasSpecificFields]);
 
+  const displayName = platformName
+    ? formatPlatformName(platformName.toLowerCase())
+    : undefined;
+
   const renderPlatformFields = () => {
     if (!platformName) return null;
 
@@ -246,11 +251,8 @@ export function PlatformSpecificTab<TFieldValues extends FieldValues>({
           </div>
           <div className="grid gap-0.5 min-w-0">
             <h3 className="text-lg font-bold tracking-tight text-foreground truncate">
-              {platformName ? (
-                <Trans>
-                  {platformName.charAt(0).toUpperCase() + platformName.slice(1)}{' '}
-                  Configuration
-                </Trans>
+              {displayName ? (
+                <Trans>{displayName} Configuration</Trans>
               ) : (
                 <Trans>Platform Specific Configuration</Trans>
               )}

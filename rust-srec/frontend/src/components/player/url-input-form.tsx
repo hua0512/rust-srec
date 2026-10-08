@@ -27,25 +27,45 @@ import {
 } from '@/components/ui/collapsible';
 
 const getSingleUrlSchema = (i18n: any) =>
-  z.object({
-    url: z
-      .url(i18n._(msg`Please enter a valid URL`))
-      .min(1, i18n._(msg`URL is required`)),
-    cookies: z.string().optional(),
-  });
+  z
+    .object({
+      url: z
+        .url(i18n._(msg`Please enter a valid URL`))
+        .min(1, i18n._(msg`URL is required`)),
+      cookies: z.string().optional(),
+      credential_id: z.string().optional(),
+    })
+    .refine((value) => !value.cookies || !value.credential_id, {
+      path: ['credential_id'],
+      message: i18n._(msg`Choose an account or raw cookies, not both`),
+    });
 
 const getBatchUrlSchema = (i18n: any) =>
-  z.object({
-    urls: z.string().min(1, i18n._(msg`Please enter at least one URL`)),
-    cookies: z.string().optional(),
-  });
+  z
+    .object({
+      urls: z.string().min(1, i18n._(msg`Please enter at least one URL`)),
+      cookies: z.string().optional(),
+      credential_id: z.string().optional(),
+    })
+    .refine((value) => !value.cookies || !value.credential_id, {
+      path: ['credential_id'],
+      message: i18n._(msg`Choose an account or raw cookies, not both`),
+    });
 
 type SingleUrlFormValues = z.infer<ReturnType<typeof getSingleUrlSchema>>;
 type BatchUrlFormValues = z.infer<ReturnType<typeof getBatchUrlSchema>>;
 
 export interface UrlInputFormProps {
-  onSubmitSingle: (data: { url: string; cookies?: string }) => void;
-  onSubmitBatch: (data: { urls: string[]; cookies?: string }) => void;
+  onSubmitSingle: (data: {
+    url: string;
+    cookies?: string;
+    credential_id?: string;
+  }) => void;
+  onSubmitBatch: (data: {
+    urls: string[];
+    cookies?: string;
+    credential_id?: string;
+  }) => void;
   isLoading?: boolean;
 }
 
@@ -63,6 +83,7 @@ export function UrlInputForm({
     defaultValues: {
       url: '',
       cookies: '',
+      credential_id: '',
     },
   });
 
@@ -71,6 +92,7 @@ export function UrlInputForm({
     defaultValues: {
       urls: '',
       cookies: '',
+      credential_id: '',
     },
   });
 
@@ -78,6 +100,7 @@ export function UrlInputForm({
     onSubmitSingle({
       url: data.url,
       cookies: data.cookies || undefined,
+      credential_id: data.credential_id || undefined,
     });
   };
 
@@ -90,6 +113,7 @@ export function UrlInputForm({
     onSubmitBatch({
       urls: urlList,
       cookies: data.cookies || undefined,
+      credential_id: data.credential_id || undefined,
     });
   };
 
@@ -196,6 +220,26 @@ export function UrlInputForm({
                   <CollapsibleContent className="space-y-4 pt-4">
                     <FormField
                       control={singleForm.control}
+                      name="credential_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <Trans>Account ID</Trans>
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} disabled={isLoading} />
+                          </FormControl>
+                          <FormDescription>
+                            <Trans>
+                              Leave empty to use the saved account selection.
+                            </Trans>
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={singleForm.control}
                       name="cookies"
                       render={({ field }) => (
                         <FormItem>
@@ -288,6 +332,26 @@ export function UrlInputForm({
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-4 pt-4">
+                    <FormField
+                      control={batchForm.control}
+                      name="credential_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            <Trans>Account ID</Trans>
+                          </FormLabel>
+                          <FormControl>
+                            <Input {...field} disabled={isLoading} />
+                          </FormControl>
+                          <FormDescription>
+                            <Trans>
+                              Leave empty to use the saved account selection.
+                            </Trans>
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={batchForm.control}
                       name="cookies"

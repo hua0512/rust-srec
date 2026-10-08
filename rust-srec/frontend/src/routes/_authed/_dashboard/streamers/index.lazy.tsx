@@ -120,7 +120,7 @@ function StreamersPage() {
   const exceptionalStateOptions = [
     { value: 'OUT_OF_SPACE', label: i18n._(msg`Out of space`) },
     { value: 'FATAL_ERROR', label: i18n._(msg`Fatal error`) },
-    { value: 'NOT_FOUND', label: i18n._(msg`Not found`) },
+    { value: 'NOT_FOUND', label: i18n._(msg`Streamer not found`) },
     {
       value: 'TEMPORAL_DISABLED',
       label: i18n._(msg`Temporarily disabled`),

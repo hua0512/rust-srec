@@ -163,7 +163,6 @@ describe('Douyu configuration', () => {
     for (const [label, key, value] of [
       ['Device Model', 'device_name', 'OnePlus 12'],
       ['Android Version', 'os_version', '15'],
-      ['Device ID', 'device_id', '0123456789abcdef0123456789abcdef'],
     ]) {
       const input = screen.getByLabelText(label);
       expect(input).toHaveAttribute('placeholder', 'Inherited');

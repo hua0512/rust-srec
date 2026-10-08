@@ -30,6 +30,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { exportConfig, importConfig } from '@/server/functions';
+import { invalidateCredentialQueries } from '@/api/credential-profiles';
 import {
   ImportModeRadioGroup,
   type ImportMode,
@@ -175,6 +176,9 @@ export function BackupRestoreCard() {
       void queryClient.invalidateQueries({ queryKey: ['templates'] });
       void queryClient.invalidateQueries({ queryKey: ['engines'] });
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // Imports write accounts without announcing them on the live
+      // connection, so the accounts views refetch here.
+      void invalidateCredentialQueries(queryClient);
 
       toast.success(i18n._(msg`Configuration imported successfully`));
     },

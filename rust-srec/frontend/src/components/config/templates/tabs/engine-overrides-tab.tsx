@@ -6,7 +6,6 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Plus, Server } from 'lucide-react';
-import { listEngines } from '@/server/functions';
 import { EngineOverrideCard } from './engine-override-card';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -31,6 +30,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import type { TemplateFormValues } from '../template-editor';
+import { enginesQueryOptions } from '@/api/engines';
 
 interface EngineOverridesTabProps {
   form: UseFormReturn<TemplateFormValues>;
@@ -41,10 +41,7 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
   const [open, setOpen] = useState(false);
 
   // Fetch available engines
-  const { data: engines = [] } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
+  const { data: engines = [] } = useQuery(enginesQueryOptions);
 
   // A field-level subscription: adding or removing an override re-renders this tab, not the
   // component that owns `useForm`.

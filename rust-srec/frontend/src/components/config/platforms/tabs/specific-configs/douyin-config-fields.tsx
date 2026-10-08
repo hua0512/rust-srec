@@ -6,17 +6,9 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
-import {
-  Zap,
-  Cookie,
-  Shield,
-  Smartphone,
-  Gamepad2,
-  Monitor,
-} from 'lucide-react';
+import { Zap, Shield, Smartphone, Gamepad2, Monitor } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
@@ -213,35 +205,6 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
                   <Trans>
                     Isolation level for tracking identifiers. Global is usually
                     best.
-                  </Trans>
-                </FormDescription>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'ttwid')}
-            render={({ field }) => (
-              <FormItem>
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-1.5 rounded-md bg-muted text-muted-foreground">
-                    <Cookie className="w-3.5 h-3.5" />
-                  </div>
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>Specific TTWID Cookie</Trans>
-                  </FormLabel>
-                </div>
-                <FormControl>
-                  <Input
-                    placeholder="ttwid=..."
-                    {...field}
-                    className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all font-mono text-xs"
-                  />
-                </FormControl>
-                <FormDescription className="text-[11px] font-medium pt-2 px-1">
-                  <Trans>
-                    Explicit TTWID cookie value to use for all requests.
                   </Trans>
                 </FormDescription>
               </FormItem>

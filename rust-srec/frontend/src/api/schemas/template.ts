@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { CredentialSelectionSchema } from './credential-profiles';
 import { ExtractorSelectionSchema } from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
-  ProxyConfigObjectSchema,
   jsonTextField,
 } from './common';
+import { ProxyRouteSchema } from './proxies';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { EngineConfigOverrideSchema } from './engine';
 
@@ -37,7 +38,6 @@ export const TemplateSchema = z.object({
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
-  cookies: z.string().nullable().optional(),
   stream_selection_config: jsonTextField(
     'stream_selection_config',
     StreamSelectionConfigObjectSchema,
@@ -50,7 +50,7 @@ export const TemplateSchema = z.object({
     'download_retry_policy',
     DownloadRetryPolicyObjectSchema,
   ),
-  proxy_config: jsonTextField('proxy_config', ProxyConfigObjectSchema),
+  proxy_route: ProxyRouteSchema.optional(),
   pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
   session_complete_pipeline: jsonTextField(
     'session_complete_pipeline',
@@ -80,16 +80,24 @@ export const CreateTemplateRequestSchema = z.object({
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   extractor: ExtractorSelectionSchema.nullable().optional(),
-  platform_overrides: z.any().nullable().optional(),
+  platform_overrides: z
+    .record(
+      z.string(),
+      z
+        .object({ credential_selection: CredentialSelectionSchema.optional() })
+        .catchall(z.any()),
+    )
+    .nullable()
+    .optional(),
   engines_override: EnginesOverrideWriteSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
   danmu_statistics: DanmuStatisticsOverrideSchema,
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
-  proxy_config: ProxyConfigObjectSchema.nullable().optional(),
+  /** Omitted on create inherits; omitted on update keeps the stored route. */
+  proxy_route: ProxyRouteSchema.optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),

@@ -38,10 +38,10 @@ describe('PlatformOverrideCard', () => {
   it('offers only the settings a per-platform override applies', () => {
     renderCard();
 
-    fireEvent.click(screen.getByText('huya'));
+    fireEvent.click(screen.getByText('Huya'));
 
     expect(
       screen.getAllByRole('tab').map((tab) => tab.textContent?.trim()),
-    ).toEqual(['Specific', 'Pipeline']);
+    ).toEqual(['Accounts', 'Specific', 'Pipeline']);
   });
 });

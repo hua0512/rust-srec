@@ -18,6 +18,7 @@ import {
   Terminal,
   Languages,
   KeyRound,
+  Network,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -64,6 +65,12 @@ function ConfigLayout() {
       description: i18n._(msg`Processing nodes`),
     },
     {
+      title: i18n._(msg`Proxies`),
+      href: '/config/proxies',
+      icon: Network,
+      description: i18n._(msg`Saved proxies & system proxy`),
+    },
+    {
       title: i18n._(msg`API Keys`),
       href: '/config/api-keys',
       icon: KeyRound,
@@ -96,9 +103,9 @@ function ConfigLayout() {
   ];
 
   return (
-    <div className="flex h-full flex-col space-y-6 lg:flex-row lg:space-x-8 lg:space-y-0 w-full min-h-[calc(100vh-4rem)] overflow-x-hidden lg:overflow-x-visible">
-      <aside className="w-full lg:w-64 shrink-0 self-start lg:sticky top-24 flex flex-col gap-4 sm:gap-6 lg:px-0 min-w-0">
-        <div className="flex items-center gap-3 px-3 lg:px-2">
+    <div className="flex h-full flex-col space-y-6 xl:flex-row xl:space-x-8 xl:space-y-0 w-full min-h-[calc(100vh-4rem)] overflow-x-hidden xl:overflow-x-visible">
+      <aside className="w-full xl:w-64 shrink-0 self-start xl:sticky top-24 flex flex-col gap-4 sm:gap-6 xl:px-0 min-w-0">
+        <div className="flex items-center gap-3 px-3 xl:px-2">
           <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10 shadow-sm">
             <Settings className="h-6 w-6 text-primary" />
           </div>
@@ -109,10 +116,10 @@ function ConfigLayout() {
           </div>
         </div>
 
-        <Separator className="hidden lg:block opacity-50" />
+        <Separator className="hidden xl:block opacity-50" />
 
-        <nav className="sticky top-[56px] z-20 lg:relative lg:top-0 -mx-3 px-3 lg:mx-0 lg:px-0 bg-background/95 lg:bg-transparent backdrop-blur-md lg:backdrop-blur-0 border-b lg:border-b-0 border-border/50 py-3 lg:py-0 flex w-full overflow-x-auto lg:overflow-visible no-scrollbar">
-          <div className="flex gap-2 min-w-0 lg:flex-col lg:w-full lg:gap-2 px-3 lg:px-0">
+        <nav className="sticky top-[56px] z-20 xl:relative xl:top-0 -mx-3 px-3 xl:mx-0 xl:px-0 bg-background/95 xl:bg-transparent backdrop-blur-md xl:backdrop-blur-0 border-b xl:border-b-0 border-border/50 py-3 xl:py-0 flex w-full overflow-x-auto xl:overflow-visible no-scrollbar">
+          <div className="flex gap-2 min-w-0 xl:flex-col xl:w-full xl:gap-2 px-3 xl:px-0">
             {sidebarItems.map((item) => {
               const isActive = pathname.includes(item.href);
               return (
@@ -120,7 +127,7 @@ function ConfigLayout() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    'group flex shrink-0 lg:shrink items-center gap-2 rounded-xl px-3 py-2 lg:px-4 lg:py-3 text-sm font-medium transition-all hover:bg-accent hover:text-accent-foreground whitespace-nowrap',
+                    'group flex shrink-0 xl:shrink items-center gap-2 rounded-xl px-3 py-2 xl:px-4 xl:py-3 text-sm font-medium transition-all hover:bg-accent hover:text-accent-foreground whitespace-nowrap',
                     isActive
                       ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground',

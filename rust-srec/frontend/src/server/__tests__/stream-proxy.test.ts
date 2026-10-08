@@ -13,6 +13,46 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it('relays managed handles with their media URL and rejects client headers', async () => {
+  fetchMock.mockResolvedValue(new Response('segment'));
+  const managed = new URLSearchParams({
+    url: 'https://cdn.example/segment.ts?sig=visible',
+    playback_handle: 'opaque',
+    stream: '1',
+  });
+  const response = await handleStreamProxyRequest(
+    new Request(`https://app.example/stream-proxy?${managed}`),
+  );
+  expect(response.status).toBe(200);
+  const backend = new URL(fetchMock.mock.calls[0][0] as string);
+  expect(backend.searchParams.get('playback_handle')).toBe('opaque');
+  expect(backend.searchParams.get('stream')).toBe('1');
+  expect(backend.searchParams.get('url')).toBe(managed.get('url'));
+  expect(backend.searchParams.has('headers')).toBe(false);
+  expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+  fetchMock.mockClear();
+  for (const extra of [
+    'headers={}',
+    'cookies=secret',
+    'credential_id=b',
+    'source_url=https://evil.invalid',
+  ]) {
+    const rejected = await handleStreamProxyRequest(
+      new Request(`https://app.example/stream-proxy?${managed}&${extra}`),
+    );
+    expect(rejected.status).toBe(400);
+  }
+  for (const missing of ['url', 'stream', 'playback_handle']) {
+    const partial = new URLSearchParams(managed);
+    partial.delete(missing);
+    const rejected = await handleStreamProxyRequest(
+      new Request(`https://app.example/stream-proxy?${partial}`),
+    );
+    expect(rejected.status).toBe(400);
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 it('requires a web session before contacting the backend', async () => {
   ensureValidTokenMock.mockResolvedValue(null);
   const response = await handleStreamProxyRequest(

@@ -47,6 +47,7 @@ const TRIGGER_CLASS =
 
 const TOOLTIP_CLASS =
   'p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden';
+const TOOLTIP_ARROW_CLASS = 'bg-background fill-background';
 
 function EditorFallback() {
   return (
@@ -87,7 +88,10 @@ export function PipelineTabsSection<TFieldValues extends FieldValues>({
                 </span>
               </TabsTrigger>
             </TooltipTrigger>
-            <TooltipContent className={TOOLTIP_CLASS}>
+            <TooltipContent
+              className={TOOLTIP_CLASS}
+              arrowClassName={TOOLTIP_ARROW_CLASS}
+            >
               <StatusInfoTooltip
                 theme="blue"
                 icon={<Layers className="w-4 h-4" />}
@@ -118,7 +122,10 @@ export function PipelineTabsSection<TFieldValues extends FieldValues>({
                 </span>
               </TabsTrigger>
             </TooltipTrigger>
-            <TooltipContent className={TOOLTIP_CLASS}>
+            <TooltipContent
+              className={TOOLTIP_CLASS}
+              arrowClassName={TOOLTIP_ARROW_CLASS}
+            >
               <StatusInfoTooltip
                 theme="orange"
                 icon={<Combine className="w-4 h-4" />}
@@ -154,7 +161,10 @@ export function PipelineTabsSection<TFieldValues extends FieldValues>({
                 </span>
               </TabsTrigger>
             </TooltipTrigger>
-            <TooltipContent className={TOOLTIP_CLASS}>
+            <TooltipContent
+              className={TOOLTIP_CLASS}
+              arrowClassName={TOOLTIP_ARROW_CLASS}
+            >
               <StatusInfoTooltip
                 theme="violet"
                 icon={<Clock className="w-4 h-4" />}

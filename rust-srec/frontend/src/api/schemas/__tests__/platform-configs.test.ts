@@ -9,12 +9,14 @@ describe('Douyin platform options', () => {
   // These options double as an override layer on a streamer or template, where an absent key
   // means "inherit the platform row". Parsing must not turn an unset option into an override.
   it('keeps an option the caller did not set absent', () => {
-    expect(DouyinConfigSchema.parse({ ttwid: 'x' })).toEqual({ ttwid: 'x' });
+    expect(DouyinConfigSchema.parse({ force_mobile_api: true })).toEqual({
+      force_mobile_api: true,
+    });
   });
 
   it('keeps an option absent through the platform union', () => {
-    expect(AllPlatformConfigsSchema.parse({ ttwid: 'x' })).toEqual({
-      ttwid: 'x',
+    expect(AllPlatformConfigsSchema.parse({ force_mobile_api: true })).toEqual({
+      force_mobile_api: true,
     });
   });
 
@@ -32,12 +34,12 @@ describe('Douyu platform options', () => {
       device_name: 'OnePlus 12',
       os_version: '15',
       device_id_mode: 'server',
-      device_id: '0123456789abcdef0123456789abcdef',
     };
     expect(AllPlatformConfigsSchema.parse(options)).toEqual(options);
     for (const options of [
       { device_id_mode: 'invalid' },
-      { device_id: 'bad' },
+      // A fixed device ID belongs to the account profile's cookies.
+      { device_id: '0123456789abcdef0123456789abcdef' },
       { os_version: 14 },
     ]) {
       expect(DouyuConfigSchema.safeParse(options).success).toBe(false);

@@ -62,6 +62,7 @@ export function ProgressIndicator({ downloadId }: ProgressIndicatorProps) {
       <TooltipContent
         side="top"
         className="p-0 bg-background text-foreground border border-border/50 shadow-xl backdrop-blur-md overflow-hidden rounded-xl"
+        arrowClassName="bg-background fill-background"
       >
         <StatusInfoTooltip
           icon={<DownloadIcon className="w-4 h-4" />}

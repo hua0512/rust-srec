@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { invalidateCredentialQueries } from '@/api/credential-profiles';
 import { getTemplate, updateTemplate } from '@/server/functions';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -42,6 +43,8 @@ function EditTemplatePage() {
       void queryClient.invalidateQueries({
         queryKey: ['template', templateId],
       });
+      // The form also saves an account selection per platform override.
+      void invalidateCredentialQueries(queryClient);
       void navigate({ to: '/config/templates' });
     },
     onError: (error) =>

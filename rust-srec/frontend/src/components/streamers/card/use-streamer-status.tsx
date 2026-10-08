@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import {
@@ -10,9 +12,12 @@ import {
   Loader2,
   UserX,
   Hourglass,
+  KeyRound,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { StreamerSchema } from '@/api/schemas';
+import type { UnavailableReason } from '@/api/schemas/credential-profiles';
+import type { CredentialBlock } from '@/api/schemas/streamer';
 import { z } from 'zod';
 import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
@@ -20,6 +25,101 @@ import type { QueuedEntry } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
 import { formatDate } from '@/lib/datetime';
 import { formatRelativeTime } from '@/lib/date-utils';
+
+/** Badge label for a streamer whose checks found no usable account. */
+function blockLabel(reason: UnavailableReason): ReactNode {
+  switch (reason) {
+    case 'login_required':
+      return <Trans>Account needs login</Trans>;
+    case 'profiles_disabled':
+      return <Trans>Accounts disabled</Trans>;
+    case 'attempts_exhausted':
+      return <Trans>Accounts failing</Trans>;
+    case 'bound_profile_unavailable':
+    case 'binding_policy_changed':
+    case 'unknown':
+      return <Trans>Account unavailable</Trans>;
+    default:
+      return reason satisfies never;
+  }
+}
+
+function blockDetail(reason: UnavailableReason): ReactNode {
+  switch (reason) {
+    case 'login_required':
+      return <Trans>This streamer has no account with a valid login.</Trans>;
+    case 'profiles_disabled':
+      return <Trans>This streamer only uses disabled accounts.</Trans>;
+    case 'bound_profile_unavailable':
+      return (
+        <Trans>The account the recording uses can no longer be used.</Trans>
+      );
+    case 'binding_policy_changed':
+      return (
+        <Trans>
+          The account selection changed while the recording was using an
+          account.
+        </Trans>
+      );
+    case 'attempts_exhausted':
+      return (
+        <Trans>No selected account worked within the attempt limit.</Trans>
+      );
+    case 'unknown':
+      return <Trans>No selected account can be used right now.</Trans>;
+    default:
+      return reason satisfies never;
+  }
+}
+
+function CredentialBlockTooltip({
+  block,
+  locale,
+  showSince,
+}: {
+  block: CredentialBlock;
+  locale: string;
+  showSince: boolean;
+}) {
+  const since = new Date(block.since);
+  return (
+    <StatusInfoTooltip
+      theme="amber"
+      icon={<KeyRound className="h-3.5 w-3.5" />}
+      title={blockLabel(block.reason)}
+      subtitle={<Trans>Recording is paused</Trans>}
+    >
+      <div className="text-xs text-muted-foreground leading-relaxed">
+        {blockDetail(block.reason)}{' '}
+        <Trans>
+          Checks continue, and recording resumes on its own once an account
+          works again.
+        </Trans>
+      </div>
+      {showSince && !isNaN(since.getTime()) && (
+        <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock className="h-3.5 w-3.5 text-[var(--tooltip-theme-color)]" />
+            <span className="font-medium">
+              <Trans>Paused since</Trans>
+            </span>
+          </div>
+          <span className="font-mono text-[10px] font-bold text-amber-700 dark:text-amber-400">
+            {formatRelativeTime(since, locale)}
+          </span>
+        </div>
+      )}
+      <Link
+        to="/config/platforms/$platformId"
+        params={{ platformId: block.platform_id }}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
+      >
+        <KeyRound className="h-3 w-3" />
+        <Trans>Manage accounts</Trans>
+      </Link>
+    </StatusInfoTooltip>
+  );
+}
 
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
@@ -44,7 +144,7 @@ export function useStreamerStatus(
       if (state === 'OUT_OF_SPACE') return <Trans>Out of Space</Trans>;
       if (state === 'FATAL_ERROR') return <Trans>Fatal Error</Trans>;
       if (state === 'CANCELLED') return <Trans>Cancelled</Trans>;
-      if (state === 'NOT_FOUND') return <Trans>Not Found</Trans>;
+      if (state === 'NOT_FOUND') return <Trans>Streamer not found</Trans>;
       if (state === 'TEMPORAL_DISABLED')
         return <Trans>Temporarily Paused</Trans>;
       if (state === 'ERROR') return <Trans>Error</Trans>;
@@ -171,7 +271,7 @@ export function useStreamerStatus(
 
     if (streamer.state === 'NOT_FOUND') {
       return {
-        label: <Trans>Account Not Found</Trans>,
+        label: <Trans>Streamer not found</Trans>,
         color:
           'bg-orange-500/10 text-orange-600 border-orange-500/20 hover:bg-orange-500/20 dark:text-orange-400 dark:border-orange-400/30',
         iconColor: 'bg-orange-500',
@@ -180,14 +280,14 @@ export function useStreamerStatus(
           <StatusInfoTooltip
             theme="orange"
             icon={<UserX className="h-3.5 w-3.5" />}
-            title={<Trans>Account Not Found</Trans>}
+            title={<Trans>Streamer not found</Trans>}
             subtitle={<Trans>Streamer no longer exists on the platform</Trans>}
           >
             <div className="text-xs text-muted-foreground leading-relaxed">
               <Trans>
-                The platform reported this account as missing. It may have been
-                deleted, banned, or the URL/ID is incorrect. Consider removing
-                or updating this streamer.
+                The platform reported this streamer as missing. The channel may
+                have been deleted or banned, or the URL or ID is incorrect.
+                Consider removing or updating this streamer.
               </Trans>
             </div>
             {streamer.last_error && (
@@ -242,6 +342,36 @@ export function useStreamerStatus(
               </div>
             )}
           </StatusInfoTooltip>
+        ),
+      };
+    }
+
+    // No usable account. The states above win: recovery means a download is
+    // making progress, and a pause, a missing streamer or stopped monitoring
+    // (user-disabled, cancelled, errors) says why no check runs at all; the
+    // backend also drops the block once monitoring stops. The block outranks
+    // everything below because none of it records while no account works:
+    // queued, live without a download (a start waiting for an account keeps
+    // the streamer live), inspecting, scheduled and offline. A running
+    // download keeps "Live": a later poll's block does not stop a recording
+    // that already has its account.
+    const credentialBlock =
+      streamer.enabled && !hasActiveDownload
+        ? streamer.credential_blocked
+        : null;
+    if (credentialBlock) {
+      return {
+        label: blockLabel(credentialBlock.reason),
+        color:
+          'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20 dark:text-amber-400 dark:border-amber-400/30',
+        iconColor: 'bg-amber-500',
+        pulsing: false,
+        tooltip: (
+          <CredentialBlockTooltip
+            block={credentialBlock}
+            locale={i18n.locale}
+            showSince={now !== null}
+          />
         ),
       };
     }

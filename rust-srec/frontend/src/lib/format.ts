@@ -151,3 +151,28 @@ export function removeEmpty(obj: any): any {
   }
   return obj;
 }
+
+/**
+ * Brand spellings of the platforms whose name is not just the stored key
+ * capitalized. Keys are the lowercase platform names the backend stores.
+ */
+const PLATFORM_BRAND_NAMES: Readonly<Record<string, string>> = {
+  acfun: 'AcFun',
+  bigo: 'Bigo Live',
+  pandatv: 'PandaTV',
+  soop: 'SOOP',
+  tiktok: 'TikTok',
+  twitcasting: 'TwitCasting',
+  youtube: 'YouTube',
+};
+
+/**
+ * A platform's display name. Platforms are stored by lowercase name
+ * (`bilibili`); the UI shows the brand spelling (`SOOP`, `TikTok`), or the
+ * name capitalized (`Bilibili`) for platforms without one.
+ */
+export function formatPlatformName(name: string): string {
+  if (Object.hasOwn(PLATFORM_BRAND_NAMES, name))
+    return PLATFORM_BRAND_NAMES[name];
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}

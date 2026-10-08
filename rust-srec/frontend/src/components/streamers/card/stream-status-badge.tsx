@@ -60,6 +60,7 @@ export const StatusBadge = ({ status }: StatusBadgeProps) => (
       {status.tooltip && (
         <TooltipContent
           className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden"
+          arrowClassName="bg-background fill-background"
           side="bottom"
           align="start"
         >
