@@ -28,7 +28,7 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 - **API State**: `AppState` (`src/api/server.rs`) is the shared context for Axum routes.
 - **Errors**: Propagate to `crate::error::Error`; handle API-specific errors in `src/api/error.rs`.
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
-- **Table rebuilds**: Preserve data, triggers, indexes, and foreign-key integrity, and account for interrupted migration replay. Read the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) when changing a migration that rebuilds a table; it specifies fixture checks and when a real-data rehearsal is needed.
+- **Table rebuilds**: Preserve data, triggers, indexes, and foreign-key integrity, and account for interrupted migration replay. Read the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) when changing a migration that rebuilds a table; it specifies fixture checks and when a real-data rehearsal is needed. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` inside SQLx's default migration transaction, where foreign keys stay on, deletes account selections (`credential_selections`, `credential_selection_members`) or fails on them; use that procedure's `-- no-transaction` / `PRAGMA foreign_keys=OFF` form.
 
 ## ANTI-PATTERNS
 - **Isolation**: Wire production services through `ServiceContainer`; focused tests may construct the service under test directly.

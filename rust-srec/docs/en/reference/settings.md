@@ -64,7 +64,20 @@ Which extractor resolves the stream URL is a separate setting from `download_eng
 | `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
 | `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
-| `enable_proxy` | Route traffic through an intermediate server | `false` |
+| `proxy_route` | **Default proxy**: how requests connect unless a platform, template, streamer or account chooses otherwise. **Direct**, **System proxy**, or a [saved proxy](#proxies). See [Proxies](../concepts/configuration.md#proxies). | **Direct**, or **System proxy** when proxy environment variables were set at the first start or the upgrade |
+| `stream_proxy_allow_private_targets` | Let the player's **Server proxy** and proxy tests reach addresses on private or local networks | `false` |
+
+### Proxies {#proxies}
+
+**Settings → Proxies** lists the saved proxies that global, platform, template, streamer and account settings can choose. Changes there are saved at once.
+
+| Field | Description |
+|-------|-------------|
+| Name | Shown wherever the proxy is chosen; unique, ignoring case |
+| Address | `http`, `https`, `socks5` or `socks5h` address as `scheme://host:port`, without a path or login |
+| Username, Password | Optional login. The username is shown; the password never is, and leaving it empty when editing keeps it. |
+
+Each row shows how many settings use the proxy and, expanded, which ones. **Test** checks that a platform's home page or another address answers through the proxy. A proxy in use cannot be deleted. The page header shows the system proxy detected from the server's [environment](./environment.md#network). See [Proxies](../concepts/configuration.md#proxies) for how the choices combine.
 
 ### Retention {#retention}
 

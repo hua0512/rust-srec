@@ -101,7 +101,12 @@ The first login requires a password change. Continue with [Make Your First Recor
 
 ### Proxy
 
-Set `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` in `.env`; the example already passes them to the backend. Then enable **Global Settings > Downloader > Proxy > Use System Proxy**. Include `localhost,127.0.0.1,rust-srec` in `NO_PROXY`.
+There are two ways to send platform traffic through a proxy:
+
+- **Saved proxy:** add it under **Settings → Proxies** and choose it as the **Default proxy** under **Settings → Global → Network & System**, or on the platform, template, streamer or account that needs it. Nothing in `.env` changes, so notifications and uploads keep connecting as before. Different platforms and accounts can use different proxies.
+- **System proxy:** set `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` in `.env`; the example already passes them to the backend. Include `localhost,127.0.0.1,rust-srec` in `NO_PROXY`. Recreate the backend container so it reads them, then choose **System proxy** where it should apply. These variables also reach notifications and upload tools, whatever the proxy settings say.
+
+**Direct** ignores the environment variables, FFmpeg and Streamlink included. See [Proxies](../concepts/configuration.md#proxies).
 
 ### Browser Push
 

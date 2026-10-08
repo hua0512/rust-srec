@@ -45,8 +45,10 @@ Priorities use a 0-10 numeric scale in the API and UI settings:
 |---|---:|---|
 | Low | 2 | Stream offline, segment progress, pipeline start/completion |
 | Normal | 5 | Stream online, download completion, system startup/shutdown |
-| High | 8 | Download error/rejection, pipeline failure, credential refresh failure, Baidu Netdisk re-login failure |
+| High | 8 | Download error/rejection, pipeline failure, credential refresh failure, credentials unavailable, platform rate limited, Baidu Netdisk re-login failure |
 | Critical | 10 | Fatal error, output path inaccessible, out of space, invalid credential |
+
+*Platform rate limited* is sent when a platform starts limiting requests on one connection. It names the connection (direct connections, the system proxy, or a saved proxy by name) and the time requests on it resume; other connections keep working. See [rate limits per connection](./configuration.md#proxy-rate-limits).
 
 All five external channels apply the same enabled/priority policy. Their test action sends a Normal-priority startup event through that policy: a disabled channel or a minimum above Normal suppresses the test too. Email configurations constructed with the Rust defaults start at High; set an appropriate minimum when testing.
 

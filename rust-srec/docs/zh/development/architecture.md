@@ -123,6 +123,9 @@ flowchart TB
 
 它会缓存合并后的结果，并广播 `ConfigUpdateEvent`，让运行时服务可以无重启响应配置变更。
 
+各层的代理连接方式会与其他设置一起解析为 `MergedConfig.proxy_route`，供检查、下载、弹幕和服务器代理播放共用；
+已保存的代理本身通过 `ProxyService` 写入。参见[代理连接](./configuration.md#proxy-routes)。
+
 参见：[配置](../concepts/configuration.md)
 
 ### `StreamerManager`（已提交的元数据快照） {#streamermanager-已提交的元数据快照}

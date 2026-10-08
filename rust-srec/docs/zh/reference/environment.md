@@ -51,9 +51,12 @@ import { withBase } from 'vitepress'
 | `API_PORT` | 后端 API 的外部端口 | `12555` |
 | `FRONTEND_PORT` | Web 界面的外部端口 | `15275` |
 | `BACKEND_URL` | 前端访问后端的内部 URL | `http://rust-srec:8080` |
-| `HTTP_PROXY` | HTTP 代理服务器 URL | - |
-| `HTTPS_PROXY` | HTTPS 代理服务器 URL | - |
+| `HTTP_PROXY` | 普通 HTTP 请求使用的代理，仅在代理设置为 **系统代理** 时生效 | - |
+| `HTTPS_PROXY` | HTTPS 请求使用的代理，仅在代理设置为 **系统代理** 时生效 | - |
+| `ALL_PROXY` | 未设置更具体的变量时，两者共用的代理 | - |
 | `NO_PROXY` | 绕过代理的主机列表（逗号分隔） | - |
+
+这些代理变量（大小写均可）只在全局、平台、模板、主播或账号的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们，此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。通知渠道、浏览器推送以及 rclone、BaiduPCS-Go 等上传工具始终使用这些变量。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[从旧版代理设置升级](../concepts/configuration.md#upgrading-proxy-settings)。
 
 ## 安全与认证 {#安全与认证}
 | 变量 | 说明 | 默认值 |

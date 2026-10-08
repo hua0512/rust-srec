@@ -93,15 +93,15 @@ The bundled frontend container runs its application server under an unprivileged
 
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
 
-Web and desktop playback relays use the backend's source-specific upstream proxy
-configuration. The backend validates each media target and redirect before fetching
-it. Without an upstream proxy configuration, direct connections also check the
-addresses used by the connector. A configured
-upstream proxy is a trusted egress endpoint: it can be on a private network, and it
-controls remote DNS and routing. Restrict access to internal destinations on that
-proxy too; the backend cannot verify a different DNS answer on the proxy's network.
-Upstream proxy credentials stay on the backend. Web playlist links use the browser
-session rather than embedding the backend access token.
+Web and desktop playback relays use the source's [proxy setting](../concepts/configuration.md#choosing-a-proxy).
+The backend validates each media target and redirect before fetching it. Without a proxy,
+direct connections also check the addresses used by the connector. A saved proxy or the
+system proxy is a trusted egress endpoint for everything sent through it, from live checks and
+account sign-in to downloads and playback: it sees the platform traffic, can be on a private
+network, and controls remote DNS and routing. Use only proxies you trust with your accounts,
+and restrict access to internal destinations on the proxy too; the backend cannot verify a
+different DNS answer on the proxy's network. Proxy logins stay on the backend. Web playlist
+links use the browser session rather than embedding the backend access token.
 
 Stream proxy and URL parsing share a global configuration snapshot for up to five
 seconds. Application writes and committed imports invalidate it immediately.
@@ -110,23 +110,20 @@ snapshots are not reused if refresh fails. Administrative reads remain fresh.
 
 ## Credential Refresh Storage
 
-Refreshed cookies and supplied tokens are saved together. A failure leaves the
-previous credentials intact; omitted tokens keep their existing values. Platform
-and streamer JSON must contain an object or be unset when refresh modifies it.
-Invalid content fails without partially replacing credentials. Template overrides
-also retain support for initially blank content. Correct invalid configuration
-explicitly instead of relying on refresh to repair it.
-
-Missing or retiring streamer/template owners are not updated. A late credential
-refresh cannot cancel a template's pending deletion. Platform-only cookie updates
-that do not touch token JSON retain their existing opaque-configuration behavior.
+Cookies, tokens and logins are stored only in account profiles. A refresh saves
+the new cookies and any returned tokens to the profile together; a failure leaves
+the previous credentials intact, and tokens the provider did not return keep their
+existing values. A refresh or login that finishes after the account was edited,
+disabled, replaced or deleted is discarded instead of overwriting it. Configuration
+writes that include account fields are rejected rather than stored.
 
 ## Secrets and Files
 
 - Restrict `.env`, `DATA_DIR`, `CONFIG_DIR`, `LOG_DIR`, configuration exports, and backup media.
 - On a systemd host the backend's secrets are in `/etc/rust-srec/rust-srec.env`, mode `0640` owned `root:rust-srec`: `JWT_SECRET`, the VAPID keys, and any tool-path override. Every assignment in it overrides the unit's own `Environment=` lines, so treat an edit there as a change to the service's configuration, not just to its secrets.
 - `UMask=0027` in the shipped unit writes recordings `-rw-r-----`. They stay readable to the `rust-srec` group, so adding an account to that group grants it read access to every recording and to the state directory. Grant that deliberately rather than lowering `UMask=`.
-- Platform cookies and passwords can be present in configuration exports. Notification channels can contain SMTP passwords, bot tokens, webhook secrets, and custom headers.
+- Saved proxies keep their usernames and passwords in plain text in the database and in configuration exports. The API and web interface show a proxy's username but never return its password.
+- Account profiles (cookies, tokens and logins) and room passwords are present in configuration exports. Notification channels can contain SMTP passwords, bot tokens, webhook secrets, and custom headers.
 - The Baidu Netdisk login session lives in BaiduPCS-Go's config directory (`BAIDUPCS_GO_CONFIG_DIR`, `/app/config/BaiduPCS-Go` in Docker) — protect and back it up like a cookie store. With **Remember for automatic re-login** enabled, the login material is additionally stored plaintext in the application database (`tool_credentials`), like platform cookies; logging out deletes it. Manual and automatic logins send credentials through stdin, never child arguments or environment variables. A private temporary config directory blocks CLI history and imports only the successful account into the original config; other accounts, settings and history remain intact. Temporary directories use owner-only permissions (0700 on Unix, a protected owner-only ACL on Windows) and are removed after child cleanup. An unconfirmed cleanup retains the private directory and keeps account operations locked until the backend restarts. Privileged host access and the configured executable remain trusted.
 - Redact tokens, private URLs, usernames, cookies, and filesystem paths before sharing logs or screenshots.
 - Run containers without unnecessary host mounts or device access. Add GPU devices only when the selected pipeline requires them.

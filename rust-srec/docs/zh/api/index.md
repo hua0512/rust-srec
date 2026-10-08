@@ -91,11 +91,33 @@ curl http://localhost:12555/api/streamers \
 | `/api/sessions` | 录制会话 | Bearer 令牌 |
 | `/api/pipeline` | 工作流、任务、预设、执行与产物 | Bearer 令牌 |
 | `/api/notifications` | 通知渠道、订阅、偏好与事件 | Bearer 令牌 |
-| `/api/credentials` | 平台凭据状态与刷新 | Bearer 令牌 |
+| `/api/credentials` | 账号凭据配置、选择状态、验证、刷新与二维码登录 | Bearer 令牌 |
+| `/api/proxies` | 已保存的代理、连通性测试和生效的代理设置 | Bearer 令牌；API 密钥需 `full` 权限 |
 | `/api/parse` | URL 与元数据解析 | Bearer 令牌 |
 | `/api/downloads`、`/api/logging`、`/api/media`、`/api/stream-proxy` | 实时或媒体访问 | 因路由而异；查看 Swagger |
 
 请求和响应字段应以生成的 OpenAPI 文档为准，不要仅根据本页摘要猜测。
+
+平台、模板和主播的写入请求用 [`credential_selection`](../reference/configuration-overrides.md#凭据选择-json) 对象选择账号，其中引用 `/api/credentials` 中的凭据配置。平台和模板配置中旧的 `cookies` 字段会以 `422` `COOKIES_REPLACED` 被拒绝。
+
+## 代理 {#proxies}
+
+`/api/proxies` 管理代理设置所引用的[已保存代理](../concepts/configuration.md#saved-proxies)。所有请求（包括读取）都要求 API 密钥具有 `full` 权限。响应会显示代理的 `username` 以及是否保存了密码（`has_password`），但从不返回密码。
+
+| 请求 | 用途 |
+|---|---|
+| `GET /api/proxies` | 列出已保存的代理及 `usage_count`，即选用各代理的设置数量 |
+| `GET /api/proxies/{id}` | 单个代理及其 `references`：选用它的全局设置、平台、模板、主播和账号 |
+| `POST /api/proxies` | 按 `name`、`url`（`http`、`https`、`socks5` 或 `socks5h`，写成 `scheme://host[:port]`）以及可选的 `username` 和 `password` 创建 |
+| `PATCH /api/proxies/{id}` | 携带 `expected_version` 编辑。省略 `password` 会保留原密码；`"username": null` 会移除登录信息。 |
+| `DELETE /api/proxies/{id}` | 删除，可附带 `expected_version` 查询参数 |
+| `POST /api/proxies/test` | 通过已保存的代理（`proxy_id`，可附带修改后的字段）或未保存的 `url`，请求一次某个 `platform` 的首页或 `target_url`。返回 `ok`、`status`、`latency_ms` 和 `error` 类型；时限为 10 秒。 |
+| `GET /api/proxies/system` | 服务器启动时检测到的环境变量代理，不含登录信息 |
+| `GET /api/proxies/effective` | 某个作用域当前的连接方式以及由哪项设置决定：`scope_type`（`global`、`platform`、`template`、`streamer` 或 `account`）、`scope_id`，模板还可附带 `platform_id` |
+
+冲突返回 `409`，代码为 `PROXY_NAME_TAKEN`、`PROXY_DUPLICATE`（另一个代理的地址和用户名相同）、`PROXY_STALE_VERSION`，或删除仍在使用的代理时返回 `PROXY_REFERENCED`，并在 `details.references` 中列出使用者。地址或登录信息无效时返回 `422` `PROXY_INVALID`。
+
+全局、平台、模板、主播和账号的写入请求用 [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) 对象选择代理。旧的 `proxy_config` 字段会以 `422` `PROXY_CONFIG_REPLACED` 被拒绝。
 
 ## 创建响应与任务进度
 

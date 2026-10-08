@@ -94,6 +94,12 @@ the member retain the stored zone; explicit null requests UTC. Backup exports no
 use schema `0.1.8` and explicit zones, while older TimeBased backup omissions import
 as local. See [filter timezones](../guides/schedules.md#filter-timezones-and-boundaries).
 
+## Proxy settings {#proxy-settings}
+
+The first start of a version with saved proxies converts the proxy configured on global, platform, template and streamer settings into saved proxies under **Settings → Proxies**, and points each setting at its proxy. Take the pre-upgrade backup first: the conversion clears the old settings, and an earlier version cannot read the new ones. Check that the proxy environment variables the backend should see are set before that start. If `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set and the global proxy was turned off or empty, the global default becomes **System proxy**; otherwise it becomes **Direct**. A setting that could not be kept, such as a `socks4` address, becomes **Direct** and is logged as a warning.
+
+After starting, review **Settings → Proxies** and the **Default proxy** under **Settings → Global → Network & System**. **Direct** now also keeps FFmpeg and Streamlink off the environment's proxy. See [upgrading from proxy settings](../concepts/configuration.md#upgrading-proxy-settings) for every rule.
+
 ## Rollback
 
 Do not start an older binary against a database already migrated by a newer release unless the release notes explicitly say it is compatible.

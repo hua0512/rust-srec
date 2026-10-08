@@ -16,7 +16,7 @@ https://www.huya.com/{房间号}
 - ✅ 自动 CDN 选择
 
 ::: info
-- **认证说明**：通常**不需要**配置 Cookie。如有特殊需要，请在 **设置 (Settings)** → **平台 (Platform)** → **虎牙 (Platform-huya)** 中设置。
+- **认证说明**：通常**不需要**配置 Cookie。如有特殊需要，请在 **设置** → **平台** → **虎牙** 中把 Cookie 添加为账号凭据配置。
 - **推荐格式**：虎牙 supports **FLV** 和 **HLS** 格式。建议优先使用 FLV 进行录制。
 - **画质选择**：默认开启 `force_origin_quality` 以尝试获取最高画质。
 - **协议说明**：支持 `use_wup` 和 `use_wup_v2`（默认）解析协议。请注意 **WUP 协议仅支持纯数字房间号**。

@@ -51,16 +51,20 @@
 `TransientError` 事件也已弃用。这些兼容格式将在未来版本中移除。新的集成必须使用
 `offline_check_count` 和 `offline_check_delay_ms`，并在每个序列化的瞬时错误事件中包含
 `backoff_threshold`。
+
+在[账号凭据配置](#凭据选择-json)和[代理连接](#proxy-route-json)出现之前，平台、模板和全局设置中的
+`cookies` 与 `proxy_config` 字段同样已弃用。此版本首次启动时会转换数据库中这些字段的内容并将其清空，
+导入旧备份时也会进行转换；这些字段将在未来版本中移除。
 :::
 
-### Cookies：“有值即覆盖”（空字符串同样算有值） {#cookies-有值即覆盖-空字符串同样算有值}
+### Cookies 不是配置字段 {#cookies-有值即覆盖-空字符串同样算有值}
 
-Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `cookies`，就会覆盖低优先级层。
+Cookies 属于账号凭据配置，而不属于平台、模板或主播配置。某个作用域使用哪个账号，
+由其[凭据选择](#凭据选择-json)决定。
 
-::: tip Cookies 使用建议
-不要把 cookies 设置成空字符串。空字符串同样算“有值”，会覆盖低优先级层，
-实际效果是让兜底 cookies 失效。
-:::
+平台和模板配置中旧的 `cookies` 字段已不再读取。仍然设置它的请求会以 HTTP 422
+`COOKIES_REPLACED` 失败，避免客户端在不知情时丢失账号；值为 `null` 或空字符串时会被接受并忽略。
+请改为通过 `/api/credentials` 把账号添加为凭据配置，再选中它。
 
 ### 流选择：由 `StreamSelectionConfig::merge` 合并 {#流选择-由-streamselectionconfig-merge-合并}
 
@@ -111,44 +115,33 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 
 每一层都会按层级顺序调用同一个合并函数。
 
-::: tip 关于平台附加项中的凭据
-平台、模板和主播记录都可能包含与凭据相关的键。每一层在并入 `platform_extras` 之前，
-都会剥离 `refresh_token`、`access_token`、`session_cookies`、`last_cookie_check_date`
-和 `last_cookie_check_result`，因此提取器配置绝不会携带凭据。
+::: tip 账号字段不属于平台附加项
+账号材料保存在凭据配置中。任何一层的配置写入（包括 `platform_specific_config` 或
+`platform_extras` 内部）只要包含 `cookies`、`refresh_token`、`access_token`、`oauth_token`、
+`ttwid`、`device_id`、`session_cookies`、`reauth_config`、`last_cookie_check_date`、
+`last_cookie_check_result`，或 SOOP 的 `username` 和 `password`，都会以校验错误被拒绝。
+提取器只会从所选凭据配置获得这些值。房间密码（`stream_password`、Bigo 和 TwitCasting
+的 `password`）属于内容设置，会保留。
 :::
 
-## 凭据（`cookies` + `refresh_token`）单独解析 {#凭据-cookies-refresh-token-单独解析}
+## 凭据来自账号凭据配置 {#凭据-cookies-refresh-token-单独解析}
 
-运行时会另外解析出 `credential_source`（挂在 `ResolvedStreamerContext` 上的附属数据），
-用于认证和 refresh token 处理。它刻意不属于 `MergedConfig`，也不得通过序列化的配置
-接口对外暴露。
+Cookies、刷新令牌和访问令牌以及 SOOP 登录信息都保存在归属于平台的账号凭据配置中。
+每个作用域的[凭据选择](#凭据选择-json)决定检查使用哪些凭据配置；所选配置的材料会交给
+提取器、下载和弹幕采集使用，不会出现在 `MergedConfig` 或序列化的配置接口中。
+参见[账号配置与选择](../concepts/configuration.md#账号配置与选择)。
 
-优先级（由高到低）：
+## 播放器上游代理 {#player-upstream-proxy}
 
-1. 主播覆盖：`streamer_specific_config.cookies`
-   （可选附带 `streamer_specific_config.refresh_token` / `access_token`）
-2. 模板：`template_config.cookies`
-   （可选附带 `template_config.platform_overrides[platform].refresh_token` / `access_token`）
-3. 平台：`platform_config.cookies`
-   （可选附带 `platform_config.platform_specific_config.refresh_token` / `access_token`）
-
-与 `MergedConfig.cookies` 不同，空字符串或只有空白字符的 `cookies` **不会**成为凭据来源：
-该层会被跳过，继续考察下一层。`refresh_token` 和 `access_token` 都只会从 cookies 胜出的
-那一层读取，因此主播没有配置自己的 cookies 时，主播层的 `refresh_token` 会被忽略。
-
-平台层也可以在没有 cookies 的情况下产生凭据来源：对于 SOOP，
-`platform_specific_config` 中配置了 `username` 和 `password` 时会得到一个凭据来源，
-其 cookies 在首次使用时签发。
-
-## 播放器上游代理
-
-选择 **服务器代理** 后，网页和桌面播放使用与 URL 解析相同的有效 `proxy_config`。
-已添加的主播使用其合并配置（包含模板和主播覆盖）；其他直播源 URL 在识别到平台时
-使用平台覆盖，否则使用全局配置。**直连** 由浏览器直接连接，不使用服务器的上游代理。
+选择 **服务器代理** 后，网页和桌面播放与 URL 解析采用相同的连接方式，即该直播源生效的
+[代理设置](../concepts/configuration.md#choosing-a-proxy)。已添加的主播使用其解析后的设置
+（包含模板和主播的选择）；其他直播源 URL 在识别到平台时使用平台的设置，否则使用全局设置。
+使用账号的播放会沿用其提取时的连接（包括账号自己的代理设置），因为平台可能按该地址签发流地址。
+**直连** 由浏览器直接连接，不使用服务器的代理。
 
 原始直播源 URL 会随 HLS 播放列表、分片和密钥请求保留，避免 CDN 地址选中不同配置。
 配置更新作用于后续请求；连续的 FLV/MPEG-TS 连接需要重新加载播放器才能切换。
-显式代理地址无效时播放会报错，不会回退到直连。网页播放需要同时升级前端和后端。
+代理无法使用时播放会报错，不会回退到直连。网页播放需要同时升级前端和后端。
 
 ## 主播覆盖：`streamer_specific_config` {#主播覆盖-streamer-specific-config}
 
@@ -158,21 +151,16 @@ Cookies 被当作单个可选字符串处理。只要高优先级层提供了 `c
 
 - `output_folder`、`output_filename_template`、`output_file_format`
 - `min_segment_size_bytes`、`max_download_duration_secs`、`max_part_size_bytes`
-- `record_danmu`、`danmu_statistics`、`cookies`、`download_engine`、`extractor`、
+- `record_danmu`、`danmu_statistics`、`download_engine`、`extractor`、
   `offline_check_count`、`offline_check_delay_ms`
-- `proxy_config`（JSON 对象）
+- `proxy_route`（连接方式对象，见[代理连接 JSON](#proxy-route-json)）
 - `stream_selection_config`（JSON 对象）
 - `download_retry_policy`（JSON 对象）
 - `pipeline`、`session_complete_pipeline`、`paired_segment_pipeline`（JSON 对象）
 - `platform_extras`（JSON 对象）
 
-由凭据子系统使用、不属于 `MergedConfig` 的键：
-
-- `refresh_token`、`access_token`
-
-两者都只从 cookies 胜出的那一层读取。它们属于在并入 `platform_extras` 之前会从每一层剥离的
-五个键——`refresh_token`、`access_token`、`session_cookies`、`last_cookie_check_date` 和
-`last_cookie_check_result`。
+`credential_selection` 用于选择该主播的账号（见下文）。与其他各层一样，这里也会拒绝
+`cookies`、`refresh_token` 等账号字段。
 
 ::: tip 无效 JSON 会被忽略
 平台/模板/全局记录中的多数 JSON 字段都采用尽力而为的解析方式。解析失败时，解析器会
@@ -223,3 +211,63 @@ extras，而不是被跳过。
 `engines_override` 中把某个键设为 `null` 表示删除该键，而 `platform_extras` 会忽略上层的
 `null`。
 :::
+
+## 凭据选择 JSON
+
+请求、响应和备份把选择作为 `credential_selection` 放在其所属的配置中：平台配置上（JSON 字符串）、
+模板的 `platform_overrides[规范平台名]` 中，或主播的 `streamer_specific_config` 中。
+这里的平台名区分大小写，须使用平台配置返回的精确名称。更新时省略策略字段会保留已存策略，
+`{ "mode": "inherit" }` 则显式将该作用域重置为继承。平台、模板和主播的保存都遵循这一规则：
+不含 `credential_selection` 的模板覆盖或主播配置会保留已存的选择。继承的作用域在返回时不含
+`credential_selection`。
+
+```json
+{
+  "credential_selection": {
+    "mode": "pool",
+    "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
+    "strategy": "priority",
+    "failover": true,
+    "max_attempts": 3
+  }
+}
+```
+
+其他策略为 `{ "mode": "none" }`、`{ "mode": "inherit" }` 及
+`{ "mode": "fixed", "credential_id": "profile-uuid-a" }`。账号池支持 `priority`
+或 `round_robin`，有序 ID 列表必须非空且不重复，总尝试次数为 1–10。
+省略 `strategy`、`failover` 和 `max_attempts` 时，分别默认为 `priority`、`true` 和 `3`。
+单成员池有效。
+未知模式/字段会被拒绝。选择不存在的凭据或其他平台的凭据时，请求会以 HTTP 409
+`CREDENTIAL_REFERENCE_INACCESSIBLE` 失败，并列出作出该选择的配置。
+禁用的凭据允许保留引用，但执行时不可用。被选中的凭据不能删除：请求会以 HTTP 409
+`CREDENTIAL_PROFILE_REFERENCED` 失败，并列出选择它的配置。主播的 URL 改为另一个平台时，
+主播自己的选择会被移除，并在新平台上改为继承，即使请求重复提交原来的选择；主播被删除后
+立即不再选择任何账号。
+参见[选择和继承](../concepts/configuration.md#账号配置与选择)。
+
+在 `streamlink` 平台上，只有主播可以保存选择，且只能是 `none` 或 `fixed`。在该平台上或模板的
+`platform_overrides["streamlink"]` 中保存选择，或为 Streamlink 主播设置账号池，都会以 HTTP 422
+`CREDENTIAL_SELECTION_PER_STREAMER` 失败；没有自有选择的 Streamlink 主播不使用账号。导入备份时，
+这类选择会改为设置到各个 Streamlink 主播上。参见 [Streamlink 账号](../concepts/configuration.md#streamlink-accounts)。
+
+## 代理连接 JSON {#proxy-route-json}
+
+每个作用域的代理设置是 `proxy_route`：它是全局、平台和模板配置中的字段，也是主播
+`streamer_specific_config` 中的一个键。账号在创建、编辑以及通过扫码登录创建时也带有该字段。
+
+```json
+{ "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }
+```
+
+`kind` 取值为 `inherit`、`direct`、`system` 或 `proxy`；只有 `proxy` 需要 `id`，即某个
+[已保存代理](../api/index.md#proxies)的 ID。未知的取值和多余字段会被拒绝。全局设置不能为
+`inherit`（HTTP 422 `PROXY_ROUTE_INVALID`）。对账号而言，`inherit` 表示跟随使用它的录制的代理。
+省略 `proxy_route` 或传 `null` 会保留已保存的设置，而 `{ "kind": "inherit" }` 会将其重置。
+选择继承的主播在响应中不带 `proxy_route`。引用不存在的代理会以 HTTP 422 `PROXY_NOT_FOUND` 失败。
+优先级见[选择连接方式](../concepts/configuration.md#choosing-a-proxy)。
+
+旧的 `proxy_config` 对象已不再读取。仍然设置它的请求——无论在全局、平台或模板配置中、
+`streamer_specific_config` 内，还是模板的 `platform_overrides` 内——都会以 HTTP 422
+`PROXY_CONFIG_REPLACED` 失败，避免客户端在不知情时丢失代理；值为 `null` 或空字符串时会被接受并忽略。
+保存代理功能推出之前写出的备份仍带有该字段，导入时会[自动转换](../operations/backup-restore.md#proxies-in-backups)。

@@ -128,6 +128,10 @@ dequeue, while checker errors preserve the cached media fallback.
 It also caches merged results and broadcasts `ConfigUpdateEvent` so runtime services can respond to
 changes without a restart.
 
+Each layer's proxy route is resolved with the rest into `MergedConfig.proxy_route`, which checks,
+downloads, danmu and server-proxied playback share; saved proxies themselves are written through
+`ProxyService`. See [Proxy routes](./configuration.md#proxy-routes).
+
 See also: [Configuration](../concepts/configuration.md)
 
 ### `StreamerManager` (committed metadata snapshots) {#streamermanager-committed-metadata-snapshots}

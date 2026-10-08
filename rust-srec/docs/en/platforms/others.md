@@ -29,7 +29,7 @@ Use `xhslink.com` share links. Direct profile URLs like `xiaohongshu.com/user/pr
 
 Note: the share link changes every stream. Copy a fresh share link when the streamer goes live.
 
-Cookies are optional for share links. If you configure cookies, include a non-empty `a1` value; incomplete cookies cause an extraction error.
+Share links need no account. If you select an [account profile](../concepts/configuration.md#account-profiles-and-selection), its cookies must include a non-empty `a1` value; incomplete cookies cause an extraction error.
 :::
 
 ## Twitcasting
@@ -44,5 +44,5 @@ Cookies are optional for share links. If you configure cookies, include a non-em
 - **Protocol**: HLS
 - **Danmaku**: ❌ Not supported
 ::: info
-Links in the format `https://weibo.com/u/{uid}` require authenticated user cookies.
+Links in the format `https://weibo.com/u/{uid}` require a logged-in [account profile](../concepts/configuration.md#account-profiles-and-selection).
 :::

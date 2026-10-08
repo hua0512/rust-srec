@@ -96,11 +96,33 @@ Treat access tokens, refresh tokens, cookies, and platform credentials as secret
 | `/api/sessions` | Recording sessions | Bearer token |
 | `/api/pipeline` | Workflows, jobs, presets, executions, and outputs | Bearer token |
 | `/api/notifications` | Channels, subscriptions, preferences, and events | Bearer token |
-| `/api/credentials` | Platform credential state and refresh operations | Bearer token |
+| `/api/credentials` | Account profiles, selection status, validation, refresh and QR login | Bearer token |
+| `/api/proxies` | Saved proxies, reachability tests and effective proxy settings | Bearer token; API keys need `full` access |
 | `/api/parse` | URL and metadata parsing | Bearer token |
 | `/api/downloads`, `/api/logging`, `/api/media`, `/api/stream-proxy` | Realtime or media access | Route-specific; inspect Swagger |
 
 Use the generated OpenAPI document for request and response schemas instead of guessing fields from this summary.
+
+Platform, template and streamer writes choose accounts with a [`credential_selection`](../reference/configuration-overrides.md#credential-selection-json) object naming profiles from `/api/credentials`. The former `cookies` field of platform and template configuration is rejected with `422` `COOKIES_REPLACED`.
+
+## Proxies {#proxies}
+
+`/api/proxies` manages the [saved proxies](../concepts/configuration.md#saved-proxies) that proxy settings name. API keys need `full` access for every request, reads included. Responses show a proxy's `username` and whether a password is saved (`has_password`), never the password.
+
+| Request | Purpose |
+|---|---|
+| `GET /api/proxies` | List saved proxies with `usage_count`, the number of settings choosing each |
+| `GET /api/proxies/{id}` | One proxy and its `references`: global settings, platforms, templates, streamers and accounts that choose it |
+| `POST /api/proxies` | Create from `name`, `url` (`http`, `https`, `socks5` or `socks5h`, as `scheme://host[:port]`) and an optional `username` with `password` |
+| `PATCH /api/proxies/{id}` | Edit with `expected_version`. An omitted `password` keeps the saved one; `"username": null` removes the login. |
+| `DELETE /api/proxies/{id}` | Delete, with an optional `expected_version` query parameter |
+| `POST /api/proxies/test` | Request a `platform`'s home page or a `target_url` once through a saved proxy (`proxy_id`, optionally with edited fields) or an unsaved `url`. Returns `ok`, `status`, `latency_ms` and an `error` kind; the limit is 10 seconds. |
+| `GET /api/proxies/system` | The environment proxy detected when the server started, without its login |
+| `GET /api/proxies/effective` | How a scope connects now and which setting decided it: `scope_type` (`global`, `platform`, `template`, `streamer` or `account`), `scope_id`, and for a template an optional `platform_id` |
+
+Conflicts return `409` with `PROXY_NAME_TAKEN`, `PROXY_DUPLICATE` (another proxy has the same address and username), `PROXY_STALE_VERSION`, or `PROXY_REFERENCED` when deleting a proxy still in use, with `details.references` listing its users. An invalid address or login returns `422` `PROXY_INVALID`.
+
+Global, platform, template, streamer and account writes choose a proxy with a [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) object. The former `proxy_config` field is rejected with `422` `PROXY_CONFIG_REPLACED`.
 
 ## Creation responses and job progress
 
