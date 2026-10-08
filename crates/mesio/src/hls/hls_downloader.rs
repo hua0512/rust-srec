@@ -166,7 +166,10 @@ impl HlsDownloader {
             } = handles;
 
             if let Err(e) = watcher.await {
-                warn!("Playlist watcher task finished with error: {:?}", e);
+                warn!(
+                    "Playlist watcher task finished with error: {}",
+                    crate::redact::redact_diagnostic(&e)
+                );
             }
             let terminal = match reactor.await {
                 Ok(terminal) => {
@@ -174,12 +177,18 @@ impl HlsDownloader {
                     terminal.into()
                 }
                 Err(e) => {
-                    warn!("Reactor task finished with error: {:?}", e);
+                    warn!(
+                        "Reactor task finished with error: {}",
+                        crate::redact::redact_diagnostic(&e)
+                    );
                     DownloadTerminal::PipelineError(Arc::from(format!("reactor task failed: {e}")))
                 }
             };
             if let Err(e) = assembler.await {
-                warn!("Assembler task finished with error: {:?}", e);
+                warn!(
+                    "Assembler task finished with error: {}",
+                    crate::redact::redact_diagnostic(&e)
+                );
             }
 
             debug!("HLS pipeline tasks finished.");

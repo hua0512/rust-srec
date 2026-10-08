@@ -597,7 +597,7 @@ impl SequenceAssembler {
                         Some(AssemblerInput::Fatal(err)) => {
                             // Pipeline error: buffered payloads are dropped,
                             // the error is the stream's terminal item.
-                            warn!(error = %err, "fatal pipeline error; dropping reorder buffer");
+                            warn!(error = %crate::redact::redact_diagnostic(&err), "fatal pipeline error; dropping reorder buffer");
                             if self.event_tx.send(Err(err)).await.is_err() {
                                 debug!("consumer closed before receiving fatal pipeline error");
                             }

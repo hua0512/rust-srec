@@ -160,6 +160,29 @@ where
 
     // ========== Event Broadcasting ==========
 
+    /// Synchronous publication runs while the committed writer still owns the
+    /// lease, so a canceled API request cannot leave cached policies behind.
+    pub(crate) fn publish_credential_owner(&self, owner: crate::credentials::CredentialOwner) {
+        self.cache.invalidate_all();
+        let event = match owner {
+            crate::credentials::CredentialOwner::Platform { platform_id } => {
+                ConfigUpdateEvent::PlatformUpdated { platform_id }
+            }
+            crate::credentials::CredentialOwner::Template { template_id } => {
+                ConfigUpdateEvent::TemplateUpdated { template_id }
+            }
+            crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id }
+            }
+        };
+        self.broadcaster.publish(event);
+    }
+
+    pub(crate) fn publish_credential_material(&self, owner: crate::credentials::CredentialOwner) {
+        self.broadcaster
+            .publish(ConfigUpdateEvent::CredentialMaterialChanged { owner });
+    }
+
     /// Subscribe to configuration update events.
     pub fn subscribe(&self) -> broadcast::Receiver<ConfigUpdateEvent> {
         self.broadcaster.subscribe()
@@ -187,7 +210,19 @@ where
 
     /// Update the global configuration.
     pub async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
-        self.config_repo.update_global_config(config).await?;
+        self.update_global_config_with_route(config, None).await
+    }
+
+    /// Update the global configuration and, when given, the global proxy
+    /// route.
+    pub async fn update_global_config_with_route(
+        &self,
+        config: &GlobalConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .update_global_config_with_route(config, route)
+            .await?;
         self.global_cache.invalidate();
         self.invalidate_all_filter_snapshots();
 
@@ -230,9 +265,34 @@ where
         Ok(())
     }
 
-    /// Update a platform configuration.
+    /// Update a platform configuration, keeping its account selection.
     pub async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        self.config_repo.update_platform_config(config).await?;
+        self.update_platform_config_with_selection(config, None)
+            .await
+    }
+
+    /// Update a platform configuration and, when given, its own account
+    /// selection; `inherit` removes the selection.
+    pub async fn update_platform_config_with_selection(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&crate::credentials::CredentialSelection>,
+    ) -> Result<()> {
+        self.update_platform_config_scoped(config, selection, None)
+            .await
+    }
+
+    /// Update a platform configuration and, when given, its own account
+    /// selection and proxy route.
+    pub async fn update_platform_config_scoped(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&crate::credentials::CredentialSelection>,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .update_platform_config_scoped(config, selection, route)
+            .await?;
 
         // Invalidate configs for streamers on this platform
         self.invalidate_streamers_by_platform(&config.id).await?;
@@ -244,6 +304,56 @@ where
 
         tracing::info!("Platform config {} updated", config.id);
         Ok(())
+    }
+
+    // ========== Proxy Routes ==========
+
+    /// The route of requests made for a platform, or for no platform.
+    pub async fn resolve_scope_route(
+        &self,
+        platform_id: Option<&str>,
+    ) -> Result<crate::proxies::ResolvedRoute> {
+        self.config_repo.resolve_scope_route(platform_id).await
+    }
+
+    /// The route one scope stores.
+    pub async fn proxy_route_of(
+        &self,
+        owner: &crate::database::repositories::proxies::RouteOwner,
+    ) -> Result<crate::proxies::ProxyRoute> {
+        self.config_repo.proxy_route_of(owner).await
+    }
+
+    /// The routes every scope of `kind`'s kind stores, by scope ID; absent
+    /// scopes inherit.
+    pub async fn proxy_routes_of_kind(
+        &self,
+        kind: &crate::database::repositories::proxies::RouteOwner,
+    ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
+        self.config_repo.proxy_routes_of_kind(kind).await
+    }
+
+    /// A saved proxy changed: every resolved route may have.
+    pub(crate) fn notify_proxies_changed(&self) {
+        self.cache.invalidate_all();
+        self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+    }
+
+    // ========== Account Selections ==========
+
+    /// Every stored account selection.
+    pub async fn list_credential_selections(
+        &self,
+    ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
+        self.config_repo.list_credential_selections().await
+    }
+
+    /// The account selections one platform, template or streamer stores.
+    pub async fn credential_selections_for(
+        &self,
+        owner: &crate::credentials::CredentialOwner,
+    ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
+        self.config_repo.credential_selections_for(owner).await
     }
 
     // ========== Template Config ==========
@@ -263,9 +373,37 @@ where
         self.config_repo.list_template_configs().await
     }
 
+    /// Clone a template and its local accounts in one committed operation.
+    pub async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel> {
+        let cloned = self
+            .config_repo
+            .clone_template_config(source_id, new_name)
+            .await?;
+        self.broadcaster
+            .publish(ConfigUpdateEvent::TemplateUpdated {
+                template_id: cloned.id.clone(),
+            });
+        Ok(cloned)
+    }
+
     /// Create a new template configuration.
     pub async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        self.config_repo.create_template_config(config).await?;
+        self.create_template_config_with_route(config, None).await
+    }
+
+    /// Create a template configuration with, when given, its proxy route.
+    pub async fn create_template_config_with_route(
+        &self,
+        config: &TemplateConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .write_template_config(config, true, route)
+            .await?;
 
         self.broadcaster
             .publish(ConfigUpdateEvent::TemplateUpdated {
@@ -277,7 +415,18 @@ where
 
     /// Update a template configuration.
     pub async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        self.config_repo.update_template_config(config).await?;
+        self.update_template_config_with_route(config, None).await
+    }
+
+    /// Update a template configuration and, when given, its proxy route.
+    pub async fn update_template_config_with_route(
+        &self,
+        config: &TemplateConfigDbModel,
+        route: Option<&crate::proxies::ProxyRoute>,
+    ) -> Result<()> {
+        self.config_repo
+            .write_template_config(config, false, route)
+            .await?;
 
         // Invalidate configs for streamers using this template
         self.invalidate_streamers_by_template(&config.id).await?;
@@ -396,7 +545,7 @@ where
 
     /// Get the resolved streamer context for a streamer.
     ///
-    /// This includes the merged config plus runtime-only derived values like `CredentialSource`.
+    /// This includes the merged config with its resolved credential policy.
     pub async fn get_context_for_streamer(
         &self,
         streamer_id: &str,
@@ -548,10 +697,14 @@ where
             });
     }
 
-    pub(crate) fn notify_import_committed(&self) {
+    pub(crate) fn invalidate_import_caches(&self) {
         self.global_cache.invalidate();
         self.cache.invalidate_all();
         self.invalidate_all_filter_snapshots();
+    }
+
+    pub(crate) fn notify_import_committed(&self) {
+        self.invalidate_import_caches();
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
     }
 

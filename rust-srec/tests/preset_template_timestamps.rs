@@ -3,15 +3,12 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
 
-use rust_srec::credentials::{
-    CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
-};
 use rust_srec::database::models::{
     DagPipelineDefinition, JobPreset, PipelinePreset, TemplateConfigDbModel,
 };
 use rust_srec::database::repositories::{
     ConfigRepository, JobPresetRepository, PipelinePresetRepository, SqliteJobPresetRepository,
-    SqlitePipelinePresetRepository, SqlxConfigRepository, SqlxCredentialStore,
+    SqlitePipelinePresetRepository, SqlxConfigRepository,
 };
 
 const VERSION: i64 = 20260907120000;
@@ -366,7 +363,7 @@ async fn timestamp_migration_rolls_back_retirement_cancellations_and_can_retry()
 }
 
 #[tokio::test]
-async fn timestamp_repository_writes_and_credentials_keep_integer_storage_and_string_contracts() {
+async fn timestamp_repository_writes_keep_integer_storage_and_string_contracts() {
     let pool = previous_database().await;
     MIGRATOR.run(&pool).await.unwrap();
     let job_repo = SqliteJobPresetRepository::new(Arc::new(pool.clone()), Arc::new(pool.clone()));
@@ -432,41 +429,6 @@ async fn timestamp_repository_writes_and_credentials_keep_integer_storage_and_st
         assert_eq!(created, expected);
         assert!(updated >= expected);
     }
-    let store = SqlxCredentialStore::new(pool.clone(), pool.clone());
-    let mut source = CredentialSource {
-        scope: CredentialScope::Template {
-            template_id: template.id.clone(),
-            template_name: template.name.clone(),
-        },
-        cookies: String::new(),
-        refresh_token: None,
-        access_token: None,
-        platform_name: "bilibili".to_owned(),
-        reauth_extra: None,
-    };
-    for refresh_token in [None, Some("test-refresh".to_owned())] {
-        store
-            .update_credentials(
-                &source,
-                &RefreshedCredentials {
-                    cookies: "test-cookie=value".to_owned(),
-                    refresh_token,
-                    access_token: None,
-                    expires_at: None,
-                },
-            )
-            .await
-            .unwrap();
-        source = store.reload_source(&source).await.unwrap();
-        let refreshed = config_repo.get_template_config(&template.id).await.unwrap();
-        assert_eq!(refreshed.created_at.timestamp_millis(), expected);
-        assert_eq!(refreshed.cookies.as_deref(), Some("test-cookie=value"));
-        assert_eq!(
-            refreshed.updated_at.timestamp_millis(),
-            timestamps(&pool, "template_config", &template.id).await.1
-        );
-    }
-
     sqlx::query("UPDATE template_config SET updated_at = ? WHERE id = ?")
         .bind(i64::MAX)
         .bind(&template.id)

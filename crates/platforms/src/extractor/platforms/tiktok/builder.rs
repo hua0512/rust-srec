@@ -242,7 +242,10 @@ impl TikTok {
                 Ok(info) => Ok(info),
                 Err(ExtractorError::StreamerNotFound) => Err(ExtractorError::StreamerNotFound),
                 Err(err) => {
-                    warn!(error = %err, "TikTok api-live lookup failed; falling back to page HTML");
+                    warn!(
+                        category = err.category(),
+                        "TikTok api-live lookup failed; falling back to page HTML"
+                    );
                     self.fetch_html_room().await
                 }
             },

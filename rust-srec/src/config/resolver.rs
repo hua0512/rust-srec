@@ -8,13 +8,10 @@ use platforms_parser::extractor::factory::ExtractorSelection;
 use tracing::{debug, warn};
 
 use crate::Error;
-use crate::credentials::{
-    CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
-};
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
-use crate::domain::{DanmuStatisticsConfig, ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuStatisticsConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
@@ -75,8 +72,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
 
     /// Resolve the effective configuration for a streamer plus runtime-only context.
     ///
-    /// This returns the merged config along with the derived credential source, using the same
-    /// platform/template records that were loaded during config resolution (no extra DB roundtrips).
+    /// The merged config carries the streamer's route and account selection policy, read with
+    /// the same platform/template records loaded for the merge.
     pub async fn resolve_context_for_streamer(
         &self,
         streamer: &Streamer,
@@ -140,16 +137,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             max_part_size_bytes: global_config.max_part_size_bytes,
             record_danmu: global_config.record_danmu,
             danmu_statistics: global_danmu_statistics,
-            proxy_config: json::parse_or_default(
-                &global_config.proxy_config,
-                JsonContext::StreamerConfig {
-                    streamer_id: &streamer.id,
-                    scope: "global",
-                    scope_id: None,
-                    field: "proxy_config",
-                },
-                "Invalid JSON config; using defaults",
-            ),
             download_engine: global_config.default_download_engine.clone(),
             extractor: parse_extractor(global_config.default_extractor.as_deref(), "global"),
             pipeline: global_pipeline,
@@ -165,17 +152,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             .config_repo
             .get_platform_config(&streamer.platform_config_id)
             .await?;
-        let platform_name = platform_config.platform_name.clone();
-        let platform_proxy: Option<ProxyConfig> = json::parse_optional(
-            platform_config.proxy_config.as_deref(),
-            JsonContext::StreamerConfig {
-                streamer_id: &streamer.id,
-                scope: "platform",
-                scope_id: Some(&streamer.platform_config_id),
-                field: "proxy_config",
-            },
-            "Invalid JSON config; ignoring",
-        );
 
         let platform_stream_selection: Option<StreamSelectionConfig> = json::parse_optional(
             platform_config.stream_selection_config.as_deref(),
@@ -207,17 +183,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             },
             "Invalid JSON config; ignoring",
         );
-        let platform_refresh_token = platform_specific.as_ref().and_then(|v| {
-            v.get("refresh_token")
-                .and_then(|t| t.as_str())
-                .map(String::from)
-        });
-        // Capture re-login material before stripping credential fields for extractors.
-        let reauth_extra =
-            platform_reauth_extra(&platform_config.platform_name, platform_specific.as_ref());
-        // `platform_specific_config` can also contain credential metadata (e.g. refresh_token),
-        // but extractor `platform_extras` must not carry credentials.
-        let platform_extras = platform_specific.map(extractor_platform_extras);
         let platform_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
             platform_config.pipeline.as_deref(),
             JsonContext::StreamerConfig {
@@ -253,8 +218,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
         builder = builder.with_platform(PlatformConfigLayer {
             fetch_delay_ms: platform_config.fetch_delay_ms,
             download_delay_ms: platform_config.download_delay_ms,
-            cookies: platform_config.cookies.clone(),
-            proxy_config: platform_proxy,
             record_danmu: platform_config.record_danmu,
             danmu_statistics: json::parse_optional(
                 platform_config.danmu_statistics.as_deref(),
@@ -266,7 +229,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             ),
-            platform_specific_config: platform_extras,
+            platform_specific_config: platform_specific,
             output_folder: platform_config.output_folder.clone(),
             output_filename_template: platform_config.output_filename_template.clone(),
             download_engine: platform_config.download_engine.clone(),
@@ -284,45 +247,11 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             offline_check_delay_ms: platform_config.offline_check_delay_ms,
         });
 
-        let mut credential_source: Option<CredentialSource> = streamer
-            .streamer_specific_config
-            .as_ref()
-            .and_then(|config| config.get("cookies").and_then(|v| v.as_str()))
-            .map(str::to_string)
-            .filter(|cookies| !cookies.trim().is_empty())
-            .map(|cookies| {
-                let refresh_token = streamer
-                    .streamer_specific_config
-                    .as_ref()
-                    .and_then(|config| config.get("refresh_token").and_then(|v| v.as_str()))
-                    .map(String::from);
-
-                CredentialSource::new(
-                    CredentialScope::Streamer {
-                        streamer_id: streamer.id.clone(),
-                        streamer_name: streamer.name.clone(),
-                    },
-                    cookies,
-                    refresh_token,
-                    platform_name.clone(),
-                )
-            });
-
         // Layer 3: Template config (if assigned)
         if let Some(ref template_id) = streamer.template_config_id {
             let template_config = self.config_repo.get_template_config(template_id).await?;
 
             // Parse JSON fields
-            let template_proxy: Option<ProxyConfig> = json::parse_optional(
-                template_config.proxy_config.as_deref(),
-                JsonContext::StreamerConfig {
-                    streamer_id: &streamer.id,
-                    scope: "template",
-                    scope_id: Some(template_id),
-                    field: "proxy_config",
-                },
-                "Invalid JSON config; ignoring",
-            );
             let template_retry: Option<RetryPolicy> = json::parse_optional(
                 template_config.download_retry_policy.as_deref(),
                 JsonContext::StreamerConfig {
@@ -367,13 +296,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; ignoring",
             );
-            let template_refresh_token = template_platform_overrides
-                .as_ref()
-                .and_then(|map| map.get(&platform_name))
-                .and_then(|entry| entry.get("refresh_token"))
-                .and_then(|t| t.as_str())
-                .map(String::from);
-
             let mut tpl_po_pipeline: Option<DagPipelineDefinition> = None;
             let mut tpl_po_session_complete: Option<DagPipelineDefinition> = None;
             let mut tpl_po_paired_segment: Option<DagPipelineDefinition> = None;
@@ -399,28 +321,9 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                             obj.extend(specific);
                         }
                     }
-                    extractor_platform_extras(entry)
+                    entry
                 });
 
-            let template_credential_candidate = if credential_source.is_none() {
-                if let Some(cookies) = template_config.cookies.as_ref()
-                    && !cookies.trim().is_empty()
-                {
-                    Some(CredentialSource::new(
-                        CredentialScope::Template {
-                            template_id: template_id.clone(),
-                            template_name: template_config.name.clone(),
-                        },
-                        cookies.clone(),
-                        template_refresh_token,
-                        platform_name.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
             let template_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
                 template_config.pipeline.as_deref(),
                 JsonContext::StreamerConfig {
@@ -472,8 +375,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                     },
                     "Invalid JSON config; ignoring",
                 ),
-                proxy_config: template_proxy,
-                cookies: template_config.cookies,
                 download_engine: template_config.download_engine,
                 extractor: parse_extractor(template_config.extractor.as_deref(), "template"),
                 download_retry_policy: template_retry,
@@ -498,50 +399,40 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             if let Some(pipe) = tpl_po_paired_segment {
                 builder = builder.override_paired_segment_pipeline(pipe);
             }
-
-            if credential_source.is_none() {
-                credential_source = template_credential_candidate;
-            }
-        }
-
-        if credential_source.is_none()
-            && let Some(cookies) = platform_config.cookies.as_ref()
-            && !cookies.trim().is_empty()
-        {
-            credential_source = Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: streamer.platform_config_id.clone(),
-                    platform_name: platform_name.clone(),
-                },
-                cookies.clone(),
-                platform_refresh_token,
-                platform_name.clone(),
-            ));
-        }
-
-        // SOOP: username/password without cookies still produce a credential
-        // source so the manager can mint and persist session cookies.
-        if credential_source.is_none() && reauth_extra.is_some() {
-            credential_source = Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: streamer.platform_config_id.clone(),
-                    platform_name: platform_name.clone(),
-                },
-                String::new(),
-                None,
-                platform_name.clone(),
-            ));
-        }
-        if let Some(source) = credential_source.as_mut() {
-            source.reauth_extra = reauth_extra;
         }
 
         // Layer 4: Streamer-specific config
         builder = builder.with_streamer(streamer.streamer_specific_config.as_ref());
 
+        let selections = self
+            .config_repo
+            .streamer_credential_selections(
+                &streamer.id,
+                &platform_config.id,
+                streamer.template_config_id.as_deref(),
+            )
+            .await?;
+        let mut config = builder.build();
+        config.proxy_route = self
+            .config_repo
+            .resolve_streamer_route(
+                &streamer.id,
+                &platform_config.id,
+                streamer.template_config_id.as_deref(),
+            )
+            .await?;
+        config.credential_policy =
+            crate::credentials::resolve_authentication(&platform_config.id, &selections)?;
+        // Account material comes only from the selected profile; configuration
+        // extras keep content settings such as room passwords.
+        config.platform_extras = config.platform_extras.map(|extras| {
+            crate::credentials::isolate_platform_authentication_extras(
+                &platform_config.platform_name,
+                extras,
+            )
+        });
         Ok(ResolvedStreamerContext {
-            config: Arc::new(builder.build()),
-            credential_source,
+            config: Arc::new(config),
         })
     }
 }
@@ -553,6 +444,53 @@ mod tests {
     use crate::database::{init_pool, run_migrations};
     use crate::domain::StreamerUrl;
     use serde_json::json;
+
+    /// Extras reach extractors: account fields from any layer are removed
+    /// once the layers are merged, nested option objects included.
+    #[tokio::test]
+    async fn merged_extras_carry_no_account_fields() {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        sqlx::query("UPDATE platform_config SET platform_specific_config = ? WHERE id = 'platform-bilibili'")
+            .bind(json!({"quality": 20000, "refresh_token": "platform-secret"}).to_string())
+            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO template_config (id, name, platform_overrides) VALUES ('account-template', 'Accounts', ?)",
+        )
+        .bind(
+            json!({"bilibili": {
+                "access_token": "template-secret",
+                "platform_specific_config": {"session_cookies": "template-secret"}
+            }})
+            .to_string(),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let resolver = ConfigResolver::new(Arc::new(SqlxConfigRepository::new(
+            pool.clone(),
+            pool.clone(),
+        )));
+        let mut streamer = Streamer::new(
+            "Accounts",
+            StreamerUrl::new("https://live.bilibili.com/2").unwrap(),
+            "platform-bilibili",
+        )
+        .with_template("account-template");
+        streamer.streamer_specific_config = Some(json!({"platform_extras": {
+            "quality": 80,
+            "last_cookie_check_result": "streamer-secret",
+            "platform_extras": {"cookies": "streamer-secret"}
+        }}));
+
+        let config = resolver
+            .resolve_config_for_streamer(&streamer)
+            .await
+            .unwrap();
+        let extras = config.platform_extras.unwrap();
+        assert_eq!(extras["quality"], 80);
+        assert!(!extras.to_string().contains("secret"), "{extras}");
+    }
 
     #[tokio::test]
     async fn bilibili_quality_inherits_through_saved_template_and_streamer_options() {

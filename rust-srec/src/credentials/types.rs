@@ -5,52 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::notification::NotificationPriority;
 
-const EXTRACTOR_CREDENTIAL_FIELDS: [&str; 5] = [
-    "refresh_token",
-    "access_token",
-    "last_cookie_check_date",
-    "last_cookie_check_result",
-    "session_cookies",
-];
-
-pub(crate) fn platform_reauth_extra(
-    platform_name: &str,
-    platform_specific: Option<&serde_json::Value>,
-) -> Option<serde_json::Value> {
-    if !platform_name.eq_ignore_ascii_case("soop") {
-        return None;
-    }
-
-    let config = platform_specific?;
-    let username = config
-        .get("username")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    let password = config
-        .get("password")
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-
-    Some(serde_json::json!({
-        "username": username,
-        "password": password,
-    }))
-}
-
-pub(crate) fn extractor_platform_extras(
-    mut platform_specific: serde_json::Value,
-) -> serde_json::Value {
-    if let serde_json::Value::Object(ref mut fields) = platform_specific {
-        for field in EXTRACTOR_CREDENTIAL_FIELDS {
-            fields.remove(field);
-        }
-    }
-
-    platform_specific
-}
-
 /// Represents the configuration layer where credentials are defined.
 ///
 /// Credentials can be defined at Platform, Template, or Streamer scope.
@@ -76,31 +30,21 @@ pub enum CredentialScope {
 }
 
 impl CredentialScope {
-    /// Returns the database table name for this scope.
-    #[inline]
-    pub fn table_name(&self) -> &'static str {
-        match self {
-            Self::Platform { .. } => "platform_config",
-            Self::Template { .. } => "template_config",
-            Self::Streamer { .. } => "streamers",
-        }
-    }
-
-    /// Returns the record ID for this scope.
-    #[inline]
-    pub fn record_id(&self) -> &str {
-        match self {
-            Self::Platform { platform_id, .. } => platform_id,
-            Self::Template { template_id, .. } => template_id,
-            Self::Streamer { streamer_id, .. } => streamer_id,
-        }
-    }
-
-    /// Returns the platform name (for Platform scope) or empty string.
-    pub fn platform_name(&self) -> Option<&str> {
-        match self {
-            Self::Platform { platform_name, .. } => Some(platform_name),
-            _ => None,
+    /// The scope of a profile owner, labelled with the owner's display name.
+    pub fn for_owner(owner: &super::CredentialOwner, name: String) -> Self {
+        match owner {
+            super::CredentialOwner::Platform { platform_id } => Self::Platform {
+                platform_id: platform_id.clone(),
+                platform_name: name,
+            },
+            super::CredentialOwner::Template { template_id } => Self::Template {
+                template_id: template_id.clone(),
+                template_name: name,
+            },
+            super::CredentialOwner::Streamer { streamer_id } => Self::Streamer {
+                streamer_id: streamer_id.clone(),
+                streamer_name: name,
+            },
         }
     }
 
@@ -118,131 +62,25 @@ impl CredentialScope {
             }
         }
     }
-
-    /// Generate a unique key for caching/locking.
-    pub fn cache_key(&self) -> String {
-        format!("{}:{}", self.table_name(), self.record_id())
-    }
-}
-
-/// Complete credential information with source tracking.
-#[derive(Clone)]
-pub struct CredentialSource {
-    /// Which configuration layer the credentials came from.
-    pub scope: CredentialScope,
-    /// The cookie string.
-    pub cookies: String,
-    /// Refresh token (if available).
-    pub refresh_token: Option<String>,
-    /// OAuth2 access token (if available, e.g. from Bilibili TV QR login).
-    pub access_token: Option<String>,
-    /// Platform name for this credential (e.g., "bilibili").
-    pub platform_name: String,
-    /// Platform-specific re-login material (e.g. SOOP username/password).
-    pub reauth_extra: Option<serde_json::Value>,
-}
-
-/// Renders `cookies`, `refresh_token`, `access_token` and `reauth_extra` as
-/// `[redacted]` so that recording a `CredentialSource` as a `tracing` field cannot
-/// write platform secrets to the log sinks installed by `crate::logging`. `scope`
-/// and `platform_name` stay visible because they identify the credential.
-impl std::fmt::Debug for CredentialSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn redact(present: bool) -> &'static str {
-            if present { "[redacted]" } else { "[unset]" }
-        }
-
-        f.debug_struct("CredentialSource")
-            .field("scope", &self.scope)
-            .field("platform_name", &self.platform_name)
-            .field("cookies", &redact(!self.cookies.is_empty()))
-            .field("refresh_token", &redact(self.refresh_token.is_some()))
-            .field("access_token", &redact(self.access_token.is_some()))
-            .field("reauth_extra", &redact(self.reauth_extra.is_some()))
-            .finish()
-    }
-}
-
-impl CredentialSource {
-    /// Compare provider inputs, excluding display names and unrelated configuration.
-    pub(crate) fn same_credentials(&self, other: &Self) -> bool {
-        self.scope.cache_key() == other.scope.cache_key()
-            && self
-                .platform_name
-                .eq_ignore_ascii_case(&other.platform_name)
-            && self.cookies == other.cookies
-            && self.refresh_token == other.refresh_token
-            && self.access_token == other.access_token
-            && self.reauth_extra == other.reauth_extra
-    }
-
-    pub(crate) fn after_refresh(&self, credentials: &super::manager::RefreshedCredentials) -> Self {
-        let mut current = self.clone();
-        current.cookies = credentials.cookies.clone();
-        if let Some(token) = &credentials.refresh_token {
-            current.refresh_token = Some(token.clone());
-        }
-        if let Some(token) = &credentials.access_token {
-            current.access_token = Some(token.clone());
-        }
-        current
-    }
-
-    /// Create a new credential source.
-    pub fn new(
-        scope: CredentialScope,
-        cookies: String,
-        refresh_token: Option<String>,
-        platform_name: String,
-    ) -> Self {
-        Self {
-            scope,
-            cookies,
-            refresh_token,
-            access_token: None,
-            platform_name,
-            reauth_extra: None,
-        }
-    }
-
-    /// Create a new credential source with an access token.
-    pub fn with_access_token(mut self, access_token: Option<String>) -> Self {
-        self.access_token = access_token;
-        self
-    }
-
-    /// Attach re-login material (username/password, etc.).
-    pub fn with_reauth_extra(mut self, reauth_extra: Option<serde_json::Value>) -> Self {
-        self.reauth_extra = reauth_extra;
-        self
-    }
-
-    /// Check if this credential has a refresh token.
-    #[inline]
-    pub fn has_refresh_token(&self) -> bool {
-        self.refresh_token.is_some()
-    }
-
-    /// Password-based re-login material is present (e.g. SOOP).
-    #[inline]
-    pub fn has_reauth_extra(&self) -> bool {
-        self.reauth_extra.as_ref().is_some_and(|v| {
-            v.get("username")
-                .and_then(|u| u.as_str())
-                .is_some_and(|s| !s.trim().is_empty())
-                && v.get("password")
-                    .and_then(|p| p.as_str())
-                    .is_some_and(|s| !s.trim().is_empty())
-        })
-    }
 }
 
 /// Credential event for notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CredentialEvent {
+    /// Selection exhaustion does not assert that any individual account is invalid.
+    Unavailable {
+        scope: CredentialScope,
+        platform: String,
+        reason_code: super::UnavailableReason,
+        timestamp: DateTime<Utc>,
+    },
     /// Credentials were successfully refreshed.
     Refreshed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         expires_at: Option<DateTime<Utc>>,
@@ -251,6 +89,10 @@ pub enum CredentialEvent {
 
     /// Credential refresh failed - action may be required.
     RefreshFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         error: String,
@@ -263,6 +105,10 @@ pub enum CredentialEvent {
 
     /// Credentials are invalid - manual re-login required.
     Invalid {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         reason: String,
@@ -273,10 +119,27 @@ pub enum CredentialEvent {
 
     /// Credentials are expiring soon - proactive warning.
     ExpiringSoon {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
         expires_at: DateTime<Utc>,
         days_remaining: u32,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// Session cookies obtained during a check (e.g. SOOP reactive login)
+    /// could not be stored; the next check has to log in again.
+    SessionSaveFailed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile_label: Option<String>,
+        scope: CredentialScope,
+        platform: String,
+        error: String,
         timestamp: DateTime<Utc>,
     },
 }
@@ -285,16 +148,19 @@ impl CredentialEvent {
     /// Event name for notification subscription matching.
     pub fn event_name(&self) -> &'static str {
         match self {
+            Self::Unavailable { .. } => "credential_unavailable",
             Self::Refreshed { .. } => "credential_refreshed",
             Self::RefreshFailed { .. } => "credential_refresh_failed",
             Self::Invalid { .. } => "credential_invalid",
             Self::ExpiringSoon { .. } => "credential_expiring",
+            Self::SessionSaveFailed { .. } => "credential_session_save_failed",
         }
     }
 
     /// Severity level for filtering.
     pub fn severity(&self) -> NotificationPriority {
         match self {
+            Self::Unavailable { .. } => NotificationPriority::High,
             Self::Refreshed { .. } => NotificationPriority::Normal,
             Self::RefreshFailed {
                 requires_relogin: true,
@@ -309,28 +175,77 @@ impl CredentialEvent {
                 NotificationPriority::High
             }
             Self::ExpiringSoon { .. } => NotificationPriority::Normal,
+            Self::SessionSaveFailed { .. } => NotificationPriority::High,
         }
     }
 
-    /// Generate a human-readable message for notifications, in the process-wide locale.
-    pub fn to_message(&self) -> String {
-        self.to_message_in(&crate::i18n::current_locale())
+    /// The scope as shown to users, naming the account for profile events.
+    pub fn scope_text_in(&self, locale: &str) -> String {
+        let (scope, label) = match self {
+            Self::Unavailable { scope, .. } => (scope, None),
+            Self::SessionSaveFailed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::Refreshed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::RefreshFailed {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::Invalid {
+                scope,
+                profile_label,
+                ..
+            }
+            | Self::ExpiringSoon {
+                scope,
+                profile_label,
+                ..
+            } => (scope, profile_label.as_deref()),
+        };
+        match label {
+            Some(label) => crate::t_str_in!(
+                locale,
+                "notification.credential.scope_with_account",
+                scope = scope.describe().as_str(),
+                account = label,
+            ),
+            None => scope.describe(),
+        }
     }
 
     /// Generate a human-readable message for notifications, in `locale`.
     pub fn to_message_in(&self, locale: &str) -> String {
+        let scope_text = self.scope_text_in(locale);
         match self {
-            Self::Refreshed {
-                platform, scope, ..
-            } => crate::t_str_in!(
+            Self::Unavailable {
+                platform,
+                reason_code,
+                ..
+            } => {
+                let reason = crate::t_str_in!(locale, unavailable_reason_key(*reason_code));
+                crate::t_str_in!(
+                    locale,
+                    "notification.credential.unavailable.message",
+                    platform = platform.as_str(),
+                    scope = scope_text.as_str(),
+                    reason = reason.as_str(),
+                )
+            }
+            Self::Refreshed { platform, .. } => crate::t_str_in!(
                 locale,
                 "notification.credential.refreshed.message",
                 platform = platform.as_str(),
-                scope = scope.describe().as_str(),
+                scope = scope_text.as_str(),
             ),
             Self::RefreshFailed {
                 platform,
-                scope,
                 error,
                 requires_relogin,
                 failure_count,
@@ -345,14 +260,13 @@ impl CredentialEvent {
                     locale,
                     key,
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     error = error.as_str(),
                     failure_count = failure_count.to_string().as_str(),
                 )
             }
             Self::Invalid {
                 platform,
-                scope,
                 reason,
                 error_code,
                 ..
@@ -368,14 +282,13 @@ impl CredentialEvent {
                     locale,
                     "notification.credential.invalid.message",
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     reason = reason.as_str(),
                     error_code = error_code.as_str(),
                 )
             }
             Self::ExpiringSoon {
                 platform,
-                scope,
                 days_remaining,
                 expires_at,
                 ..
@@ -385,76 +298,92 @@ impl CredentialEvent {
                     locale,
                     "notification.credential.expiring_soon.message",
                     platform = platform.as_str(),
-                    scope = scope.describe().as_str(),
+                    scope = scope_text.as_str(),
                     days_remaining = days_remaining.to_string().as_str(),
                     expires_at = expires_at.as_str(),
                 )
             }
+            Self::SessionSaveFailed {
+                platform, error, ..
+            } => crate::t_str_in!(
+                locale,
+                "notification.credential.session_save_failed.message",
+                platform = platform.as_str(),
+                scope = scope_text.as_str(),
+                error = error.as_str(),
+            ),
+        }
+    }
+}
+
+/// Notification text key for each unavailable reason.
+fn unavailable_reason_key(reason: super::UnavailableReason) -> &'static str {
+    use super::UnavailableReason;
+    match reason {
+        UnavailableReason::LoginRequired => {
+            "notification.credential.unavailable.reason.login_required"
+        }
+        UnavailableReason::ProfilesDisabled => {
+            "notification.credential.unavailable.reason.profiles_disabled"
+        }
+        UnavailableReason::BoundProfileUnavailable => {
+            "notification.credential.unavailable.reason.bound_profile_unavailable"
+        }
+        UnavailableReason::BindingPolicyChanged => {
+            "notification.credential.unavailable.reason.binding_policy_changed"
+        }
+        UnavailableReason::AttemptsExhausted => {
+            "notification.credential.unavailable.reason.attempts_exhausted"
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
-    };
+    use super::CredentialScope;
+    use crate::credentials::platform_reauth_extra;
 
+    /// Unavailable notices read as text rather than codes, and
+    /// profile events name the account beside the owner it belongs to.
     #[test]
-    fn debug_output_redacts_credential_material() {
-        let source = CredentialSource::new(
-            CredentialScope::Platform {
-                platform_id: "platform-1".to_string(),
-                platform_name: "bilibili".to_string(),
-            },
-            "SESSDATA=cookie-sentinel".to_string(),
-            Some("refresh-sentinel".to_string()),
-            "bilibili".to_string(),
-        )
-        .with_access_token(Some("access-sentinel".to_string()))
-        .with_reauth_extra(Some(serde_json::json!({
-            "username": "viewer",
-            "password": "password-sentinel",
-        })));
-
-        let rendered = format!("{source:?}");
-
-        for secret in [
-            "cookie-sentinel",
-            "refresh-sentinel",
-            "access-sentinel",
-            "password-sentinel",
-        ] {
-            assert!(
-                !rendered.contains(secret),
-                "Debug output leaked {secret}: {rendered}"
-            );
+    fn credential_notices_render_reasons_and_account_labels() {
+        use super::CredentialEvent;
+        use crate::credentials::profile::UNAVAILABLE_REASON_CODES;
+        let scope = CredentialScope::Template {
+            template_id: "template-1".to_string(),
+            template_name: "Night shift".to_string(),
+        };
+        for locale in ["en", "zh-CN"] {
+            for code in UNAVAILABLE_REASON_CODES {
+                let message = CredentialEvent::Unavailable {
+                    scope: scope.clone(),
+                    platform: "bilibili".to_string(),
+                    reason_code: *code,
+                    timestamp: chrono::Utc::now(),
+                }
+                .to_message_in(locale);
+                let code = code.as_str();
+                assert!(!message.contains(code), "{locale}/{code}: {message}");
+                assert!(
+                    !message.contains("notification."),
+                    "{locale}/{code}: {message}"
+                );
+                assert!(message.contains("Night shift"), "{message}");
+            }
+            let invalid = CredentialEvent::Invalid {
+                profile_id: Some("profile-1".to_string()),
+                profile_label: Some("Backup account".to_string()),
+                scope: scope.clone(),
+                platform: "bilibili".to_string(),
+                reason: "login_required".to_string(),
+                error_code: None,
+                timestamp: chrono::Utc::now(),
+            };
+            let text = invalid.scope_text_in(locale);
+            assert!(text.contains("Template: Night shift"), "{text}");
+            assert!(text.contains("Backup account"), "{text}");
+            assert!(invalid.to_message_in(locale).contains("Backup account"));
         }
-        // Field names and provenance stay readable for diagnostics.
-        assert!(rendered.contains("cookies"));
-        assert!(rendered.contains("refresh_token"));
-        assert!(rendered.contains("bilibili"));
-    }
-
-    #[test]
-    fn debug_output_distinguishes_absent_credential_material() {
-        let source = CredentialSource::new(
-            CredentialScope::Platform {
-                platform_id: "platform-1".to_string(),
-                platform_name: "bilibili".to_string(),
-            },
-            String::new(),
-            None,
-            "bilibili".to_string(),
-        );
-
-        let rendered = format!("{source:?}");
-
-        assert!(rendered.contains("cookies: \"[unset]\""), "{rendered}");
-        assert!(
-            rendered.contains("refresh_token: \"[unset]\""),
-            "{rendered}"
-        );
     }
 
     #[test]
@@ -479,26 +408,5 @@ mod tests {
     fn rejects_incomplete_soop_reauthentication_fields() {
         let missing_password = serde_json::json!({ "username": "viewer" });
         assert!(platform_reauth_extra("soop", Some(&missing_password)).is_none());
-    }
-
-    #[test]
-    fn strips_non_extractor_credential_metadata() {
-        let extras = extractor_platform_extras(serde_json::json!({
-            "username": "viewer",
-            "password": "secret-password",
-            "stream_password": "room-password",
-            "refresh_token": "refresh",
-            "access_token": "access",
-            "session_cookies": "AuthTicket=secret",
-        }));
-
-        assert_eq!(
-            extras,
-            serde_json::json!({
-                "username": "viewer",
-                "password": "secret-password",
-                "stream_password": "room-password",
-            })
-        );
     }
 }

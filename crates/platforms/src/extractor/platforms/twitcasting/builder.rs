@@ -148,7 +148,11 @@ impl Twitcasting {
                 {
                     Ok(info) => stream_info.extend(info),
                     Err(e) => {
-                        warn!(quality, error = %e, "twitcasting variant playlist fetch failed; skipping");
+                        warn!(
+                            quality,
+                            category = e.category(),
+                            "twitcasting variant playlist fetch failed; skipping"
+                        );
                         last_error = Some(e);
                     }
                 }

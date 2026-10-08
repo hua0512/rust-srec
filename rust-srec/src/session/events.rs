@@ -179,6 +179,8 @@ fn failure_kind_label(kind: DownloadFailureKind) -> &'static str {
         DownloadFailureKind::Processing => "processing",
         DownloadFailureKind::Cancelled => "cancelled",
         DownloadFailureKind::Other => "other",
+        DownloadFailureKind::CredentialRecovery => "credential_recovery",
+        DownloadFailureKind::CredentialUnavailable => "credential_unavailable",
     }
 }
 

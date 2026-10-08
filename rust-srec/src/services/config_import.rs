@@ -26,7 +26,7 @@ use crate::config::ConfigService;
 use crate::config::backup::{
     ConfigExport, ImportMode, ImportStats, NotificationChannelExport, PipelinePresetExport,
 };
-use crate::credentials::{CredentialRefreshService, CredentialScope};
+use crate::credentials::{CredentialOwner, CredentialSelection};
 #[cfg(test)]
 use crate::database::begin_immediate;
 use crate::database::models::{
@@ -34,6 +34,8 @@ use crate::database::models::{
     GlobalConfigDbModel, JobPreset, NotificationChannelDbModel, PipelinePreset,
     PlatformConfigDbModel, RetentionDays, StreamerDbModel, TemplateConfigDbModel, UserDbModel,
 };
+use crate::database::repositories::credential_selections;
+use crate::database::repositories::proxies::RouteOwner;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     config_retirement::{RetiredConfigKind, delete_or_defer},
@@ -47,6 +49,9 @@ use crate::streamer::state_store::{StateChange, StatePublication};
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamerManager = StreamerManager<SqlxStreamerRepository>;
+
+mod profiles;
+mod proxies;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigurationImportError {
@@ -100,9 +105,10 @@ impl StreamerImportDiff {
 
 struct CommittedImport {
     stats: ImportStats,
-    invalidated_credentials: Vec<CredentialScope>,
     streamers: StreamerImportDiff,
+    moved_proxies: Vec<String>,
     retained_definitions: i64,
+    credential_retirement_streamers: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -112,18 +118,41 @@ pub(crate) struct ConfigurationImportService {
     config_service: Arc<RuntimeConfigService>,
     streamer_manager: Arc<RuntimeStreamerManager>,
     notification_service: Arc<NotificationService>,
-    credential_service: Arc<CredentialRefreshService>,
     runtime_coordinator: Arc<RuntimeCoordinator>,
+    /// Platform throttles, kept per route; an imported proxy that reaches
+    /// another exit drops the old exit's.
+    admission_backoff: Arc<crate::credentials::PlatformAdmission>,
 }
 
 impl ConfigurationImportService {
+    pub(crate) async fn retired_template_ids(&self) -> crate::Result<HashSet<String>> {
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT config_id FROM retirement_config_deletions WHERE kind = 'template'",
+        )
+        .fetch_all(&self.write_pool)
+        .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    pub(crate) async fn export_profiles(
+        &self,
+        proxy_names: &HashMap<String, String>,
+    ) -> crate::Result<Vec<crate::config::backup::CredentialProfileExport>> {
+        profiles::export_profiles(&self.write_pool, proxy_names).await
+    }
+
+    /// Saved proxies, logins included, for a backup.
+    pub(crate) async fn export_proxies(&self) -> crate::Result<Vec<crate::proxies::ProxyEntry>> {
+        crate::database::repositories::proxies::list(&mut *self.write_pool.acquire().await?).await
+    }
+
     pub fn new(
         write_pool: SqlitePool,
         config_service: Arc<RuntimeConfigService>,
         streamer_manager: Arc<RuntimeStreamerManager>,
         notification_service: Arc<NotificationService>,
-        credential_service: Arc<CredentialRefreshService>,
         runtime_coordinator: Arc<RuntimeCoordinator>,
+        admission_backoff: Arc<crate::credentials::PlatformAdmission>,
     ) -> Self {
         Self {
             write_pool,
@@ -131,14 +160,14 @@ impl ConfigurationImportService {
             config_service,
             streamer_manager,
             notification_service,
-            credential_service,
             runtime_coordinator,
+            admission_backoff,
         }
     }
 
     pub async fn import(
         &self,
-        config: ConfigExport,
+        mut config: ConfigExport,
         mode: ImportMode,
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         validate_import(&config, mode)?;
@@ -168,18 +197,25 @@ impl ConfigurationImportService {
                 move |tx| {
                     Box::pin(async move {
                         let snapshot = ImportSnapshot::load(tx).await?;
+                        snapshot.upgrade_bundle(&mut config, mode)?;
                         snapshot.validate_references(&config, mode)?;
-                        let (stats, invalidated_credentials, streamers) =
-                            apply_import(tx, &snapshot, &config, mode).await?;
+                        let AppliedImport {
+                            stats,
+                            streamers,
+                            moved_proxies,
+                        } = apply_import(tx, &snapshot, &config, mode).await?;
                         let retained_definitions =
                             sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
-                                .fetch_one(tx)
+                                .fetch_one(&mut *tx)
                                 .await?;
+                        let credential_retirement_streamers = sqlx::query_scalar("SELECT DISTINCT s.streamer_id FROM live_sessions s JOIN retirement_credential_profiles r ON json_extract(s.credential_binding, '$.identity.profile_id') = r.profile_id WHERE s.end_time IS NULL AND s.streamer_id IS NOT NULL")
+                            .fetch_all(&mut *tx).await?;
                         Ok(CommittedImport {
                             stats,
-                            invalidated_credentials,
                             streamers,
+                            moved_proxies,
                             retained_definitions,
+                            credential_retirement_streamers,
                         })
                     })
                 },
@@ -189,10 +225,11 @@ impl ConfigurationImportService {
                             value: (),
                             rows: committed.streamers.rows.clone(),
                             removed: Vec::new(),
+                            reconfigured: Vec::new(),
                         },
                         StatePublication::Silent,
                     );
-                    config_service.invalidate_all_filter_snapshots();
+                    config_service.invalidate_import_caches();
                 },
                 move |committed| {
                     Box::pin(async move {
@@ -210,12 +247,15 @@ impl ConfigurationImportService {
     ) -> Result<ConfigurationImportOutcome, ConfigurationImportError> {
         let CommittedImport {
             stats,
-            invalidated_credentials,
             streamers,
+            moved_proxies,
             retained_definitions,
+            credential_retirement_streamers,
         } = committed;
-        for scope in invalidated_credentials {
-            self.credential_service.invalidate(&scope);
+
+        for id in moved_proxies {
+            self.admission_backoff
+                .clear_route(&crate::proxies::RouteKey::Proxy { id });
         }
 
         let mut warnings = Vec::new();
@@ -251,6 +291,26 @@ impl ConfigurationImportService {
             );
         }
 
+        self.config_service.notify_import_committed();
+
+        for streamer_id in credential_retirement_streamers {
+            self.runtime_coordinator
+                .settle_credential_retirement(&streamer_id)
+                .await;
+        }
+        let reaped = async {
+            let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
+            crate::database::repositories::config_retirement::reap_retired_profiles(
+                &mut transaction,
+            )
+            .await?;
+            transaction.commit().await
+        }
+        .await;
+        if let Err(error) = reaped {
+            warnings.push(format!("credential retirement cleanup deferred: {error}"));
+        }
+
         // Stops each removed streamer's actor, download and session, and removes
         // the row where nothing is left in flight. `OBSERVE_RETIREMENT` because
         // a Replace bundle can remove any number of streamers and per-streamer
@@ -275,8 +335,6 @@ impl ConfigurationImportService {
         if let Err(error) = self.notification_service.reload_from_db().await {
             warnings.push(format!("notification runtime reload failed: {error}"));
         }
-        self.config_service.notify_import_committed();
-
         Ok(ConfigurationImportOutcome { stats, warnings })
     }
 }
@@ -297,6 +355,10 @@ struct ImportSnapshot {
     // `streamers.url COLLATE NOCASE UNIQUE`, so validate_references has to
     // reject a bundle that would insert over one.
     retiring_streamer_urls: HashSet<String>,
+    // Ids of streamers with a stored account selection.
+    selected_streamers: HashSet<String>,
+    // Saved proxies, which a converted older backup reuses by exit.
+    proxies: Vec<(String, crate::proxies::ProxyEndpoint)>,
     channels: HashMap<String, NotificationChannelDbModel>,
     job_presets: HashMap<String, JobPreset>,
     pipeline_presets: HashMap<String, PipelinePreset>,
@@ -356,6 +418,17 @@ impl ImportSnapshot {
         .into_iter()
         .map(|url| url.to_ascii_lowercase())
         .collect();
+        let selected_streamers = sqlx::query_scalar::<_, String>(
+            "SELECT streamer_id FROM credential_selections WHERE streamer_id IS NOT NULL",
+        )
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect();
+        let proxies = proxies::existing(tx).await.map_err(|error| match error {
+            ConfigurationImportError::Database(error) => error,
+            ConfigurationImportError::Validation(message) => sqlx::Error::Protocol(message),
+        })?;
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
                 .fetch_all(&mut *tx)
@@ -390,6 +463,8 @@ impl ImportSnapshot {
             platforms,
             streamers,
             retiring_streamer_urls,
+            selected_streamers,
+            proxies,
             channels,
             job_presets,
             pipeline_presets,
@@ -408,6 +483,33 @@ impl ImportSnapshot {
         rows.iter()
             .find(|row| row.url == url)
             .or_else(|| rows.first())
+    }
+
+    /// Convert what the bundle carries in older forms. A merge keeps the stored
+    /// selection of a streamer whose entry omits one, provided it stays on its
+    /// platform, so no selection is moved down onto that streamer.
+    fn upgrade_bundle(
+        &self,
+        config: &mut ConfigExport,
+        mode: ImportMode,
+    ) -> Result<(), ConfigurationImportError> {
+        crate::database::legacy_credential_upgrade::upgrade_bundle(config, |streamer| {
+            mode == ImportMode::Merge
+                && self.streamer_for_update(&streamer.url).is_some_and(|row| {
+                    self.selected_streamers.contains(&row.id)
+                        && self
+                            .platforms
+                            .get(&streamer.platform)
+                            .is_some_and(|platform| platform.id == row.platform_config_id)
+                })
+        })?;
+        // Older backups and stray `proxy_config` settings become routes.
+        let legacy = config.version.starts_with("0.");
+        if legacy || crate::database::legacy_proxy_upgrade::bundle_has_legacy_settings(config) {
+            crate::database::legacy_proxy_upgrade::upgrade_bundle(config, &self.proxies, legacy)?;
+        }
+        config.validate_credential_graph()?;
+        Ok(())
     }
 
     fn validate_references(
@@ -565,6 +667,14 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
     ConfigurationImportError::Validation(message.into())
 }
 
+/// Database failures stay database errors; anything else rejects the bundle.
+fn write_error(error: crate::Error) -> ConfigurationImportError {
+    match error {
+        crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
+        error => validation_error(error.to_string()),
+    }
+}
+
 fn validation<T>(message: impl Into<String>) -> Result<T, ConfigurationImportError> {
     Err(validation_error(message))
 }
@@ -573,12 +683,16 @@ fn validate_import(
     config: &ConfigExport,
     mode: ImportMode,
 ) -> Result<(), ConfigurationImportError> {
-    if !config.version.starts_with("0.") {
+    if !config.version.starts_with("0.")
+        && config.version != crate::config::backup::MANAGED_CREDENTIAL_SCHEMA_VERSION
+    {
         return validation(format!(
-            "Unsupported schema version: {}. Expected 0.x",
+            "Unsupported schema version: {}. Expected 0.x or 1.0.0",
             config.version
         ));
     }
+    profiles::validate(config)?;
+    proxies::validate(config)?;
     RetentionDays::try_from(config.global_config.job_history_retention_days)
         .map_err(|error| validation_error(error.to_string()))?;
     RetentionDays::try_from(config.global_config.notification_event_log_retention_days)
@@ -961,17 +1075,22 @@ fn validate_engine_reference(
     Ok(())
 }
 
-/// Mutable outcome threaded through the credential-bearing apply_* passes:
-/// the per-entity counters apply_import returns to the caller, the
-/// `CredentialScope`s that `ConfigurationImportService::import` feeds to
-/// `credential_service.invalidate` after the transaction commits, and the
-/// streamer ids it then pushes through `StreamerManager` and
-/// `RuntimeCoordinator`.
+/// Mutable outcome of the apply_* passes: the per-entity counters
+/// apply_import returns to the caller and the streamer ids it then pushes
+/// through `StreamerManager` and `RuntimeCoordinator`.
 #[derive(Default)]
 struct ImportChanges {
     stats: ImportStats,
-    invalidated_credentials: Vec<CredentialScope>,
     streamers: StreamerImportDiff,
+}
+
+/// What an import changed that the runtime acts on after commit.
+#[derive(Debug)]
+struct AppliedImport {
+    stats: ImportStats,
+    streamers: StreamerImportDiff,
+    /// Saved proxies now reaching another exit.
+    moved_proxies: Vec<String>,
 }
 
 async fn apply_import(
@@ -979,27 +1098,66 @@ async fn apply_import(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     mode: ImportMode,
-) -> Result<(ImportStats, Vec<CredentialScope>, StreamerImportDiff), ConfigurationImportError> {
+) -> Result<AppliedImport, ConfigurationImportError> {
     let replace = mode == ImportMode::Replace;
     let mut changes = ImportChanges::default();
 
+    // Routes written below name the bundle's proxies.
+    let imported_proxies = proxies::upsert(tx, config).await?;
     let global = global_model(&snapshot.global, config);
     persist_global(tx, &global).await?;
+    imported_proxies
+        .write_route(
+            tx,
+            &RouteOwner::Global,
+            config.global_config.proxy_route.as_ref(),
+            replace,
+        )
+        .await?;
 
     apply_engines(tx, snapshot, config, replace, &mut changes.stats).await?;
-    let template_ids = apply_templates(tx, snapshot, config, replace, &mut changes).await?;
-    let platform_ids = apply_platforms(tx, snapshot, config, &mut changes).await?;
+    // Imports never create platforms, and selections written below need the
+    // profiles they name to exist first.
+    let platform_ids: HashMap<String, String> = snapshot
+        .platforms
+        .iter()
+        .map(|(name, model)| (name.clone(), model.id.clone()))
+        .collect();
+    profiles::upsert(tx, config, &platform_ids, &imported_proxies, replace).await?;
+    let template_ids = apply_templates(
+        tx,
+        snapshot,
+        config,
+        replace,
+        &imported_proxies,
+        &mut changes.stats,
+    )
+    .await?;
+    apply_platforms(
+        tx,
+        snapshot,
+        config,
+        replace,
+        &imported_proxies,
+        &mut changes.stats,
+    )
+    .await?;
     apply_streamers(
         tx,
         snapshot,
         config,
         replace,
-        &template_ids,
-        &platform_ids,
+        &ImportedScopes {
+            templates: &template_ids,
+            platforms: &platform_ids,
+            proxies: &imported_proxies,
+        },
         &mut changes,
     )
     .await?;
-    delete_unimported_templates(tx, snapshot, config, replace, &mut changes).await?;
+    delete_unimported_templates(tx, snapshot, config, replace, &mut changes.stats).await?;
+    profiles::retire_omitted(tx, config, mode).await?;
+    proxies::delete_omitted(tx, config, mode).await?;
 
     apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;
     apply_job_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
@@ -1008,11 +1166,11 @@ async fn apply_import(
 
     crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;
 
-    Ok((
-        changes.stats,
-        changes.invalidated_credentials,
-        changes.streamers,
-    ))
+    Ok(AppliedImport {
+        stats: changes.stats,
+        streamers: changes.streamers,
+        moved_proxies: imported_proxies.moved,
+    })
 }
 
 async fn apply_engines(
@@ -1071,7 +1229,8 @@ async fn apply_templates(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
-    changes: &mut ImportChanges,
+    imported_proxies: &proxies::ImportedProxies,
+    stats: &mut ImportStats,
 ) -> Result<HashMap<String, String>, ConfigurationImportError> {
     let mut template_ids: HashMap<String, String> = if replace {
         HashMap::new()
@@ -1085,54 +1244,85 @@ async fn apply_templates(
     for item in &config.templates {
         let existing = snapshot.templates.get(&item.name);
         let model = template_model(existing, item);
-        persist_template(tx, &model).await?;
+        crate::database::repositories::credential_profiles::reject_template_authentication(&model)
+            .map_err(write_error)?;
+        // Merge keeps a selection the bundle omits; replace takes the bundle's.
+        if replace && let Some(existing) = existing {
+            credential_selections::clear_owner(
+                tx,
+                &CredentialOwner::Template {
+                    template_id: existing.id.clone(),
+                },
+            )
+            .await
+            .map_err(write_error)?;
+        }
+        persist_template(tx, &model).await.map_err(write_error)?;
+        imported_proxies
+            .write_route(
+                tx,
+                &RouteOwner::Template(model.id.clone()),
+                item.proxy_route.as_ref(),
+                replace,
+            )
+            .await?;
         template_ids.insert(model.name.clone(), model.id.clone());
-        changes
-            .invalidated_credentials
-            .push(CredentialScope::Template {
-                template_id: model.id.clone(),
-                template_name: model.name.clone(),
-            });
         if existing.is_some() {
-            changes.stats.templates_updated += 1;
+            stats.templates_updated += 1;
         } else {
-            changes.stats.templates_created += 1;
+            stats.templates_created += 1;
         }
     }
     Ok(template_ids)
 }
 
-/// Updates the platform_config rows named by the bundle and returns
-/// platform_name -> platform_config.id for apply_streamers. Imports never
-/// create or delete platform rows; validate_references already rejected
-/// bundle platforms absent from the snapshot.
+/// Updates the platform_config rows named by the bundle. Imports never create
+/// or delete platform rows; validate_references already rejected bundle
+/// platforms absent from the snapshot.
 async fn apply_platforms(
     tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
-    changes: &mut ImportChanges,
-) -> Result<HashMap<String, String>, ConfigurationImportError> {
-    let mut platform_ids: HashMap<String, String> = snapshot
-        .platforms
-        .iter()
-        .map(|(name, model)| (name.clone(), model.id.clone()))
-        .collect();
+    replace: bool,
+    imported_proxies: &proxies::ImportedProxies,
+    stats: &mut ImportStats,
+) -> Result<(), ConfigurationImportError> {
     for item in &config.platforms {
         let existing = snapshot.platforms.get(&item.platform_name).ok_or_else(|| {
             validation_error(format!("Unknown platform '{}'", item.platform_name))
         })?;
         let model = platform_model(existing, item);
-        persist_platform(tx, &model).await?;
-        platform_ids.insert(model.platform_name.clone(), model.id.clone());
-        changes
-            .invalidated_credentials
-            .push(CredentialScope::Platform {
-                platform_id: model.id.clone(),
-                platform_name: model.platform_name.clone(),
-            });
-        changes.stats.platforms_updated += 1;
+        // Merge keeps a selection the bundle omits; replace takes the bundle's.
+        let selection = match &item.credential_selection {
+            Some(selection) => Some(selection.clone()),
+            None if replace => Some(CredentialSelection::Inherit),
+            None => None,
+        };
+        crate::database::repositories::credential_profiles::reject_platform_authentication(&model)
+            .map_err(write_error)?;
+        persist_platform(tx, &model, selection.as_ref())
+            .await
+            .map_err(write_error)?;
+        imported_proxies
+            .write_route(
+                tx,
+                &RouteOwner::Platform(model.id.clone()),
+                item.proxy_route.as_ref(),
+                replace,
+            )
+            .await?;
+        stats.platforms_updated += 1;
     }
-    Ok(platform_ids)
+    Ok(())
+}
+
+/// What streamers of a bundle name, resolved to local IDs.
+struct ImportedScopes<'a> {
+    /// Template IDs by name.
+    templates: &'a HashMap<String, String>,
+    /// Platform IDs by name.
+    platforms: &'a HashMap<String, String>,
+    proxies: &'a proxies::ImportedProxies,
 }
 
 async fn apply_streamers(
@@ -1140,10 +1330,14 @@ async fn apply_streamers(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
-    template_ids: &HashMap<String, String>,
-    platform_ids: &HashMap<String, String>,
+    scopes: &ImportedScopes<'_>,
     changes: &mut ImportChanges,
 ) -> Result<(), ConfigurationImportError> {
+    let ImportedScopes {
+        templates: template_ids,
+        platforms: platform_ids,
+        proxies: imported_proxies,
+    } = scopes;
     // Ids written by the streamer loop below (updated or newly created). Replace
     // mode deletes every snapshot row absent from this set, which covers both
     // unmatched URLs and case-duplicate rows that streamer_for_update passed over.
@@ -1169,9 +1363,31 @@ async fn apply_streamers(
             })
             .transpose()?;
         let model = streamer_model(existing, item, platform_id, template_id);
-        if let Some(row) = persist_streamer_row(tx, &model).await? {
+        // Merge keeps a selection the bundle omits; replace takes the bundle's.
+        if replace && let Some(existing) = existing {
+            credential_selections::clear_owner(
+                tx,
+                &CredentialOwner::Streamer {
+                    streamer_id: existing.id.clone(),
+                },
+            )
+            .await
+            .map_err(write_error)?;
+        }
+        if let Some(row) = persist_streamer_row(tx, &model)
+            .await
+            .map_err(write_error)?
+        {
             changes.streamers.record_row(existing, row);
         }
+        imported_proxies
+            .write_route(
+                tx,
+                &RouteOwner::Streamer(model.id.clone()),
+                item.proxy_route.as_ref(),
+                replace,
+            )
+            .await?;
         crate::database::repositories::filter::delete_for_streamer(tx, &model.id).await?;
         for item_filter in &item.filters {
             let filter_type = FilterType::parse(&item_filter.filter_type).ok_or_else(|| {
@@ -1188,12 +1404,6 @@ async fn apply_streamers(
             );
             persist_filter(tx, &filter).await?;
         }
-        changes
-            .invalidated_credentials
-            .push(CredentialScope::Streamer {
-                streamer_id: model.id.clone(),
-                streamer_name: model.name.clone(),
-            });
         retained_streamer_ids.insert(model.id.clone());
         changes.streamers.upserted.push(model.id.clone());
         if existing.is_some() {
@@ -1231,12 +1441,6 @@ async fn apply_streamers(
                 if let Some(row) = mark_streamer_deleted_row(&mut *tx, &existing.id, now).await? {
                     changes.streamers.record_row(Some(existing), row);
                 }
-                changes
-                    .invalidated_credentials
-                    .push(CredentialScope::Streamer {
-                        streamer_id: existing.id.clone(),
-                        streamer_name: existing.name.clone(),
-                    });
                 changes.streamers.marked_deleted.push(existing.id.clone());
                 changes.stats.streamers_deleted += 1;
             }
@@ -1254,7 +1458,7 @@ async fn delete_unimported_templates(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
-    changes: &mut ImportChanges,
+    stats: &mut ImportStats,
 ) -> Result<(), ConfigurationImportError> {
     if !replace {
         return Ok(());
@@ -1267,13 +1471,7 @@ async fn delete_unimported_templates(
     for (name, existing) in &snapshot.templates {
         if !imported_templates.contains(name.as_str()) {
             delete_or_defer(tx, RetiredConfigKind::Template, &existing.id).await?;
-            changes
-                .invalidated_credentials
-                .push(CredentialScope::Template {
-                    template_id: existing.id.clone(),
-                    template_name: existing.name.clone(),
-                });
-            changes.stats.templates_deleted += 1;
+            stats.templates_deleted += 1;
         }
     }
     Ok(())
@@ -1293,7 +1491,6 @@ fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> Global
     model.max_concurrent_downloads = source.max_concurrent_downloads;
     model.max_concurrent_uploads = source.max_concurrent_uploads;
     model.streamer_check_delay_ms = source.streamer_check_delay_ms;
-    model.proxy_config = db_json(source.proxy_config.clone());
     model.offline_check_delay_ms = source.offline_check_delay_ms;
     model.offline_check_count = source.offline_check_count;
     model.default_download_engine = source.default_download_engine.clone();
@@ -1329,7 +1526,6 @@ fn template_model(
     model.name = source.name.clone();
     model.output_folder = source.output_folder.clone();
     model.output_filename_template = source.output_filename_template.clone();
-    model.cookies = source.cookies.clone();
     model.output_file_format = source.output_file_format.clone();
     model.min_segment_size_bytes = source.min_segment_size_bytes;
     model.max_download_duration_secs = source.max_download_duration_secs;
@@ -1340,7 +1536,6 @@ fn template_model(
     model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
     model.download_engine = source.download_engine.clone();
     model.engines_override = source.engines_override.clone().map(db_json);
-    model.proxy_config = source.proxy_config.clone().map(db_json);
     model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
     model.pipeline = source.pipeline.clone().map(db_json);
     model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
@@ -1358,9 +1553,7 @@ fn platform_model(
     let mut model = existing.clone();
     model.fetch_delay_ms = source.fetch_delay_ms;
     model.download_delay_ms = source.download_delay_ms;
-    model.cookies = source.cookies.clone();
     model.platform_specific_config = source.platform_specific_config.clone().map(db_json);
-    model.proxy_config = source.proxy_config.clone().map(db_json);
     model.record_danmu = source.record_danmu;
     model.danmu_statistics = source.danmu_statistics.clone();
     model.output_folder = source.output_folder.clone();
@@ -1723,7 +1916,9 @@ async fn apply_users(
 
 #[cfg(test)]
 mod tests {
+    mod credential_profiles;
     mod email_validation;
+    mod proxies;
     mod timezone_import;
     use super::*;
     use crate::config::backup::{GlobalConfigExport, JobPresetExport, UserExport};
@@ -1814,8 +2009,8 @@ mod tests {
                 max_concurrent_downloads: global.max_concurrent_downloads,
                 max_concurrent_uploads: global.max_concurrent_uploads,
                 streamer_check_delay_ms: global.streamer_check_delay_ms,
-                proxy_config: serde_json::from_str(&global.proxy_config)
-                    .unwrap_or(serde_json::Value::Null),
+                proxy_config: serde_json::json!({"enabled": false}),
+                proxy_route: None,
                 offline_check_delay_ms: global.offline_check_delay_ms,
                 offline_check_count: global.offline_check_count,
                 default_download_engine: global.default_download_engine.clone(),
@@ -1845,6 +2040,8 @@ mod tests {
             job_presets: Vec::new(),
             pipeline_presets: Vec::new(),
             users: Vec::new(),
+            credential_profiles: Vec::new(),
+            proxies: Vec::new(),
         }
     }
 
@@ -1873,6 +2070,7 @@ mod tests {
             state: "NOT_LIVE".to_string(),
             avatar_url: None,
             streamer_specific_config: None,
+            proxy_route: None,
             filters: Vec::new(),
         }
     }
@@ -1906,7 +2104,9 @@ mod tests {
                 avatar TEXT,
                 created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
                 updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
-                deleted_at INTEGER
+                deleted_at INTEGER,
+                proxy_route TEXT NOT NULL DEFAULT 'inherit',
+                proxy_id TEXT
             )
             "#,
         )
@@ -1968,6 +2168,7 @@ mod tests {
                 state: "NOT_LIVE".to_string(),
                 avatar_url: None,
                 streamer_specific_config: None,
+                proxy_route: None,
                 filters: Vec::new(),
             },
             crate::config::backup::StreamerExport {
@@ -1979,6 +2180,7 @@ mod tests {
                 state: "NOT_LIVE".to_string(),
                 avatar_url: None,
                 streamer_specific_config: None,
+                proxy_route: None,
                 filters: Vec::new(),
             },
         ];
@@ -2308,9 +2510,10 @@ mod tests {
         snapshot
             .validate_references(&config, ImportMode::Replace)
             .unwrap();
-        let (stats, _, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
-            .await
-            .unwrap();
+        let AppliedImport { stats, .. } =
+            apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
+                .await
+                .unwrap();
         tx.commit().await.unwrap();
 
         let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
@@ -2365,9 +2568,10 @@ mod tests {
         snapshot
             .validate_references(&config, ImportMode::Merge)
             .unwrap();
-        let (stats, _, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .unwrap();
+        let AppliedImport { stats, .. } =
+            apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
+                .await
+                .unwrap();
         tx.commit().await.unwrap();
 
         let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
@@ -2573,9 +2777,10 @@ mod tests {
         snapshot
             .validate_references(&update_config, ImportMode::Merge)
             .unwrap();
-        let (stats, _, _) = apply_import(&mut tx, &snapshot, &update_config, ImportMode::Merge)
-            .await
-            .unwrap();
+        let AppliedImport { stats, .. } =
+            apply_import(&mut tx, &snapshot, &update_config, ImportMode::Merge)
+                .await
+                .unwrap();
         tx.commit().await.unwrap();
 
         assert_eq!(stats.pipeline_presets_updated, 1);

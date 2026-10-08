@@ -15,6 +15,7 @@ use crate::api::models::{
 };
 use crate::api::routes::config::{self, ConfigRouteState};
 use crate::api::routes::engines::{self, EngineRouteState, UpdateEngineRequest};
+use crate::api::routes::proxies::{self, ProxyRouteState};
 use crate::api::routes::templates::{self, TemplateRouteState};
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -45,7 +46,9 @@ impl PageParams {
 pub struct UpdateGlobalConfigParams {
     /// Partial update object. Same fields as `PATCH /api/config/global`
     /// (UpdateGlobalConfigRequest in the OpenAPI spec at /api/docs), e.g.
-    /// {"record_danmu": true, "max_concurrent_downloads": 4}
+    /// {"record_danmu": true, "max_concurrent_downloads": 4}. The connection
+    /// is set with `"proxy_route": {"kind": "direct" | "system"}` or
+    /// `{"kind": "proxy", "id": "<saved proxy ID from proxy_list>"}`.
     pub updates: serde_json::Value,
 }
 
@@ -65,8 +68,9 @@ pub struct UpdatePlatformConfigParams {
 pub struct CreateTemplateParams {
     /// Template object. Same shape as `POST /api/templates`
     /// (CreateTemplateRequest in the OpenAPI spec): requires "name";
-    /// optional overrides like output_folder, record_danmu, cookies,
-    /// platform_overrides, engines_override, ...
+    /// optional overrides like output_folder, record_danmu, proxy_route,
+    /// platform_overrides, engines_override, ... Accounts are chosen with
+    /// `platform_overrides.<platform>.credential_selection`.
     pub template: serde_json::Value,
 }
 
@@ -122,7 +126,7 @@ impl SrecMcpServer {
 
     #[tool(
         name = "config_list_platforms",
-        description = "List all platform-level configurations (per-platform overrides such as cookies, proxy, danmu, engine selection). Requires a full-access API key."
+        description = "List all platform-level configurations (per-platform overrides such as the account selection, proxy route, danmu and engine selection). Requires a full-access API key."
     )]
     pub async fn config_list_platforms(
         &self,
@@ -173,6 +177,19 @@ impl SrecMcpServer {
         tool_json(
             config::replace_platform_config(State(state), Path(params.id), Json(request)).await,
         )
+    }
+
+    #[tool(
+        name = "proxy_list",
+        description = "List saved proxies with their address, username and how many settings use them; passwords are never shown. Routes name a proxy by its ID. Requires a full-access API key."
+    )]
+    pub async fn proxy_list(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.require_full_access(&context)?;
+        let state = ProxyRouteState::from_ref(&self.app_state);
+        tool_json(proxies::list_proxies(State(state)).await)
     }
 
     #[tool(

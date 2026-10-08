@@ -101,13 +101,11 @@ impl PlaylistEngine {
             .await
             .map_err(HlsDownloaderError::from)?;
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::Playlist {
-                reason: format!(
-                    "Failed to fetch playlist {}: HTTP {}",
-                    Redacted(&playlist_url),
-                    response.status()
-                ),
-            });
+            return Err(HlsDownloaderError::http_status(
+                response.status(),
+                playlist_url.as_str(),
+                "initial playlist fetch",
+            ));
         }
         // Relative URIs resolve against the document actually served, which
         // differs from the requested URL after a redirect.
@@ -134,7 +132,7 @@ impl PlaylistEngine {
                 .put(cache_key, playlist_bytes.clone(), metadata)
                 .await
             {
-                warn!(%error, "failed to cache initial playlist");
+                warn!(error = %crate::redact::redact_diagnostic(&error), "failed to cache initial playlist");
             }
         }
 
@@ -164,7 +162,7 @@ impl PlaylistEngine {
         debug!(
             "Derived base URL from playlist: {} -> {}",
             Redacted(document_url),
-            base_url
+            crate::redact::redact_url_for_log(&base_url)
         );
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
@@ -228,13 +226,11 @@ impl PlaylistEngine {
             .await
             .map_err(HlsDownloaderError::from)?;
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::Playlist {
-                reason: format!(
-                    "Failed to fetch media playlist {}: HTTP {}",
-                    Redacted(&media_playlist_url),
-                    response.status()
-                ),
-            });
+            return Err(HlsDownloaderError::http_status(
+                response.status(),
+                media_playlist_url.as_str(),
+                "media playlist fetch",
+            ));
         }
         let document_url = response.url().clone();
         let playlist_bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;

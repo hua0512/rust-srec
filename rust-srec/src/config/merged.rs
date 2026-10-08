@@ -1,19 +1,18 @@
 //! Merged configuration.
 
-use crate::credentials::extractor_platform_extras;
 use crate::database::models::job::DagPipelineDefinition;
-use crate::domain::{DanmuStatisticsConfig, ProxyConfig, RetryPolicy};
+use crate::domain::{DanmuStatisticsConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
+use crate::proxies::ResolvedRoute;
 use platforms_parser::extractor::factory::ExtractorSelection;
 use platforms_parser::extractor::platform_configs::merge_platform_extras;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 /// Fully resolved configuration for a streamer.
 ///
 /// This represents the result of merging the 4-layer configuration hierarchy:
 /// Global → Platform → Template → Streamer
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MergedConfig {
     // Output settings
     pub output_folder: String,
@@ -31,8 +30,11 @@ pub struct MergedConfig {
     pub danmu_statistics: DanmuStatisticsConfig,
 
     // Network settings
-    pub proxy_config: ProxyConfig,
-    pub cookies: Option<String>,
+    /// The route the streamer's requests take: its own, else its template's,
+    /// platform's or the global route. An account with its own route
+    /// replaces it for requests made with that account.
+    pub proxy_route: ResolvedRoute,
+    pub credential_policy: Option<crate::credentials::ResolvedCredentialPolicy>,
 
     // Engine settings
     pub download_engine: String,
@@ -86,8 +88,6 @@ pub struct MergedConfigBuilder {
     max_part_size_bytes: Option<i64>,
     record_danmu: Option<bool>,
     danmu_statistics: Option<DanmuStatisticsConfig>,
-    proxy_config: Option<ProxyConfig>,
-    cookies: Option<String>,
     download_engine: Option<String>,
     extractor: Option<ExtractorSelection>,
     download_retry_policy: Option<RetryPolicy>,
@@ -114,7 +114,6 @@ pub struct GlobalConfigLayer {
     pub max_part_size_bytes: i64,
     pub record_danmu: bool,
     pub danmu_statistics: Option<DanmuStatisticsConfig>,
-    pub proxy_config: ProxyConfig,
     pub download_engine: String,
     pub extractor: Option<ExtractorSelection>,
     pub pipeline: Option<DagPipelineDefinition>,
@@ -130,8 +129,6 @@ pub struct GlobalConfigLayer {
 pub struct PlatformConfigLayer {
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
-    pub cookies: Option<String>,
-    pub proxy_config: Option<ProxyConfig>,
     pub record_danmu: Option<bool>,
     pub danmu_statistics: Option<DanmuStatisticsConfig>,
     pub platform_specific_config: Option<serde_json::Value>,
@@ -163,8 +160,6 @@ pub struct TemplateConfigLayer {
     pub max_part_size_bytes: Option<i64>,
     pub record_danmu: Option<bool>,
     pub danmu_statistics: Option<DanmuStatisticsConfig>,
-    pub proxy_config: Option<ProxyConfig>,
-    pub cookies: Option<String>,
     pub download_engine: Option<String>,
     pub extractor: Option<ExtractorSelection>,
     pub download_retry_policy: Option<RetryPolicy>,
@@ -190,7 +185,6 @@ impl MergedConfigBuilder {
             max_part_size_bytes,
             record_danmu,
             danmu_statistics,
-            proxy_config,
             download_engine,
             extractor,
             pipeline,
@@ -218,7 +212,6 @@ impl MergedConfigBuilder {
         // Absent at the global layer means "no explicit base", which `build`
         // resolves to `DanmuStatisticsConfig::default()`.
         self.danmu_statistics = danmu_statistics;
-        self.proxy_config = Some(proxy_config);
         self.download_engine = Some(download_engine);
         // NULL at the global layer means "no preference", leaving the default `Auto`.
         if let Some(v) = extractor {
@@ -239,8 +232,6 @@ impl MergedConfigBuilder {
         let PlatformConfigLayer {
             fetch_delay_ms,
             download_delay_ms,
-            cookies,
-            proxy_config,
             record_danmu,
             danmu_statistics,
             platform_specific_config,
@@ -261,11 +252,10 @@ impl MergedConfigBuilder {
             offline_check_delay_ms,
         } = layer;
         debug!(
-            "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
+            "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, stream_selection={}, pipeline_steps={}",
             output_folder,
             download_engine,
             record_danmu,
-            cookies.is_some(),
             stream_selection.is_some(),
             pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
@@ -276,12 +266,6 @@ impl MergedConfigBuilder {
             self.download_delay_ms = Some(v);
         }
 
-        if cookies.is_some() {
-            self.cookies = cookies;
-        }
-        if let Some(proxy) = proxy_config {
-            self.proxy_config = Some(proxy);
-        }
         if let Some(danmu) = record_danmu {
             self.record_danmu = Some(danmu);
         }
@@ -379,8 +363,6 @@ impl MergedConfigBuilder {
             max_part_size_bytes,
             record_danmu,
             danmu_statistics,
-            proxy_config,
-            cookies,
             download_engine,
             extractor,
             download_retry_policy,
@@ -394,11 +376,10 @@ impl MergedConfigBuilder {
             offline_check_delay_ms,
         } = layer;
         debug!(
-            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
+            "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
             output_folder,
             download_engine,
             record_danmu,
-            cookies.is_some(),
             stream_selection.is_some(),
             engines_override.is_some(),
             pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0),
@@ -435,14 +416,6 @@ impl MergedConfigBuilder {
         if let Some(statistics) = danmu_statistics {
             debug!("Template override: danmu_statistics");
             self.danmu_statistics = Some(statistics);
-        }
-        if let Some(v) = proxy_config {
-            debug!("Template override: proxy_config");
-            self.proxy_config = Some(v);
-        }
-        if cookies.is_some() {
-            debug!("Template override: cookies");
-            self.cookies = cookies;
         }
         if let Some(v) = download_engine {
             debug!("Template override: download_engine = {}", v);
@@ -507,8 +480,7 @@ impl MergedConfigBuilder {
 
         // Parse streamer-specific config JSON
         if let Some(config) = streamer_config {
-            // Only the key set is logged: the object may carry `cookies` and
-            // `refresh_token`, which `config::resolver` reads to build a `CredentialSource`.
+            // Only the key set is logged: values are user-supplied and may be sensitive.
             debug!(
                 keys = ?config.as_object().map(|fields| fields.keys().collect::<Vec<_>>()),
                 "Applying streamer-specific config overrides"
@@ -552,10 +524,6 @@ impl MergedConfigBuilder {
                 debug!("Streamer config override: danmu_statistics");
                 self.danmu_statistics = Some(statistics);
             }
-            if let Some(v) = config.get("cookies").and_then(|v| v.as_str()) {
-                debug!("Streamer config override: cookies");
-                self.cookies = Some(v.to_string());
-            }
             if let Some(v) = config.get("max_part_size_bytes").and_then(|v| v.as_i64()) {
                 debug!("Streamer config override: max_part_size_bytes = {}", v);
                 self.max_part_size_bytes = Some(v);
@@ -580,14 +548,6 @@ impl MergedConfigBuilder {
             {
                 debug!("Streamer config override: min_segment_size_bytes = {}", v);
                 self.min_segment_size_bytes = Some(v);
-            }
-
-            // Parse proxy config from streamer-specific config
-            if let Some(proxy_val) = config.get("proxy_config")
-                && let Ok(v) = serde_json::from_value::<ProxyConfig>(proxy_val.clone())
-            {
-                debug!("Streamer config override: proxy_config");
-                self.proxy_config = Some(v);
             }
 
             // Parse stream selection config from streamer-specific config
@@ -641,16 +601,12 @@ impl MergedConfigBuilder {
                 self.download_retry_policy = Some(v);
             }
 
-            // Merge platform extras from streamer layer.
-            //
-            // Stripped the same way `ConfigResolver` strips the platform and template layers:
-            // extras are handed to extractors, which must never receive credential material.
+            // Merge platform extras from streamer layer. `ConfigResolver` removes
+            // account fields from the merged extras before they reach extractors.
             if let Some(extras) = config.get("platform_extras").cloned() {
                 debug!("Streamer config override: platform_extras");
-                self.platform_extras = merge_platform_extras(
-                    self.platform_extras.take(),
-                    Some(extractor_platform_extras(extras)),
-                );
+                self.platform_extras =
+                    merge_platform_extras(self.platform_extras.take(), Some(extras));
             }
 
             if let Some(v) = config.get("offline_check_count").and_then(|v| v.as_u64()) {
@@ -729,8 +685,8 @@ impl MergedConfigBuilder {
             max_part_size_bytes: self.max_part_size_bytes.unwrap_or(8589934592),
             record_danmu,
             danmu_statistics,
-            proxy_config: self.proxy_config.unwrap_or_default(),
-            cookies: self.cookies,
+            proxy_route: ResolvedRoute::default(),
+            credential_policy: None,
             download_engine,
             extractor,
             download_retry_policy: self.download_retry_policy.unwrap_or_default(),
@@ -765,7 +721,6 @@ mod tests {
             max_part_size_bytes: 8_589_934_592,
             record_danmu: false,
             danmu_statistics: None,
-            proxy_config: ProxyConfig::disabled(),
             download_engine: download_engine.to_string(),
             extractor: None,
             pipeline: None,
@@ -1123,26 +1078,5 @@ mod tests {
             .build();
 
         assert_eq!(config.extractor, ExtractorSelection::Streamlink);
-    }
-
-    /// Extras reach extractors, so credential material must be stripped from the streamer
-    /// layer the same way `ConfigResolver` strips the platform and template layers.
-    #[test]
-    fn test_streamer_platform_extras_strip_credentials() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_streamer(Some(&serde_json::json!({
-                "platform_extras": {
-                    "refresh_token": "secret",
-                    "session_cookies": "secret",
-                    "quality": "best"
-                }
-            })))
-            .build();
-
-        let extras = config.platform_extras.expect("extras should be set");
-        assert_eq!(extras.get("quality").and_then(|v| v.as_str()), Some("best"));
-        assert!(extras.get("refresh_token").is_none());
-        assert!(extras.get("session_cookies").is_none());
     }
 }

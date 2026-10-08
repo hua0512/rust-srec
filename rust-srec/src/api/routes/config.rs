@@ -22,6 +22,11 @@ pub struct ConfigRouteState {
     >,
 }
 
+type ConfigServiceHandle = crate::config::ConfigService<
+    crate::database::repositories::config::SqlxConfigRepository,
+    crate::database::repositories::streamer::SqlxStreamerRepository,
+>;
+
 impl FromRef<AppState> for ConfigRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
@@ -166,12 +171,44 @@ fn validate_global_config_request(request: &UpdateGlobalConfigRequest) -> ApiRes
     }
     typed_fields!(is_string, "a string";
         output_folder, output_filename_template, output_file_format,
-        default_download_engine, default_extractor, proxy_config, pipeline,
+        default_download_engine, default_extractor, pipeline,
         session_complete_pipeline, paired_segment_pipeline,
     );
     typed_fields!(is_boolean, "a boolean";
         record_danmu, auto_thumbnail, stream_proxy_allow_private_targets,
     );
+    reject_proxy_config(request.proxy_config.as_ref())?;
+    Ok(())
+}
+
+/// Refuses cookies on a platform or template with `COOKIES_REPLACED`:
+/// accounts are credential profiles that scopes select. The request types
+/// accept unknown fields, so the field is checked explicitly rather than
+/// silently dropped. A null or blank value asks for no cookies and is
+/// accepted.
+pub(crate) fn reject_cookies(value: Option<&serde_json::Value>) -> ApiResult<()> {
+    let carries = match value {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::String(text)) => !text.trim().is_empty(),
+        Some(_) => true,
+    };
+    if carries {
+        return Err(ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "COOKIES_REPLACED",
+            "cookies are not accepted here; save the account as a credential profile and select it with credential_selection instead",
+        ));
+    }
+    Ok(())
+}
+
+/// Refuses a non-null `proxy_config` with `PROXY_CONFIG_REPLACED`: scopes
+/// choose a `proxy_route`. The request types accept unknown fields, so the
+/// field is checked explicitly rather than silently dropped.
+pub(crate) fn reject_proxy_config(value: Option<&serde_json::Value>) -> ApiResult<()> {
+    if value.is_some_and(|value| !value.is_null()) {
+        return Err(crate::proxies::ProxyError::ConfigReplaced.into());
+    }
     Ok(())
 }
 
@@ -194,8 +231,11 @@ pub fn router() -> Router<AppState> {
         .route("/platforms/{id}", put(replace_platform_config))
 }
 
-/// Map GlobalConfigDbModel to GlobalConfigResponse.
-fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<GlobalConfigResponse> {
+/// Map GlobalConfigDbModel and the global route to GlobalConfigResponse.
+fn map_global_config_to_response(
+    config: GlobalConfigDbModel,
+    proxy_route: crate::proxies::ProxyRoute,
+) -> ApiResult<GlobalConfigResponse> {
     let output_retention_days = RetentionDays::try_from(config.output_retention_days)
         .map_err(|_| ApiError::internal("Stored output retention configuration is invalid"))?
         .as_u32();
@@ -221,7 +261,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<Globa
         max_concurrent_cpu_jobs: config.max_concurrent_cpu_jobs as u32,
         max_concurrent_io_jobs: config.max_concurrent_io_jobs as u32,
         streamer_check_delay_ms: config.streamer_check_delay_ms as u64,
-        proxy_config: Some(config.proxy_config),
+        proxy_route,
         offline_check_delay_ms: config.offline_check_delay_ms as u64,
         offline_check_count: config.offline_check_count as u32,
         default_download_engine: config.default_download_engine,
@@ -287,8 +327,11 @@ pub async fn get_global_config(
         .get_global_config()
         .await
         .map_err(ApiError::from)?;
+    let route = config_service
+        .proxy_route_of(&crate::database::repositories::proxies::RouteOwner::Global)
+        .await?;
 
-    Ok(Json(map_global_config_to_response(config)?))
+    Ok(Json(map_global_config_to_response(config, route)?))
 }
 
 #[utoipa::path(
@@ -309,8 +352,7 @@ pub async fn update_global_config(
 
     let config_service = &state.config_service;
 
-    // The request body carries `proxy_config`, whose URL may embed proxy credentials;
-    // only the field names are logged, via `updated_fields` after `apply_updates!` below.
+    // Only the field names are logged, via `updated_fields` after `apply_updates!` below.
     tracing::info!("Received request to update global configuration via API");
 
     // Get current config to apply partial updates
@@ -356,7 +398,6 @@ pub async fn update_global_config(
             serde_json::Value::String(text) => Some(text),
             other => serde_json::to_string(&other).ok(),
         },
-        proxy_config: |v: serde_json::Value| v.as_str().map(String::from),
         pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
@@ -375,6 +416,9 @@ pub async fn update_global_config(
         stream_proxy_allow_private_targets: |v: serde_json::Value| v.as_bool(),
     ]);
 
+    if request.proxy_route.is_some() {
+        updated_fields.push("proxy_route");
+    }
     debug!(
         pipeline_after = ?config.pipeline,
         updated_fields = ?updated_fields,
@@ -388,7 +432,10 @@ pub async fn update_global_config(
     };
 
     // Update config (cache invalidation is handled automatically by ConfigService)
-    if let Err(e) = config_service.update_global_config(&config).await {
+    if let Err(e) = config_service
+        .update_global_config_with_route(&config, request.proxy_route.as_ref())
+        .await
+    {
         tracing::error!(
             error = %e,
             updated_fields = %updated_fields_summary,
@@ -401,8 +448,11 @@ pub async fn update_global_config(
         updated_fields = %updated_fields_summary,
         "Global configuration updated successfully via API"
     );
+    let route = config_service
+        .proxy_route_of(&crate::database::repositories::proxies::RouteOwner::Global)
+        .await?;
 
-    Ok(Json(map_global_config_to_response(config)?))
+    Ok(Json(map_global_config_to_response(config, route)?))
 }
 
 #[utoipa::path(
@@ -424,10 +474,21 @@ pub async fn list_platform_configs(
         .await
         .map_err(ApiError::from)?;
 
-    let responses: Vec<PlatformConfigResponse> = configs
+    let selections = platform_selections(config_service).await?;
+    let routes = config_service
+        .proxy_routes_of_kind(
+            &crate::database::repositories::proxies::RouteOwner::Platform(String::new()),
+        )
+        .await?;
+    let responses = configs
         .into_iter()
-        .map(PlatformConfigResponse::from)
-        .collect();
+        .map(|config| {
+            let selection = selections.get(&config.id);
+            let route = routes.get(&config.id).cloned().unwrap_or_default();
+            PlatformConfigResponse::with_selection(config, selection, route)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ApiError::from)?;
 
     Ok(Json(responses))
 }
@@ -454,14 +515,55 @@ pub async fn get_platform_config(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(PlatformConfigResponse::from(config)))
+    Ok(Json(platform_response(config_service, config).await?))
+}
+
+/// Each platform's own stored account selection, by platform ID.
+async fn platform_selections(
+    config_service: &ConfigServiceHandle,
+) -> ApiResult<std::collections::HashMap<String, crate::credentials::CredentialSelection>> {
+    Ok(config_service
+        .list_credential_selections()
+        .await
+        .map_err(ApiError::from)?
+        .into_iter()
+        .filter(|stored| {
+            matches!(
+                stored.owner,
+                crate::credentials::CredentialOwner::Platform { .. }
+            )
+        })
+        .map(|stored| (stored.platform_id, stored.selection))
+        .collect())
+}
+
+/// The response for a platform with its stored account selection.
+async fn platform_response(
+    config_service: &ConfigServiceHandle,
+    config: PlatformConfigDbModel,
+) -> ApiResult<PlatformConfigResponse> {
+    let selection = config_service
+        .credential_selections_for(&crate::credentials::CredentialOwner::Platform {
+            platform_id: config.id.clone(),
+        })
+        .await
+        .map_err(ApiError::from)?
+        .into_iter()
+        .next()
+        .map(|stored| stored.selection);
+    let route = config_service
+        .proxy_route_of(
+            &crate::database::repositories::proxies::RouteOwner::Platform(config.id.clone()),
+        )
+        .await?;
+    PlatformConfigResponse::with_selection(config, selection.as_ref(), route)
+        .map_err(ApiError::from)
 }
 
 /// Names of the overrides carried by `request`, for logging.
 ///
-/// `replace_platform_config` must not record the body itself: `cookies`,
-/// `platform_specific_config` (refresh/access tokens, SOOP username/password) and
-/// `proxy_config` hold platform credentials.
+/// `replace_platform_config` must not record the body itself:
+/// `platform_specific_config` can hold secrets such as room passwords.
 fn platform_config_fields_present(request: &PlatformConfigResponse) -> Vec<&'static str> {
     macro_rules! present {
         ($($field:ident),+ $(,)?) => {
@@ -477,9 +579,8 @@ fn platform_config_fields_present(request: &PlatformConfigResponse) -> Vec<&'sta
         download_delay_ms,
         record_danmu,
         danmu_statistics,
-        cookies,
         platform_specific_config,
-        proxy_config,
+        proxy_route,
         output_folder,
         output_filename_template,
         download_engine,
@@ -524,6 +625,8 @@ pub async fn replace_platform_config(
     if request.id != id {
         return Err(ApiError::bad_request("Path ID does not match body ID"));
     }
+    reject_proxy_config(request.proxy_config.as_ref())?;
+    reject_cookies(request.cookies.as_ref())?;
 
     let config_service = &state.config_service;
     let stored = config_service
@@ -554,9 +657,7 @@ pub async fn replace_platform_config(
         download_delay_ms: platform_i64("download_delay_ms", request.download_delay_ms)?,
         record_danmu: request.record_danmu,
         danmu_statistics: request.danmu_statistics,
-        cookies: request.cookies,
         platform_specific_config: request.platform_specific_config,
-        proxy_config: request.proxy_config,
         output_folder: request.output_folder,
         output_filename_template: request.output_filename_template,
         download_engine: request.download_engine,
@@ -580,8 +681,23 @@ pub async fn replace_platform_config(
         offline_check_delay_ms,
     };
 
+    // An omitted selection keeps the stored one.
+    let selection = request
+        .credential_selection
+        .as_deref()
+        .map(|raw| {
+            serde_json::from_str(raw)
+                .map_err(|_| crate::Error::validation("invalid credential selection"))
+                .and_then(crate::credentials::CredentialSelection::from_value)
+        })
+        .transpose()
+        .map_err(ApiError::from)?;
+
     // Replace config
-    if let Err(e) = config_service.update_platform_config(&config).await {
+    if let Err(e) = config_service
+        .update_platform_config_scoped(&config, selection.as_ref(), request.proxy_route.as_ref())
+        .await
+    {
         tracing::error!(
             platform_id = %id,
             error = %e,
@@ -595,7 +711,7 @@ pub async fn replace_platform_config(
         "Platform configuration replaced successfully"
     );
 
-    Ok(Json(PlatformConfigResponse::from(config)))
+    Ok(Json(platform_response(config_service, config).await?))
 }
 
 #[cfg(test)]
@@ -771,6 +887,134 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn global_and_platform_routes_are_written_explicitly_and_proxy_config_is_refused() {
+        let (_dir, state) = config_state().await;
+        for (body, code) in [
+            (
+                json!({"proxy_config": "{\"enabled\":false}"}),
+                "PROXY_CONFIG_REPLACED",
+            ),
+            (
+                json!({"proxy_config": {"enabled": true}}),
+                "PROXY_CONFIG_REPLACED",
+            ),
+            (
+                json!({"proxy_route": {"kind": "inherit"}}),
+                "PROXY_ROUTE_INVALID",
+            ),
+            (
+                json!({"proxy_route": {"kind": "proxy", "id": "missing"}}),
+                "PROXY_NOT_FOUND",
+            ),
+        ] {
+            let error = update_global_config(State(state.clone()), Json(global_request(body)))
+                .await
+                .unwrap_err();
+            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(error.code, code);
+        }
+        // A null legacy field is what older clients send for "unset".
+        let Json(response) = update_global_config(
+            State(state.clone()),
+            Json(global_request(
+                json!({"proxy_config": null, "proxy_route": {"kind": "system"}}),
+            )),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
+        // Writes that omit the route keep it.
+        let Json(response) = update_global_config(
+            State(state.clone()),
+            Json(global_request(json!({"record_danmu": true}))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
+        let mut global = state.config_service.get_global_config().await.unwrap();
+        global.record_danmu = false;
+        state
+            .config_service
+            .update_global_config(&global)
+            .await
+            .unwrap();
+        assert_eq!(
+            super::get_global_config(State(state.clone()))
+                .await
+                .unwrap()
+                .0
+                .proxy_route,
+            crate::proxies::ProxyRoute::System
+        );
+
+        let Json(platform) =
+            super::get_platform_config(State(state.clone()), Path("platform-huya".into()))
+                .await
+                .unwrap();
+        assert_eq!(
+            platform.proxy_route,
+            Some(crate::proxies::ProxyRoute::Inherit)
+        );
+        let mut body = serde_json::to_value(&platform).unwrap();
+        assert!(body.get("proxy_config").is_none());
+        body["proxy_route"] = json!({"kind": "direct"});
+        let request: PlatformConfigResponse = serde_json::from_value(body.clone()).unwrap();
+        let Json(updated) = replace_platform_config(
+            State(state.clone()),
+            Path("platform-huya".into()),
+            Json(request),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            updated.proxy_route,
+            Some(crate::proxies::ProxyRoute::Direct)
+        );
+        body.as_object_mut().unwrap().remove("proxy_route");
+        let Json(kept) = replace_platform_config(
+            State(state.clone()),
+            Path("platform-huya".into()),
+            Json(serde_json::from_value(body.clone()).unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(kept.proxy_route, Some(crate::proxies::ProxyRoute::Direct));
+        assert!(body.get("cookies").is_none());
+        for (cookies, refused) in [
+            (json!("session=abc"), true),
+            (json!({"session": "abc"}), true),
+            (json!(""), false),
+            (serde_json::Value::Null, false),
+        ] {
+            let mut request = body.clone();
+            request["cookies"] = cookies;
+            let result = replace_platform_config(
+                State(state.clone()),
+                Path("platform-huya".into()),
+                Json(serde_json::from_value(request).unwrap()),
+            )
+            .await;
+            match result {
+                Err(error) => {
+                    assert!(refused);
+                    assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+                    assert_eq!(error.code, "COOKIES_REPLACED");
+                }
+                Ok(_) => assert!(!refused),
+            }
+        }
+        body["proxy_config"] = json!("{\"enabled\":true,\"url\":\"http://p.example:1\"}");
+        let error = replace_platform_config(
+            State(state.clone()),
+            Path("platform-huya".into()),
+            Json(serde_json::from_value(body).unwrap()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "PROXY_CONFIG_REPLACED");
+    }
+
     #[test]
     fn global_patch_validates_string_and_boolean_fields() {
         for field in [
@@ -779,7 +1023,6 @@ mod tests {
             "output_file_format",
             "default_download_engine",
             "default_extractor",
-            "proxy_config",
             "pipeline",
             "session_complete_pipeline",
             "paired_segment_pipeline",
@@ -1099,7 +1342,7 @@ mod tests {
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
-            proxy_config: None,
+            proxy_route: crate::proxies::ProxyRoute::Direct,
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),

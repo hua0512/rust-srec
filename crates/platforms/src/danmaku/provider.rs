@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::danmaku::error::Result;
 use crate::danmaku::event::DanmuItem;
+use crate::danmaku::proxy::DanmuProxy;
 use crate::danmaku::websocket::WebSocketProviderConfig;
 
 /// Connection handle for an active danmu stream.
@@ -85,6 +86,9 @@ pub struct ConnectionConfig {
     pub websocket: Option<WebSocketProviderConfig>,
     /// Platform-specific extras (e.g., presenter_uid for huya, id_str for douyin)
     pub extras: Option<HashMap<String, String>>,
+    /// Proxy for the connection and any requests made to set it up. Without
+    /// one the connection is direct.
+    pub proxy: Option<DanmuProxy>,
 }
 
 impl ConnectionConfig {
@@ -94,6 +98,7 @@ impl ConnectionConfig {
             cookies,
             websocket: None,
             extras: None,
+            proxy: None,
         }
     }
 
@@ -106,6 +111,12 @@ impl ConnectionConfig {
     /// Set extras.
     pub fn with_extras(mut self, extras: HashMap<String, String>) -> Self {
         self.extras = Some(extras);
+        self
+    }
+
+    /// Set the proxy.
+    pub fn with_proxy(mut self, proxy: Option<DanmuProxy>) -> Self {
+        self.proxy = proxy;
         self
     }
 }

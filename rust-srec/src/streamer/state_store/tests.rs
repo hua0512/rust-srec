@@ -44,7 +44,7 @@ async fn fixture() -> Fixture {
         StreamerDbModel::new("Original", "https://example.test/original", "platform-huya");
     row.id = "state-test".into();
     row.streamer_specific_config =
-        Some(r#"{"cookies":"old","extension":{"retained":true}}"#.into());
+        Some(r#"{"record_danmu":true,"extension":{"retained":true}}"#.into());
     row.created_at = 1_788_784_496_123;
     repository.create_streamer(&row).await.unwrap();
     Fixture {
@@ -257,125 +257,9 @@ async fn rejected_url_update_preserves_both_indexes_and_success_replaces_only_it
     );
 }
 
-#[tokio::test]
-async fn admin_patch_uses_committed_credentials_and_counters_instead_of_its_old_cache() {
-    use crate::credentials::{
-        CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
-    };
-    let f = fixture().await;
-    f.repository
-        .increment_error_count("state-test")
-        .await
-        .unwrap();
-    let credentials = Arc::new(crate::database::repositories::SqlxCredentialStore::new(
-        f.pool.clone(),
-        f.pool.clone(),
-    ));
-    credentials.bind_committed_streamers(f.store.clone());
-    let source = CredentialSource {
-        scope: CredentialScope::Streamer {
-            streamer_id: "state-test".into(),
-            streamer_name: "Original".into(),
-        },
-        cookies: "old".into(),
-        refresh_token: None,
-        access_token: None,
-        platform_name: "huya".into(),
-        reauth_extra: None,
-    };
-    let updated = RefreshedCredentials {
-        cookies: "new".into(),
-        refresh_token: Some("rotated".into()),
-        access_token: None,
-        expires_at: None,
-    };
-    let gate = Arc::new(CommitTestGate::default());
-    f.writer
-        .set_commit_gate(CommitPhase::AfterCommit, Some(gate.clone()));
-    let refresh =
-        tokio::spawn(async move { credentials.update_credentials(&source, &updated).await });
-    reached(&gate.started).await;
-    f.writer.set_commit_gate(CommitPhase::AfterCommit, None);
-    let manager = f.manager.clone();
-    let mut edit = patch();
-    edit.name = Some("Renamed".into());
-    let admin = tokio::spawn(async move { manager.partial_update_streamer(edit).await });
-    gate.release.notify_one();
-    refresh.await.unwrap().unwrap();
-    admin.await.unwrap().unwrap();
-    let row = f.repository.get_streamer("state-test").await.unwrap();
-    assert_eq!(row.name, "Renamed");
-    assert_eq!(row.consecutive_error_count, Some(1));
-    assert_eq!(row.created_at, 1_788_784_496_123);
-    let json: serde_json::Value =
-        serde_json::from_str(row.streamer_specific_config.as_deref().unwrap()).unwrap();
-    assert_eq!(json["cookies"], "new");
-    assert_eq!(json["refresh_token"], "rotated");
-    assert_eq!(json["extension"]["retained"], true);
-    assert_eq!(
-        f.manager
-            .get_streamer("state-test")
-            .unwrap()
-            .streamer_specific_config,
-        row.streamer_specific_config
-    );
-}
-
-#[tokio::test]
-async fn stale_credential_refresh_cannot_publish_over_a_new_login() {
-    use crate::credentials::{
-        CredentialError, CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
-    };
-    let f = fixture().await;
-    let credentials =
-        crate::database::repositories::SqlxCredentialStore::new(f.pool.clone(), f.pool.clone());
-    credentials.bind_committed_streamers(f.store.clone());
-    let source = CredentialSource::new(
-        CredentialScope::Streamer {
-            streamer_id: "state-test".into(),
-            streamer_name: "Original".into(),
-        },
-        "old".into(),
-        None,
-        "huya".into(),
-    );
-    let mut edit = patch();
-    edit.streamer_specific_config = Some(Some(
-        r#"{"cookies":"manual-cookie","refresh_token":"manual-refresh"}"#.into(),
-    ));
-    f.manager.partial_update_streamer(edit).await.unwrap();
-    let saved = f.repository.get_streamer("state-test").await.unwrap();
-    let result = credentials
-        .update_credentials(
-            &source,
-            &RefreshedCredentials {
-                cookies: "obsolete-cookie".into(),
-                refresh_token: Some("obsolete-refresh".into()),
-                access_token: None,
-                expires_at: None,
-            },
-        )
-        .await;
-    assert!(matches!(result, Err(CredentialError::SourceChanged)));
-    assert_eq!(
-        f.repository
-            .get_streamer("state-test")
-            .await
-            .unwrap()
-            .streamer_specific_config,
-        saved.streamer_specific_config
-    );
-    assert_eq!(
-        f.manager
-            .get_streamer("state-test")
-            .unwrap()
-            .streamer_specific_config,
-        saved.streamer_specific_config
-    );
-}
-
 fn start() -> StartSessionInputs {
     StartSessionInputs {
+        credential_binding: None,
         streamer_id: "state-test".into(),
         streamer_name: "Original".into(),
         streamer_url: "https://example.test/original".into(),
@@ -526,6 +410,7 @@ async fn silent_removal_invalidates_without_events_and_deletion_notifies_after_i
         value: (),
         rows: Vec::new(),
         removed: vec!["state-test".into()],
+        reconfigured: Vec::new(),
     };
     f.store.cache.apply(&removal, StatePublication::Silent);
     assert_eq!(invalidated.load(Ordering::SeqCst), 1);

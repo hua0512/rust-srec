@@ -49,6 +49,8 @@ mod api;
 mod builder;
 #[cfg(test)]
 mod config_refresh_tests;
+#[cfg(test)]
+mod credential_selection_tests;
 mod event_policy;
 mod events;
 mod health;
@@ -194,7 +196,16 @@ pub struct ServiceContainer {
         >,
     >,
     /// Credential refresh service (shared between monitor + API).
-    pub(crate) credential_service: Arc<crate::credentials::CredentialRefreshService>,
+    pub(crate) credential_service: Arc<crate::credentials::CredentialProviderRegistry>,
+    /// One platform rate budget shared by monitor, parse and credential providers.
+    pub(crate) platform_admission: Arc<crate::credentials::PlatformAdmission>,
+    pub(crate) credential_profiles:
+        Arc<crate::database::repositories::credential_profiles::CredentialProfileRepository>,
+    pub(crate) credential_login_sessions:
+        Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
+    pub(crate) credential_execution: Arc<crate::credentials::CredentialExecutionService>,
+    pub(crate) proxies: Arc<crate::proxies::ProxyService>,
+    pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
     /// without polling. Same fan-out pattern as
@@ -415,6 +426,7 @@ impl ServiceContainer {
         // an answer from `SchedulerHandle::remove_streamer_awaitable` on its
         // first pass instead of treating every actor as unobserved.
         self.spawn_streamer_reaper();
+        self.spawn_login_session_pruning();
 
         info!("Startup: scheduler task started");
 
@@ -449,6 +461,7 @@ impl ServiceContainer {
     /// and reaps whatever has gone quiet.
     fn spawn_streamer_reaper(&self) {
         let runtime_coordinator = self.runtime_coordinator.clone();
+        let write_pool = self.write_pool.clone();
         let cancellation_token = self.cancellation_token.child_token();
 
         self.task_supervisor.spawn("streamer reaper", async move {
@@ -459,6 +472,20 @@ impl ServiceContainer {
                 if reaped > 0 {
                     info!(reaped, "Removed streamers whose retirement completed");
                 }
+                // Templates can also be deferred by a recording bound to one of their
+                // profiles. That session ends without deleting a streamer, so reap
+                // retired definitions and profiles here as well.
+                let definition_reap: crate::Result<()> = async {
+                    let mut transaction = crate::database::begin_immediate(&write_pool).await?;
+                    crate::database::repositories::config_retirement::reap(&mut transaction)
+                        .await?;
+                    transaction.commit().await?;
+                    Ok(())
+                }
+                .await;
+                if let Err(error) = definition_reap {
+                    tracing::warn!(%error, "Configuration retirement will be retried");
+                }
 
                 tokio::select! {
                     () = cancellation_token.cancelled() => break,
@@ -466,6 +493,23 @@ impl ServiceContainer {
                 }
             }
         });
+    }
+
+    fn spawn_login_session_pruning(&self) {
+        let sessions = self.credential_login_sessions.clone();
+        let cancellation_token = self.cancellation_token.child_token();
+        self.task_supervisor
+            .spawn("credential login pruning", async move {
+                loop {
+                    if let Err(error) = sessions.prune().await {
+                        tracing::warn!(%error, "Expired credential logins will be pruned on the next pass");
+                    }
+                    tokio::select! {
+                        () = cancellation_token.cancelled() => break,
+                        () = tokio::time::sleep(crate::credentials::login_sessions::PRUNE_INTERVAL) => {}
+                    }
+                }
+            });
     }
 
     /// Start the scheduler service in a background task.

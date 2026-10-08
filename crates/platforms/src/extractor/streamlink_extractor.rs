@@ -1,6 +1,8 @@
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
+use crate::extractor::utils::extras_get_str;
 use crate::media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo};
+use crate::proxy::ProxyTarget;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use reqwest::Client;
@@ -101,11 +103,28 @@ impl StreamlinkConfig {
     }
 }
 
+/// A Twitch OAuth token, kept out of `Debug` output.
+#[derive(Clone)]
+struct TwitchToken(String);
+
+impl std::fmt::Debug for TwitchToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TwitchToken([redacted])")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamlinkExtractor {
     extractor: Extractor,
     config: StreamlinkConfig,
     cookie_string: Option<String>,
+    /// The `oauth_token` extra the native Twitch extractor reads, kept only
+    /// for a Twitch URL: Streamlink's Twitch plugin takes it as an API header,
+    /// not as a cookie.
+    twitch_token: Option<TwitchToken>,
+    /// Streamlink runs as its own process, so the HTTP client's proxy does
+    /// not reach it; its requests take this path instead.
+    proxy: ProxyTarget,
 }
 
 impl StreamlinkExtractor {
@@ -126,11 +145,48 @@ impl StreamlinkExtractor {
             return Err(ExtractorError::UnsupportedExtractor);
         }
 
+        let twitch_token = twitch_token(&url, cookies.as_deref(), extras.as_ref());
         Ok(Self {
             extractor: Extractor::new("Streamlink", url, client),
             config,
             cookie_string: cookies,
+            twitch_token,
+            proxy: ProxyTarget::System,
         })
+    }
+
+    /// The path Streamlink's requests take.
+    pub fn with_proxy(mut self, proxy: ProxyTarget) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
+    fn build_proxy_args(&self) -> Vec<String> {
+        match self.proxy.endpoint() {
+            Some(endpoint) => vec!["--http-proxy".to_owned(), endpoint.url_with_login()],
+            None => Vec::new(),
+        }
+    }
+
+    /// Applies the proxy to a Streamlink command: a flag for an explicit
+    /// proxy, and no inherited proxy variables for a direct connection.
+    fn apply_proxy(&self, cmd: &mut tokio::process::Command) {
+        cmd.args(self.build_proxy_args());
+        self.proxy.apply_environment(cmd);
+    }
+
+    /// Account arguments for both the `--json` and `--stream-url` runs.
+    fn build_auth_args(&self) -> Vec<String> {
+        let mut args = self
+            .cookie_string
+            .as_deref()
+            .map(Self::build_cookie_args)
+            .unwrap_or_default();
+        if let Some(TwitchToken(token)) = &self.twitch_token {
+            args.push("--twitch-api-header".to_owned());
+            args.push(format!("Authorization=OAuth {token}"));
+        }
+        args
     }
 
     fn build_cookie_args(cookie_string: &str) -> Vec<String> {
@@ -155,10 +211,8 @@ impl StreamlinkExtractor {
         let binary_path = self.config.binary_path();
         let mut cmd = process_utils::tokio_command(binary_path);
         cmd.arg("--json").arg("--url").arg(&self.extractor.url);
-
-        if let Some(ref cookies) = self.cookie_string {
-            cmd.args(Self::build_cookie_args(cookies));
-        }
+        cmd.args(self.build_auth_args());
+        self.apply_proxy(&mut cmd);
 
         cmd.args(&self.config.extra_args);
 
@@ -189,10 +243,8 @@ impl StreamlinkExtractor {
             .arg("--url")
             .arg(&self.extractor.url)
             .arg(quality);
-
-        if let Some(ref cookies) = self.cookie_string {
-            cmd.args(Self::build_cookie_args(cookies));
-        }
+        cmd.args(self.build_auth_args());
+        self.apply_proxy(&mut cmd);
 
         cmd.args(&self.config.extra_args);
 
@@ -331,6 +383,22 @@ impl PlatformExtractor for StreamlinkExtractor {
     }
 }
 
+/// The token the native Twitch extractor would send, when `url` is a Twitch channel.
+fn twitch_token(
+    url: &str,
+    cookies: Option<&str>,
+    extras: Option<&serde_json::Value>,
+) -> Option<TwitchToken> {
+    if !crate::extractor::platforms::twitch::URL_REGEX.is_match(url) {
+        return None;
+    }
+    crate::extractor::platforms::twitch::resolve_oauth_token(
+        extras_get_str(extras, "oauth_token"),
+        cookies,
+    )
+    .map(TwitchToken)
+}
+
 fn infer_stream_format(stream_type: Option<&str>, url: &str) -> StreamFormat {
     match stream_type.unwrap_or_default().to_lowercase().as_str() {
         "hls" => StreamFormat::Hls,
@@ -418,6 +486,7 @@ struct StreamlinkStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::ProxyEndpoint;
 
     #[test]
     fn test_parse_streamlink_json_hls() {
@@ -450,6 +519,152 @@ mod tests {
     fn test_map_streamlink_error_unsupported() {
         let e = map_streamlink_error("No plugin can handle URL: https://x");
         assert!(matches!(e, ExtractorError::UnsupportedExtractor));
+    }
+
+    fn extractor(
+        url: &str,
+        cookies: Option<&str>,
+        extras: serde_json::Value,
+    ) -> StreamlinkExtractor {
+        StreamlinkExtractor {
+            twitch_token: twitch_token(url, cookies, Some(&extras)),
+            extractor: Extractor::new(
+                "Streamlink",
+                url.to_owned(),
+                crate::extractor::default::default_client(),
+            ),
+            config: StreamlinkConfig::from_extras(Some(&extras)),
+            cookie_string: cookies.map(str::to_owned),
+            proxy: ProxyTarget::System,
+        }
+    }
+
+    #[test]
+    fn a_proxy_reaches_streamlink_without_appearing_in_debug_output() {
+        let proxied = extractor("https://www.twitch.tv/channel", None, serde_json::json!({}))
+            .with_proxy(ProxyTarget::Explicit(ProxyEndpoint::new(
+                "socks5h://proxy:1080",
+                Some(("user".to_owned(), "secret".to_owned())),
+            )));
+        assert_eq!(
+            proxied.build_proxy_args(),
+            ["--http-proxy", "socks5h://user:secret@proxy:1080"]
+        );
+        assert!(!format!("{proxied:?}").contains("secret"));
+        let system = extractor("https://www.twitch.tv/channel", None, serde_json::json!({}));
+        assert!(system.build_proxy_args().is_empty());
+    }
+
+    #[test]
+    fn only_a_direct_run_drops_the_proxy_environment() {
+        let run = |proxy: ProxyTarget| {
+            let extractor = extractor("https://www.twitch.tv/channel", None, serde_json::json!({}))
+                .with_proxy(proxy);
+            let mut cmd = tokio::process::Command::new("streamlink");
+            extractor.apply_proxy(&mut cmd);
+            let std = cmd.as_std();
+            let args: Vec<String> = std
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            let mut removed: Vec<String> = std
+                .get_envs()
+                .filter(|(_, value)| value.is_none())
+                .map(|(key, _)| key.to_string_lossy().to_ascii_uppercase())
+                .collect();
+            removed.sort();
+            removed.dedup();
+            (args, removed)
+        };
+        let (args, removed) = run(ProxyTarget::Direct);
+        assert!(args.is_empty());
+        assert_eq!(
+            removed,
+            ["ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"]
+        );
+        #[cfg(not(windows))]
+        {
+            let extractor = extractor("https://www.twitch.tv/channel", None, serde_json::json!({}))
+                .with_proxy(ProxyTarget::Direct);
+            let mut cmd = tokio::process::Command::new("streamlink");
+            extractor.apply_proxy(&mut cmd);
+            let lowercase = cmd
+                .as_std()
+                .get_envs()
+                .filter(|(key, value)| value.is_none() && key.to_string_lossy() == "https_proxy")
+                .count();
+            assert_eq!(lowercase, 1);
+        }
+
+        let (args, removed) = run(ProxyTarget::System);
+        assert!(args.is_empty() && removed.is_empty());
+
+        let (args, removed) = run(ProxyTarget::Explicit(ProxyEndpoint::new(
+            "http://proxy:8080",
+            None,
+        )));
+        assert_eq!(args, ["--http-proxy", "http://proxy:8080"]);
+        assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn a_twitch_token_becomes_an_api_header() {
+        let extractor = extractor(
+            "https://www.twitch.tv/channel",
+            Some("unique_id=abc"),
+            serde_json::json!({"oauth_token": "secret-token"}),
+        );
+        assert_eq!(
+            extractor.build_auth_args(),
+            [
+                "--http-cookie",
+                "unique_id=abc",
+                "--twitch-api-header",
+                "Authorization=OAuth secret-token",
+            ]
+        );
+        assert!(!format!("{extractor:?}").contains("secret-token"));
+    }
+
+    #[test]
+    fn a_browser_auth_token_cookie_becomes_an_api_header() {
+        let extractor = extractor(
+            "https://www.twitch.tv/channel",
+            Some("auth-token=cookie-token"),
+            serde_json::json!({}),
+        );
+        assert_eq!(
+            extractor.build_auth_args(),
+            [
+                "--http-cookie",
+                "auth-token=cookie-token",
+                "--twitch-api-header",
+                "Authorization=OAuth cookie-token",
+            ]
+        );
+    }
+
+    #[test]
+    fn without_a_token_only_cookies_are_passed() {
+        for extras in [
+            serde_json::json!({}),
+            serde_json::json!({"oauth_token": "  "}),
+        ] {
+            let extractor = extractor("https://www.twitch.tv/channel", Some("a=1"), extras);
+            assert_eq!(extractor.build_auth_args(), ["--http-cookie", "a=1"]);
+        }
+        let extractor = extractor("https://www.twitch.tv/channel", None, serde_json::json!({}));
+        assert!(extractor.build_auth_args().is_empty());
+    }
+
+    #[test]
+    fn a_token_is_never_sent_to_other_sites() {
+        let extractor = extractor(
+            "https://www.youtube.com/@channel/live",
+            None,
+            serde_json::json!({"oauth_token": "secret-token"}),
+        );
+        assert!(extractor.build_auth_args().is_empty());
     }
 
     #[test]

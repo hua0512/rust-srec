@@ -26,6 +26,8 @@ use crate::streamer::manager::ReloadPublish;
 
 const STREAMER: &str = "coordinator-streamer";
 
+mod managed_credentials;
+
 #[async_trait]
 pub(super) trait FreshnessCheck: Send + Sync {
     async fn check(
@@ -176,6 +178,7 @@ impl Fixture {
             session_lifecycle.clone(),
             crate::monitor::StreamMonitorRuntimeConfig {
                 monitor: Default::default(),
+                admission: None,
                 required_event_sender: None,
                 task_supervisor: task_supervisor.clone(),
             },
@@ -254,6 +257,7 @@ impl Fixture {
             .coordinator
             .session_lifecycle
             .on_live_detected(LiveDetectedArgs {
+                credential_binding: None,
                 streamer_id: STREAMER,
                 streamer_name: "Coordinator",
                 streamer_url: FakeProvider::URL,
@@ -436,6 +440,8 @@ fn fresh_live() -> crate::monitor::LiveStatus {
     streams[0].extras =
         Some(serde_json::json!({"headers": {"X-Media": "stream"}, "host_header": "fresh-host"}));
     crate::monitor::LiveStatus::Live {
+        credential_binding: None,
+        credential_snapshot: None,
         title: "Refreshed".into(),
         category: None,
         started_at: None,
@@ -446,10 +452,10 @@ fn fresh_live() -> crate::monitor::LiveStatus {
             ("Referer".into(), "fresh".into()),
             ("X-Media".into(), "media".into()),
         ])),
-        media_extras: Some(HashMap::from([(
+        media_extras: Some(Box::new(HashMap::from([(
             "signed-room".into(),
             "fresh-extra".into(),
-        )])),
+        )]))),
         next_check_hint: None,
         candidates: vec![],
     }
@@ -458,11 +464,9 @@ fn fresh_live() -> crate::monitor::LiveStatus {
 fn spawned_pipeline(fixture: &Fixture, session: &str, resumed: bool) -> AbortOnDropHandle<()> {
     let coordinator = fixture.coordinator.clone();
     let payload = payload(session);
-    AbortOnDropHandle::new(tokio::spawn(run_live_download_pipeline(
-        coordinator,
-        payload,
-        resumed,
-    )))
+    AbortOnDropHandle::new(tokio::spawn(async move {
+        run_live_download_pipeline(coordinator, payload, resumed).await;
+    }))
 }
 
 fn dequeued_count(
@@ -770,6 +774,7 @@ async fn resumed_started_requires_active_session_payload_and_resume_flag() {
                     from_hysteresis: resumed,
                     download_start: payload_present.then(|| {
                         Box::new(crate::session::DownloadStartPayload {
+                            credential_binding: None,
                             streamer_url: FakeProvider::URL.into(),
                             streams: streams("resumed"),
                             media_headers: None,
@@ -864,6 +869,7 @@ async fn live_and_offline_calls_serialize_memory_database_and_transition_order()
             let live = async move {
                 let streams = streams("race");
                 live_owner.on_live_detected(LiveDetectedArgs {
+                    credential_binding: None,
                     streamer_id: STREAMER, streamer_name: "Coordinator", streamer_url: FakeProvider::URL,
                     current_avatar: None, new_avatar: None, title: "Race", category: None,
                     streams: &streams, media_headers: None, media_extras: None, now: Utc::now(),
@@ -990,6 +996,7 @@ fn collection_spec(session: &str, statistics: bool) -> CollectionSpec {
         streamer_url: FakeProvider::URL.into(),
         cookies: None,
         extras: None,
+        proxy: None,
         statistics: crate::domain::DanmuStatisticsConfig {
             enabled: statistics,
             ..Default::default()
@@ -1230,6 +1237,8 @@ fn streams(label: &str) -> Vec<crate::monitor::StreamInfo> {
 
 fn payload(session: &str) -> StreamerLivePayload {
     StreamerLivePayload {
+        runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+        credential_binding: None,
         streamer_id: STREAMER.into(),
         session_id: session.into(),
         streamer_name: "Coordinator".into(),
@@ -1284,6 +1293,7 @@ async fn delayed_old_offline_does_not_stop_successor_download_or_danmu() {
                 streamer_url: FakeProvider::URL.into(),
                 cookies: None,
                 extras: None,
+                proxy: None,
                 statistics: Default::default(),
             })
             .await

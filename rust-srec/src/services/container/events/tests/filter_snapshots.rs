@@ -107,6 +107,7 @@ async fn lagged_config_receiver_reconciles_snapshots_without_the_lost_filter_eve
             pipeline_manager: container.pipeline_manager.clone(),
             runtime_coordinator: container.runtime_coordinator.clone(),
             gpu_health_monitor: None,
+            credential_blocks: container.stream_monitor.credential_blocks().clone(),
         };
         let (events, receiver) = broadcast::channel(1);
         events

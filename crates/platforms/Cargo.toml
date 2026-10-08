@@ -19,6 +19,7 @@ tokio = { workspace = true, features = [
     "io-util",
     "macros",
     "fs",
+    "net",
     "process",
     # `danmaku::provider::DanmuStream` hands an `mpsc::Receiver` across the crate
     # boundary, so `sync` is a direct requirement rather than one inherited from
@@ -34,6 +35,8 @@ reqwest = { workspace = true, features = [
 ] }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
+# TLS to an `https` proxy before tunnelling a danmu WebSocket through it.
+tokio-rustls = { workspace = true }
 url = { workspace = true }
 thiserror = { workspace = true }
 libsm = { workspace = true }

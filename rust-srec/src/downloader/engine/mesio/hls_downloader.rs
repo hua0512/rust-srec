@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use super::super::utils::observe_segment_event_send;
+use super::super::utils::sanitize_engine_message;
 use super::classify_download_error;
 use super::config::build_hls_config;
 use super::helpers::{self, DownloadStats};
@@ -164,7 +165,10 @@ impl HlsDownloader {
                         self.event_tx
                             .send(SegmentEvent::DownloadFailed {
                                 kind,
-                                message: format!("Failed to get first HLS segment: {}", e),
+                                message: sanitize_engine_message(
+                                    &format!("Failed to get first HLS segment: {}", e),
+                                    config.managed_credentials,
+                                ),
                             })
                             .await,
                         &streamer_id,
@@ -303,6 +307,7 @@ impl HlsDownloader {
             hls_stream,
             &pipeline_input_tx,
             helpers::StreamConsumeContext {
+                managed_credentials: config.managed_credentials,
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
@@ -331,6 +336,7 @@ impl HlsDownloader {
             stream_error,
             processing_tasks,
             helpers::WriterSettleContext {
+                managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "HLS",
@@ -405,6 +411,7 @@ impl HlsDownloader {
             hls_stream,
             &tx,
             helpers::StreamConsumeContext {
+                managed_credentials: config.managed_credentials,
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
@@ -433,6 +440,7 @@ impl HlsDownloader {
             stream_error,
             vec![],
             helpers::WriterSettleContext {
+                managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "HLS",

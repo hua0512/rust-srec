@@ -7,6 +7,14 @@ use super::*;
 use super::{config, filter, notification, streamer, user};
 use crate::database::models::*;
 
+/// Platform import with the stored account selection kept.
+async fn import_platform_row(
+    connection: &mut sqlx::SqliteConnection,
+    model: &PlatformConfigDbModel,
+) -> crate::Result<()> {
+    config::import_platform(connection, model, None).await
+}
+
 fn distinctive<T: Serialize + DeserializeOwned>(seed: &T, generation: i64) -> T {
     let mut value = serde_json::to_value(seed).unwrap();
     for (index, (key, field)) in value.as_object_mut().unwrap().iter_mut().enumerate() {
@@ -189,7 +197,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
         check!(EngineConfigurationDbModel, "engine_configuration", EngineConfigurationDbModel::new("engine", crate::database::models::engine::EngineType::Mesio, "{}"), config_repo, create_engine_config, update_engine_config, config::import_engine, false);
         check!(TemplateConfigDbModel, "template_config", TemplateConfigDbModel::new("template"), config_repo, create_template_config, update_template_config, config::import_template, true);
         let platform: PlatformConfigDbModel = sqlx::query_as("SELECT * FROM platform_config WHERE id = 'platform-huya'").fetch_one(&pool).await.unwrap();
-        check!(PlatformConfigDbModel, "platform_config", platform, config_repo, create_platform_config, update_platform_config, config::import_platform, false);
+        check!(PlatformConfigDbModel, "platform_config", platform, config_repo, create_platform_config, update_platform_config, import_platform_row, false);
         check!(StreamerDbModel, "streamers", StreamerDbModel::new("streamer", "https://example.com/source", "platform-huya"), streamer_repo, create_streamer, update_streamer, streamer::import_streamer_row, false);
         check!(FilterDbModel, "filters", FilterDbModel::new("projection-ref-streamer-1", FilterType::Keyword, "{}"), filter_repo, create_filter, update_filter, filter::import_filter, false);
         check!(NotificationChannelDbModel, "notification_channel", NotificationChannelDbModel::new("channel", ChannelType::Webhook, "{}"), notification_repo, create_channel, update_channel, notification::import_channel, false);

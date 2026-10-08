@@ -29,7 +29,10 @@ use crate::error::{Error, Result};
 use crate::utils::task_supervisor::DrainedTasks;
 use platforms_parser::danmaku::ConnectionConfig;
 
-use super::events::{CollectionCommand, DanmuCoordinationSender, DanmuEvent, DanmuEventPublisher};
+use super::events::{
+    CollectionCommand, DanmuAuthentication, DanmuCoordinationSender, DanmuEvent,
+    DanmuEventPublisher,
+};
 use super::lifecycle::{
     CollectionExitReason, CollectionOutcome, CollectionSpec, CollectionStopReason,
 };
@@ -274,6 +277,7 @@ impl DanmuService {
             streamer_url,
             cookies,
             extras,
+            proxy,
             statistics,
         } = spec;
 
@@ -460,7 +464,8 @@ impl DanmuService {
         })?;
 
         // Build connection config
-        let mut connection_config = ConnectionConfig::with_cookies(cookies.clone());
+        let mut connection_config =
+            ConnectionConfig::with_cookies(cookies.clone()).with_proxy(proxy);
         if let Some(e) = extras {
             // Remove common fields that are used for room ID extraction but might be useful as extras too
             // We keep them in extras for now as it's cleaner
@@ -702,6 +707,38 @@ impl DanmuService {
                 session_id: session_id.to_string(),
                 command_tx: state.command_tx.clone(),
             })
+    }
+
+    /// Point a running collection at the account and proxy a later attempt of
+    /// the same recording uses. The collector reconnects at once when either
+    /// differs, so danmu does not keep authenticating as a replaced account or
+    /// leaving through its old network path. Returns `false` when no collection
+    /// is registered for the session.
+    pub async fn update_authentication(
+        &self,
+        session_id: &str,
+        cookies: Option<String>,
+        extras: Option<std::collections::HashMap<String, String>>,
+        proxy: Option<platforms_parser::danmaku::DanmuProxy>,
+    ) -> bool {
+        // Clone the sender out of the DashMap guard before awaiting.
+        let Some(command_tx) = self
+            .collections
+            .get(session_id)
+            .map(|state| state.command_tx.clone())
+        else {
+            return false;
+        };
+        command_tx
+            .send(CollectionCommand::UpdateAuthentication(
+                DanmuAuthentication {
+                    cookies,
+                    extras,
+                    proxy,
+                },
+            ))
+            .await
+            .is_ok()
     }
 
     /// Check if collection is active for a session.
@@ -1338,6 +1375,7 @@ mod tests {
             streamer_url: streamer_url.to_string(),
             cookies: None,
             extras: None,
+            proxy: None,
             statistics: crate::domain::DanmuStatisticsConfig::default(),
         }
     }

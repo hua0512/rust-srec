@@ -106,6 +106,15 @@ impl ConfigScope {
             // Template and engine updates are treated as global for now
             ConfigUpdateEvent::TemplateUpdated { .. } => ConfigScope::Global,
             ConfigUpdateEvent::EngineUpdated { .. } => ConfigScope::Global,
+            ConfigUpdateEvent::CredentialMaterialChanged { owner } => match owner {
+                crate::credentials::CredentialOwner::Platform { platform_id } => {
+                    ConfigScope::Platform(platform_id.clone())
+                }
+                crate::credentials::CredentialOwner::Template { .. } => ConfigScope::Global,
+                crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                    ConfigScope::Streamer(streamer_id.clone())
+                }
+            },
         }
     }
 }

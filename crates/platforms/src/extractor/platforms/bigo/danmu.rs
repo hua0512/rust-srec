@@ -403,6 +403,10 @@ impl DanmuProtocolFactory for BigoDanmuProtocol {
 }
 
 impl DanmuProtocol for BigoDanmuProtocol {
+    fn use_http_client(&mut self, client: Client) {
+        self.client = client;
+    }
+
     fn configure_connection(
         &mut self,
         _cookies: Option<&str>,

@@ -58,9 +58,20 @@ async fn write_with_publication(
             };
         }
         let deleted = matches!(mutation, Mutation::DeleteMarked);
+        // A selection lives outside the row, so a write that changes only the
+        // selection must still invalidate the streamer's resolved configuration.
+        let mut reconfigured = false;
         let row = match mutation {
-            Mutation::Insert(model) => super::writes::write_streamer(connection, &model, WriteMode::Insert, model.updated_at).await.map_err(|error| translate(error, &model.url))?,
-            Mutation::Update(model) => super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| translate(error, &model.url))?,
+            Mutation::Insert(model) => {
+                let written = super::writes::write_streamer(connection, &model, WriteMode::Insert, model.updated_at).await.map_err(|error| super::duplicate_url(error, &model.url))?;
+                reconfigured = written.selection_changed;
+                written.row
+            }
+            Mutation::Update(model) => {
+                let written = super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| super::duplicate_url(error, &model.url))?;
+                reconfigured = written.selection_changed;
+                written.row
+            }
             Mutation::State(state) => row!("UPDATE streamers SET state = ? WHERE id = ? RETURNING *", state),
             Mutation::Priority(priority) => row!("UPDATE streamers SET priority = ? WHERE id = ? RETURNING *", priority),
             Mutation::IncrementErrors => {
@@ -85,11 +96,14 @@ async fn write_with_publication(
             Mutation::Patch(patch) => {
                 let mut model = sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?").bind(&id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("Streamer", &id))?;
                 apply_patch(&mut model, patch);
-                super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| translate(error, &model.url))?
+                let written = super::writes::write_streamer(connection, &model, WriteMode::Update, model.updated_at).await.map_err(|error| super::duplicate_url(error, &model.url))?;
+                reconfigured = written.selection_changed;
+                written.row
             }
         };
         let mut change = StateChange::row(row.clone(), if deleted { None } else { row.clone() });
-        if deleted && row.is_some() { change.removed.push(id); }
+        if deleted && row.is_some() { change.removed.push(id.clone()); }
+        if reconfigured { change.reconfigured.push(id.clone()); }
         Ok(change)
     })).await
 }
@@ -125,11 +139,4 @@ pub(super) fn apply_patch(
         model.streamer_specific_config = config;
     }
     model.updated_at = crate::database::time::now_ms();
-}
-
-fn translate(error: sqlx::Error, url: &str) -> Error {
-    match error {
-        sqlx::Error::Database(error) if error.is_unique_violation() => Error::duplicate_url(url),
-        error => error.into(),
-    }
 }

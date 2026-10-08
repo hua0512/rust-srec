@@ -43,13 +43,23 @@ enum EventType {
   // silent for longer than that as lost.
   //
   // NOTE: enum values and WsMessage oneof field numbers have drifted
-  // (value 11 is a hole); pick each independently. Next free enum: 19.
+  // (value 11 is a hole); pick each independently. Next free enum: 21.
   EVENT_TYPE_UPLOAD_STARTED = 14;
   EVENT_TYPE_UPLOAD_PROGRESS = 15;
   EVENT_TYPE_UPLOAD_TERMINAL = 16;
   EVENT_TYPE_DOWNLOAD_SPLIT = 17;
   // Number of upload jobs waiting for a worker changed.
   EVENT_TYPE_UPLOAD_QUEUE = 18;
+  // A streamer's credential acquisition started or stopped finding no
+  // usable account, or its reason changed. Narrowed by the streamer
+  // subscription like download events. Current state comes from the
+  // streamer REST responses (`credential_blocked`); this only carries
+  // transitions.
+  EVENT_TYPE_STREAMER_CREDENTIAL_BLOCK = 19;
+  // The set of accounts needing the user (GET /api/credentials/attention)
+  // may have changed. No payload beyond the marker; clients refetch.
+  // Never narrowed by the streamer subscription.
+  EVENT_TYPE_CREDENTIAL_ATTENTION_CHANGED = 20;
 }
 
 // Server-to-client message envelope
@@ -73,7 +83,9 @@ message WsMessage {
     UploadTerminal upload_terminal = 16;
     DownloadSplit download_split = 17;
     UploadQueue upload_queue = 18;
-    // Next free oneof field: 19.
+    StreamerCredentialBlock streamer_credential_block = 19;
+    CredentialAttentionChanged credential_attention_changed = 20;
+    // Next free oneof field: 21.
   }
 }
 
@@ -355,3 +367,20 @@ message UploadState {
   UploadStarted started = 1;
   optional UploadProgress progress = 2;
 }
+
+// A streamer's credential block changed. `blocked` false lifts it, and the
+// other fields are then empty/zero.
+message StreamerCredentialBlock {
+  string streamer_id = 1;
+  bool blocked = 2;
+  // `UnavailableReason` in snake_case: login_required, profiles_disabled,
+  // bound_profile_unavailable, binding_policy_changed, attempts_exhausted.
+  string reason = 3;
+  // The platform whose accounts the streamer selects from.
+  string platform_id = 4;
+  // Start of the current blocked run, Unix epoch milliseconds (UTC).
+  int64 since_ms = 5;
+}
+
+// Marker: refetch the accounts needing attention.
+message CredentialAttentionChanged {}

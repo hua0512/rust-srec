@@ -655,6 +655,72 @@ impl SessionLifecycle {
             });
     }
 
+    pub(crate) async fn commit_credential_binding(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        binding: crate::credentials::CredentialBinding,
+    ) -> Result<crate::credentials::CredentialBinding> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        let lifecycle = self.clone();
+        let session_id = session_id.to_owned();
+        let streamer_id = streamer_id.to_owned();
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            let binding = lifecycle
+                .repo
+                .commit_credential_binding(session_id.clone(), streamer_id.clone(), binding)
+                .await?;
+            if !lifecycle.sessions.contains_key(&session_id)
+                && let Some(started_at) = lifecycle
+                    .repo
+                    .active_session_started_at(&session_id)
+                    .await?
+            {
+                lifecycle.sessions.insert(
+                    session_id.clone(),
+                    SessionState::recording(streamer_id.clone(), session_id.clone(), started_at),
+                );
+                lifecycle.set_current_session(&streamer_id, &session_id);
+            }
+            Ok(binding)
+        })
+        .await
+    }
+
+    pub(crate) async fn end_for_credential_retirement(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        streamer_name: &str,
+        binding: crate::credentials::CredentialBinding,
+    ) -> Result<()> {
+        let operation = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        let lifecycle = self.clone();
+        let session_id = session_id.to_owned();
+        let streamer_id = streamer_id.to_owned();
+        let streamer_name = streamer_name.to_owned();
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_operation, _stripe) = (operation, stripe);
+            if lifecycle
+                .repo
+                .credential_binding_is_retiring(&session_id, &binding)
+                .await?
+                && lifecycle
+                    .current_session_id_for_streamer(&streamer_id)
+                    .is_none_or(|current| current == session_id)
+            {
+                lifecycle
+                    .end_for_disable_inner(&streamer_id, &streamer_name)
+                    .await?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
     /// Start or resume a recording session on behalf of a monitor trigger.
     ///
     /// Decision tree:
@@ -679,6 +745,7 @@ impl SessionLifecycle {
         let operation = self.begin_operation().await?;
         let stripe = self.lock_streamer(args.streamer_id).await;
         let owned = StartSessionInputs {
+            credential_binding: args.credential_binding.cloned(),
             streamer_id: args.streamer_id.into(),
             streamer_name: args.streamer_name.into(),
             streamer_url: args.streamer_url.into(),
@@ -696,6 +763,7 @@ impl SessionLifecycle {
             let (_operation, _stripe) = (operation, stripe);
             lifecycle
                 .on_live_detected_inner(LiveDetectedArgs {
+                    credential_binding: owned.credential_binding.as_ref(),
                     streamer_id: &owned.streamer_id,
                     streamer_name: &owned.streamer_name,
                     streamer_url: &owned.streamer_url,
@@ -822,6 +890,7 @@ impl SessionLifecycle {
         // distinguishes "active session exists" (ReusedActive) from
         // "no active session" (Created).
         let inputs = StartSessionInputs {
+            credential_binding: args.credential_binding.cloned(),
             streamer_id: args.streamer_id.to_string(),
             streamer_name: args.streamer_name.to_string(),
             streamer_url: args.streamer_url.to_string(),
@@ -991,6 +1060,16 @@ impl SessionLifecycle {
         let now = Utc::now();
 
         // Step 1: The control-plane stop owner applies cancellation policy.
+        if matches!(
+            event,
+            DownloadTerminalEvent::Failed {
+                kind: crate::downloader::DownloadFailureKind::CredentialRecovery
+                    | crate::downloader::DownloadFailureKind::CredentialUnavailable,
+                ..
+            }
+        ) {
+            return Ok(());
+        }
         if matches!(event, DownloadTerminalEvent::Cancelled { .. }) {
             debug!(
                 session_id,
@@ -1455,6 +1534,7 @@ impl SessionLifecycle {
             started_at: args.now,
             from_hysteresis: true,
             download_start: Some(Box::new(crate::session::DownloadStartPayload {
+                credential_binding: args.credential_binding.cloned(),
                 streamer_url: args.streamer_url.to_string(),
                 streams: args.streams.clone(),
                 media_headers: args.media_headers.cloned(),
@@ -1946,6 +2026,7 @@ struct EndedStateTransition<'a> {
 
 /// Arguments for [`SessionLifecycle::on_live_detected`].
 pub struct LiveDetectedArgs<'a> {
+    pub credential_binding: Option<&'a crate::credentials::CredentialBinding>,
     pub streamer_id: &'a str,
     pub streamer_name: &'a str,
     pub streamer_url: &'a str,

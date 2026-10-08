@@ -30,6 +30,10 @@ use tokio::sync::broadcast;
 /// - Transaction sync -> `StreamerStateSyncedFromDb` only
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigUpdateEvent {
+    /// Account material/eligibility changed without changing cached policies.
+    CredentialMaterialChanged {
+        owner: crate::credentials::CredentialOwner,
+    },
     /// Global configuration was updated.
     GlobalUpdated,
     /// A platform configuration was updated.
@@ -78,6 +82,11 @@ impl ConfigUpdateEvent {
     /// Get a description of the event for logging.
     pub fn description(&self) -> String {
         match self {
+            Self::CredentialMaterialChanged { owner } => format!(
+                "Credential material changed: {}:{}",
+                owner.kind(),
+                owner.id()
+            ),
             Self::GlobalUpdated => "Global config updated".to_string(),
             Self::PlatformUpdated { platform_id } => {
                 format!("Platform config updated: {}", platform_id)

@@ -5,7 +5,7 @@
 //! protocol handling.
 
 use mesio::flv::FlvProtocolConfig;
-use mesio::proxy::{ProxyConfig, ProxyType};
+use mesio::proxy::{ProxyAuth, ProxyConfig, ProxyType};
 use mesio::{FlvProtocolBuilder, HlsProtocolBuilder};
 use tracing::debug;
 
@@ -14,6 +14,7 @@ use crate::database::models::engine::{
     MesioHttpVersionPreference,
 };
 use crate::downloader::engine::traits::DownloadConfig;
+use crate::proxies::{ProxyEndpoint, ProxyTarget};
 
 /// Build HLS configuration from rust-srec DownloadConfig using HlsProtocolBuilder.
 ///
@@ -41,14 +42,12 @@ pub fn build_hls_config(
         builder = builder.add_header("Cookie", cookies);
     }
 
-    // Map proxy settings - explicit proxy takes precedence, then system proxy
-    if let Some(ref proxy_url) = config.proxy_url {
-        builder = builder.proxy(parse_proxy_url(proxy_url));
-        // Note: proxy() method automatically sets use_system_proxy = false
-    } else {
-        // No explicit proxy - respect the use_system_proxy setting
-        builder = builder.use_system_proxy(config.use_system_proxy);
-    }
+    // A direct route turns off the environment's proxy too.
+    builder = match &config.proxy {
+        ProxyTarget::Explicit(endpoint) => builder.proxy(mesio_proxy(endpoint)),
+        ProxyTarget::System => builder.use_system_proxy(true),
+        ProxyTarget::Direct => builder.use_system_proxy(false),
+    };
 
     let builder = apply_hls_engine_overrides(builder, engine_config);
 
@@ -350,72 +349,40 @@ pub fn build_flv_config(
         builder = builder.add_header("Cookie", cookies);
     }
 
-    // Map proxy settings - explicit proxy takes precedence, then system proxy
-    if let Some(ref proxy_url) = config.proxy_url {
-        let proxy = parse_proxy_url(proxy_url);
-        builder = builder.with_config(|cfg| {
-            cfg.base.proxy = Some(proxy);
-            cfg.base.use_system_proxy = false;
-        });
-    } else {
-        // No explicit proxy - respect the use_system_proxy setting
-        builder = builder.with_config(|cfg| {
-            cfg.base.use_system_proxy = config.use_system_proxy;
-        });
-    }
+    // A direct route turns off the environment's proxy too.
+    let (proxy, use_system_proxy) = match &config.proxy {
+        ProxyTarget::Explicit(endpoint) => (Some(mesio_proxy(endpoint)), false),
+        ProxyTarget::System => (None, true),
+        ProxyTarget::Direct => (None, false),
+    };
+    builder = builder.with_config(|cfg| {
+        cfg.base.proxy = proxy;
+        cfg.base.use_system_proxy = use_system_proxy;
+    });
 
     builder.get_config()
 }
 
-/// Parse a proxy URL string into a ProxyConfig.
-///
-/// Supports HTTP, HTTPS, and SOCKS5 proxy URLs.
-/// Format: `[protocol://][user:pass@]host:port`
-fn parse_proxy_url(url: &str) -> ProxyConfig {
-    let url_lower = url.to_lowercase();
-
-    // Determine proxy type from URL scheme
-    let proxy_type = if url_lower.starts_with("socks5://") || url_lower.starts_with("socks5h://") {
-        ProxyType::Socks5
-    } else if url_lower.starts_with("https://") {
-        ProxyType::Https
-    } else {
-        // Default to HTTP for http:// or no scheme
-        ProxyType::Http
+/// Mesio's form of a proxy: the address, the protocol spoken to the proxy,
+/// and the login.
+fn mesio_proxy(endpoint: &ProxyEndpoint) -> ProxyConfig {
+    let url = endpoint.url.trim();
+    let scheme = url
+        .split_once("://")
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    let proxy_type = match scheme.as_deref() {
+        Some("socks5" | "socks5h") => ProxyType::Socks5,
+        Some("https") => ProxyType::Https,
+        _ => ProxyType::Http,
     };
-
-    // Extract authentication if present (user:pass@host format)
-    let auth = extract_proxy_auth(url);
-
     ProxyConfig {
-        url: url.to_string(),
+        url: url.to_owned(),
         proxy_type,
-        auth,
+        auth: endpoint.login().map(|(username, password)| ProxyAuth {
+            username: username.to_owned(),
+            password: password.to_owned(),
+        }),
     }
-}
-
-/// Extract authentication credentials from a proxy URL if present.
-///
-/// Looks for the pattern `user:pass@` in the URL.
-fn extract_proxy_auth(url: &str) -> Option<mesio::proxy::ProxyAuth> {
-    // Find the scheme separator
-    let url_without_scheme = if let Some(pos) = url.find("://") {
-        &url[pos + 3..]
-    } else {
-        url
-    };
-
-    // Check for @ which indicates auth credentials
-    if let Some(at_pos) = url_without_scheme.find('@') {
-        let auth_part = &url_without_scheme[..at_pos];
-        if let Some(colon_pos) = auth_part.find(':') {
-            let username = auth_part[..colon_pos].to_string();
-            let password = auth_part[colon_pos + 1..].to_string();
-            return Some(mesio::proxy::ProxyAuth { username, password });
-        }
-    }
-
-    None
 }
 
 #[cfg(test)]
@@ -430,14 +397,15 @@ mod tests {
 
     fn create_test_download_config() -> DownloadConfig {
         DownloadConfig {
+            managed_credentials: false,
+            credential_binding: None,
             url: "https://example.com/stream.m3u8".to_string(),
             output_dir: PathBuf::from("/tmp/downloads"),
             filename_template: "test-stream".to_string(),
             output_format: "ts".to_string(),
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,
-            proxy_url: None,
-            use_system_proxy: false,
+            proxy: ProxyTarget::Direct,
             cookies: None,
             headers: Vec::new(),
             streamer_id: "test-streamer".to_string(),
@@ -519,7 +487,8 @@ mod tests {
     #[test]
     fn test_build_hls_config_with_proxy() {
         let mut config = create_test_download_config();
-        config.proxy_url = Some("http://proxy.example.com:8080".to_string());
+        config.proxy =
+            ProxyTarget::Explicit(ProxyEndpoint::new("http://proxy.example.com:8080", None));
 
         let hls_config = build_hls_config(&config, None, &MesioEngineConfig::default());
 
@@ -582,58 +551,50 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_proxy_url_http() {
-        let proxy = parse_proxy_url("http://proxy.example.com:8080");
-        assert_eq!(proxy.proxy_type, ProxyType::Http);
-        assert_eq!(proxy.url, "http://proxy.example.com:8080");
-        assert!(proxy.auth.is_none());
+    fn endpoint(url: &str, login: Option<(&str, &str)>) -> ProxyEndpoint {
+        ProxyEndpoint::new(
+            url,
+            login.map(|(user, pass)| (user.to_owned(), pass.to_owned())),
+        )
     }
 
     #[test]
-    fn test_parse_proxy_url_https() {
-        let proxy = parse_proxy_url("https://secure-proxy.example.com:443");
-        assert_eq!(proxy.proxy_type, ProxyType::Https);
-        assert_eq!(proxy.url, "https://secure-proxy.example.com:443");
+    fn mesio_speaks_the_proxy_scheme() {
+        for (url, proxy_type) in [
+            ("http://proxy.example.com:8080", ProxyType::Http),
+            ("https://secure-proxy.example.com:443", ProxyType::Https),
+            ("socks5://socks-proxy.example.com:1080", ProxyType::Socks5),
+            ("SOCKS5H://socks-proxy.example.com:1080", ProxyType::Socks5),
+        ] {
+            let proxy = mesio_proxy(&endpoint(url, None));
+            assert_eq!(proxy.proxy_type, proxy_type, "{url}");
+            assert_eq!(proxy.url, url);
+            assert!(proxy.auth.is_none());
+        }
     }
 
     #[test]
-    fn test_parse_proxy_url_socks5() {
-        let proxy = parse_proxy_url("socks5://socks-proxy.example.com:1080");
-        assert_eq!(proxy.proxy_type, ProxyType::Socks5);
-        assert_eq!(proxy.url, "socks5://socks-proxy.example.com:1080");
-    }
-
-    #[test]
-    fn test_parse_proxy_url_with_auth() {
-        let proxy = parse_proxy_url("http://user:password@proxy.example.com:8080");
-        assert_eq!(proxy.proxy_type, ProxyType::Http);
-        assert!(proxy.auth.is_some());
+    fn mesio_receives_the_login_as_written() {
+        let proxy = mesio_proxy(&endpoint(
+            "socks5h://proxy.example:1080",
+            Some(("us@er:x/", "p%20ss w@rd")),
+        ));
+        assert_eq!(proxy.url, "socks5h://proxy.example:1080");
         let auth = proxy.auth.unwrap();
-        assert_eq!(auth.username, "user");
-        assert_eq!(auth.password, "password");
-    }
-
-    #[test]
-    fn test_parse_proxy_url_no_scheme() {
-        // URLs without scheme should default to HTTP
-        let proxy = parse_proxy_url("proxy.example.com:8080");
-        assert_eq!(proxy.proxy_type, ProxyType::Http);
-    }
-
-    #[test]
-    fn test_extract_proxy_auth_with_credentials() {
-        let auth = extract_proxy_auth("http://user:pass@host:8080");
-        assert!(auth.is_some());
-        let auth = auth.unwrap();
-        assert_eq!(auth.username, "user");
-        assert_eq!(auth.password, "pass");
-    }
-
-    #[test]
-    fn test_extract_proxy_auth_without_credentials() {
-        let auth = extract_proxy_auth("http://host:8080");
-        assert!(auth.is_none());
+        assert_eq!(
+            (auth.username.as_str(), auth.password.as_str()),
+            ("us@er:x/", "p%20ss w@rd")
+        );
+        assert!(
+            !format!(
+                "{:?}",
+                mesio_proxy(&endpoint(
+                    "http://proxy.example:8080",
+                    Some(("user", "secret"))
+                ))
+            )
+            .contains("secret")
+        );
     }
 
     #[test]

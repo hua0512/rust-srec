@@ -5,6 +5,19 @@ use super::NotificationEvent;
 use crate::credentials::CredentialEvent;
 use crate::utils::text::{format_bytes, format_duration};
 
+/// The paused connection as the description names it.
+fn throttled_route(locale: &str, route: &str, proxy_name: Option<&str>) -> String {
+    match (route, proxy_name) {
+        ("proxy", Some(name)) => crate::t_str_in!(
+            locale,
+            "notification.platform_throttled.route.proxy",
+            name = name,
+        ),
+        ("system", _) => crate::t_str_in!(locale, "notification.platform_throttled.route.system"),
+        _ => crate::t_str_in!(locale, "notification.platform_throttled.route.direct"),
+    }
+}
+
 impl NotificationEvent {
     /// Get a human-readable title for this event, in the process-wide locale.
     ///
@@ -151,6 +164,11 @@ impl NotificationEvent {
                 locale,
                 "notification.system_shutdown.title",
                 reason = reason.as_str(),
+            ),
+            Self::PlatformThrottled { platform, .. } => crate::t_str_in!(
+                locale,
+                "notification.platform_throttled.title",
+                platform = platform.as_str(),
             ),
             Self::Credential { event } => credential_title(event, locale),
             Self::BaiduPcsReloginFailed { config_dir, .. } => crate::t_str_in!(
@@ -414,6 +432,22 @@ impl NotificationEvent {
                 "notification.system_shutdown.description",
                 reason = reason.as_str(),
             ),
+            Self::PlatformThrottled {
+                platform,
+                route,
+                proxy_name,
+                retry_at,
+                ..
+            } => crate::t_str_in!(
+                locale,
+                "notification.platform_throttled.description",
+                platform = platform.as_str(),
+                route = throttled_route(locale, route, proxy_name.as_deref()).as_str(),
+                retry_at = retry_at
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string()
+                    .as_str(),
+            ),
             Self::Credential { event } => event.to_message_in(locale),
             Self::BaiduPcsReloginFailed { message, .. } => crate::t_str_in!(
                 locale,
@@ -430,18 +464,22 @@ impl NotificationEvent {
 /// `requires_relogin` branching in `RefreshFailed`); inlining it would
 /// have made the main `title()` match unreadable.
 fn credential_title(event: &CredentialEvent, locale: &str) -> String {
+    let scope_text = event.scope_text_in(locale);
     match event {
-        CredentialEvent::Refreshed {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::Unavailable { platform, .. } => crate::t_str_in!(
+            locale,
+            "notification.credential.unavailable.title",
+            platform = platform.as_str(),
+            scope = scope_text.as_str()
+        ),
+        CredentialEvent::Refreshed { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.refreshed.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
         ),
         CredentialEvent::RefreshFailed {
             platform,
-            scope,
             requires_relogin,
             ..
         } => {
@@ -454,24 +492,26 @@ fn credential_title(event: &CredentialEvent, locale: &str) -> String {
                 locale,
                 key,
                 platform = platform.as_str(),
-                scope = scope.describe().as_str(),
+                scope = scope_text.as_str(),
             )
         }
-        CredentialEvent::Invalid {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::Invalid { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.invalid.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
         ),
-        CredentialEvent::ExpiringSoon {
-            platform, scope, ..
-        } => crate::t_str_in!(
+        CredentialEvent::ExpiringSoon { platform, .. } => crate::t_str_in!(
             locale,
             "notification.credential.expiring_soon.title",
             platform = platform.as_str(),
-            scope = scope.describe().as_str(),
+            scope = scope_text.as_str(),
+        ),
+        CredentialEvent::SessionSaveFailed { platform, .. } => crate::t_str_in!(
+            locale,
+            "notification.credential.session_save_failed.title",
+            platform = platform.as_str(),
+            scope = scope_text.as_str(),
         ),
     }
 }

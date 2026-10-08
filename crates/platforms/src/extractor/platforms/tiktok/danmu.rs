@@ -417,6 +417,10 @@ impl DanmuProtocolFactory for TikTokDanmuProtocol {
 }
 
 impl DanmuProtocol for TikTokDanmuProtocol {
+    fn use_http_client(&mut self, client: Client) {
+        self.client = client;
+    }
+
     fn cookies(&self) -> Option<String> {
         self.cookies.clone()
     }

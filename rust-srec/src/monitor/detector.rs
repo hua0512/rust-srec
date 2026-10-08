@@ -5,26 +5,29 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
+use platforms_parser::extractor::platform_extractor::PlatformExtractor;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 use crate::Result;
-use crate::domain::ProxyConfig;
 use crate::domain::filter::{Filter, FilterType};
 use crate::downloader::{StreamSelectionConfig, StreamSelector};
+use crate::proxies::ProxyTarget;
 use crate::streamer::StreamerMetadata;
+use crate::utils::http_client::ClientCache;
 
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
 
 /// Live status of a streamer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub enum LiveStatus {
     /// Streamer is currently live.
     Live {
+        credential_binding: Option<Box<crate::credentials::CredentialBinding>>,
+        credential_snapshot: Option<std::sync::Arc<crate::credentials::CredentialSnapshot>>,
         /// Stream title.
         title: String,
         /// Stream category (if available).
@@ -42,13 +45,12 @@ pub enum LiveStatus {
         /// These should be passed to download engines for platforms that require specific headers.
         media_headers: Option<HashMap<String, String>>,
         /// Additional platform-specific metadata extracted from MediaInfo.extras.
-        media_extras: Option<HashMap<String, String>>,
+        media_extras: Option<Box<HashMap<String, String>>>,
 
         /// Hint for when to check next (used for boundary wakes).
         ///
         /// This is currently used to stop recording exactly at the end of a time-based
         /// schedule window while a download is active.
-        #[serde(default)]
         next_check_hint: Option<DateTime<Utc>>,
 
         /// Total number of stream candidates the platform extractor returned
@@ -63,11 +65,6 @@ pub enum LiveStatus {
         /// projects each candidate to a `SelectedStreamSummary` that
         /// strips the URL before persistence — operator-facing diagnostic
         /// surfaces never see signed query params or CDN tokens.
-        ///
-        /// `#[serde(default)]` so events serialized by older builds (e.g.
-        /// in the monitor outbox during an in-place upgrade) deserialize
-        /// cleanly with an empty vec.
-        #[serde(default)]
         candidates: Vec<StreamInfo>,
     },
     /// Streamer is offline.
@@ -92,6 +89,32 @@ pub enum LiveStatus {
     Private,
     /// Fatal error - unsupported platform.
     UnsupportedPlatform,
+}
+
+impl std::fmt::Debug for LiveStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Live {
+                credential_binding,
+                streams,
+                ..
+            } => formatter
+                .debug_struct("Live")
+                .field("credential_binding", credential_binding)
+                .field("stream_count", &streams.len())
+                .finish_non_exhaustive(),
+            Self::Filtered { reason, .. } => {
+                formatter.debug_tuple("Filtered").field(reason).finish()
+            }
+            Self::Offline => formatter.write_str("Offline"),
+            Self::NotFound => formatter.write_str("NotFound"),
+            Self::Banned => formatter.write_str("Banned"),
+            Self::AgeRestricted => formatter.write_str("AgeRestricted"),
+            Self::RegionLocked => formatter.write_str("RegionLocked"),
+            Self::Private => formatter.write_str("Private"),
+            Self::UnsupportedPlatform => formatter.write_str("UnsupportedPlatform"),
+        }
+    }
 }
 
 /// Reason why a stream was filtered.
@@ -209,17 +232,29 @@ pub struct CheckContext<'a> {
     pub selection_config: Option<&'a StreamSelectionConfig>,
     /// Platform-specific extractor options, merged from all config layers.
     pub platform_extras: Option<serde_json::Value>,
-    /// Proxy used for the extractor's HTTP client.
-    pub proxy_config: &'a ProxyConfig,
+    /// How the extractor connects.
+    pub proxy: &'a ProxyTarget,
     /// Which extractor resolves the stream URL.
     pub extractor: ExtractorSelection,
 }
+
+/// Stands in for extraction in tests; receives the cookies and the proxy the
+/// extractor would have used.
+#[cfg(test)]
+pub(crate) type TestExtraction = std::sync::Arc<
+    dyn Fn(Option<String>, ProxyTarget) -> futures::future::BoxFuture<'static, Result<LiveStatus>>
+        + Send
+        + Sync,
+>;
 
 /// Stream detector for checking live status.
 pub struct StreamDetector {
     request_timeout: std::time::Duration,
     pool_max_idle_per_host: usize,
-    client_cache: DashMap<ProxyKey, reqwest::Client>,
+    /// Clients kept for distinct proxies at once.
+    client_cache: ClientCache<ProxyTarget>,
+    #[cfg(test)]
+    pub(crate) test_extraction: Option<TestExtraction>,
 }
 
 impl StreamDetector {
@@ -235,23 +270,20 @@ impl StreamDetector {
         Self {
             request_timeout,
             pool_max_idle_per_host,
-            client_cache: DashMap::new(),
+            client_cache: ClientCache::new(64),
+            #[cfg(test)]
+            test_extraction: None,
         }
     }
 
-    fn client_for_proxy_config(&self, proxy_config: &ProxyConfig) -> reqwest::Client {
-        let key = ProxyKey::from(proxy_config);
-        if let Some(existing) = self.client_cache.get(&key) {
-            return existing.clone();
-        }
-
-        let client = crate::utils::http_client::build_platforms_client(
-            proxy_config,
-            self.request_timeout,
-            self.pool_max_idle_per_host,
-        );
-        self.client_cache.insert(key, client.clone());
-        client
+    fn client_for_proxy(&self, proxy: &ProxyTarget) -> Result<reqwest::Client> {
+        Ok(self.client_cache.get_or_try_build(proxy, || {
+            crate::utils::http_client::build_platforms_client(
+                proxy,
+                self.request_timeout,
+                self.pool_max_idle_per_host,
+            )
+        })?)
     }
 
     /// Merge stream selection preferences into platform_extras.
@@ -299,39 +331,21 @@ impl StreamDetector {
         }
     }
 
-    /// Check the live status of a streamer.
-    ///
-    /// Uses the platforms crate to extract media information from the streamer's URL.
-    pub async fn check_status(
-        &self,
-        streamer: &StreamerMetadata,
-        selection_config: Option<&StreamSelectionConfig>,
-    ) -> Result<LiveStatus> {
-        let proxy_config = ProxyConfig::disabled();
-        self.check_status_with_cookies(
-            streamer,
-            CheckContext {
-                cookies: None,
-                selection_config,
-                platform_extras: None,
-                proxy_config: &proxy_config,
-                extractor: ExtractorSelection::default(),
-            },
-        )
-        .await
-    }
-
     /// Check the live status of a streamer using resolved configuration.
     pub async fn check_status_with_cookies(
         &self,
         streamer: &StreamerMetadata,
         context: CheckContext<'_>,
     ) -> Result<LiveStatus> {
+        #[cfg(test)]
+        if let Some(extract) = &self.test_extraction {
+            return extract(context.cookies, context.proxy.clone()).await;
+        }
         let CheckContext {
             cookies,
             selection_config,
             platform_extras,
-            proxy_config,
+            proxy,
             extractor: selection,
         } = context;
 
@@ -347,7 +361,8 @@ impl StreamDetector {
         let merged_extras =
             Self::merge_selection_config_into_extras(platform_extras, selection_config);
 
-        let extractor_factory = ExtractorFactory::new(self.client_for_proxy_config(proxy_config));
+        let extractor_factory =
+            ExtractorFactory::new(self.client_for_proxy(proxy)?).with_proxy(proxy.clone());
 
         // Create platform extractor for this streamer's URL
         let extractor = match extractor_factory.create_extractor(
@@ -362,13 +377,20 @@ impl StreamDetector {
                 return Ok(LiveStatus::UnsupportedPlatform);
             }
             Err(e) => {
-                return Err(crate::Error::Monitor(format!(
-                    "Failed to create extractor: {}",
-                    e
-                )));
+                return Err(e.into());
             }
         };
 
+        self.check_status_with_extractor(streamer, selection_config, extractor.as_ref())
+            .await
+    }
+
+    async fn check_status_with_extractor(
+        &self,
+        streamer: &StreamerMetadata,
+        selection_config: Option<&StreamSelectionConfig>,
+        extractor: &dyn PlatformExtractor,
+    ) -> Result<LiveStatus> {
         // Extract media information
         let mut media_info = match extractor.extract().await {
             Ok(info) => info,
@@ -403,22 +425,9 @@ impl StreamDetector {
                 );
                 return Ok(LiveStatus::Offline);
             }
-            Err(ExtractorError::JsError(msg)) => {
-                warn!(
-                    "JavaScript-based extraction failed for {} ({}): {}",
-                    streamer.name, streamer.url, msg
-                );
-                return Err(crate::Error::Monitor(format!(
-                    "Failed to extract media info for {} ({}): js error: {}",
-                    streamer.name, streamer.url, msg
-                )));
-            }
             // Transient errors - should be retried
             Err(e) => {
-                return Err(crate::Error::Monitor(format!(
-                    "Failed to extract media info for {} ({}): {}",
-                    streamer.name, streamer.url, e
-                )));
+                return Err(e.into());
             }
         };
 
@@ -444,8 +453,6 @@ impl StreamDetector {
                     priority = s.priority,
                     codec = %s.codec,
                     fps = s.fps,
-                    extras = ?s.extras,
-                    url = %s.url,
                     "extracted stream candidate"
                 );
             }
@@ -500,7 +507,7 @@ impl StreamDetector {
 
             let candidates = selector.sort_candidates(&media_info.streams);
             let selected_stream = if let Some(stream) = candidates.first() {
-                debug!(quality = %stream.quality, url = %stream.url, "selected stream candidate");
+                debug!(quality = %stream.quality, "selected stream candidate");
                 (*stream).clone()
             } else if let Some(stream) = media_info.streams.first() {
                 // Fallback: if no candidates match selection criteria, take the first available stream
@@ -530,38 +537,9 @@ impl StreamDetector {
                 &candidates
             };
 
-            let mut resolved_stream = None;
-            for candidate in resolution_slice {
-                let mut stream = (*candidate).clone();
-                trace!(quality = %stream.quality, url = %stream.url, "resolving stream url");
-
-                match extractor.get_url(&mut stream).await {
-                    Ok(_) => {
-                        trace!(url = %stream.url, "resolved stream url");
-                        resolved_stream = Some(stream);
-                        break;
-                    }
-                    Err(e) => {
-                        error!(
-                            streamer_name = %streamer.name,
-                            quality = %candidate.quality,
-                            error = %e,
-                            "failed to resolve stream url for candidate"
-                        );
-                        // Continue to next candidate
-                    }
-                }
-            }
-
-            let selected_stream = match resolved_stream {
-                Some(stream) => stream,
-                None => {
-                    warn!(
-                        "All stream candidates failed resolution for {}. Treating as OFFLINE.",
-                        streamer.name
-                    );
-                    return Ok(LiveStatus::Offline);
-                }
+            let selected_stream = match resolve_candidates(extractor, resolution_slice).await {
+                Ok(stream) => stream,
+                Err(error) => return terminal_status(&error).map_or_else(|| Err(error.into()), Ok),
             };
 
             let streams = vec![selected_stream];
@@ -587,6 +565,8 @@ impl StreamDetector {
             );
 
             Ok(LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: media_info.title,
                 category,
                 avatar: media_info.artist_url.clone(),
@@ -594,7 +574,7 @@ impl StreamDetector {
                 viewer_count,
                 streams,
                 media_headers,
-                media_extras,
+                media_extras: media_extras.map(Box::new),
                 next_check_hint: None,
                 candidates,
             })
@@ -686,6 +666,8 @@ impl StreamDetector {
             } = status
             {
                 return Ok(LiveStatus::Live {
+                    credential_binding: None,
+                    credential_snapshot: None,
                     title,
                     category,
                     started_at,
@@ -710,25 +692,45 @@ impl Default for StreamDetector {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ProxyKey {
-    enabled: bool,
-    url: Option<String>,
-    username: Option<String>,
-    password: Option<String>,
-    use_system_proxy: bool,
+fn terminal_status(error: &ExtractorError) -> Option<LiveStatus> {
+    match error {
+        ExtractorError::NoStreamsFound => Some(LiveStatus::Offline),
+        ExtractorError::StreamerNotFound => Some(LiveStatus::NotFound),
+        ExtractorError::StreamerBanned => Some(LiveStatus::Banned),
+        ExtractorError::AgeRestrictedContent => Some(LiveStatus::AgeRestricted),
+        ExtractorError::RegionLockedContent => Some(LiveStatus::RegionLocked),
+        ExtractorError::PrivateContent => Some(LiveStatus::Private),
+        ExtractorError::UnsupportedExtractor => Some(LiveStatus::UnsupportedPlatform),
+        _ => None,
+    }
 }
 
-impl From<&ProxyConfig> for ProxyKey {
-    fn from(value: &ProxyConfig) -> Self {
-        Self {
-            enabled: value.enabled,
-            url: value.url.clone(),
-            username: value.username.clone(),
-            password: value.password.clone(),
-            use_system_proxy: value.use_system_proxy,
+async fn resolve_candidates(
+    extractor: &dyn PlatformExtractor,
+    candidates: &[&StreamInfo],
+) -> std::result::Result<StreamInfo, ExtractorError> {
+    let mut last_error = None;
+    for candidate in candidates {
+        let mut stream = (*candidate).clone();
+        match extractor.get_url(&mut stream).await {
+            Ok(()) => return Ok(stream),
+            Err(error) => {
+                // Authentication and shared throttling must reach the operation
+                // owner before another candidate can hide the provider evidence.
+                if matches!(
+                    error,
+                    ExtractorError::Authentication { .. } | ExtractorError::RateLimited { .. }
+                ) || terminal_status(&error).is_some()
+                {
+                    return Err(error);
+                }
+                debug!(quality = %candidate.quality, category = error.category(), "stream URL candidate failed");
+                last_error = Some(error);
+            }
         }
     }
+    Err(last_error
+        .unwrap_or_else(|| ExtractorError::Other("No URL resolution candidates".to_owned())))
 }
 
 #[cfg(test)]
@@ -736,6 +738,167 @@ mod tests {
     use super::*;
 
     use platforms_parser::media::{StreamFormat, formats::MediaFormat};
+
+    struct FakeExtractor {
+        base: platforms_parser::extractor::platform_extractor::Extractor,
+        media: std::sync::Mutex<
+            Option<std::result::Result<platforms_parser::media::MediaInfo, ExtractorError>>,
+        >,
+        urls: std::sync::Mutex<std::collections::VecDeque<std::result::Result<(), ExtractorError>>>,
+    }
+
+    impl FakeExtractor {
+        fn new(
+            media: std::result::Result<platforms_parser::media::MediaInfo, ExtractorError>,
+            urls: Vec<std::result::Result<(), ExtractorError>>,
+        ) -> Self {
+            crate::utils::http_client::install_rustls_provider();
+            Self {
+                base: platforms_parser::extractor::platform_extractor::Extractor::new(
+                    "fixture",
+                    "https://example.com/channel",
+                    reqwest::Client::new(),
+                ),
+                media: std::sync::Mutex::new(Some(media)),
+                urls: std::sync::Mutex::new(urls.into()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PlatformExtractor for FakeExtractor {
+        fn get_extractor(&self) -> &platforms_parser::extractor::platform_extractor::Extractor {
+            &self.base
+        }
+
+        async fn extract(
+            &self,
+        ) -> std::result::Result<platforms_parser::media::MediaInfo, ExtractorError> {
+            self.media.lock().unwrap().take().unwrap()
+        }
+
+        async fn get_url(&self, _: &mut StreamInfo) -> std::result::Result<(), ExtractorError> {
+            self.urls.lock().unwrap().pop_front().unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn detector_keeps_initial_and_url_authentication_errors_typed() {
+        let streamer =
+            StreamerMetadata::from_db_model(&crate::database::models::StreamerDbModel::new(
+                "fixture",
+                "https://example.com/channel",
+                "fixture-platform",
+            ));
+        let detector = StreamDetector::new();
+        for during_resolution in [false, true] {
+            let authentication = ExtractorError::Authentication {
+                code: "-101".into(),
+            };
+            let extractor = if during_resolution {
+                FakeExtractor::new(
+                    Ok(platforms_parser::media::MediaInfo::builder(
+                        "https://example.com/channel",
+                        "fixture",
+                        "fixture",
+                    )
+                    .is_live(true)
+                    .streams(vec![create_test_stream()])
+                    .build()),
+                    vec![Err(authentication)],
+                )
+            } else {
+                FakeExtractor::new(Err(authentication), vec![])
+            };
+            let error = detector
+                .check_status_with_extractor(&streamer, None, &extractor)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, crate::Error::Extractor(ExtractorError::Authentication { code }) if code == "-101")
+            );
+        }
+        let extractor = FakeExtractor::new(
+            Ok(platforms_parser::media::MediaInfo::builder(
+                "https://example.com/channel",
+                "fixture",
+                "fixture",
+            )
+            .is_live(true)
+            .streams(vec![create_test_stream()])
+            .build()),
+            vec![Err(ExtractorError::Other("signed-url-secret".into()))],
+        );
+        let error = detector
+            .check_status_with_extractor(&streamer, None, &extractor)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, crate::Error::Extractor(_)));
+        assert!(!error.to_string().contains("signed-url-secret"));
+    }
+
+    #[tokio::test]
+    async fn candidate_resolution_preserves_auth_and_throttle_evidence() {
+        let failures = [
+            ExtractorError::Authentication {
+                code: "-101".into(),
+            },
+            ExtractorError::RateLimited {
+                code: Some("429".into()),
+                retry_after: Some(std::time::Duration::from_secs(3600)),
+            },
+            ExtractorError::RateLimited {
+                code: None,
+                retry_after: None,
+            },
+        ];
+        let stream = create_test_stream();
+        for error in failures {
+            let category = error.category();
+            let extractor = FakeExtractor::new(
+                Ok(platforms_parser::media::MediaInfo::empty()),
+                vec![Err(error), Ok(())],
+            );
+            let result = resolve_candidates(&extractor, &[&stream, &stream])
+                .await
+                .unwrap_err();
+            assert_eq!(result.category(), category);
+            assert_eq!(
+                extractor.urls.lock().unwrap().len(),
+                1,
+                "must stop before hiding account or throttle evidence"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn candidate_failures_are_errors_but_positive_offline_is_terminal() {
+        let stream = create_test_stream();
+        let extractor = FakeExtractor::new(
+            Ok(platforms_parser::media::MediaInfo::empty()),
+            vec![
+                Err(ExtractorError::ValidationError("bad candidate".into())),
+                Err(ExtractorError::Other("transport failure".into())),
+            ],
+        );
+        let error = resolve_candidates(&extractor, &[&stream, &stream])
+            .await
+            .unwrap_err();
+        assert!(terminal_status(&error).is_none());
+        assert!(matches!(
+            crate::Error::from(error),
+            crate::Error::Extractor(_)
+        ));
+        let extractor = FakeExtractor::new(
+            Ok(platforms_parser::media::MediaInfo::empty()),
+            vec![Err(ExtractorError::NoStreamsFound), Ok(())],
+        );
+        let error = resolve_candidates(&extractor, &[&stream, &stream])
+            .await
+            .unwrap_err();
+        assert!(matches!(terminal_status(&error), Some(LiveStatus::Offline)));
+        assert_eq!(extractor.urls.lock().unwrap().len(), 1);
+    }
 
     fn create_test_stream() -> StreamInfo {
         StreamInfo {
@@ -756,6 +919,8 @@ mod tests {
     #[test]
     fn test_live_status_is_live() {
         let status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
             title: "Test Stream".to_string(),
             category: Some("Gaming".to_string()),
             started_at: None,
@@ -797,6 +962,8 @@ mod tests {
     #[test]
     fn test_live_status_title() {
         let live = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
             title: "Live Title".to_string(),
             category: None,
             started_at: None,
@@ -836,6 +1003,8 @@ mod tests {
         assert!(!LiveStatus::Offline.is_fatal_error());
         assert!(
             !LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Test".to_string(),
                 category: None,
                 started_at: None,

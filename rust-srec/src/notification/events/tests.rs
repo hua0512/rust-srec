@@ -551,6 +551,8 @@ fn sample_events() -> Vec<NotificationEvent> {
         },
         NotificationEvent::Credential {
             event: CredentialEvent::Refreshed {
+                profile_id: None,
+                profile_label: None,
                 scope: CredentialScope::Platform {
                     platform_id: "bilibili".into(),
                     platform_name: "bilibili".into(),
@@ -562,6 +564,8 @@ fn sample_events() -> Vec<NotificationEvent> {
         },
         NotificationEvent::Credential {
             event: CredentialEvent::RefreshFailed {
+                profile_id: None,
+                profile_label: None,
                 scope: CredentialScope::Platform {
                     platform_id: "bilibili".into(),
                     platform_name: "bilibili".into(),
@@ -575,6 +579,8 @@ fn sample_events() -> Vec<NotificationEvent> {
         },
         NotificationEvent::Credential {
             event: CredentialEvent::RefreshFailed {
+                profile_id: None,
+                profile_label: None,
                 scope: CredentialScope::Platform {
                     platform_id: "bilibili".into(),
                     platform_name: "bilibili".into(),
@@ -588,6 +594,8 @@ fn sample_events() -> Vec<NotificationEvent> {
         },
         NotificationEvent::Credential {
             event: CredentialEvent::Invalid {
+                profile_id: None,
+                profile_label: None,
                 scope: CredentialScope::Platform {
                     platform_id: "bilibili".into(),
                     platform_name: "bilibili".into(),
@@ -599,7 +607,20 @@ fn sample_events() -> Vec<NotificationEvent> {
             },
         },
         NotificationEvent::Credential {
+            event: CredentialEvent::Unavailable {
+                scope: CredentialScope::Platform {
+                    platform_id: "bilibili".into(),
+                    platform_name: "bilibili".into(),
+                },
+                platform: "bilibili".into(),
+                reason_code: crate::credentials::UnavailableReason::LoginRequired,
+                timestamp: now,
+            },
+        },
+        NotificationEvent::Credential {
             event: CredentialEvent::ExpiringSoon {
+                profile_id: None,
+                profile_label: None,
                 scope: CredentialScope::Platform {
                     platform_id: "bilibili".into(),
                     platform_name: "bilibili".into(),
@@ -630,7 +651,7 @@ fn all_notification_variants_localize_in_both_locales() {
     // self-doc; bump it alongside the match arms in title/description.
     assert_eq!(
         events.len(),
-        26,
+        27,
         "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
     );
 
@@ -673,6 +694,19 @@ fn all_notification_variants_localize_in_both_locales() {
     }
 
     crate::i18n::set_locale("en");
+}
+
+/// Channels can subscribe only to cataloged event types, so an uncataloged
+/// variant would never reach Discord, Telegram, email or webhook channels.
+#[test]
+fn every_notification_variant_is_subscribable() {
+    for event in sample_events() {
+        assert!(
+            canonicalize_subscription_event_name(event.event_type()).is_some(),
+            "{} is missing from the subscription catalog",
+            event.event_type(),
+        );
+    }
 }
 
 /// Spot-check that a few high-visibility variants render recognizable

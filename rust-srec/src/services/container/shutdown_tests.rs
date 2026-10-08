@@ -7,7 +7,7 @@ use tokio::sync::{Notify, oneshot};
 use super::ServiceContainer;
 use crate::api::server::{ApiServices, AppState};
 use crate::config::ConfigUpdateEvent;
-use crate::config::backup::{ConfigExport, ImportMode};
+use crate::config::backup::{ConfigExport, CredentialProfileExport, ImportMode};
 use crate::database::committed_writer::{CommitPhase, CommitTestGate};
 use crate::database::models::StreamerDbModel;
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -48,6 +48,13 @@ async fn fixture() -> (
         logging_download_tokens: Arc::new(dashmap::DashMap::new()),
         logging_archives: Arc::new(crate::api::routes::logging::LogArchiveService::new()),
         credential_service: container.credential_service.clone(),
+        platform_admission: container.platform_admission.clone(),
+        credential_profiles: container.credential_profiles.clone(),
+        credential_execution: container.credential_execution.clone(),
+        proxies: container.proxies.clone(),
+        credential_blocks: container.stream_monitor.credential_blocks().clone(),
+        playback_contexts: container.playback_contexts.clone(),
+        credential_login_sessions: container.credential_login_sessions.clone(),
         configuration_import_service: container.configuration_import_service.clone(),
         runtime_coordinator: container.runtime_coordinator.clone(),
     });
@@ -56,7 +63,7 @@ async fn fixture() -> (
         "https://example.test/retained-commit",
         "platform-huya",
     );
-    row.streamer_specific_config = Some(r#"{"cookies":"session=before"}"#.into());
+    row.streamer_specific_config = Some(r#"{"record_danmu":true}"#.into());
     state
         .streamer_repository
         .create_streamer(&row)
@@ -76,6 +83,24 @@ async fn exported(state: &AppState) -> ConfigExport {
     let mut config: ConfigExport = serde_json::from_slice(&bytes).unwrap();
     config.users.clear();
     config.streamers[0].name = "After shutdown".into();
+    let profile_id = uuid::Uuid::new_v4().to_string();
+    config.credential_profiles.push(CredentialProfileExport {
+        id: profile_id.clone(),
+        platform: config.streamers[0].platform.clone(),
+        label: "Imported account".into(),
+        enabled: true,
+        cookies: "session=managed-import".into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+        proxy_route: None,
+    });
+    config.streamers[0]
+        .streamer_specific_config
+        .as_mut()
+        .unwrap()["credential_selection"] =
+        serde_json::json!({"mode":"fixed", "credential_id":profile_id});
+    config.update_schema_version();
     config
 }
 
@@ -108,21 +133,19 @@ async fn close_fixture_after_hard_cap(container: &ServiceContainer) {
 #[derive(Clone, Copy, Debug)]
 enum Mutation {
     Manager,
-    Credential,
     Import,
 }
 
 #[tokio::test]
-async fn hard_cap_retains_manager_credential_and_import_commit_publication() {
+async fn hard_cap_retains_manager_and_import_commit_publication() {
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
-        for mutation in [Mutation::Manager, Mutation::Credential, Mutation::Import] {
+        for mutation in [Mutation::Manager, Mutation::Import] {
             let (_directory, container, state, row) = fixture().await;
             let previous = state
                 .config_service
                 .get_context_for_streamer(&row.id)
                 .await
                 .unwrap();
-            let source = previous.credential_source.clone().unwrap();
             let config = exported(&state).await;
             let owner = container.streamer_manager.committed_state().unwrap();
             let gate = Arc::new(CommitTestGate::default());
@@ -147,11 +170,6 @@ async fn hard_cap_retains_manager_credential_and_import_commit_publication() {
                                     .update_streamer(metadata)
                                     .await
                             }
-                            Mutation::Credential => caller_state
-                                .credential_service
-                                .persist_session_cookies(&source, "session=after".into())
-                                .await
-                                .map_err(|error| crate::Error::Other(error.to_string())),
                             Mutation::Import => caller_state
                                 .configuration_import_service
                                 .import(config, ImportMode::Merge)
@@ -231,23 +249,21 @@ async fn hard_cap_retains_manager_credential_and_import_commit_publication() {
                     assert!(matches!(events.try_recv().unwrap(),
                         ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } if streamer_id == row.id));
                     if matches!(mutation, Mutation::Import) {
+                        let policy = current.config.credential_policy.as_ref().unwrap();
+                        let profile_id = policy.selection.profile_ids()[0];
+                        let stored: String = sqlx::query_scalar(
+                            "SELECT cookies FROM credential_profiles WHERE id = ?",
+                        )
+                        .bind(profile_id)
+                        .fetch_one(&container.pool)
+                        .await
+                        .unwrap();
+                        assert_eq!(stored, "session=managed-import");
                         assert!(matches!(
                             events.try_recv().unwrap(),
                             ConfigUpdateEvent::GlobalUpdated
                         ));
                     }
-                }
-                Mutation::Credential => {
-                    let config: serde_json::Value = serde_json::from_str(
-                        persisted.streamer_specific_config.as_deref().unwrap(),
-                    )
-                    .unwrap();
-                    assert_eq!(config["cookies"], "session=after");
-                    assert_eq!(
-                        snapshot.streamer_specific_config,
-                        persisted.streamer_specific_config
-                    );
-                    assert_eq!(current.config.cookies.as_deref(), Some("session=after"));
                 }
             }
             close_fixture_after_hard_cap(&container).await;

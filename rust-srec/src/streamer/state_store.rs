@@ -25,6 +25,10 @@ pub(crate) struct StateChange<T> {
     pub value: T,
     pub rows: Vec<StreamerDbModel>,
     pub removed: Vec<String>,
+    /// Streamers whose account selection changed. The selection is stored
+    /// outside the row, so an identical row does not mean an unchanged
+    /// configuration.
+    pub reconfigured: Vec<String>,
 }
 
 impl<T> StateChange<T> {
@@ -33,6 +37,7 @@ impl<T> StateChange<T> {
             value,
             rows: row.into_iter().collect(),
             removed: Vec::new(),
+            reconfigured: Vec::new(),
         }
     }
 }
@@ -80,13 +85,14 @@ impl StreamerCache {
                 .as_ref()
                 .is_none_or(|old| old.state != next.state || old.is_active() != next.is_active());
             let active = next.is_active();
-            let config_changed = old.as_ref().is_none_or(|old| {
-                old.name != next.name
-                    || old.url != next.url
-                    || old.platform_config_id != next.platform_config_id
-                    || old.template_config_id != next.template_config_id
-                    || old.streamer_specific_config != next.streamer_specific_config
-            });
+            let config_changed = change.reconfigured.contains(&model.id)
+                || old.as_ref().is_none_or(|old| {
+                    old.name != next.name
+                        || old.url != next.url
+                        || old.platform_config_id != next.platform_config_id
+                        || old.template_config_id != next.template_config_id
+                        || old.streamer_specific_config != next.streamer_specific_config
+                });
             self.urls.insert(next.url.to_lowercase(), next.id.clone());
             self.metadata.insert(next.id.clone(), Arc::new(next));
             if config_changed && let Some(invalidate) = self.on_changed.read().as_ref() {

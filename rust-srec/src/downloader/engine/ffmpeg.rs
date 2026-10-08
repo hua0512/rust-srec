@@ -16,10 +16,11 @@ use super::traits::{
     EngineType,
 };
 use super::utils::{
-    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit, redact_process_args,
-    settle_engine_tasks, terminate_and_reap,
+    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
+    redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
+use crate::proxies::ProxyTarget;
 
 enum FfmpegProcessExit {
     Status(Option<i32>),
@@ -150,8 +151,8 @@ impl FfmpegEngine {
         }
 
         // 4. Input options
-        if let Some(ref proxy) = config.proxy_url {
-            args.extend(["-http_proxy".to_string(), proxy.clone()]);
+        if let Some(proxy) = config.proxy.endpoint() {
+            args.extend(["-http_proxy".to_string(), proxy.url_with_login()]);
         }
 
         // Add headers
@@ -250,6 +251,20 @@ impl FfmpegEngine {
     }
 }
 
+/// ffmpeg's `-http_proxy` speaks only plain HTTP to the proxy. Any other
+/// proxy would be misread, so the download fails instead of guessing.
+fn require_http_proxy(proxy: &ProxyTarget) -> std::result::Result<(), EngineStartError> {
+    if let Some(endpoint) = proxy.endpoint()
+        && url::Url::parse(endpoint.url.trim()).map_or(true, |url| url.scheme() != "http")
+    {
+        return Err(EngineStartError::new(
+            DownloadFailureKind::Configuration,
+            "ffmpeg can only use http:// proxies; choose an http proxy for this recording or use the mesio or streamlink engine",
+        ));
+    }
+    Ok(())
+}
+
 impl Default for FfmpegEngine {
     fn default() -> Self {
         Self::new()
@@ -263,6 +278,7 @@ impl FfmpegEngine {
         chunked: bool,
     ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
+        require_http_proxy(&config.proxy)?;
         // `DownloadManager::prepare_output_dir` runs before engine startup,
         // enforcing the output-root write gate and classifying directory errors.
         let mut args = self.build_args(&config);
@@ -279,7 +295,7 @@ impl FfmpegEngine {
         info!(
             "Starting ffmpeg download for streamer {} with args: {:?}",
             config.streamer_id,
-            redact_process_args(&args)
+            redact_download_process_args(&args, config.managed_credentials)
         );
 
         // Spawn ffmpeg process
@@ -290,6 +306,7 @@ impl FfmpegEngine {
             command = fixture.command(false);
         }
         crate::utils::configure_ffmpeg_locale(&mut command);
+        config.proxy.apply_environment(&mut command);
         command
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::null())
@@ -441,6 +458,7 @@ impl FfmpegEngine {
         }));
 
         let events = FfmpegEvents {
+            managed_credentials: config.managed_credentials,
             ignored_output_path: chunked.then(|| config.output_dir.join(super::chunked::LIST_NAME)),
             continuous_timestamps: chunked,
             source: FfmpegSource::Direct,
@@ -495,6 +513,55 @@ impl DownloadEngine for FfmpegEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn explicit(url: &str, login: Option<(&str, &str)>) -> ProxyTarget {
+        ProxyTarget::Explicit(crate::proxies::ProxyEndpoint::new(
+            url,
+            login.map(|(user, pass)| (user.to_owned(), pass.to_owned())),
+        ))
+    }
+
+    #[test]
+    fn ffmpeg_takes_only_plain_http_proxies() {
+        for accepted in [
+            ProxyTarget::Direct,
+            ProxyTarget::System,
+            explicit("http://proxy.example:8080", Some(("user", "pass"))),
+        ] {
+            assert!(require_http_proxy(&accepted).is_ok(), "{accepted:?}");
+        }
+        for refused in [
+            "https://proxy.example:443",
+            "socks5://proxy.example:1080",
+            "socks5h://proxy.example:1080",
+        ] {
+            let error =
+                require_http_proxy(&explicit(refused, Some(("user", "secret")))).unwrap_err();
+            assert_eq!(error.kind, DownloadFailureKind::Configuration);
+            assert!(error.message.contains("http://"), "{}", error.message);
+            assert!(!error.message.contains("secret"));
+        }
+        let engine = FfmpegEngine::with_version(FfmpegEngineConfig::default(), None);
+        let config = DownloadConfig::new("https://cdn.example/live.flv", "/tmp", "s", "s", "x")
+            .with_proxy(explicit("http://proxy.example:8080", None));
+        let args = engine.build_args(&config);
+        let flag = args.iter().position(|arg| arg == "-http_proxy").unwrap();
+        assert_eq!(args[flag + 1], "http://proxy.example:8080");
+        // ffmpeg reads the login only from the URL.
+        let config =
+            DownloadConfig::new("https://cdn.example/live.flv", "/tmp", "s", "s", "x").with_proxy(
+                explicit("http://proxy.example:8080", Some(("us@r", "p:ss"))),
+            );
+        let args = engine.build_args(&config);
+        let flag = args.iter().position(|arg| arg == "-http_proxy").unwrap();
+        assert_eq!(args[flag + 1], "http://us%40r:p%3Ass@proxy.example:8080/");
+        let direct = DownloadConfig::new("https://cdn.example/live.flv", "/tmp", "s", "s", "x");
+        assert!(
+            !engine
+                .build_args(&direct)
+                .contains(&"-http_proxy".to_owned())
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]

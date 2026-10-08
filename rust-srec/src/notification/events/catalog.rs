@@ -176,6 +176,16 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         priority: NotificationPriority::Normal,
         aliases: &["system_shutdown", "system.shutdown", "SystemShutdown"],
     },
+    NotificationEventTypeInfo {
+        event_type: "platform_throttled",
+        label: "Platform Rate Limited",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "platform_throttled",
+            "platform.throttled",
+            "PlatformThrottled",
+        ],
+    },
     // ========== Credential Events ==========
     NotificationEventTypeInfo {
         event_type: "credential_refreshed",
@@ -209,6 +219,16 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         ],
     },
     NotificationEventTypeInfo {
+        event_type: "credential_unavailable",
+        label: "Credentials Unavailable",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "credential_unavailable",
+            "credential.unavailable",
+            "CredentialUnavailable",
+        ],
+    },
+    NotificationEventTypeInfo {
         event_type: "credential_expiring",
         label: "Credential Expiring Soon",
         priority: NotificationPriority::Normal,
@@ -216,6 +236,16 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
             "credential_expiring",
             "credential.expiring",
             "CredentialExpiring",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "credential_session_save_failed",
+        label: "Session Cookies Not Saved",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "credential_session_save_failed",
+            "credential.session_save_failed",
+            "CredentialSessionSaveFailed",
         ],
     },
     // ========== External Tool Events ==========

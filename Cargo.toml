@@ -111,6 +111,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 native-tls = "0.2.18"
 rustls = { version = "0.23.40", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.7.0"
+tokio-rustls = { version = "0.26.6", default-features = false }
 libsm = "0.6.0"
 rustc-hash = "2.1"
 memchr = "2.7.6"

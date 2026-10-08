@@ -27,11 +27,25 @@ use super::session_cancels::SessionCancelTokens;
 mod download_pipeline;
 mod retirement;
 
-use download_pipeline::{StreamerLivePayload, run_live_download_pipeline};
+use download_pipeline::{PipelineExit, StreamerLivePayload, run_live_download_pipeline};
 
 pub(crate) use retirement::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
 
 const MAX_CONCURRENT_CONFIG_REFRESHES: usize = 16;
+
+/// Signed media URLs from a diagnostic stay usable only briefly.
+const RECOVERED_MEDIA_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Media a successful credential diagnostic extracted with the binding it
+/// committed. The restarted attempt uses it instead of extracting again.
+pub(super) struct RecoveredMedia {
+    pub(super) binding: crate::credentials::CredentialBinding,
+    pub(super) snapshot: Arc<crate::credentials::CredentialSnapshot>,
+    pub(super) streams: Vec<crate::monitor::StreamInfo>,
+    pub(super) media_headers: Option<std::collections::HashMap<String, String>>,
+    pub(super) media_extras: Option<std::collections::HashMap<String, String>>,
+    extracted_at: std::time::Instant,
+}
 
 /// Only independent owners run concurrently; callers await the whole batch before
 /// handling the next configuration event, retaining event order and bounded fan-out.
@@ -91,8 +105,13 @@ struct StreamerWorkStopped {
 
 /// Coordinates required side effects for configuration, monitor, and session events.
 pub(crate) struct RuntimeCoordinator {
+    credential_diagnostics: DashMap<String, std::collections::HashSet<String>>,
+    /// Keyed by session; at most one bundle, consumed by the next startup.
+    recovered_media: DashMap<String, RecoveredMedia>,
     #[cfg(test)]
     freshness_check: Option<Arc<dyn contract_tests::FreshnessCheck>>,
+    #[cfg(test)]
+    recovery_check: Option<Arc<dyn contract_tests::FreshnessCheck>>,
     download_manager: Arc<DownloadManager>,
     streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     config_service: Arc<RuntimeConfigService>,
@@ -148,8 +167,12 @@ impl RuntimeCoordinator {
             scheduler_handle,
         } = dependencies;
         Self {
+            credential_diagnostics: DashMap::new(),
+            recovered_media: DashMap::new(),
             #[cfg(test)]
             freshness_check: None,
+            #[cfg(test)]
+            recovery_check: None,
             download_manager,
             streamer_manager,
             config_service,
@@ -173,7 +196,283 @@ impl RuntimeCoordinator {
         if let Some(checker) = &self.freshness_check {
             return checker.check(metadata).await;
         }
-        self.stream_monitor.check_streamer(metadata).await
+        self.stream_monitor
+            .check_streamer_for(metadata, crate::monitor::CredentialCheckPurpose::QueueStart)
+            .await
+    }
+
+    async fn check_recovery(
+        &self,
+        metadata: &crate::streamer::StreamerMetadata,
+    ) -> crate::Result<crate::monitor::LiveStatus> {
+        #[cfg(test)]
+        if let Some(checker) = &self.recovery_check {
+            return checker.check(metadata).await;
+        }
+        self.stream_monitor
+            .check_streamer_for(metadata, crate::monitor::CredentialCheckPurpose::Recovery)
+            .await
+    }
+
+    /// Hands a diagnostic's bundle to the startup that carries the same binding.
+    pub(super) fn take_recovered_media(
+        &self,
+        session_id: &str,
+        binding: Option<&crate::credentials::CredentialBinding>,
+    ) -> Option<RecoveredMedia> {
+        let (_, media) = self.recovered_media.remove(session_id)?;
+        (binding == Some(&media.binding) && media.extracted_at.elapsed() < RECOVERED_MEDIA_TTL)
+            .then_some(media)
+    }
+
+    pub(crate) async fn diagnose_credential_attempt(
+        &self,
+        terminal: crate::downloader::DownloadTerminalEvent,
+    ) -> Option<crate::downloader::DownloadFailureKind> {
+        use crate::downloader::DownloadFailureKind;
+        let crate::downloader::DownloadTerminalEvent::Failed {
+            download_id,
+            streamer_id,
+            session_id,
+            kind,
+            engine_type,
+            ..
+        } = terminal
+        else {
+            return None;
+        };
+        if !kind.requests_credential_diagnostic(engine_type)
+            || !self.session_lifecycle.is_session_active(&session_id)
+        {
+            return None;
+        }
+        let config = self
+            .config_service
+            .get_config_for_streamer(&streamer_id)
+            .await
+            .ok()?;
+        config.credential_policy.as_ref()?;
+        let attempt = {
+            let mut attempts = self
+                .credential_diagnostics
+                .entry(session_id.clone())
+                .or_default();
+            if attempts.contains(&download_id)
+                || attempts.len() >= config.download_retry_policy.max_retries as usize
+            {
+                return None;
+            }
+            let attempt = attempts.len() as u32;
+            attempts.insert(download_id);
+            attempt
+        };
+        tokio::time::sleep(config.download_retry_policy.delay_for_attempt(attempt)).await;
+        let metadata = self.streamer_manager.get_streamer(&streamer_id)?;
+        if !metadata.is_active() || metadata.is_disabled() {
+            return None;
+        }
+        match self.check_recovery(&metadata).await {
+            Ok(crate::monitor::LiveStatus::Live {
+                credential_binding: Some(binding),
+                credential_snapshot,
+                streams,
+                media_headers,
+                media_extras,
+                ..
+            }) => {
+                match self
+                    .session_lifecycle
+                    .commit_credential_binding(&session_id, &streamer_id, *binding)
+                    .await
+                {
+                    Ok(binding) => {
+                        if let Some(snapshot) = credential_snapshot
+                            && !streams.is_empty()
+                        {
+                            self.recovered_media.insert(
+                                session_id,
+                                RecoveredMedia {
+                                    binding,
+                                    snapshot,
+                                    streams,
+                                    media_headers,
+                                    media_extras: media_extras.map(|extras| *extras),
+                                    extracted_at: std::time::Instant::now(),
+                                },
+                            );
+                        }
+                        Some(DownloadFailureKind::CredentialRecovery)
+                    }
+                    Err(error) => {
+                        debug!(session_id, %error, "Credential recovery handoff changed");
+                        None
+                    }
+                }
+            }
+            Err(crate::Error::CredentialUnavailable(_)) => {
+                Some(DownloadFailureKind::CredentialUnavailable)
+            }
+            _ => None,
+        }
+    }
+
+    /// Restarts a recording session whose managed download is waiting for usable
+    /// credentials. Sessions with a running or starting download are left alone.
+    pub(crate) async fn resume_pending_credentials(self: &Arc<Self>, streamer_id: &str) {
+        self.resume_pending(streamer_id, true).await;
+    }
+
+    /// A waiting recording keeps its streamer Live, so other streamers are
+    /// skipped without a session lookup.
+    pub(crate) async fn resume_pending_credentials_for(
+        self: &Arc<Self>,
+        streamer_ids: impl IntoIterator<Item = String>,
+    ) {
+        let live = streamer_ids.into_iter().filter(|id| {
+            self.streamer_manager
+                .get_streamer(id)
+                .is_some_and(|metadata| metadata.state == StreamerState::Live)
+        });
+        run_config_refreshes(live, |id| async move {
+            self.resume_pending_credentials(&id).await;
+        })
+        .await;
+    }
+
+    /// A bound check that succeeds after a credential change reports Live to
+    /// Live and emits no event, so a recording waiting for the changed owner's
+    /// accounts is restarted here.
+    pub(crate) async fn resume_pending_credentials_for_owner(
+        self: &Arc<Self>,
+        owner: &crate::credentials::CredentialOwner,
+    ) {
+        use crate::credentials::CredentialOwner;
+        let affected: Vec<String> = self
+            .streamer_manager
+            .get_all()
+            .into_iter()
+            .filter(|metadata| match owner {
+                CredentialOwner::Platform { platform_id } => {
+                    metadata.platform_config_id == *platform_id
+                }
+                CredentialOwner::Template { template_id } => {
+                    metadata.template_config_id.as_deref() == Some(template_id.as_str())
+                }
+                CredentialOwner::Streamer { streamer_id } => metadata.id == *streamer_id,
+            })
+            .map(|metadata| metadata.id)
+            .collect();
+        self.resume_pending_credentials_for(affected).await;
+    }
+
+    async fn resume_pending(self: &Arc<Self>, streamer_id: &str, retry_changed: bool) {
+        use crate::database::repositories::SessionRepository;
+        if self.download_manager.has_active_download(streamer_id)
+            || self.pending_pipelines.contains_key(streamer_id)
+        {
+            return;
+        }
+        let Some(metadata) = self
+            .streamer_manager
+            .get_streamer(streamer_id)
+            .filter(|metadata| metadata.is_active() && !metadata.is_disabled())
+        else {
+            return;
+        };
+        let session_id = match self
+            .session_lifecycle
+            .current_session_id_for_streamer(streamer_id)
+        {
+            // This hands off straight to download startup. A session in
+            // hysteresis resumes only through live detection, which cancels its
+            // quiet-period timer; starting an engine here would let that timer
+            // end the session underneath the new recording.
+            Some(session_id)
+                if self
+                    .session_lifecycle
+                    .session_snapshot(&session_id)
+                    .is_some_and(|state| state.is_recording()) =>
+            {
+                session_id
+            }
+            Some(_) => return,
+            None => match self
+                .session_repository
+                .get_active_session_for_streamer(streamer_id)
+                .await
+            {
+                Ok(Some(session)) => session.id,
+                _ => return,
+            },
+        };
+        let title = self
+            .session_repository
+            .get_session(&session_id)
+            .await
+            .ok()
+            .and_then(|session| session.titles)
+            .and_then(|raw| {
+                serde_json::from_str::<Vec<crate::database::models::TitleEntry>>(&raw).ok()
+            })
+            .and_then(|mut titles| titles.pop())
+            .map_or_else(String::new, |entry| entry.title);
+        match self
+            .stream_monitor
+            .session_credential_binding(&session_id)
+            .await
+        {
+            Ok(Some(binding)) => {
+                debug!(
+                    streamer_id,
+                    session_id, "Resuming a recording that awaited credentials"
+                );
+                self.spawn_live_pipeline(
+                    StreamerLivePayload {
+                        runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+                        credential_binding: Some(binding),
+                        streamer_id: streamer_id.to_owned(),
+                        session_id,
+                        streamer_name: metadata.name,
+                        title,
+                        streams: Vec::new(),
+                        streamer_url: metadata.url,
+                        media_headers: None,
+                        media_extras: None,
+                    },
+                    false,
+                    retry_changed,
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                debug!(streamer_id, %error, "Pending credential recovery could not load its binding")
+            }
+        }
+    }
+
+    /// `retry_changed` allows one fresh bound extraction when the account
+    /// changes between extraction and engine start. A repeat waits for the
+    /// next check or credential change instead of looping.
+    fn spawn_live_pipeline(
+        self: &Arc<Self>,
+        payload: StreamerLivePayload,
+        from_hysteresis_resume: bool,
+        retry_changed: bool,
+    ) {
+        let coordinator = self.clone();
+        self.task_supervisor
+            .spawn("live download pipeline", async move {
+                let streamer_id = payload.streamer_id.clone();
+                let exit = run_live_download_pipeline(
+                    coordinator.clone(),
+                    payload,
+                    from_hysteresis_resume,
+                )
+                .await;
+                if exit == PipelineExit::CredentialsChanged && retry_changed {
+                    coordinator.resume_pending(&streamer_id, false).await;
+                }
+            });
     }
 
     pub(crate) async fn refresh_metadata_offline_checks(
@@ -224,6 +523,68 @@ impl RuntimeCoordinator {
         let _ = self
             .stop_streamer_work(streamer_id, &streamer_name, StopWait::Requested)
             .await;
+    }
+
+    /// Import retires authentication separately from the streamer row. Settle
+    /// current work before its profile can be physically reaped.
+    pub(crate) async fn settle_credential_retirement(&self, streamer_id: &str) {
+        let (session_id, binding) = match self
+            .stream_monitor
+            .retiring_credential_session(streamer_id)
+            .await
+        {
+            Ok(Some(session)) => session,
+            Ok(None) => return,
+            Err(error) => {
+                warn!(streamer_id, %error, "Could not inspect credential retirement");
+                return;
+            }
+        };
+        let streamer_name = self
+            .streamer_manager
+            .get_streamer(streamer_id)
+            .map(|metadata| metadata.name)
+            .unwrap_or_default();
+        let downloads: Vec<_> = self
+            .download_manager
+            .get_active_downloads()
+            .into_iter()
+            .filter(|download| download.session_id == session_id)
+            .collect();
+        self.session_cancels.cancel(&session_id);
+        for download in downloads {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                self.download_manager.stop_download_with_reason(
+                    &download.id,
+                    crate::downloader::DownloadStopCause::StreamerDisabled,
+                ),
+            )
+            .await
+            {
+                Ok(Ok(())) | Ok(Err(crate::Error::NotFound { .. })) => {}
+                _ => {
+                    warn!(
+                        streamer_id,
+                        session_id, "Credential retirement awaits the captured engine attempt"
+                    );
+                    return;
+                }
+            }
+        }
+        if self.danmu_service.is_collecting(&session_id)
+            && let Err(error) = self.danmu_service.stop_collection(&session_id).await
+        {
+            warn!(session_id, %error, "Credential retirement awaits danmu completion");
+            return;
+        }
+        if let Err(error) = self
+            .session_lifecycle
+            .end_for_credential_retirement(&session_id, streamer_id, &streamer_name, binding)
+            .await
+        {
+            warn!(session_id, %error, "Credential retirement could not finalize its captured session");
+        }
     }
 
     /// Stop everything bound to `streamer_id`: its queued and running download
@@ -392,6 +753,8 @@ impl RuntimeCoordinator {
     ) {
         match event {
             MonitorEvent::StreamerLive {
+                runtime_instance,
+                credential_binding,
                 streamer_id,
                 session_id,
                 streamer_name,
@@ -412,25 +775,22 @@ impl RuntimeCoordinator {
                     "Streamer went live"
                 );
 
-                let coordinator = self.clone();
-                self.task_supervisor
-                    .spawn("live download pipeline", async move {
-                        run_live_download_pipeline(
-                            coordinator,
-                            StreamerLivePayload {
-                                streamer_id,
-                                session_id,
-                                streamer_name,
-                                title,
-                                streams,
-                                streamer_url,
-                                media_headers,
-                                media_extras,
-                            },
-                            from_hysteresis_resume,
-                        )
-                        .await;
-                    });
+                self.spawn_live_pipeline(
+                    StreamerLivePayload {
+                        runtime_instance,
+                        credential_binding: credential_binding.map(|binding| *binding),
+                        streamer_id,
+                        session_id,
+                        streamer_name,
+                        title,
+                        streams,
+                        streamer_url,
+                        media_headers,
+                        media_extras: media_extras.map(|extras| *extras),
+                    },
+                    from_hysteresis_resume,
+                    true,
+                );
             }
             MonitorEvent::StreamerOffline {
                 streamer_id,
@@ -541,6 +901,8 @@ impl RuntimeCoordinator {
 
     pub(crate) async fn handle_session_transition(self: &Arc<Self>, transition: SessionTransition) {
         if let SessionTransition::Ended { session_id, .. } = &transition {
+            self.credential_diagnostics.remove(session_id);
+            self.recovered_media.remove(session_id);
             self.download_manager
                 .clear_session_segment_index(session_id);
         }
@@ -581,6 +943,8 @@ impl RuntimeCoordinator {
                 );
                 self.handle_monitor_event(
                     MonitorEvent::StreamerLive {
+                        runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+                        credential_binding: payload.credential_binding.clone().map(Box::new),
                         streamer_id: streamer_id.clone(),
                         session_id: session_id.clone(),
                         streamer_name: streamer_name.clone(),
@@ -589,7 +953,7 @@ impl RuntimeCoordinator {
                         category: category.clone(),
                         streams: payload.streams.clone(),
                         media_headers: payload.media_headers.clone(),
-                        media_extras: payload.media_extras.clone(),
+                        media_extras: payload.media_extras.clone().map(Box::new),
                         timestamp: started_at.to_owned(),
                     },
                     true,

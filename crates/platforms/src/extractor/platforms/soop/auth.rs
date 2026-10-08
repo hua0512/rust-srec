@@ -1,6 +1,6 @@
 //! SOOP session validation and password login helpers.
 //!
-//! Used by the extractor (reactive login) and by the app credential manager
+//! Used by the extractor (reactive login) and by the app account provider
 //! (proactive check + re-login with persisted cookies).
 
 use reqwest::Client;
@@ -42,8 +42,8 @@ pub async fn validate_session(client: &Client, cookies: &str) -> Result<bool, Ex
         .header(reqwest::header::REFERER, ORIGIN)
         .header(reqwest::header::COOKIE, cookies)
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+    let response = ExtractorError::check_response(response)?;
 
     let body: PrivateInfoResponse = response.json().await.map_err(|e| {
         ExtractorError::ValidationError(format!("SOOP private info parse error: {e}"))
@@ -99,12 +99,7 @@ pub async fn login_for_cookies(
         .send()
         .await?;
 
-    if !response.status().is_success() {
-        return Err(ExtractorError::ValidationError(format!(
-            "SOOP login returned HTTP {}",
-            response.status()
-        )));
-    }
+    let response = ExtractorError::check_response(response)?;
 
     let cookie_header = response
         .headers()
@@ -119,9 +114,9 @@ pub async fn login_for_cookies(
 
     let login_response = response.json::<SoopLoginResponse>().await?;
     if login_response.result != 1 {
-        return Err(ExtractorError::ValidationError(
-            "SOOP login failed".to_string(),
-        ));
+        return Err(ExtractorError::Authentication {
+            code: login_response.result.to_string(),
+        });
     }
 
     if cookie_header.is_empty() {

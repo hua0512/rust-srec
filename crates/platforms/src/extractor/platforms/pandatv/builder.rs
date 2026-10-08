@@ -324,6 +324,9 @@ mod tests {
 
         let extractor = PandaTV::new(TEST_URL.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();
-        debug!("Media info: {:?}", media_info);
+        debug!(
+            stream_count = media_info.streams.len(),
+            "Decoded PandaTV media info"
+        );
     }
 }

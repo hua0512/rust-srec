@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use platforms_parser::danmaku::DanmuProxy;
+
 use crate::danmu::DanmuStatistics;
 use crate::domain::DanmuStatisticsConfig;
 use crate::error::Error;
@@ -12,6 +14,8 @@ pub struct CollectionSpec {
     pub streamer_url: String,
     pub cookies: Option<String>,
     pub extras: Option<HashMap<String, String>>,
+    /// The proxy the recording uses. Without one danmu connects directly.
+    pub proxy: Option<DanmuProxy>,
     pub statistics: DanmuStatisticsConfig,
 }
 

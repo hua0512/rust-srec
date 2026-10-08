@@ -1,5 +1,6 @@
 //! Configuration repository.
 
+mod cloning;
 mod writes;
 pub(crate) use writes::{
     delete_engine, import_engine, import_global, import_platform, import_template,
@@ -7,11 +8,16 @@ pub(crate) use writes::{
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use std::sync::{Arc, OnceLock};
 
+use super::credential_selections::{self, StoredSelection};
+use super::proxies::{self, RouteOwner};
+use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays,
     TemplateConfigDbModel,
 };
+use crate::proxies::{ProxyRoute, ResolvedRoute, SystemProxy};
 use crate::{Error, Result};
 
 fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
@@ -37,23 +43,106 @@ fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
 pub trait ConfigRepository: Send + Sync {
     // Global Config
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel>;
-    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
+    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        self.update_global_config_with_route(config, None).await
+    }
+    /// Update the row and, when given, the global proxy route in one
+    /// transaction; `None` keeps the stored route.
+    async fn update_global_config_with_route(
+        &self,
+        config: &GlobalConfigDbModel,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()>;
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
+
+    // Proxy routes
+    /// The route a streamer's requests take, resolved through its template,
+    /// platform and the global route.
+    async fn resolve_streamer_route(
+        &self,
+        streamer_id: &str,
+        platform_id: &str,
+        template_id: Option<&str>,
+    ) -> Result<ResolvedRoute>;
+    /// The route of requests made for a platform, or for no platform.
+    async fn resolve_scope_route(&self, platform_id: Option<&str>) -> Result<ResolvedRoute>;
+    /// The route one scope stores.
+    async fn proxy_route_of(&self, owner: &RouteOwner) -> Result<ProxyRoute>;
+    /// The routes every scope of `kind`'s kind stores, by scope ID; scopes
+    /// absent from the map inherit.
+    async fn proxy_routes_of_kind(
+        &self,
+        kind: &RouteOwner,
+    ) -> Result<std::collections::HashMap<String, ProxyRoute>>;
 
     // Platform Config
     async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel>;
     async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel>;
     async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>>;
     async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
-    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
+    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
+        self.update_platform_config_with_selection(config, None)
+            .await
+    }
+    /// Update the row and, when given, the platform's own account selection in
+    /// one transaction; `None` keeps the stored selection.
+    async fn update_platform_config_with_selection(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&CredentialSelection>,
+    ) -> Result<()> {
+        self.update_platform_config_scoped(config, selection, None)
+            .await
+    }
+    /// Update the row and, when given, the platform's own account selection
+    /// and proxy route in one transaction; `None` keeps the stored value.
+    async fn update_platform_config_scoped(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&CredentialSelection>,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()>;
     async fn delete_platform_config(&self, id: &str) -> Result<()>;
+
+    // Account selections
+    /// Every stored account selection.
+    async fn list_credential_selections(&self) -> Result<Vec<StoredSelection>>;
+    /// The selections one platform, template or streamer stores.
+    async fn credential_selections_for(
+        &self,
+        owner: &CredentialOwner,
+    ) -> Result<Vec<StoredSelection>>;
+    /// The selections a streamer resolves through on its platform.
+    async fn streamer_credential_selections(
+        &self,
+        streamer_id: &str,
+        platform_id: &str,
+        template_id: Option<&str>,
+    ) -> Result<Vec<StoredSelection>>;
 
     // Template Config
     async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel>;
     async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel>;
     async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>>;
-    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
-    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
+    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        self.write_template_config(config, true, None).await
+    }
+    /// Create or update the row and, when given, its proxy route in one
+    /// transaction; `None` keeps the stored route.
+    async fn write_template_config(
+        &self,
+        config: &TemplateConfigDbModel,
+        create: bool,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()>;
+    async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel>;
+    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
+        self.write_template_config(config, false, None).await
+    }
     async fn delete_template_config(&self, id: &str) -> Result<()>;
 
     // Engine Config
@@ -68,16 +157,195 @@ pub trait ConfigRepository: Send + Sync {
 pub struct SqlxConfigRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
+    writer: Arc<crate::database::CommittedWriter>,
+    publication: OnceLock<Arc<dyn Fn(CredentialOwner) + Send + Sync>>,
 }
 
 impl SqlxConfigRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
-        Self { pool, write_pool }
+        let writer = Arc::new(crate::database::CommittedWriter::for_invalidation(
+            write_pool.clone(),
+            Arc::new(crate::utils::task_supervisor::TaskSupervisor::for_committed_work()),
+        ));
+        Self {
+            pool,
+            write_pool,
+            writer,
+            publication: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn with_committed_writer(
+        mut self,
+        writer: Arc<crate::database::CommittedWriter>,
+    ) -> Self {
+        self.writer = writer;
+        self
+    }
+
+    pub(crate) fn bind_publication(&self, publication: Arc<dyn Fn(CredentialOwner) + Send + Sync>) {
+        self.publication.get_or_init(|| publication);
+    }
+
+    async fn write_platform_owned(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&CredentialSelection>,
+        route: Option<&ProxyRoute>,
+        create: bool,
+    ) -> Result<()> {
+        let model = config.clone();
+        let selection = selection.cloned();
+        let route = route.cloned();
+        let owner = CredentialOwner::Platform {
+            platform_id: model.id.clone(),
+        };
+        let publication = self.publication.get().cloned();
+        self.writer
+            .transaction(
+                "write platform configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        super::credential_profiles::reject_platform_authentication(&model)?;
+                        writes::write_platform(
+                            connection,
+                            &model,
+                            if create {
+                                super::row_write::WriteMode::Insert
+                            } else {
+                                super::row_write::WriteMode::Update
+                            },
+                            selection.as_ref(),
+                        )
+                        .await?;
+                        if let Some(route) = &route {
+                            proxies::set_route(
+                                connection,
+                                &RouteOwner::Platform(model.id.clone()),
+                                route,
+                            )
+                            .await?;
+                        }
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(owner);
+                    }
+                },
+            )
+            .await
+    }
+
+    /// Removes a platform with its profiles, or a template, in one transaction.
+    /// Publication runs after commit even if the caller is cancelled, so caches
+    /// and the runtime never keep the deleted owner or its profiles.
+    async fn delete_owned(&self, owner: CredentialOwner) -> Result<()> {
+        let publication = self.publication.get().cloned();
+        let published = owner.clone();
+        self.writer
+            .transaction(
+                "delete configuration owner",
+                move |connection| {
+                    Box::pin(async move {
+                        if let CredentialOwner::Platform { platform_id } = &owner {
+                            super::credential_profiles::delete_platform_profiles(
+                                connection,
+                                platform_id,
+                            )
+                            .await?;
+                        }
+                        let query = match owner {
+                            CredentialOwner::Platform { .. } => {
+                                "DELETE FROM platform_config WHERE id = ?"
+                            }
+                            CredentialOwner::Template { .. } => {
+                                "DELETE FROM template_config WHERE id = ?"
+                            }
+                            CredentialOwner::Streamer { .. } => {
+                                return Err(Error::validation(
+                                    "streamers are removed through their retirement",
+                                ));
+                            }
+                        };
+                        sqlx::query(query)
+                            .bind(owner.id())
+                            .execute(&mut *connection)
+                            .await?;
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(published);
+                    }
+                },
+            )
+            .await
+    }
+
+    async fn write_template_owned(
+        &self,
+        config: &TemplateConfigDbModel,
+        create: bool,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()> {
+        let model = config.clone();
+        let route = route.cloned();
+        let owner = CredentialOwner::Template {
+            template_id: model.id.clone(),
+        };
+        let publication = self.publication.get().cloned();
+        self.writer
+            .transaction(
+                "write template configuration",
+                move |connection| {
+                    Box::pin(async move {
+                        super::credential_profiles::reject_template_authentication(&model)?;
+                        let (mode, updated_at) = if create {
+                            (
+                                super::row_write::WriteMode::Insert,
+                                model.updated_at.timestamp_millis(),
+                            )
+                        } else {
+                            (
+                                super::row_write::WriteMode::Update,
+                                crate::database::time::now_ms(),
+                            )
+                        };
+                        writes::write_template(connection, &model, mode, updated_at).await?;
+                        if let Some(route) = &route {
+                            proxies::set_route(
+                                connection,
+                                &RouteOwner::Template(model.id.clone()),
+                                route,
+                            )
+                            .await?;
+                        }
+                        Ok(())
+                    })
+                },
+                move |_| {
+                    if let Some(publication) = publication {
+                        publication(owner);
+                    }
+                },
+            )
+            .await
     }
 }
 
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
+    async fn clone_template_config(
+        &self,
+        source_id: &str,
+        new_name: &str,
+    ) -> Result<TemplateConfigDbModel> {
+        self.clone_template_owned(source_id, new_name).await
+    }
+
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
         // Migrations seed this row. SQLx can report an interrupted worker's row
         // stream as empty; treating that as first-run initialization would insert
@@ -89,15 +357,52 @@ impl ConfigRepository for SqlxConfigRepository {
         )
     }
 
-    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+    async fn update_global_config_with_route(
+        &self,
+        config: &GlobalConfigDbModel,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()> {
         validate_global_retention(config)?;
-        writes::write_global(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
-        )
-        .await?;
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        writes::write_global(&mut tx, config, super::row_write::WriteMode::Update).await?;
+        if let Some(route) = route {
+            proxies::set_route(&mut tx, &RouteOwner::Global, route).await?;
+        }
+        tx.commit().await?;
         Ok(())
+    }
+
+    async fn resolve_streamer_route(
+        &self,
+        streamer_id: &str,
+        platform_id: &str,
+        template_id: Option<&str>,
+    ) -> Result<ResolvedRoute> {
+        proxies::resolve_streamer(
+            &mut *self.pool.acquire().await?,
+            streamer_id,
+            platform_id,
+            template_id,
+            SystemProxy::current(),
+        )
+        .await
+    }
+
+    async fn resolve_scope_route(&self, platform_id: Option<&str>) -> Result<ResolvedRoute> {
+        let mut connection = self.pool.acquire().await?;
+        let layers = proxies::scope_layers(&mut connection, platform_id).await?;
+        proxies::resolve_layers(&mut connection, &layers, SystemProxy::current()).await
+    }
+
+    async fn proxy_route_of(&self, owner: &RouteOwner) -> Result<ProxyRoute> {
+        proxies::route_of(&mut *self.pool.acquire().await?, owner).await
+    }
+
+    async fn proxy_routes_of_kind(
+        &self,
+        kind: &RouteOwner,
+    ) -> Result<std::collections::HashMap<String, ProxyRoute>> {
+        proxies::routes_of_kind(&mut *self.pool.acquire().await?, kind).await
     }
 
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
@@ -139,31 +444,50 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        writes::write_platform(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-        )
-        .await?;
-        Ok(())
+        self.write_platform_owned(config, None, None, true).await
     }
 
-    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()> {
-        writes::write_platform(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
+    async fn update_platform_config_scoped(
+        &self,
+        config: &PlatformConfigDbModel,
+        selection: Option<&CredentialSelection>,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()> {
+        self.write_platform_owned(config, selection, route, false)
+            .await
+    }
+
+    async fn list_credential_selections(&self) -> Result<Vec<StoredSelection>> {
+        credential_selections::load_all(&mut *self.pool.acquire().await?).await
+    }
+
+    async fn credential_selections_for(
+        &self,
+        owner: &CredentialOwner,
+    ) -> Result<Vec<StoredSelection>> {
+        credential_selections::load_owner(&mut *self.pool.acquire().await?, owner).await
+    }
+
+    async fn streamer_credential_selections(
+        &self,
+        streamer_id: &str,
+        platform_id: &str,
+        template_id: Option<&str>,
+    ) -> Result<Vec<StoredSelection>> {
+        credential_selections::load_for_streamer(
+            &mut *self.pool.acquire().await?,
+            streamer_id,
+            platform_id,
+            template_id,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn delete_platform_config(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM platform_config WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
+        self.delete_owned(CredentialOwner::Platform {
+            platform_id: id.to_owned(),
+        })
+        .await
     }
 
     async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel> {
@@ -191,35 +515,20 @@ impl ConfigRepository for SqlxConfigRepository {
         Ok(configs)
     }
 
-    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        writes::write_template(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Insert,
-            config.updated_at.timestamp_millis(),
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()> {
-        let updated_at = crate::database::time::now_ms();
-        writes::write_template(
-            &mut *self.write_pool.acquire().await?,
-            config,
-            super::row_write::WriteMode::Update,
-            updated_at,
-        )
-        .await?;
-        Ok(())
+    async fn write_template_config(
+        &self,
+        config: &TemplateConfigDbModel,
+        create: bool,
+        route: Option<&ProxyRoute>,
+    ) -> Result<()> {
+        self.write_template_owned(config, create, route).await
     }
 
     async fn delete_template_config(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM template_config WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
+        self.delete_owned(CredentialOwner::Template {
+            template_id: id.to_owned(),
+        })
+        .await
     }
 
     async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel> {
@@ -272,6 +581,136 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[tokio::test]
+    async fn cancelled_platform_and_template_deletes_publish_after_commit() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for template in [false, true] {
+                let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                    .await
+                    .unwrap();
+                crate::database::run_migrations(&pool).await.unwrap();
+                let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+                sqlx::query(
+                    "INSERT INTO template_config(id,name) VALUES ('deleted-template','Deleted')",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO platform_config(id, platform_name) VALUES ('deleted-platform', 'deleted')")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                repository.bind_publication(Arc::new(move |owner| {
+                    published.send(owner).unwrap();
+                }));
+                let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
+                repository.writer.set_commit_gate(
+                    crate::database::committed_writer::CommitPhase::AfterCommit,
+                    Some(gate.clone()),
+                );
+                let task_repository = repository.clone();
+                let caller = tokio::spawn(async move {
+                    if template {
+                        task_repository
+                            .delete_template_config("deleted-template")
+                            .await
+                    } else {
+                        task_repository
+                            .delete_platform_config("deleted-platform")
+                            .await
+                    }
+                });
+                gate.started.notified().await;
+                caller.abort();
+                assert!(caller.await.unwrap_err().is_cancelled());
+                gate.release.notify_one();
+                let owner = receiver.recv().await.unwrap();
+                assert_eq!(owner.kind(), if template { "template" } else { "platform" });
+                assert!(if template {
+                    repository.get_template_config("deleted-template").await.is_err()
+                } else {
+                    repository.get_platform_config("deleted-platform").await.is_err()
+                });
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_platform_and_template_requests_publish_after_commit() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for template in [false, true] {
+                let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+                    .await
+                    .unwrap();
+                crate::database::run_migrations(&pool).await.unwrap();
+                let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+                sqlx::query(
+                    "INSERT INTO template_config(id,name) VALUES ('committed-template','Original')",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+                repository.bind_publication(Arc::new(move |owner| {
+                    published.send(owner).unwrap();
+                }));
+                let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
+                repository.writer.set_commit_gate(
+                    crate::database::committed_writer::CommitPhase::AfterCommit,
+                    Some(gate.clone()),
+                );
+                let task_repository = repository.clone();
+                let caller = tokio::spawn(async move {
+                    if template {
+                        let mut config = task_repository
+                            .get_template_config("committed-template")
+                            .await
+                            .unwrap();
+                        config.name = "Edited".into();
+                        task_repository.update_template_config(&config).await
+                    } else {
+                        let mut config = task_repository
+                            .get_platform_config("platform-huya")
+                            .await
+                            .unwrap();
+                        config.fetch_delay_ms = Some(1234);
+                        task_repository.update_platform_config(&config).await
+                    }
+                });
+                gate.started.notified().await;
+                caller.abort();
+                assert!(caller.await.unwrap_err().is_cancelled());
+                gate.release.notify_one();
+                let owner = receiver.recv().await.unwrap();
+                assert_eq!(owner.kind(), if template { "template" } else { "platform" });
+                if template {
+                    assert_eq!(
+                        repository
+                            .get_template_config("committed-template")
+                            .await
+                            .unwrap()
+                            .name,
+                        "Edited"
+                    );
+                } else {
+                    assert_eq!(
+                        repository
+                            .get_platform_config("platform-huya")
+                            .await
+                            .unwrap()
+                            .fetch_delay_ms,
+                        Some(1234)
+                    );
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
 
     #[tokio::test]
     async fn missing_global_config_is_an_error_without_inserting_defaults() {

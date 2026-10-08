@@ -7,14 +7,14 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
 use tokio::task::JoinHandle;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderMap;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::http::header;
 use tokio_tungstenite::{
-    Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
+    Connector, MaybeTlsStream, WebSocketStream, client_async_tls_with_config,
     tungstenite::protocol::Message,
 };
 use tracing::{debug, error, info, trace, warn};
@@ -24,6 +24,7 @@ use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::event::DanmuItem;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider, DanmuStream};
+use crate::danmaku::proxy::{self, BoxedTransport, DanmuProxy};
 use crate::extractor::utils::merge_cookie_headers;
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
@@ -111,9 +112,9 @@ fn install_rustls_provider() {
     });
 }
 
-fn rustls_connector() -> Connector {
+pub(crate) fn rustls_config() -> Arc<ClientConfig> {
     static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
-    let config = CONFIG
+    CONFIG
         .get_or_init(|| {
             install_rustls_provider();
 
@@ -127,9 +128,11 @@ fn rustls_connector() -> Connector {
 
             Arc::new(tls_config)
         })
-        .clone();
+        .clone()
+}
 
-    Connector::Rustls(config)
+fn rustls_connector() -> Connector {
+    Connector::Rustls(rustls_config())
 }
 
 #[cfg(feature = "tls-native-fallback")]
@@ -169,6 +172,31 @@ fn connector_for_url(url: &str) -> Connector {
     }
 
     rustls_connector()
+}
+
+type DanmuSocket = WebSocketStream<MaybeTlsStream<BoxedTransport>>;
+
+/// Opens the WebSocket at `url` with `headers` added to the upgrade, through
+/// `proxy` when one is set.
+async fn open_websocket(
+    url: &str,
+    headers: &HeaderMap,
+    proxy: Option<&DanmuProxy>,
+) -> Result<DanmuSocket> {
+    let invalid = |error: &dyn std::fmt::Display| {
+        DanmakuError::connection(format!("invalid WebSocket URL: {error}"))
+    };
+    let mut request = url.into_client_request().map_err(|e| invalid(&e))?;
+    for (name, value) in headers {
+        request.headers_mut().insert(name, value.clone());
+    }
+    let (host, port) = proxy::endpoint(&Url::parse(url).map_err(|e| invalid(&e))?)?;
+    let stream = proxy::open_transport(&host, port, proxy).await?;
+    let (socket, _) =
+        client_async_tls_with_config(request, stream, None, Some(connector_for_url(url)))
+            .await
+            .map_err(|error| DanmakuError::connection(error.to_string()))?;
+    Ok(socket)
 }
 
 /// Creates isolated protocol state for WebSocket danmaku connections.
@@ -273,6 +301,12 @@ pub trait DanmuProtocol: Send + 'static {
     fn normalize_cookies(&self, cookies: &str) -> String {
         cookies.to_string()
     }
+
+    /// Hands the protocol the client for its HTTP requests when the connection
+    /// goes through a proxy. Protocols that make requests before connecting
+    /// must send them with this client, so they leave through the same proxy
+    /// as the WebSocket.
+    fn use_http_client(&mut self, _client: reqwest::Client) {}
 
     /// Configure protocol state based on connection inputs.
     ///
@@ -405,12 +439,11 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
         let room_id_owned = room_id.to_string();
         let cookies = config.cookies;
         let extras = config.extras;
+        let proxy = config.proxy;
+        let http_client = proxy.as_ref().map(DanmuProxy::http_client).transpose()?;
         // Spawn main management task
         let handle = tokio::spawn(async move {
-            let mut current_connection: Option<(
-                WebSocketStream<MaybeTlsStream<TcpStream>>,
-                F::Protocol,
-            )> = None;
+            let mut current_connection: Option<(DanmuSocket, F::Protocol)> = None;
             let mut attempt = 0;
             let mut delay = ws_config.base_reconnect_delay_ms;
 
@@ -423,6 +456,9 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                 // Connect if not connected
                 if current_connection.is_none() {
                     let mut protocol = factory.create_protocol();
+                    if let Some(client) = &http_client {
+                        protocol.use_http_client(client.clone());
+                    }
                     // Compute cookies and let the protocol derive per-connection state (e.g. uid)
                     // before resolving the final WebSocket URL.
                     let protocol_cookies = protocol.cookies();
@@ -433,7 +469,10 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
 
                     match protocol.websocket_url(&room_id_owned).await {
                         Ok(url) => {
-                            info!("Connecting to WebSocket: {}", url);
+                            info!(
+                                proxied = proxy.is_some(),
+                                "Connecting to WebSocket: {}", url
+                            );
 
                             // Build request with custom headers
                             let mut headers = protocol.headers(&room_id_owned);
@@ -469,67 +508,11 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                                 headers.remove(header::COOKIE);
                             }
 
-                            let connect_result = if headers.is_empty() {
-                                let connector = connector_for_url(&url);
-                                connect_async_tls_with_config(&url, None, true, Some(connector))
-                                    .await
-                            } else {
-                                use tokio_tungstenite::tungstenite::handshake::client::generate_key;
-                                use tokio_tungstenite::tungstenite::http::Request;
-
-                                // Extract host from URL for Host header (avoid panics on invalid URLs).
-                                let parsed = match Url::parse(&url) {
-                                    Ok(v) => v,
-                                    Err(e) => {
-                                        error!(error = %e, %url, "Failed to parse WebSocket URL");
-                                        continue;
-                                    }
-                                };
-                                let host = match parsed.host_str() {
-                                    Some(v) => v,
-                                    None => {
-                                        error!(%url, "WebSocket URL is missing host");
-                                        continue;
-                                    }
-                                };
-                                let host_header = match parsed.port() {
-                                    Some(p) => format!("{host}:{p}"),
-                                    None => host.to_string(),
-                                };
-
-                                let builder = Request::builder()
-                                    .uri(&url)
-                                    .header("Host", host_header)
-                                    .header("Connection", "Upgrade")
-                                    .header("Upgrade", "websocket")
-                                    .header("Sec-WebSocket-Version", "13")
-                                    .header("Sec-WebSocket-Key", generate_key());
-
-                                match builder.body(()) {
-                                    Ok(request) => {
-                                        // Insert protocol headers after constructing the base upgrade request.
-                                        let mut request = request;
-                                        for (name, value) in headers.iter() {
-                                            request.headers_mut().insert(name, value.clone());
-                                        }
-                                        let connector = connector_for_url(&url);
-                                        connect_async_tls_with_config(
-                                            request,
-                                            None,
-                                            true,
-                                            Some(connector),
-                                        )
-                                        .await
-                                    }
-                                    Err(e) => {
-                                        error!("Failed to build request: {}", e);
-                                        continue;
-                                    }
-                                }
-                            };
+                            let connect_result =
+                                open_websocket(&url, &headers, proxy.as_ref()).await;
 
                             match connect_result {
-                                Ok((mut ws_stream, _)) => {
+                                Ok(mut ws_stream) => {
                                     info!("Connected to WebSocket for room {}", room_id_owned);
 
                                     // Handshake
@@ -734,6 +717,174 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::danmaku::DanmuMessage;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    /// Connects to `url` and turns each text frame into a chat message.
+    struct TextFactory {
+        url: String,
+        given_client: Arc<AtomicBool>,
+    }
+
+    struct TextProtocol {
+        url: String,
+        given_client: Arc<AtomicBool>,
+    }
+
+    impl DanmuProtocolFactory for TextFactory {
+        type Protocol = TextProtocol;
+
+        fn platform(&self) -> &str {
+            "test"
+        }
+
+        fn supports_url(&self, _url: &str) -> bool {
+            false
+        }
+
+        fn extract_room_id(&self, _url: &str) -> Option<String> {
+            None
+        }
+
+        fn create_protocol(&self) -> TextProtocol {
+            TextProtocol {
+                url: self.url.clone(),
+                given_client: self.given_client.clone(),
+            }
+        }
+    }
+
+    impl DanmuProtocol for TextProtocol {
+        fn use_http_client(&mut self, _client: reqwest::Client) {
+            self.given_client.store(true, Ordering::SeqCst);
+        }
+
+        async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
+            Ok(self.url.clone())
+        }
+
+        async fn decode_message(
+            &mut self,
+            message: &Message,
+            _room_id: &str,
+        ) -> Result<DanmuProtocolOutput> {
+            let Message::Text(text) = message else {
+                return Ok(DanmuProtocolOutput::default());
+            };
+            let item = DanmuItem::Message(DanmuMessage::chat("1", "u", "u", text.as_str()));
+            Ok(vec![item].into())
+        }
+    }
+
+    /// A WebSocket server that sends one text frame to each client.
+    async fn websocket_server() -> TcpListener {
+        TcpListener::bind("127.0.0.1:0").await.unwrap()
+    }
+
+    async fn serve_one(listener: TcpListener) {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+        socket.send(Message::text("hello")).await.unwrap();
+        // Hold the socket open until the client goes away.
+        while socket.next().await.is_some_and(|frame| frame.is_ok()) {}
+    }
+
+    /// An HTTP proxy that forwards one tunnel and reports its CONNECT line.
+    async fn forwarding_proxy() -> (u16, tokio::sync::oneshot::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (seen, request) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (client, _) = listener.accept().await.unwrap();
+            let mut client = tokio::io::BufReader::new(client);
+            let mut connect = String::new();
+            client.read_line(&mut connect).await.unwrap();
+            loop {
+                let mut line = String::new();
+                client.read_line(&mut line).await.unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let target = connect.split_whitespace().nth(1).unwrap().to_owned();
+            seen.send(connect).unwrap();
+            let mut upstream = TcpStream::connect(target).await.unwrap();
+            let mut client = client.into_inner();
+            client
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            let _copied = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+        });
+        (port, request)
+    }
+
+    #[tokio::test]
+    async fn a_proxied_connection_runs_inside_the_tunnel() {
+        let server = websocket_server().await;
+        let server_port = server.local_addr().unwrap().port();
+        tokio::spawn(serve_one(server));
+        let (proxy_port, connect) = forwarding_proxy().await;
+        let given_client = Arc::new(AtomicBool::new(false));
+        let provider = WebSocketDanmuProvider::with_factory(
+            TextFactory {
+                url: format!("ws://127.0.0.1:{server_port}/room"),
+                given_client: given_client.clone(),
+            },
+            None,
+        );
+        let proxy = DanmuProxy::parse(&format!("http://127.0.0.1:{proxy_port}")).unwrap();
+        let mut stream = provider
+            .connect("room", ConnectionConfig::default().with_proxy(Some(proxy)))
+            .await
+            .unwrap();
+        let item = tokio::time::timeout(Duration::from_secs(5), stream.items.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(item, DanmuItem::Message(message) if message.content == "hello"));
+        assert_eq!(
+            connect.await.unwrap(),
+            format!("CONNECT 127.0.0.1:{server_port} HTTP/1.1\r\n")
+        );
+        assert!(given_client.load(Ordering::SeqCst));
+        provider.disconnect(&mut stream.connection).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_proxy_never_falls_back_to_a_direct_connection() {
+        let server = websocket_server().await;
+        let server_port = server.local_addr().unwrap().port();
+        // Bound then released, so nothing listens on the proxy's port.
+        let proxy_port = {
+            let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            closed.local_addr().unwrap().port()
+        };
+        let provider = WebSocketDanmuProvider::with_factory(
+            TextFactory {
+                url: format!("ws://127.0.0.1:{server_port}/room"),
+                given_client: Arc::default(),
+            },
+            None,
+        );
+        let proxy = DanmuProxy::parse(&format!("socks5h://127.0.0.1:{proxy_port}")).unwrap();
+        let config = ConnectionConfig::default()
+            .with_proxy(Some(proxy))
+            .with_websocket(WebSocketProviderConfig {
+                max_reconnect_attempts: 0,
+                ..WebSocketProviderConfig::default()
+            });
+        let mut stream = provider.connect("room", config).await.unwrap();
+        let closed = tokio::time::timeout(Duration::from_secs(5), stream.items.recv())
+            .await
+            .unwrap();
+        assert!(closed.is_none());
+        let direct = tokio::time::timeout(Duration::from_millis(100), server.accept()).await;
+        assert!(direct.is_err(), "the server was reached directly");
+        provider.disconnect(&mut stream.connection).await.unwrap();
+    }
 
     #[test]
     fn test_merge_cookie_headers_merges_and_overrides() {

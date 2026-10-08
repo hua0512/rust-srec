@@ -1,8 +1,11 @@
-use std::{sync::OnceLock, time::Duration};
+use std::collections::VecDeque;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
+use platforms_parser::proxy::{ProxyTarget, redacted_url, unroutable_proxy};
+
+use crate::proxies::ProxyError;
 use tracing::{debug, warn};
-
-use crate::domain::ProxyConfig;
 
 pub fn install_rustls_provider() {
     static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
@@ -14,57 +17,89 @@ pub fn install_rustls_provider() {
     });
 }
 
-/// Apply `proxy_config` to an existing `reqwest::ClientBuilder`.
-///
-/// Behavior matches rust-srec's download proxy semantics:
-/// - `enabled = false` => disable all proxy (including env/system)
-/// - `enabled = true` + `url = Some(..)` => use explicit proxy (optionally with auth)
-/// - `enabled = true` + `url = None` + `use_system_proxy = true` => use system/env proxy defaults
-/// - `enabled = true` + `url = None` + `use_system_proxy = false` => disable all proxy
-pub fn apply_proxy_config(
-    mut builder: reqwest::ClientBuilder,
-    proxy_config: &ProxyConfig,
-) -> reqwest::ClientBuilder {
-    if !proxy_config.enabled {
-        return builder.no_proxy();
-    }
-
-    if let Some(url) = proxy_config.url.as_deref() {
-        match reqwest::Proxy::all(url) {
-            Ok(mut proxy) => {
-                if let (Some(username), Some(password)) = (
-                    proxy_config.username.as_ref(),
-                    proxy_config.password.as_ref(),
-                ) {
-                    proxy = proxy.basic_auth(username, password);
-                }
-                builder = builder.proxy(proxy);
-            }
+/// Routes `builder`'s requests through `proxy`. A direct target ignores the
+/// proxy environment variables too; the system target leaves reqwest's own
+/// environment lookup on. An explicit proxy reqwest cannot use makes every
+/// request fail rather than leave without it.
+pub fn apply_proxy(builder: reqwest::ClientBuilder, proxy: &ProxyTarget) -> reqwest::ClientBuilder {
+    match proxy {
+        ProxyTarget::Direct => builder.no_proxy(),
+        ProxyTarget::System => builder,
+        ProxyTarget::Explicit(endpoint) => match endpoint.reqwest_proxy() {
+            Ok(proxy) => builder.proxy(proxy),
             Err(error) => {
-                // `url` may embed `username:password@`, so only the parse error is logged.
-                warn!(error = %error, "Invalid proxy URL; disabling proxy");
-                builder = builder.no_proxy();
+                // Only the address's scheme, host and port are logged.
+                warn!(
+                    error = %error.without_url(),
+                    proxy = %redacted_url(&endpoint.url),
+                    "Invalid proxy URL; requests through it will fail"
+                );
+                builder.proxy(unroutable_proxy())
             }
+        },
+    }
+}
+
+/// Clients kept per connection setting, oldest dropped first: each edited
+/// proxy login leaves a client behind.
+pub(crate) struct ClientCache<K> {
+    capacity: usize,
+    clients: Mutex<VecDeque<(K, reqwest::Client)>>,
+}
+
+impl<K: Clone + Eq> ClientCache<K> {
+    pub(crate) const fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            clients: Mutex::new(VecDeque::new()),
         }
-        return builder;
     }
 
-    if proxy_config.use_system_proxy {
-        // reqwest default behavior (no `no_proxy()` call) uses system/env proxy settings.
-        return builder;
+    /// The cached client for `key`, else the one `build` makes, which is kept
+    /// when it builds.
+    pub(crate) fn get_or_try_build<E>(
+        &self,
+        key: &K,
+        build: impl FnOnce() -> Result<reqwest::Client, E>,
+    ) -> Result<reqwest::Client, E> {
+        if let Some(client) = self.find(key) {
+            return Ok(client);
+        }
+        let client = build()?;
+        let mut clients = self.lock();
+        if !clients.iter().any(|(cached, _)| cached == key) {
+            if clients.len() >= self.capacity {
+                clients.pop_front();
+            }
+            clients.push_back((key.clone(), client.clone()));
+        }
+        Ok(client)
     }
 
-    // Proxy "enabled" but neither explicit URL nor system proxy => no proxy.
-    builder.no_proxy()
+    fn find(&self, key: &K) -> Option<reqwest::Client> {
+        self.lock()
+            .iter()
+            .find(|(cached, _)| cached == key)
+            .map(|(_, client)| client.clone())
+    }
+
+    /// A panic while the lock was held cannot leave an entry half written,
+    /// so a poisoned cache stays usable.
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<(K, reqwest::Client)>> {
+        self.clients
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// Build a `reqwest::Client` configured like `platforms-parser`'s default client,
-/// but with rust-srec proxy semantics applied.
+/// but with rust-srec proxy semantics applied. Fails when no client on the
+/// route can be built: a default client would ignore the route.
 pub fn build_platforms_client(
-    proxy_config: &ProxyConfig,
+    proxy: &ProxyTarget,
     request_timeout: Duration,
     pool_max_idle_per_host: usize,
-) -> reqwest::Client {
+) -> Result<reqwest::Client, ProxyError> {
     install_rustls_provider();
 
     let mut builder = platforms_parser::extractor::create_client_builder(None);
@@ -77,22 +112,56 @@ pub fn build_platforms_client(
         builder = builder.pool_max_idle_per_host(pool_max_idle_per_host);
     }
 
-    builder = apply_proxy_config(builder, proxy_config);
+    builder = apply_proxy(builder, proxy);
 
-    builder.build().unwrap_or_else(|error| {
+    builder.build().or_else(|error| {
         warn!(
             error = %error,
             "Failed to create HTTP client via platforms-parser; falling back to reqwest defaults"
         );
-
-        // Best-effort: preserve "no proxy" semantics when requested.
-        if !proxy_config.enabled || (!proxy_config.use_system_proxy && proxy_config.url.is_none()) {
-            reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new())
-        } else {
-            reqwest::Client::new()
-        }
+        // The fallback keeps the route.
+        build_client(apply_proxy(reqwest::Client::builder(), proxy))
     })
+}
+
+/// Builds `builder`, reporting a failure without its details, which may
+/// quote a proxy address.
+pub(crate) fn build_client(builder: reqwest::ClientBuilder) -> Result<reqwest::Client, ProxyError> {
+    builder.build().map_err(|error| {
+        warn!(error = %error.without_url(), "Could not build an HTTP client");
+        ProxyError::ClientUnavailable
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cache_keeps_the_newest_clients() {
+        install_rustls_provider();
+        let cache = ClientCache::new(2);
+        let builds = std::cell::Cell::new(0);
+        let client = |key: u8| {
+            cache
+                .get_or_try_build(&key, || {
+                    builds.set(builds.get() + 1);
+                    Ok::<_, ()>(reqwest::Client::new())
+                })
+                .unwrap()
+        };
+        client(1);
+        client(2);
+        client(1);
+        assert_eq!(builds.get(), 2);
+        client(3);
+        client(2);
+        assert_eq!(builds.get(), 3);
+        client(1);
+        assert_eq!(builds.get(), 4);
+        let failed: Result<_, &str> = cache.get_or_try_build(&9, || Err("no client"));
+        assert!(failed.is_err());
+        client(9);
+        assert_eq!(builds.get(), 5);
+    }
 }

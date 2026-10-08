@@ -3,11 +3,34 @@
 /// Placeholder substituted for every credential-bearing argument value.
 const REDACTED: &str = "[redacted]";
 
+/// Managed subprocess arguments may contain account material in positional,
+/// plugin-specific, or user-supplied flags. Do not guess which values are safe.
+pub fn redact_download_process_args(args: &[String], managed_credentials: bool) -> Vec<String> {
+    if managed_credentials {
+        vec![format!(
+            "[{} managed process arguments redacted]",
+            args.len()
+        )]
+    } else {
+        redact_process_args(args)
+    }
+}
+
+/// Unstructured engine output can echo URLs, response bodies, or login inputs.
+/// The separately classified failure kind carries the actionable diagnosis.
+pub fn sanitize_engine_message(message: &str, managed_credentials: bool) -> String {
+    if managed_credentials {
+        "Managed engine diagnostic redacted".to_owned()
+    } else {
+        message.to_owned()
+    }
+}
+
 /// Flags whose following argument is credential material in full.
 ///
 /// `FfmpegEngine::build_args` folds the `Cookie` header into the CRLF-joined
 /// `-headers` value, and both engines hand the proxy flags
-/// `ProxyConfig::effective_url()`, which embeds `user:pass@`.
+/// `ProxyEndpoint::url_with_login()`, which embeds `user:pass@`.
 const OPAQUE_VALUE_FLAGS: &[&str] = &[
     "-headers",
     "-cookies",
@@ -35,7 +58,7 @@ enum RedactionKind {
 ///
 /// Only the value following a known flag is rewritten, so flag names, the stream
 /// URL and the output path stay intact.
-pub fn redact_process_args(args: &[String]) -> Vec<String> {
+fn redact_process_args(args: &[String]) -> Vec<String> {
     let mut redacted = Vec::with_capacity(args.len());
     let mut redact_next: Option<RedactionKind> = None;
 
@@ -64,6 +87,35 @@ pub fn redact_process_args(args: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{REDACTED, redact_process_args};
+
+    #[test]
+    fn managed_arguments_hide_positional_and_plugin_specific_account_material() {
+        let args = args(&[
+            "-i",
+            "https://cdn.invalid/private-path-sentinel?signature=query-sentinel",
+            "--plugin-login=password-sentinel",
+            "--access-token",
+            "token-sentinel",
+            "-headers",
+            "Cookie: cookie-sentinel",
+        ]);
+        let rendered = super::redact_download_process_args(&args, true).join(" ");
+        assert!(rendered.contains("managed process arguments redacted"));
+        for secret in [
+            "private-path-sentinel",
+            "query-sentinel",
+            "password-sentinel",
+            "token-sentinel",
+            "cookie-sentinel",
+        ] {
+            assert!(!rendered.contains(secret));
+        }
+        assert_eq!(
+            super::redact_download_process_args(&args, false),
+            redact_process_args(&args)
+        );
+        assert!(!super::sanitize_engine_message(&args.join(" "), true).contains("sentinel"));
+    }
 
     fn args(raw: &[&str]) -> Vec<String> {
         raw.iter().map(|s| s.to_string()).collect()

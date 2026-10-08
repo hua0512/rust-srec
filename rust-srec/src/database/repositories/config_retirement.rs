@@ -61,6 +61,14 @@ pub(crate) async fn delete_or_defer(
         .bind(id)
         .execute(&mut *conn)
         .await?;
+        // Only retiring streamers still use the template, and they no longer
+        // select accounts; its selections would only keep omitted profiles.
+        if let RetiredConfigKind::Template = kind {
+            sqlx::query("DELETE FROM credential_selections WHERE template_config_id = ?")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
     } else {
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DELETE FROM {} WHERE id = ?",
@@ -89,6 +97,27 @@ pub(crate) async fn reap(conn: &mut SqliteConnection) -> Result<(), sqlx::Error>
         .bind(kind.key())
         .execute(&mut *conn)
         .await?;
+    }
+    reap_retired_profiles(conn).await
+}
+
+/// Remove only unreferenced retirement intents. Live sessions and policies keep
+/// their profile rows until runtime finalization and owner reaping have settled.
+pub(crate) async fn reap_retired_profiles(conn: &mut SqliteConnection) -> Result<(), sqlx::Error> {
+    let ids: Vec<String> =
+        sqlx::query_scalar("SELECT profile_id FROM retirement_credential_profiles")
+            .fetch_all(&mut *conn)
+            .await?;
+    let referenced = super::credential_profiles::references_of(conn, &ids)
+        .await
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+    for id in ids {
+        if !referenced.contains_key(&id) {
+            sqlx::query("DELETE FROM credential_profiles WHERE id = ?")
+                .bind(id)
+                .execute(&mut *conn)
+                .await?;
+        }
     }
     Ok(())
 }

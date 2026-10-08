@@ -5,7 +5,7 @@
 pub mod auth;
 pub mod baidupcs;
 pub mod config;
-pub mod credentials;
+pub mod credential_profiles;
 pub mod downloads;
 pub mod engines;
 pub mod export_import;
@@ -17,6 +17,7 @@ pub mod media;
 pub mod notifications;
 pub mod parse;
 pub mod pipeline;
+pub mod proxies;
 pub mod sessions;
 pub mod stream_proxy;
 pub mod streamers;
@@ -26,9 +27,43 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::api::auth_service::AuthPrincipal;
+use crate::api::error::{ApiError, ApiResult};
 use crate::api::middleware::AuthLayer;
 use crate::api::openapi::ApiDoc;
 use crate::api::server::AppState;
+
+/// Owner of playback contexts and login sessions while authentication is
+/// disabled. Parse stores contexts under it and the stream proxy looks them up
+/// under the same name, so both must use this constant.
+pub(crate) const LOCAL_ANONYMOUS_PRINCIPAL: &str = "local-anonymous";
+
+/// The caller's principal; anonymous callers are accepted only while
+/// authentication is disabled.
+pub(crate) fn request_principal(
+    auth_enabled: bool,
+    identity: Option<axum::Extension<AuthPrincipal>>,
+) -> ApiResult<String> {
+    match identity {
+        Some(axum::Extension(principal)) => Ok(principal.claims.sub),
+        None if !auth_enabled => Ok(LOCAL_ANONYMOUS_PRINCIPAL.into()),
+        None => Err(ApiError::unauthorized("Authentication required")),
+    }
+}
+
+/// Headers for responses that carry account-scoped data or playback URLs.
+pub(crate) fn private_response_headers() -> axum::http::HeaderMap {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, no-store"),
+    );
+    headers.insert(
+        axum::http::header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("no-referrer"),
+    );
+    headers
+}
 
 /// Create the main API router with all routes.
 ///
@@ -48,7 +83,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/streamers/{streamer_id}/filters", filters::router())
         .nest("/api/config", config::router())
         .nest("/api/config/backup", export_import::router())
-        .nest("/api/credentials", credentials::router())
+        .nest("/api/credentials", credential_profiles::router())
+        .nest("/api/proxies", proxies::router())
         .nest("/api/templates", templates::router())
         .nest("/api/engines", engines::router())
         .nest("/api/job", job::router())

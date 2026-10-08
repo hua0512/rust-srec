@@ -29,6 +29,11 @@ pub use platforms_parser::media::StreamInfo;
 pub enum MonitorEvent {
     /// Streamer went live.
     StreamerLive {
+        /// A prior process cannot authorize reuse of its extracted media.
+        #[serde(default)]
+        runtime_instance: Option<String>,
+        #[serde(default)]
+        credential_binding: Option<Box<crate::credentials::CredentialBinding>>,
         streamer_id: String,
         session_id: String,
         streamer_name: String,
@@ -43,7 +48,7 @@ pub enum MonitorEvent {
         /// These should be merged with StreamInfo headers and passed to download engines.
         media_headers: Option<HashMap<String, String>>,
         /// Additional platform-specific metadata extracted from MediaInfo.extras.
-        media_extras: Option<HashMap<String, String>>,
+        media_extras: Option<Box<HashMap<String, String>>>,
         timestamp: DateTime<Utc>,
     },
     /// Streamer went offline.
@@ -92,6 +97,11 @@ pub enum MonitorEvent {
         reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
+}
+
+pub(crate) fn runtime_instance_id() -> &'static str {
+    static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    INSTANCE.get_or_init(|| uuid::Uuid::new_v4().to_string())
 }
 
 /// A durable monitor event awaiting acknowledgement from the required runtime consumer.
@@ -241,6 +251,8 @@ mod tests {
     #[test]
     fn test_event_description() {
         let event = MonitorEvent::StreamerLive {
+            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+            credential_binding: None,
             streamer_id: "123".to_string(),
             session_id: "session-123".to_string(),
             streamer_name: "TestStreamer".to_string(),
@@ -259,6 +271,8 @@ mod tests {
     #[test]
     fn test_should_notify() {
         let live_event = MonitorEvent::StreamerLive {
+            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
+            credential_binding: None,
             streamer_id: "123".to_string(),
             session_id: "session-123".to_string(),
             streamer_name: "Test".to_string(),

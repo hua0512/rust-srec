@@ -248,6 +248,10 @@ pub struct StreamerResponse {
     pub disabled_until: Option<DateTime<Utc>>,
     pub last_error: Option<String>,
     pub last_live_time: Option<DateTime<Utc>>,
+    /// Set while the streamer's latest check, queued start or recovery found
+    /// no usable account on its platform, so nothing records until an account
+    /// is fixed. Absent for streamers that are not monitored.
+    pub credential_blocked: Option<crate::credentials::CredentialBlock>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub streamer_specific_config: Option<serde_json::Value>,
@@ -295,7 +299,9 @@ pub struct GlobalConfigResponse {
     pub max_concurrent_downloads: u32,
     pub max_concurrent_uploads: u32,
     pub streamer_check_delay_ms: u64,
-    pub proxy_config: Option<String>,
+    /// How requests connect unless a platform, template, streamer or account
+    /// chooses otherwise; never `inherit`.
+    pub proxy_route: crate::proxies::ProxyRoute,
     pub offline_check_delay_ms: u64,
     pub offline_check_count: u32,
     pub default_download_engine: String,
@@ -360,6 +366,13 @@ pub struct UpdateGlobalConfigRequest {
     pub default_extractor: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
     pub danmu_statistics: Option<serde_json::Value>,
+    /// The global route; never `inherit`. Omitting it keeps the stored route.
+    #[serde(default)]
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
+    /// Not accepted: routes are set with `proxy_route`. A request carrying a
+    /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
+    #[serde(default)]
+    #[schema(ignore)]
     pub proxy_config: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<serde_json::Value>,
@@ -393,9 +406,26 @@ pub struct PlatformConfigResponse {
     pub record_danmu: Option<bool>,
     /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.
     pub danmu_statistics: Option<String>,
-    pub cookies: Option<String>,
+    /// JSON `CredentialSelection` the platform stores; absent when it stores
+    /// none. In a request, absent keeps the stored selection and
+    /// `{"mode":"inherit"}` removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_selection: Option<String>,
+    /// Not accepted: accounts are credential profiles. A request carrying
+    /// nonblank cookies is rejected with `COOKIES_REPLACED`; null or blank is
+    /// ignored.
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub cookies: Option<serde_json::Value>,
     pub platform_specific_config: Option<String>,
-    pub proxy_config: Option<String>,
+    /// The platform's route. In a request, absent keeps the stored route.
+    #[serde(default)]
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
+    /// Not accepted: routes are set with `proxy_route`. A request carrying a
+    /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub proxy_config: Option<serde_json::Value>,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
@@ -426,9 +456,11 @@ impl From<crate::database::models::PlatformConfigDbModel> for PlatformConfigResp
             download_delay_ms: config.download_delay_ms.map(|v| v as u64),
             record_danmu: config.record_danmu,
             danmu_statistics: config.danmu_statistics,
-            cookies: config.cookies,
+            credential_selection: None,
+            cookies: None,
             platform_specific_config: config.platform_specific_config,
-            proxy_config: config.proxy_config,
+            proxy_route: None,
+            proxy_config: None,
             output_folder: config.output_folder,
             output_filename_template: config.output_filename_template,
             download_engine: config.download_engine,
@@ -445,6 +477,21 @@ impl From<crate::database::models::PlatformConfigDbModel> for PlatformConfigResp
             offline_check_count: config.offline_check_count.map(|v| v as u32),
             offline_check_delay_ms: config.offline_check_delay_ms.map(|v| v as u64),
         }
+    }
+}
+
+impl PlatformConfigResponse {
+    /// The response for `config` carrying the platform's own stored account
+    /// selection.
+    pub fn with_selection(
+        config: crate::database::models::PlatformConfigDbModel,
+        selection: Option<&crate::credentials::CredentialSelection>,
+        route: crate::proxies::ProxyRoute,
+    ) -> crate::Result<Self> {
+        let mut response = Self::from(config);
+        response.credential_selection = selection.map(serde_json::to_string).transpose()?;
+        response.proxy_route = Some(route);
+        Ok(response)
     }
 }
 
@@ -468,12 +515,24 @@ pub struct CreateTemplateRequest {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
-    pub cookies: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub proxy_config: Option<String>,
+    /// Not accepted: accounts are credential profiles. A request carrying
+    /// nonblank cookies is rejected with `COOKIES_REPLACED`; null or blank is
+    /// ignored.
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub cookies: Option<serde_json::Value>,
+    /// The template's route; absent inherits.
+    #[serde(default)]
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
+    /// Not accepted: routes are set with `proxy_route`. A request carrying a
+    /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
+    #[serde(default)]
+    #[schema(ignore)]
+    pub proxy_config: Option<serde_json::Value>,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -497,12 +556,24 @@ pub struct UpdateTemplateRequest {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
-    pub cookies: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub proxy_config: Option<String>,
+    /// Not accepted: accounts are credential profiles. A request carrying
+    /// nonblank cookies is rejected with `COOKIES_REPLACED`; null or blank is
+    /// ignored.
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
+    pub cookies: Option<serde_json::Value>,
+    /// The template's route; absent keeps the stored route.
+    #[serde(default)]
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
+    /// Not accepted: routes are set with `proxy_route`. A request carrying a
+    /// non-null value is rejected with `PROXY_CONFIG_REPLACED`.
+    #[serde(default)]
+    #[schema(ignore)]
+    pub proxy_config: Option<serde_json::Value>,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -527,12 +598,12 @@ pub struct TemplateResponse {
     pub platform_overrides: Option<serde_json::Value>,
     pub engines_override: Option<serde_json::Value>,
     pub stream_selection_config: Option<String>,
-    pub cookies: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
     pub max_download_duration_secs: Option<i64>,
     pub max_part_size_bytes: Option<i64>,
     pub download_retry_policy: Option<String>,
-    pub proxy_config: Option<String>,
+    /// The template's route.
+    pub proxy_route: crate::proxies::ProxyRoute,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -1166,31 +1237,36 @@ pub struct ExtractMetadataResponse {
 }
 
 /// Request to parse a URL and extract media info.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
 pub struct ParseUrlRequest {
     /// URL to parse
     pub url: String,
     /// Optional cookies for authentication
     pub cookies: Option<String>,
+    /// Explicit accessible profile; mutually exclusive with raw cookies.
+    pub credential_id: Option<String>,
 }
 
-/// Response from URL parsing with full media info.
-///
-/// This returns the complete MediaInfo from platforms_parser crate as JSON.
+/// Managed sources return safe playback metadata; legacy sources return media info.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ParseUrlResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub playback: Option<crate::services::playback_context::ManagedPlayback>,
     /// Whether extraction was successful
     pub success: bool,
     /// Whether the stream is currently live
     pub is_live: bool,
-    /// The full media info from platforms_parser (serialized)
+    /// Legacy media info; absent for managed playback.
     pub media_info: Option<serde_json::Value>,
     /// Error message if extraction failed
     pub error: Option<String>,
 }
 
 /// Request to resolve the true URL for a stream.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+///
+/// Managed sources resolve every stream during parse and never use this route.
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ResolveUrlRequest {
     /// The page URL (needed to create the extractor)
     pub url: String,

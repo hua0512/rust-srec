@@ -307,7 +307,6 @@ pub struct CacheStats {
 mod tests {
     use super::*;
     use crate::config::{GlobalConfigLayer, MergedConfig, PlatformConfigLayer};
-    use crate::domain::ProxyConfig;
 
     fn create_test_context() -> ResolvedStreamerContext {
         let config = MergedConfig::builder()
@@ -320,7 +319,6 @@ mod tests {
                 max_part_size_bytes: 8_589_934_592,
                 record_danmu: false,
                 danmu_statistics: None,
-                proxy_config: ProxyConfig::disabled(),
                 extractor: None,
                 download_engine: "ffmpeg".to_string(),
                 pipeline: None,
@@ -339,7 +337,6 @@ mod tests {
 
         ResolvedStreamerContext {
             config: Arc::new(config),
-            credential_source: None,
         }
     }
 

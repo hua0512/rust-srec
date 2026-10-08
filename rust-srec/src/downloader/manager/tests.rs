@@ -9,6 +9,8 @@ use crate::downloader::engine::{EngineStartError, IoErrorKindSer, SegmentEvent};
 use super::coordination::DownloadCoordinationReceipt;
 use super::*;
 
+mod credential_admission;
+
 #[derive(Clone)]
 struct ScriptedSegmentEngine {
     prelude: Vec<SegmentEvent>,
