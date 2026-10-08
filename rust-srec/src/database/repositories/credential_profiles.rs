@@ -555,18 +555,7 @@ impl CredentialProfileRepository {
     /// The sites of several profiles at once, each list sorted; profiles
     /// without sites have no entry.
     pub async fn sites_of(&self, ids: &[String]) -> Result<HashMap<String, Vec<String>>> {
-        if ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let rows: Vec<(String, String)> = sqlx::query_as("SELECT profile_id, site FROM credential_profile_sites WHERE profile_id IN (SELECT value FROM json_each(?)) ORDER BY profile_id, site")
-            .bind(serde_json::to_string(ids)?)
-            .fetch_all(&self.pool)
-            .await?;
-        let mut sites: HashMap<String, Vec<String>> = HashMap::new();
-        for (profile_id, site) in rows {
-            sites.entry(profile_id).or_default().push(site);
-        }
-        Ok(sites)
+        sites_of(&mut *self.pool.acquire().await?, ids).await
     }
 
     /// The host of a Streamlink streamer's URL and the accounts whose sites
@@ -911,6 +900,26 @@ pub(crate) async fn sites_in(
     .bind(profile_id)
     .fetch_all(connection)
     .await?)
+}
+
+/// The sites of several profiles at once, each list sorted; profiles without
+/// sites have no entry.
+pub(crate) async fn sites_of(
+    connection: &mut SqliteConnection,
+    ids: &[String],
+) -> Result<HashMap<String, Vec<String>>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT profile_id, site FROM credential_profile_sites WHERE profile_id IN (SELECT value FROM json_each(?)) ORDER BY profile_id, site")
+        .bind(serde_json::to_string(ids)?)
+        .fetch_all(connection)
+        .await?;
+    let mut sites: HashMap<String, Vec<String>> = HashMap::new();
+    for (profile_id, site) in rows {
+        sites.entry(profile_id).or_default().push(site);
+    }
+    Ok(sites)
 }
 
 /// Caller owns BEGIN IMMEDIATE. Replaces the sites `profile_id` names and

@@ -481,7 +481,7 @@ fn require_scope_allowed(
     }
     if !matches!(owner, CredentialOwner::Streamer { .. }) {
         return Err(ProfileError::PerStreamerOnly(
-            "Streamlink serves many unrelated sites, so its accounts are chosen on each streamer, not on the platform or a template",
+            "Streamlink serves many unrelated sites, so its accounts are chosen by the sites they name or on each streamer, not on the platform or a template",
         )
         .into());
     }

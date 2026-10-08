@@ -129,7 +129,11 @@ export const PlatformCredentialCapabilitiesSchema = z.object({
   qr_login: z.boolean(),
   check: z.boolean(),
   refresh: z.boolean(),
-  /** Accounts are chosen per streamer, as none or one fixed account. */
+  /**
+   * The platform serves many unrelated sites: its accounts name the sites
+   * they are for, and only a streamer chooses, as none or one fixed account.
+   * Without a choice, a streamer uses the account for its site.
+   */
   per_streamer_selection: z.boolean(),
 });
 export type PlatformCredentialCapabilities = z.infer<

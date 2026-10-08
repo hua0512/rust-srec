@@ -33,15 +33,7 @@ pub(super) async fn export_profiles(
         "SELECT p.*, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE NOT EXISTS(SELECT 1 FROM retirement_credential_profiles r WHERE r.profile_id = p.id) ORDER BY p.id"
     ).fetch_all(pool).await?;
     let ids: Vec<String> = profiles.iter().map(|row| row.profile.id.clone()).collect();
-    let mut sites = sqlx::query_as::<_, (String, String)>("SELECT profile_id, site FROM credential_profile_sites WHERE profile_id IN (SELECT value FROM json_each(?)) ORDER BY profile_id, site")
-        .bind(serde_json::to_string(&ids)?)
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .fold(HashMap::<String, Vec<String>>::new(), |mut sites, (id, site)| {
-            sites.entry(id).or_default().push(site);
-            sites
-        });
+    let mut sites = credential_profiles::sites_of(&mut *pool.acquire().await?, &ids).await?;
     let mut result = Vec::with_capacity(profiles.len());
     for row in profiles {
         let profile = row.profile;

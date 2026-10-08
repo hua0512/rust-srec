@@ -248,7 +248,9 @@ async fn details(
 pub struct PlatformCredentialCapabilities {
     #[serde(flatten)]
     pub provider: ProviderCapabilities,
-    /// Accounts are chosen per streamer, as none or one fixed account.
+    /// The platform serves many unrelated sites: its accounts name the sites
+    /// they are for, and only a streamer chooses, as none or one fixed
+    /// account. Without a choice, a streamer uses the account for its site.
     pub per_streamer_selection: bool,
 }
 
