@@ -193,9 +193,11 @@ Profile saves happen immediately; selecting the saved profile in an unsaved conf
 
 ### Streamlink accounts {#streamlink-accounts}
 
-Streamers on sites without a built-in extractor, such as YouTube or Kick, all belong to the Streamlink platform. Because that one platform covers many unrelated sites, its accounts are chosen per streamer:
+Streamers on sites without a built-in extractor, such as YouTube or Kick, all belong to the Streamlink platform. Because that one platform covers many unrelated sites, its accounts are chosen by site or per streamer:
 
-- Add profiles on the Streamlink platform page, then choose **No authentication** or one **Fixed account** in each streamer's settings. A streamer that inherits uses no account.
+- Add profiles on the Streamlink platform page and enter the **Sites** each one is for, such as `youtube.com`. A site also covers its subdomains: `youtube.com` covers `www.youtube.com` and `m.youtube.com`, but not `notyoutube.com`. A whole URL can be pasted, a leading `www.` is dropped, and each site belongs to one account only.
+- A streamer that inherits uses the account whose site covers its URL. When two sites cover it, the more specific one wins, so `m.youtube.com` beats `youtube.com`. Without such an account the streamer records signed out.
+- A streamer can choose **No authentication** or one **Fixed account** in its settings instead. The settings warn when the fixed account is set up for other sites, because its cookies would be sent to the streamer's site.
 - The Streamlink platform and template overrides for it cannot select accounts, and pools are not available, so there is no automatic failover to another account.
 - Streamlink receives the profile's cookies and connects as the account's [proxy setting](#account-proxies) chooses. The account is not checked or refreshed automatically, and a login failure does not mark it invalid.
 - Credentials written into the Streamlink engine's or extractor's `extra_args` are passed to Streamlink as written. They are not managed by profiles, are never checked, and apply to every streamer using those settings.
@@ -209,7 +211,7 @@ Earlier versions stored cookies, tokens and logins (Twitch OAuth token, Douyin T
 - Each platform, template or streamer that carried its own credentials gets a profile on its platform, labeled after it with "(migrated)", and a fixed selection of that profile. The profile holds what its recordings used before, including the platform's SOOP login.
 - Identical credentials on one platform share a single profile.
 - A template's cookie is converted only for platforms whose streamers use the template.
-- A cookie on the Streamlink platform, or a template cookie used by Streamlink streamers, becomes a fixed selection on each of those streamers that has no account of its own, because [Streamlink accounts](#streamlink-accounts) are chosen per streamer. Backups are imported the same way, including a Streamlink platform or template selection; an imported pool there keeps only its first account.
+- A cookie on the Streamlink platform, or a template cookie used by Streamlink streamers, becomes a fixed selection on each of those streamers that has no account of its own, because a [Streamlink account](#streamlink-accounts) is never shared by every site. Backups are imported the same way, including a Streamlink platform or template selection; an imported pool there keeps only its first account.
 - Empty cookie fields are treated as unset: that scope now inherits.
 - Credentials that are not valid account material are dropped, with a warning in the log.
 

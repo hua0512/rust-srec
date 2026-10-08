@@ -29,6 +29,17 @@ pub enum ProfileError {
     /// per streamer, one at a time.
     #[error("{0}")]
     PerStreamerOnly(&'static str),
+    /// A site of a Streamlink account is not a host name, or the account is
+    /// not on the Streamlink platform.
+    #[error("{0}")]
+    InvalidSite(String),
+    /// Another account already names the site.
+    #[error("site {site} already belongs to account {label:?}")]
+    SiteTaken {
+        site: String,
+        profile_id: String,
+        label: String,
+    },
     /// A platform cannot be deleted while streamers record from it or
     /// templates choose accounts on it.
     #[error("platform is used by streamers {streamer_ids:?} and templates {template_ids:?}")]

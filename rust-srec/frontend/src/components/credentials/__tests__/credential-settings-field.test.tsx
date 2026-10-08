@@ -130,16 +130,17 @@ it('scopes on one platform share a single fetch of its accounts', async () => {
     });
 });
 
-it('Streamlink accounts are chosen per streamer, not on the platform or a template', async () => {
-  for (const owner of [platformOwner, templateOwner]) {
+it('Streamlink accounts are chosen by site or per streamer, not on the platform or a template', async () => {
+  for (const [owner, text] of [
+    [platformOwner, /each account names the sites it is for/],
+    [templateOwner, /chosen by site or on each streamer, not in a template/],
+  ] as const) {
     renderCredentials(settings(owner, 'streamlink'));
     expect(
       await screen.findByRole('button', { name: rowName }),
     ).toBeInTheDocument();
     expect(screen.queryByText('Account selection')).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/so its accounts are chosen on each streamer/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(text)).toBeInTheDocument();
     cleanup();
   }
   // The platform page still manages Streamlink accounts.

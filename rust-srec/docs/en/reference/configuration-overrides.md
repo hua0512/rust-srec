@@ -269,9 +269,15 @@ request repeats the old selection; a streamer that is deleted stops selecting im
 
 On the `streamlink` platform only a streamer stores a selection, and only `none` or `fixed`. A
 selection on that platform or in a template's `platform_overrides["streamlink"]`, or a pool on a
-Streamlink streamer, fails with HTTP 422 `CREDENTIAL_SELECTION_PER_STREAMER`; a Streamlink streamer
-without its own selection uses no account. Backup import moves such selections onto the Streamlink
-streamers instead. See [Streamlink accounts](../concepts/configuration.md#streamlink-accounts).
+Streamlink streamer, fails with HTTP 422 `CREDENTIAL_SELECTION_PER_STREAMER`. Backup import moves
+such selections onto the Streamlink streamers instead. A Streamlink streamer without its own
+selection uses the account whose `sites` cover its URL, or none. Profiles take `sites` on create
+and update (omitting it on update keeps them); only Streamlink profiles accept them, an invalid
+site fails with HTTP 422, and a site another profile already has fails with HTTP 409
+`CREDENTIAL_SITE_TAKEN`, naming that profile. For a Streamlink streamer,
+`GET /api/credentials/selection` also returns `site`: the streamer's host, the site that decides
+its inherited account, and the profiles whose sites cover the host. See
+[Streamlink accounts](../concepts/configuration.md#streamlink-accounts).
 
 ## Proxy route JSON {#proxy-route-json}
 

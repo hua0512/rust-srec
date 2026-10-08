@@ -173,6 +173,7 @@ fn profile(platform: &str) -> CredentialProfileExport {
         access_token: None,
         reauth_config: None,
         proxy_route: None,
+        sites: None,
     }
 }
 
@@ -872,4 +873,103 @@ fn cookie_platform(snapshot: &ImportSnapshot) -> &crate::database::models::Platf
         .values()
         .find(|platform| platform.platform_name.eq_ignore_ascii_case("huya"))
         .unwrap()
+}
+
+fn streamlink_account(sites: Option<&[&str]>) -> CredentialProfileExport {
+    let mut account = profile("streamlink");
+    account.refresh_token = None;
+    account.sites = sites.map(|sites| sites.iter().map(|site| (*site).to_owned()).collect());
+    account
+}
+
+async fn sites_of(connection: &mut sqlx::SqliteConnection, id: &str) -> Vec<String> {
+    crate::database::repositories::credential_profiles::sites_in(connection, id)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn streamlink_account_sites_round_trip_and_follow_the_import_mode() {
+    let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+    run_migrations(&pool).await.unwrap();
+    let mut tx = begin_immediate(&pool).await.unwrap();
+    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+    let mut config = import_config(&snapshot.global);
+    let youtube = streamlink_account(Some(&["https://www.youtube.com/", "kick.com"]));
+    config.credential_profiles = vec![youtube.clone(), profile("bilibili")];
+    config.update_schema_version();
+    validate_import(&config, ImportMode::Merge).unwrap();
+    apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    // Only Streamlink accounts carry their sites, stored normalized.
+    let exported = profiles::export_profiles(&pool, &Default::default())
+        .await
+        .unwrap();
+    for account in &exported {
+        let expected = (account.id == youtube.id)
+            .then(|| vec!["kick.com".to_owned(), "youtube.com".to_owned()]);
+        assert_eq!(account.sites, expected, "{}", account.platform);
+    }
+
+    // A merge that omits the sites keeps them.
+    let mut tx = begin_immediate(&pool).await.unwrap();
+    let mut merged = config.clone();
+    merged.credential_profiles[0].sites = None;
+    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+    apply_import(&mut tx, &snapshot, &merged, ImportMode::Merge)
+        .await
+        .unwrap();
+    assert_eq!(
+        sites_of(&mut tx, &youtube.id).await,
+        ["kick.com", "youtube.com"]
+    );
+
+    // A site stays with one account, inside a bundle and against a stored
+    // account the bundle leaves alone.
+    let mut twice = config.clone();
+    twice
+        .credential_profiles
+        .push(streamlink_account(Some(&["youtube.com"])));
+    assert!(validate_import(&twice, ImportMode::Merge).is_err());
+    let mut elsewhere = config.clone();
+    elsewhere.credential_profiles[1].sites = Some(vec!["bilibili.com".into()]);
+    assert!(validate_import(&elsewhere, ImportMode::Merge).is_err());
+    let mut taken = config.clone();
+    taken.credential_profiles = vec![streamlink_account(Some(&["m.kick.com", "kick.com"]))];
+    validate_import(&taken, ImportMode::Merge).unwrap();
+    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+    let error = apply_import(&mut tx, &snapshot, &taken, ImportMode::Merge)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("kick.com"), "{error}");
+    tx.rollback().await.unwrap();
+
+    // Moving a site between the bundle's accounts works in one import.
+    let mut tx = begin_immediate(&pool).await.unwrap();
+    let mut moved = config.clone();
+    let mobile = streamlink_account(Some(&["kick.com"]));
+    moved.credential_profiles[0].sites = Some(vec!["youtube.com".into()]);
+    moved.credential_profiles.push(mobile.clone());
+    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+    apply_import(&mut tx, &snapshot, &moved, ImportMode::Merge)
+        .await
+        .unwrap();
+    assert_eq!(sites_of(&mut tx, &youtube.id).await, ["youtube.com"]);
+    assert_eq!(sites_of(&mut tx, &mobile.id).await, ["kick.com"]);
+
+    // A replace retires the accounts it omits, freeing their sites, and
+    // clears the sites of accounts that carry none.
+    let mut replaced = config.clone();
+    let successor = streamlink_account(Some(&["youtube.com"]));
+    replaced.credential_profiles = vec![successor.clone(), streamlink_account(None)];
+    let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+    apply_import(&mut tx, &snapshot, &replaced, ImportMode::Replace)
+        .await
+        .unwrap();
+    assert_eq!(sites_of(&mut tx, &successor.id).await, ["youtube.com"]);
+    assert!(sites_of(&mut tx, &mobile.id).await.is_empty());
+    assert!(sites_of(&mut tx, &youtube.id).await.is_empty());
 }

@@ -138,6 +138,11 @@ export type PlatformCredentialCapabilities = z.infer<
 
 export const CredentialProfileDetailSchema = z.object({
   profile: CredentialProfileSummarySchema,
+  /**
+   * The sites a Streamlink account is for, sorted. Streamlink streamers on
+   * them that choose no account use it.
+   */
+  sites: z.array(z.string()).optional(),
   health: CredentialProfileHealthSchema.nullable(),
   references: ProfileReferencesSchema,
   capabilities: z.object({
@@ -198,6 +203,22 @@ export const EffectiveCredentialSelectionSchema = z.object({
     .object({ identity: z.object({ profile_id: z.string().optional() }) })
     .nullable()
     .optional(),
+  /**
+   * For a Streamlink streamer, its site and the accounts that name it.
+   * `resolved` comes from that site when the streamer chooses no account and
+   * `site.site` is set.
+   */
+  site: z
+    .object({
+      /** The host of the streamer's URL, without a leading `www.`. */
+      host: z.string(),
+      /** The most specific account site that covers the host. */
+      site: z.string().nullable(),
+      /** Accounts whose sites cover the host, most specific site first. */
+      accounts: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type EffectiveCredentialSelection = z.infer<
@@ -212,6 +233,8 @@ export const CredentialProfileCreateSchema = z
     material: CredentialMaterialSchema,
     /** Omitted follows the recording using the account. */
     proxy_route: ProxyRouteSchema.optional(),
+    /** The sites a Streamlink account is for, as host names or URLs. */
+    sites: z.array(z.string()).optional(),
   })
   .strict();
 export const CredentialProfileUpdateSchema = z
@@ -223,6 +246,8 @@ export const CredentialProfileUpdateSchema = z
     replacement: CredentialMaterialSchema.optional(),
     /** Replaces the account's own route; omitted keeps it. */
     proxy_route: ProxyRouteSchema.optional(),
+    /** Replaces a Streamlink account's sites; omitted keeps them. */
+    sites: z.array(z.string()).optional(),
   })
   .strict();
 

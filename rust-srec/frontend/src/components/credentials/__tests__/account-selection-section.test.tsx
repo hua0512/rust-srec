@@ -189,7 +189,7 @@ it('a Streamlink streamer picks one account and never a pool', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
   fireEvent.keyDown(screen.getAllByRole('combobox')[0], { key: 'ArrowDown' });
   expect(
-    await screen.findByRole('option', { name: 'Inherit (no account)' }),
+    await screen.findByRole('option', { name: "Inherit (the site's account)" }),
   ).toBeInTheDocument();
   expect(
     screen.getByRole('option', { name: 'No authentication' }),
@@ -251,4 +251,82 @@ it.each([
   });
   renderSection('Bilibili', platformOwner, selection);
   expect(await screen.findByRole('status')).toHaveTextContent(text);
+});
+
+describe('a Streamlink streamer', () => {
+  const youtubeAccount = accountDetail({ sites: ['youtube.com'] });
+  const site = (host: string, accounts: string[] = []) => ({
+    host,
+    site: accounts.length ? host : null,
+    accounts,
+  });
+
+  beforeEach(() => {
+    vi.mocked(listCredentialProfiles).mockResolvedValue([youtubeAccount]);
+  });
+
+  it('inherits the account set up for its site', async () => {
+    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
+      configured: null,
+      resolved: {
+        owner: platformOwner,
+        selection: { mode: 'fixed', credential_id: profile.id },
+      },
+      candidates: [youtubeAccount],
+      unavailable_reason: null,
+      site: site('youtube.com', [profile.id]),
+    });
+    renderSection('streamlink', streamerOwner, { mode: 'inherit' });
+    await sentence('Recording uses Account A');
+    await sentence('The account set up for youtube.com');
+  });
+
+  it('records signed out when no account is set up for its site', async () => {
+    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
+      configured: null,
+      resolved: null,
+      candidates: [],
+      unavailable_reason: null,
+      site: site('kick.com'),
+    });
+    renderSection('streamlink', streamerOwner, { mode: 'inherit' });
+    await sentence('No account — records signed out');
+    await sentence('No account is set up for kick.com');
+  });
+
+  it('warns about an account set up for other sites', async () => {
+    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
+      configured: { mode: 'fixed', credential_id: profile.id },
+      resolved: null,
+      candidates: [],
+      unavailable_reason: null,
+      site: site('kick.com'),
+    });
+    renderSection('streamlink', streamerOwner);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Account A is set up for youtube.com, but this streamer is on kick.com. Its cookies will be sent to kick.com.',
+    );
+  });
+
+  it.each([
+    ['is set up for its site', ['youtube.com'], [profile.id]],
+    ['names no sites', [], []],
+  ])(
+    'does not warn about an account that %s',
+    async (_, sites: string[], accounts: string[]) => {
+      vi.mocked(listCredentialProfiles).mockResolvedValue([
+        accountDetail({ sites }),
+      ]);
+      vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
+        configured: { mode: 'fixed', credential_id: profile.id },
+        resolved: null,
+        candidates: [],
+        unavailable_reason: null,
+        site: site('youtube.com', accounts),
+      });
+      renderSection('streamlink', streamerOwner);
+      await sentence('Recording uses Account A');
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    },
+  );
 });

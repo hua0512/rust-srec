@@ -684,6 +684,7 @@ fn documents_split_and_rejoin_their_selection() {
         platform_id: "platform-douyu".into(),
         platform_name: "douyu".into(),
         selection: CredentialSelection::None,
+        site: None,
     };
     let overrides: serde_json::Value = serde_json::from_str(overrides.as_deref().unwrap()).unwrap();
     assert_eq!(
@@ -807,4 +808,216 @@ async fn streamlink_accounts_are_chosen_per_streamer_one_at_a_time() {
     })
     .await
     .unwrap();
+}
+
+impl Fixture {
+    async fn name_sites(
+        &self,
+        id: &str,
+        sites: &[&str],
+    ) -> Result<crate::credentials::CredentialProfile> {
+        let version = self.profiles.get(id).await.unwrap().version;
+        let sites: Vec<String> = sites.iter().map(|site| (*site).to_owned()).collect();
+        self.profiles
+            .edit(
+                id,
+                version,
+                crate::database::repositories::credential_profiles::ProfileEdit {
+                    sites: Some(&sites),
+                    ..Default::default()
+                },
+            )
+            .await
+    }
+
+    async fn resolved(
+        &self,
+        streamer_id: &str,
+    ) -> Option<crate::credentials::ResolvedCredentialPolicy> {
+        let mut connection = self.pool.acquire().await.unwrap();
+        let layers = load_for_streamer(&mut connection, streamer_id, "platform-streamlink", None)
+            .await
+            .unwrap();
+        crate::credentials::resolve_authentication("platform-streamlink", &layers).unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_streamlink_streamer_without_an_account_uses_the_account_of_its_site() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let youtube = f.profile("platform-streamlink", "site=youtube").await;
+        let mobile = f.profile("platform-streamlink", "site=mobile").await;
+        let other = f.profile("platform-streamlink", "site=other").await;
+        let desktop = f
+            .streamer(
+                "https://www.youtube.com/@someone/live",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        let phone = f
+            .streamer(
+                "https://m.youtube.com/@someone/live",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        let kick = f
+            .streamer(
+                "https://kick.com/someone",
+                "platform-streamlink",
+                serde_json::json!({}),
+            )
+            .await;
+        assert!(f.resolved(&desktop.id).await.is_none());
+
+        let before = f.profiles.get(&youtube).await.unwrap();
+        let named = f
+            .name_sites(&youtube, &["https://www.youtube.com/"])
+            .await
+            .unwrap();
+        // Sites change which streamers use the account, not the account.
+        assert_eq!(named.revision, before.revision);
+        assert_eq!(named.version, before.version + 1);
+        f.name_sites(&mobile, &["m.youtube.com"]).await.unwrap();
+
+        let policy = f.resolved(&desktop.id).await.unwrap();
+        assert_eq!(policy.owner, platform("platform-streamlink"));
+        assert_eq!(policy.selection, fixed(&youtube));
+        // The most specific site wins.
+        assert_eq!(
+            f.resolved(&phone.id).await.unwrap().selection,
+            fixed(&mobile)
+        );
+        assert!(f.resolved(&kick.id).await.is_none());
+
+        let site = f.profiles.streamer_site(&phone.id).await.unwrap().unwrap();
+        assert_eq!(site.host, "m.youtube.com");
+        assert_eq!(site.site.as_deref(), Some("m.youtube.com"));
+        assert_eq!(site.accounts, [mobile.clone(), youtube.clone()]);
+        let site = f.profiles.streamer_site(&kick.id).await.unwrap().unwrap();
+        assert_eq!(
+            (site.host.as_str(), site.site, site.accounts.len()),
+            ("kick.com", None, 0)
+        );
+
+        // The streamer's own choice, including no account, beats its site.
+        let owner = CredentialOwner::Streamer {
+            streamer_id: desktop.id.clone(),
+        };
+        for selection in [CredentialSelection::None, fixed(&other)] {
+            let mut connection = f.pool.acquire().await.unwrap();
+            set(&mut connection, &owner, "platform-streamlink", &selection)
+                .await
+                .unwrap();
+            drop(connection);
+            let policy = f.resolved(&desktop.id).await.unwrap();
+            assert_eq!((policy.owner, policy.selection), (owner.clone(), selection));
+        }
+        let mut connection = f.pool.acquire().await.unwrap();
+        clear_owner(&mut connection, &owner).await.unwrap();
+        drop(connection);
+
+        // A site belongs to one account.
+        let error = f
+            .name_sites(&other, &["kick.com", "YouTube.com"])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::CredentialProfile(ProfileError::SiteTaken { site, profile_id, .. })
+                    if site == "youtube.com" && profile_id == &youtube
+            ),
+            "{error}"
+        );
+        assert!(
+            f.profiles
+                .sites_of(std::slice::from_ref(&other))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // Omitting sites keeps them; an empty list removes them.
+        let version = f.profiles.get(&youtube).await.unwrap().version;
+        f.profiles
+            .update(&youtube, version, Some("Renamed"), None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            f.resolved(&desktop.id).await.unwrap().selection,
+            fixed(&youtube)
+        );
+        f.name_sites(&youtube, &[]).await.unwrap();
+        assert!(f.resolved(&desktop.id).await.is_none());
+
+        // Deleting an account frees its sites.
+        let mobile_version = f.profiles.get(&mobile).await.unwrap().version;
+        f.profiles.delete(&mobile, mobile_version).await.unwrap();
+        assert!(f.resolved(&phone.id).await.is_none());
+        f.name_sites(&other, &["m.youtube.com"]).await.unwrap();
+        assert_eq!(
+            f.resolved(&phone.id).await.unwrap().selection,
+            fixed(&other)
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn only_streamlink_accounts_name_sites() {
+    let f = fixture().await;
+    let huya = f.profile("platform-huya", "huya=1").await;
+    let error = f.name_sites(&huya, &["huya.com"]).await.unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            Error::CredentialProfile(ProfileError::InvalidSite(_))
+        ),
+        "{error}"
+    );
+    let error = f
+        .profiles
+        .create_with_sites(
+            "platform-streamlink",
+            "Bad",
+            true,
+            &material("a=1"),
+            &crate::proxies::ProxyRoute::Inherit,
+            &["com".to_owned()],
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            Error::CredentialProfile(ProfileError::InvalidSite(_))
+        ),
+        "{error}"
+    );
+    // The refused account was not created.
+    let accounts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM credential_profiles WHERE platform_config_id = 'platform-streamlink'",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(accounts, 0);
+    let huya_streamer = f
+        .streamer(
+            "https://www.huya.com/123",
+            "platform-huya",
+            serde_json::json!({}),
+        )
+        .await;
+    assert!(
+        f.profiles
+            .streamer_site(&huya_streamer.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

@@ -1157,6 +1157,7 @@ async fn apply_import(
     .await?;
     delete_unimported_templates(tx, snapshot, config, replace, &mut changes.stats).await?;
     profiles::retire_omitted(tx, config, mode).await?;
+    profiles::write_sites(tx, config, replace).await?;
     proxies::delete_omitted(tx, config, mode).await?;
 
     apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;

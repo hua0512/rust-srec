@@ -196,6 +196,24 @@ impl From<Error> for ApiError {
                         "Credential owner is missing, retired, or inaccessible",
                     ),
                     ProfileError::InvalidMaterial(message) => ApiError::validation(message),
+                    ProfileError::InvalidSite(message) => ApiError::validation(message),
+                    ProfileError::SiteTaken {
+                        site,
+                        profile_id,
+                        label,
+                    } => {
+                        let mut error = ApiError::new(
+                            StatusCode::CONFLICT,
+                            "CREDENTIAL_SITE_TAKEN",
+                            "Another account already uses this site",
+                        );
+                        error.details = Some(serde_json::json!({
+                            "site": site,
+                            "profile_id": profile_id,
+                            "label": label,
+                        }));
+                        error
+                    }
                     ProfileError::PerStreamerOnly(message) => ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         "CREDENTIAL_SELECTION_PER_STREAMER",
@@ -523,6 +541,21 @@ mod tests {
                 ProfileError::InaccessibleReferences(vec!["streamer:a".into()]).into(),
                 StatusCode::CONFLICT,
                 "CREDENTIAL_REFERENCE_INACCESSIBLE",
+            ),
+            (
+                ProfileError::SiteTaken {
+                    site: "youtube.com".into(),
+                    profile_id: "a".into(),
+                    label: "Main".into(),
+                }
+                .into(),
+                StatusCode::CONFLICT,
+                "CREDENTIAL_SITE_TAKEN",
+            ),
+            (
+                ProfileError::InvalidSite("not a site".into()).into(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "VALIDATION_ERROR",
             ),
             (
                 ProfileError::ProviderUnavailable("deadline_exceeded").into(),

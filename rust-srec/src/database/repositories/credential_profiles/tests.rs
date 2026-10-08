@@ -287,3 +287,70 @@ async fn an_account_route_is_kept_replaced_or_removed_and_starts_a_new_revision(
         ProxyRoute::Direct
     );
 }
+
+#[tokio::test]
+async fn changing_sites_republishes_the_platform_configuration() {
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let profiles = CredentialProfileRepository::new(pool.clone(), pool.clone());
+    let (published, mut configuration) = tokio::sync::mpsc::unbounded_channel();
+    profiles.bind_publication(Arc::new(move |owner| {
+        published.send(owner).unwrap();
+    }));
+    let (published, mut material) = tokio::sync::mpsc::unbounded_channel();
+    profiles.bind_material_publication(Arc::new(move |owner| {
+        published.send(owner).unwrap();
+    }));
+    let owner = CredentialOwner::Platform {
+        platform_id: "platform-streamlink".into(),
+    };
+    let account = CredentialMaterial {
+        cookies: "a=1".into(),
+        refresh_token: None,
+        access_token: None,
+        reauth_config: None,
+    };
+    let profile = profiles
+        .create(owner.id(), "A", true, &account, &ProxyRoute::Inherit)
+        .await
+        .unwrap();
+    assert_eq!(material.try_recv().unwrap(), owner);
+    let renamed = profiles
+        .update(&profile.id, profile.version, Some("B"), None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(material.try_recv().unwrap(), owner);
+    assert!(configuration.try_recv().is_err());
+
+    let sites = ["kick.com".to_owned()];
+    let named = profiles
+        .edit(
+            &renamed.id,
+            renamed.version,
+            ProfileEdit {
+                sites: Some(&sites),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(configuration.try_recv().unwrap(), owner);
+    assert_eq!(material.try_recv().unwrap(), owner);
+    // Writing the same sites again changes nothing they decide.
+    let same = profiles
+        .edit(
+            &named.id,
+            named.version,
+            ProfileEdit {
+                sites: Some(&sites),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(configuration.try_recv().is_err());
+    profiles.delete(&same.id, same.version).await.unwrap();
+    assert_eq!(configuration.try_recv().unwrap(), owner);
+}

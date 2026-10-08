@@ -26,8 +26,8 @@ pub const AUTHENTICATION_FIELDS: &[&str] = &[
 /// stores none inherits, and with no selection at any layer the scope has no
 /// managed policy. `layers` are the selections of one streamer or scope on
 /// `platform_id`, in any order. On the Streamlink platform only a streamer's
-/// own selection counts, so inheriting there is anonymous whatever a platform
-/// or template row says.
+/// own selection and the account of its site count, so without either it is
+/// anonymous whatever a platform or template row says.
 pub(crate) fn resolve_authentication(
     platform_id: &str,
     layers: &[StoredSelection],
@@ -38,6 +38,7 @@ pub(crate) fn resolve_authentication(
             layer.platform_id == platform_id
                 && !matches!(layer.selection, CredentialSelection::Inherit)
                 && (matches!(layer.owner, CredentialOwner::Streamer { .. })
+                    || layer.site.is_some()
                     || !crate::domain::is_streamlink_platform(&layer.platform_name))
         })
         .min_by_key(|layer| layer.owner.precedence())

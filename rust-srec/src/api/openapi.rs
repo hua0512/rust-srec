@@ -421,6 +421,7 @@ pub struct MessageResponse {
             crate::config::backup::ProxyExport,
             crate::config::backup::BackupRoute,
             crate::api::routes::credential_profiles::EffectiveCredentialSelection,
+            crate::credentials::StreamerSite,
             crate::api::routes::parse::RenewPlaybackRequest,
             crate::services::playback_context::ManagedPlayback,
             crate::services::playback_context::PlaybackStream,

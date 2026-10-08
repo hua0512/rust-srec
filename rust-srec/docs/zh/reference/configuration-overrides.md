@@ -248,8 +248,12 @@ extras，而不是被跳过。
 
 在 `streamlink` 平台上，只有主播可以保存选择，且只能是 `none` 或 `fixed`。在该平台上或模板的
 `platform_overrides["streamlink"]` 中保存选择，或为 Streamlink 主播设置账号池，都会以 HTTP 422
-`CREDENTIAL_SELECTION_PER_STREAMER` 失败；没有自有选择的 Streamlink 主播不使用账号。导入备份时，
-这类选择会改为设置到各个 Streamlink 主播上。参见 [Streamlink 账号](../concepts/configuration.md#streamlink-accounts)。
+`CREDENTIAL_SELECTION_PER_STREAMER` 失败。导入备份时，这类选择会改为设置到各个 Streamlink 主播上。
+没有自有选择的 Streamlink 主播使用 `sites` 覆盖其 URL 的账号，没有则不使用账号。凭据配置在创建和更新时
+接受 `sites`（更新时省略则保留原值）；只有 Streamlink 凭据配置接受它，无效的网站以 HTTP 422 失败，
+已属于其他凭据配置的网站以 HTTP 409 `CREDENTIAL_SITE_TAKEN` 失败，并指明该凭据配置。对于 Streamlink 主播，
+`GET /api/credentials/selection` 还会返回 `site`：主播的主机名、决定其继承账号的网站，以及网站覆盖该主机名的凭据配置。
+参见 [Streamlink 账号](../concepts/configuration.md#streamlink-accounts)。
 
 ## 代理连接 JSON {#proxy-route-json}
 

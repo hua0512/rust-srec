@@ -134,6 +134,7 @@ pub(crate) fn upgrade_bundle(
             access_token: profile.material.access_token.clone(),
             reauth_config: profile.material.reauth_config.clone(),
             proxy_route: None,
+            sites: None,
         });
     }
     for platform in &mut export.platforms {

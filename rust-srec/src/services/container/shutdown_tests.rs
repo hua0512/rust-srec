@@ -94,6 +94,7 @@ async fn exported(state: &AppState) -> ConfigExport {
         access_token: None,
         reauth_config: None,
         proxy_route: None,
+        sites: None,
     });
     config.streamers[0]
         .streamer_specific_config

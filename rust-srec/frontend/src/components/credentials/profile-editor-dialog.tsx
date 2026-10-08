@@ -5,6 +5,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Cookie,
+  Globe,
   Info,
   KeyRound,
   Lock,
@@ -46,12 +47,41 @@ import { ProxyRoutePicker } from '@/components/config/shared/proxy-route-picker'
 import { sameRoute } from '@/components/proxies/proxy-route-label';
 import { Callout } from '@/components/shared/callout';
 import { platformCapabilitiesQueryOptions } from '@/api/credential-profiles';
+import { errorBody, errorDetails, hasErrorCode } from '@/lib/api-error';
 
 /** An account that inherits follows the route of the recording using it. */
 const FOLLOW_RECORDING = { kind: 'recording' } as const;
 
 /** How a new account signs in: a QR code scanned in the app, or pasted credentials. */
 type SignIn = 'qr' | 'paste';
+
+/** The sites typed into the editor, separated by commas, spaces or lines. */
+function parseSites(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((site) => site.trim())
+    .filter(Boolean);
+}
+
+/** Why saving failed, naming the account that already has a site. */
+function SaveError({ error }: { error: Error }) {
+  const details = errorDetails(error);
+  if (
+    hasErrorCode(errorBody(error), 'CREDENTIAL_SITE_TAKEN') &&
+    typeof details?.site === 'string' &&
+    typeof details.label === 'string'
+  ) {
+    const site = details.site;
+    const label = details.label;
+    return (
+      <Trans>
+        {site} already belongs to the account {label}. A site can belong to one
+        account only.
+      </Trans>
+    );
+  }
+  return <>{error.message}</>;
+}
 
 /**
  * Adds an account to the platform, or edits one's label, its proxy setting
@@ -94,8 +124,15 @@ export function ProfileEditorDialog({
   const [proxyRoute, setProxyRoute] = useState<ProxyRoute>(storedRoute);
   const routeChanged = !sameRoute(proxyRoute, storedRoute);
   const proxyId = useId();
+  const storedSites = profile?.sites ?? [];
+  const [sitesText, setSitesText] = useState(storedSites.join(', '));
+  const sites = parseSites(sitesText);
+  const sitesChanged = sites.join(',') !== storedSites.join(',');
+  const sitesId = useId();
   // Until the platform's rules load, only cookies are offered.
   const fields = useQuery(platformCapabilitiesQueryOptions(platformId)).data;
+  // Streamlink accounts name the sites they are for.
+  const namesSites = fields?.per_streamer_selection ?? false;
   // QR login is the default for a new account wherever the platform has it.
   const signIn: SignIn =
     !profile && fields?.qr_login ? (chosenSignIn ?? 'qr') : 'paste';
@@ -119,6 +156,7 @@ export function ProfileEditorDialog({
             label,
             ...(replace ? { replacement: material } : {}),
             ...(routeChanged ? { proxy_route: proxyRoute } : {}),
+            ...(namesSites && sitesChanged ? { sites } : {}),
           },
         });
       else
@@ -131,6 +169,7 @@ export function ProfileEditorDialog({
             ...(proxyRoute.kind !== 'inherit'
               ? { proxy_route: proxyRoute }
               : {}),
+            ...(namesSites && sites.length ? { sites } : {}),
           },
         });
     },
@@ -300,6 +339,32 @@ export function ProfileEditorDialog({
               )}
             </div>
           )}
+          {namesSites && (
+            <div className="space-y-2">
+              <ConfigFieldLabel icon={Globe} plain>
+                <label htmlFor={sitesId}>
+                  <Trans>Sites</Trans>
+                </label>
+              </ConfigFieldLabel>
+              <Input
+                id={sitesId}
+                className={CONFIG_INPUT}
+                placeholder="youtube.com, kick.com"
+                autoComplete="off"
+                spellCheck={false}
+                value={sitesText}
+                onChange={(event) => setSitesText(event.target.value)}
+              />
+              <p className={CONFIG_DESCRIPTION}>
+                <Trans>
+                  Streamers on these sites that don&apos;t choose an account use
+                  this one. A site also covers its subdomains, so youtube.com
+                  covers www.youtube.com and m.youtube.com. Separate sites with
+                  commas.
+                </Trans>
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <ConfigFieldLabel icon={Network} plain>
               <label htmlFor={proxyId}>
@@ -323,7 +388,7 @@ export function ProfileEditorDialog({
           </div>
           {save.error && (
             <Callout tone="error" icon={AlertCircle}>
-              {save.error.message}
+              <SaveError error={save.error} />
             </Callout>
           )}
         </div>
