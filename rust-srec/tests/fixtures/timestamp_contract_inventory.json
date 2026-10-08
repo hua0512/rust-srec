@@ -30,6 +30,88 @@
       "user_id"
     ]
   },
+  "credential_login_sessions": {
+    "required_epoch_ms": [
+      "created_at",
+      "expires_at"
+    ],
+    "nullable_epoch_ms": [
+      "completed_at"
+    ],
+    "non_timestamp_columns": [
+      "id",
+      "principal",
+      "platform_config_id",
+      "target",
+      "provider_auth_code",
+      "state",
+      "result_profile_id",
+      "result_version"
+    ]
+  },
+  "credential_profile_health": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [
+      "last_check_at",
+      "last_refresh_at",
+      "last_failure_at"
+    ],
+    "non_timestamp_columns": [
+      "profile_id",
+      "revision",
+      "validity",
+      "refresh_failure_count",
+      "last_notified_failure_count",
+      "reason_code"
+    ]
+  },
+  "credential_profiles": {
+    "required_epoch_ms": [
+      "created_at",
+      "updated_at"
+    ],
+    "nullable_epoch_ms": [
+      "last_used_at"
+    ],
+    "non_timestamp_columns": [
+      "id",
+      "platform_config_id",
+      "label",
+      "enabled",
+      "cookies",
+      "refresh_token",
+      "access_token",
+      "reauth_config",
+      "revision",
+      "version",
+      "proxy_route",
+      "proxy_id"
+    ]
+  },
+  "credential_selection_members": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "selection_id",
+      "platform_config_id",
+      "position",
+      "profile_id"
+    ]
+  },
+  "credential_selections": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "id",
+      "platform_config_id",
+      "template_config_id",
+      "streamer_id",
+      "mode",
+      "strategy",
+      "failover",
+      "max_attempts"
+    ]
+  },
   "dag_execution": {
     "required_epoch_ms": [
       "created_at",
@@ -137,7 +219,6 @@
       "max_concurrent_downloads",
       "max_concurrent_uploads",
       "streamer_check_delay_ms",
-      "proxy_config",
       "offline_check_delay_ms",
       "offline_check_count",
       "default_download_engine",
@@ -159,7 +240,9 @@
       "gpu_health_probe_interval_secs",
       "stream_proxy_allow_private_targets",
       "default_extractor",
-      "danmu_statistics"
+      "danmu_statistics",
+      "proxy_route",
+      "proxy_id"
     ]
   },
   "job": {
@@ -246,7 +329,8 @@
       "titles",
       "danmu_statistics_id",
       "total_size_bytes",
-      "session_complete_dispatched"
+      "session_complete_dispatched",
+      "credential_binding"
     ]
   },
   "media_outputs": {
@@ -348,9 +432,7 @@
       "platform_name",
       "fetch_delay_ms",
       "download_delay_ms",
-      "cookies",
       "platform_specific_config",
-      "proxy_config",
       "record_danmu",
       "output_folder",
       "output_filename_template",
@@ -367,7 +449,24 @@
       "offline_check_count",
       "offline_check_delay_ms",
       "extractor",
-      "danmu_statistics"
+      "danmu_statistics",
+      "proxy_route",
+      "proxy_id"
+    ]
+  },
+  "proxies": {
+    "required_epoch_ms": [
+      "created_at",
+      "updated_at"
+    ],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "id",
+      "name",
+      "url",
+      "username",
+      "password",
+      "version"
     ]
   },
   "refresh_tokens": {
@@ -392,6 +491,13 @@
     "non_timestamp_columns": [
       "kind",
       "config_id"
+    ]
+  },
+  "retirement_credential_profiles": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "profile_id"
     ]
   },
   "session_events": {
@@ -468,7 +574,9 @@
       "streamer_specific_config",
       "consecutive_error_count",
       "last_error",
-      "avatar"
+      "avatar",
+      "proxy_route",
+      "proxy_id"
     ]
   },
   "template_config": {
@@ -482,7 +590,6 @@
       "name",
       "output_folder",
       "output_filename_template",
-      "cookies",
       "output_file_format",
       "min_segment_size_bytes",
       "max_download_duration_secs",
@@ -492,7 +599,6 @@
       "download_retry_policy",
       "download_engine",
       "engines_override",
-      "proxy_config",
       "stream_selection_config",
       "pipeline",
       "session_complete_pipeline",
@@ -500,7 +606,9 @@
       "offline_check_count",
       "offline_check_delay_ms",
       "extractor",
-      "danmu_statistics"
+      "danmu_statistics",
+      "proxy_route",
+      "proxy_id"
     ]
   },
   "tool_credentials": {

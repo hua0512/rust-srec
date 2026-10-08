@@ -19,6 +19,8 @@ use super::RuntimeCoordinator;
 /// [`crate::monitor::MonitorEvent::StreamerLive`] but is decoupled from
 /// the enum so the spawned task can capture exactly what it needs.
 pub(super) struct StreamerLivePayload {
+    pub(super) runtime_instance: Option<String>,
+    pub(super) credential_binding: Option<crate::credentials::CredentialBinding>,
     pub(super) streamer_id: String,
     pub(super) session_id: String,
     pub(super) streamer_name: String,
@@ -27,6 +29,15 @@ pub(super) struct StreamerLivePayload {
     pub(super) streamer_url: String,
     pub(super) media_headers: Option<std::collections::HashMap<String, String>>,
     pub(super) media_extras: Option<std::collections::HashMap<String, String>>,
+}
+
+/// How a pipeline ended, for the caller that owns its retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PipelineExit {
+    Finished,
+    /// The bound account changed or became unavailable between extraction and
+    /// engine start. Fresh bound media is needed; the cached bundle is unusable.
+    CredentialsChanged,
 }
 
 /// Removes the per-streamer reservation from
@@ -81,7 +92,7 @@ pub(super) async fn run_live_download_pipeline(
     // tells the short-queue-wait branch to trust the lifecycle signal
     // instead of re-reading the streamer-manager cache.
     from_hysteresis_resume: bool,
-) {
+) -> PipelineExit {
     use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
 
     let RuntimeCoordinator {
@@ -96,6 +107,8 @@ pub(super) async fn run_live_download_pipeline(
     } = &*coordinator;
 
     let StreamerLivePayload {
+        runtime_instance,
+        mut credential_binding,
         streamer_id,
         session_id,
         streamer_name,
@@ -120,7 +133,7 @@ pub(super) async fn run_live_download_pipeline(
             "Skipping StreamerLive for {} — pipeline already in flight",
             streamer_id
         );
-        return;
+        return PipelineExit::Finished;
     }
     let _pipeline_guard = PipelineReservationGuard {
         map: pending_pipelines,
@@ -146,7 +159,7 @@ pub(super) async fn run_live_download_pipeline(
                 conflict.started_at
             );
         }
-        return;
+        return PipelineExit::Finished;
     }
 
     let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
@@ -156,7 +169,7 @@ pub(super) async fn run_live_download_pipeline(
                 "Ignoring StreamerLive for inactive streamer {} (state: {})",
                 streamer_id, metadata.state
             );
-            return;
+            return PipelineExit::Finished;
         }
         if metadata.is_disabled() {
             // Returning silently here would strand the pipeline: the session
@@ -194,16 +207,8 @@ pub(super) async fn run_live_download_pipeline(
             {
                 warn!(%error, "Failed to publish download rejection");
             }
-            return;
+            return PipelineExit::Finished;
         }
-    }
-
-    if streams.is_empty() {
-        warn!(
-            "Streamer {} has no streams available, cannot start download",
-            streamer_id
-        );
-        return;
     }
 
     let is_high_priority = streamer_metadata
@@ -212,7 +217,7 @@ pub(super) async fn run_live_download_pipeline(
     // Load merged config for this streamer.
     let resolved_config = tokio::select! {
         biased;
-        _ = cancel.cancelled() => return,
+        _ = cancel.cancelled() => return PipelineExit::Finished,
         config = config_service.get_config_for_streamer(&streamer_id) => config,
     };
     let merged_config = match resolved_config {
@@ -225,6 +230,32 @@ pub(super) async fn run_live_download_pipeline(
             Arc::new(crate::config::MergedConfig::builder().build())
         }
     };
+    let managed = credential_binding.is_some() || merged_config.credential_policy.is_some();
+    let replayed = runtime_instance.as_deref() != Some(crate::monitor::runtime_instance_id());
+    let mut credential_snapshot: Option<Arc<crate::credentials::CredentialSnapshot>> = None;
+    if streams.is_empty() && !managed && !replayed {
+        warn!(streamer_id, "No streams available for download startup");
+        return PipelineExit::Finished;
+    }
+    if let Some(binding) = credential_binding.as_ref() {
+        match coordinator
+            .stream_monitor
+            .session_credential_binding(&session_id)
+            .await
+        {
+            Ok(Some(current))
+                if current.epoch == binding.epoch && current.identity == binding.identity => {}
+            // An active session without a committed binding (a legacy session
+            // whose scope became managed, resumed from hysteresis) has no newer
+            // binding to protect. Managed startup re-extracts and commits the
+            // first epoch below; that commit also rechecks session liveness.
+            Ok(None) if coordinator.session_lifecycle.is_session_active(&session_id) => {}
+            _ => {
+                debug!(session_id, "Ignoring stale credential handoff");
+                return PipelineExit::Finished;
+            }
+        }
+    }
 
     // Sanitize names for filename usage.
     let sanitized_streamer = sanitize_filename_for_template(&streamer_name);
@@ -252,14 +283,14 @@ pub(super) async fn run_live_download_pipeline(
     };
     let preflight = tokio::select! {
         biased;
-        _ = cancel.cancelled() => return,
+        _ = cancel.cancelled() => return PipelineExit::Finished,
         engine = download_manager.preflight(preflight_req) => engine,
     };
     let engine = match preflight {
         Ok(e) => e,
         Err(e) => {
             warn!("Preflight failed for streamer {}: {}", streamer_id, e);
-            return; // Manager has already emitted DownloadRejected if applicable.
+            return PipelineExit::Finished; // Manager has already emitted DownloadRejected if applicable.
         }
     };
     let engine_type = engine.engine_type;
@@ -267,7 +298,7 @@ pub(super) async fn run_live_download_pipeline(
     // Honour cancellation that fired between preflight and slot acquire.
     if cancel.is_cancelled() {
         debug!("Streamer {} cancelled before slot acquire", streamer_id);
-        return;
+        return PipelineExit::Finished;
     }
 
     // Acquire slot.
@@ -295,14 +326,31 @@ pub(super) async fn run_live_download_pipeline(
                 "acquire_slot returned without a slot for streamer {}: {}",
                 streamer_id, e
             );
-            return;
+            return PipelineExit::Finished;
         }
     };
 
     let waited_ms = slot.waited_ms();
+    let recovered = if replayed {
+        None
+    } else {
+        coordinator.take_recovered_media(&session_id, credential_binding.as_ref())
+    };
 
     // Freshness re-check.
-    if waited_ms > download_manager.queue_freshness_threshold_ms() {
+    if let Some(recovered) = recovered {
+        // A successful credential diagnostic for this session just extracted
+        // with the committed binding; its bundle is this attempt's URL renewal.
+        debug!(
+            session_id,
+            "Starting with media from the credential diagnostic"
+        );
+        streams = recovered.streams;
+        media_headers = recovered.media_headers;
+        media_extras = recovered.media_extras;
+        credential_binding = Some(recovered.binding);
+        credential_snapshot = Some(recovered.snapshot);
+    } else if managed || replayed || waited_ms > download_manager.queue_freshness_threshold_ms() {
         debug!(
             streamer_id = %streamer_id,
             waited_ms,
@@ -315,12 +363,14 @@ pub(super) async fn run_live_download_pipeline(
                 biased;
                 _ = cancel.cancelled() => {
                     download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-                    return;
+                    return PipelineExit::Finished;
                 }
                 fresh = coordinator.check_startup_freshness(&meta) => fresh,
             };
             match fresh {
                 Ok(crate::monitor::LiveStatus::Live {
+                    credential_binding: fresh_binding,
+                    credential_snapshot: fresh_snapshot,
                     streams: fresh_streams,
                     media_headers: fresh_headers,
                     media_extras: fresh_extras,
@@ -336,7 +386,7 @@ pub(super) async fn run_live_download_pipeline(
                             &streamer_id,
                             &streamer_name,
                         );
-                        return;
+                        return PipelineExit::Finished;
                     }
                     // Replace BOTH the URLs and the associated
                     // headers/extras. On platforms whose signed
@@ -347,7 +397,9 @@ pub(super) async fn run_live_download_pipeline(
                     // URLs.
                     streams = fresh_streams;
                     media_headers = fresh_headers;
-                    media_extras = fresh_extras;
+                    media_extras = fresh_extras.map(|extras| *extras);
+                    credential_binding = fresh_binding.map(|binding| *binding);
+                    credential_snapshot = fresh_snapshot;
                 }
                 Ok(_) => {
                     debug!(
@@ -355,9 +407,27 @@ pub(super) async fn run_live_download_pipeline(
                         "Streamer no longer live after queue wait; aborting"
                     );
                     download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-                    return;
+                    return PipelineExit::Finished;
                 }
                 Err(e) => {
+                    if managed || replayed {
+                        warn!(streamer_id, error = %e, "Managed download startup awaits fresh credentials and media");
+                        download_manager.emit_dequeued_for_slot(
+                            &slot,
+                            &streamer_id,
+                            &streamer_name,
+                        );
+                        return if matches!(
+                            e,
+                            crate::Error::CredentialProfile(
+                                crate::credentials::ProfileError::SourceChanged
+                            )
+                        ) {
+                            PipelineExit::CredentialsChanged
+                        } else {
+                            PipelineExit::Finished
+                        };
+                    }
                     warn!(
                         streamer_id = %streamer_id,
                         error = %e,
@@ -371,7 +441,7 @@ pub(super) async fn run_live_download_pipeline(
                 "Streamer metadata vanished during queue wait; aborting"
             );
             download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
+            return PipelineExit::Finished;
         }
     } else if !from_hysteresis_resume {
         // Cheap re-check for the short-wait case: is the streamer
@@ -402,7 +472,7 @@ pub(super) async fn run_live_download_pipeline(
                 "Streamer no longer in LIVE state after short queue wait; aborting"
             );
             download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
+            return PipelineExit::Finished;
         }
     }
 
@@ -412,7 +482,31 @@ pub(super) async fn run_live_download_pipeline(
             streamer_id
         );
         download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-        return;
+        return PipelineExit::Finished;
+    }
+
+    let mut committed_binding = None;
+    if let Some(binding) = credential_binding {
+        if credential_snapshot.is_none() {
+            warn!(
+                session_id,
+                "Managed download startup has no credential snapshot"
+            );
+            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+            return PipelineExit::Finished;
+        }
+        match coordinator
+            .session_lifecycle
+            .commit_credential_binding(&session_id, &streamer_id, binding)
+            .await
+        {
+            Ok(binding) => committed_binding = Some(binding),
+            Err(error) => {
+                debug!(session_id, %error, "Credential binding changed before download startup");
+                download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+                return credentials_exit(&error);
+            }
+        }
     }
 
     // ── Build full DownloadConfig with possibly-refreshed URLs ──
@@ -423,7 +517,7 @@ pub(super) async fn run_live_download_pipeline(
         biased;
         _ = cancel.cancelled() => {
             download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
+            return PipelineExit::Finished;
         }
         index = session_repository.next_session_segment_index(&session_id) => index,
     };
@@ -446,14 +540,27 @@ pub(super) async fn run_live_download_pipeline(
         if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
             for (k, v) in extra_headers {
                 if let Some(v) = v.as_str() {
+                    headers.retain(|existing, _| !existing.eq_ignore_ascii_case(k));
                     headers.insert(k.clone(), v.to_string());
                 }
             }
         }
         if let Some(host_header) = extras.get("host_header").and_then(|v| v.as_str()) {
+            headers.retain(|existing, _| !existing.eq_ignore_ascii_case("host"));
             headers.insert("Host".to_string(), host_header.to_string());
         }
     }
+    let extractor_cookie_updates: Vec<String> = if managed {
+        let updates = headers
+            .iter()
+            .filter(|(key, _)| key.eq_ignore_ascii_case("cookie"))
+            .map(|(_, value)| value.clone())
+            .collect();
+        headers.retain(|key, _| !key.eq_ignore_ascii_case("cookie"));
+        updates
+    } else {
+        Vec::new()
+    };
     if !headers.is_empty() {
         debug!(
             "Using {} merged headers for download: {:?}",
@@ -482,51 +589,56 @@ pub(super) async fn run_live_download_pipeline(
     .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
     .with_max_segment_size(merged_config.max_part_size_bytes as u64)
     .with_engines_override(merged_config.engines_override.clone());
+    config.managed_credentials = managed;
+    config.credential_binding = committed_binding;
 
-    if let Some(ref cookies) = merged_config.cookies {
+    let cookies = credential_snapshot.as_ref().map(|snapshot| {
+        crate::credentials::merge_cookie_updates(
+            &snapshot.material.cookies,
+            extractor_cookie_updates.iter().map(String::as_str),
+        )
+    });
+    if let Some(ref cookies) = cookies {
         debug!(
-            "Applying cookies from merged config to download (length: {} chars)",
+            "Applying cookies from the bound credential profile to download (length: {} chars)",
             cookies.len()
         );
         config = config.with_cookies(cookies);
     }
 
-    let proxy_config = &merged_config.proxy_config;
-    if proxy_config.enabled {
-        if let Some(effective_proxy_url) = proxy_config.effective_url() {
-            // Both the configured and effective URL may contain credentials.
-            debug!(
-                has_auth = proxy_config.password.is_some(),
-                "Applying explicit proxy from merged config to download"
-            );
-            config = config.with_proxy(effective_proxy_url);
-        } else if proxy_config.use_system_proxy {
-            debug!("Enabling system proxy for download");
-            config = config.with_system_proxy(true);
-        }
-    }
+    // One route carries extraction, the download and danmu: platforms may
+    // sign a stream URL for the address that extracted it. A snapshot holds
+    // the route its extraction used, the account's own when it has one.
+    let route = credential_snapshot.as_ref().map_or_else(
+        || merged_config.proxy_route.clone(),
+        |snapshot| snapshot.route.clone(),
+    );
+    debug!(
+        route = route.kind().as_str(),
+        proxy = route.proxy_name(),
+        source = ?route.source,
+        "Applying the recording's route to the download"
+    );
+    config = config.with_proxy(route.target.clone());
 
     for (key, value) in headers {
         config = config.with_header(key, value);
     }
 
     info!(
-        "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {}, initial_segment_index: {})",
-        streamer_name,
-        best_stream.url,
+        streamer_id,
+        session_id,
         stream_format,
         media_format,
-        best_stream.is_headers_needed,
-        merged_config.output_folder,
-        waited_ms,
+        queue_wait_ms = waited_ms,
         initial_segment_index,
+        "Starting download with extracted media"
     );
-
-    let cookies = merged_config.cookies.clone();
     let danmu_statistics = merged_config.danmu_statistics.clone();
 
     // Maintenance may defer admission after a slot has been granted. Keep the
     // session cancellation connected until the manager actually starts the engine.
+    let mut exit = PipelineExit::Finished;
     let started = match download_manager
         .start_with_slot_cancellable(slot, config, engine, &cancel)
         .await
@@ -553,6 +665,7 @@ pub(super) async fn run_live_download_pipeline(
                 "Failed to start download for streamer {}: {}",
                 streamer_id, e
             );
+            exit = credentials_exit(&e);
             false
         }
     };
@@ -563,7 +676,32 @@ pub(super) async fn run_live_download_pipeline(
     // there's no engine to interleave danmu with — opening a danmu
     // socket for a stream we're not recording would leak a platform
     // connection.
-    if started && !cancel.is_cancelled() && merged_config.record_danmu {
+    // A later attempt of the same session (engine retry, credential recovery)
+    // keeps the running collector and hands it this attempt's account and proxy.
+    // Danmu goes through the recording's proxy too; one it cannot use leaves
+    // danmu off rather than connecting directly.
+    let danmu_proxy = if started && !cancel.is_cancelled() && merged_config.record_danmu {
+        match route.danmu_proxy(crate::proxies::SystemProxy::current()) {
+            Ok(proxy) => Some(proxy),
+            Err(error) => {
+                warn!(%session_id, %error, "Danmu not collected: its proxy cannot be used");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let Some(danmu_proxy) = danmu_proxy else {
+        return exit;
+    };
+    if danmu_service.is_collecting(&session_id) {
+        if !danmu_service
+            .update_authentication(&session_id, cookies, media_extras, danmu_proxy)
+            .await
+        {
+            debug!(%session_id, "Danmu collection ended before its account could be updated");
+        }
+    } else {
         match danmu_service
             .start_collection_cancellable(
                 CollectionSpec {
@@ -572,6 +710,7 @@ pub(super) async fn run_live_download_pipeline(
                     streamer_url,
                     cookies,
                     extras: media_extras,
+                    proxy: danmu_proxy,
                     statistics: danmu_statistics,
                 },
                 &cancel,
@@ -593,5 +732,14 @@ pub(super) async fn run_live_download_pipeline(
                 );
             }
         }
+    }
+    exit
+}
+
+fn credentials_exit(error: &crate::Error) -> PipelineExit {
+    match error {
+        crate::Error::CredentialProfile(crate::credentials::ProfileError::SourceChanged)
+        | crate::Error::CredentialUnavailable(_) => PipelineExit::CredentialsChanged,
+        _ => PipelineExit::Finished,
     }
 }

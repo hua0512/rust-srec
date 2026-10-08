@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { invalidateCredentialQueries } from '@/api/credential-profiles';
 import { getPlatformConfig, updatePlatformConfig } from '@/server/functions';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -47,6 +48,9 @@ function EditPlatformPage() {
       void queryClient.invalidateQueries({
         queryKey: ['config', 'platform', platformId],
       });
+      // The form also saves the platform's account selection, which every
+      // scope on the platform inherits.
+      void invalidateCredentialQueries(queryClient, platformId);
       void navigate({ to: '/config/platforms' });
     },
     onError: (error) =>

@@ -24,8 +24,12 @@ use crate::api::routes::parse::{self, ParseRouteState};
 pub struct ParseUrlParams {
     /// Live room or video page URL to extract stream info from
     pub url: String,
-    /// Optional cookies for authenticated extraction
+    /// Optional raw cookies for authenticated extraction; mutually exclusive
+    /// with `credential_id`
     pub cookies: Option<String>,
+    /// Optional ID of a saved account (credential profile) to extract with;
+    /// mutually exclusive with `cookies`
+    pub credential_id: Option<String>,
 }
 
 #[tool_router(router = system_tools, vis = "pub(crate)")]
@@ -74,9 +78,24 @@ impl SrecMcpServer {
         self.require_full_access(&context)?;
         let state = ParseRouteState::from_ref(&self.app_state);
         let request = ParseUrlRequest {
+            credential_id: params.credential_id,
             url: params.url,
             cookies: params.cookies,
         };
-        tool_json(parse::parse_url(State(state), Json(request)).await)
+        let identity = context
+            .extensions
+            .get::<axum::http::request::Parts>()
+            .and_then(|parts| {
+                parts
+                    .extensions
+                    .get::<crate::api::auth_service::AuthPrincipal>()
+            })
+            .cloned()
+            .map(axum::Extension);
+        tool_json(
+            parse::parse_url(State(state), identity, Json(request))
+                .await
+                .map(|(_, json)| json),
+        )
     }
 }

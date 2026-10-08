@@ -47,6 +47,7 @@ impl ServiceContainer {
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
+            credential_blocks: self.stream_monitor.credential_blocks().clone(),
         };
         let receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
@@ -71,6 +72,7 @@ impl ServiceContainer {
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
+            credential_blocks: self.stream_monitor.credential_blocks().clone(),
         }
         .handle_event(event)
         .await;
@@ -241,6 +243,9 @@ struct ConfigEventHandler {
     pipeline_manager: Arc<PipelineManager>,
     runtime_coordinator: Arc<RuntimeCoordinator>,
     gpu_health_monitor: Option<Arc<crate::metrics::GpuHealthMonitor>>,
+    /// Lifted here for streamers that stop being monitored: no later check
+    /// would lift it.
+    credential_blocks: Arc<crate::credentials::CredentialBlocks>,
 }
 
 impl ConfigEventHandler {
@@ -342,9 +347,15 @@ impl ConfigEventHandler {
                             "Streamer {} is inactive after update (state: {}), initiating cleanup",
                             streamer_id, metadata.state
                         );
+                        self.credential_blocks.clear(&streamer_id);
                         self.stop_streamer_unless_retiring(&streamer_id).await;
                     }
-                    Some(_) => {}
+                    // A selection change can make a waiting recording startable.
+                    Some(_) => {
+                        self.runtime_coordinator
+                            .resume_pending_credentials(&streamer_id)
+                            .await;
+                    }
                     None => {
                         // Streamer not in memory (race with delete/hydration issues).
                         // Best-effort cleanup anyway.
@@ -352,6 +363,7 @@ impl ConfigEventHandler {
                             "Streamer {} not found after update, initiating best-effort cleanup",
                             streamer_id
                         );
+                        self.credential_blocks.clear(&streamer_id);
                         self.stop_streamer_unless_retiring(&streamer_id).await;
                     }
                 }
@@ -369,7 +381,15 @@ impl ConfigEventHandler {
                     .map(|m| m.id)
                     .collect();
                 self.runtime_coordinator
-                    .refresh_metadata_offline_checks(affected)
+                    .refresh_metadata_offline_checks(affected.clone())
+                    .await;
+                self.runtime_coordinator
+                    .resume_pending_credentials_for(affected)
+                    .await;
+            }
+            ConfigUpdateEvent::CredentialMaterialChanged { owner } => {
+                self.runtime_coordinator
+                    .resume_pending_credentials_for_owner(&owner)
                     .await;
             }
             ConfigUpdateEvent::TemplateUpdated { template_id } => {
@@ -382,7 +402,10 @@ impl ConfigEventHandler {
                     .map(|m| m.id)
                     .collect();
                 self.runtime_coordinator
-                    .refresh_metadata_offline_checks(affected)
+                    .refresh_metadata_offline_checks(affected.clone())
+                    .await;
+                self.runtime_coordinator
+                    .resume_pending_credentials_for(affected)
                     .await;
             }
             ConfigUpdateEvent::GlobalUpdated => {
@@ -463,6 +486,7 @@ impl ConfigEventHandler {
                     .invalidate_filter_snapshots(&streamer_id);
 
                 info!("Streamer {} deleted, initiating cleanup", streamer_id);
+                self.credential_blocks.clear(&streamer_id);
                 // Reuse the same cleanup logic as disabled state
                 self.runtime_coordinator
                     .handle_streamer_disabled(&streamer_id)
@@ -485,6 +509,7 @@ impl ConfigEventHandler {
                         "Streamer {} became inactive, initiating cleanup",
                         streamer_id
                     );
+                    self.credential_blocks.clear(&streamer_id);
                     self.stop_streamer_unless_retiring(&streamer_id).await;
                 }
             }
@@ -637,8 +662,10 @@ impl DownloadEventProcessor {
         if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
             ref streamer_id,
             ref error,
+            kind,
             ..
         }) = download_event
+            && kind != crate::downloader::DownloadFailureKind::CredentialUnavailable
             && let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
         {
             if let Err(e) = self.stream_monitor.handle_error(&metadata, error).await {
@@ -1176,6 +1203,7 @@ mod tests {
     use super::*;
     use crate::downloader::{DownloadRejectedKind, download_coordination_channel};
 
+    mod credential_blocks;
     mod filter_snapshots;
 
     fn rejected_event(session_id: &str) -> DownloadManagerEvent {

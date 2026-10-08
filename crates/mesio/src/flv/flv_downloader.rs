@@ -95,7 +95,7 @@ impl FlvDownloader {
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
         info!(url = %Redacted(url), "Starting FLV download request");
-        debug!(url = %Redacted(url), params = ?self.config.base.params, "Sending FLV download request");
+        debug!(url = %Redacted(url), parameter_count = self.config.base.params.len(), "Sending FLV download request");
 
         let client = self.clients.client_for_url(url);
         let response = client
@@ -131,7 +131,6 @@ impl FlvDownloader {
             if is_text_response {
                 warn!(
                     url = %Redacted(url),
-                    content_type = %ct_str,
                     "Response has text Content-Type, likely not FLV data"
                 );
                 return Err(DownloadError::InvalidContent {
@@ -143,7 +142,7 @@ impl FlvDownloader {
                 });
             }
 
-            debug!(url = %Redacted(url), content_type = %ct_str, "Content-Type check passed");
+            debug!(url = %Redacted(url), "Content-Type check passed");
         }
 
         if let Some(content_length) = response.content_length() {
@@ -339,14 +338,9 @@ fn probe_flv_content(url: &Url, probe: &[u8]) -> Result<(), DownloadError> {
         .iter()
         .take(64)
         .all(|&b| b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || b.is_ascii_punctuation());
-    let preview = if is_text {
-        String::from_utf8_lossy(&probe[..probe.len().min(128)]).to_string()
-    } else {
-        format!("{:02X?}", &probe[..probe.len().min(32)])
-    };
     warn!(
         url = %Redacted(url),
-        preview = %preview,
+        inspected_bytes = probe.len().min(128),
         first_byte = format!("0x{:02X}", probe[0]),
         is_text,
         "Invalid FLV content: expected FLV signature or valid tag header"

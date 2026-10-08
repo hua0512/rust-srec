@@ -5,6 +5,7 @@ mod builder;
 mod danmu;
 mod danmu_models;
 mod models;
+pub mod passport;
 mod stt;
 
 pub use builder::Douyu;

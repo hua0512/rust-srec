@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CloudAlert, CloudUpload, Square, X } from 'lucide-react';
@@ -36,6 +36,13 @@ import {
   uploaderLabel,
   uploadPercent,
 } from '@/lib/upload-format';
+import { usePresence } from '@/hooks/use-presence';
+import {
+  HEADER_BADGE_DOT,
+  HEADER_POPOVER,
+  HEADER_TRIGGER_EXIT_MS,
+  headerTriggerClass,
+} from '@/components/header-indicator';
 import { cn, getProxiedUrl } from '@/lib/utils';
 import { cancelActivePipelineJob } from '@/server/functions/pipeline';
 import {
@@ -98,23 +105,6 @@ export function summarizeUploads(uploads: UploadView[]): UploadSummary {
 
 const RING_RADIUS = 15;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-// The trigger's exit animation-duration below must match.
-const TRIGGER_EXIT_MS = 180;
-
-/**
- * Keeps the trigger mounted for its exit animation after the last upload
- * leaves. Mounting needs no delay: the enter animation runs on mount.
- */
-function usePresence(present: boolean) {
-  const [lingering, setLingering] = useState(present);
-  if (present && !lingering) setLingering(true);
-  useEffect(() => {
-    if (present) return;
-    const timer = setTimeout(() => setLingering(false), TRIGGER_EXIT_MS);
-    return () => clearTimeout(timer);
-  }, [present]);
-  return { mounted: present || lingering, exiting: !present && lingering };
-}
 
 /**
  * Header entry for upload jobs across every streamer: running, queued, and
@@ -136,7 +126,9 @@ export function UploadStatusIndicator() {
   const dismissFailed = useUploadStore((state) => state.dismissFailed);
 
   const hasContent = uploads.length > 0 || failed.length > 0 || pending > 0;
-  const { mounted, exiting } = usePresence(hasContent);
+  // Keeps the trigger mounted for its exit animation after the last upload
+  // leaves.
+  const { mounted, exiting } = usePresence(hasContent, HEADER_TRIGGER_EXIT_MS);
 
   if (!mounted) return null;
 
@@ -186,14 +178,7 @@ export function UploadStatusIndicator() {
         <PopoverTrigger
           aria-label={triggerLabel || title}
           className={cn(
-            buttonVariants({ variant: 'ghost', size: 'icon' }),
-            'relative h-9 w-9 rounded-full motion-reduce:animate-none',
-            // transitions.dev "Notification badge" pop, applied to the whole
-            // trigger: springs in when uploads start, collapses without
-            // overshoot when the last one leaves.
-            exiting
-              ? 'pointer-events-none animate-out fill-mode-forwards fade-out-0 zoom-out-60 blur-out-[2px] animation-duration-180 ease-[cubic-bezier(0.4,0,0.2,1)]'
-              : 'animate-in fade-in-0 zoom-in-60 blur-in-[2px] animation-duration-500 ease-[cubic-bezier(0.34,1.36,0.64,1)]',
+            headerTriggerClass(exiting),
             tone === 'active' &&
               'text-sky-600 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-400',
             tone === 'failed' &&
@@ -242,18 +227,14 @@ export function UploadStatusIndicator() {
             entering={badge != null}
             className="-top-0.5 -right-0.5"
             dotClassName={cn(
-              'h-4 min-w-4 rounded-full px-1 text-[10px] leading-none font-semibold text-white tabular-nums',
+              HEADER_BADGE_DOT,
               badge?.className ?? 'bg-sky-500',
             )}
           >
             {badge?.label}
           </NotificationBadge>
         </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          sideOffset={8}
-          className="w-80 overflow-hidden rounded-xl border-border/60 bg-popover/80 p-0 shadow-xl backdrop-blur-xl ease-[cubic-bezier(0.22,1,0.36,1)] data-[side=bottom]:slide-in-from-top-0 data-[state=closed]:duration-150 data-[state=closed]:zoom-out-99 data-[state=open]:duration-250 data-[state=open]:zoom-in-97 motion-reduce:animate-none"
-        >
+        <PopoverContent align="end" sideOffset={8} className={HEADER_POPOVER}>
           <div className="space-y-2 px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-semibold">

@@ -24,6 +24,17 @@ export const parseUrl = createServerFn({ method: 'POST' })
     return ParseUrlResponseSchema.parse(json);
   });
 
+export const renewPlayback = createServerFn({ method: 'POST' })
+  .validator((handle: string) => parseInput(z.string().min(1), handle))
+  .handler(async ({ data }) =>
+    ParseUrlResponseSchema.parse(
+      await fetchBackend('/parse/playback/renew', {
+        method: 'POST',
+        body: JSON.stringify({ playback_handle: data }),
+      }),
+    ),
+  );
+
 /**
  * Parse multiple URLs in batch
  */

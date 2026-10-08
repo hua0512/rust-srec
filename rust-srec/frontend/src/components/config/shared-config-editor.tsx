@@ -20,13 +20,21 @@ import { DanmuStatisticsCard } from './shared/danmu-statistics-card';
 import { OfflineCheckCard } from './shared/offline-check-card';
 import { PipelineTabsSection } from './shared/pipeline-tabs-section';
 import { NetworkSettingsCard } from './shared/network-settings-card';
-import { ProxySettingsCard } from './shared/proxy-settings-card';
-import type { CredentialSaveScope } from '@/server/functions/credentials';
+import {
+  ProxyRouteCard,
+  type ProxyRouteInherit,
+} from './shared/proxy-route-picker';
+import { configPath } from './shared/form-path';
+import type {
+  CredentialOwner,
+  CredentialPlatform,
+} from '@/api/schemas/credential-profiles';
 
 export interface SharedConfigPaths<T extends FieldValues> {
   streamSelection: Path<T>;
-  cookies: Path<T>;
-  proxy: Path<T>;
+  credentialSelection?: Path<T>;
+  // The scope's `proxy_route`. Omit to leave out the Proxy tab.
+  proxyRoute?: Path<T>;
   retryPolicy: Path<T>;
   // Output settings base path (folder, template, format, engine)
   output: string;
@@ -67,14 +75,14 @@ export interface SharedConfigEditorProps<T extends FieldValues> {
   availableTabs?: ConfigTabType[];
   defaultTab?: string;
   extraTabs?: ExtraTab[];
-  // If true, assumes proxy_config is an object. If false/undefined, assumes JSON string logic usually,
-  // but ProxyConfigSettings handles object output via props.
-  proxyMode?: 'json' | 'object';
+  /** What inheriting the proxy route means here; omit for a scope that cannot inherit. */
+  proxyInherit?: ProxyRouteInherit;
   // Mode for stream selection, retry policy, etc.
   configMode?: 'json' | 'object';
-  streamerId?: string;
-  credentialScope?: CredentialSaveScope;
-  credentialPlatformNameHint?: string;
+  /** The saved configuration whose account selection the form edits; keep it memoized. */
+  credentialScope?: CredentialOwner;
+  /** The platform the credential selection applies to; keep it memoized. */
+  credentialPlatform?: CredentialPlatform;
 }
 
 const tabContentVariants = {
@@ -106,19 +114,23 @@ export function SharedConfigEditor<T extends FieldValues>({
   ],
   defaultTab = 'filters',
   extraTabs = [],
-  proxyMode = 'object',
+  proxyInherit,
   configMode = 'object',
-  streamerId,
   credentialScope,
-  credentialPlatformNameHint,
+  credentialPlatform,
 }: SharedConfigEditorProps<T>) {
-  const showTab = (tab: ConfigTabType) => availableTabs.includes(tab);
+  const showTab = (tab: ConfigTabType) =>
+    availableTabs.includes(tab) &&
+    (tab !== 'proxy' || paths.proxyRoute !== undefined);
 
   // `NetworkSettingsCard` is memoized, so a fresh object here would re-render it on every
   // render of this editor.
   const networkPaths = useMemo(
-    () => ({ cookies: paths.cookies, retryPolicy: paths.retryPolicy }),
-    [paths.cookies, paths.retryPolicy],
+    () => ({
+      retryPolicy: paths.retryPolicy,
+      credentialSelection: paths.credentialSelection,
+    }),
+    [paths.retryPolicy, paths.credentialSelection],
   );
 
   return (
@@ -284,9 +296,8 @@ export function SharedConfigEditor<T extends FieldValues>({
                 form={form}
                 paths={networkPaths}
                 configMode={configMode}
-                streamerId={streamerId}
                 credentialScope={credentialScope}
-                credentialPlatformNameHint={credentialPlatformNameHint}
+                credentialPlatform={credentialPlatform}
               />
               {paths.offlineCheck !== undefined && (
                 <OfflineCheckCard
@@ -311,11 +322,17 @@ export function SharedConfigEditor<T extends FieldValues>({
               animate="visible"
               exit="exit"
             >
-              <ProxySettingsCard
-                form={form}
-                name={paths.proxy}
-                proxyMode={proxyMode}
-              />
+              {paths.proxyRoute && (
+                <ProxyRouteCard<T>
+                  name={paths.proxyRoute}
+                  inherit={proxyInherit}
+                  engines={engines}
+                  enginePath={configPath<T>(
+                    paths.output === '' ? undefined : paths.output,
+                    'download_engine',
+                  )}
+                />
+              )}
             </motion.div>
           </TabsContent>
         )}

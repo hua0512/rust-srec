@@ -79,6 +79,14 @@ notification:
     title: "🛑 系统正在关闭:%{reason}"
     description: "%{reason}"
 
+  platform_throttled:
+    title: "⏳ %{platform} 正在限制请求频率"
+    description: "%{platform} 要求 rust-srec 降低经由%{route}的请求频率。该平台经由此连接的直播检测、凭据刷新与解析已暂停至 %{retry_at},之后将自动恢复;其他连接不受影响。如果频繁出现,请增大该平台的「获取延迟」。"
+    route:
+      direct: "直连"
+      system: "系统代理"
+      proxy: "代理「%{name}」"
+
   # ============ 输出根写入门(#508) ============
   # 已在写入门 PR 中本地化并发布,保持不变。
   output_path_inaccessible:
@@ -135,6 +143,16 @@ notification:
 
   # ============ 凭据事件 ============
   credential:
+    scope_with_account: "%{scope}，账号 %{account}"
+    unavailable:
+      title: "🔐 %{platform} 凭据暂不可用（%{scope}）"
+      message: "凭据选择正在等待可用账号。范围：%{scope}。原因：%{reason}。"
+      reason:
+        login_required: "所有可用账号都需要重新登录"
+        profiles_disabled: "所选账号均已停用"
+        bound_profile_unavailable: "录制所绑定的账号不可用"
+        binding_policy_changed: "录制期间账号选择已更改"
+        attempts_exhausted: "本次检查允许的尝试均已失败"
     refreshed:
       title: "🔐 已刷新 %{platform} 凭据(%{scope})"
       message: "✅ %{platform} 凭据刷新成功(%{scope})"
@@ -165,6 +183,12 @@ notification:
         ⏰ %{platform} 凭据将在 %{days_remaining} 天后过期(%{expires_at})
         范围:%{scope}
         建议:尽快刷新
+    session_save_failed:
+      title: "🔐 %{platform} 会话 Cookie 未保存(%{scope})"
+      message: |-
+        ⚠️ %{platform} 在直播检测时完成了登录,但新的会话 Cookie 无法保存。录制不受影响;在保存恢复正常之前,后续检测会重新登录。
+        范围:%{scope}
+        错误:%{error}
   # ============ External tool events ============
   baidupcs_relogin_failed:
     title: "🔐 百度网盘自动重新登录失败(%{config_dir})"

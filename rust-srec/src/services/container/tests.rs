@@ -268,6 +268,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
             streamer_url: FakeProvider::URL.to_string(),
             cookies: None,
             extras: None,
+            proxy: None,
             statistics: crate::domain::DanmuStatisticsConfig::default(),
         })
         .await
@@ -526,6 +527,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
         .build(),
     ];
     let live_args = |now| crate::session::LiveDetectedArgs {
+        credential_binding: None,
         streamer_id: SHUTDOWN_STREAMER_ID,
         streamer_name: "Shutdown tracer",
         streamer_url: "https://example.com/shutdown-tracer",

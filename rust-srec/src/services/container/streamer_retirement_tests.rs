@@ -162,6 +162,7 @@ impl Harness {
                 ),
             ),
             self.container.runtime_coordinator.clone(),
+            self.container.stream_monitor.credential_blocks().clone(),
         )
     }
 

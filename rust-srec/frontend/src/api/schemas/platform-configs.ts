@@ -32,7 +32,6 @@ export const DouyinConfigSchema = z
     force_origin_quality: z.boolean().nullable().optional(),
     double_screen: z.boolean().nullable().optional(),
     ttwid_management_mode: z.string().nullable().optional(),
-    ttwid: z.string().nullable().optional(),
     force_mobile_api: z.boolean().nullable().optional(),
     skip_interactive_games: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
@@ -68,13 +67,6 @@ export const DouyuConfigSchema = z
     codec: z.enum(['avc', 'hevc']).nullable().optional(),
     device_name: z.string().nullable().optional(),
     os_version: z.string().nullable().optional(),
-    device_id: z
-      .string()
-      .regex(
-        /^(?:[A-Za-z0-9]{32}|[A-Za-z0-9_]{8}(?:-[A-Za-z0-9_]{4}){3}-[A-Za-z0-9_]{12})$/,
-      )
-      .nullable()
-      .optional(),
     device_id_mode: z
       .enum(['local', 'server', 'default'])
       .nullable()
@@ -91,7 +83,6 @@ export const DouyuConfigSchema = z
 // Twitch platform-specific configuration
 export const TwitchConfigSchema = z
   .object({
-    oauth_token: z.string().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
@@ -118,8 +109,6 @@ export const TwitcastingConfigSchema = z
 // SOOP platform-specific configuration
 export const SoopConfigSchema = z
   .object({
-    username: z.string().nullable().optional(),
-    password: z.string().nullable().optional(),
     stream_password: z.string().nullable().optional(),
   })
   .strict();

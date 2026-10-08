@@ -28,6 +28,7 @@ async-trait = { workspace = true }
 reqwest = { workspace = true }
 sqlx = { workspace = true }
 url = { workspace = true }
+percent-encoding = "2.3"
 base64 = { workspace = true }
 rustls = { workspace = true }
 aes-gcm = { workspace = true }

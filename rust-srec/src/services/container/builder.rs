@@ -8,14 +8,11 @@ use tracing::{info, warn};
 
 use crate::Result;
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
-use crate::credentials::{
-    CredentialRefreshService,
-    platforms::{BilibiliCredentialManager, SoopCredentialManager},
-};
+use crate::credentials::CredentialProviderRegistry;
 use crate::danmu::{DanmuService, events::danmu_coordination_channel};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    ConfigRepository, SqlxCredentialStore, SqlxNotificationRepository,
+    ConfigRepository, SqlxNotificationRepository,
     config::SqlxConfigRepository,
     dag::SqlxDagRepository,
     filter::SqlxFilterRepository,
@@ -123,7 +120,10 @@ impl ServiceContainer {
         ));
 
         // Create repositories
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
+        let config_repo = Arc::new(
+            SqlxConfigRepository::new(pool.clone(), write_pool.clone())
+                .with_committed_writer(committed_writer.clone()),
+        );
         let streamer_repo = Arc::new(
             SqlxStreamerRepository::new(pool.clone(), write_pool.clone())
                 .with_committed_state(committed_streamers.clone()),
@@ -156,6 +156,28 @@ impl ServiceContainer {
             .with_filter_store(filter_store),
         );
 
+        let weak_config = Arc::downgrade(&config_service);
+        let publish_owner: Arc<dyn Fn(crate::credentials::CredentialOwner) + Send + Sync> =
+            Arc::new(move |owner| {
+                if let Some(config) = weak_config.upgrade() {
+                    config.publish_credential_owner(owner);
+                }
+            });
+        config_repo.bind_publication(publish_owner.clone());
+        let credential_profiles = Arc::new(
+            crate::database::repositories::credential_profiles::CredentialProfileRepository::new(
+                pool.clone(),
+                write_pool.clone(),
+            )
+            .with_supervisor(committed_write_supervisor.clone()),
+        );
+        credential_profiles.bind_publication(publish_owner);
+        let weak_config = Arc::downgrade(&config_service);
+        credential_profiles.bind_material_publication(Arc::new(move |owner| {
+            if let Some(config) = weak_config.upgrade() {
+                config.publish_credential_material(owner);
+            }
+        }));
         let weak_config = Arc::downgrade(&config_service);
         committed_streamers.on_changed(Arc::new(move |id| {
             if let Some(config) = weak_config.upgrade() {
@@ -230,9 +252,16 @@ impl ServiceContainer {
         );
 
         // Create stream monitor for real status detection
+        let monitor_config = crate::monitor::StreamMonitorConfig::default();
+        let mut platform_admission =
+            crate::credentials::PlatformAdmission::from_config(&monitor_config);
+        for platform in config_service.list_platform_configs().await? {
+            platform_admission.register_platform_name(&platform.id, &platform.platform_name);
+        }
+        let platform_admission = Arc::new(platform_admission);
         let (required_monitor_event_sender, required_monitor_event_receiver) =
             tokio::sync::mpsc::channel(256);
-        let mut stream_monitor = StreamMonitor::with_runtime(
+        let stream_monitor = StreamMonitor::with_runtime(
             streamer_manager.clone(),
             filter_repo.clone(),
             session_repo.clone(),
@@ -240,25 +269,42 @@ impl ServiceContainer {
             write_pool.clone(),
             session_lifecycle.clone(),
             crate::monitor::StreamMonitorRuntimeConfig {
-                monitor: crate::monitor::StreamMonitorConfig::default(),
+                monitor: monitor_config,
+                admission: Some(platform_admission.clone()),
                 required_event_sender: Some(required_monitor_event_sender),
                 task_supervisor: task_supervisor.clone(),
             },
         );
 
         // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
-        let mut credential_service = CredentialRefreshService::new(credential_store);
-        match BilibiliCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
-        }
-        match SoopCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
-        }
+        let credential_service = CredentialProviderRegistry::new()
+            .with_admission(platform_admission.clone())
+            .with_platform_providers();
         let credential_service = Arc::new(credential_service);
-        stream_monitor.set_credential_service(Arc::clone(&credential_service));
+        let credential_execution = Arc::new(crate::credentials::CredentialExecutionService::new(
+            credential_profiles.clone(),
+            credential_service.clone(),
+        ));
+        let credential_login_sessions = Arc::new(
+            crate::credentials::login_sessions::CredentialLoginSessions::new(
+                credential_profiles.clone(),
+                pool.clone(),
+                write_pool.clone(),
+                platform_admission.clone(),
+            )
+            .with_supervisor(committed_write_supervisor.clone()),
+        );
+        let proxies = Arc::new(
+            crate::proxies::ProxyService::new(
+                pool.clone(),
+                write_pool.clone(),
+                config_service.clone(),
+                credential_profiles.clone(),
+                platform_admission.clone(),
+            )
+            .with_supervisor(committed_write_supervisor.clone()),
+        );
+        stream_monitor.set_execution_service(credential_execution.clone());
         let stream_monitor = Arc::new(stream_monitor);
 
         // Create download manager with custom config, overridden by global config for concurrency.
@@ -275,6 +321,18 @@ impl ServiceContainer {
         );
         download_manager
             .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
+        let weak_monitor = Arc::downgrade(&stream_monitor);
+        download_manager.set_credential_start_validator(Arc::new(
+            move |session_id, streamer_id, binding| {
+                let monitor = weak_monitor.upgrade();
+                Box::pin(async move {
+                    let monitor = monitor.ok_or(crate::credentials::ProfileError::SourceChanged)?;
+                    monitor
+                        .validate_download_binding(&session_id, &streamer_id, &binding)
+                        .await
+                })
+            },
+        ));
         let download_manager_ms = download_manager_start.elapsed().as_millis();
 
         // Create job repository for pipeline persistence
@@ -479,14 +537,34 @@ impl ServiceContainer {
             ),
         );
 
+        let weak_runtime = Arc::downgrade(&runtime_coordinator);
+        stream_monitor.set_pending_credential_recovery(Arc::new(move |streamer_id| {
+            let runtime = weak_runtime.upgrade();
+            Box::pin(async move {
+                if let Some(runtime) = runtime {
+                    runtime.resume_pending_credentials(&streamer_id).await;
+                }
+            })
+        }));
+        let weak_runtime = Arc::downgrade(&runtime_coordinator);
+        download_manager.set_credential_diagnostic(Arc::new(move |event| {
+            let runtime = weak_runtime.upgrade();
+            Box::pin(async move {
+                match runtime {
+                    Some(runtime) => runtime.diagnose_credential_attempt(event).await,
+                    None => None,
+                }
+            })
+        }));
+
         let configuration_import_service = Arc::new(
             crate::services::config_import::ConfigurationImportService::new(
                 write_pool.clone(),
                 config_service.clone(),
                 streamer_manager.clone(),
                 notification_service.clone(),
-                credential_service.clone(),
                 runtime_coordinator.clone(),
+                platform_admission.clone(),
             ),
         );
 
@@ -542,6 +620,14 @@ impl ServiceContainer {
             scheduler,
             scheduler_handle,
             stream_monitor,
+            platform_admission,
+            credential_profiles,
+            playback_contexts: Arc::new(
+                crate::services::playback_context::PlaybackContextService::default(),
+            ),
+            credential_execution,
+            credential_login_sessions,
+            proxies,
             credential_service,
             check_history_broadcaster,
             upload_status_broadcaster,

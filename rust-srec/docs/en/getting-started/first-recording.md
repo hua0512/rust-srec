@@ -64,9 +64,9 @@ Open the streamer's action menu and select **Disable** when you no longer want a
 | Symptom | Check |
 |---|---|
 | Link is rejected | Use the direct channel/room format from [Supported Platforms](../platforms/). |
-| Streamer stays offline | Confirm the channel is currently live in a browser and check whether the platform requires cookies. |
+| Streamer stays offline | Confirm the channel is currently live in a browser and check whether the platform requires a logged-in [account](../concepts/configuration.md#account-profiles-and-selection). |
 | Streamer shows an error | Open its edit page and status history, then inspect backend logs. |
 | Session starts but no file appears | Check free space, output-directory permissions, and [Storage and Capacity](../operations/storage.md). |
-| Platform requests fail | Configure a proxy only if the backend host needs one; see [Configuration](./configuration.md). |
+| Platform requests fail | Configure a proxy only if the backend host needs one; see [Proxies](../concepts/configuration.md#proxies). |
 
 After the first recording works, configure reusable [Templates](../concepts/configuration.md) and a [Pipeline](../concepts/pipeline.md) before adding many channels.

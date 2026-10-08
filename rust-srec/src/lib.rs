@@ -47,6 +47,8 @@ pub mod panic_hook;
 #[doc(hidden)]
 pub mod pipeline;
 #[doc(hidden)]
+pub mod proxies;
+#[doc(hidden)]
 pub mod scheduler;
 #[doc(hidden)]
 pub mod session;

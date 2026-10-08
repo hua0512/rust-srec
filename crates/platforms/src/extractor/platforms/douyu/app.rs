@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use reqwest::{RequestBuilder, header};
+use reqwest::{
+    RequestBuilder,
+    header::{self, HeaderValue},
+};
 use serde::Deserialize;
 use serde_json::json;
 use tracing::debug;
@@ -11,6 +14,7 @@ use crate::{
 };
 
 use super::{
+    app_device::DeviceIdentity,
     app_sign::{self, Params},
     builder::Douyu,
 };
@@ -109,8 +113,7 @@ impl Douyu {
         .collect();
         params.insert("rate".into(), rate.to_string());
         let auth = app_sign::sign(rid, &identity.did, timestamp, &mut params);
-        // Do not forward browser login cookies to the app CDN host. Only the
-        // device cookie participates in this anonymous Android protocol.
+        let cookie = self.app_cookie(identity)?;
         Ok(self
             .extractor
             .client
@@ -124,7 +127,34 @@ impl Douyu {
             .header(header::USER_AGENT, identity.user_agent.clone())
             .header("time", timestamp.to_string())
             .header("auth", auth)
-            .header(header::COOKIE, identity.cookie.clone()))
+            .header(header::COOKIE, cookie))
+    }
+
+    /// The app play request's Cookie: the device cookie, plus a signed-in
+    /// account's session, which lets Douyu serve the qualities it reserves for
+    /// logged-in viewers. The session is `acf_uid` and `acf_auth`, with the
+    /// account's `dy_did` when it is the signing device. The `token` parameter
+    /// stays empty: it is the Android app's own login, which web cookies do not
+    /// provide. The app host is not on douyu.com, so the account's other
+    /// cookies stay away from it.
+    fn app_cookie(&self, identity: &DeviceIdentity) -> Result<HeaderValue, ExtractorError> {
+        if !self.signed_in() {
+            return Ok(identity.cookie.clone());
+        }
+        let cookies = &self.extractor.cookies;
+        let mut cookie = format!("acf_did={}", identity.did);
+        if cookies.get("dy_did") == Some(&identity.did) {
+            cookie.push_str(&format!("; dy_did={}", identity.did));
+        }
+        for name in ["acf_uid", "acf_auth"] {
+            if let Some(value) = cookies.get(name).filter(|value| !value.is_empty()) {
+                cookie.push_str(&format!("; {name}={value}"));
+            }
+        }
+        let mut value = HeaderValue::from_str(&cookie)
+            .map_err(|_| ExtractorError::ValidationError("Invalid Douyu account cookie".into()))?;
+        value.set_sensitive(true);
+        Ok(value)
     }
 
     async fn get_app_play_info(
@@ -189,7 +219,11 @@ impl Douyu {
             match self.has_interactive_game(room.room_id).await {
                 Ok(true) => is_live = false,
                 Ok(false) => {}
-                Err(e) => debug!(rid, error = %e, "Could not check Douyu interactive game status"),
+                Err(e) => debug!(
+                    rid,
+                    category = e.category(),
+                    "Could not check Douyu interactive game status"
+                ),
             }
         }
         let streams = if is_live {
@@ -418,6 +452,64 @@ mod tests {
                 1790312470,
                 &mut params
             )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_signed_in_account_sends_its_session_on_app_play_requests() {
+        let did = "b0123456789abcdefghijklmnopqrstu";
+        let request = |cookies: String, options: serde_json::Value| async move {
+            Douyu::new(
+                "https://www.douyu.com/100".into(),
+                crate::extractor::default::default_client(),
+                Some(cookies),
+                Some(options),
+            )
+            .app_request(100, "hw", 0, 1790312470)
+            .await
+            .unwrap()
+            .build()
+            .unwrap()
+        };
+        let signed_in = format!(
+            "dy_did={did}; acf_did={did}; acf_uid=42; acf_auth=session; acf_nickname=n; LTP0=passport"
+        );
+        let built = request(signed_in.clone(), json!({})).await;
+        assert_eq!(
+            built.headers()[header::COOKIE],
+            format!("acf_did={did}; dy_did={did}; acf_uid=42; acf_auth=session").as_str()
+        );
+        assert!(built.headers()[header::COOKIE].is_sensitive());
+        assert_eq!(
+            STANDARD
+                .decode(built.headers()["User-Device"].as_bytes())
+                .unwrap(),
+            format!("{did}|v8.2.2.0").as_bytes()
+        );
+        let token = built
+            .url()
+            .query_pairs()
+            .find(|(key, _)| key == "token")
+            .map(|(_, value)| value.into_owned());
+        assert_eq!(token.as_deref(), Some(""));
+
+        // `dy_did` goes along only when it is the device that signs.
+        let other = "0123456789abcdef0123456789abcdef";
+        let built = request(signed_in, json!({"device_id": other})).await;
+        assert_eq!(
+            built.headers()[header::COOKIE],
+            format!("acf_did={other}; acf_uid=42; acf_auth=session").as_str()
+        );
+
+        // Without a session the request is the anonymous one.
+        let built = request(
+            format!("dy_did={did}; acf_did={did}; acf_uid=42"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            built.headers()[header::COOKIE],
+            format!("acf_did={did}").as_str()
         );
     }
 

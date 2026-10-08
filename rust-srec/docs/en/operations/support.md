@@ -42,6 +42,6 @@ Include enough evidence to reproduce the issue:
 - Exact timestamps with timezone and the expected versus actual outcome.
 - Relevant backend/frontend logs and health output.
 - Whether the failure affects one streamer, one platform, or all recordings.
-- Recent configuration, proxy, storage, or upgrade changes.
+- Recent configuration, proxy, storage, or upgrade changes, and which proxy setting the affected streamer uses (Direct, System proxy or a saved proxy; never its address or login).
 
 Remove JWTs, refresh tokens, session cookies, platform cookies, passwords, webhook URLs, bot tokens, private hostnames/IPs, user identifiers, and private media before submission. Rotate any secret that was exposed.

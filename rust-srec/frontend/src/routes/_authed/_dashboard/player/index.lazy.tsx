@@ -9,6 +9,7 @@ import React, {
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { parseUrl, parseUrlBatch } from '@/server/functions';
+import { renewPlayback } from '@/server/functions/parse';
 import type { ParseUrlResponse } from '@/api/schemas';
 import { UrlInputForm } from '@/components/player/url-input-form';
 import { Button } from '@/components/ui/button';
@@ -32,8 +33,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import {
   extractStreams,
+  renewalNeedsNewParse,
   selectRefreshedStream,
 } from '@/components/player/stream-source';
+
+/** A managed parse's playback, or the media info of an unmanaged one. */
+const parsedMedia = (response: ParseUrlResponse) =>
+  response.playback ?? response.media_info;
 
 // Lazy loaded PlayerCard
 const PlayerCard = React.lazy(() =>
@@ -51,6 +57,8 @@ interface PlayerInstance {
   currentStream: StreamOption;
   title: string;
   headers?: Record<string, string>;
+  /** The explicitly selected account, reused when the source is parsed again. */
+  credentialId?: string;
   response: ParseUrlResponse;
   muted: boolean;
   volume: number;
@@ -87,7 +95,11 @@ function PlayerPage() {
   }, []);
 
   const parseSingleMutation = useMutation({
-    mutationFn: (data: { url: string; cookies?: string }) => parseUrl({ data }),
+    mutationFn: (data: {
+      url: string;
+      cookies?: string;
+      credential_id?: string;
+    }) => parseUrl({ data }),
     onMutate: () => setIsParsing(true),
     onSettled: () => setIsParsing(false),
     onSuccess: (response, variables) => {
@@ -96,9 +108,9 @@ function PlayerPage() {
         return;
       }
 
-      if (response.success && response.media_info) {
+      if (response.success && parsedMedia(response)) {
         // Extract first available stream
-        const firstStream = extractStreams(response.media_info)[0];
+        const firstStream = extractStreams(parsedMedia(response))[0];
         if (firstStream) {
           const newPlayer: PlayerInstance = {
             id: Date.now().toString(),
@@ -107,6 +119,7 @@ function PlayerPage() {
             headers: variables.cookies
               ? { Cookie: variables.cookies }
               : undefined,
+            credentialId: variables.credential_id,
             response,
             muted: false,
             volume: 0.5,
@@ -130,10 +143,15 @@ function PlayerPage() {
   });
 
   const parseBatchMutation = useMutation({
-    mutationFn: (data: { urls: string[]; cookies?: string }) => {
+    mutationFn: (data: {
+      urls: string[];
+      cookies?: string;
+      credential_id?: string;
+    }) => {
       const requests = data.urls.map((url) => ({
         url,
         cookies: data.cookies,
+        credential_id: data.credential_id,
       }));
       return parseUrlBatch({ data: requests });
     },
@@ -156,8 +174,8 @@ function PlayerPage() {
           return;
         }
 
-        if (response.success && response.media_info) {
-          const firstStream = extractStreams(response.media_info)[0];
+        if (response.success && parsedMedia(response)) {
+          const firstStream = extractStreams(parsedMedia(response))[0];
           if (firstStream) {
             newPlayers.push({
               id: `${Date.now()}-${index}`,
@@ -166,6 +184,7 @@ function PlayerPage() {
               headers: variables.cookies
                 ? { Cookie: variables.cookies }
                 : undefined,
+              credentialId: variables.credential_id,
               response,
               muted: false,
               volume: 0.5,
@@ -214,12 +233,25 @@ function PlayerPage() {
   );
 
   const handleRefreshSource = async (player: PlayerInstance) => {
-    const response = await parseUrl({
-      data: { url: player.title, cookies: player.headers?.Cookie },
-    });
+    const parseAgain = () =>
+      parseUrl({
+        data: {
+          url: player.title,
+          cookies: player.headers?.Cookie,
+          credential_id: player.credentialId,
+        },
+      });
+    const response = player.response.playback
+      ? await renewPlayback({ data: player.response.playback.handle }).catch(
+          (error: unknown) => {
+            if (renewalNeedsNewParse(error)) return parseAgain();
+            throw error;
+          },
+        )
+      : await parseAgain();
     if (
       !response.success ||
-      !selectRefreshedStream(response.media_info, player.currentStream)
+      !selectRefreshedStream(parsedMedia(response), player.currentStream)
     ) {
       throw new Error('Stream refresh failed');
     }
@@ -227,7 +259,7 @@ function PlayerPage() {
       current.map((item) => {
         if (item.id !== player.id) return item;
         const currentStream = selectRefreshedStream(
-          response.media_info,
+          parsedMedia(response),
           item.currentStream,
         );
         return currentStream ? { ...item, response, currentStream } : item;
@@ -503,16 +535,18 @@ const PlayerItem = React.memo(function PlayerItem({
         <PlayerCard
           url={player.currentStream.url}
           title={
-            typeof player.response.media_info?.title === 'string' &&
+            player.response.playback?.title ??
+            (typeof player.response.media_info?.title === 'string' &&
             player.response.media_info.title.trim()
               ? player.response.media_info.title
-              : undefined
+              : undefined)
           }
           sourceUrl={player.title}
           creator={
-            typeof player.response.media_info?.artist === 'string'
+            player.response.playback?.artist ??
+            (typeof player.response.media_info?.artist === 'string'
               ? player.response.media_info.artist
-              : undefined
+              : undefined)
           }
           quality={player.currentStream.quality}
           sourceDetails={player.currentStream}
@@ -528,7 +562,7 @@ const PlayerItem = React.memo(function PlayerItem({
           onVolumeChange={onVolumeChange}
           settingsContent={
             <StreamInfoCard
-              mediaInfo={player.response.media_info}
+              mediaInfo={parsedMedia(player.response)}
               selectedStream={player.currentStream}
               onStreamSelect={onStreamSelect}
             />

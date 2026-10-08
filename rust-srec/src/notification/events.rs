@@ -329,6 +329,21 @@ pub enum NotificationEvent {
         timestamp: DateTime<Utc>,
     },
 
+    /// A platform answered with a rate limit, so every check, refresh and
+    /// parse for it on one connection is paused until `retry_at`; other
+    /// connections continue. Emitted when a pause starts, not when an active
+    /// pause is extended.
+    PlatformThrottled {
+        platform: String,
+        /// The paused connection: `direct`, `system` or `proxy`.
+        route: String,
+        /// The saved proxy's name, for a `proxy` route.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proxy_name: Option<String>,
+        retry_at: DateTime<Utc>,
+        timestamp: DateTime<Utc>,
+    },
+
     // ========== Credential Events ==========
     /// Credentials subsystem event (refresh, invalidation, etc.).
     Credential { event: CredentialEvent },
@@ -388,6 +403,7 @@ impl NotificationEvent {
             Self::PipelineQueueCritical { .. } => NotificationPriority::Critical,
             Self::SystemStartup { .. } => NotificationPriority::Normal,
             Self::SystemShutdown { .. } => NotificationPriority::Normal,
+            Self::PlatformThrottled { .. } => NotificationPriority::High,
 
             // Credential events
             Self::Credential { event } => event.severity(),
@@ -422,6 +438,7 @@ impl NotificationEvent {
             Self::PipelineQueueCritical { .. } => "pipeline_queue_critical",
             Self::SystemStartup { .. } => "system_startup",
             Self::SystemShutdown { .. } => "system_shutdown",
+            Self::PlatformThrottled { .. } => "platform_throttled",
             Self::Credential { event } => event.event_name(),
             Self::BaiduPcsReloginFailed { .. } => "baidupcs_relogin_failed",
         }
@@ -452,12 +469,15 @@ impl NotificationEvent {
             | Self::PipelineQueueCritical { timestamp, .. }
             | Self::SystemStartup { timestamp, .. }
             | Self::SystemShutdown { timestamp, .. }
+            | Self::PlatformThrottled { timestamp, .. }
             | Self::BaiduPcsReloginFailed { timestamp, .. } => *timestamp,
             Self::Credential { event } => match event {
-                CredentialEvent::Refreshed { timestamp, .. }
+                CredentialEvent::Unavailable { timestamp, .. }
+                | CredentialEvent::Refreshed { timestamp, .. }
                 | CredentialEvent::RefreshFailed { timestamp, .. }
                 | CredentialEvent::Invalid { timestamp, .. }
-                | CredentialEvent::ExpiringSoon { timestamp, .. } => *timestamp,
+                | CredentialEvent::ExpiringSoon { timestamp, .. }
+                | CredentialEvent::SessionSaveFailed { timestamp, .. } => *timestamp,
             },
         }
     }

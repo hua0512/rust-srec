@@ -23,7 +23,7 @@ use platforms_parser::danmaku::{
 use crate::danmu::XmlDanmuWriter;
 use crate::error::{Error, Result};
 
-use super::events::{CollectionCommand, DanmuEvent, DanmuEventPublisher};
+use super::events::{CollectionCommand, DanmuAuthentication, DanmuEvent, DanmuEventPublisher};
 use super::lifecycle::{CollectionExitReason, CollectionOutcome};
 use super::statistics_session::StatisticsSession;
 
@@ -234,6 +234,15 @@ impl CollectionRunner {
             };
 
             match event {
+                // Swapping accounts replaces the transport, which only this loop owns.
+                LoopEvent::Command(Some(CollectionCommand::UpdateAuthentication(
+                    authentication,
+                ))) => {
+                    if self.replace_authentication(authentication) {
+                        self.drain_pending(&mut link).await?;
+                        link = self.reconnect().await;
+                    }
+                }
                 LoopEvent::Command(cmd) => {
                     let boundary_stop = if self.command_closes_current_segment(cmd.as_ref()) {
                         self.drain_segment_boundary(&mut link).await?
@@ -499,6 +508,26 @@ impl CollectionRunner {
         }
     }
 
+    /// Adopt new account material and proxy for subsequent connections. Returns
+    /// whether either differs from what is in use, i.e. whether the link must be
+    /// reopened.
+    fn replace_authentication(&mut self, authentication: DanmuAuthentication) -> bool {
+        if self.conn_config.cookies == authentication.cookies
+            && self.conn_config.extras == authentication.extras
+            && self.conn_config.proxy == authentication.proxy
+        {
+            return false;
+        }
+        self.conn_config.cookies = authentication.cookies;
+        self.conn_config.extras = authentication.extras;
+        self.conn_config.proxy = authentication.proxy;
+        info!(
+            session_id = %self.session_id,
+            "danmu: reconnecting with the recording's current account"
+        );
+        true
+    }
+
     /// Exponential back-off, doubling from `RECONNECT_BASE_DELAY_MS` up to
     /// `RECONNECT_MAX_DELAY_MS`.
     fn reconnect_delay(attempt: u32) -> Duration {
@@ -525,6 +554,8 @@ impl CollectionRunner {
                 self.end_segment(&segment_id).await?;
                 Ok(CommandResult::Continue)
             }
+            // `run_loop` applies these itself because they replace the link.
+            Some(CollectionCommand::UpdateAuthentication(_)) => Ok(CommandResult::Continue),
             // `run` finalizes the segment and disconnects after the loop ends, so
             // stopping only has to leave the loop.
             Some(CollectionCommand::Stop(reason)) => {
@@ -548,7 +579,9 @@ impl CollectionRunner {
         match cmd {
             Some(CollectionCommand::StartSegment { .. }) => true,
             Some(CollectionCommand::EndSegment { segment_id }) => segment_id == current_segment_id,
-            Some(CollectionCommand::Stop(_)) | None => false,
+            Some(CollectionCommand::UpdateAuthentication(_))
+            | Some(CollectionCommand::Stop(_))
+            | None => false,
         }
     }
 
@@ -1138,6 +1171,73 @@ mod tests {
         let _ = tokio::fs::remove_file(&path).await;
         assert!(xml.contains("before") && xml.contains("after"));
         assert!(xml.trim_end().ends_with("</i>"));
+    }
+
+    /// A later attempt of the recording that switched accounts or proxies moves
+    /// danmu to them at once; re-sending what is already in use does not reconnect.
+    #[tokio::test(start_paused = true)]
+    async fn authentication_update_reconnects_only_when_the_account_changes() {
+        let (_first_tx, first_rx) = mpsc::channel(8);
+        let (_second_tx, second_rx) = mpsc::channel(8);
+        let (_third_tx, third_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![first_rx, second_rx, third_rx]));
+        let (runner, items) = runner_for(provider.clone(), DanmuEventPublisher::new(64)).await;
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let handle = tokio::spawn(runner.run(command_rx, items, CancellationToken::new()));
+        let proxy = platforms_parser::danmaku::DanmuProxy::parse(
+            "socks5h://user:secret@proxy.example:1080",
+        )
+        .expect("proxy");
+        let update = |cookies: Option<&str>,
+                      proxy: Option<&platforms_parser::danmaku::DanmuProxy>| {
+            CollectionCommand::UpdateAuthentication(DanmuAuthentication {
+                cookies: cookies.map(str::to_owned),
+                extras: None,
+                proxy: proxy.cloned(),
+            })
+        };
+        command_tx
+            .send(update(None, None))
+            .await
+            .expect("send unchanged");
+        command_tx
+            .send(update(Some("account=B"), None))
+            .await
+            .expect("send switch");
+        command_tx
+            .send(update(Some("account=B"), Some(&proxy)))
+            .await
+            .expect("send proxy");
+        command_tx
+            .send(update(Some("account=B"), Some(&proxy)))
+            .await
+            .expect("send unchanged proxy");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        command_tx
+            .send(CollectionCommand::Stop(CollectionStopReason::SessionEnded))
+            .await
+            .expect("send stop");
+
+        let outcome = handle.await.expect("runner task");
+        assert!(outcome.error.is_none());
+        assert_eq!(
+            provider.connected_cookies(),
+            vec![
+                None,
+                Some("account=B".to_string()),
+                Some("account=B".to_string())
+            ]
+        );
+        assert_eq!(
+            provider.connected_proxies(),
+            vec![None, None, Some(proxy.clone())]
+        );
+        assert!(
+            provider.disconnects() >= 2,
+            "each replaced link is released"
+        );
+        let shown = format!("{:?}", update(Some("account=B"), Some(&proxy)));
+        assert!(!shown.contains("account=B") && !shown.contains("secret"));
     }
 
     /// A stop request must not discard messages already queued by the provider.

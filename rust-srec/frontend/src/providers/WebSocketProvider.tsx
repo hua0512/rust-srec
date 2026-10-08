@@ -15,6 +15,7 @@ import type {
   UploadStartedInput,
 } from '@/store/uploads';
 import type {
+  StreamerCredentialBlock as WireCredentialBlock,
   UploadProgress as WireUploadProgress,
   UploadStarted as WireUploadStarted,
   UploadTerminal as WireUploadTerminal,
@@ -33,6 +34,9 @@ import {
   StreamerCheckHistoryEntrySchema,
   type StreamerCheckHistoryEntry,
 } from '@/api/schemas/check-history';
+import { UnavailableReasonSchema } from '@/api/schemas/credential-profiles';
+import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
+import { invalidateCredentialAttention } from '@/api/credential-profiles';
 
 /**
  * How long progress ticks are held before they reach the stores. Every active
@@ -73,6 +77,53 @@ export async function handleUploadTerminal(
   await queryClient.invalidateQueries({
     queryKey: ['pipeline', 'job', terminal.jobId, 'uploads'],
   });
+}
+
+/**
+ * Applies a streamer's credential block change to every cached copy of the
+ * streamer: the list pages, the dashboard and the streamer's own page. The
+ * REST responses carry the current block; this keeps cards current between
+ * their polls.
+ */
+export function applyCredentialBlock(
+  queryClient: QueryClient,
+  wire: Pick<
+    WireCredentialBlock,
+    'streamerId' | 'blocked' | 'reason' | 'platformId' | 'sinceMs'
+  >,
+) {
+  const block: CredentialBlock | null = wire.blocked
+    ? {
+        reason: UnavailableReasonSchema.parse(wire.reason),
+        platform_id: wire.platformId,
+        since: new Date(Number(wire.sinceMs)).toISOString(),
+      }
+    : null;
+  const patch = (streamer: Streamer): Streamer =>
+    streamer.id === wire.streamerId
+      ? { ...streamer, credential_blocked: block }
+      : streamer;
+
+  // Only the paginated lists under ['streamers'] hold streamers; other
+  // entries under that prefix (a streamer's filters) are left untouched.
+  for (const [queryKey, data] of queryClient.getQueriesData<unknown>({
+    queryKey: ['streamers'],
+  })) {
+    const items = (data as { items?: unknown } | undefined)?.items;
+    if (
+      !Array.isArray(items) ||
+      !items.some((item: Streamer) => item?.id === wire.streamerId)
+    ) {
+      continue;
+    }
+    queryClient.setQueryData(queryKey, {
+      ...(data as object),
+      items: (items as Streamer[]).map(patch),
+    });
+  }
+  const detailKey = ['streamer', wire.streamerId];
+  const detail = queryClient.getQueryData<Streamer>(detailKey);
+  if (detail) queryClient.setQueryData(detailKey, patch(detail));
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
@@ -367,6 +418,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             // Not currently surfaced in the UI; decoding still works.
             break;
 
+          case EventType.STREAMER_CREDENTIAL_BLOCK:
+            if (message.payload.case === 'streamerCredentialBlock') {
+              applyCredentialBlock(queryClient, message.payload.value);
+            }
+            break;
+
+          case EventType.CREDENTIAL_ATTENTION_CHANGED:
+            void invalidateCredentialAttention(queryClient);
+            break;
+
           case EventType.STREAMER_CHECK_RECORDED:
             if (message.payload.case === 'streamerCheckRecorded') {
               const wire = message.payload.value;
@@ -460,6 +521,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     accessToken,
     onMessage: handleMessage,
     onOpen: (ws) => {
+      // Attention changes while disconnected were never announced.
+      void invalidateCredentialAttention(queryClient);
       // Explicitly Clear any filters to ensure we receive everything
       const unsubscribeReq = create(UnsubscribeRequestSchema, {});
       const clientMessage = create(ClientMessageSchema, {

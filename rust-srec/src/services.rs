@@ -5,6 +5,7 @@
 
 pub(crate) mod config_import;
 pub(crate) mod container;
+pub(crate) mod playback_context;
 pub(crate) mod runtime_coordinator;
 pub(crate) mod session_cancels;
 

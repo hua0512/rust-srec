@@ -51,9 +51,12 @@ A forced or crashed run leaves a recovery marker beside the database. Later clea
 | `API_PORT` | External port for the backend API | `12555` |
 | `FRONTEND_PORT` | External port for the web interface | `15275` |
 | `BACKEND_URL` | Internal URL for the frontend to reach the backend | `http://rust-srec:8080` |
-| `HTTP_PROXY` | HTTP proxy server URL | - |
-| `HTTPS_PROXY` | HTTPS proxy server URL | - |
-| `NO_PROXY` | Comma-separated list of hosts to bypass proxy | - |
+| `HTTP_PROXY` | Proxy for plain HTTP requests, used where the proxy setting is **System proxy** | - |
+| `HTTPS_PROXY` | Proxy for HTTPS requests, used where the proxy setting is **System proxy** | - |
+| `ALL_PROXY` | Proxy for both when the more specific variable is not set | - |
+| `NO_PROXY` | Comma-separated list of hosts that bypass the proxy | - |
+
+The proxy variables, in upper or lower case, take effect only where a global, platform, template, streamer or account [proxy setting](../concepts/configuration.md#choosing-a-proxy) is **System proxy**. **Direct** ignores them, and FFmpeg and Streamlink are then started without them. The server reads them when it starts: restart it after changing them. Notification channels, browser push and upload tools such as rclone and BaiduPCS-Go always follow them. A new installation, or an upgrade from a version whose global proxy was turned off, that starts with `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` set makes **System proxy** the global default; see [upgrading from proxy settings](../concepts/configuration.md#upgrading-proxy-settings).
 
 ## Security & Auth {#security-auth}
 | Variable | Description | Default |

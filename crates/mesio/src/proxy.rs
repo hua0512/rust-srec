@@ -94,15 +94,34 @@ pub fn build_proxy_from_config(config: &ProxyConfig) -> Result<Proxy, String> {
         proxy_type => normalize_proxy_url(&config.url, proxy_type),
     };
 
+    let proxy_url = match &config.auth {
+        Some(auth) => url_with_login(&proxy_url, auth)?,
+        None => proxy_url,
+    };
+
     // Use `all` so both http and https requests follow the configured proxy.
-    let mut proxy = Proxy::all(&proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
+    Proxy::all(&proxy_url).map_err(|e| format!("Invalid proxy URL: {}", e.without_url()))
+}
 
-    // Add authentication if provided
-    if let Some(auth) = &config.auth {
-        proxy = proxy.basic_auth(&auth.username, &auth.password);
+/// `proxy_url` with `auth` written into it, replacing any login it carries.
+///
+/// reqwest percent-decodes the login it finds in a proxy URL, for HTTP and
+/// SOCKS alike, and `Proxy::basic_auth` stores its login in that URL without
+/// escaping `%`, so the login goes in encoded: everything except ASCII
+/// letters, digits and `*-._` is escaped.
+fn url_with_login(proxy_url: &str, auth: &ProxyAuth) -> Result<String, String> {
+    let encode = |value: &str| {
+        url::form_urlencoded::byte_serialize(value.as_bytes())
+            .collect::<String>()
+            .replace('+', "%20")
+    };
+    let mut url = Url::parse(proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
+    if url.set_username(&encode(&auth.username)).is_err()
+        || url.set_password(Some(&encode(&auth.password))).is_err()
+    {
+        return Err("Invalid proxy URL: it cannot carry a login".to_owned());
     }
-
-    Ok(proxy)
+    Ok(url.into())
 }
 
 #[cfg(test)]
@@ -189,5 +208,92 @@ mod tests {
         };
 
         assert_eq!(config.redacted_url(), "socks5://proxy.example.com:1080");
+    }
+
+    /// A plain-HTTP forward proxy answering 204 to requests whose Basic
+    /// proxy credentials are `expected` (base64) and 407 otherwise.
+    async fn login_checking_proxy(expected: &'static str) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    let mut buffer = [0u8; 1024];
+                    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        match stream.read(&mut buffer).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(read) => request.extend_from_slice(&buffer[..read]),
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&request);
+                    let allowed = request.lines().any(|line| {
+                        line.split_once(':').is_some_and(|(name, value)| {
+                            name.eq_ignore_ascii_case("proxy-authorization")
+                                && value.trim() == format!("Basic {expected}")
+                        })
+                    });
+                    let response: &[u8] = if allowed {
+                        b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+                    } else {
+                        b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n"
+                    };
+                    let _ = stream.write_all(response).await;
+                });
+            }
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn the_login_reaches_the_proxy_as_written() {
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            // base64 of `us@r%41:p%41 @:x/%`.
+            let address = login_checking_proxy("dXNAciU0MTpwJTQxIEA6eC8l").await;
+            let send = |auth: Option<ProxyAuth>, url: String| async move {
+                let config = crate::DownloaderConfig {
+                    proxy: Some(ProxyConfig {
+                        url,
+                        proxy_type: ProxyType::Http,
+                        auth,
+                    }),
+                    ..crate::DownloaderConfig::default()
+                };
+                crate::downloader::create_client(&config)
+                    .unwrap()
+                    .get("http://site.example/")
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+            };
+            let login = || {
+                Some(ProxyAuth {
+                    username: "us@r%41".to_owned(),
+                    password: "p%41 @:x/%".to_owned(),
+                })
+            };
+            assert_eq!(
+                send(login(), format!("http://{address}")).await,
+                reqwest::StatusCode::NO_CONTENT
+            );
+            // The address may omit its scheme, and the login replaces one
+            // the address carries.
+            assert_eq!(
+                send(login(), format!("old:login@{address}")).await,
+                reqwest::StatusCode::NO_CONTENT
+            );
+            assert_eq!(
+                send(None, format!("http://{address}")).await,
+                reqwest::StatusCode::PROXY_AUTHENTICATION_REQUIRED
+            );
+        })
+        .await
+        .unwrap();
     }
 }

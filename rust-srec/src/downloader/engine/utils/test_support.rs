@@ -4,6 +4,32 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLog(Arc<parking_lot::Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    pub(crate) fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock()).into_owned()
+    }
+}
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLog {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
 use crate::downloader::engine::{DownloadConfig, DownloadEngine, DownloadHandle, SegmentEvent};
 #[cfg(unix)]
 use crate::downloader::engine::{DownloadFailureKind, IoErrorKindSer};

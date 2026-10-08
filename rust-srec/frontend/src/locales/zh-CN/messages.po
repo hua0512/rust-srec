@@ -49,9 +49,25 @@ msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "“{0}”将立即失效。此操作无法撤销。"
 
+#: src/components/proxies/proxy-editor-dialog.tsx:175
+msgid "“{conflictName}” already uses this address and username."
+msgstr "“{conflictName}”已在使用相同的地址和用户名。"
+
+#: src/components/credentials/delete-profile-dialog.tsx:80
+msgid "\"{label}\" cannot be deleted while it is selected or recording."
+msgstr "“{label}”正被选择策略选中或正在录制中使用，无法删除。"
+
+#: src/components/proxies/delete-proxy-dialog.tsx:56
+msgid "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
+msgstr "以下设置仍在使用“{name}”，暂时无法删除。请先在这些设置中改选其他代理。"
+
 #: src/components/logging/log-viewer.tsx:515
 msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
+
+#: src/components/proxies/proxy-references.tsx:26
+msgid "(being removed)"
+msgstr "（正在移除）"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:143
 msgid "(Delete source)"
@@ -74,11 +90,6 @@ msgstr "（保留源文件）"
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, other {# 项可选}}"
 
-#. placeholder {0}: field.value.length
-#: src/components/config/shared/network-settings-card.tsx:215
-msgid "{0, plural, one {# char} other {# chars}}"
-msgstr "{0, plural, other {# 个字符}}"
-
 #. placeholder {0}: pipeline.completed_steps
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:332
 msgid "{0, plural, one {# done} other {# done}}"
@@ -90,7 +101,7 @@ msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
 #. placeholder {0}: failed.length
-#: src/components/upload-status-indicator.tsx:145
+#: src/components/upload-status-indicator.tsx:137
 msgid "{0, plural, one {# failed upload} other {# failed uploads}}"
 msgstr "{0, plural, other {# 个上传失败}}"
 
@@ -100,7 +111,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
 #. placeholder {0}: upload.filesFailed
-#: src/components/upload-status-indicator.tsx:431
+#: src/components/upload-status-indicator.tsx:412
 msgid "{0, plural, one {# file failed} other {# files failed}}"
 msgstr "{0, plural, other {# 个文件失败}}"
 
@@ -158,6 +169,11 @@ msgstr "{0, plural, other {# 个警告}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
+#. placeholder {0}: rest.length
+#: src/components/shared/list-panel.tsx:226
+msgid "{0, plural, other {+# more}}"
+msgstr "{0, plural, other {另外 # 个}}"
+
 #. placeholder {0}: filteredLogs.length
 #. placeholder {1}: logs.length
 #: src/components/logging/log-viewer.tsx:510
@@ -169,11 +185,6 @@ msgstr "{0} / {1, plural, other {# 条}}"
 #: src/components/streamers/edit/status-check-history.tsx:163
 msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
-
-#. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:250
-msgid "{0} Configuration"
-msgstr "{0} 配置"
 
 #. placeholder {0}: source.fps
 #: src/components/player/playback-details.tsx:61
@@ -192,7 +203,7 @@ msgid "{0} s"
 msgstr "{0} 秒"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:199
 msgid "{0} stream(s) added successfully"
 msgstr "成功添加 {0} 个流"
 
@@ -208,6 +219,10 @@ msgstr "{0}/{1, plural, other {# 个步骤}}"
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
+#: src/components/credentials/account-selection-section.tsx:251
+msgid "{attempts, plural, one {up to # try} other {up to # tries}}"
+msgstr "{attempts, plural, other {最多尝试 # 次}}"
+
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:131
 msgid "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel # running pipelines}}"
 msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
@@ -215,6 +230,14 @@ msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
 #: src/components/sessions/danmu-stats-panel.tsx:321
 msgid "{chat} chat · {gift} gift"
 msgstr "{chat} 条弹幕 · {gift} 个礼物"
+
+#: src/components/credential-attention-indicator.tsx:59
+msgid "{count, plural, one {# account needs attention} other {# accounts need attention}}"
+msgstr "{count, plural, other {# 个账号需要处理}}"
+
+#: src/components/credential-attention-indicator.tsx:56
+msgid "{count, plural, one {# account needs login} other {# accounts need login}}"
+msgstr "{count, plural, other {# 个账号需要登录}}"
 
 #: src/lib/upload-format.ts:33
 msgid "{count, plural, one {# active upload} other {# active uploads}}"
@@ -224,11 +247,24 @@ msgstr "{count, plural, other {# 个进行中的上传}}"
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
 
-#: src/components/upload-status-indicator.tsx:378
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:255
+msgid "{displayName} Configuration"
+msgstr "{displayName} 配置"
+
+#: src/components/upload-status-indicator.tsx:359
 msgid "{eta} left"
 msgstr "剩余 {eta}"
 
-#: src/components/upload-status-indicator.tsx:375
+#: src/components/credentials/account-usage.tsx:292
+msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
+msgstr "{failures, plural, other {连续 # 次刷新失败}}"
+
+#: src/components/credential-attention-indicator.tsx:69
+#: src/components/credentials/account-usage.tsx:181
+msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
+msgstr "{failures, plural, other {刷新已失败 # 次}}"
+
+#: src/components/upload-status-indicator.tsx:356
 msgid "{filesDone}/{filesTotal} files"
 msgstr "{filesDone}/{filesTotal} 个文件"
 
@@ -245,13 +281,17 @@ msgstr "{hours} 小时"
 msgid "{minutes}m"
 msgstr "{minutes} 分钟"
 
-#: src/components/upload-status-indicator.tsx:148
+#: src/components/upload-status-indicator.tsx:140
 msgid "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgstr "{pending, plural, other {# 个上传排队中}}"
 
-#: src/components/upload-status-indicator.tsx:151
+#: src/components/upload-status-indicator.tsx:143
 msgid "{pending} queued"
 msgstr "{pending} 个排队中"
+
+#: src/components/credentials/account-usage.tsx:207
+msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
+msgstr "{recordings, plural, other {# 个录制进行中}}"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:99
 msgid "{retryableCount, plural, one {Retry # failed or cancelled pipeline} other {Retry # failed or cancelled pipelines}}"
@@ -268,6 +308,14 @@ msgstr "{seconds} 秒"
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:163
 msgid "{selectedCount, plural, one {This will permanently delete # pipeline with its jobs and logs. This action cannot be undone.} other {This will permanently delete # pipelines with their jobs and logs. This action cannot be undone.}}"
 msgstr "{selectedCount, plural, other {这将永久删除 # 个流水线及其任务和日志。此操作无法撤销。}}"
+
+#: src/components/credentials/delete-profile-dialog.tsx:88
+msgid "{selections, plural, one {Remove it from the account selection of # configuration.} other {Remove it from the account selection of # configurations.}}"
+msgstr "{selections, plural, other {请先从 # 项配置的账号选择中移除它。}}"
+
+#: src/components/credentials/delete-profile-dialog.tsx:97
+msgid "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
+msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制结束。}}"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:347
 msgid "{totalOutputs, plural, one {# file} other {# files}}"
@@ -305,7 +353,16 @@ msgstr "<1>已选</1><0>{selectedCount}</0>"
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> 表示不限速（rclone 默认值）。例如：当服务方将你限制为每秒 10 次请求时，可设为 <1>10</1>。"
 
-#: src/components/upload-status-indicator.tsx:286
+#: src/components/credentials/account-selection-section.tsx:218
+msgid "<0>Recording rotates between</0> {names}"
+msgstr "<0>录制轮流使用</0> {names}"
+
+#: src/components/credentials/account-selection-section.tsx:203
+#: src/components/credentials/account-selection-section.tsx:234
+msgid "<0>Recording uses</0> {names}"
+msgstr "<0>录制使用</0> {names}"
+
+#: src/components/upload-status-indicator.tsx:267
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -381,6 +438,18 @@ msgstr "7 天"
 msgid "90 days"
 msgstr "90 天"
 
+#: src/components/credentials/account-usage.tsx:137
+msgid "A check found it needs a refresh"
+msgstr "检查发现需要刷新"
+
+#: src/components/credentials/credential-selection-editor.tsx:252
+msgid "A recording keeps using the account it started with."
+msgstr "一次录制会一直使用开始时的账号。"
+
+#: src/components/proxies/delete-proxy-dialog.tsx:70
+msgid "A template being removed lets go of the proxy once the recordings using it finish."
+msgstr "正在移除的模板会在使用它的录制结束后释放该代理。"
+
 #: src/components/config/engines/engine-editor.tsx:195
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
@@ -413,14 +482,74 @@ msgstr "权限"
 msgid "Access level"
 msgstr "权限级别"
 
+#: src/components/credentials/profile-editor-dialog.tsx:266
+msgid "Access token"
+msgstr "访问令牌"
+
 #: src/components/player/playback-state.ts:26
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应用登录已过期，请重新登录。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:174
-#: src/components/streamers/card/use-streamer-status.tsx:183
-msgid "Account Not Found"
-msgstr "账号不存在"
+#: src/components/credentials/credential-selection-editor.tsx:266
+msgid "Account"
+msgstr "账号"
+
+#: src/components/credentials/profile-editor-dialog.tsx:316
+msgid "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
+msgstr "使用此账号的账号检查、刷新、录制、弹幕和播放都按此设置连接。选择“跟随录制”时，使用账号的录制用什么代理就走什么代理，账号检查则使用平台的代理设置。"
+
+#: src/components/player/url-input-form.tsx:227
+#: src/components/player/url-input-form.tsx:341
+msgid "Account ID"
+msgstr "账号 ID"
+
+#: src/components/credentials/platform-accounts-section.tsx:109
+msgid "Account ID copied"
+msgstr "已复制账号 ID"
+
+#: src/components/streamers/card/use-streamer-status.tsx:33
+msgid "Account needs login"
+msgstr "账号需要登录"
+
+#: src/components/credentials/credential-selection-editor.tsx:209
+msgid "Account selection"
+msgstr "账号选择"
+
+#: src/components/streamers/card/use-streamer-status.tsx:41
+msgid "Account unavailable"
+msgstr "账号不可用"
+
+#: src/components/config/templates/tabs/platform-override-card.tsx:80
+#: src/components/credentials/credential-selection-editor.tsx:304
+#: src/components/credentials/platform-accounts-section.tsx:129
+#: src/components/credentials/read-only-accounts-section.tsx:25
+msgid "Accounts"
+msgstr "账号列表"
+
+#: src/components/proxies/proxy-references.tsx:121
+msgctxt "proxy references"
+msgid "Accounts"
+msgstr "账号"
+
+#: src/components/config/shared/network-settings-card.tsx:72
+msgid "Accounts are chosen per platform. Set them in this template's platform overrides."
+msgstr "账号按平台选择。请在此模板的平台覆盖中设置。"
+
+#: src/components/credentials/read-only-accounts-section.tsx:28
+msgid "Accounts belong to the platform. Add, edit or log in to them in the platform settings."
+msgstr "账号归属于平台。请在平台设置中添加、编辑或登录账号。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:35
+msgid "Accounts disabled"
+msgstr "账号已停用"
+
+#: src/components/streamers/card/use-streamer-status.tsx:37
+msgid "Accounts failing"
+msgstr "账号均不可用"
+
+#: src/components/credentials/credential-selection-editor.tsx:302
+msgid "Accounts, in the order they are tried"
+msgstr "账号（按尝试顺序）"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:510
 msgid "Action"
@@ -464,23 +593,29 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:405
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:437
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
-#: src/components/streamers/streamer-editor.tsx:200
+#: src/components/streamers/streamer-editor.tsx:215
 msgid "Add a streamer"
 msgstr "添加主播"
+
+#: src/components/credentials/credential-selection-editor.tsx:375
+#: src/components/credentials/platform-accounts-section.tsx:122
+#: src/components/credentials/profile-editor-dialog.tsx:159
+msgid "Add account"
+msgstr "添加账号"
 
 #: src/components/config/engines/engine-card.tsx:224
 msgid "Add an engine"
 msgstr "添加引擎"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:132
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:150
 msgid "Add an override to customize behavior for specific platforms."
 msgstr "添加覆盖项以自定义特定平台的行为。"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:138
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:135
 msgid "Add an override to customize engine behavior for this template."
 msgstr "添加覆盖项以自定义此模板的引擎行为。"
 
@@ -548,8 +683,20 @@ msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。
 msgid "Add module..."
 msgstr "添加模块..."
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:97
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:97
+#: src/components/credentials/platform-accounts-section.tsx:145
+msgid "Add one by scanning a QR code with the platform's app or by pasting its cookies."
+msgstr "用平台 App 扫描二维码，或粘贴 Cookie 来添加账号。"
+
+#: src/components/proxies/proxies-panel.tsx:193
+msgid "Add one to send recordings, checks and danmu through it. Until then, requests connect directly or through the system proxy, as the global settings choose."
+msgstr "添加代理后，录制、检查和弹幕即可通过它连接。在此之前，请求按全局设置直连或使用系统代理。"
+
+#: src/components/credentials/platform-accounts-section.tsx:150
+msgid "Add one with its cookies or tokens to record signed in."
+msgstr "粘贴账号的 Cookie 或令牌来添加账号，即可登录录制。"
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:94
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:114
 msgid "Add Override"
 msgstr "添加覆盖项"
 
@@ -560,6 +707,16 @@ msgstr "添加参数"
 #: src/components/pipeline/workflows/step-library.tsx:265
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
+
+#: src/components/proxies/proxies-panel.tsx:160
+#: src/components/proxies/proxy-editor-dialog.tsx:206
+#: src/components/proxies/proxy-editor-dialog.tsx:361
+msgid "Add proxy"
+msgstr "添加代理"
+
+#: src/components/config/shared/proxy-route-picker.tsx:260
+msgid "Add proxy…"
+msgstr "添加代理…"
 
 #: src/components/config/shared/retry-policy-form.tsx:133
 msgid "Add randomness to retry delays to prevent thundering herd."
@@ -573,8 +730,8 @@ msgstr "添加 rclone 参数"
 msgid "Add Step"
 msgstr "添加步骤"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:414
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:446
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:478
 msgid "Add Stream"
 msgstr "添加流"
 
@@ -586,9 +743,26 @@ msgstr "添加主播"
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
+#: src/components/credentials/read-only-accounts-section.tsx:47
+msgid "Add them in the platform settings."
+msgstr "请在平台设置中添加。"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:127
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:246
+#: src/components/proxies/proxy-row.tsx:216
+msgid "Address"
+msgstr "地址"
+
+#: src/components/proxies/proxies-panel.tsx:148
+msgid "Address copied"
+msgstr "地址已复制"
+
+#: src/components/proxies/proxy-test.tsx:140
+msgid "Address to check"
+msgstr "要检查的地址"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1036
 msgid "Adjust rate based on target duration"
@@ -606,16 +780,16 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:88
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:314
-#: src/components/streamers/streamer-editor.tsx:162
+#: src/components/streamers/streamer-editor.tsx:176
 msgid "Advanced"
 msgstr "高级"
 
-#: src/components/streamers/streamer-editor.tsx:166
+#: src/components/streamers/streamer-editor.tsx:180
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
-#: src/components/player/url-input-form.tsx:186
-#: src/components/player/url-input-form.tsx:280
+#: src/components/player/url-input-form.tsx:210
+#: src/components/player/url-input-form.tsx:324
 msgid "Advanced Options"
 msgstr "高级选项"
 
@@ -665,6 +839,14 @@ msgstr "所有级别"
 msgid "All Platforms"
 msgstr "所有平台"
 
+#: src/components/credentials/account-selection-section.tsx:56
+msgid "All selected accounts are disabled. Enable one or change the selection."
+msgstr "所选账号均已禁用。请启用其中一个，或更改账号选择。"
+
+#: src/components/credentials/account-selection-section.tsx:45
+msgid "All selected accounts need a new login. Log in again to one of them or replace its cookies."
+msgstr "所选账号都需要重新登录。请重新登录其中一个，或替换其 Cookie。"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:497
 msgid "All Templates"
 msgstr "所有模板"
@@ -682,7 +864,7 @@ msgstr "所有类型"
 msgid "Allow more startup buffering. Playback may start later and add delay."
 msgstr "允许更多启动缓冲，可能延后开始播放并增加延迟。"
 
-#: src/components/config/global/network-system-card.tsx:29
+#: src/components/config/global/network-system-card.tsx:32
 msgid "Allow private stream proxy targets"
 msgstr "允许私有网络流代理目标"
 
@@ -698,11 +880,7 @@ msgstr "同时从磁盘删除文件"
 msgid "Always use Streamlink"
 msgstr "始终使用 Streamlink"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:200
-msgid "An error occurred"
-msgstr "发生错误"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:308
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:303
 msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
 msgstr "指定的设备 ID 优先于 acf_did Cookie 和所选来源。服务端注册需要额外请求，同一提取器会复用注册结果。"
 
@@ -717,6 +895,14 @@ msgstr "Android 版本"
 #: src/components/danmu/danmu-viewer.tsx:348
 msgid "Anonymized Metadata • UTF-8 Format"
 msgstr "匿名元数据 • UTF-8 格式"
+
+#: src/components/proxies/proxy-test.tsx:134
+msgid "Another address…"
+msgstr "其他地址…"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:172
+msgid "Another proxy is already named “{conflictName}”."
+msgstr "已有名为“{conflictName}”的代理。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:261
 msgid "Any additional command line arguments to pass to Streamlink"
@@ -740,7 +926,7 @@ msgstr "API 密钥已吊销"
 
 #: src/components/sidebar/user-menu.tsx:119
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:67
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
 msgid "API Keys"
 msgstr "API 密钥"
 
@@ -748,7 +934,7 @@ msgstr "API 密钥"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:364
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:359
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -776,7 +962,7 @@ msgstr "应用令牌"
 msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
 msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始终使用 Web。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:82
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:89
 msgid "Appearance & style"
 msgstr "外观与样式"
 
@@ -788,11 +974,11 @@ msgstr "追加到输出文件名之前"
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。"
 
-#: src/components/player/url-input-form.tsx:308
+#: src/components/player/url-input-form.tsx:372
 msgid "Applied to all URLs"
 msgstr "应用于所有链接"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:170
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:165
 msgid "Applies only to MP4, MKV, FLV, TS, or MOV output. Recordings in other formats use normal recording."
 msgstr "仅适用于 MP4、MKV、FLV、TS 或 MOV 输出。其他格式的录制使用普通录制方式。"
 
@@ -826,7 +1012,7 @@ msgid "Are you sure you want to delete {0} sessions? This action cannot be undon
 msgstr "你确定要删除 {0} 个会话吗？此操作无法撤销。"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:190
+#: src/components/config/templates/template-card.tsx:183
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
@@ -886,7 +1072,7 @@ msgstr "至少需要一个输入路径"
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:66
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -940,16 +1126,14 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
-#: src/components/config/shared/network-settings-card.tsx:157
+#: src/components/config/shared/network-settings-card.tsx:54
 #: src/components/notifications/forms/webhook-form.tsx:168
 msgid "Authentication"
 msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:781
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
-#: src/components/player/player-card.tsx:222
+#: src/components/player/player-card.tsx:248
 msgid "Auto"
 msgstr "自动"
 
@@ -973,10 +1157,6 @@ msgstr "自动封面"
 msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 msgstr "自动模式优先使用无需签名的 Web API，失败时回退到解析直播页面。直播页面更容易触发风控检测。"
 
-#: src/components/config/shared/network-settings-card.tsx:282
-msgid "Auto-Refresh"
-msgstr "自动刷新"
-
 #: src/components/logging/log-viewer.tsx:474
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
@@ -993,10 +1173,6 @@ msgstr "从 URL 自动填充名称"
 #: src/routes/_public/login.lazy.tsx:100
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:244
-msgid "Automatic"
-msgstr "自动"
 
 #: src/components/config/shared/output-settings-card.tsx:222
 msgid "Automatic (match the site)"
@@ -1031,9 +1207,9 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:157
-#: src/components/config/templates/template-editor.tsx:208
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/platforms/platform-editor.tsx:168
+#: src/components/config/templates/template-editor.tsx:162
+#: src/components/config/templates/template-editor.tsx:165
 msgid "Back"
 msgstr "返回"
 
@@ -1046,7 +1222,7 @@ msgstr "返回引擎列表"
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
 
-#: src/components/streamers/streamer-editor.tsx:270
+#: src/components/streamers/streamer-editor.tsx:285
 msgid "Back to link"
 msgstr "返回链接"
 
@@ -1078,10 +1254,6 @@ msgstr "后端：{backendLabel}"
 msgid "Background"
 msgstr "后台"
 
-#: src/components/config/shared/network-settings-card.tsx:297
-msgid "Background refresh enabled"
-msgstr "后台刷新已启用"
-
 #: src/components/config/engines/forms/mesio-form.tsx:203
 msgid "Backjump Threshold"
 msgstr "回跳阈值"
@@ -1090,13 +1262,13 @@ msgstr "回跳阈值"
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
-#: src/components/layout/site-header.tsx:42
+#: src/components/layout/site-header.tsx:43
 msgid "Backup"
 msgstr "备份"
 
-#: src/components/config/global/backup-restore-card.tsx:223
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:85
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:88
+#: src/components/config/global/backup-restore-card.tsx:227
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:92
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:95
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
@@ -1126,7 +1298,7 @@ msgstr "百度网盘登录失败"
 msgid "Baidu Netdisk logout failed"
 msgstr "百度网盘退出登录失败"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:46
 msgid "Baidu Netdisk re-login failed"
 msgstr "百度网盘重新登录失败"
 
@@ -1151,7 +1323,7 @@ msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，�
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
-#: src/components/player/player-card.tsx:264
+#: src/components/player/player-card.tsx:290
 msgid "Balanced"
 msgstr "均衡"
 
@@ -1195,16 +1367,16 @@ msgstr "基本信息"
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
-#: src/components/streamers/streamer-editor.tsx:147
+#: src/components/streamers/streamer-editor.tsx:161
 msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
 msgid "Batch parse error: {0}"
 msgstr "批量解析失败：{0}"
 
-#: src/components/player/url-input-form.tsx:137
+#: src/components/player/url-input-form.tsx:161
 msgid "Batch URLs"
 msgstr "批量 URL"
 
@@ -1227,10 +1399,6 @@ msgstr "最佳"
 #: src/components/config/engines/forms/mesio-form.tsx:156
 msgid "BETA"
 msgstr "测试版"
-
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:215
-msgid "Bilibili QR Login"
-msgstr "哔哩哔哩扫码登录"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:55
 #: src/components/config/engines/forms/streamlink-form.tsx:48
@@ -1322,7 +1490,7 @@ msgstr "前方缓冲时长"
 msgid "Buffering"
 msgstr "缓冲中"
 
-#: src/components/player/player-card.tsx:250
+#: src/components/player/player-card.tsx:276
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "当前播放方式不支持缓冲预设。"
 
@@ -1351,8 +1519,9 @@ msgid "Cache"
 msgstr "缓存"
 
 #: src/components/config/engines/engine-card.tsx:189
-#: src/components/config/global/backup-restore-card.tsx:509
-#: src/components/config/templates/template-card.tsx:198
+#: src/components/config/global/backup-restore-card.tsx:513
+#: src/components/config/templates/template-card.tsx:191
+#: src/components/credentials/delete-profile-dialog.tsx:146
 #: src/components/filters/FilterDialog.tsx:284
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:226
@@ -1370,8 +1539,10 @@ msgstr "缓存"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:784
 #: src/components/pipeline/workflows/step-config-dialog.tsx:842
 #: src/components/pipeline/workflows/workflow-card.tsx:120
+#: src/components/proxies/delete-proxy-dialog.tsx:105
+#: src/components/proxies/proxy-editor-dialog.tsx:358
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
-#: src/components/streamers/streamer-editor.tsx:228
+#: src/components/streamers/streamer-editor.tsx:243
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:239
@@ -1396,17 +1567,17 @@ msgstr "取消处理管道？"
 msgid "Cancel selected"
 msgstr "取消所选"
 
-#: src/components/upload-status-indicator.tsx:553
+#: src/components/upload-status-indicator.tsx:534
 msgid "Cancel this upload?"
 msgstr "取消此上传？"
 
-#: src/components/upload-status-indicator.tsx:411
-#: src/components/upload-status-indicator.tsx:572
+#: src/components/upload-status-indicator.tsx:392
+#: src/components/upload-status-indicator.tsx:553
 msgid "Cancel upload"
 msgstr "取消上传"
 
 #: src/components/pipeline/status-config.ts:107
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:146
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 msgid "Cancelled"
 msgstr "已取消"
@@ -1434,7 +1605,7 @@ msgstr "采集模式"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:89
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1458,11 +1629,15 @@ msgstr "原因："
 
 #: src/components/player/stream-info-card.tsx:31
 #: src/components/streamers/edit/active-download-card.tsx:93
-#: src/components/streamers/progress-indicator.tsx:93
+#: src/components/streamers/progress-indicator.tsx:94
 msgid "CDN"
 msgstr "CDN"
 
-#: src/components/layout/site-header.tsx:35
+#: src/components/credentials/account-selection-section.tsx:482
+msgid "Change"
+msgstr "更改"
+
+#: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/user-menu.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:278
@@ -1473,15 +1648,27 @@ msgstr "修改密码"
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/components/player/player-card.tsx:520
+#: src/components/player/player-card.tsx:546
 msgid "Change source"
 msgstr "切换直播源"
+
+#: src/components/config/shared/proxy-route-picker.tsx:460
+msgid "Changes apply to the next check or recording; ones already running keep their connection."
+msgstr "更改会在下一次检查或录制时生效，进行中的连接保持不变。"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:210
+msgid "Changes apply to the next connection everywhere this proxy is used."
+msgstr "更改会在所有使用此代理的地方于下一次连接时生效。"
+
+#: src/components/credentials/platform-accounts-section.tsx:130
+msgid "Changes to accounts are saved right away."
+msgstr "账号的修改会立即保存。"
 
 #: src/routes/_authed/change-password.lazy.tsx:276
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/player/player-card.tsx:247
+#: src/components/player/player-card.tsx:273
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
@@ -1513,9 +1700,9 @@ msgstr "频道1,频道2"
 msgid "channels"
 msgstr "个渠道"
 
-#: src/components/config/global/backup-restore-card.tsx:408
-#: src/components/config/global/backup-restore-card.tsx:413
-#: src/components/config/global/backup-restore-card.tsx:418
+#: src/components/config/global/backup-restore-card.tsx:412
+#: src/components/config/global/backup-restore-card.tsx:417
+#: src/components/config/global/backup-restore-card.tsx:422
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
 #: src/lib/split-reason.ts:231
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:407
@@ -1555,9 +1742,17 @@ msgstr "转换后检查文件是否存在"
 msgid "Check size after copy"
 msgstr "复制后检查大小"
 
+#: src/components/proxies/proxy-test.tsx:109
+msgid "Check that it reaches"
+msgstr "检查能否访问"
+
 #: src/components/streamers/config/streamer-recording-fields.tsx:136
 msgid "Check this streamer and record when it goes live."
 msgstr "检查该主播，并在开播时自动录制。"
+
+#: src/components/credentials/account-usage.tsx:170
+msgid "checked {when}"
+msgstr "{when}检查"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:518
 msgid "Checkers"
@@ -1571,25 +1766,42 @@ msgstr "校验数帮助"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/streamer-editor.tsx:239
+#: src/components/streamers/streamer-editor.tsx:254
 msgid "Checking link"
 msgstr "检查链接中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:340
+#: src/components/streamers/card/use-streamer-status.tsx:470
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
+
+#: src/components/credentials/account-row.tsx:64
+msgid "Checking…"
+msgstr "正在校验…"
+
+#: src/components/streamers/card/use-streamer-status.tsx:94
+msgid "Checks continue, and recording resumes on its own once an account works again."
+msgstr "检查会继续进行，账号恢复可用后录制会自动恢复。"
 
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:46
 msgid "Chinese Simplified"
 msgstr "简体中文"
 
+#: src/components/credentials/credential-settings-field.tsx:123
+msgid "Choose a single platform to manage its accounts."
+msgstr "请选择单个平台以管理其账号。"
+
+#: src/components/player/url-input-form.tsx:40
+#: src/components/player/url-input-form.tsx:52
+msgid "Choose an account or raw cookies, not both"
+msgstr "请选择账号或手动 Cookie，不能同时使用"
+
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:161
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:275
-msgid "Choose how this streamer handles proxy connections."
-msgstr "选择此主播如何处理代理连接。"
+#: src/components/config/shared/proxy-route-picker.tsx:204
+msgid "Choose how to connect"
+msgstr "选择连接方式"
 
 #: src/components/filters/forms/TimezoneField.tsx:40
 msgid "Choose timezone"
@@ -1599,7 +1811,11 @@ msgstr "选择时区"
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:94
+#: src/components/config/shared/network-settings-card.tsx:57
+msgid "Choose which accounts sign in to the platform."
+msgstr "选择用于登录平台的账号。"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:101
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
@@ -1641,7 +1857,7 @@ msgstr "用于流认证签名的客户端平台类型。不同平台使用不同
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
-#: src/components/config/templates/template-card.tsx:122
+#: src/components/config/templates/template-card.tsx:115
 #: src/components/pipeline/presets/preset-card.tsx:126
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:248
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:477
@@ -1661,13 +1877,15 @@ msgstr "克隆模板"
 msgid "Cloning..."
 msgstr "正在克隆..."
 
-#: src/components/config/global/backup-restore-card.tsx:500
+#: src/components/config/global/backup-restore-card.tsx:504
+#: src/components/credentials/delete-profile-dialog.tsx:123
 #: src/components/notifications/browser-channel-dialog.tsx:200
 #: src/components/notifications/desktop-channel-dialog.tsx:227
+#: src/components/proxies/delete-proxy-dialog.tsx:82
 msgid "Close"
 msgstr "关闭"
 
-#: src/components/player/player-card.tsx:456
+#: src/components/player/player-card.tsx:482
 msgid "Close playback details"
 msgstr "关闭播放详情"
 
@@ -1770,16 +1988,16 @@ msgstr "压缩/归档"
 msgid "Compression Level"
 msgstr "压缩级别"
 
-#: src/components/config/global/concurrency-card.tsx:78
+#: src/components/config/global/concurrency-card.tsx:76
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:468
 msgid "Concurrency"
 msgstr "并发"
 
-#: src/components/streamers/card/use-streamer-status.tsx:276
+#: src/components/streamers/card/use-streamer-status.tsx:406
 msgid "Concurrency limit reached"
 msgstr "已达到并发限制"
 
-#: src/components/config/global/concurrency-card.tsx:67
+#: src/components/config/global/concurrency-card.tsx:65
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "并发限制、流水线超时与引擎默认值。"
 
@@ -1791,7 +2009,7 @@ msgstr "并发校验数（--checkers）。"
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
-#: src/components/layout/site-header.tsx:33
+#: src/components/layout/site-header.tsx:34
 msgid "Config"
 msgstr "配置"
 
@@ -1819,11 +2037,11 @@ msgstr "配置"
 msgid "Configuration copied to clipboard"
 msgstr "配置已复制到剪贴板"
 
-#: src/components/config/global/backup-restore-card.tsx:153
+#: src/components/config/global/backup-restore-card.tsx:154
 msgid "Configuration exported successfully"
 msgstr "配置已成功导出"
 
-#: src/components/config/global/backup-restore-card.tsx:179
+#: src/components/config/global/backup-restore-card.tsx:183
 msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
@@ -1852,17 +2070,13 @@ msgstr "配置所选引擎的详细选项。"
 msgid "Configure how you receive alerts in this browser and via system push notifications."
 msgstr "配置如何在此浏览器中以及通过系统推送通知接收警报。"
 
-#: src/components/config/global/backup-restore-card.tsx:331
+#: src/components/config/global/backup-restore-card.tsx:335
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:77
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
-
-#: src/components/config/shared/proxy-settings-card.tsx:253
-msgid "Configure proxy strategies and connection details."
-msgstr "配置代理策略和连接详情。"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:540
 msgid "Configure Settings"
@@ -1882,7 +2096,7 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Configured Events"
 msgstr "已配置的事件"
 
-#: src/components/config/global/backup-restore-card.tsx:524
+#: src/components/config/global/backup-restore-card.tsx:528
 msgid "Confirm Import"
 msgstr "确认导入"
 
@@ -1919,7 +2133,8 @@ msgstr "连接中"
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/player/player-card.tsx:201
+#: src/components/notifications/events/payload-preview.tsx:53
+#: src/components/player/player-card.tsx:227
 msgid "Connection"
 msgstr "连接方式"
 
@@ -1927,7 +2142,7 @@ msgstr "连接方式"
 msgid "Connection Error"
 msgstr "连接错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:125
+#: src/components/streamers/card/stream-avatar-info.tsx:126
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
@@ -1943,7 +2158,7 @@ msgstr "连接/活动超时"
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "确认离线所需的连续失败检查次数。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:132
+#: src/components/streamers/card/stream-avatar-info.tsx:133
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
@@ -1960,7 +2175,7 @@ msgstr "容器"
 msgid "Context"
 msgstr "上下文"
 
-#: src/components/streamers/streamer-editor.tsx:243
+#: src/components/streamers/streamer-editor.tsx:258
 msgid "Continue"
 msgstr "继续"
 
@@ -1980,19 +2195,15 @@ msgstr "只转换本次会话各分段录制的弹幕"
 msgid "Cookie string"
 msgstr "Cookie 字符串"
 
-#: src/components/config/shared/network-settings-card.tsx:208
-#: src/components/player/url-input-form.tsx:203
-#: src/components/player/url-input-form.tsx:297
+#: src/components/credentials/profile-editor-dialog.tsx:244
+#: src/components/player/url-input-form.tsx:247
+#: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
 msgstr "Cookie"
 
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:134
 msgid "Cookies (recommended)"
 msgstr "Cookie（推荐）"
-
-#: src/components/config/shared/network-settings-card.tsx:291
-msgid "Cookies Only"
-msgstr "仅 Cookie"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:528
 msgid "Copied"
@@ -2024,6 +2235,10 @@ msgstr "复制（流复制）"
 msgid "Copy / Move"
 msgstr "复制/移动"
 
+#: src/components/proxies/proxy-row.tsx:196
+msgid "Copy address"
+msgstr "复制地址"
+
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:409
 msgid "Copy API key"
 msgstr "复制 API 密钥"
@@ -2043,6 +2258,10 @@ msgstr "复制文件"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:83
 msgid "Copy Files"
 msgstr "复制文件"
+
+#: src/components/credentials/account-row.tsx:294
+msgid "Copy ID"
+msgstr "复制 ID"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:534
 msgid "Copy JSON"
@@ -2072,9 +2291,18 @@ msgstr "请立即复制此密钥。出于安全考虑，它只显示一次，之
 msgid "Could not check whether this tool is installed."
 msgstr "无法检测该工具是否已安装。"
 
+#: src/components/proxies/proxy-test.tsx:36
+msgid "Could not connect through the proxy"
+msgstr "无法通过代理连接"
+
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:78
 msgid "Could not connect to the server. Please check your connection."
 msgstr "无法连接到服务器，请检查网络连接。"
+
+#: src/components/credentials/platform-accounts-section.tsx:110
+#: src/components/proxies/proxies-panel.tsx:149
+msgid "Could not copy to the clipboard"
+msgstr "无法复制到剪贴板"
 
 #. placeholder {0}: failed.join(', ')
 #: src/components/pipeline/workflows/preset-lookup-status.tsx:28
@@ -2107,11 +2335,11 @@ msgstr "当一场直播的不同发言人数少于此值时，计数保持精确
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "涵盖局域网转推、摄像头和 tailnet 地址。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
 
-#: src/components/config/global/concurrency-card.tsx:265
+#: src/components/config/global/concurrency-card.tsx:263
 msgid "CPU Job"
 msgstr "CPU 任务"
 
-#: src/components/config/global/concurrency-card.tsx:268
+#: src/components/config/global/concurrency-card.tsx:266
 msgid "CPU Job Timeout"
 msgstr "CPU 任务超时"
 
@@ -2123,7 +2351,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:230
+#: src/components/config/templates/template-editor.tsx:184
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:513
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:439
@@ -2198,11 +2426,11 @@ msgstr "创建处理管道"
 msgid "Create Preset"
 msgstr "创建预设"
 
-#: src/components/streamers/streamer-editor.tsx:303
+#: src/components/streamers/streamer-editor.tsx:318
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:182
+#: src/components/config/templates/template-editor.tsx:136
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:203
 msgid "Create Template"
 msgstr "创建模板"
@@ -2219,7 +2447,7 @@ msgstr "创建你的第一个预设，用于为处理管道定义可复用的处
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤序列。"
 
-#: src/components/config/global/backup-restore-card.tsx:91
+#: src/components/config/global/backup-restore-card.tsx:92
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:705
 msgid "Created"
 msgstr "已创建"
@@ -2236,25 +2464,21 @@ msgstr "创建中…"
 msgid "Creation Mode"
 msgstr "创建模式"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:44
 msgid "Credential expiring soon"
 msgstr "凭据即将过期"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:42
 msgid "Credential invalid"
 msgstr "凭据无效"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:41
 msgid "Credential refresh failed"
 msgstr "凭据刷新失败"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:40
 msgid "Credential refreshed"
 msgstr "凭据已刷新"
-
-#: src/components/config/shared/network-settings-card.tsx:245
-msgid "Credential Source Status"
-msgstr "凭据来源状态"
 
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:120
 msgid "Credentials are handed to BaiduPCS-Go on the server; the login session persists in its config directory. The app itself keeps them only if you enable remembering below."
@@ -2264,17 +2488,17 @@ msgstr "凭据会交给服务器上的 BaiduPCS-Go 处理，登录会话保存�
 msgid "Credentials could not be stored for automatic re-login"
 msgstr "凭据保存失败，无法自动重新登录"
 
-#: src/components/config/shared/network-settings-card.tsx:130
-msgid "Credentials refreshed successfully"
-msgstr "凭据刷新成功"
-
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:81
 msgid "Credentials remembered for automatic re-login"
 msgstr "已保存凭据，可自动重新登录"
 
-#: src/components/config/shared/network-settings-card.tsx:356
+#: src/components/credentials/credential-login-dialog.tsx:176
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
+
+#: src/lib/notification-event-types.ts:43
+msgid "Credentials unavailable"
+msgstr "凭据不可用"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:106
 msgid "CRF (0-51)"
@@ -2344,15 +2568,11 @@ msgstr "自定义"
 msgid "Custom Config"
 msgstr "自定义配置"
 
-#: src/components/config/shared/proxy-settings-card.tsx:312
-msgid "Custom Configuration"
-msgstr "自定义配置"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:23
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:123
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:120
 msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "已设置自定义 FFmpeg 输出参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
@@ -2388,7 +2608,7 @@ msgstr "自定义标签"
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:86
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:83
 msgid "Customize specific engine settings for this template."
 msgstr "为此模板自定义特定的引擎设置。"
 
@@ -2426,11 +2646,12 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:189
+#: src/components/config/shared-config-editor.tsx:201
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:255
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -2465,7 +2686,7 @@ msgstr "弹幕数"
 msgid "Dark"
 msgstr "深色"
 
-#: src/components/layout/site-header.tsx:29
+#: src/components/layout/site-header.tsx:30
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
 msgstr "仪表盘"
@@ -2509,8 +2730,8 @@ msgstr "解密"
 msgid "Decryption Key TTL (ms)"
 msgstr "解密密钥 TTL（毫秒）"
 
-#: src/components/config/platforms/platform-card.tsx:107
-#: src/components/config/platforms/platform-card.tsx:122
+#: src/components/config/platforms/platform-card.tsx:110
+#: src/components/config/platforms/platform-card.tsx:125
 msgid "default"
 msgstr "默认"
 
@@ -2530,7 +2751,7 @@ msgstr "默认"
 msgid "Default Douyu quality"
 msgstr "斗鱼默认画质"
 
-#: src/components/config/global/concurrency-card.tsx:380
+#: src/components/config/global/concurrency-card.tsx:378
 msgid "Default Engine"
 msgstr "默认引擎"
 
@@ -2538,7 +2759,7 @@ msgstr "默认引擎"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:123
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:57
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
@@ -2549,6 +2770,10 @@ msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 #: src/components/config/global/pipeline-config-card.tsx:16
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
+
+#: src/components/config/global/network-system-card.tsx:162
+msgid "Default proxy"
+msgstr "默认代理"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1525
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
@@ -2588,13 +2813,15 @@ msgstr "已确认离线"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:91
+#: src/components/config/global/network-system-card.tsx:98
 msgid "Delay between the re-checks used to confirm a streamer has really gone offline."
 msgstr "用于确认主播确实已下播的复查之间的间隔。"
 
 #: src/components/config/engines/engine-card.tsx:195
-#: src/components/config/templates/template-card.tsx:130
-#: src/components/config/templates/template-card.tsx:204
+#: src/components/config/templates/template-card.tsx:123
+#: src/components/config/templates/template-card.tsx:197
+#: src/components/credentials/account-row.tsx:302
+#: src/components/credentials/delete-profile-dialog.tsx:153
 #: src/components/notifications/channel-card.tsx:209
 #: src/components/notifications/channel-card.tsx:232
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:182
@@ -2608,12 +2835,26 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/presets/preset-card.tsx:158
 #: src/components/pipeline/workflows/workflow-card.tsx:103
 #: src/components/pipeline/workflows/workflow-card.tsx:126
+#: src/components/proxies/delete-proxy-dialog.tsx:112
+#: src/components/proxies/proxy-row.tsx:204
 #: src/components/sessions/session-card.tsx:287
 #: src/components/streamers/card/stream-actions-menu.tsx:99
 #: src/components/streamers/streamer-batch-action-bar.tsx:230
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:476
 msgid "Delete"
 msgstr "删除"
+
+#: src/components/credentials/delete-profile-dialog.tsx:138
+msgid "Delete \"{label}\" and its saved credentials? This cannot be undone."
+msgstr "删除“{label}”及其保存的凭据？此操作无法撤销。"
+
+#: src/components/proxies/delete-proxy-dialog.tsx:97
+msgid "Delete \"{name}\" and its saved login? This cannot be undone."
+msgstr "删除“{name}”及其保存的登录信息？此操作无法撤销。"
+
+#: src/components/credentials/delete-profile-dialog.tsx:135
+msgid "Delete account"
+msgstr "删除账号"
 
 #: src/components/notifications/channel-card.tsx:215
 msgid "Delete Channel?"
@@ -2654,6 +2895,10 @@ msgstr "删除处理管道？"
 #: src/components/pipeline/presets/preset-card.tsx:141
 msgid "Delete Preset?"
 msgstr "删除预设？"
+
+#: src/components/proxies/delete-proxy-dialog.tsx:94
+msgid "Delete proxy"
+msgstr "删除代理"
 
 #: src/components/config/global/output-retention-fields.tsx:105
 msgid "Delete records and files"
@@ -2700,7 +2945,7 @@ msgstr "删除源视频文件"
 msgid "Delete Source XML"
 msgstr "删除源 XML 文件"
 
-#: src/components/config/templates/template-card.tsx:187
+#: src/components/config/templates/template-card.tsx:180
 msgid "Delete Template"
 msgstr "删除模板"
 
@@ -2728,9 +2973,13 @@ msgstr "转换成功后删除 XML 文件"
 msgid "Delete-after-transform checks are incomplete."
 msgstr "转换后删除检查尚未完成。"
 
-#: src/components/config/global/backup-restore-card.tsx:93
+#: src/components/config/global/backup-restore-card.tsx:94
 msgid "Deleted"
 msgstr "已删除"
+
+#: src/components/proxies/proxies-panel.tsx:119
+msgid "Deleted “{name}”"
+msgstr "已删除“{name}”"
 
 #. placeholder {0}: result.succeeded
 #. placeholder {1}: result.failed
@@ -2739,9 +2988,13 @@ msgid "Deleted {0} outputs; {1} failed"
 msgstr "已删除 {0} 个产物；{1} 个失败"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:63
+#: src/components/config/templates/template-card.tsx:62
 msgid "Deleted template \"{0}\""
 msgstr "已删除模板“{0}”"
+
+#: src/components/proxies/proxy-references.tsx:21
+msgid "Deleted; kept until the recordings using it finish"
+msgstr "已删除；保留至使用它的录制结束"
 
 #: src/components/config/global/import-mode-radio-group.tsx:145
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
@@ -2750,6 +3003,11 @@ msgstr "导入前删除所有现有配置。此操作无法撤销。"
 #: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
+
+#: src/components/credentials/account-row.tsx:67
+#: src/components/proxies/proxy-row.tsx:147
+msgid "Deleting…"
+msgstr "正在删除…"
 
 #: src/components/notifications/forms/webhook-form.tsx:131
 msgid "Delivery Policy"
@@ -2829,6 +3087,13 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
+#. placeholder {0}: profile.label
+#. placeholder {0}: proxy.name
+#: src/components/credentials/account-row.tsx:231
+#: src/components/proxies/proxy-row.tsx:168
+msgid "Details for {0}"
+msgstr "{0} 的详情"
+
 #: src/components/streamers/config/streamer-identity-fields.tsx:179
 msgid "Detecting…"
 msgstr "识别中…"
@@ -2837,11 +3102,7 @@ msgstr "识别中…"
 msgid "Determined from the URL. Platform settings apply automatically."
 msgstr "根据链接自动识别，并自动应用该平台的设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:243
-msgid "Device ID"
-msgstr "设备 ID"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:275
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:270
 msgid "Device ID source"
 msgstr "设备 ID 来源"
 
@@ -2853,7 +3114,10 @@ msgstr "设备机型"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/player/player-card.tsx:225
+#: src/components/notifications/browser-notification-listener.tsx:60
+#: src/components/notifications/events/payload-preview.tsx:58
+#: src/components/player/player-card.tsx:251
+#: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
 msgstr "直连"
 
@@ -2869,6 +3133,7 @@ msgstr "目录路径已复制"
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
+#: src/components/credentials/account-row.tsx:288
 #: src/components/streamers/card/stream-actions-menu.tsx:57
 #: src/components/streamers/streamer-batch-action-bar.tsx:103
 msgid "Disable"
@@ -2886,13 +3151,20 @@ msgstr "禁用所选"
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:93
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
-#: src/components/streamers/card/use-streamer-status.tsx:51
+#: src/components/credentials/account-row.tsx:92
+#: src/components/credentials/account-selection-section.tsx:134
+#: src/components/credentials/credential-selection-editor.tsx:107
+#: src/components/streamers/card/use-streamer-status.tsx:151
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:520
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:530
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:102
 msgid "Disabled"
 msgstr "已禁用"
+
+#: src/components/credentials/account-usage.tsx:405
+msgid "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
+msgstr "已禁用的账号不会被使用、校验或刷新，但仍可编辑或重新登录。"
 
 #: src/components/connection-status-indicator.tsx:32
 #: src/components/logging/log-viewer.tsx:400
@@ -2912,7 +3184,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
-#: src/components/upload-status-indicator.tsx:462
+#: src/components/upload-status-indicator.tsx:443
 msgid "Dismiss"
 msgstr "忽略"
 
@@ -2930,7 +3202,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:86
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -2947,7 +3219,7 @@ msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
 
 #: src/components/sessions/recordings-tab.tsx:190
-#: src/components/streamers/progress-indicator.tsx:68
+#: src/components/streamers/progress-indicator.tsx:69
 msgid "Download"
 msgstr "下载"
 
@@ -2956,7 +3228,7 @@ msgstr "下载"
 msgid "Download {0}"
 msgstr "下载 {0}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:90
+#: src/components/streamers/card/use-streamer-status.tsx:190
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
@@ -2964,7 +3236,7 @@ msgstr "下载活动看起来正常"
 msgid "Download All"
 msgstr "下载全部"
 
-#: src/components/config/global/backup-restore-card.tsx:258
+#: src/components/config/global/backup-restore-card.tsx:262
 msgid "Download Backup"
 msgstr "下载备份"
 
@@ -2994,7 +3266,7 @@ msgstr "下载失败：{0}"
 msgid "Download Manager"
 msgstr "下载管理"
 
-#: src/components/config/shared/network-settings-card.tsx:323
+#: src/components/config/shared/network-settings-card.tsx:89
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
@@ -3028,11 +3300,15 @@ msgstr "丢帧数"
 msgid "Dual Format"
 msgstr "双格式输出"
 
+#: src/components/credentials/account-usage.tsx:381
+msgid "Due at its next use"
+msgstr "下次使用时续期"
+
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:61
+#: src/components/notifications/events/payload-preview.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
-#: src/components/streamers/progress-indicator.tsx:79
+#: src/components/streamers/progress-indicator.tsx:80
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:662
 msgid "Duration"
 msgstr "时长"
@@ -3138,15 +3414,22 @@ msgstr "每个输入框按顺序对应一个参数。空参数、空格、引号
 msgid "Earlier files are still being finalized, so the cut was not made. Recording continues."
 msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 
-#: src/components/config/platforms/platform-card.tsx:89
-#: src/components/config/templates/template-card.tsx:118
-#: src/components/layout/site-header.tsx:55
+#: src/components/config/platforms/platform-card.tsx:92
+#: src/components/config/templates/template-card.tsx:111
+#: src/components/credentials/account-row.tsx:222
+#: src/components/credentials/account-row.tsx:280
+#: src/components/layout/site-header.tsx:57
 #: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:122
 #: src/components/pipeline/workflows/workflow-card.tsx:95
+#: src/components/proxies/proxy-row.tsx:190
 #: src/components/streamers/card/stream-actions-menu.tsx:89
 msgid "Edit"
 msgstr "编辑"
+
+#: src/components/credentials/profile-editor-dialog.tsx:159
+msgid "Edit account"
+msgstr "编辑账号"
 
 #: src/components/notifications/channel-form.tsx:350
 msgid "Edit channel"
@@ -3166,6 +3449,10 @@ msgstr "编辑过滤器"
 msgid "Edit Preset: {0}"
 msgstr "编辑预设：{0}"
 
+#: src/components/proxies/proxy-editor-dialog.tsx:206
+msgid "Edit proxy"
+msgstr "编辑代理"
+
 #. placeholder {0}: workflow.name
 #: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:101
 msgid "Edit Workflow: {0}"
@@ -3175,14 +3462,11 @@ msgstr "编辑工作流：{0}"
 msgid "Editing Mode"
 msgstr "编辑模式"
 
-#: src/components/config/shared/network-settings-card.tsx:262
-msgid "Effective Scope"
-msgstr "生效范围"
-
 #: src/components/filters/FilterCard.tsx:156
 msgid "Empty pattern"
 msgstr "表达式为空"
 
+#: src/components/credentials/account-row.tsx:290
 #: src/components/streamers/card/stream-actions-menu.tsx:64
 #: src/components/streamers/streamer-batch-action-bar.tsx:82
 msgid "Enable"
@@ -3207,10 +3491,6 @@ msgstr "启用监控"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1585
 msgid "Enable Output Metrics (Default: On)"
 msgstr "启用输出指标（默认：开）"
-
-#: src/components/config/shared/proxy-settings-card.tsx:125
-msgid "Enable Proxy"
-msgstr "启用代理"
 
 #: src/components/config/global/file-config-card.tsx:31
 msgid "Enable recording of danmu/chat messages along with the video."
@@ -3280,12 +3560,12 @@ msgstr "端点"
 msgid "Endpoint Configuration"
 msgstr "端点配置"
 
-#: src/components/config/platforms/platform-card.tsx:143
-#: src/components/config/templates/template-card.tsx:141
+#: src/components/config/platforms/platform-card.tsx:146
+#: src/components/config/templates/template-card.tsx:134
 msgid "Engine"
 msgstr "引擎"
 
-#: src/components/config/global/concurrency-card.tsx:371
+#: src/components/config/global/concurrency-card.tsx:369
 msgid "Engine & Hardware"
 msgstr "引擎与硬件"
 
@@ -3301,7 +3581,7 @@ msgstr "引擎已删除"
 msgid "Engine Name"
 msgstr "引擎名称"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:83
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:80
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
@@ -3313,16 +3593,16 @@ msgstr "引擎类型"
 msgid "Engine updated successfully"
 msgstr "引擎更新成功"
 
-#: src/components/config/global/concurrency-card.tsx:403
+#: src/components/config/global/concurrency-card.tsx:401
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "未在平台/主播中指定时使用的录制引擎。"
 
-#: src/components/config/global/backup-restore-card.tsx:384
-#: src/components/config/global/backup-restore-card.tsx:389
-#: src/components/config/global/backup-restore-card.tsx:394
-#: src/components/config/templates/template-editor.tsx:273
-#: src/components/layout/site-header.tsx:43
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:61
+#: src/components/config/global/backup-restore-card.tsx:388
+#: src/components/config/global/backup-restore-card.tsx:393
+#: src/components/config/global/backup-restore-card.tsx:398
+#: src/components/config/templates/template-editor.tsx:225
+#: src/components/layout/site-header.tsx:44
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Engines"
 msgstr "引擎列表"
 
@@ -3339,9 +3619,13 @@ msgstr "输入唯一名称"
 msgid "Enter a URL above"
 msgstr "请在上方输入链接"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:449
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:481
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:63
+msgid "Enter an address such as http://proxy.example:8080."
+msgstr "请输入地址，例如 http://proxy.example:8080。"
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:62
 msgid "Enter keywords to exclude..."
@@ -3351,14 +3635,22 @@ msgstr "输入要排除的关键词..."
 msgid "Enter keywords to include..."
 msgstr "输入要包含的关键词..."
 
+#: src/components/credentials/profile-editor-dialog.tsx:236
+msgid "Enter the credentials of this one account. Never mix cookies from different accounts."
+msgstr "只填写这一个账号的凭据。切勿混用不同账号的 Cookie。"
+
+#: src/components/credentials/profile-editor-dialog.tsx:231
+msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
+msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除。已保存的凭据不会显示。"
+
 #: src/routes/_public/login.lazy.tsx:115
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
 #: src/components/notifications/events/payload-preview.tsx:34
-#: src/components/streamers/card/use-streamer-status.tsx:50
+#: src/components/streamers/card/use-streamer-status.tsx:150
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
-#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:37
+#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:30
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:60
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:366
@@ -3369,8 +3661,8 @@ msgstr "输入你的凭据以登录账户"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:197
-#: src/components/streamers/card/use-streamer-status.tsx:237
+#: src/components/streamers/card/use-streamer-status.tsx:297
+#: src/components/streamers/card/use-streamer-status.tsx:337
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:751
 msgid "Error Details"
 msgstr "错误详情"
@@ -3383,7 +3675,7 @@ msgstr "加载处理任务失败"
 msgid "Error Loading Pipeline"
 msgstr "加载处理管道失败"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:79
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
@@ -3400,7 +3692,7 @@ msgstr "加载录制会话失败"
 msgid "Error loading streamers: {0}"
 msgstr "加载主播失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:74
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
 msgid "Error loading template"
 msgstr "加载模板失败"
 
@@ -3424,7 +3716,7 @@ msgstr "事件类型"
 msgid "Event Types"
 msgstr "事件类型"
 
-#: src/components/layout/site-header.tsx:39
+#: src/components/layout/site-header.tsx:40
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:370
 msgid "Events"
 msgstr "事件"
@@ -3463,7 +3755,7 @@ msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "在内置列表之外，额外从高频词图表中排除的词。每行一个。"
 
-#: src/components/config/global/concurrency-card.tsx:324
+#: src/components/config/global/concurrency-card.tsx:322
 msgid "Execute"
 msgstr "执行"
 
@@ -3473,11 +3765,11 @@ msgstr "执行"
 msgid "Execute Command"
 msgstr "执行命令"
 
-#: src/components/config/global/concurrency-card.tsx:327
+#: src/components/config/global/concurrency-card.tsx:325
 msgid "Execute Timeout"
 msgstr "执行超时"
 
-#: src/components/config/global/concurrency-card.tsx:65
+#: src/components/config/global/concurrency-card.tsx:63
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:73
 msgid "Execution"
 msgstr "执行"
@@ -3494,12 +3786,12 @@ msgstr "执行设置"
 msgid "Execution time (default)"
 msgstr "执行时间（默认）"
 
-#: src/components/layout/site-header.tsx:48
+#: src/components/layout/site-header.tsx:50
 msgid "Executions"
 msgstr "执行记录"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:281
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:345
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:313
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:377
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
@@ -3513,12 +3805,12 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:66
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:54
 #: src/components/ui/flag-form-field.tsx:55
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:182
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:183
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -3531,10 +3823,6 @@ msgstr "已过期"
 msgid "Expires"
 msgstr "过期时间"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:243
-msgid "Explicit TTWID cookie value to use for all requests."
-msgstr "用于所有请求的显式 TTWID Cookie 值。"
-
 #: src/components/sessions/session-card.tsx:233
 msgid "Explore"
 msgstr "浏览"
@@ -3543,11 +3831,11 @@ msgstr "浏览"
 msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr "探索匹配的自动化步骤以增强你的处理管道工作流。"
 
-#: src/components/config/global/backup-restore-card.tsx:239
+#: src/components/config/global/backup-restore-card.tsx:243
 msgid "Export Configuration"
 msgstr "导出配置"
 
-#: src/components/config/global/backup-restore-card.tsx:300
+#: src/components/config/global/backup-restore-card.tsx:304
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
@@ -3558,7 +3846,7 @@ msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎
 msgid "Extra Arguments"
 msgstr "额外参数"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:129
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:126
 msgid "Extra Streamlink arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "已设置额外的 Streamlink 参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
@@ -3596,7 +3884,7 @@ msgid "Extraction Method"
 msgstr "提取方式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
 msgid "Extraction Settings"
@@ -3613,7 +3901,7 @@ msgstr "五"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
-#: src/components/upload-status-indicator.tsx:434
+#: src/components/upload-status-indicator.tsx:415
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:472
@@ -3629,7 +3917,7 @@ msgstr "下载失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
-#: src/hooks/use-streamer-form.ts:111
+#: src/hooks/use-streamer-form.ts:115
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
@@ -3642,7 +3930,7 @@ msgstr "取消处理任务失败"
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
 
-#: src/components/upload-status-indicator.tsx:539
+#: src/components/upload-status-indicator.tsx:520
 msgid "Failed to cancel upload"
 msgstr "取消上传失败"
 
@@ -3650,7 +3938,7 @@ msgstr "取消上传失败"
 msgid "Failed to change password"
 msgstr "修改密码失败"
 
-#: src/components/streamers/streamer-editor.tsx:133
+#: src/components/streamers/streamer-editor.tsx:147
 msgid "Failed to check this link. Please try again."
 msgstr "检查该链接失败，请重试。"
 
@@ -3715,7 +4003,7 @@ msgstr "删除渠道失败"
 msgid "Failed to delete engine"
 msgstr "删除引擎失败"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:94
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:98
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -3754,7 +4042,7 @@ msgid "Failed to delete streamer"
 msgstr "删除主播失败"
 
 #. placeholder {0}: error.message
-#: src/components/config/templates/template-card.tsx:67
+#: src/components/config/templates/template-card.tsx:66
 msgid "Failed to delete template: {0}"
 msgstr "删除模板失败：{0}"
 
@@ -3780,15 +4068,15 @@ msgstr "下载日志失败"
 msgid "Failed to enable Web Push"
 msgstr "启用 Web 推送失败"
 
-#: src/components/config/global/backup-restore-card.tsx:156
+#: src/components/config/global/backup-restore-card.tsx:157
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
-#: src/hooks/use-streamer-form.ts:107
+#: src/hooks/use-streamer-form.ts:111
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
 
-#: src/components/config/global/backup-restore-card.tsx:182
+#: src/components/config/global/backup-restore-card.tsx:186
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
 
@@ -3806,7 +4094,7 @@ msgid "Failed to load engine: {0}"
 msgstr "加载引擎失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:40
+#: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:33
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
@@ -3852,7 +4140,7 @@ msgstr "加载工作流列表失败：{0}"
 msgid "Failed to parse danmu file"
 msgstr "弹幕文件解析失败"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:133
 msgid "Failed to parse URL"
 msgstr "解析 URL 失败"
 
@@ -3867,10 +4155,6 @@ msgstr "处理所选主播失败"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:151
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "查询 BaiduPCS-Go 状态失败。"
-
-#: src/components/config/shared/network-settings-card.tsx:141
-msgid "Failed to refresh credentials"
-msgstr "刷新凭据失败"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:257
 msgid "Failed to retry all failed pipelines"
@@ -3909,7 +4193,7 @@ msgid "Failed to update logging configuration"
 msgstr "更新日志配置失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:53
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:57
 msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
@@ -3922,12 +4206,12 @@ msgstr "更新预设失败：{0}"
 msgid "Failed to update priority"
 msgstr "更新优先级失败"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:186
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:137
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:84
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:303
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -3937,7 +4221,7 @@ msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:48
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:51
 msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
@@ -3945,6 +4229,14 @@ msgstr "更新模板失败：{0}"
 #: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:51
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
+
+#: src/components/credentials/account-selection-section.tsx:250
+msgid "Failover off"
+msgstr "故障切换关闭"
+
+#: src/components/credentials/account-selection-section.tsx:250
+msgid "Failover on"
+msgstr "故障切换开启"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:559
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
@@ -3981,7 +4273,7 @@ msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取�
 msgid "Fatal error"
 msgstr "致命错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:45
+#: src/components/streamers/card/use-streamer-status.tsx:145
 msgid "Fatal Error"
 msgstr "严重错误"
 
@@ -3989,7 +4281,7 @@ msgstr "严重错误"
 msgid "Fatal:"
 msgstr "致命："
 
-#: src/components/config/platforms/platform-card.tsx:100
+#: src/components/config/platforms/platform-card.tsx:103
 msgid "Fetch"
 msgstr "获取"
 
@@ -4008,6 +4300,10 @@ msgstr "ffmpeg"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:822
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
+
+#: src/components/config/shared/proxy-route-picker.tsx:362
+msgid "FFmpeg only supports http proxies, so FFmpeg recordings fail through this one. Choose an http proxy or another engine."
+msgstr "FFmpeg 仅支持 http 代理，通过此代理的 FFmpeg 录制会失败。请选择 http 代理或其他引擎。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:69
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:243
@@ -4076,7 +4372,7 @@ msgstr "按标题关键字过滤"
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:88
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:92
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
@@ -4084,7 +4380,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:334
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:329
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -4118,7 +4414,7 @@ msgstr "已过滤"
 msgid "Filtered:"
 msgstr "过滤原因："
 
-#: src/components/config/shared-config-editor.tsx:145
+#: src/components/config/shared-config-editor.tsx:157
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:524
 msgid "Filters"
 msgstr "过滤器"
@@ -4159,11 +4455,15 @@ msgstr "修复 FLV 流"
 msgid "Fix HLS Discontinuities"
 msgstr "修复 HLS 不连续性"
 
+#: src/components/credentials/credential-selection-editor.tsx:235
+msgid "Fixed account"
+msgstr "固定账号"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:122
 msgid "Fixed executable name or path on the server. Placeholders are expanded only in arguments. On Windows servers, use shell command mode for .bat or .cmd files."
 msgstr "服务器上的固定可执行文件名称或路径。仅在参数中展开占位符。在 Windows 服务器上，.bat 或 .cmd 文件请使用 shell 命令模式。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:299
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:294
 msgid "Fixed fallback"
 msgstr "固定兼容值"
 
@@ -4191,6 +4491,14 @@ msgstr "FLV 调优"
 msgid "Follow Redirects (Default: On)"
 msgstr "跟随重定向（默认：开）"
 
+#: src/components/config/shared/proxy-route-picker.tsx:108
+msgid "Follow the recording's proxy"
+msgstr "跟随录制的代理"
+
+#: src/components/proxies/proxy-route-label.tsx:91
+msgid "Follows the recording"
+msgstr "跟随录制"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "字体目录"
@@ -4203,11 +4511,11 @@ msgstr "强制 IPv4（默认：关闭）"
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:48
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:172
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:100
 msgid "Force Origin Quality"
@@ -4225,12 +4533,12 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:281
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:283
 msgid "Form"
 msgstr "表单"
 
 #: src/components/config/global/file-config-card.tsx:99
-#: src/components/config/templates/template-card.tsx:152
+#: src/components/config/templates/template-card.tsx:145
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:287
 #: src/components/player/stream-info-card.tsx:30
@@ -4267,6 +4575,26 @@ msgstr "变更前"
 msgid "From Address"
 msgstr "发件人地址"
 
+#: src/components/proxies/proxy-route-label.tsx:42
+msgid "from global settings"
+msgstr "来自全局设置"
+
+#: src/components/proxies/proxy-route-label.tsx:38
+msgid "from the account"
+msgstr "来自账号"
+
+#: src/components/proxies/proxy-route-label.tsx:41
+msgid "from the platform"
+msgstr "来自平台"
+
+#: src/components/proxies/proxy-route-label.tsx:39
+msgid "from the streamer"
+msgstr "来自主播"
+
+#: src/components/proxies/proxy-route-label.tsx:40
+msgid "from the template"
+msgstr "来自模板"
+
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:208
 msgid "Full access"
 msgstr "完全访问"
@@ -4300,17 +4628,17 @@ msgid "GB"
 msgstr "GB"
 
 #: src/components/config/engines/forms/mesio-form.tsx:265
-#: src/components/config/platforms/platform-editor.tsx:206
-#: src/components/config/templates/template-editor.tsx:263
+#: src/components/config/platforms/platform-editor.tsx:217
+#: src/components/config/templates/template-editor.tsx:215
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:82
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:278
-#: src/components/streamers/streamer-editor.tsx:142
+#: src/components/streamers/streamer-editor.tsx:156
 msgid "General"
 msgstr "常规"
 
-#: src/components/streamers/streamer-editor.tsx:146
+#: src/components/streamers/streamer-editor.tsx:160
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -4342,11 +4670,11 @@ msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:191
+#: src/components/credentials/credential-login-dialog.tsx:208
 msgid "Generate new QR code"
 msgstr "生成新二维码"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:146
+#: src/components/credentials/credential-login-dialog.tsx:154
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
@@ -4355,9 +4683,10 @@ msgstr "正在生成二维码..."
 msgid "Gift items"
 msgstr "礼物数"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:201
-#: src/components/layout/site-header.tsx:47
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:193
+#: src/components/layout/site-header.tsx:49
+#: src/components/proxies/proxy-references.tsx:68
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
 msgstr "全局"
 
@@ -4375,10 +4704,13 @@ msgstr "全局配置"
 #: src/components/config/shared/limits-card.tsx:91
 #: src/components/config/shared/limits-card.tsx:115
 #: src/components/config/shared/output-settings-card.tsx:140
-#: src/components/config/shared/proxy-settings-card.tsx:309
 #: src/components/config/shared/record-danmu-card.tsx:97
 msgid "Global Default"
 msgstr "全局默认"
+
+#: src/components/proxies/proxy-references.tsx:71
+msgid "Global settings"
+msgstr "全局设置"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:666
 msgid "Global Timeout (ms)"
@@ -4416,8 +4748,8 @@ msgstr "Gotify 应用令牌"
 msgid "GPU"
 msgstr "GPU"
 
-#: src/components/config/global/concurrency-card.tsx:418
-#: src/components/config/global/concurrency-card.tsx:421
+#: src/components/config/global/concurrency-card.tsx:416
+#: src/components/config/global/concurrency-card.tsx:419
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
@@ -4490,7 +4822,7 @@ msgstr "收到头部"
 msgid "Header Value"
 msgstr "Header 值"
 
-#: src/components/layout/site-header.tsx:53
+#: src/components/layout/site-header.tsx:55
 msgid "Health"
 msgstr "健康"
 
@@ -4549,7 +4881,7 @@ msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
-#: src/components/streamers/card/use-streamer-status.tsx:272
+#: src/components/streamers/card/use-streamer-status.tsx:402
 msgid "High-priority slot waiting (concurrency limit reached)"
 msgstr "高优先级槽位等待中（已达到并发限制）"
 
@@ -4583,7 +4915,7 @@ msgid "HLS Tuning"
 msgstr "HLS 调优"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/layout/site-header.tsx:84
+#: src/components/layout/site-header.tsx:86
 msgid "Home"
 msgstr "主页"
 
@@ -4603,7 +4935,11 @@ msgstr "小时"
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
-#: src/components/player/player-card.tsx:465
+#: src/components/config/shared/proxy-route-picker.tsx:448
+msgid "How checks, recordings, danmu and playback here connect. An account with its own proxy setting keeps it."
+msgstr "此处的检查、录制、弹幕和播放的连接方式。设置了自己代理的账号仍使用其自身设置。"
+
+#: src/components/player/player-card.tsx:491
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "播放进度落后于可用直播流的时长，而不是直播的总延迟。"
 
@@ -4611,7 +4947,7 @@ msgstr "播放进度落后于可用直播流的时长，而不是直播的总延
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "目标位置已有同名文件时的处理方式（--policy）。选择跳过还能让任务重试的开销更小。"
 
-#: src/components/config/global/concurrency-card.tsx:249
+#: src/components/config/global/concurrency-card.tsx:247
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作线程池创建时读取，因此修改后需要重启才能生效。"
 
@@ -4627,11 +4963,11 @@ msgstr "排行榜中显示的数量。范围 1–500。"
 msgid "How many appear in the word chart. 1–500."
 msgstr "词频图表中显示的数量。范围 1–500。"
 
-#: src/components/config/global/concurrency-card.tsx:151
+#: src/components/config/global/concurrency-card.tsx:149
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
 msgstr "可同时运行的 CPU 密集型流水线步骤（如转码）数量。设置超过 CPU 核心数会拖慢所有任务。"
 
-#: src/components/config/global/concurrency-card.tsx:181
+#: src/components/config/global/concurrency-card.tsx:179
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）数量。"
 
@@ -4639,7 +4975,7 @@ msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）
 msgid "How many files rclone uploads in parallel."
 msgstr "rclone 并行上传的文件数量。"
 
-#: src/components/config/global/concurrency-card.tsx:123
+#: src/components/config/global/concurrency-card.tsx:121
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "可同时运行的流水线上传步骤数量。"
 
@@ -4647,15 +4983,15 @@ msgstr "可同时运行的流水线上传步骤数量。"
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "在节流生效之前，可短时超出 TPS 限制的请求数量。"
 
-#: src/components/config/global/concurrency-card.tsx:93
+#: src/components/config/global/concurrency-card.tsx:91
 msgid "How many streamers may record at the same time. Recordings past this limit wait in the queue until a slot frees up."
 msgstr "可同时录制的主播数量。超出此限制的录制会在队列中等待，直到有空闲名额。"
 
-#: src/components/config/global/concurrency-card.tsx:445
+#: src/components/config/global/concurrency-card.tsx:443
 msgid "How often nvidia-smi is polled to confirm the GPU is still reachable."
 msgstr "轮询 nvidia-smi 以确认 GPU 仍可访问的频率。"
 
-#: src/components/config/global/concurrency-card.tsx:424
+#: src/components/config/global/concurrency-card.tsx:422
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问权限(NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题)。仅在系统中存在 nvidia-smi 时启用,否则不会注册 GPU 行。默认 30 秒。修改会在下一次探测时生效,无需重启。不建议设置低于 30 秒。"
 
@@ -4666,10 +5002,6 @@ msgstr "获取直播地址的方式。当某个站点失效时可切换为 Strea
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:198
 msgid "How to pair video files with .ass subtitles"
 msgstr "如何将视频文件与 .ass 字幕配对"
-
-#: src/components/config/shared/network-settings-card.tsx:230
-msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
-msgstr "用于认证的 HTTP cookie。刷新时会自动更新。"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:69
 msgid "HTTP middleware"
@@ -4682,6 +5014,10 @@ msgstr "HTTP 请求"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:773
 msgid "HTTP Version Preference"
 msgstr "HTTP 版本偏好"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:255
+msgid "http, https, socks5 or socks5h."
+msgstr "支持 http、https、socks5 或 socks5h。"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:792
 msgid "HTTP/1.1 Only"
@@ -4759,7 +5095,7 @@ msgstr "忽略低于此比特率的流。"
 msgid "Ignored words"
 msgstr "忽略的词"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:350
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
@@ -4767,8 +5103,8 @@ msgstr "沉浸模式"
 msgid "Import"
 msgstr "导入"
 
-#: src/components/config/global/backup-restore-card.tsx:270
-#: src/components/config/global/backup-restore-card.tsx:321
+#: src/components/config/global/backup-restore-card.tsx:274
+#: src/components/config/global/backup-restore-card.tsx:325
 msgid "Import Configuration"
 msgstr "导入配置"
 
@@ -4780,7 +5116,7 @@ msgstr "导入自定义 CSS"
 msgid "Import Strategy"
 msgstr "导入策略"
 
-#: src/components/config/global/backup-restore-card.tsx:318
+#: src/components/config/global/backup-restore-card.tsx:322
 msgid "Import Successful"
 msgstr "导入成功"
 
@@ -4788,13 +5124,21 @@ msgstr "导入成功"
 msgid "Import Theme"
 msgstr "导入主题"
 
-#: src/components/config/global/backup-restore-card.tsx:520
+#: src/components/config/global/backup-restore-card.tsx:524
 msgid "Importing..."
 msgstr "正在导入..."
 
 #: src/components/sessions/overview-tab.tsx:327
 msgid "In progress"
 msgstr "进行中"
+
+#: src/components/config/shared/proxy-route-picker.tsx:344
+msgid "In the desktop app, the operating system's proxy setting reaches only some requests."
+msgstr "在桌面应用中，操作系统的代理设置只对部分请求生效。"
+
+#: src/components/credentials/account-selection-section.tsx:424
+msgid "In use by the active recording"
+msgstr "当前录制正在使用"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:462
 msgid "Inactive"
@@ -4813,12 +5157,35 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
+#: src/components/config/shared/proxy-route-picker.tsx:116
+#: src/components/config/shared/proxy-route-picker.tsx:118
+#: src/components/credentials/credential-selection-editor.tsx:228
+msgid "Inherit"
+msgstr "继承"
+
+#: src/components/config/shared/proxy-route-picker.tsx:114
+msgid "Inherit — {resolved}"
+msgstr "继承 — {resolved}"
+
+#: src/components/config/shared/proxy-route-picker.tsx:110
+msgid "Inherit — each streamer's platform setting"
+msgstr "继承 — 各主播所在平台的设置"
+
+#: src/components/credentials/credential-selection-editor.tsx:226
+msgid "Inherit (no account)"
+msgstr "继承（不使用账号）"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
 msgid "Inherited"
 msgstr "继承自上层"
+
+#: src/components/proxies/proxy-route-label.tsx:93
+msgctxt "proxy route"
+msgid "Inherited"
+msgstr "继承"
 
 #: src/components/config/shared/output-settings-card.tsx:179
 #: src/components/config/shared/output-settings-card.tsx:219
@@ -4873,9 +5240,9 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inset"
 msgstr "嵌入"
 
-#: src/components/streamers/card/use-streamer-status.tsx:42
-#: src/components/streamers/card/use-streamer-status.tsx:328
-#: src/components/streamers/card/use-streamer-status.tsx:337
+#: src/components/streamers/card/use-streamer-status.tsx:142
+#: src/components/streamers/card/use-streamer-status.tsx:458
+#: src/components/streamers/card/use-streamer-status.tsx:467
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -4891,7 +5258,7 @@ msgstr "24小时交互式时间线选择。"
 msgid "Internal"
 msgstr "内部"
 
-#: src/components/config/global/network-system-card.tsx:58
+#: src/components/config/global/network-system-card.tsx:65
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
@@ -4907,19 +5274,19 @@ msgstr "离线检查之间的间隔。"
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:176
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:177
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
-#: src/components/config/global/concurrency-card.tsx:293
+#: src/components/config/global/concurrency-card.tsx:291
 msgid "IO Job"
 msgstr "IO 任务"
 
-#: src/components/config/global/concurrency-card.tsx:296
+#: src/components/config/global/concurrency-card.tsx:294
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:213
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
@@ -4939,7 +5306,7 @@ msgstr "处理任务已取消"
 msgid "Job Configuration"
 msgstr "处理任务配置"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:58
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:59
 msgid "Job configurations"
 msgstr "任务配置"
 
@@ -4972,11 +5339,11 @@ msgstr "任务预设"
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
-#: src/components/config/global/concurrency-card.tsx:247
+#: src/components/config/global/concurrency-card.tsx:245
 msgid "Job Timeouts"
 msgstr "任务超时"
 
-#: src/components/layout/site-header.tsx:49
+#: src/components/layout/site-header.tsx:51
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:348
 msgid "Jobs"
@@ -4986,7 +5353,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:299
 msgid "JSON"
 msgstr "JSON"
 
@@ -5018,7 +5385,7 @@ msgstr "保留目录结构"
 msgid "Keep Running"
 msgstr "保持运行"
 
-#: src/components/upload-status-indicator.tsx:564
+#: src/components/upload-status-indicator.tsx:545
 msgid "Keep uploading"
 msgstr "继续上传"
 
@@ -5045,11 +5412,15 @@ msgstr "密钥超时（毫秒）"
 msgid "Keyword"
 msgstr "关键字"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:91
+#: src/components/credentials/profile-editor-dialog.tsx:170
+msgid "Label"
+msgstr "名称"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:98
 msgid "Language"
 msgstr "语言"
 
-#: src/components/streamers/card/use-streamer-status.tsx:399
+#: src/components/streamers/card/use-streamer-status.tsx:529
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -5062,19 +5433,33 @@ msgstr "最后检查"
 msgid "Last check {0} ago"
 msgstr "上次检查于 {0} 前"
 
-#: src/components/streamers/card/use-streamer-status.tsx:160
+#: src/components/credentials/account-usage.tsx:349
+msgid "Last checked"
+msgstr "最近检查"
+
+#. placeholder {0}: formatRelativeTime(lastCheck, i18n.locale)
+#: src/components/credential-attention-indicator.tsx:184
+msgid "Last checked {0}"
+msgstr "上次检查：{0}"
+
+#: src/components/streamers/card/use-streamer-status.tsx:260
 msgid "Last Error"
 msgstr "最后错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:145
+#: src/components/streamers/card/stream-avatar-info.tsx:146
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
+#: src/components/credentials/account-usage.tsx:367
+msgid "Last refreshed"
+msgstr "最近刷新"
+
+#: src/components/credentials/account-usage.tsx:337
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
 msgid "Last used"
 msgstr "最近使用"
 
-#: src/components/player/player-card.tsx:242
+#: src/components/player/player-card.tsx:268
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:234
 msgid "Latency"
 msgstr "延迟"
@@ -5090,6 +5475,23 @@ msgstr "尝试次数留空或填 1 表示不自动重试；退避时间在每次
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:112
 msgid "Leave empty for stream copy"
 msgstr "留空以进行流复制"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:315
+msgid "Leave empty to keep the current password."
+msgstr "留空则保留当前密码。"
+
+#: src/components/player/url-input-form.tsx:233
+#: src/components/player/url-input-form.tsx:347
+msgid "Leave empty to use the saved account selection."
+msgstr "留空以使用已保存的账号选择策略。"
+
+#: src/components/credentials/profile-editor-dialog.tsx:186
+msgid "Leave off to keep the stored credentials."
+msgstr "保持关闭则保留已保存的凭据。"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:66
+msgid "Leave out any path: only scheme://host:port."
+msgstr "请去掉路径，只填写 scheme://host:port。"
 
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:87
 msgid "Leave this off to only remove the records and keep the files where they are."
@@ -5131,8 +5533,8 @@ msgstr "限制单个文件的传输速率，而非整体总量。"
 msgid "List"
 msgstr "列表"
 
-#: src/components/streamers/card/use-streamer-status.tsx:41
-#: src/components/streamers/card/use-streamer-status.tsx:315
+#: src/components/streamers/card/use-streamer-status.tsx:141
+#: src/components/streamers/card/use-streamer-status.tsx:445
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
 #: src/components/streamers/edit/status-check-history.tsx:366
 #: src/components/streamers/edit/status-check-history.tsx:387
@@ -5143,7 +5545,7 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/player-card.tsx:306
+#: src/components/player/player-card.tsx:332
 #: src/components/sessions/session-card.tsx:167
 #: src/components/sessions/session-header.tsx:27
 msgid "LIVE"
@@ -5178,7 +5580,7 @@ msgstr "直播刷新间隔 (ms)"
 msgid "Loading Danmu"
 msgstr "正在加载弹幕"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:54
+#: src/components/config/shared/pipeline-tabs-section.tsx:55
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
@@ -5212,6 +5614,7 @@ msgstr "正在加载预设..."
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
+#: src/components/proxies/proxy-row.tsx:92
 #: src/components/streamers/edit/status-check-history.tsx:137
 msgid "Loading…"
 msgstr "加载中…"
@@ -5220,8 +5623,8 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:290
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:293
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:285
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:288
 msgid "Local generation"
 msgstr "本地生成"
 
@@ -5234,7 +5637,23 @@ msgstr "日志文件"
 msgid "Log in"
 msgstr "登录"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:76
+#: src/components/credentials/account-row.tsx:209
+msgid "Log in again"
+msgstr "重新登录"
+
+#: src/components/credentials/credential-login-dialog.tsx:126
+msgid "Log in again to “{accountLabel}”"
+msgstr "重新登录“{accountLabel}”"
+
+#: src/components/credentials/credential-login-dialog.tsx:128
+msgid "Log in to “{accountLabel}”"
+msgstr "登录“{accountLabel}”"
+
+#: src/components/credentials/account-row.tsx:266
+msgid "Log in with QR code"
+msgstr "扫码登录"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:83
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
@@ -5263,7 +5682,7 @@ msgstr "已以 {0} 登录百度网盘"
 msgid "Logged out of Baidu Netdisk"
 msgstr "已退出百度网盘"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:73
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:80
 msgid "Logging"
 msgstr "日志"
 
@@ -5275,15 +5694,19 @@ msgstr "日志配置已更新"
 msgid "Logging paused"
 msgstr "日志已暂停"
 
+#: src/components/proxies/proxy-row.tsx:220
+msgid "Login"
+msgstr "登录信息"
+
 #: src/routes/_public/login.lazy.tsx:152
 msgid "Login failed"
 msgstr "登录失败"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:179
-msgid "Login successful!"
-msgstr "登录成功！"
+#: src/components/credentials/account-health.tsx:78
+msgid "Login invalid"
+msgstr "登录失效"
 
-#: src/components/layout/site-header.tsx:34
+#: src/components/layout/site-header.tsx:35
 msgid "Logs"
 msgstr "日志"
 
@@ -5295,7 +5718,7 @@ msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:119
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:117
 msgid "Lossless cutting will not be used"
 msgstr "不会使用无损分段"
 
@@ -5303,7 +5726,7 @@ msgstr "不会使用无损分段"
 msgid "Lossless Split"
 msgstr "无损分割"
 
-#: src/components/player/player-card.tsx:263
+#: src/components/player/player-card.tsx:289
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:590
@@ -5348,11 +5771,15 @@ msgstr "主程序"
 msgid "Maintenance"
 msgstr "维护"
 
-#: src/components/config/shared/network-settings-card.tsx:160
-msgid "Manage credentials and session cookies."
-msgstr "管理凭据和会话 Cookie。"
+#: src/components/streamers/card/use-streamer-status.tsx:118
+msgid "Manage accounts"
+msgstr "管理账号"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:259
+#: src/components/config/shared/proxy-route-picker.tsx:271
+msgid "Manage proxies"
+msgstr "管理代理"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:261
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -5368,7 +5795,7 @@ msgstr "管理订阅"
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
-#: src/components/config/global/backup-restore-card.tsx:224
+#: src/components/config/global/backup-restore-card.tsx:228
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
@@ -5380,13 +5807,9 @@ msgstr "管理你监控的主播及录制"
 msgid "Manual cut"
 msgstr "手动分段"
 
-#: src/components/upload-status-indicator.tsx:351
+#: src/components/upload-status-indicator.tsx:332
 msgid "Manual job"
 msgstr "手动任务"
-
-#: src/components/config/shared/network-settings-card.tsx:299
-msgid "Manual update required"
-msgstr "需要手动更新"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:381
 msgid "Mark Read"
@@ -5416,8 +5839,8 @@ msgstr "最大比特率（bps）"
 msgid "Max Bytes"
 msgstr "最大字节数"
 
-#: src/components/config/global/concurrency-card.tsx:146
-#: src/components/config/global/concurrency-card.tsx:149
+#: src/components/config/global/concurrency-card.tsx:144
+#: src/components/config/global/concurrency-card.tsx:147
 msgid "Max CPU Jobs"
 msgstr "最大 CPU 任务数"
 
@@ -5425,8 +5848,8 @@ msgstr "最大 CPU 任务数"
 msgid "Max Delay (ms)"
 msgstr "最大延迟（ms）"
 
-#: src/components/config/global/concurrency-card.tsx:88
-#: src/components/config/global/concurrency-card.tsx:91
+#: src/components/config/global/concurrency-card.tsx:86
+#: src/components/config/global/concurrency-card.tsx:89
 msgid "Max Downloads"
 msgstr "最大并发录制数"
 
@@ -5447,8 +5870,8 @@ msgstr "每主机最大空闲连接数"
 msgid "Max Interval (ms)"
 msgstr "最大间隔（毫秒）"
 
-#: src/components/config/global/concurrency-card.tsx:175
-#: src/components/config/global/concurrency-card.tsx:178
+#: src/components/config/global/concurrency-card.tsx:173
+#: src/components/config/global/concurrency-card.tsx:176
 msgid "Max IO Jobs"
 msgstr "最大 IO 任务数"
 
@@ -5503,12 +5926,16 @@ msgstr "最大停顿时间（毫秒）"
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 
-#: src/components/config/global/concurrency-card.tsx:117
-#: src/components/config/global/concurrency-card.tsx:120
+#: src/components/config/global/concurrency-card.tsx:115
+#: src/components/config/global/concurrency-card.tsx:118
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:379
+#: src/components/credentials/credential-selection-editor.tsx:408
+msgid "Maximum attempts (1–10)"
+msgstr "最大尝试次数（1–10）"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:374
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "元数据及 App 播放请求的最大尝试次数。"
 
@@ -5662,16 +6089,16 @@ msgstr "星期一"
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:50
 msgid "Monitoring"
 msgstr "监控"
 
-#: src/components/config/global/network-system-card.tsx:35
-msgid "Monitoring intervals and proxy settings."
-msgstr "监测间隔与代理设置。"
+#: src/components/config/global/network-system-card.tsx:42
+msgid "Monitoring intervals and the default proxy."
+msgstr "监控间隔与默认代理。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:211
-#: src/components/streamers/card/use-streamer-status.tsx:220
+#: src/components/streamers/card/use-streamer-status.tsx:311
+#: src/components/streamers/card/use-streamer-status.tsx:320
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -5682,6 +6109,13 @@ msgstr "本月"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:384
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
+
+#. placeholder {0}: profile.label
+#. placeholder {0}: proxy.name
+#: src/components/credentials/account-row.tsx:243
+#: src/components/proxies/proxy-row.tsx:179
+msgid "More actions for {0}"
+msgstr "{0} 的更多操作"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:515
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:540
@@ -5699,6 +6133,14 @@ msgstr "上午"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:140
 msgid "Move"
 msgstr "移动"
+
+#: src/components/credentials/credential-selection-editor.tsx:340
+msgid "Move account down"
+msgstr "下移账号"
+
+#: src/components/credentials/credential-selection-editor.tsx:329
+msgid "Move account up"
+msgstr "上移账号"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:18
 msgid "Move File"
@@ -5763,6 +6205,7 @@ msgstr "我的模板"
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
+#: src/components/proxies/proxy-editor-dialog.tsx:232
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
@@ -5773,7 +6216,7 @@ msgstr "名称"
 msgid "Name A-Z"
 msgstr "名称 A-Z"
 
-#: src/hooks/use-streamer-form.ts:103
+#: src/hooks/use-streamer-form.ts:107
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
@@ -5797,19 +6240,27 @@ msgstr "原生"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
+#: src/components/credential-attention-indicator.tsx:66
+msgid "Needs a new login"
+msgstr "需要重新登录"
+
+#: src/components/credentials/account-health.tsx:70
+msgid "Needs refresh"
+msgstr "需要刷新"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:320
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间标记。"
 
-#: src/components/config/shared-config-editor.tsx:167
+#: src/components/config/shared-config-editor.tsx:179
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:320
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:315
 msgid "Network & Content"
 msgstr "网络与内容"
 
-#: src/components/config/global/network-system-card.tsx:34
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Network & System"
 msgstr "网络与系统"
 
@@ -5819,7 +6270,13 @@ msgstr "网络与系统"
 msgid "Never"
 msgstr "永不"
 
-#: src/components/layout/site-header.tsx:54
+#: src/components/credentials/account-usage.tsx:344
+#: src/components/credentials/account-usage.tsx:357
+msgctxt "an account never used or checked"
+msgid "Never"
+msgstr "从未"
+
+#: src/components/layout/site-header.tsx:56
 msgid "New"
 msgstr "新建"
 
@@ -5860,13 +6317,31 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
 
+#: src/components/credentials/account-usage.tsx:377
+msgid "Next renewal"
+msgstr "下次续期"
+
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:46
 msgid "Night"
 msgstr "夜间"
 
+#: src/components/credentials/account-selection-section.tsx:193
+#: src/components/credentials/account-selection-section.tsx:308
+#: src/components/credentials/account-selection-section.tsx:316
+msgid "No account — records signed out"
+msgstr "不使用账号——以未登录状态录制"
+
+#: src/components/credentials/account-list.tsx:17
+msgid "No accounts yet"
+msgstr "还没有账号"
+
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:418
 msgid "No active recordings"
 msgstr "暂无正在录制"
+
+#: src/components/proxies/proxy-test.tsx:37
+msgid "No answer within 10 seconds"
+msgstr "10 秒内无响应"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:160
 msgid "No API keys yet. Create one to let scripts or AI assistants access this server."
@@ -5876,7 +6351,11 @@ msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服
 msgid "No Archives Found"
 msgstr "未找到归档"
 
-#: src/components/config/global/backup-restore-card.tsx:429
+#: src/components/credentials/credential-selection-editor.tsx:232
+msgid "No authentication"
+msgstr "不使用身份验证"
+
+#: src/components/config/global/backup-restore-card.tsx:433
 msgid "No changes detected"
 msgstr "未检测到更改"
 
@@ -5892,10 +6371,6 @@ msgstr "此处理器没有可用的配置表单。"
 msgid "No configuration."
 msgstr "无配置。"
 
-#: src/components/config/shared/network-settings-card.tsx:307
-msgid "No credentials found."
-msgstr "未找到凭据。"
-
 #: src/components/notifications/forms/webhook-form.tsx:403
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
@@ -5908,11 +6383,11 @@ msgstr "未添加自定义标签"
 msgid "No description."
 msgstr "暂无描述。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:150
+#: src/components/streamers/card/stream-avatar-info.tsx:151
 msgid "No detailed error message available"
 msgstr "没有可用的详细错误信息"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:102
 msgid "No engines found."
 msgstr "未找到引擎。"
 
@@ -6011,7 +6486,7 @@ msgstr "未生成输出"
 msgid "No outputs found"
 msgstr "未找到媒体文件"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:135
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:132
 msgid "No overrides configured"
 msgstr "未配置覆盖项"
 
@@ -6027,16 +6502,16 @@ msgstr "未发现处理管道 DAG。"
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:105
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:122
 msgid "No platform found."
 msgstr "未找到平台。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:129
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:147
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:202
-#: src/components/streamers/streamer-editor.tsx:125
+#: src/components/streamers/streamer-editor.tsx:139
 msgid "No platform recognizes this link, so it cannot be recorded."
 msgstr "无法识别该链接所属的平台，因此无法录制。"
 
@@ -6048,11 +6523,11 @@ msgstr "未配置平台"
 msgid "No platforms found"
 msgstr "未找到平台"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:130
 msgid "No playable stream found in response"
 msgstr "响应中未找到可播放的流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:208
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
@@ -6073,13 +6548,17 @@ msgstr "暂无预设"
 msgid "No preview generated"
 msgstr "未生成预览"
 
+#: src/components/proxies/proxies-panel.tsx:191
+msgid "No proxies yet"
+msgstr "暂无代理"
+
+#: src/components/config/shared/proxy-route-picker.tsx:222
+msgid "No proxy"
+msgstr "不使用代理"
+
 #: src/components/streamers/edit/recent-sessions-list.tsx:112
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
-
-#: src/components/config/shared/network-settings-card.tsx:137
-msgid "No refresh needed or not supported"
-msgstr "无需刷新或不支持"
 
 #: src/components/danmu/danmu-viewer.tsx:278
 msgid "No results found"
@@ -6093,7 +6572,15 @@ msgstr "未选择运行中的流水线"
 msgid "No safe cut boundary was found. Recording continues."
 msgstr "未找到安全分割点，录制仍在继续。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:310
+#: src/components/streamers/card/use-streamer-status.tsx:69
+msgid "No selected account can be used right now."
+msgstr "所选账号目前都无法使用。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:66
+msgid "No selected account worked within the attempt limit."
+msgstr "在尝试次数上限内，所选账号均未成功。"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:312
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -6108,6 +6595,14 @@ msgstr "未定义步骤"
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:768
 msgid "No streamers found"
 msgstr "未找到主播"
+
+#: src/components/proxies/proxies-panel.tsx:52
+msgid "No system proxy detected"
+msgstr "未检测到系统代理"
+
+#: src/components/config/shared/proxy-route-picker.tsx:335
+msgid "No system proxy was detected when the server started, so this connects directly, danmu included."
+msgstr "服务器启动时未检测到系统代理，因此会直连，弹幕也是如此。"
 
 #: src/components/sessions/danmu-stats-panel.tsx:557
 msgid "No talker data"
@@ -6154,6 +6649,11 @@ msgstr "暂无工作流"
 msgid "None"
 msgstr "无"
 
+#: src/components/proxies/proxy-row.tsx:235
+msgctxt "no proxy login"
+msgid "None"
+msgstr "无"
+
 #: src/components/streamers/config/streamer-recording-fields.tsx:74
 msgid "None (Default)"
 msgstr "无（默认）"
@@ -6161,6 +6661,14 @@ msgstr "无（默认）"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:461
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
+
+#: src/components/config/shared/proxy-route-picker.tsx:228
+msgid "none detected"
+msgstr "未检测到"
+
+#: src/components/credentials/account-selection-section.tsx:81
+msgid "None of the selected accounts could sign in within the attempt limit. Check their status or log in again to one of them."
+msgstr "所选账号在尝试次数内都未能登录。请检查它们的状态，或重新登录其中一个。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:182
@@ -6182,13 +6690,13 @@ msgstr "普通+"
 msgid "Not available"
 msgstr "不可用"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:123
-msgid "Not found"
-msgstr "未找到"
+#: src/components/credentials/account-health.tsx:85
+msgid "Not checked"
+msgstr "未校验"
 
-#: src/components/streamers/card/use-streamer-status.tsx:47
-msgid "Not Found"
-msgstr "未找到主播"
+#: src/components/credential-attention-indicator.tsx:186
+msgid "Not checked yet"
+msgstr "尚未检查"
 
 #: src/components/config/engines/engine-card.tsx:76
 msgid "Not installed"
@@ -6198,9 +6706,30 @@ msgstr "未安装"
 msgid "Not logged in"
 msgstr "未登录"
 
+#: src/components/credentials/account-usage.tsx:199
+#: src/components/credentials/account-usage.tsx:315
+msgid "Not selected anywhere"
+msgstr "未被任何配置选用"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:317
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
+
+#: src/components/proxies/proxy-row.tsx:124
+msgid "not used"
+msgstr "未使用"
+
+#: src/components/proxies/proxy-references.tsx:134
+msgid "Not used anywhere"
+msgstr "未被任何设置使用"
+
+#: src/components/credentials/account-usage.tsx:173
+msgid "Not used while disabled"
+msgstr "已禁用，不会使用"
+
+#: src/components/credentials/account-selection-section.tsx:319
+msgid "Nothing it inherits from chooses an account"
+msgstr "继承来源未选择任何账号"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:266
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:296
@@ -6227,7 +6756,7 @@ msgstr "通知保留"
 msgid "Notification Service"
 msgstr "通知服务"
 
-#: src/components/layout/site-header.tsx:38
+#: src/components/layout/site-header.tsx:39
 #: src/lib/menu-list.ts:119
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:356
 msgid "Notifications"
@@ -6253,7 +6782,7 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
-#: src/components/config/global/network-system-card.tsx:123
+#: src/components/config/global/network-system-card.tsx:130
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
@@ -6298,17 +6827,17 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:23
-msgid "OAuth Token"
-msgstr "OAuth 令牌"
-
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:347
 msgid "Off Canvas"
 msgstr "侧滑"
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
-#: src/components/streamers/card/use-streamer-status.tsx:385
-#: src/components/streamers/card/use-streamer-status.tsx:394
+#: src/components/proxies/proxy-editor-dialog.tsx:239
+msgid "Office proxy"
+msgstr "办公室代理"
+
+#: src/components/streamers/card/use-streamer-status.tsx:140
+#: src/components/streamers/card/use-streamer-status.tsx:515
+#: src/components/streamers/card/use-streamer-status.tsx:524
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/status-check-history.tsx:368
 #: src/components/streamers/edit/status-check-history.tsx:389
@@ -6321,8 +6850,8 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
-#: src/components/config/global/network-system-card.tsx:85
-#: src/components/config/global/network-system-card.tsx:88
+#: src/components/config/global/network-system-card.tsx:92
+#: src/components/config/global/network-system-card.tsx:95
 #: src/components/config/shared/offline-check-card.tsx:46
 msgid "Offline Check"
 msgstr "离线检查"
@@ -6331,11 +6860,11 @@ msgstr "离线检查"
 msgid "Offline Check Interval"
 msgstr "离线检查间隔"
 
-#: src/components/config/global/network-system-card.tsx:120
+#: src/components/config/global/network-system-card.tsx:127
 msgid "Offline Detection"
 msgstr "离线检测"
 
-#: src/components/config/global/network-system-card.tsx:117
+#: src/components/config/global/network-system-card.tsx:124
 #: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
@@ -6376,8 +6905,8 @@ msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可�
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
-#: src/components/config/platforms/platform-card.tsx:83
-#: src/components/config/templates/template-card.tsx:112
+#: src/components/config/platforms/platform-card.tsx:86
+#: src/components/config/templates/template-card.tsx:105
 #: src/components/notifications/channel-card.tsx:188
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:206
 #: src/components/pipeline/outputs/output-card.tsx:219
@@ -6387,6 +6916,10 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/streamers/card/stream-actions-menu.tsx:41
 msgid "Open menu"
 msgstr "打开菜单"
+
+#: src/components/credentials/read-only-accounts-section.tsx:37
+msgid "Open platform settings"
+msgstr "打开平台设置"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:183
 msgid "Open quality options"
@@ -6409,8 +6942,6 @@ msgstr "操作类型"
 msgid "Optimize Stream Headers"
 msgstr "优化流头部"
 
-#: src/components/config/shared/proxy-settings-card.tsx:190
-#: src/components/config/shared/proxy-settings-card.tsx:210
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:439
 msgid "Optional"
 msgstr "可选"
@@ -6418,6 +6949,10 @@ msgstr "可选"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:304
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:297
+msgid "Optional."
+msgstr "可选。"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:116
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:175
@@ -6449,14 +6984,14 @@ msgstr "不在计划时间内"
 msgid "Out of space"
 msgstr "空间不足"
 
-#: src/components/streamers/card/use-streamer-status.tsx:44
+#: src/components/streamers/card/use-streamer-status.tsx:144
 msgid "Out of Space"
 msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1700
-#: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:156
-#: src/components/config/templates/template-card.tsx:163
+#: src/components/config/platforms/platform-card.tsx:133
+#: src/components/config/shared-config-editor.tsx:168
+#: src/components/config/templates/template-card.tsx:156
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
 msgstr "输出"
@@ -6524,14 +7059,14 @@ msgstr "输出保留时间（天）"
 msgid "Output Settings"
 msgstr "输出设置"
 
-#: src/components/layout/site-header.tsx:50
+#: src/components/layout/site-header.tsx:52
 #: src/components/sessions/overview-tab.tsx:130
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:470
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:358
+#: src/components/streamers/card/use-streamer-status.tsx:488
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -6551,7 +7086,7 @@ msgstr "覆盖文件名模板。"
 msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
-#: src/components/streamers/streamer-editor.tsx:168
+#: src/components/streamers/streamer-editor.tsx:182
 msgid "Override global defaults for this streamer."
 msgstr "为该主播覆盖全局默认设置。"
 
@@ -6563,7 +7098,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:85
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
@@ -6602,6 +7137,10 @@ msgstr "仅在文件大小变化时覆盖"
 msgid "Overwrite Output"
 msgstr "覆盖输出"
 
+#: src/components/credentials/account-row.tsx:155
+msgid "Own proxy setting"
+msgstr "独立代理设置"
+
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:482
 msgid "Page"
 msgstr "页码"
@@ -6610,20 +7149,20 @@ msgstr "页码"
 msgid "pagination"
 msgstr "分页"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:117
+#: src/components/config/shared/pipeline-tabs-section.tsx:121
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:231
+#: src/components/config/shared/pipeline-tabs-section.tsx:241
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:114
+#: src/components/config/shared/pipeline-tabs-section.tsx:118
 msgid "Paired Segment"
 msgstr "配对分段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:125
-#: src/components/config/shared/pipeline-tabs-section.tsx:208
+#: src/components/config/shared/pipeline-tabs-section.tsx:132
+#: src/components/config/shared/pipeline-tabs-section.tsx:218
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -6631,16 +7170,16 @@ msgstr "配对分段处理管道"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:331
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:363
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
 
-#: src/components/player/url-input-form.tsx:329
+#: src/components/player/url-input-form.tsx:393
 msgid "Parse Batch"
 msgstr "批量解析"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
 msgid "Parse error: {0}"
 msgstr "解析失败：{0}"
 
@@ -6648,16 +7187,16 @@ msgstr "解析失败：{0}"
 msgid "Parse Mode"
 msgstr "解析模式"
 
-#: src/components/player/url-input-form.tsx:232
+#: src/components/player/url-input-form.tsx:276
 msgid "Parse Stream"
 msgstr "解析流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:412
 msgid "Parsing Stream..."
 msgstr "正在解析流..."
 
-#: src/components/player/url-input-form.tsx:227
-#: src/components/player/url-input-form.tsx:324
+#: src/components/player/url-input-form.tsx:271
+#: src/components/player/url-input-form.tsx:388
 msgid "Parsing..."
 msgstr "解析中..."
 
@@ -6666,12 +7205,12 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:74
-#: src/components/config/shared/proxy-settings-card.tsx:204
+#: src/components/credentials/profile-editor-dialog.tsx:295
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
 #: src/components/notifications/forms/webhook-form.tsx:307
+#: src/components/proxies/proxy-editor-dialog.tsx:312
 #: src/routes/_public/login.lazy.tsx:190
 msgid "Password"
 msgstr "密码"
@@ -6685,9 +7224,12 @@ msgstr "请修改密码"
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
 
+#: src/components/proxies/proxy-row.tsx:229
+msgid "password saved"
+msgstr "已保存密码"
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:83
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:119
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
 msgstr "密码…"
@@ -6696,15 +7238,19 @@ msgstr "密码…"
 msgid "Past"
 msgstr "过去"
 
-#: src/components/streamers/streamer-editor.tsx:203
+#: src/components/streamers/streamer-editor.tsx:218
 msgid "Paste a channel link. Everything else can wait."
 msgstr "先粘贴频道链接，其他设置稍后再填。"
+
+#: src/components/credentials/profile-editor-dialog.tsx:204
+msgid "Paste cookies"
+msgstr "粘贴 Cookie"
 
 #: src/components/layout/themes/import-modal.tsx:68
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "在下方粘贴你的 CSS 主题。请同时包含 <0>:root</0>（浅色模式）和 <1>.dark</1>（深色模式）部分，并使用 <2>--primary</2>、<3>--background</3> 等 CSS 变量。主题会在浅色和深色模式之间自动切换。"
 
-#: src/components/notifications/events/payload-preview.tsx:52
+#: src/components/notifications/events/payload-preview.tsx:69
 msgid "Path"
 msgstr "路径"
 
@@ -6728,6 +7274,14 @@ msgstr "暂停"
 msgid "Paused"
 msgstr "已暂停"
 
+#: src/components/streamers/card/use-streamer-status.tsx:104
+msgid "Paused since"
+msgstr "暂停开始于"
+
+#: src/components/notifications/events/payload-preview.tsx:63
+msgid "Paused until"
+msgstr "暂停至"
+
 #: src/components/sessions/danmu-stats-panel.tsx:453
 msgid "Peak / min"
 msgstr "峰值/分钟"
@@ -6742,7 +7296,7 @@ msgstr "待处理"
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
-#: src/components/streamers/card/use-streamer-status.tsx:101
+#: src/components/streamers/card/use-streamer-status.tsx:201
 msgid "Pending Error Clears"
 msgstr "待清除错误"
 
@@ -6769,16 +7323,16 @@ msgstr "单文件带宽限制帮助"
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:83
+#: src/components/config/shared/pipeline-tabs-section.tsx:84
 msgid "Per-segment"
 msgstr "逐段"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:94
-#: src/components/config/shared/pipeline-tabs-section.tsx:184
+#: src/components/config/shared/pipeline-tabs-section.tsx:98
+#: src/components/config/shared/pipeline-tabs-section.tsx:194
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:207
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:199
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -6800,8 +7354,8 @@ msgstr "需要权限"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:200
-#: src/components/layout/site-header.tsx:37
+#: src/components/config/shared-config-editor.tsx:212
+#: src/components/layout/site-header.tsx:38
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:508
 msgid "Pipeline"
@@ -6906,7 +7460,7 @@ msgstr "处理管道统计"
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
-#: src/components/config/global/concurrency-card.tsx:244
+#: src/components/config/global/concurrency-card.tsx:242
 msgid "Pipeline Timeouts"
 msgstr "流水线超时"
 
@@ -6920,7 +7474,11 @@ msgstr "处理管道"
 msgid "Platform"
 msgstr "平台"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:45
+#: src/components/credentials/account-usage.tsx:42
+msgid "Platform {label}"
+msgstr "平台 {label}"
+
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:46
 msgid "Platform configuration updated successfully"
 msgstr "平台配置更新成功"
 
@@ -6932,23 +7490,27 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform name"
 msgstr "平台名称"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:82
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:86
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/streamers/config/streamer-configuration.tsx:52
+#: src/components/streamers/config/streamer-configuration.tsx:88
 msgid "Platform options"
 msgstr "平台选项"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:127
+#: src/components/config/templates/tabs/platform-override-card.tsx:154
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:82
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:99
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:255
+#: src/lib/notification-event-types.ts:39
+msgid "Platform rate limited"
+msgstr "平台限流"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:257
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -6960,10 +7522,11 @@ msgstr "平台 URL 提取器"
 msgid "platforms"
 msgstr "平台"
 
-#: src/components/config/global/backup-restore-card.tsx:401
-#: src/components/config/templates/template-editor.tsx:283
-#: src/components/layout/site-header.tsx:44
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
+#: src/components/config/global/backup-restore-card.tsx:405
+#: src/components/config/templates/template-editor.tsx:235
+#: src/components/layout/site-header.tsx:46
+#: src/components/proxies/proxy-references.tsx:77
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
 msgstr "平台"
 
@@ -6971,7 +7534,7 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
-#: src/components/player/player-card.tsx:408
+#: src/components/player/player-card.tsx:434
 msgid "Playback"
 msgstr "播放"
 
@@ -6979,9 +7542,9 @@ msgstr "播放"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
 
-#: src/components/player/player-card.tsx:371
-#: src/components/player/player-card.tsx:372
-#: src/components/player/player-card.tsx:449
+#: src/components/player/player-card.tsx:397
+#: src/components/player/player-card.tsx:398
+#: src/components/player/player-card.tsx:475
 msgid "Playback details"
 msgstr "播放详情"
 
@@ -6989,7 +7552,7 @@ msgstr "播放详情"
 msgid "Playback error"
 msgstr "播放错误"
 
-#: src/components/player/player-card.tsx:483
+#: src/components/player/player-card.tsx:509
 msgid "Playback Error"
 msgstr "播放错误"
 
@@ -6997,13 +7560,13 @@ msgstr "播放错误"
 msgid "Playback stalled while seeking. Retry to reload the video."
 msgstr "跳转时播放停滞。请重试以重新加载视频。"
 
-#: src/components/layout/site-header.tsx:40
+#: src/components/layout/site-header.tsx:41
 #: src/lib/menu-list.ts:97
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:383
-#: src/components/player/player-card.tsx:384
+#: src/components/player/player-card.tsx:409
+#: src/components/player/player-card.tsx:410
 msgid "Player settings"
 msgstr "播放器设置"
 
@@ -7024,11 +7587,11 @@ msgstr "播放列表已失效"
 msgid "Playlist TTL (ms)"
 msgstr "播放列表 TTL（毫秒）"
 
-#: src/components/player/url-input-form.tsx:32
+#: src/components/player/url-input-form.tsx:33
 msgid "Please enter a valid URL"
 msgstr "请输入有效的 URL"
 
-#: src/components/player/url-input-form.tsx:39
+#: src/components/player/url-input-form.tsx:46
 msgid "Please enter at least one URL"
 msgstr "请至少输入一个 URL"
 
@@ -7036,19 +7599,19 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/hooks/use-streamer-form.ts:137
+#: src/hooks/use-streamer-form.ts:141
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
-#: src/components/config/global/backup-restore-card.tsx:446
+#: src/components/config/global/backup-restore-card.tsx:450
 msgid "Please restart the system to ensure all configuration changes are fully applied."
 msgstr "请重启系统以确保所有配置更改已完全生效。"
 
-#: src/components/config/global/backup-restore-card.tsx:191
+#: src/components/config/global/backup-restore-card.tsx:195
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:383
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:415
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
@@ -7120,7 +7683,7 @@ msgstr "首选视频编码"
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
-#: src/components/upload-status-indicator.tsx:381
+#: src/components/upload-status-indicator.tsx:362
 msgid "Preparing…"
 msgstr "准备中…"
 
@@ -7166,7 +7729,7 @@ msgstr "预设"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:146
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
-#: src/components/layout/site-header.tsx:51
+#: src/components/layout/site-header.tsx:53
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:219
 msgid "Presets"
@@ -7209,6 +7772,10 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
+#: src/components/credentials/credential-selection-editor.tsx:240
+msgid "Primary and backups"
+msgstr "主账号与备用账号"
+
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:44
 msgid "Prime Time"
 msgstr "黄金时段"
@@ -7246,6 +7813,10 @@ msgstr "优先级从低到高"
 #: src/components/config/global/network-system-card.tsx:183
 msgid "Private Network Access"
 msgstr "私有网络访问"
+
+#: src/components/credentials/account-usage.tsx:391
+msgid "Problems"
+msgstr "问题"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
@@ -7286,7 +7857,7 @@ msgstr "处理中"
 msgid "Processing Behavior"
 msgstr "处理行为"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:64
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:65
 msgid "Processing nodes"
 msgstr "处理节点"
 
@@ -7311,7 +7882,7 @@ msgstr "程序"
 msgid "Program and arguments"
 msgstr "程序和参数"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:70
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:77
 msgid "Programmatic & MCP access"
 msgstr "编程与 MCP 访问"
 
@@ -7332,31 +7903,27 @@ msgstr "保护设置"
 msgid "Protocol Settings"
 msgstr "协议设置"
 
-#: src/components/config/global/network-system-card.tsx:149
-#: src/components/config/shared-config-editor.tsx:178
+#: src/components/layout/site-header.tsx:45
+#: src/components/proxies/proxies-panel.tsx:166
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
+msgid "Proxies"
+msgstr "代理"
+
+#: src/components/config/global/network-system-card.tsx:156
+#: src/components/config/shared-config-editor.tsx:190
+#: src/components/config/shared/proxy-route-picker.tsx:445
+#: src/components/credentials/account-usage.tsx:397
+#: src/components/credentials/profile-editor-dialog.tsx:306
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:157
-#: src/components/config/shared/proxy-settings-card.tsx:250
-msgid "Proxy Configuration"
-msgstr "代理配置"
+#: src/components/proxies/proxy-editor-dialog.tsx:65
+msgid "Put the login in the username and password fields instead."
+msgstr "请将登录信息填写在用户名和密码栏中。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:272
-msgid "Proxy Strategy"
-msgstr "代理策略"
-
-#: src/components/config/shared/proxy-settings-card.tsx:168
-msgid "Proxy URL"
-msgstr "代理 URL"
-
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:188
+#: src/components/credentials/credential-login-dialog.tsx:184
 msgid "QR code expired"
 msgstr "二维码已过期"
-
-#: src/components/config/shared/network-settings-card.tsx:175
-msgid "QR Login"
-msgstr "扫码登录"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:140
 #: src/components/player/stream-info-card.tsx:32
@@ -7387,16 +7954,16 @@ msgstr "查询参数"
 msgid "Queue"
 msgstr "队列"
 
-#: src/components/streamers/card/use-streamer-status.tsx:259
+#: src/components/streamers/card/use-streamer-status.tsx:389
 msgid "Queued"
 msgstr "排队中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:269
+#: src/components/streamers/card/use-streamer-status.tsx:399
 msgid "Queued for download"
 msgstr "等待下载"
 
-#: src/components/config/global/concurrency-card.tsx:206
-#: src/components/config/global/concurrency-card.tsx:209
+#: src/components/config/global/concurrency-card.tsx:204
+#: src/components/config/global/concurrency-card.tsx:207
 msgid "Queued Refresh Threshold"
 msgstr "排队刷新阈值"
 
@@ -7425,11 +7992,11 @@ msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \
 msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 429 \"请求过多\" 时较为有用。"
 
 #: src/components/streamers/edit/active-download-card.tsx:154
-#: src/components/streamers/progress-indicator.tsx:85
+#: src/components/streamers/progress-indicator.tsx:86
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:162
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -7458,6 +8025,10 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
+#: src/components/proxies/proxy-test.tsx:55
+msgid "Reachable"
+msgstr "可访问"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:704
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
@@ -7483,7 +8054,7 @@ msgstr "就绪"
 msgid "Ready to play"
 msgstr "就绪，等待播放"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:402
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:434
 msgid "Ready to Watch"
 msgstr "准备观看"
 
@@ -7500,7 +8071,7 @@ msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
 #: src/components/notifications/events/payload-preview.tsx:41
-#: src/components/streamers/card/use-streamer-status.tsx:224
+#: src/components/streamers/card/use-streamer-status.tsx:324
 msgid "Reason"
 msgstr "原因"
 
@@ -7547,6 +8118,12 @@ msgstr "录制弹幕"
 msgid "Recording"
 msgstr "录制"
 
+#: src/components/credentials/account-usage.tsx:117
+#: src/components/credentials/account-usage.tsx:322
+msgctxt "live recordings using an account"
+msgid "Recording"
+msgstr "正在录制"
+
 #: src/lib/notification-event-types.ts:22
 msgid "Recording cancelled"
 msgstr "录制已取消"
@@ -7556,13 +8133,17 @@ msgid "Recording error"
 msgstr "录制出错"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:134
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:138
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
 #: src/lib/notification-event-types.ts:20
 msgid "Recording finished"
 msgstr "录制完成"
+
+#: src/components/streamers/card/use-streamer-status.tsx:90
+msgid "Recording is paused"
+msgstr "录制已暂停"
 
 #: src/lib/notification-event-types.ts:23
 msgid "Recording rejected"
@@ -7577,11 +8158,11 @@ msgstr "录制分段成功。"
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:153
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:148
 msgid "Recording uses temporary chunks"
 msgstr "录制将使用临时分块"
 
-#: src/components/streamers/card/use-streamer-status.tsx:368
+#: src/components/streamers/card/use-streamer-status.tsx:498
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -7589,12 +8170,12 @@ msgstr "录制将在计划允许时开始"
 msgid "Recordings"
 msgstr "录制内容"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:157
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:152
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:80
-#: src/components/streamers/card/use-streamer-status.tsx:89
+#: src/components/streamers/card/use-streamer-status.tsx:180
+#: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Recovering"
 msgstr "恢复中"
 
@@ -7602,25 +8183,29 @@ msgstr "恢复中"
 msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
-#: src/components/config/shared/network-settings-card.tsx:194
+#: src/components/credentials/account-row.tsx:274
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:397
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:602
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:141
 msgid "Refresh"
 msgstr "刷新"
 
-#: src/components/config/shared/network-settings-card.tsx:135
-msgid "Refresh failed: Manual login required"
-msgstr "刷新失败：需要手动登录"
-
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:133
 msgid "Refresh status"
 msgstr "刷新状态"
 
-#: src/components/player/player-card.tsx:284
-#: src/components/player/player-card.tsx:499
+#: src/components/player/player-card.tsx:310
+#: src/components/player/player-card.tsx:525
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
+
+#: src/components/credentials/profile-editor-dialog.tsx:258
+msgid "Refresh token"
+msgstr "刷新令牌"
+
+#: src/components/credentials/account-row.tsx:65
+msgid "Refreshing…"
+msgstr "正在刷新…"
 
 #: src/components/filters/filter-types.ts:56
 msgid "Regex"
@@ -7639,8 +8224,12 @@ msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
-#: src/components/player/player-card.tsx:357
-#: src/components/player/player-card.tsx:358
+#: src/components/credentials/account-usage.tsx:138
+msgid "Rejected during use; a refresh is queued"
+msgstr "使用时被拒绝，已排队刷新"
+
+#: src/components/player/player-card.tsx:383
+#: src/components/player/player-card.tsx:384
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -7649,7 +8238,7 @@ msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:147
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:167
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:164
 msgid "Remove"
 msgstr "移除"
 
@@ -7660,6 +8249,10 @@ msgstr "移除 {item}"
 #: src/components/ui/tag-input.tsx:67
 msgid "Remove {tag}"
 msgstr "移除 {tag}"
+
+#: src/components/credentials/credential-selection-editor.tsx:359
+msgid "Remove account"
+msgstr "移除账号"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:196
 msgid "Remove argument {number}"
@@ -7682,12 +8275,16 @@ msgstr "移除请求头"
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:144
+#: src/components/proxies/proxy-editor-dialog.tsx:289
+msgid "Remove login"
+msgstr "移除登录信息"
+
+#: src/components/config/templates/tabs/platform-override-card.tsx:171
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:430
-#: src/components/player/player-card.tsx:431
+#: src/components/player/player-card.tsx:456
+#: src/components/player/player-card.tsx:457
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -7748,6 +8345,14 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
+#: src/components/credentials/account-usage.tsx:220
+msgid "renewal due"
+msgstr "待续期"
+
+#: src/components/credentials/account-usage.tsx:223
+msgid "renews {when}"
+msgstr "{when}续期"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1470
 msgid "Reorder Duration (ms)"
 msgstr "重排持续时间（毫秒）"
@@ -7767,6 +8372,10 @@ msgstr "全部替换"
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:137
 msgid "Replace configuration?"
 msgstr "替换配置？"
+
+#: src/components/credentials/profile-editor-dialog.tsx:184
+msgid "Replace credentials"
+msgstr "替换凭据"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:236
 msgid "Replace destination files if they exist"
@@ -7802,6 +8411,22 @@ msgstr "请求不含视频轨的 AAC 音频。"
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
+#: src/components/proxies/proxies-panel.tsx:82
+msgid "Requests a page once through <0>{address}</0> and reports whether it answered."
+msgstr "通过 <0>{address}</0> 请求一次页面，并报告是否有响应。"
+
+#: src/components/credentials/account-row.tsx:161
+msgid "Requests for this account connect directly."
+msgstr "此账号的请求直连。"
+
+#: src/components/credentials/account-row.tsx:167
+msgid "Requests for this account go through {routeLabel}."
+msgstr "此账号的请求通过 {routeLabel} 连接。"
+
+#: src/components/credentials/account-row.tsx:163
+msgid "Requests for this account use the system proxy."
+msgstr "此账号的请求使用系统代理。"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:212
 msgid "Require Subtitles"
 msgstr "需要字幕"
@@ -7810,8 +8435,8 @@ msgstr "需要字幕"
 msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:138
-#: src/components/config/shared/pipeline-tabs-section.tsx:217
+#: src/components/config/shared/pipeline-tabs-section.tsx:145
+#: src/components/config/shared/pipeline-tabs-section.tsx:227
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -7853,15 +8478,15 @@ msgstr "资源限制"
 msgid "Resources"
 msgstr "资源"
 
-#: src/components/config/global/backup-restore-card.tsx:443
+#: src/components/config/global/backup-restore-card.tsx:447
 msgid "Restart Required"
 msgstr "需要重启"
 
-#: src/components/config/global/concurrency-card.tsx:358
+#: src/components/config/global/concurrency-card.tsx:356
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "保存后需重启 rust-srec，新的超时设置才会生效。"
 
-#: src/components/config/global/backup-restore-card.tsx:273
+#: src/components/config/global/backup-restore-card.tsx:277
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
@@ -7886,7 +8511,7 @@ msgstr "在待确认状态 {0} 秒后恢复。"
 msgid "RESUMED START"
 msgstr "恢复启动"
 
-#: src/components/streamers/card/use-streamer-status.tsx:134
+#: src/components/streamers/card/use-streamer-status.tsx:234
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
@@ -7903,7 +8528,7 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:491
+#: src/components/player/player-card.tsx:517
 #: src/components/sessions/danmu-stats-panel.tsx:240
 msgid "Retry"
 msgstr "重试"
@@ -7978,9 +8603,9 @@ msgstr "已吊销"
 msgid "Right"
 msgstr "右侧"
 
-#: src/components/config/shared/proxy-settings-card.tsx:128
-msgid "Route traffic through an intermediate server"
-msgstr "通过中间服务器转发流量"
+#: src/components/credentials/credential-selection-editor.tsx:243
+msgid "Round-robin pool"
+msgstr "轮询账号池"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:793
 msgid "Rows per page"
@@ -8002,7 +8627,7 @@ msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:187
+#: src/components/config/shared/pipeline-tabs-section.tsx:197
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
@@ -8010,19 +8635,19 @@ msgstr "在每个录制分段完成后立即运行。"
 msgid "Runs in the server's shell. With placeholders, use a fixed command name and ordinary arguments or file redirects. Shell expansions, command groups and nested shells are unsupported. Windows servers also reject pipes, multiline templates, batch scripts and builtins with placeholders, such as echo."
 msgstr "在服务器的 shell 中运行。使用占位符时，请使用固定命令名称、普通参数或文件重定向。不支持 shell 展开、命令分组和嵌套 shell。Windows 服务器还会拒绝管道、多行模板、批处理脚本，以及 echo 等带占位符的内置命令。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:245
+#: src/components/config/shared/pipeline-tabs-section.tsx:255
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:167
+#: src/components/config/shared/pipeline-tabs-section.tsx:177
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:132
+#: src/components/config/shared/pipeline-tabs-section.tsx:139
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:212
+#: src/components/config/shared/pipeline-tabs-section.tsx:222
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -8077,16 +8702,21 @@ msgstr "清理后的主播名称"
 msgid "Saturday"
 msgstr "星期六"
 
+#: src/components/credentials/profile-editor-dialog.tsx:346
+msgid "Save account"
+msgstr "保存账号"
+
 #: src/components/config/engines/engine-editor.tsx:276
 #: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
+#: src/components/proxies/proxy-editor-dialog.tsx:361
 #: src/components/shared/save-fab.tsx:93
-#: src/components/streamers/streamer-editor.tsx:305
+#: src/components/streamers/streamer-editor.tsx:320
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:175
-#: src/components/config/templates/template-editor.tsx:232
+#: src/components/config/platforms/platform-editor.tsx:186
+#: src/components/config/templates/template-editor.tsx:186
 #: src/components/notifications/subscription-manager.tsx:480
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
@@ -8094,9 +8724,17 @@ msgstr "保存更改"
 msgid "Save Changes"
 msgstr "保存更改"
 
-#: src/components/config/global/backup-restore-card.tsx:242
+#: src/components/config/global/backup-restore-card.tsx:246
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
+
+#: src/components/credentials/account-selection-section.tsx:337
+msgid "Save this configuration to see what it inherits."
+msgstr "保存此配置后即可查看其继承结果。"
+
+#: src/components/credentials/credential-settings-field.tsx:115
+msgid "Save this template or streamer before choosing its accounts."
+msgstr "请先保存此模板或主播，再为其选择账号。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:815
 msgid "Save with incomplete delete checks?"
@@ -8106,17 +8744,58 @@ msgstr "删除检查尚未完成，仍要保存吗？"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
+#: src/components/proxies/proxy-editor-dialog.tsx:253
+msgid "Saved as {normalized}"
+msgstr "将保存为 {normalized}"
+
+#: src/components/config/shared/proxy-route-picker.tsx:237
+msgid "Saved proxies"
+msgstr "已保存的代理"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:71
+msgid "Saved proxies & system proxy"
+msgstr "已保存的代理与系统代理"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:215
+msgid "Saved proxies can be chosen in global, platform, template, streamer and account settings."
+msgstr "已保存的代理可在全局、平台、模板、主播和账号设置中选用。"
+
+#: src/components/proxies/proxies-panel.tsx:170
+msgid "Saved proxies that global, platform, template, streamer and account settings can route requests through. Changes are saved right away."
+msgstr "全局、平台、模板、主播和账号设置可选用这些已保存的代理来转发请求。更改会立即保存。"
+
+#: src/components/config/shared/proxy-route-picker.tsx:92
+#: src/components/config/shared/proxy-route-picker.tsx:182
+#: src/components/config/shared/proxy-route-picker.tsx:253
+#: src/components/notifications/browser-notification-listener.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:56
+#: src/components/proxies/proxy-route-label.tsx:68
+msgid "Saved proxy"
+msgstr "已保存的代理"
+
+#: src/components/credentials/profile-editor-dialog.tsx:162
+msgid "Saved right away, separately from the rest of this page."
+msgstr "立即保存，与本页其他设置分开保存。"
+
+#: src/components/credentials/account-selection-section.tsx:522
+msgid "Saved together with this configuration."
+msgstr "随此配置一起保存。"
+
 #: src/components/filters/FilterDialog.tsx:295
 #: src/components/shared/save-fab.tsx:91
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:173
-#: src/components/config/templates/template-editor.tsx:228
+#: src/components/config/platforms/platform-editor.tsx:184
+#: src/components/config/templates/template-editor.tsx:182
 #: src/components/pipeline/workflows/workflow-editor.tsx:166
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
 msgid "Saving..."
 msgstr "保存中..."
+
+#: src/components/credentials/account-row.tsx:66
+msgid "Saving…"
+msgstr "正在保存…"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:444
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
@@ -8126,24 +8805,40 @@ msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传
 msgid "Scan Directory"
 msgstr "扫描目录"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:218
-msgid "Scan the QR code with Bilibili app to login and save credentials"
-msgstr "使用哔哩哔哩 App 扫码登录并保存凭据"
+#: src/components/credentials/profile-editor-dialog.tsx:200
+msgid "Scan QR code"
+msgstr "扫码登录"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:158
+#: src/components/credentials/credential-login-dialog.tsx:220
 msgid "Scan with Bilibili mobile app"
 msgstr "使用哔哩哔哩移动端 App 扫码"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:170
+#: src/components/credentials/credential-login-dialog.tsx:222
+msgid "Scan with the Douyu app"
+msgstr "使用斗鱼 App 扫码"
+
+#: src/components/credentials/credential-login-dialog.tsx:224
+msgid "Scan with the platform's mobile app"
+msgstr "使用该平台的移动端 App 扫码"
+
+#: src/components/credentials/credential-login-dialog.tsx:167
 msgid "Scanned! Please confirm on your phone"
 msgstr "已扫描！请在手机上确认"
+
+#: src/components/credentials/credential-login-dialog.tsx:138
+msgid "Scanning adds the account. Account selections are not changed."
+msgstr "扫码后即添加该账号，不会更改账号选择。"
+
+#: src/components/credentials/credential-login-dialog.tsx:133
+msgid "Scanning replaces this account's saved login. Account selections are not changed."
+msgstr "扫码会替换该账号已保存的登录信息，不会更改账号选择。"
 
 #: src/components/filters/filter-types.ts:39
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:43
-#: src/components/streamers/card/use-streamer-status.tsx:349
+#: src/components/streamers/card/use-streamer-status.tsx:143
+#: src/components/streamers/card/use-streamer-status.tsx:479
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -8169,7 +8864,7 @@ msgstr "按名称或描述搜索..."
 msgid "Search comments..."
 msgstr "搜索弹幕…"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:99
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
@@ -8189,7 +8884,7 @@ msgstr "搜索日志..."
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
-#: src/components/config/templates/tabs/platform-overrides-tab.tsx:102
+#: src/components/config/templates/tabs/platform-overrides-tab.tsx:119
 msgid "Search platform..."
 msgstr "搜索平台…"
 
@@ -8238,11 +8933,11 @@ msgstr "secret"
 msgid "Secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:170
 msgid "Security & Identity"
 msgstr "安全与身份"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:86
+#: src/components/config/shared/pipeline-tabs-section.tsx:87
 msgid "Segment"
 msgstr "分段"
 
@@ -8272,7 +8967,7 @@ msgstr "分段"
 msgid "Select"
 msgstr "选择"
 
-#: src/components/config/global/concurrency-card.tsx:390
+#: src/components/config/global/concurrency-card.tsx:388
 msgid "Select a default engine"
 msgstr "选择默认引擎"
 
@@ -8350,7 +9045,7 @@ msgstr "选择日期锚点"
 msgid "Select date range"
 msgstr "选择日期范围"
 
-#: src/components/config/global/backup-restore-card.tsx:292
+#: src/components/config/global/backup-restore-card.tsx:296
 msgid "Select File"
 msgstr "选择文件"
 
@@ -8435,6 +9130,11 @@ msgstr "选择你偏好的配色方案。"
 msgid "Selected"
 msgstr "已选择"
 
+#: src/components/credentials/account-usage.tsx:106
+#: src/components/credentials/account-usage.tsx:303
+msgid "Selected by"
+msgstr "选用者"
+
 #: src/components/streamers/edit/status-check-history.tsx:314
 msgid "Selected stream"
 msgstr "已选择的流"
@@ -8460,15 +9160,15 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
-#: src/components/player/player-card.tsx:231
+#: src/components/player/player-card.tsx:257
 msgid "Server proxy"
 msgstr "服务器代理"
 
-#: src/components/player/player-card.tsx:208
+#: src/components/player/player-card.tsx:234
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "服务器代理会通过本应用的服务器转发播放，并使用该来源配置的上游代理设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:296
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:291
 msgid "Server registration"
 msgstr "服务端注册"
 
@@ -8477,7 +9177,7 @@ msgstr "服务端注册"
 msgid "Server URL"
 msgstr "服务器地址"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:153
+#: src/components/config/shared/pipeline-tabs-section.tsx:160
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:272
 msgid "Session"
 msgstr "会话"
@@ -8486,18 +9186,22 @@ msgstr "会话"
 msgid "Session {sessionLabel}"
 msgstr "会话 {sessionLabel}"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:150
+#: src/components/config/shared/pipeline-tabs-section.tsx:157
 msgid "Session Complete"
 msgstr "会话完成"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:161
-#: src/components/config/shared/pipeline-tabs-section.tsx:242
+#: src/components/config/shared/pipeline-tabs-section.tsx:171
+#: src/components/config/shared/pipeline-tabs-section.tsx:252
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:261
+#: src/components/config/shared/pipeline-tabs-section.tsx:271
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
+
+#: src/lib/notification-event-types.ts:45
+msgid "Session cookies not saved"
+msgstr "会话 Cookie 未保存"
 
 #: src/components/sessions/session-card.tsx:85
 msgid "Session deleted successfully"
@@ -8564,7 +9268,7 @@ msgstr "会话已启动。其他详细信息不可用。"
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
-#: src/components/layout/site-header.tsx:30
+#: src/components/layout/site-header.tsx:31
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:261
 msgid "Sessions"
@@ -8589,9 +9293,9 @@ msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:89
 #: src/components/filters/FilterDialog.tsx:267
-#: src/components/layout/site-header.tsx:31
+#: src/components/layout/site-header.tsx:32
 #: src/lib/menu-list.ts:105
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:114
 msgid "Settings"
 msgstr "设置"
 
@@ -8599,7 +9303,7 @@ msgstr "设置"
 msgid "Settings updated"
 msgstr "配置已更新"
 
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:179
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:178
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
@@ -8639,6 +9343,10 @@ msgstr "收起"
 msgid "Show password"
 msgstr "显示密码"
 
+#: src/components/credentials/profile-editor-dialog.tsx:338
+msgid "Show QR code"
+msgstr "显示二维码"
+
 #: src/components/notifications/browser-channel-dialog.tsx:97
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "在应用标签页打开时，通过轮询最近事件来显示通知。"
@@ -8651,6 +9359,14 @@ msgstr "侧边栏布局"
 #: src/routes/_public/login.lazy.tsx:243
 msgid "Sign In"
 msgstr "登录"
+
+#: src/components/credentials/profile-editor-dialog.tsx:212
+msgid "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
+msgstr "使用 {appName} App 扫描二维码登录，无需复制粘贴。"
+
+#: src/components/credentials/profile-editor-dialog.tsx:217
+msgid "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
+msgstr "使用平台 App 扫描二维码登录，无需复制粘贴。"
 
 #: src/components/player/playback-state.ts:35
 msgid "Sign in to the server before using the stream proxy."
@@ -8665,6 +9381,14 @@ msgstr "退出登录"
 msgid "Signature"
 msgstr "签名"
 
+#: src/components/credentials/account-selection-section.tsx:88
+msgid "Signing in is temporarily unavailable. Check the account status and try again."
+msgstr "暂时无法登录。请检查账号状态后重试。"
+
+#: src/components/credentials/account-selection-section.tsx:76
+msgid "Signing in with this account kept failing. Check its status or log in again."
+msgstr "该账号多次登录失败。请检查其状态，或重新登录。"
+
 #: src/routes/_public/login.lazy.tsx:241
 msgid "Signing in..."
 msgstr "正在登录..."
@@ -8674,12 +9398,12 @@ msgstr "正在登录..."
 msgid "Since {0}"
 msgstr "自 {0} 起"
 
-#: src/components/player/url-input-form.tsx:117
+#: src/components/player/url-input-form.tsx:141
 msgid "Single URL"
 msgstr "单个 URL"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:71
+#: src/components/notifications/events/payload-preview.tsx:88
 #: src/components/streamers/edit/active-download-card.tsx:127
 msgid "Size"
 msgstr "大小"
@@ -8708,7 +9432,7 @@ msgstr "达到时长后跳过"
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:145
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -8716,7 +9440,7 @@ msgstr "跳过互动玩法"
 msgid "Skipped"
 msgstr "已跳过"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:204
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
@@ -8724,7 +9448,7 @@ msgstr "跳过了 {skippedCount} 个重复的流"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
-#: src/components/player/player-card.tsx:265
+#: src/components/player/player-card.tsx:291
 msgid "Smooth"
 msgstr "流畅"
 
@@ -8744,11 +9468,6 @@ msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:58
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:87
-msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
-msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
-
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:598
 msgid "Sort by"
 msgstr "排序方式"
@@ -8757,14 +9476,10 @@ msgstr "排序方式"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:216
-#: src/components/config/templates/tabs/platform-override-card.tsx:74
+#: src/components/config/platforms/platform-editor.tsx:227
+#: src/components/config/templates/tabs/platform-override-card.tsx:99
 msgid "Specific"
 msgstr "特定"
-
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:232
-msgid "Specific TTWID Cookie"
-msgstr "特定 TTWID Cookie"
 
 #: src/components/streamers/edit/active-download-card.tsx:116
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:680
@@ -8903,7 +9618,7 @@ msgstr "存储"
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "将这些凭据保存在服务器上（明文，与平台 Cookie 相同），登录会话过期时上传任务可以自行重新登录。退出登录会一并清除。"
 
-#: src/components/player/player-card.tsx:404
+#: src/components/player/player-card.tsx:430
 msgid "Stream"
 msgstr "直播流"
 
@@ -8923,7 +9638,7 @@ msgstr "地址获取方式"
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:127
+#: src/components/streamers/card/stream-avatar-info.tsx:128
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
@@ -8935,22 +9650,22 @@ msgstr "已下播"
 msgid "Stream online"
 msgstr "开播"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:115
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:128
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:47
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:101
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
 msgid "Stream Password"
 msgstr "直播密码"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:328
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/player/player-card.tsx:190
+#: src/components/player/player-card.tsx:216
 msgid "Stream source"
 msgstr "直播源"
 
@@ -8981,8 +9696,12 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
-#: src/components/config/global/network-system-card.tsx:53
-#: src/components/config/global/network-system-card.tsx:56
+#: src/components/credentials/account-usage.tsx:61
+msgid "Streamer {name}"
+msgstr "主播 {name}"
+
+#: src/components/config/global/network-system-card.tsx:60
+#: src/components/config/global/network-system-card.tsx:63
 msgid "Streamer Check"
 msgstr "主播检查"
 
@@ -9008,13 +9727,20 @@ msgstr "主播 ID"
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
-#: src/components/streamers/card/use-streamer-status.tsx:128
+#: src/components/streamers/card/use-streamer-status.tsx:228
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
-#: src/components/streamers/card/use-streamer-status.tsx:184
+#: src/components/streamers/card/use-streamer-status.tsx:284
 msgid "Streamer no longer exists on the platform"
 msgstr "主播在平台上已不存在"
+
+#: src/components/streamers/card/use-streamer-status.tsx:147
+#: src/components/streamers/card/use-streamer-status.tsx:274
+#: src/components/streamers/card/use-streamer-status.tsx:283
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:123
+msgid "Streamer not found"
+msgstr "主播不存在"
 
 #: src/components/sessions/timeline-tab.tsx:170
 msgctxt "terminal-cause"
@@ -9030,14 +9756,15 @@ msgstr "主播分页"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:74
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:75
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
-#: src/components/config/global/backup-restore-card.tsx:367
-#: src/components/config/global/backup-restore-card.tsx:372
-#: src/components/config/global/backup-restore-card.tsx:377
-#: src/components/layout/site-header.tsx:32
+#: src/components/config/global/backup-restore-card.tsx:371
+#: src/components/config/global/backup-restore-card.tsx:376
+#: src/components/config/global/backup-restore-card.tsx:381
+#: src/components/layout/site-header.tsx:33
+#: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:394
 msgid "Streamers"
@@ -9047,13 +9774,29 @@ msgstr "主播"
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:52
+#: src/components/credential-attention-indicator.tsx:122
+msgid "Streamers that select only these accounts stop recording until one works again."
+msgstr "仅选择这些账号的主播会停止录制，直到其中一个账号恢复可用。"
+
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:53
 msgid "Streaming services"
 msgstr "流媒体服务"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:53
 msgid "streamlink"
 msgstr "streamlink"
+
+#: src/components/credentials/account-selection-section.tsx:500
+msgid "Streamlink receives only the account's cookies, and the account is not checked automatically."
+msgstr "Streamlink 只会收到该账号的 Cookie，且不会自动检查账号状态。"
+
+#: src/components/credentials/account-selection-section.tsx:449
+msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer, not in a template."
+msgstr "Streamlink 覆盖许多不同的网站，因此其账号需在每个主播上单独选择，而不是在模板中选择。"
+
+#: src/components/credentials/account-selection-section.tsx:443
+msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer. Add accounts here, then pick one in a streamer's settings."
+msgstr "Streamlink 支持许多不同的网站，因此其账号在各主播中选择。请先在这里添加账号，再到主播设置中选择。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:664
 msgid "Streams"
@@ -9112,10 +9855,6 @@ msgstr "成功处理 {0} 个主播"
 msgid "Sunday"
 msgstr "星期日"
 
-#: src/components/config/shared/network-settings-card.tsx:287
-msgid "Supported"
-msgstr "支持"
-
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
@@ -9135,6 +9874,10 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
+#: src/components/credentials/credential-selection-editor.tsx:403
+msgid "Switch to the next account when one stops working"
+msgstr "账号失效时切换到下一个账号"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:96
 msgid "Switching modes clears the previous command or program and arguments."
 msgstr "切换模式会清除之前的命令，或程序和参数。"
@@ -9143,7 +9886,7 @@ msgstr "切换模式会清除之前的命令，或程序和参数。"
 msgid "Sync"
 msgstr "同步"
 
-#: src/components/layout/site-header.tsx:41
+#: src/components/layout/site-header.tsx:42
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:139
 msgid "System"
 msgstr "系统"
@@ -9157,6 +9900,16 @@ msgstr "系统"
 msgid "System Health"
 msgstr "系统健康"
 
+#: src/components/notifications/browser-notification-listener.tsx:60
+#: src/components/notifications/events/payload-preview.tsx:58
+#: src/components/proxies/proxy-route-label.tsx:34
+msgid "System proxy"
+msgstr "系统代理"
+
+#: src/components/proxies/proxies-panel.tsx:46
+msgid "System proxy: <0>{url}</0>"
+msgstr "系统代理：<0>{url}</0>"
+
 #: src/lib/notification-event-types.ts:38
 msgid "System shutting down"
 msgstr "系统正在关闭"
@@ -9169,7 +9922,7 @@ msgstr "系统已启动"
 msgid "System Status"
 msgstr "系统状态"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:46
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:47
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
@@ -9209,6 +9962,10 @@ msgstr "TB"
 msgid "Template"
 msgstr "模板"
 
+#: src/components/credentials/account-usage.tsx:52
+msgid "Template {name}"
+msgstr "模板 {name}"
+
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:58
 msgid "Template cloned successfully"
 msgstr "模板克隆成功"
@@ -9225,11 +9982,11 @@ msgstr "模板信息"
 msgid "Template Name"
 msgstr "模板名称"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:80
 msgid "Template not found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:40
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:41
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
@@ -9237,11 +9994,12 @@ msgstr "模板更新成功"
 msgid "templates"
 msgstr "模板"
 
-#: src/components/config/global/backup-restore-card.tsx:350
-#: src/components/config/global/backup-restore-card.tsx:355
-#: src/components/config/global/backup-restore-card.tsx:360
-#: src/components/layout/site-header.tsx:45
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:55
+#: src/components/config/global/backup-restore-card.tsx:354
+#: src/components/config/global/backup-restore-card.tsx:359
+#: src/components/config/global/backup-restore-card.tsx:364
+#: src/components/layout/site-header.tsx:47
+#: src/components/proxies/proxy-references.tsx:93
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
 msgstr "模板"
 
@@ -9249,15 +10007,22 @@ msgstr "模板"
 msgid "Temporarily disabled"
 msgstr "暂时禁用"
 
-#: src/components/streamers/card/use-streamer-status.tsx:49
-#: src/components/streamers/card/use-streamer-status.tsx:118
-#: src/components/streamers/card/use-streamer-status.tsx:127
+#: src/components/streamers/card/use-streamer-status.tsx:149
+#: src/components/streamers/card/use-streamer-status.tsx:218
+#: src/components/streamers/card/use-streamer-status.tsx:227
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:224
+#: src/components/proxies/proxy-row.tsx:158
+#: src/components/proxies/proxy-row.tsx:193
+#: src/components/proxies/proxy-test.tsx:163
 msgid "Test"
 msgstr "测试"
+
+#: src/components/proxies/proxies-panel.tsx:79
+msgid "Test “{name}”"
+msgstr "测试“{name}”"
 
 #: src/components/notifications/channel-card.tsx:201
 msgid "Test Notification"
@@ -9267,15 +10032,43 @@ msgstr "测试通知"
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
+#: src/components/proxies/proxy-test.tsx:163
+msgid "Testing…"
+msgstr "测试中…"
+
+#: src/components/credentials/profile-editor-dialog.tsx:271
+msgid "The access token alone signs in; cookies are optional."
+msgstr "仅凭访问令牌即可登录；Cookie 可选。"
+
+#: src/components/credentials/credential-login-dialog.tsx:189
+msgid "The account or the proxy it uses was changed or removed in the meantime. Reload the page and try again."
+msgstr "账号或其使用的代理已在此期间被修改或删除。请刷新页面后重试。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:59
+msgid "The account selection changed while the recording was using an account."
+msgstr "录制使用账号期间，账号选择发生了变更。"
+
+#: src/components/credentials/account-selection-section.tsx:63
+msgid "The account the active recording uses can no longer be used."
+msgstr "当前录制使用的账号已无法使用。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:55
+msgid "The account the recording uses can no longer be used."
+msgstr "录制使用的账号已无法使用。"
+
 #: src/components/player/playback-state.ts:31
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "浏览器无法解码此直播流。请选择其他画质或格式。"
 
-#: src/components/config/global/backup-restore-card.tsx:326
+#: src/components/proxies/proxy-test.tsx:39
+msgid "The check failed"
+msgstr "检查失败"
+
+#: src/components/config/global/backup-restore-card.tsx:330
 msgid "The configuration has been successfully processed. Here is a summary of the changes:"
 msgstr "配置已成功处理。以下是更改摘要："
 
-#: src/components/config/global/backup-restore-card.tsx:432
+#: src/components/config/global/backup-restore-card.tsx:436
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
@@ -9299,17 +10092,41 @@ msgstr "密钥继承你账户的权限，并受此处选择的权限级别限制
 msgid "The language this channel's messages are written in, whoever reads them."
 msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
 
+#: src/components/credentials/account-usage.tsx:136
+msgid "The last refresh failed"
+msgstr "上次刷新失败"
+
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:187
-msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
-msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
+#: src/components/credentials/account-usage.tsx:135
+msgid "The platform asked for a new login"
+msgstr "平台要求重新登录"
+
+#: src/components/streamers/card/use-streamer-status.tsx:287
+msgid "The platform reported this streamer as missing. The channel may have been deleted or banned, or the URL or ID is incorrect. Consider removing or updating this streamer."
+msgstr "平台报告该主播不存在。直播间可能已被删除或封禁，或者 URL 或 ID 有误。建议删除或更新该主播。"
+
+#: src/components/proxies/proxy-test.tsx:35
+msgid "The proxy rejected the login"
+msgstr "代理拒绝了登录信息"
 
 #: src/components/streamers/card/lossless-cut-action.tsx:94
 msgid "The recording ended before the cut completed."
 msgstr "分段完成前录制已结束。"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:295
+msgid "The saved login will be removed."
+msgstr "保存的登录信息将被移除。"
+
+#: src/components/proxies/proxy-test.tsx:38
+msgid "The secure connection to the site failed"
+msgstr "与站点的安全连接失败"
+
+#: src/components/credentials/account-selection-section.tsx:69
+msgid "The selection changed during the active recording. The recording switches to the new selection when it next reconnects."
+msgstr "当前录制期间账号选择已更改，录制下次重新连接时将使用新的选择。"
 
 #: src/components/player/playback-state.ts:28
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
@@ -9339,12 +10156,12 @@ msgstr "服务器无法连接直播源。请重试或切换直播源。"
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
-#: src/components/upload-status-indicator.tsx:556
+#: src/components/upload-status-indicator.tsx:537
 msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 msgstr "{name} 的上传将立即停止。已完成的文件会保留在目标位置，之后可以重试该任务。"
 
-#: src/components/layout/site-header.tsx:46
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:79
+#: src/components/layout/site-header.tsx:48
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:86
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:108
 msgid "Theme"
 msgstr "主题"
@@ -9357,9 +10174,25 @@ msgstr "主题模式"
 msgid "Theme Preset"
 msgstr "主题预设"
 
+#: src/components/credentials/account-selection-section.tsx:167
+msgid "then"
+msgstr "然后"
+
 #: src/components/notifications/desktop-channel-dialog.tsx:211
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道通知（Discord/电子邮件/Webhook）。"
+
+#: src/components/credentials/account-selection-section.tsx:52
+msgid "This account is disabled. Enable it or choose another account."
+msgstr "该账号已禁用。请启用它或选择其他账号。"
+
+#: src/components/credentials/delete-profile-dialog.tsx:75
+msgid "This account is in use"
+msgstr "该账号正在使用中"
+
+#: src/components/credentials/account-selection-section.tsx:41
+msgid "This account needs a new login. Log in again or replace its cookies."
+msgstr "该账号需要重新登录。请重新登录，或替换其 Cookie。"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:140
@@ -9394,9 +10227,29 @@ msgstr "此处理任务是工作流中的一个步骤，将与工作流的其余
 msgid "This media format is not supported by your browser. Choose another format or browser."
 msgstr "浏览器不支持此媒体格式。请选择其他格式或使用其他浏览器。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:98
+#: src/components/config/shared/pipeline-tabs-section.tsx:102
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
+
+#: src/components/credentials/account-selection-section.tsx:514
+msgid "This platform has no accounts yet. Add them in the platform settings."
+msgstr "该平台还没有账号，请在平台设置中添加。"
+
+#: src/components/credentials/account-selection-section.tsx:509
+msgid "This platform has no accounts yet. Use Add account above to create one."
+msgstr "该平台还没有账号。请使用上方的“添加账号”创建一个。"
+
+#: src/components/proxies/delete-proxy-dialog.tsx:51
+msgid "This proxy is in use"
+msgstr "此代理正在使用中"
+
+#: src/components/config/shared/proxy-route-picker.tsx:354
+msgid "This proxy no longer exists. Requests fail until another is chosen."
+msgstr "此代理已不存在。在改选其他代理前，请求都会失败。"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:179
+msgid "This proxy was changed elsewhere. Close the editor and open it again."
+msgstr "此代理已在别处被修改。请关闭编辑器后重新打开。"
 
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:65
 msgid "This removes {countLabel} from the recording's file list. This action cannot be undone."
@@ -9410,7 +10263,7 @@ msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
 
-#: src/components/player/player-card.tsx:204
+#: src/components/player/player-card.tsx:230
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "此来源需要请求头，因此无法使用直连。"
 
@@ -9426,17 +10279,25 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This STOKEN contains no uppercase letters — it is likely the wrong value. Copy STOKEN from the netdisk page cookies, not bdstoken."
 msgstr "此 STOKEN 不含大写字母，很可能取错了值。请从网盘页面 Cookie 中复制 STOKEN，而不是 bdstoken。"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:107
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
-#: src/components/streamers/card/use-streamer-status.tsx:281
+#: src/components/streamers/card/use-streamer-status.tsx:411
 msgid "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
 msgstr "该主播正在直播，但全局下载并发已用满。一旦有空闲槽位，录制和弹幕采集将自动开始。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:361
+#: src/components/streamers/card/use-streamer-status.tsx:50
+msgid "This streamer has no account with a valid login."
+msgstr "该主播没有登录有效的账号。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:491
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:52
+msgid "This streamer only uses disabled accounts."
+msgstr "该主播只使用已禁用的账号。"
 
 #: src/components/config/engines/engine-card.tsx:151
 msgid "This tool was not found on the server."
@@ -9535,15 +10396,15 @@ msgstr "超时（秒）"
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
-#: src/components/config/global/concurrency-card.tsx:330
+#: src/components/config/global/concurrency-card.tsx:328
 msgid "Timeout before cancelling `execute` processor commands."
 msgstr "取消 `execute` 处理器命令前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:270
+#: src/components/config/global/concurrency-card.tsx:268
 msgid "Timeout before cancelling CPU-bound processors."
 msgstr "取消 CPU 密集型处理器前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:299
+#: src/components/config/global/concurrency-card.tsx:297
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
@@ -9588,15 +10449,19 @@ msgstr "变更后"
 msgid "To Addresses"
 msgstr "收件人地址"
 
+#: src/components/credentials/delete-profile-dialog.tsx:113
+msgid "To stop using it right away, disable it instead."
+msgstr "如需立即停止使用，请改为禁用它。"
+
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:180
 msgid "Today"
 msgstr "今天"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:115
+#: src/components/config/templates/tabs/platform-override-card.tsx:140
 msgid "Toggle"
 msgstr "切换"
 
-#: src/components/layout/site-header.tsx:72
+#: src/components/layout/site-header.tsx:74
 msgid "Toggle navigation menu"
 msgstr "切换导航菜单"
 
@@ -9694,23 +10559,23 @@ msgstr "传输数帮助"
 msgid "Transient error"
 msgstr "瞬时错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:93
+#: src/components/streamers/card/use-streamer-status.tsx:193
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:156
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:148
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:337
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:332
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:95
+#: src/components/config/shared/pipeline-tabs-section.tsx:99
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:163
+#: src/components/config/shared/pipeline-tabs-section.tsx:173
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -9770,7 +10635,7 @@ msgstr "应用关闭时触发。"
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
-#: src/components/config/shared/pipeline-tabs-section.tsx:127
+#: src/components/config/shared/pipeline-tabs-section.tsx:134
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -9807,21 +10672,17 @@ msgstr "尝试调整搜索或过滤器。"
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
 
-#: src/components/credentials/bilibili-qr-login-dialog.tsx:203
-msgid "Try again"
-msgstr "重试"
-
 #: src/components/default-catch-boundary.tsx:42
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:284
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:83
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/player/player-card.tsx:508
+#: src/components/player/player-card.tsx:534
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:180
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -9832,10 +10693,6 @@ msgstr "星期二"
 #: src/components/config/engines/forms/streamlink-form.tsx:189
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
-
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:27
-msgid "Twitch OAuth token for subscriber-only and high-quality streams."
-msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:198
 msgid "Twitch Proxy Playlist"
@@ -9898,7 +10755,13 @@ msgstr "Unix 时间戳"
 msgid "Unknown"
 msgstr "未知"
 
-#: src/components/config/templates/tabs/engine-overrides-tab.tsx:160
+#: src/components/credentials/account-selection-section.tsx:153
+#: src/components/credentials/account-selection-section.tsx:406
+#: src/components/credentials/credential-selection-editor.tsx:168
+msgid "Unknown account"
+msgstr "未知账号"
+
+#: src/components/config/templates/tabs/engine-overrides-tab.tsx:157
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
@@ -9907,8 +10770,8 @@ msgid "Unknown engine type: {engineType}"
 msgstr "未知的引擎类型：{engineType}"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:279
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
 msgid "Unknown error"
 msgstr "未知错误"
 
@@ -9928,11 +10791,15 @@ msgstr "不限"
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
+#: src/components/credentials/account-selection-section.tsx:356
+msgid "Unsaved"
+msgstr "未保存"
+
 #: src/components/streamers/config/streamer-identity-fields.tsx:191
 msgid "Unsupported link"
 msgstr "不支持的链接"
 
-#: src/components/streamers/card/use-streamer-status.tsx:147
+#: src/components/streamers/card/use-streamer-status.tsx:247
 msgid "Until"
 msgstr "直到"
 
@@ -9944,7 +10811,7 @@ msgstr "无标题直播"
 msgid "UPDATE"
 msgstr "更新"
 
-#: src/components/config/global/backup-restore-card.tsx:92
+#: src/components/config/global/backup-restore-card.tsx:93
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:534
 msgid "Updated"
 msgstr "已更新"
@@ -9985,7 +10852,7 @@ msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重
 msgid "Upload Behavior"
 msgstr "上传行为"
 
-#: src/components/upload-status-indicator.tsx:536
+#: src/components/upload-status-indicator.tsx:517
 msgid "Upload cancelled"
 msgstr "上传已取消"
 
@@ -10035,17 +10902,25 @@ msgstr "运行时间 <0>{0}</0>"
 
 #: src/components/notifications/channel-card.tsx:144
 #: src/components/streamers/config/streamer-identity-fields.tsx:73
-#: src/components/streamers/progress-indicator.tsx:101
+#: src/components/streamers/progress-indicator.tsx:102
 msgid "URL"
 msgstr "URL"
 
-#: src/components/player/url-input-form.tsx:33
+#: src/components/player/url-input-form.tsx:34
 msgid "URL is required"
 msgstr "必须填写 URL"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:348
+msgid "Use “{conflictName}” instead"
+msgstr "改用“{conflictName}”"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:909
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
+
+#: src/components/proxies/proxy-editor-dialog.tsx:64
+msgid "Use an http, https, socks5 or socks5h address."
+msgstr "请使用 http、https、socks5 或 socks5h 地址。"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:87
 #: src/components/config/engines/forms/streamlink-form.tsx:115
@@ -10056,7 +10931,7 @@ msgstr "使用引擎设置"
 msgid "Use environment default"
 msgstr "使用环境默认值"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:118
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
@@ -10069,10 +10944,6 @@ msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder. Execution time preserves the existing copy/move behavior."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中。执行时间会保留现有 copy/move 行为。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:148
-msgid "Use System Proxy"
-msgstr "使用系统代理"
-
 #: src/components/player/playback-presets.ts:9
 msgid "Use the player's default balance of buffering and delay."
 msgstr "使用播放器默认的缓冲与延迟平衡设置。"
@@ -10080,6 +10951,18 @@ msgstr "使用播放器默认的缓冲与延迟平衡设置。"
 #: src/components/notifications/forms/email-form.tsx:179
 msgid "Use TLS"
 msgstr "启用 TLS"
+
+#: src/components/credentials/account-usage.tsx:215
+msgid "used {when}"
+msgstr "{when}使用"
+
+#: src/components/proxies/proxy-row.tsx:124
+msgid "used by {usage}"
+msgstr "被 {usage} 处使用"
+
+#: src/components/config/global/network-system-card.tsx:165
+msgid "Used wherever a platform, template, streamer or account does not choose its own."
+msgstr "在平台、模板、主播或账号未自行选择时使用。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:125
 #: src/components/config/engines/forms/mesio-hls-form.tsx:755
@@ -10091,12 +10974,12 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:45
-#: src/components/config/shared/proxy-settings-card.tsx:185
+#: src/components/credentials/profile-editor-dialog.tsx:282
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/notifications/forms/webhook-form.tsx:286
+#: src/components/proxies/proxy-editor-dialog.tsx:275
 #: src/routes/_public/login.lazy.tsx:170
 msgid "Username"
 msgstr "用户名"
@@ -10105,14 +10988,35 @@ msgstr "用户名"
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
-#: src/components/layout/site-header.tsx:36
+#: src/components/layout/site-header.tsx:37
 msgid "Users"
 msgstr "用户"
 
-#: src/components/config/engines/forms/lossless-cutting-field.tsx:164
+#: src/components/config/engines/forms/lossless-cutting-field.tsx:159
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "会占用额外的磁盘空间和 I/O。文件收尾失败时会保留临时分块。"
 
+#: src/components/credentials/account-selection-section.tsx:335
+msgid "Uses the inherited setting"
+msgstr "使用继承的设置"
+
+#: src/components/credentials/account-selection-section.tsx:265
+msgid "Uses the platform's setting"
+msgstr "使用平台的设置"
+
+#: src/components/credentials/account-selection-section.tsx:269
+msgid "Uses the streamer's setting"
+msgstr "使用主播的设置"
+
+#: src/components/credentials/account-selection-section.tsx:267
+msgid "Uses the template's setting"
+msgstr "使用模板的设置"
+
+#: src/components/credentials/account-health.tsx:62
+msgid "Valid"
+msgstr "有效"
+
+#: src/components/credentials/account-row.tsx:258
 #: src/components/pipeline/workflows/workflow-editor.tsx:157
 msgid "Validate"
 msgstr "校验"
@@ -10120,6 +11024,10 @@ msgstr "校验"
 #: src/components/pipeline/workflows/validation-feedback.tsx:56
 msgid "Validation Failed"
 msgstr "校验失败"
+
+#: src/components/credentials/account-usage.tsx:359
+msgid "Validation not supported"
+msgstr "不支持校验"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:109
 msgid "Validation service unavailable"
@@ -10153,7 +11061,7 @@ msgid "Verify Output"
 msgstr "验证输出"
 
 #: src/components/config/engines/engine-card.tsx:143
-#: src/components/notifications/events/payload-preview.tsx:77
+#: src/components/notifications/events/payload-preview.tsx:94
 msgid "Version"
 msgstr "版本"
 
@@ -10161,7 +11069,7 @@ msgstr "版本"
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/player/player-card.tsx:343
+#: src/components/player/player-card.tsx:369
 msgid "via server proxy"
 msgstr "通过服务器代理"
 
@@ -10187,7 +11095,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:301
+#: src/components/player/player-card.tsx:327
 msgid "Video Player"
 msgstr "视频播放器"
 
@@ -10221,7 +11129,7 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
-#: src/components/upload-status-indicator.tsx:335
+#: src/components/upload-status-indicator.tsx:316
 msgid "View processing jobs"
 msgstr "查看处理中的任务"
 
@@ -10238,7 +11146,7 @@ msgctxt "Wednesday initial"
 msgid "W"
 msgstr "三"
 
-#: src/components/config/platforms/platform-card.tsx:115
+#: src/components/config/platforms/platform-card.tsx:118
 msgid "Wait"
 msgstr "等待"
 
@@ -10250,7 +11158,7 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/upload-status-indicator.tsx:324
+#: src/components/upload-status-indicator.tsx:305
 msgid "Waiting for a free upload worker."
 msgstr "正在等待空闲的上传工作线程。"
 
@@ -10262,7 +11170,7 @@ msgstr "正在等待安全分割点…"
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
-#: src/components/streamers/card/use-streamer-status.tsx:292
+#: src/components/streamers/card/use-streamer-status.tsx:422
 msgid "Waiting since"
 msgstr "等待时长"
 
@@ -10345,7 +11253,7 @@ msgstr "周末"
 msgid "Welcome back"
 msgstr "欢迎回来"
 
-#: src/components/config/global/concurrency-card.tsx:212
+#: src/components/config/global/concurrency-card.tsx:210
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以获取新的流地址和请求头。低于此阈值时，会复用首次直播事件中捕获的 URL。默认 60 秒。设为 0 表示每次排队等待都刷新。"
 
@@ -10403,7 +11311,7 @@ msgstr "工作流更新成功"
 msgid "workflows"
 msgstr "工作流"
 
-#: src/components/layout/site-header.tsx:52
+#: src/components/layout/site-header.tsx:54
 #: src/components/pipeline/workflows/step-library.tsx:286
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:141
@@ -10430,8 +11338,8 @@ msgstr "年 (4 位数字)"
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/components/streamers/streamer-editor.tsx:100
-#: src/routes/_authed/_dashboard/config/global.lazy.tsx:199
+#: src/components/streamers/streamer-editor.tsx:114
+#: src/routes/_authed/_dashboard/config/global.lazy.tsx:198
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "有未保存的更改，确定要离开吗？"
 

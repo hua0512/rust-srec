@@ -16,7 +16,7 @@ Set download concurrency to a value your network and disk can sustain. Use durat
 
 ## Add platform credentials when needed
 
-Use the relevant [platform guide](../platforms/) to determine whether login or cookies are required. Set credentials at the platform level when several streamers share an account; use a template or streamer override when they need different accounts.
+Use the relevant [platform guide](../platforms/) to determine whether login or cookies are required. Add accounts as profiles on the platform page. Select an account at the platform level when several streamers share it; choose a different one in a template or streamer when they need different accounts. See [account profiles](../concepts/configuration.md#account-profiles-and-selection).
 
 ## Reuse settings with templates
 

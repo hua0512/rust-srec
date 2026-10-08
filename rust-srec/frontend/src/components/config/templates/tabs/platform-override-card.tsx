@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { formatPlatformName } from '@/lib/format';
 import { PlatformSpecificTab } from '../../platforms/tabs/platform-specific-tab';
 import {
   SharedConfigEditor,
@@ -24,15 +25,22 @@ import {
 } from '../../shared-config-editor';
 import { configPath } from '../../shared/form-path';
 import type { TemplateFormValues } from '../template-editor';
+import { CredentialSettingsField } from '@/components/credentials/credential-settings-field';
+import type { CredentialPlatform } from '@/api/schemas/credential-profiles';
 
 interface PlatformOverrideCardProps {
   platformName: string;
+  /** The platform `platformName` resolves to, once the platform list has loaded. */
+  platform?: CredentialPlatform;
+  templateId?: string;
   form: UseFormReturn<TemplateFormValues>;
   onRemove: () => void;
 }
 
 export function PlatformOverrideCard({
   platformName,
+  platform,
+  templateId,
   form,
   onRemove,
 }: PlatformOverrideCardProps) {
@@ -48,8 +56,6 @@ export function PlatformOverrideCard({
       basePath,
       'stream_selection_config',
     ),
-    cookies: configPath<TemplateFormValues>(basePath, 'cookies'),
-    proxy: configPath<TemplateFormValues>(basePath, 'proxy_config'),
     retryPolicy: configPath<TemplateFormValues>(
       basePath,
       'download_retry_policy',
@@ -69,6 +75,25 @@ export function PlatformOverrideCard({
   };
 
   const extraTabs: ExtraTab[] = [
+    {
+      value: 'accounts',
+      label: <Trans>Accounts</Trans>,
+      content: (
+        <CredentialSettingsField
+          form={form}
+          name={configPath<TemplateFormValues>(
+            basePath,
+            'credential_selection',
+          )}
+          scope={
+            templateId
+              ? { type: 'template', template_id: templateId }
+              : undefined
+          }
+          platform={platform}
+        />
+      ),
+    },
     {
       value: 'specific',
       label: <Trans>Specific</Trans>,
@@ -122,7 +147,9 @@ export function PlatformOverrideCard({
                   <LayoutGrid className="w-5 h-5" />
                 </div>
                 <div className="flex flex-col">
-                  <h4 className="font-semibold text-base">{platformName}</h4>
+                  <h4 className="font-semibold text-base">
+                    {formatPlatformName(platformName)}
+                  </h4>
                   <span className="text-xs text-muted-foreground">
                     <Trans>Platform Override Settings</Trans>
                   </span>
@@ -154,11 +181,10 @@ export function PlatformOverrideCard({
               paths={paths}
               extraTabs={extraTabs}
               defaultTab="specific"
-              // The resolver reads only the extractor options and the pipelines from a template's
-              // per-platform override; anything else stored there never reaches a recording.
+              // A recording takes only the extractor options, the account selection and the
+              // pipelines from a template's per-platform override; anything else stored there
+              // never reaches it.
               availableTabs={['pipeline']}
-              // Platform override uses objects for complex fields
-              proxyMode="object"
               configMode="object"
             />
           </CardContent>

@@ -5,6 +5,7 @@ pub mod extractor;
 // #[cfg(feature = "rquickjs")]
 // pub mod js_engine;
 pub mod media;
+pub mod proxy;
 
 /// Format a digest hash as a lowercase hex string.
 pub fn digest_to_hex(hash: &[u8]) -> String {

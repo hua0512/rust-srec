@@ -80,6 +80,14 @@ pub struct Bilibili {
 }
 
 impl Bilibili {
+    fn api_error(code: i32) -> ExtractorError {
+        match code {
+            -101 => ExtractorError::Authentication {
+                code: code.to_string(),
+            },
+            _ => ExtractorError::ValidationError(format!("Bilibili API returned code {code}")),
+        }
+    }
     pub(in crate::extractor::platforms::bilibili) const BASE_URL: &str = "https://www.bilibili.com";
 
     const ROOM_INFO_URL: &str =
@@ -135,11 +143,10 @@ impl Bilibili {
         let keys = get_wbi_keys(&self.extractor.client).await?;
 
         let params = encode_wbi(params, keys)?;
-        debug!("params: {:?}", params);
 
         let api_url = format!("{url}?{params}");
 
-        let response = self.extractor.get(&api_url).send().await?;
+        let response = ExtractorError::check_response(self.extractor.get(&api_url).send().await?)?;
 
         let json = response.json::<T>().await?;
 
@@ -157,10 +164,8 @@ impl Bilibili {
 
         let json: RoomInfo = self.get_bilibili_api(Self::ROOM_INFO_URL, params).await?;
 
-        debug!("json: {:?}", json);
-
         if json.code != 0 {
-            return Err(ExtractorError::ValidationError(json.message));
+            return Err(Self::api_error(json.code));
         }
 
         let data = json
@@ -199,7 +204,7 @@ impl Bilibili {
             .await?;
 
         if json.code != 0 {
-            return Err(ExtractorError::ValidationError(json.message));
+            return Err(Self::api_error(json.code));
         }
 
         // `code == 0` with no `data`/`playurl_info` means the room went offline between
@@ -389,7 +394,7 @@ impl PlatformExtractor for Bilibili {
             .await?;
 
         if json.code != 0 {
-            return Err(ExtractorError::ValidationError(json.message));
+            return Err(Self::api_error(json.code));
         }
 
         let playurl_info = json
@@ -466,6 +471,17 @@ mod tests {
         platform_extractor::PlatformExtractor,
         platforms::bilibili::{Bilibili, models::RoomPlayInfo},
     };
+
+    #[test]
+    fn account_authentication_has_typed_evidence() {
+        assert!(
+            matches!(super::Bilibili::api_error(-101), crate::extractor::error::ExtractorError::Authentication { code } if code == "-101")
+        );
+        assert!(matches!(
+            super::Bilibili::api_error(-403),
+            crate::extractor::error::ExtractorError::ValidationError(_)
+        ));
+    }
 
     #[test]
     fn test_room_play_info_parses_offline_room_with_null_playurl_info() {

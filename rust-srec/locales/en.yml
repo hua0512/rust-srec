@@ -79,6 +79,14 @@ notification:
     title: "🛑 System shutting down: %{reason}"
     description: "%{reason}"
 
+  platform_throttled:
+    title: "⏳ %{platform} is rate limiting requests"
+    description: "%{platform} asked rust-srec to slow down on %{route}. Live checks, credential refreshes and parsing for this platform that use this connection are paused until %{retry_at}, then resume automatically; other connections continue. If this keeps happening, increase the platform's Fetch Delay."
+    route:
+      direct: "direct connections"
+      system: "the system proxy"
+      proxy: "proxy “%{name}”"
+
   # ============ Output-root write gate (#508) ============
   # Already localized and shipped in the gate PR; preserved verbatim.
   output_path_inaccessible:
@@ -135,6 +143,16 @@ notification:
 
   # ============ Credential events ============
   credential:
+    scope_with_account: "%{scope}, account %{account}"
+    unavailable:
+      title: "🔐 %{platform} credentials unavailable (%{scope})"
+      message: "Credential selection is waiting for an eligible account. Scope: %{scope}. Reason: %{reason}."
+      reason:
+        login_required: "every usable account needs a new login"
+        profiles_disabled: "every selected account is disabled"
+        bound_profile_unavailable: "the account pinned to the recording is unavailable"
+        binding_policy_changed: "the account selection changed during the recording"
+        attempts_exhausted: "every attempt allowed for this check failed"
     refreshed:
       title: "🔐 %{platform} credentials refreshed (%{scope})"
       message: "✅ %{platform} credentials refreshed successfully (%{scope})"
@@ -165,6 +183,12 @@ notification:
         ⏰ %{platform} credentials expiring in %{days_remaining} days (%{expires_at})
         Scope: %{scope}
         Action: Consider refreshing soon
+    session_save_failed:
+      title: "🔐 %{platform} session cookies not saved (%{scope})"
+      message: |-
+        ⚠️ %{platform} logged in during a live check, but the new session cookies could not be saved. Recording is unaffected; the next check will log in again until saving works.
+        Scope: %{scope}
+        Error: %{error}
   # ============ External tool events ============
   baidupcs_relogin_failed:
     title: "🔐 Baidu Netdisk auto re-login failed (%{config_dir})"

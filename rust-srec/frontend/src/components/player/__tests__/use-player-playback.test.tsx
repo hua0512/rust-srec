@@ -5,6 +5,30 @@ import {
   type UsePlayerPlaybackOptions,
 } from '../use-player-playback';
 
+it('managed playback always uses the proxy with the handle and never carries headers', () => {
+  const media = 'https://cdn.invalid/signed?sig=visible';
+  for (const desktopBuild of [false, true]) {
+    const result = buildPlaybackUrl({
+      url: media,
+      headers: { Cookie: 'sentinel' },
+      playback: { handle: 'handle-a', stream: 2 },
+      sourceUrl: 'https://source.invalid',
+      connectionMode: 'direct',
+      desktopBuild,
+      desktopToken: 'app-token',
+      baseUrl: 'https://backend.invalid/api',
+    });
+    const parsed = new URL(result, 'https://app.invalid');
+    expect(parsed.pathname).toMatch(/\/stream-proxy$/);
+    expect(parsed.searchParams.get('url')).toBe(media);
+    expect(parsed.searchParams.get('playback_handle')).toBe('handle-a');
+    expect(parsed.searchParams.get('stream')).toBe('2');
+    for (const field of ['headers', 'source_url'])
+      expect(parsed.searchParams.has(field)).toBe(false);
+    expect(result).not.toContain('sentinel');
+  }
+});
+
 const artplayerMock = vi.hoisted(() => {
   type EventHandler = (...args: unknown[]) => void;
 
@@ -286,6 +310,43 @@ describe('usePlayerPlayback', () => {
     );
     expect(decodeURIComponent(playbackUrl as string)).toContain(
       '"Referer":"https://source.example/"',
+    );
+  });
+});
+
+describe('managed playback sources', () => {
+  beforeEach(() => {
+    artplayerMock.instances.length = 0;
+    resolveUrlMock.mockReset();
+  });
+
+  it('plays the parsed URL through the proxy without a resolve request', async () => {
+    const view = render(
+      <PlaybackHarness
+        {...defaultOptions}
+        url="https://cdn.example/live.flv?sig=visible"
+        title="Live"
+        sourceUrl="https://source.example/room"
+        mediaType="mp4"
+        headers={{ Cookie: 'sentinel' }}
+        streamData={{ playback_handle: 'handle-a', stream: 0 }}
+      />,
+    );
+    await waitFor(() => expect(artplayerMock.instances).toHaveLength(1));
+    const url = new URL(
+      artplayerMock.instances[0]!.options.url as string,
+      'https://app.invalid',
+    );
+    expect(url.searchParams.get('playback_handle')).toBe('handle-a');
+    expect(url.searchParams.get('stream')).toBe('0');
+    expect(url.searchParams.get('url')).toBe(
+      'https://cdn.example/live.flv?sig=visible',
+    );
+    expect(url.toString()).not.toContain('sentinel');
+    expect(resolveUrlMock).not.toHaveBeenCalled();
+    expect(view.container.firstElementChild).toHaveAttribute(
+      'data-connection',
+      'proxy',
     );
   });
 });

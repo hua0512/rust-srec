@@ -166,6 +166,16 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
     .await;
     assert_eq!(preset["name"], "contract-pipeline");
 
+    let proxy = created(
+        &application,
+        "/api/proxies",
+        "/api/proxies",
+        json!({"name": "contract-proxy", "url": "http://proxy.example:8080"}),
+        &mut exercised,
+    )
+    .await;
+    assert_eq!(proxy["url"], "http://proxy.example:8080");
+
     let session = LiveSessionDbModel::new(streamer_id);
     container
         .session_repository
@@ -199,6 +209,396 @@ async fn every_documented_creation_returns_201_and_its_resource_body() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["code"], "VALIDATION_ERROR");
+    container.cancellation_token.cancel();
+}
+
+/// Like [`request`], for responses that may have no body.
+async fn send(
+    application: &Router,
+    method: Method,
+    path: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let response = tokio::time::timeout(
+        Duration::from_secs(10),
+        application.clone().oneshot(request),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 4 * 1024 * 1024)
+        .await
+        .unwrap();
+    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn saved_proxies_hide_passwords_and_stay_while_routes_name_them() {
+    const SECRET: &str = "proxy-password-sentinel";
+    let (container, application, _directory) = application().await;
+    let (status, proxy) = send(
+        &application,
+        Method::POST,
+        "/api/proxies",
+        json!({"name": "Office", "url": "HTTP://Proxy.Example:8080/", "username": "office-user", "password": SECRET}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{proxy}");
+    let id = proxy["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        (
+            &proxy["url"],
+            &proxy["scheme"],
+            &proxy["host"],
+            &proxy["port"]
+        ),
+        (
+            &json!("http://proxy.example:8080"),
+            &json!("http"),
+            &json!("proxy.example"),
+            &json!(8080)
+        )
+    );
+    assert_eq!(proxy["username"], "office-user");
+    assert_eq!(proxy["has_password"], true);
+    let (status, duplicate) = send(
+        &application,
+        Method::POST,
+        "/api/proxies",
+        json!({"name": "office", "url": "http://other.example:1"}),
+    )
+    .await;
+    assert_eq!(
+        (status, &duplicate["code"]),
+        (StatusCode::CONFLICT, &json!("PROXY_NAME_TAKEN"))
+    );
+    let (status, invalid) = send(
+        &application,
+        Method::POST,
+        "/api/proxies",
+        json!({"name": "Bad", "url": "socks4://bad.example:1"}),
+    )
+    .await;
+    assert_eq!(
+        (status, &invalid["code"]),
+        (StatusCode::UNPROCESSABLE_ENTITY, &json!("PROXY_INVALID"))
+    );
+
+    // An omitted password keeps the saved one.
+    let (status, renamed) = send(
+        &application,
+        Method::PATCH,
+        &format!("/api/proxies/{id}"),
+        json!({"expected_version": proxy["version"], "name": "Office proxy"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    assert_eq!(
+        container
+            .proxies
+            .endpoint(&id)
+            .await
+            .unwrap()
+            .password
+            .as_deref(),
+        Some(SECRET)
+    );
+    let (status, stale) = send(
+        &application,
+        Method::PATCH,
+        &format!("/api/proxies/{id}"),
+        json!({"expected_version": proxy["version"], "name": "Stale"}),
+    )
+    .await;
+    assert_eq!(
+        (status, &stale["code"]),
+        (StatusCode::CONFLICT, &json!("PROXY_STALE_VERSION"))
+    );
+
+    let route = json!({"kind": "proxy", "id": id});
+    let (status, _) = send(
+        &application,
+        Method::PATCH,
+        "/api/config/global",
+        json!({"proxy_route": route}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, refused) = send(
+        &application,
+        Method::PATCH,
+        "/api/config/global",
+        json!({"proxy_config": "{\"enabled\":true}"}),
+    )
+    .await;
+    assert_eq!(
+        (status, &refused["code"]),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &json!("PROXY_CONFIG_REPLACED")
+        )
+    );
+    let (status, refused) = send(
+        &application,
+        Method::POST,
+        "/api/templates",
+        json!({"name": "Cookie template", "cookies": "session=abc"}),
+    )
+    .await;
+    assert_eq!(
+        (status, &refused["code"]),
+        (StatusCode::UNPROCESSABLE_ENTITY, &json!("COOKIES_REPLACED"))
+    );
+    let (status, streamer) = send(
+        &application,
+        Method::POST,
+        "/api/streamers",
+        json!({"name": "routed", "url": "https://www.twitch.tv/routed_proxy", "enabled": false,
+               "streamer_specific_config": {"proxy_route": route}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{streamer}");
+    assert_eq!(streamer["streamer_specific_config"]["proxy_route"], route);
+    let (status, refused) = send(
+        &application,
+        Method::POST,
+        "/api/streamers",
+        json!({"name": "legacy", "url": "https://www.twitch.tv/legacy_proxy", "enabled": false,
+               "streamer_specific_config": {"proxy_config": {"enabled": false}}}),
+    )
+    .await;
+    assert_eq!(
+        (status, &refused["code"]),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &json!("PROXY_CONFIG_REPLACED")
+        )
+    );
+    let (status, effective) = send(
+        &application,
+        Method::GET,
+        "/api/proxies/effective?scope_type=platform&scope_id=platform-huya",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        effective,
+        json!({"kind": "proxy", "proxy": {"id": id, "name": "Office proxy"}, "source": "global"})
+    );
+    let (status, effective) = send(
+        &application,
+        Method::GET,
+        &format!(
+            "/api/proxies/effective?scope_type=streamer&scope_id={}",
+            streamer["id"].as_str().unwrap()
+        ),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, &effective["source"]),
+        (StatusCode::OK, &json!("streamer"))
+    );
+
+    let (status, refused) = send(
+        &application,
+        Method::DELETE,
+        &format!("/api/proxies/{id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(refused["code"], "PROXY_REFERENCED");
+    assert_eq!(refused["details"]["references"]["global"], true);
+    assert_eq!(
+        refused["details"]["references"]["streamers"][0]["name"],
+        "routed"
+    );
+    let (status, detail) = send(
+        &application,
+        Method::GET,
+        &format!("/api/proxies/{id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["proxy"]["usage_count"], 2);
+
+    // Backups carry the login and name the proxy; IDs stay local.
+    let (status, backup) = send(
+        &application,
+        Method::GET,
+        "/api/config/backup/export",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(backup["version"], "1.0.0");
+    assert_eq!(backup["proxies"][0]["password"], SECRET);
+    assert_eq!(
+        backup["global_config"]["proxy_route"],
+        json!({"kind": "proxy", "name": "Office proxy"})
+    );
+    assert!(backup["global_config"].get("proxy_config").is_none());
+    assert!(!backup.to_string().contains(&id));
+
+    // Every other response keeps the password out.
+    for path in [
+        "/api/proxies".to_owned(),
+        format!("/api/proxies/{id}"),
+        "/api/proxies/system".to_owned(),
+        "/api/config/global".to_owned(),
+    ] {
+        let (status, body) = send(&application, Method::GET, &path, Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        assert!(!body.to_string().contains(SECRET), "{path}");
+    }
+    let (status, unknown) = send(
+        &application,
+        Method::POST,
+        "/api/proxies/test",
+        json!({"proxy_id": id, "platform": "unknown"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{unknown}");
+    let (status, _) = send(
+        &application,
+        Method::POST,
+        "/api/proxies/test",
+        json!({"url": "http://proxy.example:8080", "target_url": "http://127.0.0.1/"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send(
+        &application,
+        Method::PATCH,
+        "/api/config/global",
+        json!({"proxy_route": {"kind": "direct"}}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &application,
+        Method::DELETE,
+        &format!("/api/streamers/{}", streamer["id"].as_str().unwrap()),
+        Value::Null,
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+    let (status, _) = send(
+        &application,
+        Method::DELETE,
+        &format!("/api/proxies/{id}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    container.cancellation_token.cancel();
+}
+
+#[tokio::test]
+async fn an_imported_proxy_on_another_exit_drops_its_throttle_and_moves_pinned_accounts() {
+    let (container, application, _directory) = application().await;
+    let (status, proxy) = send(
+        &application,
+        Method::POST,
+        "/api/proxies",
+        json!({"name": "Exit", "url": "http://old-exit.example:8080"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{proxy}");
+    let id = proxy["id"].as_str().unwrap().to_owned();
+    let profile = container
+        .credential_profiles
+        .create(
+            "platform-huya",
+            "Pinned",
+            true,
+            &crate::credentials::CredentialMaterial {
+                cookies: "account=pinned".into(),
+                refresh_token: None,
+                access_token: None,
+                reauth_config: None,
+            },
+            &crate::proxies::ProxyRoute::Proxy { id: id.clone() },
+        )
+        .await
+        .unwrap();
+    container
+        .credential_profiles
+        .publish_health(
+            &profile,
+            crate::credentials::CredentialValidity::Valid,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    let key = crate::proxies::RouteKey::Proxy { id: id.clone() };
+    let route = container
+        .credential_profiles
+        .account_route(&profile, None)
+        .await
+        .unwrap();
+    container
+        .platform_admission
+        .defer("platform-huya", &route, Duration::from_secs(600));
+    assert!(
+        container
+            .platform_admission
+            .backing_off("platform-huya", &key)
+    );
+
+    let (status, mut backup) = send(
+        &application,
+        Method::GET,
+        "/api/config/backup/export",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    backup["proxies"][0]["url"] = json!("http://new-exit.example:8080");
+    let (status, imported) = send(
+        &application,
+        Method::POST,
+        "/api/config/backup/import",
+        json!({"config": backup, "mode": "merge"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{imported}");
+
+    assert!(
+        !container
+            .platform_admission
+            .backing_off("platform-huya", &key)
+    );
+    let moved = container
+        .credential_profiles
+        .get(&profile.id)
+        .await
+        .unwrap();
+    assert!(moved.revision > profile.revision);
+    assert!(
+        container
+            .credential_profiles
+            .health(&profile.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        container.proxies.endpoint(&id).await.unwrap().url,
+        "http://new-exit.example:8080"
+    );
     container.cancellation_token.cancel();
 }
 

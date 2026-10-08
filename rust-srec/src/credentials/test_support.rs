@@ -1,27 +1,29 @@
 //! Test doubles shared by the tests that drive the credential refresh flow.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use super::error::CredentialError;
-use super::manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
+use super::{
+    AccountStatus, CredentialMaterial, CredentialProvider, PlatformAdmission, ProviderCapabilities,
+    RefreshedCredentials,
+};
 
-/// A [`CredentialManager`] that reports the stored credentials as needing a refresh and hands back
-/// a fixed [`RefreshedCredentials`].
+/// A [`CredentialProvider`] that reports every account as needing a refresh
+/// and hands back fixed [`RefreshedCredentials`].
 ///
-/// Lets a test drive `CredentialRefreshService::check_and_refresh_source` — and therefore
-/// `CredentialStore::update_credentials` — to a successful refresh without a platform API.
-/// `platform_id` must match the `platform_name` of the config layer under test, lowercased, since
-/// `CredentialRefreshService::register_manager` keys managers by it.
-pub(crate) struct StubCredentialManager {
-    platform_id: &'static str,
+/// Lets a test drive a profile refresh to success without a platform API.
+/// Register it with `CredentialProviderRegistry::register_provider` under the
+/// `platform_name` of the config layer under test.
+pub(crate) struct StubCredentialProvider {
     cookies: String,
     refresh_token: String,
 }
 
-impl StubCredentialManager {
-    pub(crate) fn new(platform_id: &'static str, cookies: &str, refresh_token: &str) -> Self {
+impl StubCredentialProvider {
+    pub(crate) fn new(cookies: &str, refresh_token: &str) -> Self {
         Self {
-            platform_id,
             cookies: cookies.to_string(),
             refresh_token: refresh_token.to_string(),
         }
@@ -29,20 +31,27 @@ impl StubCredentialManager {
 }
 
 #[async_trait]
-impl CredentialManager for StubCredentialManager {
-    fn platform_id(&self) -> &'static str {
-        self.platform_id
+impl CredentialProvider for StubCredentialProvider {
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            check: true,
+            refresh: true,
+            ..ProviderCapabilities::default()
+        }
     }
 
-    async fn check_status(&self, _cookies: &str) -> Result<CredentialStatus, CredentialError> {
-        Ok(CredentialStatus::NeedsRefresh {
-            refresh_deadline: None,
-        })
+    async fn check(
+        &self,
+        _client: &reqwest::Client,
+        _material: &CredentialMaterial,
+    ) -> Result<AccountStatus, CredentialError> {
+        Ok(AccountStatus::Repairable)
     }
 
     async fn refresh(
         &self,
-        _state: &RefreshState,
+        _client: &reqwest::Client,
+        _material: &CredentialMaterial,
     ) -> Result<RefreshedCredentials, CredentialError> {
         Ok(RefreshedCredentials {
             cookies: self.cookies.clone(),
@@ -51,8 +60,15 @@ impl CredentialManager for StubCredentialManager {
             expires_at: None,
         })
     }
+}
 
-    async fn validate(&self, _cookies: &str) -> Result<bool, CredentialError> {
-        Ok(true)
-    }
+/// Admission with enough tokens that tests never wait on the rate limiter.
+pub(crate) fn unthrottled_admission() -> Arc<PlatformAdmission> {
+    Arc::new(PlatformAdmission::new(
+        crate::monitor::RateLimiterManager::with_config(crate::monitor::RateLimiterConfig {
+            max_tokens: 100,
+            initial_tokens: 100,
+            refill_rate: 100.0,
+        }),
+    ))
 }

@@ -36,10 +36,13 @@ const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   gpu_unavailable: msg`GPU unavailable`,
   system_startup: msg`System started`,
   system_shutdown: msg`System shutting down`,
+  platform_throttled: msg`Platform rate limited`,
   credential_refreshed: msg`Credential refreshed`,
   credential_refresh_failed: msg`Credential refresh failed`,
   credential_invalid: msg`Credential invalid`,
+  credential_unavailable: msg`Credentials unavailable`,
   credential_expiring: msg`Credential expiring soon`,
+  credential_session_save_failed: msg`Session cookies not saved`,
   baidupcs_relogin_failed: msg`Baidu Netdisk re-login failed`,
 };
 

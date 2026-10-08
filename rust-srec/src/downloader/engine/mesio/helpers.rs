@@ -18,7 +18,7 @@ use tracing::{debug, error, info, warn};
 use crate::downloader::engine::traits::{
     DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
 };
-use crate::downloader::engine::utils::observe_segment_event_send;
+use crate::downloader::engine::utils::{observe_segment_event_send, sanitize_engine_message};
 
 // ---------------------------------------------------------------------------
 // DownloadStats (moved from hls_downloader)
@@ -286,6 +286,7 @@ impl<T: Send> StreamSender<T> for PipelineSender<T> {
 }
 
 pub(super) struct StreamConsumeContext<'a> {
+    pub managed_credentials: bool,
     pub parent_token: &'a CancellationToken,
     pub child_token: &'a CancellationToken,
     pub streamer_id: &'a str,
@@ -373,14 +374,15 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
                 }
             }
             Err(e) => {
+                let kind = classify(&e);
+                let msg = sanitize_engine_message(&e.to_string(), context.managed_credentials);
                 error!(
                     protocol = context.protocol,
                     streamer_id = context.streamer_id,
-                    error = %e,
+                    error = %msg,
+                    ?kind,
                     "Stream failed"
                 );
-                let kind = classify(&e);
-                let msg = e.to_string();
                 stream_error = Some((kind, msg.clone()));
                 let send_result = tokio::select! {
                     biased;
@@ -425,6 +427,7 @@ pub(super) async fn consume_stream<T: Send, E: Display>(
 
 /// Per-download context for [`handle_writer_result`].
 pub(super) struct WriterSettleContext<'a> {
+    pub managed_credentials: bool,
     /// Sink for the terminal `SegmentEvent` (and the `OutputIoError` that may
     /// precede it).
     pub event_tx: &'a mpsc::Sender<SegmentEvent>,
@@ -454,6 +457,7 @@ pub(super) async fn handle_writer_result(
     context: WriterSettleContext<'_>,
 ) -> crate::Result<DownloadStats> {
     let WriterSettleContext {
+        managed_credentials,
         event_tx,
         streamer_id,
         protocol,
@@ -485,6 +489,7 @@ pub(super) async fn handle_writer_result(
             } else {
                 (DownloadFailureKind::Processing, writer_message)
             };
+            let message = sanitize_engine_message(&message, managed_credentials);
             observe_segment_event_send(
                 event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -509,7 +514,10 @@ pub(super) async fn handle_writer_result(
             };
 
             if let Some((kind, msg)) = stream_error {
-                let message = format!("{} stream error for {}: {}", protocol, streamer_id, msg);
+                let message = sanitize_engine_message(
+                    &format!("{} stream error for {}: {}", protocol, streamer_id, msg),
+                    managed_credentials,
+                );
                 observe_segment_event_send(
                     event_tx
                         .send(SegmentEvent::DownloadFailed {
@@ -559,7 +567,8 @@ pub(super) async fn handle_writer_result(
             } else {
                 (DownloadFailureKind::Processing, pipeline_message)
             };
-            warn!(%message, "Pipeline processing task failed");
+            let message = sanitize_engine_message(&message, managed_credentials);
+            warn!(%message, ?kind, "Pipeline processing task failed");
             observe_segment_event_send(
                 event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -603,13 +612,17 @@ pub(super) async fn handle_writer_result(
                         .send(SegmentEvent::OutputIoError {
                             output_dir: output_dir.to_path_buf(),
                             io_kind,
-                            detail: format!("mesio {}: {}", protocol, writer_error),
+                            detail: sanitize_engine_message(
+                                &format!("mesio {}: {}", protocol, writer_error),
+                                managed_credentials,
+                            ),
                         })
                         .await,
                     streamer_id,
                 );
             }
 
+            let message = sanitize_engine_message(&message, managed_credentials);
             observe_segment_event_send(
                 event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -668,6 +681,83 @@ mod tests {
     use crate::downloader::engine::IoErrorKindSer;
 
     #[tokio::test]
+    async fn managed_mesio_stream_errors_keep_http_evidence_without_log_or_terminal_secrets() {
+        let captured = crate::downloader::engine::utils::test_support::CapturedLog::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(captured.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let parent_token = CancellationToken::new();
+        let child_token = parent_token.child_token();
+        let (tx, mut rx) = mpsc::channel::<std::result::Result<u8, PipelineError>>(4);
+        let error = mesio::DownloadError::HttpStatus { status: reqwest::StatusCode::FORBIDDEN, url: "https://cdn.invalid/signed-path-sentinel?Cookie=cookie-sentinel&Authorization=token-sentinel".into(), operation: "segment" };
+        let result = consume_stream(
+            futures::stream::iter([Err(error)]),
+            &tx,
+            StreamConsumeContext {
+                managed_credentials: true,
+                parent_token: &parent_token,
+                child_token: &child_token,
+                streamer_id: "managed",
+                protocol: "HLS",
+            },
+            super::super::classify_download_error,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.0,
+            DownloadFailureKind::HttpClientError { status: 403 }
+        );
+        assert!(
+            !rx.try_recv()
+                .unwrap()
+                .unwrap_err()
+                .to_string()
+                .contains("sentinel")
+        );
+        let (event_tx, mut events) = mpsc::channel(4);
+        let writer = tokio::spawn(async {
+            Ok(WriterStats {
+                items_written: 0,
+                files_created: 0,
+                bytes_written: 0,
+                duration_secs: 0.0,
+            })
+        });
+        let result = handle_writer_result(
+            writer,
+            Some(result),
+            vec![],
+            WriterSettleContext {
+                managed_credentials: true,
+                event_tx: &event_tx,
+                streamer_id: "managed",
+                protocol: "HLS",
+                output_dir: Path::new("."),
+                engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        let terminal = events.try_recv().unwrap();
+        assert!(matches!(
+            &terminal,
+            SegmentEvent::DownloadFailed {
+                kind: DownloadFailureKind::HttpClientError { status: 403 },
+                ..
+            }
+        ));
+        let rendered = format!("{} {terminal:?} {result:?}", captured.contents());
+        assert!(rendered.contains("Stream failed"));
+        assert!(rendered.contains("403"));
+        assert!(!rendered.contains("sentinel"), "{rendered}");
+    }
+
+    #[tokio::test]
     async fn stream_consumption_stops_when_cancelled_while_source_is_pending() {
         let parent_token = CancellationToken::new();
         let child_token = parent_token.child_token();
@@ -685,6 +775,7 @@ mod tests {
                 futures::stream::pending::<std::result::Result<u8, std::io::Error>>(),
                 &tx,
                 StreamConsumeContext {
+                    managed_credentials: false,
                     parent_token: &parent_token,
                     child_token: &child_token,
                     streamer_id: "streamer-1",
@@ -719,6 +810,7 @@ mod tests {
                 futures::stream::iter([Ok::<u8, std::io::Error>(2)]),
                 &tx,
                 StreamConsumeContext {
+                    managed_credentials: false,
                     parent_token: &parent_token,
                     child_token: &child_token,
                     streamer_id: "streamer-1",
@@ -772,6 +864,7 @@ mod tests {
                 )),
                 vec![processing_task],
                 WriterSettleContext {
+                    managed_credentials: false,
                     event_tx: &event_tx,
                     streamer_id: "streamer-1",
                     protocol: "FLV",
@@ -834,6 +927,7 @@ mod tests {
             stream_error,
             vec![],
             WriterSettleContext {
+                managed_credentials: false,
                 event_tx: &event_tx,
                 streamer_id: "streamer-1",
                 protocol: "FLV",

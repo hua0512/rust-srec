@@ -1,10 +1,6 @@
 use std::time::Duration;
 
-use rust_srec::credentials::{
-    CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
-};
 use rust_srec::database::{self, models::*, repositories::*};
-use serde_json::json;
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 
@@ -115,76 +111,5 @@ async fn concurrent_error_increments_return_their_own_committed_value() {
             .unwrap()
             .consecutive_error_count,
         Some(2)
-    );
-}
-
-#[tokio::test]
-async fn template_credential_refresh_reads_the_reserved_write_snapshot() {
-    let (_dir, read, write) = pools().await;
-    let configs = SqlxConfigRepository::new(read.clone(), write.clone());
-    let mut template = TemplateConfigDbModel::new("atomic-template");
-    template.cookies = Some("old-cookie".to_owned());
-    template.platform_overrides = Some(json!({"bilibili": {"quality": "old"}}).to_string());
-    configs.create_template_config(&template).await.unwrap();
-    let store = SqlxCredentialStore::new(read.clone(), write.clone());
-    let source = CredentialSource::new(
-        CredentialScope::Template {
-            template_id: template.id.clone(),
-            template_name: template.name.clone(),
-        },
-        "old-cookie".to_owned(),
-        None,
-        "bilibili".to_owned(),
-    );
-    let credentials = RefreshedCredentials {
-        cookies: "new-cookie".to_owned(),
-        refresh_token: Some("new-refresh".to_owned()),
-        access_token: Some("new-access".to_owned()),
-        expires_at: None,
-    };
-    let mut competing_write = database::begin_immediate(&write).await.unwrap();
-    sqlx::query("UPDATE template_config SET platform_overrides = ? WHERE id = ?")
-        .bind(json!({"bilibili": {"quality": "updated"}, "twitch": {"custom": true}}).to_string())
-        .bind(&template.id)
-        .execute(&mut *competing_write)
-        .await
-        .unwrap();
-    let held_read = read.acquire().await.unwrap();
-    let update = store.update_credentials(&source, &credentials);
-    tokio::pin!(update);
-    assert!(futures::poll!(&mut update).is_pending());
-    competing_write.commit().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(3), &mut update)
-        .await
-        .unwrap()
-        .unwrap();
-    drop(held_read);
-    let saved = configs.get_template_config(&template.id).await.unwrap();
-    let value: serde_json::Value =
-        serde_json::from_str(saved.platform_overrides.as_ref().unwrap()).unwrap();
-    assert_eq!(
-        value,
-        json!({"bilibili": {"quality": "updated", "refresh_token": "new-refresh", "access_token": "new-access"}, "twitch": {"custom": true}})
-    );
-    assert_eq!(saved.cookies.as_deref(), Some("new-cookie"));
-
-    sqlx::query("UPDATE template_config SET platform_overrides = '[]' WHERE id = ?")
-        .bind(&template.id)
-        .execute(&write)
-        .await
-        .unwrap();
-    let invalid = RefreshedCredentials {
-        cookies: "must-not-persist".to_owned(),
-        ..credentials.clone()
-    };
-    assert!(store.update_credentials(&source, &invalid).await.is_err());
-    assert_eq!(
-        configs
-            .get_template_config(&template.id)
-            .await
-            .unwrap()
-            .cookies
-            .as_deref(),
-        Some("new-cookie")
     );
 }

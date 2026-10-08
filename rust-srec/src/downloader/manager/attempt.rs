@@ -17,6 +17,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::Result;
 use crate::downloader::SegmentInfo;
+use crate::downloader::engine::utils::sanitize_engine_message;
 use crate::downloader::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadProgress,
     DownloadStatus, EngineType, SegmentEvent,
@@ -432,6 +433,10 @@ impl DownloadManager {
         let terminal_streamer_name = streamer_name.clone();
         let terminal_session_id = session_id.clone();
         let terminal_phase = phase.clone();
+        let credential_diagnostic = self.credential_diagnostic.get().cloned();
+        let diagnostic_cancel = handle.cancellation_token.clone();
+        let managed_credentials = config.managed_credentials;
+        let may_diagnose = credential_diagnostic.is_some() && config.managed_credentials;
 
         let engine_handle = handle.clone();
         let engine_future = async move {
@@ -444,8 +449,9 @@ impl DownloadManager {
                     "engine returned without a terminal event".to_string(),
                 ),
                 Ok(Err(error)) => {
-                    error!(%error, "Download engine failed");
-                    (error.kind, error.message)
+                    let message = sanitize_engine_message(&error.message, managed_credentials);
+                    error!(kind = ?error.kind, %message, "Download engine failed");
+                    (error.kind, message)
                 }
                 Err(payload) => {
                     let message = if let Some(message) = payload.downcast_ref::<&str>() {
@@ -455,6 +461,7 @@ impl DownloadManager {
                     } else {
                         "engine panicked with a non-string payload".to_string()
                     };
+                    let message = sanitize_engine_message(&message, managed_credentials);
                     error!(%message, "Download engine panicked");
                     (DownloadFailureKind::Other, message)
                 }
@@ -741,6 +748,7 @@ impl DownloadManager {
                         io_kind,
                         detail,
                     } => {
+                        let detail = sanitize_engine_message(&detail, managed_credentials);
                         if let Some(gate) = output_root_gate_ref.as_ref() {
                             let synthetic_io_err =
                                 std::io::Error::new(io_kind.to_io_kind(), detail);
@@ -753,6 +761,7 @@ impl DownloadManager {
                         }
                     }
                     SegmentEvent::DownloadFailed { kind, message } => {
+                        let message = sanitize_engine_message(&message, managed_credentials);
                         // An engine must not bypass both storage gating and the breaker,
                         // including early failures delivered by the engine fallback.
                         let kind =
@@ -904,14 +913,22 @@ impl DownloadManager {
                 );
             }
 
-            choose_attempt_terminal(
-                &translator_phase,
-                natural_terminal,
-                &translator_download_id,
-                &translator_streamer_id,
-                &translator_streamer_name,
-                &translator_session_id,
-            )
+            if may_diagnose
+                && matches!(&natural_terminal, DownloadTerminalEvent::Failed { kind, engine_type, .. } if kind.requests_credential_diagnostic(*engine_type))
+            {
+                // Keep stop requests effective during the bounded diagnostic.
+                // The finalizer chooses the terminal after diagnostic work settles.
+                natural_terminal
+            } else {
+                choose_attempt_terminal(
+                    &translator_phase,
+                    natural_terminal,
+                    &translator_download_id,
+                    &translator_streamer_id,
+                    &translator_streamer_name,
+                    &translator_session_id,
+                )
+            }
         };
 
         let finalizer = AttemptFinalizer {
@@ -972,6 +989,7 @@ impl DownloadManager {
                 } else {
                     "engine wrapper panicked with a non-string payload".to_string()
                 };
+                let error = sanitize_engine_message(&error, managed_credentials);
                 error!(
                     download_id = %attempt_download_id,
                     %error,
@@ -990,6 +1008,7 @@ impl DownloadManager {
                     } else {
                         "download event translator panicked with a non-string payload".to_string()
                     };
+                    let error = sanitize_engine_message(&error, managed_credentials);
                     error!(
                         download_id = %attempt_download_id,
                         %error,
@@ -1018,6 +1037,45 @@ impl DownloadManager {
                 }
             };
 
+            let mut terminal = terminal;
+            if let DownloadTerminalEvent::Failed {
+                kind, engine_type, ..
+            } = &terminal
+                && kind.requests_credential_diagnostic(*engine_type)
+                && !matches!(*terminal_phase.lock(), AttemptPhase::TerminalChosen)
+                && let Some(diagnostic) = credential_diagnostic
+            {
+                let replacement = tokio::select! {
+                    biased;
+                    _ = diagnostic_cancel.cancelled() => None,
+                    result = diagnostic(terminal.clone()) => result,
+                };
+                if let Some(replacement) = replacement
+                    && let DownloadTerminalEvent::Failed {
+                        kind,
+                        recoverable,
+                        error,
+                        ..
+                    } = &mut terminal
+                {
+                    *kind = replacement;
+                    *recoverable = true;
+                    *error = if replacement == DownloadFailureKind::CredentialUnavailable {
+                        "Recording awaits available credentials"
+                    } else {
+                        "Bound media renewed after engine failure"
+                    }
+                    .to_string();
+                }
+                terminal = choose_attempt_terminal(
+                    &terminal_phase,
+                    terminal,
+                    &attempt_download_id,
+                    &terminal_streamer_id,
+                    &terminal_streamer_name,
+                    &terminal_session_id,
+                );
+            }
             let terminal_event = DownloadManagerEvent::Terminal(terminal);
             if let Err(delivery_error) = terminal_events.coordinate_and_wait(&terminal_event).await
             {
@@ -1050,7 +1108,11 @@ impl DownloadManager {
         let started_streamer_id = streamer_id.clone();
         let started_streamer_name = streamer_name.clone();
         let started_session_id = session_id.clone();
-        let started_url = config.url.clone();
+        let started_url = if config.managed_credentials {
+            String::new()
+        } else {
+            config.url.clone()
+        };
         let admitted = self.attempts.spawn(
             download_id.clone(),
             move || {

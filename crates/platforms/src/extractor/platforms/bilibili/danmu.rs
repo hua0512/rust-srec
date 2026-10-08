@@ -809,6 +809,10 @@ impl DanmuProtocolFactory for BilibiliDanmuProtocol {
 }
 
 impl DanmuProtocol for BilibiliDanmuProtocol {
+    fn use_http_client(&mut self, client: Client) {
+        self.client = client;
+    }
+
     async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get real room ID
         let real_room_id = self.get_real_room_id(room_id).await?;

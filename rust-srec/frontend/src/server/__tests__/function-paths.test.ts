@@ -1,6 +1,13 @@
 import { revokeApiKey } from '../functions/apiKeys';
-import { getTemplate, updateGlobalConfig } from '../functions/config';
-import { getTemplateCredentialSource } from '../functions/credentials';
+import {
+  getTemplate,
+  updateGlobalConfig,
+  updatePlatformConfig,
+} from '../functions/config';
+import {
+  getCredentialCapabilities,
+  listCredentialProfiles,
+} from '../functions/credential-profiles';
 import { getEngine } from '../functions/engines';
 import { createFilter, deleteFilter, updateFilter } from '../functions/filters';
 import { getJobPreset } from '../functions/job';
@@ -13,6 +20,13 @@ import {
   getPipelineJob,
   listPipelinePresets,
 } from '../functions/pipeline';
+import {
+  deleteProxy,
+  getEffectiveRoute,
+  getProxy,
+  testProxy,
+  updateProxy,
+} from '../functions/proxies';
 import { getSession } from '../functions/sessions';
 import { getStreamer, updateStreamer } from '../functions/streamers';
 
@@ -146,12 +160,36 @@ describe('server function request paths', () => {
       `/pipeline/outputs/${ID}?delete_file=true`,
     ],
     [
-      'getTemplateCredentialSource',
+      'listCredentialProfiles',
       () =>
-        getTemplateCredentialSource({
-          data: { id: ID, platform: 'BILIBILI' },
+        listCredentialProfiles({
+          data: { platform_id: ID },
         }),
-      `/credentials/templates/${ID}/source?platform=BILIBILI`,
+      `/credentials/profiles?platform_id=${ID}`,
+    ],
+    [
+      'getCredentialCapabilities',
+      () => getCredentialCapabilities({ data: { platform_id: ID } }),
+      `/credentials/capabilities?platform_id=${ID}`,
+    ],
+    ['getProxy', () => getProxy({ data: ID }), `/proxies/${ID}`],
+    [
+      'deleteProxy',
+      () => deleteProxy({ data: { id: ID, expected_version: 3 } }),
+      `/proxies/${ID}?expected_version=3`,
+    ],
+    [
+      'getEffectiveRoute',
+      () =>
+        getEffectiveRoute({
+          data: { scope_type: 'template', scope_id: ID, platform_id: 'p1' },
+        }),
+      `/proxies/effective?scope_type=template&scope_id=${ID}&platform_id=p1`,
+    ],
+    [
+      'getEffectiveRoute (global)',
+      () => getEffectiveRoute({ data: { scope_type: 'global' } }),
+      '/proxies/effective?scope_type=global',
     ],
     [
       'listLogFiles',
@@ -182,12 +220,6 @@ describe('server function request paths', () => {
         }),
       ),
     ).resolves.toBe('/pipeline/presets?search=remux&limit=10&offset=0');
-  });
-
-  it('keeps a template lookup scoped when no platform is given', async () => {
-    await expect(
-      requestedPath(() => getTemplateCredentialSource({ data: { id: ID } })),
-    ).resolves.toBe(`/credentials/templates/${ID}/source`);
   });
 });
 
@@ -289,6 +321,82 @@ describe('server function request bodies', () => {
     const sent = JSON.parse(body);
     expect(sent).not.toHaveProperty('auto_thumbnail');
     expect(sent).not.toHaveProperty('stream_proxy_allow_private_targets');
+  });
+
+  // `{"kind":"inherit"}` is how a streamer drops its own route; leaving it
+  // out would keep the stored one.
+  it('forwards a streamer route reset to inherit', async () => {
+    await expect(
+      requestedBody(() =>
+        updateStreamer({
+          data: {
+            id: ID,
+            data: {
+              streamer_specific_config: { proxy_route: { kind: 'inherit' } },
+            },
+          },
+        }),
+      ),
+    ).resolves.toBe(
+      '{"streamer_specific_config":{"proxy_route":{"kind":"inherit"}}}',
+    );
+  });
+
+  it('sends routes as objects, never the replaced proxy_config', async () => {
+    const global = JSON.parse(
+      await requestedBody(() =>
+        updateGlobalConfig({
+          data: {
+            ...globalConfigWithoutToggles(),
+            proxy_route: { kind: 'proxy', id: ID },
+          },
+        }),
+      ),
+    );
+    expect(global.proxy_route).toEqual({ kind: 'proxy', id: ID });
+    expect(global).not.toHaveProperty('proxy_config');
+    fetchBackendMock.mockClear();
+    const platform = JSON.parse(
+      await requestedBody(() =>
+        updatePlatformConfig({
+          data: {
+            id: ID,
+            data: {
+              output_folder: null,
+              output_filename_template: null,
+              output_file_format: null,
+              download_engine: null,
+              proxy_route: { kind: 'system' },
+            },
+          },
+        }),
+      ),
+    );
+    expect(platform.proxy_route).toEqual({ kind: 'system' });
+    expect(platform).not.toHaveProperty('proxy_config');
+  });
+
+  it('keeps a saved proxy password unless one is given', async () => {
+    await expect(
+      requestedBody(() =>
+        updateProxy({
+          data: { id: ID, expected_version: 2, username: null },
+        }),
+      ),
+    ).resolves.toBe('{"expected_version":2,"username":null}');
+  });
+
+  it('refuses a proxy check without exactly one target', async () => {
+    await expectNoRequest(() => testProxy({ data: { proxy_id: ID } }));
+    await expectNoRequest(() =>
+      testProxy({
+        data: {
+          proxy_id: ID,
+          platform: 'bilibili',
+          target_url: 'https://example.com',
+        },
+      }),
+    );
   });
 
   it('preserves an explicit streamer priority', async () => {

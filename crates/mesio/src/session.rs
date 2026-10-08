@@ -721,10 +721,10 @@ async fn run_hls_source_failover(
                         drop(items);
                         handle.cancel();
                         if let Some(Err(error)) = handle.join().await {
-                            debug!(%error, "HLS attempt failed after downstream closed");
+                            debug!(error = %crate::redact::redact_diagnostic(&error), "HLS attempt failed after downstream closed");
                         }
                         if let Err(error) = event_task.await {
-                            warn!(%error, "HLS event forwarding task failed during cancellation");
+                            warn!(error = %crate::redact::redact_diagnostic(&error), "HLS event forwarding task failed during cancellation");
                         }
                         return DownloadTerminal::DownstreamClosed;
                     }
@@ -747,7 +747,7 @@ async fn run_hls_source_failover(
             }
         }
         if let Err(error) = event_task.await {
-            warn!(%error, "HLS event forwarding task failed");
+            warn!(error = %crate::redact::redact_diagnostic(&error), "HLS event forwarding task failed");
         }
 
         if let Some(err) = failed {

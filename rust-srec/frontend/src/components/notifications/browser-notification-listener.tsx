@@ -5,6 +5,7 @@ import { listEvents } from '@/server/functions/notifications';
 import type { NotificationEventLog } from '@/api/schemas/notifications';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { priorityLabel } from '@/lib/priority';
 import {
   getBrowserNotificationsEnabled,
@@ -51,6 +52,14 @@ function formatBrowserNotification(
 
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(String(streamer));
+  // A rate limit names the platform and the paused connection.
+  if (typeof inner?.route === 'string' && inner.platform) {
+    const connection =
+      inner.route === 'proxy'
+        ? (inner.proxy_name ?? i18n._(msg`Saved proxy`))
+        : i18n._(inner.route === 'system' ? msg`System proxy` : msg`Direct`);
+    bodyParts.push(`${inner.platform} · ${connection}`);
+  }
   if (error) bodyParts.push(String(error));
   if (bodyParts.length === 0)
     bodyParts.push(i18n._(priorityLabel(log.priority)));

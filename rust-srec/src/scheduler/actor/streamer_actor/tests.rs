@@ -42,6 +42,73 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+struct UnavailableCredentialChecker {
+    errors: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait]
+impl StatusChecker for UnavailableCredentialChecker {
+    async fn check_status(
+        &self,
+        _streamer: &StreamerMetadata,
+    ) -> Result<(CheckResult, LiveStatus), CheckError> {
+        Err(
+            crate::Error::CredentialUnavailable(crate::credentials::CredentialUnavailable {
+                reason: crate::credentials::UnavailableReason::LoginRequired,
+                policy_generation: "fixture".into(),
+            })
+            .into(),
+        )
+    }
+    async fn process_status(
+        &self,
+        _streamer: &StreamerMetadata,
+        _status: LiveStatus,
+    ) -> Result<ProcessStatusResult, CheckError> {
+        panic!("unavailability is not an offline status")
+    }
+    async fn handle_error(
+        &self,
+        _streamer: &StreamerMetadata,
+        _error: &str,
+    ) -> Result<(), CheckError> {
+        self.errors
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+    async fn set_infra_blocked(
+        &self,
+        _streamer: &StreamerMetadata,
+        _reason: crate::monitor::InfraBlockReason,
+    ) -> Result<(), CheckError> {
+        panic!("credentials must not disable the streamer")
+    }
+}
+
+#[tokio::test]
+async fn repeated_credential_exhaustion_preserves_live_state_and_bypasses_error_circuit() {
+    let checker = Arc::new(UnavailableCredentialChecker {
+        errors: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let (mut actor, _) = StreamerActor::new(
+        "test-streamer".into(),
+        create_test_metadata_store(),
+        create_test_config(),
+        CancellationToken::new(),
+        checker.clone(),
+    );
+    actor.state.streamer_state = StreamerState::Live;
+    actor.state.hysteresis.mark_live();
+    for _ in 0..12 {
+        actor.perform_check().await.unwrap();
+    }
+    assert_eq!(actor.state.streamer_state, StreamerState::Live);
+    assert!(actor.state.hysteresis.was_live());
+    assert_eq!(checker.errors.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(actor.get_error_count(), 0);
+    assert!(actor.live_watchdog_backoff_until.is_some());
+}
+
 fn create_test_metadata() -> StreamerMetadata {
     StreamerMetadata {
         id: "test-streamer".to_string(),
@@ -473,6 +540,8 @@ async fn test_streamer_actor_batch_result() {
         streamer_id: "test-streamer".to_string(),
         result: CheckResult::success(StreamerState::Live),
         status: crate::monitor::LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
             title: "Test Stream".to_string(),
             category: None,
             started_at: None,
@@ -820,6 +889,8 @@ async fn test_perform_check_suppressed_live_does_not_leave_actor_stuck_live() {
         vec![(
             CheckResult::success(StreamerState::Live),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Suppressed Live".to_string(),
                 category: None,
                 started_at: None,
@@ -869,6 +940,8 @@ async fn test_perform_check_recovers_after_suppressed_live_when_backoff_expires(
             (
                 CheckResult::success(StreamerState::Live),
                 LiveStatus::Live {
+                    credential_binding: None,
+                    credential_snapshot: None,
                     title: "Suppressed Live".to_string(),
                     category: None,
                     started_at: None,
@@ -884,6 +957,8 @@ async fn test_perform_check_recovers_after_suppressed_live_when_backoff_expires(
             (
                 CheckResult::success(StreamerState::Live),
                 LiveStatus::Live {
+                    credential_binding: None,
+                    credential_snapshot: None,
                     title: "Recovered Live".to_string(),
                     category: None,
                     started_at: None,
@@ -940,6 +1015,8 @@ async fn test_live_watchdog_stall_forces_live_reemit() {
         vec![(
             CheckResult::success(StreamerState::Live),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Stalled Live".to_string(),
                 category: None,
                 started_at: None,
@@ -996,6 +1073,8 @@ async fn test_live_watchdog_with_fresh_heartbeats_keeps_suppression() {
         vec![(
             CheckResult::success(StreamerState::Live),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Healthy Live".to_string(),
                 category: None,
                 started_at: None,
@@ -1091,6 +1170,8 @@ async fn test_suppressed_live_restores_notlive_grace_hysteresis_context() {
         vec![(
             CheckResult::success(StreamerState::Live),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Suppressed Live".to_string(),
                 category: None,
                 started_at: None,
@@ -1161,6 +1242,8 @@ async fn test_suppressed_live_restores_out_of_schedule_smart_wake_context() {
         vec![(
             CheckResult::success(StreamerState::Live),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Suppressed Live".to_string(),
                 category: None,
                 started_at: None,

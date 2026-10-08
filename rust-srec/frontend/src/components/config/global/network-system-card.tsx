@@ -4,7 +4,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -14,25 +13,33 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Activity, Database, Network, ShieldAlert, Timer } from 'lucide-react';
-import { ProxyConfigSettings } from '../shared/proxy-settings-card';
+import { useQuery } from '@tanstack/react-query';
+import { useWatch } from 'react-hook-form';
+import { ProxyRouteField, isFfmpegEngine } from '../shared/proxy-route-picker';
 import { FlagFormField } from '@/components/ui/flag-form-field';
 import {
+  CONFIG_DESCRIPTION,
   CONFIG_INPUT,
   ConfigFieldLabel,
   ConfigSectionHeading,
   FieldInfo,
 } from '@/components/config/shared/config-field';
+import { enginesQueryOptions } from '@/api/engines';
 
 export const NetworkSystemCard = memo(() => {
   const { i18n } = useLingui();
   const allowPrivateTargetsLabel = i18n._(
     msg`Allow private stream proxy targets`,
   );
+  const { data: engines } = useQuery(enginesQueryOptions);
+  const defaultEngine = useWatch({ name: 'default_download_engine' }) as
+    | string
+    | undefined;
 
   return (
     <SettingsCard
       title={<Trans>Network & System</Trans>}
-      description={<Trans>Monitoring intervals and proxy settings.</Trans>}
+      description={<Trans>Monitoring intervals and the default proxy.</Trans>}
       icon={Network}
       iconColor="text-purple-500"
       iconBgColor="bg-purple-500/10"
@@ -149,24 +156,17 @@ export const NetworkSystemCard = memo(() => {
             <Trans>Proxy</Trans>
           </ConfigSectionHeading>
 
-          <FormField
-            name="proxy_config"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="sr-only">
-                  <Trans>Proxy Configuration</Trans>
-                </FormLabel>
-                <FormControl>
-                  <ProxyConfigSettings
-                    value={field.value}
-                    onChange={field.onChange}
-                    outputFormat="object"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          <ProxyRouteField
+            name="proxy_route"
+            ffmpeg={isFfmpegEngine(defaultEngine, engines)}
+            label={<Trans>Default proxy</Trans>}
           />
+          <p className={CONFIG_DESCRIPTION}>
+            <Trans>
+              Used wherever a platform, template, streamer or account does not
+              choose its own.
+            </Trans>
+          </p>
 
           <FlagFormField
             fieldName="stream_proxy_allow_private_targets"

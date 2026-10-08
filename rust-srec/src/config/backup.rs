@@ -4,10 +4,15 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
+use crate::database::repositories::credential_selections::SELECTION_KEY;
+
 mod filter_timezones;
 pub(crate) use filter_timezones::{
     EXPORT_SCHEMA_VERSION, export_filter_config, import_filter_config,
 };
+
+/// Schema of bundles that carry managed credential profiles or selections.
+pub(crate) const MANAGED_CREDENTIAL_SCHEMA_VERSION: &str = "1.0.0";
 
 pub(crate) fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
@@ -168,6 +173,301 @@ pub struct ConfigExport {
     /// All users (authentication accounts).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<UserExport>,
+    /// Secret-bearing profiles, present only in the managed-credential format.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_profiles: Vec<CredentialProfileExport>,
+    /// Saved proxies, logins included; routes name them. Present only in the
+    /// managed-credential format.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxies: Vec<ProxyExport>,
+}
+
+/// A saved proxy in a backup. Bundles name proxies; IDs stay local to each
+/// installation.
+#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyExport {
+    pub name: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+impl std::fmt::Debug for ProxyExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyExport")
+            .field("name", &self.name)
+            .field("login", &"[redacted]")
+            .finish()
+    }
+}
+
+impl ProxyExport {
+    pub fn endpoint(&self) -> crate::proxies::ProxyEndpoint {
+        crate::proxies::ProxyEndpoint {
+            url: self.url.clone(),
+            username: self.username.clone(),
+            password: self.password.clone(),
+        }
+    }
+}
+
+/// A route in a backup, naming its proxy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BackupRoute {
+    Inherit,
+    Direct,
+    System,
+    Proxy { name: String },
+}
+
+impl BackupRoute {
+    /// The route a stored route writes, naming proxies through `names`
+    /// (entry ID to name).
+    pub fn from_route(
+        route: &crate::proxies::ProxyRoute,
+        names: &std::collections::HashMap<String, String>,
+    ) -> crate::Result<Self> {
+        use crate::proxies::ProxyRoute;
+        Ok(match route {
+            ProxyRoute::Inherit => Self::Inherit,
+            ProxyRoute::Direct => Self::Direct,
+            ProxyRoute::System => Self::System,
+            ProxyRoute::Proxy { id } => Self::Proxy {
+                name: names
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| crate::proxies::ProxyError::Missing(id.clone()))?,
+            },
+        })
+    }
+
+    /// The stored route, finding proxies through `ids`: entry IDs by
+    /// [`crate::proxies::name_key`]. The error is a name `ids` lacks.
+    pub fn to_route(
+        &self,
+        ids: &std::collections::HashMap<String, String>,
+    ) -> std::result::Result<crate::proxies::ProxyRoute, &str> {
+        use crate::proxies::ProxyRoute;
+        Ok(match self {
+            Self::Inherit => ProxyRoute::Inherit,
+            Self::Direct => ProxyRoute::Direct,
+            Self::System => ProxyRoute::System,
+            Self::Proxy { name } => ProxyRoute::Proxy {
+                id: ids
+                    .get(&crate::proxies::name_key(name))
+                    .ok_or(name.as_str())?
+                    .clone(),
+            },
+        })
+    }
+
+    /// The `proxy_config` a backup without saved proxies carries instead:
+    /// releases before saved proxies read only that.
+    pub fn legacy_config(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::Inherit | Self::Proxy { .. } => None,
+            Self::Direct => Some(serde_json::json!({"enabled": false})),
+            Self::System => Some(serde_json::json!({"enabled": true, "use_system_proxy": true})),
+        }
+    }
+}
+
+/// Explicit sensitive backup representation. Ordinary profile DTOs never serialize material.
+#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialProfileExport {
+    pub id: String,
+    /// Profiles belong to this platform; any scope on it may select them.
+    pub platform: String,
+    pub label: String,
+    pub enabled: bool,
+    pub cookies: String,
+    pub refresh_token: Option<String>,
+    pub access_token: Option<String>,
+    pub reauth_config: Option<serde_json::Value>,
+    /// The account's own route; absent keeps the stored route on a merge
+    /// and inherits on a replace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
+}
+
+impl std::fmt::Debug for CredentialProfileExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialProfileExport")
+            .field("id", &self.id)
+            .field("material", &"[redacted]")
+            .finish()
+    }
+}
+
+impl ConfigExport {
+    /// Filtering callers must keep profile dependencies or reject the incomplete
+    /// graph. This also prevents a concurrent owner deletion producing a lossy backup.
+    pub fn validate_credential_graph(&self) -> crate::Result<()> {
+        use std::collections::{HashMap, HashSet};
+        let platforms: HashSet<&str> = self
+            .platforms
+            .iter()
+            .map(|p| p.platform_name.as_str())
+            .collect();
+        let profiles: HashMap<_, _> = self
+            .credential_profiles
+            .iter()
+            .map(|p| (p.id.as_str(), p))
+            .collect();
+        if profiles.len() != self.credential_profiles.len() {
+            return Err(crate::Error::validation(
+                "duplicate credential profile in export",
+            ));
+        }
+        if profiles
+            .values()
+            .any(|profile| !platforms.contains(profile.platform.as_str()))
+        {
+            return Err(crate::Error::validation(
+                "export omits a credential profile platform",
+            ));
+        }
+        let check = |selection: &crate::credentials::CredentialSelection,
+                     platform: &str|
+         -> crate::Result<()> {
+            selection.validate()?;
+            for id in selection.profile_ids() {
+                let profile = profiles.get(id).ok_or_else(|| {
+                    crate::Error::validation("export omits a referenced credential profile")
+                })?;
+                if profile.platform != platform {
+                    return Err(crate::Error::validation(
+                        "export contains a credential profile reference from another platform",
+                    ));
+                }
+            }
+            Ok(())
+        };
+        for platform in &self.platforms {
+            if let Some(selection) = &platform.credential_selection {
+                check(selection, &platform.platform_name)?;
+            }
+        }
+        for template in &self.templates {
+            if let Some(entries) = template
+                .platform_overrides
+                .as_ref()
+                .and_then(serde_json::Value::as_object)
+            {
+                for (platform, value) in entries {
+                    if let Some(selection) = value.get(SELECTION_KEY) {
+                        if !platforms.contains(platform.as_str()) {
+                            return Err(crate::Error::validation(
+                                "export omits a template policy platform",
+                            ));
+                        }
+                        check(
+                            &crate::credentials::CredentialSelection::from_value(
+                                selection.clone(),
+                            )?,
+                            platform,
+                        )?;
+                    }
+                }
+            }
+        }
+        for streamer in &self.streamers {
+            if let Some(selection) = streamer
+                .streamer_specific_config
+                .as_ref()
+                .and_then(|v| v.get(SELECTION_KEY))
+            {
+                if !platforms.contains(streamer.platform.as_str()) {
+                    return Err(crate::Error::validation(
+                        "export omits a streamer policy dependency",
+                    ));
+                }
+                check(
+                    &crate::credentials::CredentialSelection::from_value(selection.clone())?,
+                    &streamer.platform,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Compute from the selected graph, including explicit inherit/none policies.
+    pub fn has_managed_credentials(&self) -> bool {
+        !self.credential_profiles.is_empty()
+            || self
+                .platforms
+                .iter()
+                .any(|p| p.credential_selection.is_some())
+            || self.templates.iter().any(|t| {
+                t.platform_overrides
+                    .as_ref()
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(|entries| entries.values().any(has_selection))
+            })
+            || self.streamers.iter().any(|s| {
+                s.streamer_specific_config
+                    .as_ref()
+                    .is_some_and(has_selection)
+            })
+    }
+
+    /// Saved proxies need the managed format: older releases cannot read
+    /// routes that name them.
+    pub fn needs_managed_format(&self) -> bool {
+        self.has_managed_credentials() || !self.proxies.is_empty()
+    }
+
+    /// Picks the schema version and the proxy form it carries. Bundles
+    /// without managed credentials or saved proxies stay readable by
+    /// releases before saved proxies, which read `proxy_config` only.
+    pub fn update_schema_version(&mut self) {
+        if !self.needs_managed_format() {
+            self.write_legacy_proxy_settings();
+        }
+        self.version = if self.needs_managed_format() {
+            MANAGED_CREDENTIAL_SCHEMA_VERSION
+        } else {
+            EXPORT_SCHEMA_VERSION
+        }
+        .to_owned();
+    }
+}
+
+impl ConfigExport {
+    fn write_legacy_proxy_settings(&mut self) {
+        let legacy =
+            |route: &mut Option<BackupRoute>| route.take().and_then(|route| route.legacy_config());
+        if let Some(config) = legacy(&mut self.global_config.proxy_route) {
+            self.global_config.proxy_config = config;
+        }
+        for platform in &mut self.platforms {
+            platform.proxy_config = legacy(&mut platform.proxy_route);
+        }
+        for template in &mut self.templates {
+            template.proxy_config = legacy(&mut template.proxy_route);
+        }
+        for streamer in &mut self.streamers {
+            if let Some(config) = legacy(&mut streamer.proxy_route) {
+                let document = streamer
+                    .streamer_specific_config
+                    .get_or_insert_with(|| serde_json::Value::Object(Default::default()));
+                if let Some(fields) = document.as_object_mut() {
+                    fields.insert("proxy_config".to_owned(), config);
+                }
+            }
+        }
+    }
+}
+
+fn has_selection(value: &serde_json::Value) -> bool {
+    value
+        .get(SELECTION_KEY)
+        .is_some_and(|policy| !policy.is_null())
 }
 
 /// Global configuration for export (excludes internal ID).
@@ -186,7 +486,11 @@ pub struct GlobalConfigExport {
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
+    /// Proxy settings of backups without saved proxies; see [`BackupRoute`].
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub proxy_config: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
     pub offline_check_delay_ms: i64,
     pub offline_check_count: i32,
     pub default_download_engine: String,
@@ -244,6 +548,9 @@ pub struct TemplateExport {
     pub name: String,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
+    /// Read only from backups written before credential profiles; import
+    /// converts it into a profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cookies: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
@@ -257,7 +564,11 @@ pub struct TemplateExport {
     pub download_retry_policy: Option<serde_json::Value>,
     pub download_engine: Option<String>,
     pub engines_override: Option<serde_json::Value>,
+    /// Proxy settings of backups without saved proxies; see [`BackupRoute`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_config: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
     pub stream_selection_config: Option<serde_json::Value>,
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
@@ -284,6 +595,8 @@ pub struct StreamerExport {
     /// Streamer avatar URL (if known).
     pub avatar_url: Option<String>,
     pub streamer_specific_config: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
     /// Associated filters.
     pub filters: Vec<FilterExport>,
 }
@@ -309,9 +622,18 @@ pub struct PlatformExport {
     pub platform_name: String,
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
+    /// Read only from backups written before credential profiles; import
+    /// converts it into a profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cookies: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_selection: Option<crate::credentials::CredentialSelection>,
     pub platform_specific_config: Option<serde_json::Value>,
+    /// Proxy settings of backups without saved proxies; see [`BackupRoute`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_config: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
     pub record_danmu: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// JSON `DanmuStatisticsConfig`; absent inherits the layer above.

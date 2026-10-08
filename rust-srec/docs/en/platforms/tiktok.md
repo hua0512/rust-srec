@@ -29,6 +29,6 @@ Platform options are under **Settings** → **Platforms** → **TikTok**. **Noth
 
 ::: info
 - **Authentication**: No cookies are needed. Chat collection registers a temporary `ttwid` session automatically; providing browser cookies is optional.
-- **Region locks**: Some rooms are unavailable in certain regions. Use a proxy if extraction reports region-locked content (see [Docker Configuration](../getting-started/docker.md#proxy)).
+- **Region locks**: Some rooms are unavailable in certain regions. Use a proxy if extraction reports region-locked content (see [Proxies](../concepts/configuration.md#proxies)).
 - **Danmaku**: Chat messages, emote-only messages, and gifts are captured. Combo gifts are recorded once with the final count.
 :::

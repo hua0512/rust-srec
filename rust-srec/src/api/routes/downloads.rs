@@ -53,6 +53,9 @@ pub struct DownloadRouteState {
     /// Source of the snapshot's `uploads` slice (`list_active_uploads`).
     pipeline_manager: std::sync::Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
     streamer_avatar: StreamerAvatarLookup,
+    credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
+    /// Wakes when the accounts needing attention may have changed.
+    credential_attention: tokio::sync::watch::Receiver<u64>,
 }
 
 /// Streamer id to avatar URL. Upload jobs carry the streamer's name but not
@@ -79,6 +82,8 @@ impl FromRef<AppState> for DownloadRouteState {
             upload_status_broadcaster: state.upload_status_broadcaster.clone(),
             pipeline_manager: state.pipeline_manager.clone(),
             streamer_avatar: streamer_avatar_lookup(state.streamer_manager.clone()),
+            credential_blocks: state.services.credential_blocks.clone(),
+            credential_attention: state.credential_profiles.attention_changes(),
         }
     }
 }
@@ -245,6 +250,13 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     let mut event_rx = download_manager.subscribe_shared();
     let mut check_history_rx = state.check_history_broadcaster.subscribe();
     let mut upload_rx = state.upload_status_broadcaster.subscribe();
+    let mut block_rx = state.credential_blocks.subscribe();
+    let mut blocks_open = true;
+    // Only changes after connecting matter: the client fetches the current
+    // list when it mounts and after every snapshot.
+    let mut attention_rx = state.credential_attention.clone();
+    attention_rx.mark_unchanged();
+    let mut attention_open = true;
 
     // 2. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
@@ -428,6 +440,44 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         debug!("upload-status broadcast closed");
+                    }
+                }
+            }
+
+            // Credential block transitions, narrowed like download events.
+            change = block_rx.recv(), if blocks_open => {
+                match change {
+                    Ok(change) => {
+                        if filter.as_ref().is_none_or(|f| f == &change.streamer_id) {
+                            let bytes = map_credential_block_to_protobuf(&change).encode_to_vec();
+                            if let Err(e) = sender.send(Message::Binary(Bytes::from(bytes))).await {
+                                debug!("Failed to send credential block message: {}", e);
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // The streamer lists' periodic refetch carries the
+                        // current blocks.
+                        warn!("credential-block broadcast lagged by {} messages", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        debug!("credential-block broadcast closed");
+                        blocks_open = false;
+                    }
+                }
+            }
+
+            changed = attention_rx.changed(), if attention_open => {
+                match changed {
+                    Ok(()) => {
+                        let bytes = credential_attention_changed_message().encode_to_vec();
+                        if let Err(e) = sender.send(Message::Binary(Bytes::from(bytes))).await {
+                            debug!("Failed to send credential attention message: {}", e);
+                        }
+                    }
+                    Err(_) => {
+                        debug!("credential attention channel closed");
+                        attention_open = false;
                     }
                 }
             }
@@ -766,6 +816,36 @@ pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
     }
 }
 
+/// Map a credential block change to the WebSocket envelope. A lifted block
+/// leaves every field but the streamer at its proto3 default.
+pub fn map_credential_block_to_protobuf(
+    change: &crate::credentials::CredentialBlockChange,
+) -> WsMessage {
+    let mut payload = crate::api::proto::download_progress::StreamerCredentialBlock {
+        streamer_id: change.streamer_id.clone(),
+        ..Default::default()
+    };
+    if let Some(block) = &change.block {
+        payload.blocked = true;
+        payload.reason = block.reason.as_str().to_owned();
+        payload.platform_id = block.platform_id.clone();
+        payload.since_ms = block.since.timestamp_millis();
+    }
+    WsMessage {
+        event_type: EventType::StreamerCredentialBlock as i32,
+        payload: Some(Payload::StreamerCredentialBlock(payload)),
+    }
+}
+
+fn credential_attention_changed_message() -> WsMessage {
+    WsMessage {
+        event_type: EventType::CredentialAttentionChanged as i32,
+        payload: Some(Payload::CredentialAttentionChanged(
+            crate::api::proto::download_progress::CredentialAttentionChanged {},
+        )),
+    }
+}
+
 /// Map an [`UploadStatusEvent`] to the WebSocket envelope.
 ///
 /// `pub` for the same reason as [`map_check_record_to_protobuf`]: the
@@ -896,6 +976,8 @@ mod tests {
             )),
             pipeline_manager: Arc::new(PipelineManager::new()),
             streamer_avatar: Arc::new(|_| None),
+            credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
+            credential_attention: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route(
@@ -982,6 +1064,8 @@ mod tests {
             )),
             pipeline_manager: Arc::new(PipelineManager::new()),
             streamer_avatar: Arc::new(|_| None),
+            credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
+            credential_attention: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1320,6 +1404,8 @@ mod tests {
             upload_status_broadcaster: upload_status_broadcaster.clone(),
             pipeline_manager: Arc::new(PipelineManager::new()),
             streamer_avatar,
+            credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
+            credential_attention: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1381,5 +1467,102 @@ mod tests {
         assert_eq!(started.streamer_id, "other");
         assert_eq!(started.streamer_name, "Other Streamer");
         assert_eq!(started.streamer_avatar, "https://example.com/other.png");
+    }
+    /// Block changes follow the streamer subscription like download events,
+    /// while the account-attention marker reaches every socket.
+    #[tokio::test]
+    async fn credential_blocks_follow_the_subscription_and_attention_reaches_every_socket() {
+        use crate::api::proto::download_progress::SubscribeRequest;
+        use crate::credentials::UnavailableReason;
+        use std::sync::Arc;
+        use tokio_tungstenite::tungstenite::Message as Frame;
+
+        let blocks = Arc::new(crate::credentials::CredentialBlocks::new());
+        let (attention, attention_rx) = tokio::sync::watch::channel(0u64);
+        let state = DownloadRouteState {
+            auth_service: None,
+            download_manager: Arc::new(crate::downloader::DownloadManager::new()),
+            check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            pipeline_manager: Arc::new(PipelineManager::new()),
+            streamer_avatar: Arc::new(|_| None),
+            credential_blocks: blocks.clone(),
+            credential_attention: attention_rx,
+        };
+        let app = Router::new()
+            .route("/ws", get(download_progress_ws))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let _server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws"))
+            .await
+            .unwrap();
+        let (mut outgoing, mut incoming) = socket.split();
+        let mut next_message = async || {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Frame::Binary(data) = incoming.next().await.unwrap().unwrap() {
+                        return WsMessage::decode(data).unwrap();
+                    }
+                }
+            })
+            .await
+            .expect("socket message must arrive")
+        };
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
+        let subscribe = ClientMessage {
+            action: Some(Action::Subscribe(SubscribeRequest {
+                streamer_id: "watched".to_string(),
+            })),
+        };
+        outgoing
+            .send(Frame::Binary(subscribe.encode_to_vec().into()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
+
+        // Another streamer's block is filtered out; the next frame is the
+        // watched streamer's.
+        blocks.block("other", "platform-a", UnavailableReason::LoginRequired);
+        blocks.block("watched", "platform-a", UnavailableReason::ProfilesDisabled);
+        let Some(Payload::StreamerCredentialBlock(blocked)) = next_message().await.payload else {
+            panic!("expected the watched streamer's block");
+        };
+        assert_eq!(blocked.streamer_id, "watched");
+        assert!(blocked.blocked);
+        assert_eq!(blocked.reason, "profiles_disabled");
+        assert_eq!(blocked.platform_id, "platform-a");
+        assert_eq!(
+            blocked.since_ms,
+            blocks.get("watched").unwrap().since.timestamp_millis()
+        );
+
+        blocks.clear("watched");
+        let Some(Payload::StreamerCredentialBlock(lifted)) = next_message().await.payload else {
+            panic!("expected the watched streamer's block to lift");
+        };
+        assert_eq!(lifted.streamer_id, "watched");
+        assert!(!lifted.blocked);
+        assert!(lifted.reason.is_empty());
+
+        attention.send_modify(|generation| *generation += 1);
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::CredentialAttentionChanged(_))
+        ));
     }
 }

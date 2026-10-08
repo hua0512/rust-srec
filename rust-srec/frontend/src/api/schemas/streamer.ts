@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  CredentialSelectionSchema,
+  UnavailableReasonSchema,
+} from './credential-profiles';
+import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
@@ -15,6 +19,7 @@ import {
   AllPlatformConfigsSchema,
   ExtractorSelectionSchema,
 } from './platform-configs';
+import { ProxyRouteSchema } from './proxies';
 
 // --- Streamer Schemas ---
 export const StreamerStateSchema = z.enum([
@@ -42,13 +47,9 @@ export const StreamerSpecificConfigSchema = z.object({
     .nullable()
     .optional(),
 
-  proxy_config: z
-    .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-      z.any().nullable().optional(),
-    )
-    .nullable()
-    .optional(),
+  // Absent in a response means the streamer inherits. In a request, absent
+  // keeps the stored route and `{"kind":"inherit"}` resets it.
+  proxy_route: ProxyRouteSchema.optional(),
 
   danmu_statistics: z
     .preprocess(
@@ -122,10 +123,7 @@ export const StreamerSpecificConfigSchema = z.object({
     .nullable()
     .optional(),
   record_danmu: z.boolean().nullable().optional(),
-  cookies: z
-    .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
-    .nullable()
-    .optional(),
+  credential_selection: CredentialSelectionSchema.optional(),
   download_engine: z
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
     .nullable()
@@ -161,9 +159,10 @@ export const StreamerSpecificConfigSchema = z.object({
 
 // Form-specific schema without preprocessors for proper type inference with react-hook-form
 export const StreamerSpecificConfigFormSchema = z.object({
+  credential_selection: CredentialSelectionSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),
-  proxy_config: z.any().nullable().optional(),
+  proxy_route: ProxyRouteSchema.optional(),
   danmu_statistics: DanmuStatisticsOverrideSchema,
   download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
@@ -176,13 +175,25 @@ export const StreamerSpecificConfigFormSchema = z.object({
   max_download_duration_secs: z.number().nullable().optional(),
   max_part_size_bytes: z.number().nullable().optional(),
   record_danmu: z.boolean().nullable().optional(),
-  cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   extractor: ExtractorSelectionSchema.nullable().optional(),
   platform_extras: AllPlatformConfigsSchema.nullable().optional(),
   offline_check_count: z.number().int().min(1).nullable().optional(),
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
+
+/**
+ * Set while the streamer's latest check, queued start or recovery found no
+ * usable account on its platform, so nothing records until one is fixed.
+ */
+export const CredentialBlockSchema = z.object({
+  reason: UnavailableReasonSchema,
+  /** The platform whose accounts the streamer selects from. */
+  platform_id: z.string(),
+  /** Start of the current blocked run. */
+  since: z.string(),
+});
+export type CredentialBlock = z.infer<typeof CredentialBlockSchema>;
 
 export const StreamerSchema = z.object({
   id: z.string(),
@@ -198,10 +209,12 @@ export const StreamerSchema = z.object({
   disabled_until: z.string().nullable().optional(),
   last_error: z.string().nullable().optional(),
   last_live_time: z.string().nullable().optional(),
+  credential_blocked: CredentialBlockSchema.nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   streamer_specific_config: StreamerSpecificConfigSchema.nullable().optional(),
 });
+export type Streamer = z.infer<typeof StreamerSchema>;
 
 // `platform_config_id` is absent by design: the backend derives it from `url`.
 export const CreateStreamerSchema = z.object({

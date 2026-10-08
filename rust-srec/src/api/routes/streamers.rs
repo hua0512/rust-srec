@@ -20,7 +20,7 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::PlatformConfigDbModel;
 use crate::domain::streamer::StreamerState;
-use crate::domain::value_objects::StreamerUrl;
+use crate::domain::value_objects::{STREAMLINK_PLATFORM, StreamerUrl};
 use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
 use crate::utils::json::{self, JsonContext};
 
@@ -41,6 +41,7 @@ pub struct StreamerRouteState {
     streamer_check_history_repository:
         std::sync::Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
     runtime_coordinator: std::sync::Arc<crate::services::runtime_coordinator::RuntimeCoordinator>,
+    credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
 }
 
 impl FromRef<AppState> for StreamerRouteState {
@@ -50,6 +51,7 @@ impl FromRef<AppState> for StreamerRouteState {
             streamer_manager: state.streamer_manager.clone(),
             streamer_check_history_repository: state.streamer_check_history_repository.clone(),
             runtime_coordinator: state.services.runtime_coordinator.clone(),
+            credential_blocks: state.services.credential_blocks.clone(),
         }
     }
 }
@@ -72,12 +74,14 @@ impl StreamerRouteState {
         runtime_coordinator: std::sync::Arc<
             crate::services::runtime_coordinator::RuntimeCoordinator,
         >,
+        credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
     ) -> Self {
         Self {
             config_service,
             streamer_manager,
             streamer_check_history_repository,
             runtime_coordinator,
+            credential_blocks,
         }
     }
 }
@@ -155,8 +159,16 @@ fn state_for_enabled(current: Option<StreamerState>, enabled: bool) -> Option<St
     }
 }
 
-/// Convert StreamerMetadata to StreamerResponse.
-fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
+/// Convert StreamerMetadata to StreamerResponse, carrying the streamer's
+/// stored account selection and proxy route inside its specific
+/// configuration and its credential block. A streamer that is no longer
+/// monitored shows no block: nothing would lift it.
+fn metadata_to_response(
+    metadata: &StreamerMetadata,
+    selection: Option<&crate::credentials::CredentialSelection>,
+    route: Option<&crate::proxies::ProxyRoute>,
+    credential_blocked: Option<crate::credentials::CredentialBlock>,
+) -> StreamerResponse {
     StreamerResponse {
         id: metadata.id.clone(),
         name: metadata.name.clone(),
@@ -171,22 +183,60 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         last_error: metadata.last_error.clone(),
         avatar_url: metadata.avatar_url.clone(),
         last_live_time: metadata.last_live_time,
+        credential_blocked: credential_blocked.filter(|_| metadata.is_active()),
         created_at: metadata.created_at,
         updated_at: metadata.updated_at,
-        streamer_specific_config: json::parse_optional_value_non_null(
-            metadata.streamer_specific_config.as_deref(),
-            JsonContext::StreamerField {
-                streamer_id: &metadata.id,
-                field: "streamer_specific_config",
-            },
-            "Invalid JSON field; omitting from response",
+        streamer_specific_config: crate::database::repositories::proxies::inject_document(
+            crate::database::repositories::credential_selections::inject_document(
+                json::parse_optional_value_non_null(
+                    metadata.streamer_specific_config.as_deref(),
+                    JsonContext::StreamerField {
+                        streamer_id: &metadata.id,
+                        field: "streamer_specific_config",
+                    },
+                    "Invalid JSON field; omitting from response",
+                ),
+                selection,
+            ),
+            route,
         ),
     }
 }
 
-/// Pseudo-platform assigned to URLs that no built-in regex claims but the `streamlink` CLI can
-/// handle. Matches the `platform-streamlink` row seeded by the initial schema migration.
-const STREAMLINK_PLATFORM: &str = "streamlink";
+/// The response for one streamer with its stored account selection.
+async fn streamer_response(
+    state: &StreamerRouteState,
+    metadata: &StreamerMetadata,
+) -> ApiResult<StreamerResponse> {
+    let selection = state
+        .config_service
+        .credential_selections_for(&crate::credentials::CredentialOwner::Streamer {
+            streamer_id: metadata.id.clone(),
+        })
+        .await
+        .map_err(ApiError::from)?
+        .into_iter()
+        .next()
+        .map(|stored| stored.selection);
+    // A streamer being created has no row yet and inherits.
+    let route = match state
+        .config_service
+        .proxy_route_of(
+            &crate::database::repositories::proxies::RouteOwner::Streamer(metadata.id.clone()),
+        )
+        .await
+    {
+        Ok(route) => route,
+        Err(crate::Error::NotFound { .. }) => crate::proxies::ProxyRoute::Inherit,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(metadata_to_response(
+        metadata,
+        selection.as_ref(),
+        Some(&route),
+        state.credential_blocks.get(&metadata.id),
+    ))
+}
 
 /// A URL's platform and the `platform_config` row it belongs to.
 struct ResolvedPlatform {
@@ -347,7 +397,10 @@ pub async fn create_streamer(
         .await
         .map_err(ApiError::from)?;
 
-    Ok((StatusCode::CREATED, Json(metadata_to_response(&metadata))))
+    Ok((
+        StatusCode::CREATED,
+        Json(streamer_response(&state, &metadata).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -496,13 +549,33 @@ pub async fn list_streamers(
     let offset = pagination.offset as usize;
     let effective_limit = pagination.limit.min(100);
     let limit = effective_limit as usize;
+    let selections: std::collections::HashMap<String, crate::credentials::CredentialSelection> =
+        state
+            .config_service
+            .list_credential_selections()
+            .await
+            .map_err(ApiError::from)?
+            .into_iter()
+            .filter_map(|stored| match stored.owner {
+                crate::credentials::CredentialOwner::Streamer { streamer_id } => {
+                    Some((streamer_id, stored.selection))
+                }
+                _ => None,
+            })
+            .collect();
+    let routes = state
+        .config_service
+        .proxy_routes_of_kind(
+            &crate::database::repositories::proxies::RouteOwner::Streamer(String::new()),
+        )
+        .await?;
     let streamers: Vec<_> = streamers
         .into_iter()
         .skip(offset)
         .take(limit)
         .map(|s| {
-            // tracing::debug!("Streamer {} state: {:?}", s.name, s.state);
-            metadata_to_response(&s)
+            let blocked = state.credential_blocks.get(&s.id);
+            metadata_to_response(&s, selections.get(&s.id), routes.get(&s.id), blocked)
         })
         .collect();
 
@@ -684,7 +757,7 @@ pub async fn get_streamer(
     // Get streamer by ID
     let metadata = live_streamer(streamer_manager, &id)?;
 
-    Ok(Json(metadata_to_response(&metadata)))
+    Ok(Json(streamer_response(&state, &metadata).await?))
 }
 
 #[utoipa::path(
@@ -794,7 +867,7 @@ pub async fn update_streamer(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(metadata_to_response(&metadata)))
+    Ok(Json(streamer_response(&state, &metadata).await?))
 }
 
 #[utoipa::path(
@@ -874,7 +947,7 @@ pub async fn clear_error(
         .get_streamer(&id)
         .ok_or_else(|| ApiError::internal("Failed to retrieve streamer after clearing error"))?;
 
-    Ok(Json(metadata_to_response(&metadata)))
+    Ok(Json(streamer_response(&state, &metadata).await?))
 }
 
 #[utoipa::path(
@@ -910,7 +983,7 @@ pub async fn update_priority(
         .get_streamer(&id)
         .ok_or_else(|| ApiError::internal("Failed to retrieve streamer after priority update"))?;
 
-    Ok(Json(metadata_to_response(&metadata)))
+    Ok(Json(streamer_response(&state, &metadata).await?))
 }
 
 #[cfg(test)]
@@ -925,9 +998,7 @@ mod tests {
             platform_name: platform_name.to_string(),
             fetch_delay_ms: None,
             download_delay_ms: None,
-            cookies: None,
             platform_specific_config: None,
-            proxy_config: None,
             record_danmu: None,
             danmu_statistics: None,
             output_folder: None,
@@ -1036,7 +1107,7 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        let response = metadata_to_response(&metadata);
+        let response = metadata_to_response(&metadata, None, None, None);
 
         assert_eq!(response.id, "test-id");
         assert_eq!(response.name, "Test Streamer");
@@ -1072,8 +1143,68 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        let response = metadata_to_response(&metadata);
+        let response = metadata_to_response(&metadata, None, None, None);
         assert!(!response.enabled);
+    }
+
+    #[test]
+    fn a_credential_block_is_shown_only_while_the_streamer_is_monitored() {
+        let mut metadata = StreamerMetadata {
+            id: "test-id".to_string(),
+            name: "Test".to_string(),
+            url: "https://example.com".to_string(),
+            avatar_url: None,
+            platform_config_id: "platform-twitch".to_string(),
+            template_config_id: None,
+            state: StreamerState::NotLive,
+            priority: Priority::Normal,
+            consecutive_error_count: 0,
+            disabled_until: None,
+            last_error: None,
+            last_live_time: None,
+            streamer_specific_config: None,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
+            created_at: chrono::Utc::now(),
+            deleted_at: None,
+            updated_at: chrono::Utc::now(),
+        };
+        let since = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
+        let block = crate::credentials::CredentialBlock {
+            reason: crate::credentials::UnavailableReason::LoginRequired,
+            platform_id: "platform-twitch".to_string(),
+            since,
+        };
+
+        let response = metadata_to_response(&metadata, None, None, Some(block.clone()));
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            json["credential_blocked"],
+            serde_json::json!({
+                "reason": "login_required",
+                "platform_id": "platform-twitch",
+                "since": since,
+            })
+        );
+        assert!(
+            serde_json::to_value(metadata_to_response(&metadata, None, None, None)).unwrap()
+                ["credential_blocked"]
+                .is_null()
+        );
+
+        metadata.state = StreamerState::Disabled;
+        assert!(
+            metadata_to_response(&metadata, None, None, Some(block.clone()))
+                .credential_blocked
+                .is_none()
+        );
+        metadata.state = StreamerState::NotLive;
+        metadata.deleted_at = Some(chrono::Utc::now());
+        assert!(
+            metadata_to_response(&metadata, None, None, Some(block))
+                .credential_blocked
+                .is_none()
+        );
     }
 
     #[test]

@@ -13,8 +13,6 @@ type Values = Record<string, unknown>;
 
 const PATHS: SharedConfigPaths<Values> = {
   streamSelection: 'stream_selection_config',
-  cookies: 'cookies',
-  proxy: 'proxy_config',
   retryPolicy: 'download_retry_policy',
   output: '',
   limits: '',
@@ -22,7 +20,10 @@ const PATHS: SharedConfigPaths<Values> = {
   pipeline: 'pipeline',
 };
 
-function renderDanmuTab(paths: SharedConfigPaths<Values>) {
+function renderDanmuTab(
+  paths: SharedConfigPaths<Values>,
+  availableTabs: Array<'danmu' | 'proxy'> = ['danmu'],
+) {
   function Harness() {
     const form = useForm<Values>({ defaultValues: {} });
     return (
@@ -30,7 +31,7 @@ function renderDanmuTab(paths: SharedConfigPaths<Values>) {
         <SharedConfigEditor
           form={form}
           paths={paths}
-          availableTabs={['danmu']}
+          availableTabs={availableTabs}
           defaultTab="danmu"
         />
       </Form>
@@ -54,5 +55,17 @@ describe('SharedConfigEditor danmu tab', () => {
     renderDanmuTab(PATHS);
 
     expect(screen.queryByText('Danmu Statistics')).not.toBeInTheDocument();
+  });
+
+  it('offers the Proxy tab only for a layer with a route of its own', () => {
+    renderDanmuTab(PATHS, ['danmu', 'proxy']);
+    expect(
+      screen.queryByRole('tab', { name: 'Proxy' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers the Proxy tab for a layer that has a route', () => {
+    renderDanmuTab({ ...PATHS, proxyRoute: 'proxy_route' }, ['danmu', 'proxy']);
+    expect(screen.getByRole('tab', { name: 'Proxy' })).toBeInTheDocument();
   });
 });

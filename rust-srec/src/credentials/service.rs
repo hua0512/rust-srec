@@ -1,58 +1,88 @@
-//! Credential refresh service.
+//! Credential provider registry.
 //!
-//! Orchestrates credential checking, refreshing, and persistence.
+//! Resolves each platform's [`CredentialProvider`], and holds the shared
+//! platform admission and the notification sink for credential events. Account
+//! selection, refresh and health live in [`super::CredentialExecutionService`].
 
+#[cfg(test)]
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use chrono::Utc;
-use tokio::sync::Mutex;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::warn;
 
 use crate::notification::{NotificationEvent, NotificationService};
 
-use super::error::CredentialError;
-use super::manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
-use super::store::CredentialStore;
-use super::tracker::{DailyCheckTracker, RefreshFailureTracker};
-use super::types::{CredentialEvent, CredentialScope, CredentialSource};
+use super::provider::CredentialProvider;
+use super::types::{CredentialEvent, CredentialScope};
+use super::{CredentialProfile, PlatformAdmission};
 
-/// Credential refresh service.
-///
-/// Orchestrates detection, refresh, and persistence of platform credentials.
-pub struct CredentialRefreshService {
-    store: Arc<dyn CredentialStore>,
-    managers: HashMap<String, Arc<dyn CredentialManager>>,
-    daily_tracker: Arc<DailyCheckTracker>,
-    failure_tracker: Arc<RefreshFailureTracker>,
-    /// Per-scope locks to prevent concurrent refreshes
-    refresh_locks: dashmap::DashMap<String, Arc<Mutex<()>>>,
-    /// Optional notification service for broadcasting credential events.
+pub struct CredentialProviderRegistry {
+    admission: Arc<PlatformAdmission>,
+    /// Whether platforms use their built-in providers. Without them every
+    /// account is plain cookies and no provider is ever called.
+    platform_providers: bool,
+    /// Test replacements for the built-in providers, by lowercase platform name.
+    #[cfg(test)]
+    providers: HashMap<String, Arc<dyn CredentialProvider>>,
     notification_service: OnceLock<Arc<NotificationService>>,
+    /// Profiles whose latest session-cookie save failed. A failure repeats on
+    /// every live check, so it is announced once until a save succeeds.
+    session_save_failures: dashmap::DashSet<String>,
 }
 
-impl CredentialRefreshService {
-    pub(crate) fn bind_committed_streamers(
-        &self,
-        state: Arc<crate::streamer::CommittedStreamerState>,
-    ) {
-        self.store.bind_committed_streamers(state);
+impl Default for CredentialProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CredentialProviderRegistry {
+    pub fn new() -> Self {
+        Self {
+            admission: Arc::new(PlatformAdmission::from_config(
+                &crate::monitor::StreamMonitorConfig::default(),
+            )),
+            platform_providers: false,
+            #[cfg(test)]
+            providers: HashMap::new(),
+            notification_service: OnceLock::new(),
+            session_save_failures: dashmap::DashSet::new(),
+        }
     }
 
-    /// Create a new credential refresh service.
-    pub fn new(store: Arc<dyn CredentialStore>) -> Self {
-        Self {
-            store,
-            managers: HashMap::new(),
-            daily_tracker: Arc::new(DailyCheckTracker::new()),
-            failure_tracker: Arc::new(RefreshFailureTracker::new()),
-            refresh_locks: dashmap::DashMap::new(),
-            notification_service: OnceLock::new(),
+    pub fn with_admission(mut self, admission: Arc<PlatformAdmission>) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    pub fn admission(&self) -> Arc<PlatformAdmission> {
+        self.admission.clone()
+    }
+
+    /// Enable the built-in provider of each platform (QR login aside, which
+    /// always uses it).
+    pub fn with_platform_providers(mut self) -> Self {
+        self.platform_providers = true;
+        self
+    }
+
+    /// The provider whose calls check and refresh accounts on the platform.
+    pub(crate) fn provider(&self, platform_name: &str) -> &dyn CredentialProvider {
+        #[cfg(test)]
+        if let Some(provider) = self.providers.get(&platform_name.to_ascii_lowercase()) {
+            return provider.as_ref();
+        }
+        if self.platform_providers {
+            super::provider(platform_name)
+        } else {
+            &super::CookieProvider
         }
     }
 
     /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
     pub fn set_notification_service(&self, service: Arc<NotificationService>) {
+        self.admission.set_notification_service(service.clone());
         if self.notification_service.set(service).is_err() {
             warn!("Credential notification service is already configured");
         }
@@ -63,143 +93,18 @@ impl CredentialRefreshService {
         self.notification_service.get().is_some()
     }
 
-    /// Register a credential manager for a platform.
-    pub fn register_manager(&mut self, manager: Arc<dyn CredentialManager>) {
-        let platform_id = manager.platform_id().to_string();
-        self.managers.insert(platform_id, manager);
+    /// Replace the provider for a platform.
+    #[cfg(test)]
+    pub(crate) fn register_provider(
+        &mut self,
+        platform_name: &str,
+        provider: Arc<dyn CredentialProvider>,
+    ) {
+        self.providers
+            .insert(platform_name.to_ascii_lowercase(), provider);
     }
 
-    /// Get the daily check tracker (for testing or external access).
-    pub fn daily_tracker(&self) -> Arc<DailyCheckTracker> {
-        Arc::clone(&self.daily_tracker)
-    }
-
-    /// Get the failure tracker (for testing or external access).
-    pub fn failure_tracker(&self) -> Arc<RefreshFailureTracker> {
-        Arc::clone(&self.failure_tracker)
-    }
-
-    /// Check and refresh credentials for a pre-resolved credential source.
-    ///
-    /// This is useful for hot paths that already loaded platform/template records (e.g. config
-    /// resolution) and want to avoid extra DB queries just to find credential provenance.
-    #[instrument(skip_all, fields(platform = %source.platform_name, scope = %source.scope.describe()))]
-    pub async fn check_and_refresh_source(
-        &self,
-        source: &CredentialSource,
-    ) -> Result<Option<String>, CredentialError> {
-        // Skip platforms without a registered credential manager (unsupported for auto-refresh).
-        let platform_key = source.platform_name.to_ascii_lowercase();
-        if !self.managers.contains_key(&platform_key)
-            && !self.managers.contains_key(&source.platform_name)
-        {
-            // debug!(
-            //     platform = %source.platform_name,
-            //     "Platform does not support credential auto-refresh; skipping"
-            // );
-            return Ok(None);
-        }
-
-        // Cached NeedsRefresh can call the provider, so it shares the same
-        // ownership as an initial check and the resulting persistence.
-        let lock = self.get_refresh_lock(&source.scope);
-        let _guard = lock.lock().await;
-
-        let current = self.store.reload_source(source).await?;
-        let refreshed = if let Some(status) = self.daily_tracker.get_cached_status(&current) {
-            self.handle_cached_status(&current, status).await?
-        } else {
-            self.perform_check_and_refresh(&current).await?
-        };
-        // Waiters may still hold an extractor configuration assembled before
-        // the owner rotated its cookies. Return the committed cookies to them
-        // as well, without calling the provider or notifying a second time.
-        Ok(refreshed.or_else(|| (current.cookies != source.cookies).then_some(current.cookies)))
-    }
-
-    /// Handle a cached status from earlier today.
-    async fn handle_cached_status(
-        &self,
-        source: &CredentialSource,
-        status: CredentialStatus,
-    ) -> Result<Option<String>, CredentialError> {
-        match status {
-            CredentialStatus::Valid => {
-                debug!("Using cached valid status from today");
-                Ok(None)
-            }
-            CredentialStatus::NeedsRefresh { .. } => {
-                debug!("Cached status indicates refresh needed");
-                // Attempt refresh
-                self.perform_refresh(source).await
-            }
-            CredentialStatus::Invalid { reason, .. } => {
-                debug!("Cached status indicates invalid credentials");
-                Err(CredentialError::InvalidCredentials(reason))
-            }
-        }
-    }
-
-    /// Perform the actual check and refresh.
-    async fn perform_check_and_refresh(
-        &self,
-        source: &CredentialSource,
-    ) -> Result<Option<String>, CredentialError> {
-        let manager = self.get_manager(&source.platform_name)?;
-
-        info!(
-            platform = %source.platform_name,
-            scope = %source.scope.describe(),
-            "Checking credential status"
-        );
-
-        let status = match manager.check_status(&source.cookies).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(error = %e, "Status check failed");
-                // Don't cache failures - allow retry
-                return Err(e);
-            }
-        };
-
-        // Also persist to DB for hydration on restart
-        let result_str = match &status {
-            CredentialStatus::Valid => "valid",
-            CredentialStatus::NeedsRefresh { .. } => "needs_refresh",
-            CredentialStatus::Invalid { .. } => "invalid",
-        };
-        self.persist_check_result(source, result_str).await?;
-        self.daily_tracker.record_check(source, status.clone());
-
-        match status {
-            CredentialStatus::Valid => {
-                info!("Credentials are valid");
-                // Clear any previous failures
-                self.failure_tracker.clear(&source.scope);
-                Ok(None)
-            }
-            CredentialStatus::NeedsRefresh { refresh_deadline } => {
-                info!(?refresh_deadline, "Credentials need refresh");
-                self.perform_refresh(source).await
-            }
-            CredentialStatus::Invalid { reason, error_code } => {
-                error!(%reason, ?error_code, "Credentials are invalid - manual re-login required");
-
-                // Emit a notification event once per day (this path runs only on uncached checks).
-                self.maybe_notify_credential_event(CredentialEvent::Invalid {
-                    scope: source.scope.clone(),
-                    platform: source.platform_name.clone(),
-                    reason: reason.clone(),
-                    error_code,
-                    timestamp: Utc::now(),
-                });
-
-                Err(CredentialError::InvalidCredentials(reason))
-            }
-        }
-    }
-
-    fn maybe_notify_credential_event(&self, event: CredentialEvent) {
+    pub(crate) fn maybe_notify_credential_event(&self, event: CredentialEvent) {
         let Some(service) = self.notification_service.get().cloned() else {
             return;
         };
@@ -220,387 +125,46 @@ impl CredentialRefreshService {
         service.dispatch_notification(NotificationEvent::Credential { event });
     }
 
-    async fn persist_check_result(
+    /// Session cookies minted during extraction (e.g. SOOP reactive login)
+    /// could not be stored on their profile. The check keeps its result; the
+    /// failure is announced once per profile until a save succeeds.
+    pub(crate) fn report_session_save_failure(
         &self,
-        source: &CredentialSource,
-        result: &str,
-    ) -> Result<(), CredentialError> {
-        match self.store.update_check_result(source, result).await {
-            Ok(()) => Ok(()),
-            Err(e @ (CredentialError::SourceChanged | CredentialError::NoCredentials)) => Err(e),
-            Err(e) => {
-                warn!(error = %e, "Failed to persist check result (non-fatal)");
-                Ok(())
-            }
-        }
-    }
-
-    /// Perform credential refresh.
-    #[instrument(skip_all, fields(platform = %source.platform_name, scope = %source.scope.describe()))]
-    async fn perform_refresh(
-        &self,
-        source: &CredentialSource,
-    ) -> Result<Option<String>, CredentialError> {
-        let manager = self.get_manager(&source.platform_name)?;
-
-        // Refresh token is required for OAuth-style platforms. Password re-login
-        // platforms (SOOP) use reauth_extra instead.
-        if !source.has_refresh_token() && !source.has_reauth_extra() {
-            warn!("Missing refresh_token / reauth credentials - cannot auto-refresh");
-            self.failure_tracker.record_failure(&source.scope);
-            return Err(CredentialError::MissingRefreshToken);
-        }
-
-        info!("Starting credential refresh");
-
-        let mut state = RefreshState::new(source.cookies.clone(), source.refresh_token.clone());
-        // Pass access_token and/or password reauth material through extra JSON.
-        let mut extra = serde_json::Map::new();
-        if let Some(ref access_token) = source.access_token {
-            extra.insert(
-                "access_token".to_string(),
-                serde_json::Value::String(access_token.clone()),
-            );
-        }
-        if let Some(serde_json::Value::Object(map)) = source.reauth_extra.clone() {
-            for (k, v) in map {
-                extra.insert(k, v);
-            }
-        }
-        if !extra.is_empty() {
-            state.extra = Some(serde_json::Value::Object(extra));
-        }
-
-        match manager.refresh(&state).await {
-            Ok(new_creds) => {
-                info!(
-                    expires_at = ?new_creds.expires_at,
-                    "Credential refresh successful"
-                );
-
-                // Persist to database
-                self.store.update_credentials(source, &new_creds).await?;
-
-                // Update daily tracker with valid status
-                self.daily_tracker
-                    .record_check(&source.after_refresh(&new_creds), CredentialStatus::Valid);
-
-                // Clear failure tracking
-                self.failure_tracker.clear(&source.scope);
-
-                self.maybe_notify_credential_event(
-                    self.create_refresh_success_event(source, &new_creds),
-                );
-
-                Ok(Some(new_creds.cookies))
-            }
-            Err(e) => {
-                // Provider failures describe the inputs it received, not a newer login.
-                let current = self.store.reload_source(source).await?;
-                if !source.same_credentials(&current) {
-                    return Err(CredentialError::SourceChanged);
-                }
-                if e.requires_relogin() {
-                    let reason = match &e {
-                        CredentialError::InvalidCredentials(r) => r.clone(),
-                        _ => e.to_string(),
-                    };
-
-                    // Cache an invalid status so we don't repeatedly attempt refresh within the day
-                    // when the platform indicates a manual re-login is required.
-                    self.persist_check_result(source, "invalid").await?;
-                    self.daily_tracker.record_check(
-                        source,
-                        CredentialStatus::Invalid {
-                            reason: reason.clone(),
-                            error_code: None,
-                        },
-                    );
-                }
-
-                let failure_count = self.failure_tracker.record_failure(&source.scope);
-
-                error!(
-                    error = %e,
-                    %failure_count,
-                    "Credential refresh failed"
-                );
-
-                self.maybe_notify_credential_event(self.create_refresh_failed_event(source, &e));
-
-                Err(e)
-            }
-        }
-    }
-
-    /// Get a credential manager for a platform.
-    fn get_manager(
-        &self,
-        platform_name: &str,
-    ) -> Result<&Arc<dyn CredentialManager>, CredentialError> {
-        if let Some(manager) = self.managers.get(platform_name) {
-            return Ok(manager);
-        }
-        // Platform ids are stored lowercase (e.g. "soop"); display names may differ.
-        let key = platform_name.to_ascii_lowercase();
-        self.managers
-            .get(&key)
-            .ok_or_else(|| CredentialError::UnsupportedPlatform(platform_name.to_string()))
-    }
-
-    /// Get or create a refresh lock for a scope.
-    fn get_refresh_lock(&self, scope: &CredentialScope) -> Arc<Mutex<()>> {
-        let key = scope.cache_key();
-        self.refresh_locks
-            .entry(key)
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
-    }
-
-    /// Invalidate cached status for a scope (e.g., after user updates cookies).
-    pub fn invalidate(&self, scope: &CredentialScope) {
-        self.daily_tracker.invalidate(scope);
-        self.failure_tracker.clear(scope);
-    }
-
-    /// Persist session cookies minted during extract (e.g. SOOP reactive login).
-    ///
-    /// Updates the same configuration layer that supplied the credential source
-    /// and marks today's check status as valid.
-    pub async fn persist_session_cookies(
-        &self,
-        source: &CredentialSource,
-        cookies: String,
-    ) -> Result<(), CredentialError> {
-        if cookies.trim().is_empty() {
-            return Ok(());
-        }
-
-        let lock = self.get_refresh_lock(&source.scope);
-        let _guard = lock.lock().await;
-        let new_creds = RefreshedCredentials {
-            cookies,
-            refresh_token: source.refresh_token.clone(),
-            access_token: source.access_token.clone(),
-            expires_at: None,
-        };
-
-        self.store.update_credentials(source, &new_creds).await?;
-        let current = source.after_refresh(&new_creds);
-        self.persist_check_result(&current, "valid").await?;
-        self.daily_tracker
-            .record_check(&current, CredentialStatus::Valid);
-        self.failure_tracker.clear(&source.scope);
-        info!(
-            platform = %source.platform_name,
-            scope = %source.scope.describe(),
-            "Persisted session cookies from extract"
+        profile: &CredentialProfile,
+        scope: CredentialScope,
+        platform: &str,
+        error: &crate::Error,
+    ) {
+        warn!(
+            %error,
+            profile_id = %profile.id,
+            platform,
+            "Failed to persist session cookies from extract"
         );
-        Ok(())
-    }
-
-    /// Create a credential event for notification.
-    pub fn create_refresh_failed_event(
-        &self,
-        source: &CredentialSource,
-        error: &CredentialError,
-    ) -> CredentialEvent {
-        let failure_count = self.failure_tracker.failure_count(&source.scope);
-
-        CredentialEvent::RefreshFailed {
-            scope: source.scope.clone(),
-            platform: source.platform_name.clone(),
-            error: error.to_string(),
-            requires_relogin: error.requires_relogin(),
-            failure_count,
-            timestamp: Utc::now(),
+        if self.session_save_failures.insert(profile.id.clone()) {
+            self.maybe_notify_credential_event(CredentialEvent::SessionSaveFailed {
+                profile_id: Some(profile.id.clone()),
+                profile_label: Some(profile.label.clone()),
+                scope,
+                platform: platform.to_owned(),
+                error: error.to_string(),
+                timestamp: Utc::now(),
+            });
         }
     }
 
-    /// Create a credential event for successful refresh.
-    pub fn create_refresh_success_event(
-        &self,
-        source: &CredentialSource,
-        credentials: &RefreshedCredentials,
-    ) -> CredentialEvent {
-        CredentialEvent::Refreshed {
-            scope: source.scope.clone(),
-            platform: source.platform_name.clone(),
-            expires_at: credentials.expires_at,
-            timestamp: Utc::now(),
-        }
+    pub(crate) fn session_saved(&self, profile_id: &str) {
+        self.session_save_failures.remove(profile_id);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::sync::Mutex;
-
-    use sqlx::sqlite::SqlitePoolOptions;
-    use tracing_subscriber::fmt::MakeWriter;
-    use tracing_subscriber::fmt::format::FmtSpan;
-    use tracing_subscriber::layer::SubscriberExt;
-
     use super::*;
-    use crate::credentials::types::CredentialScope;
-    use crate::database::repositories::SqlxCredentialStore;
-
-    struct PausedRefresh {
-        calls: std::sync::atomic::AtomicUsize,
-        started: tokio::sync::Notify,
-        release: tokio::sync::Semaphore,
-    }
-
-    #[async_trait::async_trait]
-    impl CredentialManager for PausedRefresh {
-        fn platform_id(&self) -> &'static str {
-            "bilibili"
-        }
-
-        async fn check_status(&self, _cookies: &str) -> Result<CredentialStatus, CredentialError> {
-            Ok(CredentialStatus::NeedsRefresh {
-                refresh_deadline: None,
-            })
-        }
-
-        async fn refresh(
-            &self,
-            state: &RefreshState,
-        ) -> Result<RefreshedCredentials, CredentialError> {
-            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            assert_eq!(state.cookies, "stored-cookie");
-            assert_eq!(state.refresh_token.as_deref(), Some("stored-token"));
-            self.started.notify_one();
-            self.release.acquire().await.unwrap().forget();
-            Ok(RefreshedCredentials {
-                cookies: "rotated-cookie".to_string(),
-                refresh_token: Some("rotated-token".to_string()),
-                access_token: None,
-                expires_at: None,
-            })
-        }
-
-        async fn validate(&self, _cookies: &str) -> Result<bool, CredentialError> {
-            Ok(true)
-        }
-    }
-
-    #[tokio::test]
-    async fn cached_refresh_waits_for_its_owner_and_reads_current_credentials() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::time::Duration;
-
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        sqlx::query("UPDATE platform_config SET cookies = 'stored-cookie', platform_specific_config = '{\"refresh_token\":\"stored-token\"}' WHERE id = 'platform-bilibili'")
-            .execute(&pool).await.unwrap();
-        let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool.clone()));
-        let provider = Arc::new(PausedRefresh {
-            calls: AtomicUsize::new(0),
-            started: tokio::sync::Notify::new(),
-            release: tokio::sync::Semaphore::new(0),
-        });
-        let mut service = CredentialRefreshService::new(store);
-        service.register_manager(provider.clone());
-        let service = Arc::new(service);
-        let source = CredentialSource::new(
-            CredentialScope::Platform {
-                platform_id: "platform-bilibili".to_string(),
-                platform_name: "bilibili".to_string(),
-            },
-            "stale-cookie".to_string(),
-            Some("stale-token".to_string()),
-            "bilibili".to_string(),
-        );
-        let cached_source = service.store.reload_source(&source).await.unwrap();
-        service.daily_tracker.record_check(
-            &cached_source,
-            CredentialStatus::NeedsRefresh {
-                refresh_deadline: None,
-            },
-        );
-        let first = {
-            let service = service.clone();
-            let source = source.clone();
-            tokio::spawn(async move { service.check_and_refresh_source(&source).await })
-        };
-        tokio::time::timeout(Duration::from_secs(2), provider.started.notified())
-            .await
-            .unwrap();
-        let second = service.check_and_refresh_source(&source);
-        tokio::pin!(second);
-        assert!(futures::poll!(second.as_mut()).is_pending());
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
-        provider.release.add_permits(1);
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), first)
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap()
-                .as_deref(),
-            Some("rotated-cookie")
-        );
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), second)
-                .await
-                .unwrap()
-                .unwrap()
-                .as_deref(),
-            Some("rotated-cookie"),
-        );
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
-        let token: String = sqlx::query_scalar("SELECT json_extract(platform_specific_config, '$.refresh_token') FROM platform_config WHERE id = 'platform-bilibili'").fetch_one(&pool).await.unwrap();
-        assert_eq!(token, "rotated-token");
-    }
-
-    /// `MakeWriter` that appends every formatted record to a buffer the test can read.
-    #[derive(Clone, Default)]
-    struct CapturedLog(Arc<Mutex<Vec<u8>>>);
-
-    impl CapturedLog {
-        fn contents(&self) -> String {
-            let bytes = self.0.lock().unwrap_or_else(|e| e.into_inner());
-            String::from_utf8_lossy(&bytes).into_owned()
-        }
-    }
-
-    impl io::Write for CapturedLog {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> MakeWriter<'a> for CapturedLog {
-        type Writer = Self;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            self.clone()
-        }
-    }
-
-    fn build_service() -> CredentialRefreshService {
-        let pool = SqlitePoolOptions::new()
-            .connect_lazy("sqlite::memory:")
-            .expect("in-memory SQLite URL should be valid");
-        let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool));
-        CredentialRefreshService::new(store)
-    }
 
     #[tokio::test]
     async fn notification_service_is_installed_once() {
-        let service = build_service();
+        let service = CredentialProviderRegistry::new();
         let first = Arc::new(NotificationService::new());
 
         service.set_notification_service(Arc::clone(&first));
@@ -613,53 +177,54 @@ mod tests {
         assert!(Arc::ptr_eq(installed, &first));
     }
 
-    /// `check_and_refresh_source` must not record its `CredentialSource` argument as a
-    /// span field; `crate::logging` installs default-format `fmt` layers that prefix
-    /// every event with the enclosing span's fields.
     #[tokio::test]
-    async fn instrumented_check_does_not_record_credential_material() {
-        let captured = CapturedLog::default();
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_subscriber::fmt::layer()
-                .with_ansi(false)
-                .with_writer(captured.clone())
-                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE),
-        );
-        let _default = tracing::subscriber::set_default(subscriber);
-
-        let source = CredentialSource::new(
-            CredentialScope::Platform {
-                platform_id: "platform-1".to_string(),
-                platform_name: "bilibili".to_string(),
-            },
-            "SESSDATA=cookie-sentinel".to_string(),
-            Some("refresh-sentinel".to_string()),
-            "bilibili".to_string(),
-        )
-        .with_access_token(Some("access-sentinel".to_string()));
-
-        // No manager is registered for "bilibili", so this returns before any I/O while
-        // still creating the instrumented span.
-        let service = build_service();
-        assert!(
-            service
-                .check_and_refresh_source(&source)
+    async fn repeated_session_save_failures_notify_once_until_a_save_succeeds() {
+        let service = CredentialProviderRegistry::new();
+        let notifications = Arc::new(NotificationService::new());
+        let mut received = notifications.subscribe();
+        service.set_notification_service(notifications);
+        let profile = CredentialProfile {
+            id: "profile-a".into(),
+            platform_config_id: "platform-soop".into(),
+            label: "Main".into(),
+            enabled: true,
+            cookies: "AuthTicket=a".into(),
+            refresh_token: None,
+            access_token: None,
+            reauth_config: None,
+            revision: 1,
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
+            last_used_at: None,
+            proxy_route: "inherit".into(),
+            proxy_id: None,
+        };
+        let scope = CredentialScope::Platform {
+            platform_id: "platform-soop".into(),
+            platform_name: "soop".into(),
+        };
+        let error = crate::Error::DatabaseSqlx(sqlx::Error::PoolTimedOut);
+        let mut next = async || {
+            tokio::time::timeout(std::time::Duration::from_secs(5), received.recv())
                 .await
-                .expect("unsupported platform should be skipped")
-                .is_none()
-        );
+                .unwrap()
+                .unwrap()
+        };
 
-        let output = captured.contents();
-        // Guards against the negative assertions passing because the span vanished.
-        assert!(
-            output.contains("check_and_refresh_source"),
-            "expected the instrumented span in the captured log: {output}"
-        );
-        for secret in ["cookie-sentinel", "refresh-sentinel", "access-sentinel"] {
-            assert!(
-                !output.contains(secret),
-                "span fields leaked {secret}: {output}"
-            );
-        }
+        service.report_session_save_failure(&profile, scope.clone(), "soop", &error);
+        service.report_session_save_failure(&profile, scope.clone(), "soop", &error);
+        let first = next().await;
+        assert!(matches!(
+            first,
+            NotificationEvent::Credential {
+                event: CredentialEvent::SessionSaveFailed { ref profile_label, .. }
+            } if profile_label.as_deref() == Some("Main")
+        ));
+
+        service.session_saved(&profile.id);
+        service.report_session_save_failure(&profile, scope, "soop", &error);
+        // Only the failure after the successful save is announced again.
+        assert!(next().await.timestamp() >= first.timestamp());
     }
 }

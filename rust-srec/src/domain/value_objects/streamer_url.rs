@@ -8,6 +8,17 @@ use platforms_parser::extractor::platforms::{
 };
 use serde::{Deserialize, Serialize};
 
+/// `platform_config.platform_name` of the pseudo-platform, seeded as
+/// `platform-streamlink`, that hosts every URL no built-in extractor claims but
+/// the `streamlink` CLI can handle.
+pub const STREAMLINK_PLATFORM: &str = "streamlink";
+
+/// Whether `platform_name` names the Streamlink pseudo-platform. Callers pass
+/// both stored lowercase names and the capitalised names URL detection reports.
+pub fn is_streamlink_platform(platform_name: &str) -> bool {
+    platform_name.eq_ignore_ascii_case(STREAMLINK_PLATFORM)
+}
+
 /// A validated streamer URL.
 ///
 /// This value object ensures that streamer URLs are valid and provides

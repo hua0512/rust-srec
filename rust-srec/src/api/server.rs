@@ -73,7 +73,7 @@ use std::sync::Arc;
 
 use crate::api::auth_service::{AuthPrincipal, AuthService};
 use crate::config::ConfigService;
-use crate::credentials::CredentialRefreshService;
+use crate::credentials::CredentialProviderRegistry;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     filter::FilterRepository,
@@ -142,8 +142,19 @@ pub struct ApiServices {
     pub logging_download_tokens: Arc<DashMap<String, LoggingArchiveGrant>>,
     /// Shared capacity and streaming archive generation for log downloads.
     pub(crate) logging_archives: Arc<crate::api::routes::logging::LogArchiveService>,
-    /// Credential refresh service for API-triggered refresh and cookie resolution.
-    pub credential_service: Arc<CredentialRefreshService>,
+    /// Credential managers for account validation, refresh and capability checks.
+    pub credential_service: Arc<CredentialProviderRegistry>,
+    pub(crate) platform_admission: Arc<crate::credentials::PlatformAdmission>,
+    pub(crate) credential_profiles:
+        Arc<crate::database::repositories::credential_profiles::CredentialProfileRepository>,
+    pub(crate) credential_login_sessions:
+        Arc<crate::credentials::login_sessions::CredentialLoginSessions>,
+    pub(crate) credential_execution: Arc<crate::credentials::CredentialExecutionService>,
+    /// Saved proxies and their effects on resolved routes.
+    pub(crate) proxies: Arc<crate::proxies::ProxyService>,
+    /// Streamers whose latest credential acquisition found no usable account.
+    pub(crate) credential_blocks: Arc<crate::credentials::CredentialBlocks>,
+    pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,

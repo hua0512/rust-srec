@@ -144,15 +144,17 @@ fn _encode_wbi(
 async fn fetch_new_keys(client: &Client) -> Result<WbiKeys, ExtractorError> {
     let ResWbi {
         data: Data { wbi_img },
-    } = client
-        .get("https://api.bilibili.com/x/web-interface/nav")
-        .header(USER_AGENT, DEFAULT_UA)
-        .header(reqwest::header::REFERER.to_string(), Bilibili::BASE_URL)
-        .send()
-        .await
-        .map_err(ExtractorError::HttpError)?
-        .json::<ResWbi>()
-        .await?;
+    } = ExtractorError::check_response(
+        client
+            .get("https://api.bilibili.com/x/web-interface/nav")
+            .header(USER_AGENT, DEFAULT_UA)
+            .header(reqwest::header::REFERER.to_string(), Bilibili::BASE_URL)
+            .send()
+            .await
+            .map_err(ExtractorError::HttpError)?,
+    )?
+    .json::<ResWbi>()
+    .await?;
 
     let img_key = take_filename(wbi_img.img_url.clone()).ok_or_else(|| {
         ExtractorError::ValidationError(format!(

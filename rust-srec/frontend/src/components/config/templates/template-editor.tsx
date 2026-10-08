@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
@@ -22,13 +22,15 @@ import { EngineOverridesTab } from './tabs/engine-overrides-tab';
 import { PlatformOverridesTab } from './tabs/platform-overrides-tab';
 import { cn } from '@/lib/utils';
 import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';
-import {
-  SharedConfigEditor,
-  type SharedConfigEditorProps,
-} from '../shared-config-editor';
-import { listEngines } from '@/server/functions';
+import { SharedConfigEditor } from '../shared-config-editor';
+import type { ProxyRouteInherit } from '../shared/proxy-route-picker';
+import { INHERIT_ROUTE } from '@/api/schemas/proxies';
+import { enginesQueryOptions } from '@/api/engines';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
+
+/** A template that inherits leaves each streamer on its own platform's route. */
+const PER_PLATFORM: ProxyRouteInherit = { kind: 'per-platform' };
 
 function toTemplateFormValues(
   template?: z.infer<typeof TemplateSchema>,
@@ -44,12 +46,11 @@ function toTemplateFormValues(
         max_part_size_bytes: template.max_part_size_bytes,
         record_danmu: template.record_danmu,
         danmu_statistics: danmuStatisticsFormValue(template.danmu_statistics),
-        cookies: template.cookies,
         platform_overrides: template.platform_overrides,
         download_retry_policy: template.download_retry_policy,
         download_engine: template.download_engine,
         engines_override: template.engines_override ?? undefined,
-        proxy_config: template.proxy_config,
+        proxy_route: template.proxy_route ?? INHERIT_ROUTE,
         stream_selection_config: template.stream_selection_config,
         pipeline: template.pipeline,
         session_complete_pipeline: template.session_complete_pipeline,
@@ -67,12 +68,11 @@ function toTemplateFormValues(
         max_part_size_bytes: null,
         record_danmu: null,
         danmu_statistics: danmuStatisticsFormValue(null),
-        cookies: null,
         platform_overrides: null,
         download_retry_policy: null,
         download_engine: null,
         engines_override: undefined,
-        proxy_config: null,
+        proxy_route: INHERIT_ROUTE,
         stream_selection_config: null,
         pipeline: null,
         session_complete_pipeline: null,
@@ -80,41 +80,6 @@ function toTemplateFormValues(
         offline_check_count: null,
         offline_check_delay_ms: null,
       };
-}
-
-/**
- * The shared editor plus the credential hint taken from the template's platform overrides.
- *
- * The subscription lives here, not in `TemplateEditor`, so a change to the overrides re-renders
- * this wrapper rather than the component that owns `useForm` and with it the whole form.
- */
-function TemplateConfigEditor(
-  props: Omit<
-    SharedConfigEditorProps<TemplateFormValues>,
-    'credentialPlatformNameHint'
-  >,
-) {
-  const platformOverrides = useWatch({
-    control: props.form.control,
-    name: 'platform_overrides',
-  });
-  const platformOverrideKeys =
-    platformOverrides && typeof platformOverrides === 'object'
-      ? Object.keys(platformOverrides as Record<string, unknown>)
-      : [];
-  const credentialPlatformNameHint =
-    platformOverrideKeys.length === 1
-      ? platformOverrideKeys[0]
-      : platformOverrideKeys.includes('bilibili')
-        ? 'bilibili'
-        : undefined;
-
-  return (
-    <SharedConfigEditor
-      {...props}
-      credentialPlatformNameHint={credentialPlatformNameHint}
-    />
-  );
 }
 
 interface TemplateEditorProps {
@@ -130,10 +95,7 @@ export function TemplateEditor({
   isSubmitting,
   mode,
 }: TemplateEditorProps) {
-  const { data: engines = [] } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
+  const { data: engines = [] } = useQuery(enginesQueryOptions);
 
   const form = useForm<TemplateFormValues>({
     resolver: zodResolver(UpdateTemplateRequestSchema),
@@ -147,14 +109,6 @@ export function TemplateEditor({
       reset(toTemplateFormValues(template));
     }
   }, [template, reset]);
-
-  // Memoized because the shared editor forwards it to a memoized card, which would otherwise
-  // re-render for a new object of the same contents.
-  const credentialScope = useMemo(
-    () =>
-      template ? ({ type: 'template', id: template.id } as const) : undefined,
-    [template],
-  );
 
   return (
     <Form {...form}>
@@ -171,8 +125,8 @@ export function TemplateEditor({
         >
           {/* Header Section */}
           <div className="flex flex-col gap-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
                 <div className="p-2 sm:p-3 rounded-2xl ring-1 ring-inset ring-black/5 dark:ring-white/10 shadow-sm bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
                   <FileBox className="w-6 h-6 sm:w-8 sm:h-8" />
                 </div>
@@ -186,9 +140,9 @@ export function TemplateEditor({
                   </h1>
                   {mode === 'edit' && (
                     <p className="text-muted-foreground text-xs flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
+                      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-0.5 rounded-full bg-accent/50 text-xs font-medium border border-border/50">
                         ID:{' '}
-                        <span className="font-mono truncate max-w-[100px] sm:max-w-none">
+                        <span className="min-w-0 font-mono truncate max-w-[100px] sm:max-w-none">
                           {template?.id}
                         </span>
                       </span>
@@ -235,12 +189,11 @@ export function TemplateEditor({
               </div>
             </div>
           </div>
-          <TemplateConfigEditor
+          <SharedConfigEditor
             form={form}
             paths={{
               streamSelection: 'stream_selection_config',
-              cookies: 'cookies',
-              proxy: 'proxy_config',
+              proxyRoute: 'proxy_route',
               retryPolicy: 'download_retry_policy',
               output: '',
               limits: '',
@@ -251,9 +204,8 @@ export function TemplateEditor({
               pairedSegmentPipeline: 'paired_segment_pipeline',
               offlineCheck: '',
             }}
-            credentialScope={credentialScope}
             engines={engines}
-            proxyMode="object"
+            proxyInherit={PER_PLATFORM}
             configMode="object"
             extraTabs={[
               {
@@ -284,7 +236,9 @@ export function TemplateEditor({
                   </span>
                 ),
                 icon: Settings,
-                content: <PlatformOverridesTab form={form} />,
+                content: (
+                  <PlatformOverridesTab form={form} templateId={template?.id} />
+                ),
               },
             ]}
             defaultTab="general"

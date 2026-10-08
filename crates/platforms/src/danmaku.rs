@@ -2,6 +2,7 @@ pub mod error;
 pub mod event;
 pub mod message;
 pub mod provider;
+pub mod proxy;
 pub mod registry;
 pub mod statistics;
 pub mod websocket;
@@ -11,6 +12,7 @@ pub use error::{DanmakuError, Result};
 pub use event::{DanmuControlEvent, DanmuItem};
 pub use message::{DanmuMessage, DanmuType};
 pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider, DanmuStream};
+pub use proxy::DanmuProxy;
 pub use registry::ProviderRegistry;
 pub use statistics::{
     AggregatorState, DanmuStatistics, RateDataPoint, StatisticsAggregator, StatisticsConfig,

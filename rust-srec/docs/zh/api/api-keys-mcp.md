@@ -49,7 +49,7 @@ curl http://localhost:12555/api/sessions \
 无论访问级别如何，以下限制始终生效：
 
 - API 密钥不能调用上述密钥管理端点、`POST /api/auth/change-password` 或 `POST /api/auth/logout-all`。
-- 只读密钥不能获取配置、主播覆盖配置、任务记录、预设、引擎、通知渠道、备份，以及其他可能包含已存凭据或运维机密的响应。
+- 只读密钥不能获取配置、主播覆盖配置、已保存的代理、任务记录、预设、引擎、通知渠道、备份，以及其他可能包含已存凭据或运维机密的响应。
 - 只读密钥可以读取需要认证的健康详情与录制媒体。下载/日志 WebSocket、流代理请求、日志配置和归档路由需要 `full` 权限。
 - 被禁用的用户、或处于强制改密状态的用户，其密钥会被拒绝。
 
@@ -100,6 +100,7 @@ http://<host>:<port>/api/mcp
 | 分组 | 示例 | 用途 |
 |---|---|---|
 | `config_*`、`template_*`、`engine_*` | `config_get_global`、`config_update_global`、`template_create` | 读取和修改「全局 → 平台 → 模板 → 主播」配置层级 |
+| `proxy_list` | `proxy_list` | 列出已保存的代理及其地址、用户名和使用情况，用于查找 `proxy_route` 引用的 ID；从不显示密码。代理需在 Web 界面或 REST API 中创建和编辑。 |
 | `streamer_*`、`filter_*` | `streamer_list`、`streamer_create`、`filter_create` | 管理监控的主播与录制过滤器 |
 | `session_*` | `session_list`、`session_danmu_statistics`、`session_read_danmu` | 查看录制会话、分段、弹幕统计与原始弹幕 XML（按字节分页） |
 | `pipeline_*`、`job_preset_*` | `pipeline_stats`、`pipeline_retry_job`、`pipeline_list_dags` | 观察与操作后处理管道 |
@@ -110,7 +111,7 @@ http://<host>:<port>/api/mcp
 
 `session_read_danmu` 在请求的字节上限内返回完整 UTF-8 字符（默认 65,536，最大 262,144）。请使用返回的 `next_offset` 继续读取；XML 节点可能跨页。建议至少请求四字节，以容纳任意字符。零上限、位于字符内部的偏移、上限不足以容纳下一个字符，以及请求窗口中的无效或不完整 UTF-8 都会返回错误。历史损坏文件不会自动修复；仍在写入的文件可能需要稍后重试。
 
-包含配置的工具组（`config_*`、`template_*`、`engine_*`、`streamer_*`、`filter_*`、处理管道/任务预设与执行详情工具、通知渠道/订阅工具，以及 `parse_url`）即使只读取也需要 `full` 密钥。这样可以防止只读助手获取平台 Cookie、处理器配置、通知凭据、直播访问数据或其他已存机密。
+包含配置的工具组（`config_*`、`template_*`、`engine_*`、`proxy_list`、`streamer_*`、`filter_*`、处理管道/任务预设与执行详情工具、通知渠道/订阅工具，以及 `parse_url`）即使只读取也需要 `full` 密钥。这样可以防止只读助手获取平台 Cookie、处理器配置、通知凭据、直播访问数据或其他已存机密。
 
 ## 安全注意事项
 

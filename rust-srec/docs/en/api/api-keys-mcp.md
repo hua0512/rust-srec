@@ -49,7 +49,7 @@ curl http://localhost:12555/api/sessions \
 Restrictions that always apply, regardless of access level:
 
 - API keys cannot call the key-management endpoints above, `POST /api/auth/change-password`, or `POST /api/auth/logout-all`.
-- Read-only keys cannot retrieve configuration, streamer overrides, job records, presets, engines, notification channels, backups, or other responses that can contain stored credentials or operational secrets.
+- Read-only keys cannot retrieve configuration, streamer overrides, saved proxies, job records, presets, engines, notification channels, backups, or other responses that can contain stored credentials or operational secrets.
 - Read-only keys may read authenticated health details and recorded media. Download/log WebSockets, stream proxy requests, and logging configuration or archive routes require `full` access.
 - Keys of a disabled user, or of a user in the forced-password-change state, are rejected.
 
@@ -102,6 +102,7 @@ Tools mirror the REST API and run in-process against the same services, so valid
 | Group | Examples | Purpose |
 |---|---|---|
 | `config_*`, `template_*`, `engine_*` | `config_get_global`, `config_update_global`, `template_create` | Read and change the global → platform → template → streamer configuration hierarchy |
+| `proxy_list` | `proxy_list` | List saved proxies with their address, username and usage, to find the ID a `proxy_route` names; passwords are never shown. Proxies are created and edited in the web interface or REST API. |
 | `streamer_*`, `filter_*` | `streamer_list`, `streamer_create`, `filter_create` | Manage monitored streamers and recording filters |
 | `session_*` | `session_list`, `session_danmu_statistics`, `session_read_danmu` | Inspect recording sessions, segments, danmu statistics, and raw danmu XML (byte-paginated) |
 | `pipeline_*`, `job_preset_*` | `pipeline_stats`, `pipeline_retry_job`, `pipeline_list_dags` | Observe and operate the post-processing pipeline |
@@ -112,7 +113,7 @@ For danmu analysis, prefer `session_danmu_statistics` (aggregated totals, rate t
 
 `session_read_danmu` returns complete UTF-8 characters within the requested byte limit (default 65,536; maximum 262,144). Continue with the returned `next_offset`; XML nodes may span pages. Use a limit of at least four bytes so any character can fit. Zero limits, offsets inside a character, insufficient space for the next character, and invalid or incomplete UTF-8 in the requested window return errors. Historical corrupt files are not repaired; a file still being written may require a later retry.
 
-Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. This prevents a read-only assistant from retrieving platform cookies, processor configuration, notification credentials, stream access data, or other stored secrets.
+Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `proxy_list`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. This prevents a read-only assistant from retrieving platform cookies, processor configuration, notification credentials, stream access data, or other stored secrets.
 
 ## Security Notes
 

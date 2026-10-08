@@ -50,6 +50,9 @@ const AuthedDashboardConfigLanguageLazyRouteImport = createFileRoute(
 const AuthedDashboardConfigLoggingLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/logging',
 )()
+const AuthedDashboardConfigProxiesLazyRouteImport = createFileRoute(
+  '/_authed/_dashboard/config/proxies',
+)()
 const AuthedDashboardConfigThemeLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/theme',
 )()
@@ -211,6 +214,16 @@ const AuthedDashboardConfigLoggingLazyRoute =
     getParentRoute: () => AuthedDashboardConfigRouteRoute,
   } as any).lazy(() =>
     import('./routes/_authed/_dashboard/config/logging.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthedDashboardConfigProxiesLazyRoute =
+  AuthedDashboardConfigProxiesLazyRouteImport.update({
+    id: '/proxies',
+    path: '/proxies',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/config/proxies.lazy').then(
       (d) => d.Route,
     ),
   )
@@ -526,6 +539,7 @@ export interface FileRoutesByFullPath {
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
+  '/config/proxies': typeof AuthedDashboardConfigProxiesLazyRoute
   '/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
@@ -570,6 +584,7 @@ export interface FileRoutesByTo {
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
+  '/config/proxies': typeof AuthedDashboardConfigProxiesLazyRoute
   '/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
@@ -618,6 +633,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/_authed/_dashboard/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/_authed/_dashboard/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
+  '/_authed/_dashboard/config/proxies': typeof AuthedDashboardConfigProxiesLazyRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
@@ -664,6 +680,7 @@ export interface FileRouteTypes {
     | '/config/global'
     | '/config/language'
     | '/config/logging'
+    | '/config/proxies'
     | '/config/theme'
     | '/sessions/$sessionId'
     | '/streamers/new'
@@ -708,6 +725,7 @@ export interface FileRouteTypes {
     | '/config/global'
     | '/config/language'
     | '/config/logging'
+    | '/config/proxies'
     | '/config/theme'
     | '/sessions/$sessionId'
     | '/streamers/new'
@@ -755,6 +773,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/config/global'
     | '/_authed/_dashboard/config/language'
     | '/_authed/_dashboard/config/logging'
+    | '/_authed/_dashboard/config/proxies'
     | '/_authed/_dashboard/config/theme'
     | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
@@ -898,6 +917,13 @@ declare module '@tanstack/react-router' {
       path: '/logging'
       fullPath: '/config/logging'
       preLoaderRoute: typeof AuthedDashboardConfigLoggingLazyRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
+    '/_authed/_dashboard/config/proxies': {
+      id: '/_authed/_dashboard/config/proxies'
+      path: '/proxies'
+      fullPath: '/config/proxies'
+      preLoaderRoute: typeof AuthedDashboardConfigProxiesLazyRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/config/theme': {
@@ -1119,6 +1145,7 @@ interface AuthedDashboardConfigRouteRouteChildren {
   AuthedDashboardConfigGlobalLazyRoute: typeof AuthedDashboardConfigGlobalLazyRoute
   AuthedDashboardConfigLanguageLazyRoute: typeof AuthedDashboardConfigLanguageLazyRoute
   AuthedDashboardConfigLoggingLazyRoute: typeof AuthedDashboardConfigLoggingLazyRoute
+  AuthedDashboardConfigProxiesLazyRoute: typeof AuthedDashboardConfigProxiesLazyRoute
   AuthedDashboardConfigThemeLazyRoute: typeof AuthedDashboardConfigThemeLazyRoute
   AuthedDashboardConfigEnginesEngineIdLazyRoute: typeof AuthedDashboardConfigEnginesEngineIdLazyRoute
   AuthedDashboardConfigEnginesCreateLazyRoute: typeof AuthedDashboardConfigEnginesCreateLazyRoute
@@ -1140,6 +1167,8 @@ const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteCh
       AuthedDashboardConfigLanguageLazyRoute,
     AuthedDashboardConfigLoggingLazyRoute:
       AuthedDashboardConfigLoggingLazyRoute,
+    AuthedDashboardConfigProxiesLazyRoute:
+      AuthedDashboardConfigProxiesLazyRoute,
     AuthedDashboardConfigThemeLazyRoute: AuthedDashboardConfigThemeLazyRoute,
     AuthedDashboardConfigEnginesEngineIdLazyRoute:
       AuthedDashboardConfigEnginesEngineIdLazyRoute,

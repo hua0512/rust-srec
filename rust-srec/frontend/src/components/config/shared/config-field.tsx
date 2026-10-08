@@ -84,9 +84,12 @@ export function FieldInfo({
         <CircleHelp className="h-3.5 w-3.5 cursor-help text-muted-foreground/40 transition-colors hover:text-muted-foreground" />
       </TooltipTrigger>
       {/* `TooltipContent` defaults to `bg-foreground text-background` for short label tips.
-          These are full info panels with their own themed header, so they take the normal
-          surface colours instead of the inverted ones. */}
-      <TooltipContent className="overflow-hidden border border-border/50 bg-popover p-0 text-popover-foreground shadow-xl">
+          These are full info panels with their own themed header, so they and their arrow
+          take the normal surface colours instead of the inverted ones. */}
+      <TooltipContent
+        className="overflow-hidden border border-border/50 bg-popover p-0 text-popover-foreground shadow-xl"
+        arrowClassName="bg-popover fill-popover"
+      >
         <StatusInfoTooltip icon={icon} title={title} theme={theme}>
           <p className="text-xs leading-relaxed text-muted-foreground">
             {children}
@@ -97,22 +100,39 @@ export function FieldInfo({
   );
 }
 
-/** Accented rule introducing a group of related settings. */
+/**
+ * Accented rule introducing a group of related settings.
+ *
+ * `description` sits under the title inside the rule; `action` (e.g. an add button) is pinned to
+ * the right end of it.
+ */
 export function ConfigSectionHeading({
   icon: Icon,
   accent = 'theme',
+  description,
+  action,
   children,
 }: {
   icon: LucideIcon;
   accent?: ConfigAccent;
+  description?: ReactNode;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border/40 pb-3">
-      <Icon className={cn('h-5 w-5', ACCENT_TEXT[accent])} />
-      <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
-        {children}
-      </h4>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/40 pb-3">
+      <Icon className={cn('h-5 w-5 shrink-0', ACCENT_TEXT[accent])} />
+      {/* With an action, a narrow card wraps the action under the title instead of squeezing
+          the title into a sliver beside it. */}
+      <div className={cn('min-w-0 flex-1 space-y-1', action && 'basis-56')}>
+        <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-foreground/80 sm:tracking-[0.2em]">
+          {children}
+        </h4>
+        {description && (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   );
 }

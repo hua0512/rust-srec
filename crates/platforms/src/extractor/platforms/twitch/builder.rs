@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::extractor::error::ExtractorError;
 use crate::extractor::hls_extractor::HlsExtractor;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platforms::twitch::auth::resolve_oauth_token;
 use crate::extractor::platforms::twitch::models::TwitchResponse;
 use crate::extractor::utils::{capture_group_1_or_invalid_url, extras_get_str};
 use crate::media::StreamInfo;
@@ -20,6 +21,10 @@ pub static URL_REGEX: LazyLock<Regex> =
 
 pub struct Twitch {
     extractor: Extractor,
+    gql_url: String,
+    /// Whether requests carry an account OAuth token, so a rejected request
+    /// is evidence against that account rather than an anonymous failure.
+    has_oauth_token: bool,
 }
 
 impl Twitch {
@@ -39,14 +44,22 @@ impl Twitch {
         extractor.add_header_str("device-id", Self::get_device_id());
         extractor.add_header_str("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko");
 
-        if let Some(token) = extras_get_str(extras.as_ref(), "oauth_token") {
+        let oauth_token = resolve_oauth_token(
+            extras_get_str(extras.as_ref(), "oauth_token"),
+            cookies.as_deref(),
+        );
+        if let Some(token) = &oauth_token {
             extractor.add_header_typed(reqwest::header::AUTHORIZATION, format!("OAuth {token}"));
         }
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-        Self { extractor }
+        Self {
+            extractor,
+            gql_url: Self::GPL_API_URL.to_owned(),
+            has_oauth_token: oauth_token.is_some(),
+        }
     }
 
     fn get_device_id() -> String {
@@ -83,34 +96,42 @@ impl Twitch {
 
     const GPL_API_URL: &str = "https://gql.twitch.tv/gql";
 
-    async fn post_gql<T: for<'de> serde::Deserialize<'de> + std::fmt::Debug>(
+    async fn post_gql<T: for<'de> serde::Deserialize<'de>>(
         &self,
         body: String,
     ) -> Result<Vec<T>, ExtractorError> {
-        let response = self
-            .extractor
-            .post(Self::GPL_API_URL)
-            .body(body)
-            .send()
-            .await?;
+        let response = self.extractor.post(&self.gql_url).body(body).send().await?;
+        // GQL rejects an invalid or revoked OAuth token with 401 instead of
+        // falling back to anonymous access.
+        if self.has_oauth_token && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(ExtractorError::Authentication {
+                code: "401".to_owned(),
+            });
+        }
+        let response = ExtractorError::check_response(response)?;
         let body = response.text().await?;
-        debug!("body: {}", body);
+        debug!(
+            response_bytes = body.len(),
+            "Received Twitch GraphQL response"
+        );
 
         // Try to parse as array first, then as single object if that fails
         let responses: Vec<T> = match serde_json::from_str::<Vec<T>>(&body) {
             Ok(responses) => responses,
             Err(e) => {
-                debug!("Failed to parse as array: {}", e);
+                debug!(category = ?e.classify(), "Failed to parse Twitch response as array");
                 // If parsing as array fails, try parsing as single object
-                let single_response: T = serde_json::from_str(&body).map_err(|e2| {
-                    debug!("Failed to parse as single object: {}", e2);
-                    e2
+                let single_response: T = serde_json::from_str(&body).inspect_err(|e2| {
+                    debug!(category = ?e2.classify(), "Failed to parse Twitch response as single object");
                 })?;
                 vec![single_response]
             }
         };
 
-        debug!("responses: {:?}", responses);
+        debug!(
+            response_count = responses.len(),
+            "Decoded Twitch GraphQL response"
+        );
         Ok(responses)
     }
 
@@ -135,10 +156,9 @@ impl Twitch {
         );
         let queries_string = format!("[{channel_shell_query},{stream_metadata_query}]");
 
-        debug!("queries_string: {}", queries_string);
+        debug!("Requesting Twitch channel metadata");
 
         let response = self.post_gql::<TwitchResponse>(queries_string).await?;
-        debug!("response: {:?}", response);
 
         let mut valid_responses = response.iter().filter(|r| r.data.is_some());
         let Some(channel_shell) = valid_responses.next() else {
@@ -284,7 +304,6 @@ impl Twitch {
             )
             .await?;
 
-        // debug!("response: {:?}", response);
         Ok(streams)
     }
 }
@@ -307,7 +326,128 @@ impl PlatformExtractor for Twitch {
 mod tests {
     use tracing::Level;
 
-    use crate::extractor::{default::default_client, platforms::twitch::builder::Twitch};
+    use crate::extractor::{
+        default::default_client, error::ExtractorError, platforms::twitch::builder::Twitch,
+    };
+
+    /// Serves one HTTP request with the given status line and JSON body,
+    /// returning the URL to post to.
+    async fn serve_once(status: &'static str, body: &'static str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 8192];
+                let _ = socket.read(&mut buf).await;
+                let response = format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len(),
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        format!("http://{addr}/gql")
+    }
+
+    const INVALID_TOKEN_BODY: &str = r#"{"error":"Unauthorized","status":401,"message":"The \"Authorization\" token is invalid."}"#;
+
+    async fn post_against(
+        oauth_token: Option<&str>,
+        status: &'static str,
+        body: &'static str,
+    ) -> Result<Vec<serde_json::Value>, ExtractorError> {
+        let extras = oauth_token.map(|token| serde_json::json!({ "oauth_token": token }));
+        let mut twitch = Twitch::new(
+            "https://www.twitch.tv/abby_".to_string(),
+            default_client(),
+            None,
+            extras,
+        );
+        twitch.gql_url = serve_once(status, body).await;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            twitch.post_gql::<serde_json::Value>("{}".to_owned()),
+        )
+        .await
+        .expect("local GQL request timed out")
+    }
+
+    #[tokio::test]
+    async fn rejected_oauth_token_is_an_authentication_failure() {
+        let error = post_against(Some("revoked"), "401 Unauthorized", INVALID_TOKEN_BODY)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&error, ExtractorError::Authentication { code } if code == "401"),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn browser_auth_token_cookie_authenticates_requests() {
+        let mut twitch = Twitch::new(
+            "https://www.twitch.tv/abby_".to_string(),
+            default_client(),
+            Some("unique_id=a; auth-token=revoked".to_owned()),
+            None,
+        );
+        twitch.gql_url = serve_once("401 Unauthorized", INVALID_TOKEN_BODY).await;
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            twitch.post_gql::<serde_json::Value>("{}".to_owned()),
+        )
+        .await
+        .expect("local GQL request timed out")
+        .unwrap_err();
+
+        assert!(
+            matches!(error, ExtractorError::Authentication { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn anonymous_unauthorized_is_not_account_evidence() {
+        let error = post_against(None, "401 Unauthorized", INVALID_TOKEN_BODY)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, ExtractorError::HttpError(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn blank_oauth_token_is_treated_as_anonymous() {
+        let error = post_against(Some("  "), "401 Unauthorized", INVALID_TOKEN_BODY)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, ExtractorError::HttpError(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn gql_throttling_is_a_rate_limit() {
+        let error = post_against(Some("valid"), "429 Too Many Requests", "{}")
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ExtractorError::RateLimited { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_response_still_decodes() {
+        let responses = post_against(Some("valid"), "200 OK", r#"[{"data":{}}]"#)
+            .await
+            .unwrap();
+
+        assert_eq!(responses.len(), 1);
+    }
 
     #[tokio::test]
     #[ignore]

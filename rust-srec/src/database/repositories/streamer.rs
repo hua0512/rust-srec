@@ -139,6 +139,15 @@ where
     .await
 }
 
+fn duplicate_url(error: Error, url: &str) -> Error {
+    match error {
+        Error::DatabaseSqlx(sqlx::Error::Database(error)) if error.is_unique_violation() => {
+            Error::duplicate_url(url)
+        }
+        error => error,
+    }
+}
+
 /// SQLx implementation of StreamerRepository.
 pub struct SqlxStreamerRepository {
     pool: SqlitePool,
@@ -349,21 +358,17 @@ impl StreamerRepository for SqlxStreamerRepository {
             .map(|_| ());
         }
 
-        let result = writes::write_streamer(
-            &mut *self.write_pool.acquire().await?,
+        let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
+        writes::write_streamer(
+            &mut transaction,
             streamer,
             super::row_write::WriteMode::Insert,
             streamer.updated_at,
         )
-        .await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                Err(Error::duplicate_url(&streamer.url))
-            }
-            Err(e) => Err(e.into()),
-        }
+        .await
+        .map_err(|error| duplicate_url(error, &streamer.url))?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
@@ -377,21 +382,18 @@ impl StreamerRepository for SqlxStreamerRepository {
             .map(|_| ());
         }
 
-        let result = writes::write_streamer(
-            &mut *self.write_pool.acquire().await?,
+        let mut transaction = crate::database::begin_immediate(&self.write_pool).await?;
+        // Update never creates: a missing streamer is a zero-row update.
+        writes::write_streamer(
+            &mut transaction,
             streamer,
             super::row_write::WriteMode::Update,
             streamer.updated_at,
         )
-        .await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                Err(Error::duplicate_url(&streamer.url))
-            }
-            Err(e) => Err(e.into()),
-        }
+        .await
+        .map_err(|error| duplicate_url(error, &streamer.url))?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()> {

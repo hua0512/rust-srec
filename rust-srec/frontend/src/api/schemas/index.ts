@@ -11,5 +11,6 @@ export * from './engine';
 export * from './system';
 export * from './notifications';
 export * from './logging';
-export * from './credentials';
 export * from './baidupcs';
+export * from './proxies';
+export * from './credential-profiles';

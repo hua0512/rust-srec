@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { resolvePlayerMediaType, type PlayerMediaType } from '@/lib/media';
 import { resolveUrl } from '@/server/functions/parse';
+import { ManagedStreamSchema } from '@/api/schemas/system';
 import { isDesktopBuild } from '@/utils/desktop';
 import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
@@ -29,6 +30,7 @@ type HlsInstance = InstanceType<(typeof import('hls.js'))['default']>;
 interface PlaybackSource {
   url: string;
   headers?: Record<string, string>;
+  playback?: { handle: string; stream: number };
 }
 
 interface SourceRequest {
@@ -109,7 +111,21 @@ export function buildPlaybackUrl({
   baseUrl,
   connectionMode = 'auto',
   sourceUrl,
+  playback,
 }: BuildPlaybackUrlOptions): string {
+  if (playback) {
+    // Account headers stay server-side behind the handle; only the media URL
+    // travels with it.
+    const query = new URLSearchParams({
+      url,
+      playback_handle: playback.handle,
+      stream: String(playback.stream),
+    });
+    if (!desktopBuild) return `/stream-proxy?${query}`;
+    if (!desktopToken) throw new PlaybackConfigurationError('session');
+    query.set('token', desktopToken);
+    return `${baseUrl.replace(/\/$/, '')}/stream-proxy?${query}`;
+  }
   const hasHeaders = Object.keys(headers ?? {}).length > 0;
   if (connectionMode === 'direct' && hasHeaders) {
     throw new PlaybackConfigurationError('headers');
@@ -150,10 +166,18 @@ function useResolvedSource(options: UseResolvedSourceOptions): {
 } {
   const { url, headers, title, streamData, reloadKey } = options;
   const [resolved, setResolved] = useState<ResolvedSource | null>(null);
-  const needsResolution = Boolean(streamData && title);
+  // Managed streams are resolved during parse and play through their handle.
+  const managed = ManagedStreamSchema.safeParse(streamData);
+  const managedStream = managed.success ? managed.data : null;
+  const needsResolution = Boolean(streamData && title) && !managedStream;
 
   useEffect(() => {
-    if (!streamData || !title) return;
+    if (
+      !streamData ||
+      !title ||
+      ManagedStreamSchema.safeParse(streamData).success
+    )
+      return;
 
     let disposed = false;
     const request: SourceRequest = {
@@ -197,6 +221,19 @@ function useResolvedSource(options: UseResolvedSourceOptions): {
     };
   }, [url, headers, title, streamData, reloadKey]);
 
+  if (managedStream) {
+    return {
+      source: {
+        url,
+        playback: {
+          handle: managedStream.playback_handle,
+          stream: managedStream.stream,
+        },
+      },
+      resolving: false,
+      error: null,
+    };
+  }
   if (!needsResolution) {
     return { source: { url, headers }, resolving: false, error: null };
   }
@@ -260,10 +297,9 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   });
   const desktopBuild = isDesktopBuild();
   const desktopToken = desktopBuild ? getDesktopAccessToken() : null;
-  const connection = effectiveConnection(
-    connectionMode,
-    source?.headers ?? headers,
-  );
+  const connection = source?.playback
+    ? 'proxy'
+    : effectiveConnection(connectionMode, source?.headers ?? headers);
   let playUrl: string | null = null;
   let configurationError: PlaybackError | null = null;
   if (source) {

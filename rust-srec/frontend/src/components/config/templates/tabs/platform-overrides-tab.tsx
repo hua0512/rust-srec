@@ -20,6 +20,7 @@ import {
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
+import { formatPlatformName } from '@/lib/format';
 import { PlatformOverrideCard } from './platform-override-card';
 import {
   Card,
@@ -34,9 +35,13 @@ import type { TemplateFormValues } from '../template-editor';
 
 interface PlatformOverridesTabProps {
   form: UseFormReturn<TemplateFormValues>;
+  templateId?: string;
 }
 
-export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
+export function PlatformOverridesTab({
+  form,
+  templateId,
+}: PlatformOverridesTabProps) {
   const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
 
@@ -62,6 +67,18 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
     const newOverrides = { ...currentOverrides };
     delete newOverrides[platformName];
     form.setValue('platform_overrides', newOverrides, { shouldDirty: true });
+  };
+
+  // Overrides are keyed by platform name; the accounts their selection draws
+  // from need the platform's ID, so only a name naming exactly one platform
+  // resolves.
+  const credentialPlatformFor = (platformName: string) => {
+    const matches = platforms.filter(
+      (platform) => platform.name === platformName,
+    );
+    return matches.length === 1
+      ? { id: matches[0].id, name: matches[0].name }
+      : undefined;
   };
 
   // Filter out already overridden platforms
@@ -109,9 +126,10 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
                       <CommandItem
                         key={platform.id}
                         value={platform.name}
+                        keywords={[formatPlatformName(platform.name)]}
                         onSelect={() => handleAddOverride(platform.name)}
                       >
-                        {platform.name}
+                        {formatPlatformName(platform.name)}
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -139,6 +157,8 @@ export function PlatformOverridesTab({ form }: PlatformOverridesTabProps) {
           <PlatformOverrideCard
             key={platformName}
             platformName={platformName}
+            platform={credentialPlatformFor(platformName)}
+            templateId={templateId}
             form={form}
             onRemove={() => handleRemoveOverride(platformName)}
           />

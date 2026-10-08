@@ -1,5 +1,7 @@
 //! Template management routes.
 
+use std::collections::HashMap;
+
 use axum::{
     Json, Router,
     extract::{FromRef, Path, Query, State},
@@ -13,7 +15,9 @@ use crate::api::models::{
     UpdateTemplateRequest,
 };
 use crate::api::server::AppState;
+use crate::credentials::CredentialOwner;
 use crate::database::models::TemplateConfigDbModel;
+use crate::database::repositories::{StoredSelection, credential_selections};
 use crate::utils::json::{self, JsonContext};
 use tracing::info;
 
@@ -59,8 +63,14 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/clone", post(clone_template))
 }
 
-/// Convert TemplateConfigDbModel to TemplateResponse.
-fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> TemplateResponse {
+/// Convert TemplateConfigDbModel to TemplateResponse, carrying the template's
+/// stored account selections inside their platform overrides.
+fn db_model_to_response(
+    model: &TemplateConfigDbModel,
+    usage_count: u32,
+    selections: &[StoredSelection],
+    proxy_route: crate::proxies::ProxyRoute,
+) -> TemplateResponse {
     TemplateResponse {
         id: model.id.clone(),
         name: model.name.clone(),
@@ -71,13 +81,16 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         extractor: model.extractor.clone(),
         record_danmu: model.record_danmu,
         danmu_statistics: model.danmu_statistics.clone(),
-        platform_overrides: json::parse_optional_value_non_null(
-            model.platform_overrides.as_deref(),
-            JsonContext::TemplateField {
-                template_id: &model.id,
-                field: "platform_overrides",
-            },
-            "Invalid template JSON field; omitting from response",
+        platform_overrides: credential_selections::inject_overrides(
+            json::parse_optional_value_non_null(
+                model.platform_overrides.as_deref(),
+                JsonContext::TemplateField {
+                    template_id: &model.id,
+                    field: "platform_overrides",
+                },
+                "Invalid template JSON field; omitting from response",
+            ),
+            selections,
         ),
         engines_override: json::parse_optional_value_non_null(
             model.engines_override.as_deref(),
@@ -88,12 +101,11 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
             "Invalid template JSON field; omitting from response",
         ),
         stream_selection_config: model.stream_selection_config.clone(),
-        cookies: model.cookies.clone(),
         min_segment_size_bytes: model.min_segment_size_bytes,
         max_download_duration_secs: model.max_download_duration_secs,
         max_part_size_bytes: model.max_part_size_bytes,
         download_retry_policy: model.download_retry_policy.clone(),
-        proxy_config: model.proxy_config.clone(),
+        proxy_route,
         pipeline: model.pipeline.clone(),
         session_complete_pipeline: model.session_complete_pipeline.clone(),
         paired_segment_pipeline: model.paired_segment_pipeline.clone(),
@@ -103,6 +115,37 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         created_at: model.created_at,
         updated_at: model.updated_at,
     }
+}
+
+/// The proxy route a template stores.
+async fn template_route(
+    config_service: &crate::config::ConfigService<
+        crate::database::repositories::config::SqlxConfigRepository,
+        crate::database::repositories::streamer::SqlxStreamerRepository,
+    >,
+    template_id: &str,
+) -> ApiResult<crate::proxies::ProxyRoute> {
+    Ok(config_service
+        .proxy_route_of(
+            &crate::database::repositories::proxies::RouteOwner::Template(template_id.to_owned()),
+        )
+        .await?)
+}
+
+/// The account selections a template stores, one per platform.
+async fn template_selections(
+    config_service: &crate::config::ConfigService<
+        crate::database::repositories::config::SqlxConfigRepository,
+        crate::database::repositories::streamer::SqlxStreamerRepository,
+    >,
+    template_id: &str,
+) -> ApiResult<Vec<StoredSelection>> {
+    config_service
+        .credential_selections_for(&CredentialOwner::Template {
+            template_id: template_id.to_owned(),
+        })
+        .await
+        .map_err(ApiError::from)
 }
 
 /// Validate the optional offline-check overrides on a template request.
@@ -146,6 +189,8 @@ pub async fn create_template(
     }
 
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
+    super::config::reject_proxy_config(request.proxy_config.as_ref())?;
+    super::config::reject_cookies(request.cookies.as_ref())?;
 
     // Get config service from state
     let config_service = &state.config_service;
@@ -171,12 +216,10 @@ pub async fn create_template(
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
-    template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.proxy_config = request.proxy_config;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -185,13 +228,19 @@ pub async fn create_template(
 
     // Create the template
     config_service
-        .create_template_config(&template)
+        .create_template_config_with_route(&template, request.proxy_route.as_ref())
         .await
         .map_err(ApiError::from)?;
+    let template = config_service
+        .get_template_config(&template.id)
+        .await
+        .map_err(ApiError::from)?;
+    let selections = template_selections(config_service, &template.id).await?;
+    let route = template_route(config_service, &template.id).await?;
 
     Ok((
         StatusCode::CREATED,
-        Json(db_model_to_response(&template, 0)),
+        Json(db_model_to_response(&template, 0, &selections, route)),
     ))
 }
 
@@ -228,6 +277,25 @@ pub async fn list_templates(
     let effective_limit = pagination.limit.min(100);
     let limit = effective_limit as usize;
 
+    let routes = config_service
+        .proxy_routes_of_kind(
+            &crate::database::repositories::proxies::RouteOwner::Template(String::new()),
+        )
+        .await?;
+    let mut selections: HashMap<String, Vec<StoredSelection>> = HashMap::new();
+    for stored in config_service
+        .list_credential_selections()
+        .await
+        .map_err(ApiError::from)?
+    {
+        if let CredentialOwner::Template { template_id } = &stored.owner {
+            selections
+                .entry(template_id.clone())
+                .or_default()
+                .push(stored);
+        }
+    }
+
     let templates: Vec<TemplateResponse> = templates
         .into_iter()
         .skip(offset)
@@ -235,7 +303,9 @@ pub async fn list_templates(
         .map(|t| {
             // Count streamers using this template
             let usage_count = streamer_manager.get_by_template(&t.id).len() as u32;
-            db_model_to_response(&t, usage_count)
+            let selections = selections.get(&t.id).map_or(&[][..], Vec::as_slice);
+            let route = routes.get(&t.id).cloned().unwrap_or_default();
+            db_model_to_response(&t, usage_count, selections, route)
         })
         .collect();
 
@@ -272,8 +342,15 @@ pub async fn get_template(
 
     // Count streamers using this template
     let usage_count = streamer_manager.get_by_template(&id).len() as u32;
+    let selections = template_selections(config_service, &id).await?;
+    let route = template_route(config_service, &id).await?;
 
-    Ok(Json(db_model_to_response(&template, usage_count)))
+    Ok(Json(db_model_to_response(
+        &template,
+        usage_count,
+        &selections,
+        route,
+    )))
 }
 
 #[utoipa::path(
@@ -294,6 +371,8 @@ pub async fn update_template(
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
+    super::config::reject_proxy_config(request.proxy_config.as_ref())?;
+    super::config::reject_cookies(request.cookies.as_ref())?;
 
     // Get config service from state
     let config_service = &state.config_service;
@@ -334,12 +413,10 @@ pub async fn update_template(
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
-    template.cookies = request.cookies;
     template.min_segment_size_bytes = request.min_segment_size_bytes;
     template.max_download_duration_secs = request.max_download_duration_secs;
     template.max_part_size_bytes = request.max_part_size_bytes;
     template.download_retry_policy = request.download_retry_policy;
-    template.proxy_config = request.proxy_config;
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
@@ -348,7 +425,12 @@ pub async fn update_template(
 
     // Update the template
     config_service
-        .update_template_config(&template)
+        .update_template_config_with_route(&template, request.proxy_route.as_ref())
+        .await
+        .map_err(ApiError::from)?;
+    // Selections the request omitted are kept, so read back what is stored.
+    let template = config_service
+        .get_template_config(&id)
         .await
         .map_err(ApiError::from)?;
 
@@ -356,8 +438,15 @@ pub async fn update_template(
 
     // Count streamers using this template
     let usage_count = streamer_manager.get_by_template(&id).len() as u32;
+    let selections = template_selections(config_service, &id).await?;
+    let route = template_route(config_service, &id).await?;
 
-    Ok(Json(db_model_to_response(&template, usage_count)))
+    Ok(Json(db_model_to_response(
+        &template,
+        usage_count,
+        &selections,
+        route,
+    )))
 }
 
 #[utoipa::path(
@@ -464,33 +553,8 @@ pub async fn clone_template(
         )));
     }
 
-    // Create the cloned template with a new ID and name
-    let mut cloned = TemplateConfigDbModel::new(&request.new_name);
-    cloned.output_folder = existing.output_folder;
-    cloned.output_filename_template = existing.output_filename_template;
-    cloned.output_file_format = existing.output_file_format;
-    cloned.download_engine = existing.download_engine;
-    cloned.extractor = existing.extractor;
-    cloned.record_danmu = existing.record_danmu;
-    cloned.danmu_statistics = existing.danmu_statistics.clone();
-    cloned.platform_overrides = existing.platform_overrides;
-    cloned.engines_override = existing.engines_override;
-    cloned.stream_selection_config = existing.stream_selection_config;
-    cloned.cookies = existing.cookies;
-    cloned.min_segment_size_bytes = existing.min_segment_size_bytes;
-    cloned.max_download_duration_secs = existing.max_download_duration_secs;
-    cloned.max_part_size_bytes = existing.max_part_size_bytes;
-    cloned.download_retry_policy = existing.download_retry_policy;
-    cloned.proxy_config = existing.proxy_config;
-    cloned.pipeline = existing.pipeline;
-    cloned.session_complete_pipeline = existing.session_complete_pipeline;
-    cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
-    cloned.offline_check_count = existing.offline_check_count;
-    cloned.offline_check_delay_ms = existing.offline_check_delay_ms;
-
-    // Create the cloned template
-    config_service
-        .create_template_config(&cloned)
+    let cloned = config_service
+        .clone_template_config(&id, &request.new_name)
         .await
         .map_err(ApiError::from)?;
 
@@ -499,12 +563,126 @@ pub async fn clone_template(
         existing.name, id, cloned.name, cloned.id
     );
 
-    Ok((StatusCode::CREATED, Json(db_model_to_response(&cloned, 0))))
+    let selections = template_selections(config_service, &cloned.id).await?;
+    let route = template_route(config_service, &cloned.id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(db_model_to_response(&cloned, 0, &selections, route)),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn templates_store_a_route_and_refuse_the_replaced_proxy_config() {
+        use crate::config::{ConfigEventBroadcaster, ConfigService};
+        use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
+        use axum::http::StatusCode;
+        use std::sync::Arc;
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let proxy =
+            crate::database::repositories::proxies::save_for_test(&pool, "T", "http://t.example:1")
+                .await;
+        let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let state = TemplateRouteState {
+            config_service: Arc::new(ConfigService::new(
+                Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
+                streamers.clone(),
+            )),
+            streamer_manager: Arc::new(crate::streamer::StreamerManager::new(
+                streamers,
+                ConfigEventBroadcaster::new(),
+            )),
+        };
+        let (status, Json(created)) = create_template(
+            State(state.clone()),
+            Json(
+                serde_json::from_value(serde_json::json!({
+                    "name": "Routed",
+                    "proxy_route": {"kind": "proxy", "id": proxy},
+                }))
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(
+            created.proxy_route,
+            crate::proxies::ProxyRoute::Proxy { id: proxy.clone() }
+        );
+        // An update without a route keeps the stored one.
+        let Json(updated) = update_template(
+            State(state.clone()),
+            Path(created.id.clone()),
+            Json(serde_json::from_value(serde_json::json!({"name": "Renamed"})).unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.proxy_route, created.proxy_route);
+        for body in [
+            serde_json::json!({"name": "Legacy", "proxy_config": "{\"enabled\":false}"}),
+            serde_json::json!({"name": "Legacy", "platform_overrides": {"bilibili": {"proxy_config": {"enabled": true}}}}),
+        ] {
+            let error = create_template(
+                State(state.clone()),
+                Json(serde_json::from_value(body).unwrap()),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(error.code, "PROXY_CONFIG_REPLACED");
+        }
+        let error = update_template(
+            State(state.clone()),
+            Path(created.id.clone()),
+            Json(
+                serde_json::from_value(
+                    serde_json::json!({"proxy_route": {"kind": "proxy", "id": "missing"}}),
+                )
+                .unwrap(),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "PROXY_NOT_FOUND");
+
+        // Cookies on a template are refused; a blank value asks for none.
+        let error = create_template(
+            State(state.clone()),
+            Json(
+                serde_json::from_value(serde_json::json!({"name": "Cookies", "cookies": "a=b"}))
+                    .unwrap(),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            (error.status, error.code.as_str()),
+            (StatusCode::UNPROCESSABLE_ENTITY, "COOKIES_REPLACED")
+        );
+        let error = update_template(
+            State(state.clone()),
+            Path(created.id.clone()),
+            Json(serde_json::from_value(serde_json::json!({"cookies": "a=b"})).unwrap()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "COOKIES_REPLACED");
+        let Json(blank) = update_template(
+            State(state.clone()),
+            Path(created.id.clone()),
+            Json(serde_json::from_value(serde_json::json!({"cookies": " "})).unwrap()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(blank.id, created.id);
+    }
 
     #[tokio::test]
     async fn template_routes_distinguish_typed_not_found_from_database_error_text() {
@@ -590,12 +768,11 @@ mod tests {
             platform_overrides: None,
             engines_override: None,
             stream_selection_config: None,
-            cookies: None,
             min_segment_size_bytes: None,
             max_download_duration_secs: None,
             max_part_size_bytes: None,
             download_retry_policy: None,
-            proxy_config: None,
+            proxy_route: crate::proxies::ProxyRoute::Inherit,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
@@ -617,7 +794,7 @@ mod tests {
         let at = chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap();
         model.created_at = at;
         model.updated_at = at;
-        let response = db_model_to_response(&model, 3);
+        let response = db_model_to_response(&model, 3, &[], crate::proxies::ProxyRoute::Inherit);
 
         assert_eq!(response.name, "test");
         assert_eq!(response.usage_count, 3);

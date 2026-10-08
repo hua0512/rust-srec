@@ -46,6 +46,23 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
       fields.push({ label: msg`Category`, value: inner.category });
     if (inner.platform)
       fields.push({ label: msg`Platform`, value: inner.platform });
+    // A rate limit pauses one connection to the platform: direct, the
+    // system proxy, or a saved proxy named by `proxy_name`.
+    if (typeof inner.route === 'string')
+      fields.push({
+        label: msg`Connection`,
+        value:
+          inner.route === 'proxy'
+            ? (inner.proxy_name ?? i18n._(msg`Saved proxy`))
+            : i18n._(
+                inner.route === 'system' ? msg`System proxy` : msg`Direct`,
+              ),
+      });
+    if (inner.retry_at)
+      fields.push({
+        label: msg`Paused until`,
+        value: new Date(inner.retry_at).toLocaleTimeString(i18n.locale),
+      });
 
     if (inner.output_path || inner.path) {
       fields.push({

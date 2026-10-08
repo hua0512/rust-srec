@@ -17,24 +17,25 @@ https://live.bilibili.com/{room_id}
 
 ## Authentication
 
+Bilibili accounts are [account profiles](../concepts/configuration.md#account-profiles-and-selection) on the Bilibili platform.
+
 ### QR Code Login (Recommended)
 
-1. Go to **Settings (Settings)** → **Platform (Platform)**
-2. Select **Bilibili (Platform-bilibili)** → **Network (Network)** tab
-3. Click **Scan Login (Qr login)**
-4. Scan the QR code with Bilibili mobile app
-5. Credentials are automatically saved
+1. Go to **Settings** → **Platforms** and open **Bilibili**
+2. In the **Network** tab, click **Add account**, enter a label, keep **Scan QR code** selected and click **Show QR code** (to log an existing account in again, use **Log in again** on its row or **Log in with QR code** in its **…** menu)
+3. Scan the QR code with the Bilibili mobile app
+4. The profile is saved when the login completes; to record with it, click **Change** above the account list, select it under **Account selection** and save the page
 
 ### Manual Cookies
 
-Set cookies in **Platform Config** → **Bilibili**:
+Add a profile in the same place, choose **Paste cookies** and paste the cookies of a logged-in browser session:
 
 | Cookie | Required | Description |
 |--------|----------|-------------|
 | `SESSDATA` | Yes | Session token |
-| `refresh_token` | Yes | Token for refreshing cookies (can be found in Browser LocalStorage as `ac_time_value`) |
-| `bili_jct` | Optional | CSRF token |
-| `DedeUserID` | Optional | User ID |
+| `DedeUserID` | Optional | User ID; lets danmaku connect as the account |
+
+Pasted cookies are not renewed automatically: once Bilibili stops accepting them, the account needs a new login. Automatic refresh needs the access token and refresh token that a QR code login saves with the profile; the browser's `ac_time_value` is not such a token.
 
 ## Quality Options
 
@@ -49,7 +50,7 @@ Set cookies in **Platform Config** → **Bilibili**:
 ## Notes
 
 ::: warning
-Cookies are required for recording Super HD (1080P) and above quality.
+A logged-in account is required for recording Super HD (1080P) and above quality.
 :::
 
 ::: info

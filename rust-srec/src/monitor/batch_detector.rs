@@ -285,6 +285,8 @@ mod tests {
         result.add_result(
             "streamer-2".to_string(),
             LiveStatus::Live {
+                credential_binding: None,
+                credential_snapshot: None,
                 title: "Test".to_string(),
                 category: None,
                 avatar: None,

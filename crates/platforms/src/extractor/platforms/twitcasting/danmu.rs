@@ -370,6 +370,10 @@ impl DanmuProtocolFactory for TwitcastingDanmuProtocol {
 }
 
 impl DanmuProtocol for TwitcastingDanmuProtocol {
+    fn use_http_client(&mut self, client: Client) {
+        self.client = client;
+    }
+
     async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get the movie ID from streamserver.php
         let movie_id = self.get_movie_id(room_id).await?;

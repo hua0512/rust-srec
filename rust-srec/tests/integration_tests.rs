@@ -28,9 +28,7 @@ async fn create_test_platform(pool: &DbPool, prefix: &str) -> String {
         platform_name: format!("{}_{}", prefix, uuid::Uuid::new_v4()),
         fetch_delay_ms: Some(60_000),
         download_delay_ms: Some(1_000),
-        cookies: None,
         platform_specific_config: None,
-        proxy_config: None,
         record_danmu: None,
         danmu_statistics: None,
         output_folder: None,
@@ -367,11 +365,10 @@ mod database_tests {
             INSERT INTO platform_config (id, platform_name, event_hooks)
             VALUES ('platform-1', 'hooked_platform', '{"on_online":"notify-send online"}');
 
-            INSERT INTO template_config (id, name, cookies, platform_overrides, event_hooks)
+            INSERT INTO template_config (id, name, platform_overrides, event_hooks)
             VALUES (
                 'template-1',
                 'hooked_template',
-                'session=abc',
                 '{"douyin":{"cookies":"c","event_hooks":{"on_offline":"echo off"}},"huya":{"record_danmu":true},"broken":null}',
                 '{"on_download_error":"echo boom"}'
             );
@@ -462,8 +459,8 @@ mod database_tests {
         .expect("Failed to read unparseable streamer config");
         assert_eq!(unparseable, "not json");
 
-        let (overrides, cookies): (String, String) = sqlx::query_as(
-            "SELECT platform_overrides, cookies FROM template_config WHERE id = 'template-1'",
+        let (overrides,): (String,) = sqlx::query_as(
+            "SELECT platform_overrides FROM template_config WHERE id = 'template-1'",
         )
         .fetch_one(&pool)
         .await
@@ -472,7 +469,6 @@ mod database_tests {
             overrides,
             r#"{"douyin":{"cookies":"c"},"huya":{"record_danmu":true},"broken":null}"#
         );
-        assert_eq!(cookies, "session=abc");
     }
 }
 
@@ -1489,6 +1485,8 @@ mod end_to_end_tests {
 
         // Simulate live status detection
         let live_status = LiveStatus::Live {
+            credential_binding: None,
+            credential_snapshot: None,
             title: "Playing Rust!".to_string(),
             category: Some("Gaming".to_string()),
             avatar: None,
@@ -1676,6 +1674,7 @@ mod end_to_end_tests {
         let now = Utc::now();
         let streams = Vec::new();
         let live_args = LiveDetectedArgs {
+            credential_binding: None,
             streamer_id: &streamer_id,
             streamer_name: "TestStreamer",
             streamer_url: "https://twitch.tv/teststreamer",
@@ -1732,6 +1731,7 @@ mod end_to_end_tests {
         let later = now + chrono::Duration::seconds(5);
         let streams2 = Vec::new();
         let relive_args = LiveDetectedArgs {
+            credential_binding: None,
             streamer_id: &streamer_id,
             streamer_name: "TestStreamer",
             streamer_url: "https://twitch.tv/teststreamer",

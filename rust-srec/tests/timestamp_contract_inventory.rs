@@ -21,7 +21,8 @@ async fn canonical_timestamp_inventory_storage_and_nullability() {
         .connect("sqlite::memory:")
         .await
         .unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+    // Includes the post-migration conversions that drop their pending markers.
+    rust_srec::database::run_migrations(&pool).await.unwrap();
     let inventory: BTreeMap<String, TableContract> =
         serde_json::from_str(include_str!("fixtures/timestamp_contract_inventory.json")).unwrap();
     let tables: BTreeSet<String> = sqlx::query_scalar(

@@ -97,8 +97,6 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_downloads: i32,
     pub max_concurrent_uploads: i32,
     pub streamer_check_delay_ms: i64,
-    /// JSON serialized ProxyConfig
-    pub proxy_config: String,
     pub offline_check_delay_ms: i64,
     pub offline_check_count: i32,
     /// Name of the default engine configuration
@@ -171,7 +169,6 @@ impl Default for GlobalConfigDbModel {
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
-            proxy_config: r#"{"enabled":false,"url":null}"#.to_string(),
             offline_check_delay_ms: 20000,
             offline_check_count: 3,
             default_download_engine: "mesio".to_string(),
@@ -208,11 +205,8 @@ pub struct PlatformConfigDbModel {
     pub platform_name: String,
     pub fetch_delay_ms: Option<i64>,
     pub download_delay_ms: Option<i64>,
-    pub cookies: Option<String>,
     /// JSON blob for platform-specific settings
     pub platform_specific_config: Option<String>,
-    /// JSON serialized ProxyConfig
-    pub proxy_config: Option<String>,
     pub record_danmu: Option<bool>,
     /// JSON `DanmuStatisticsConfig`; NULL inherits the global layer.
     pub danmu_statistics: Option<String>,
@@ -249,7 +243,6 @@ pub struct TemplateConfigDbModel {
     pub name: String,
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
-    pub cookies: Option<String>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,
     pub max_download_duration_secs: Option<i64>,
@@ -267,8 +260,6 @@ pub struct TemplateConfigDbModel {
     pub extractor: Option<String>,
     /// JSON map for template-specific engine configurations
     pub engines_override: Option<String>,
-    /// JSON serialized ProxyConfig
-    pub proxy_config: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
     /// JSON serialized `Vec<PipelineStep>`
@@ -292,7 +283,6 @@ impl TemplateConfigDbModel {
             name: name.into(),
             output_folder: None,
             output_filename_template: None,
-            cookies: None,
             output_file_format: None,
             min_segment_size_bytes: None,
             max_download_duration_secs: None,
@@ -304,7 +294,6 @@ impl TemplateConfigDbModel {
             download_engine: None,
             extractor: None,
             engines_override: None,
-            proxy_config: None,
             stream_selection_config: None,
             pipeline: None,
             session_complete_pipeline: None,

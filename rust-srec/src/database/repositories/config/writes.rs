@@ -1,4 +1,6 @@
+use super::super::credential_selections;
 use super::super::row_write::{Mutation, RowWrite, WriteMode};
+use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
@@ -41,7 +43,6 @@ pub(crate) async fn write_global(
         model.streamer_check_delay_ms,
         true,
     )?;
-    row.field("proxy_config", &model.proxy_config, true)?;
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
     row.field("offline_check_count", model.offline_check_count, true)?;
     row.field(
@@ -151,17 +152,22 @@ pub(crate) async fn import_engine(
     write_engine(connection, model, WriteMode::Import).await
 }
 
+/// Writes the row and applies the selections its platform overrides carry.
+/// Overrides that omit a selection keep the stored one.
 pub(crate) async fn write_template(
     connection: &mut sqlx::SqliteConnection,
     model: &TemplateConfigDbModel,
     mode: WriteMode,
     updated_at: i64,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
         WriteMode::Import => Mutation::Upsert,
     };
+    super::super::proxies::reject_legacy_overrides(model.platform_overrides.as_deref())?;
+    let mut platform_overrides = model.platform_overrides.clone();
+    let selections = credential_selections::take_overrides(&mut platform_overrides)?;
     let mut row = RowWrite::new("template_config", mutation, &model.id)?;
     row.field("name", &model.name, true)?;
     row.field("output_folder", &model.output_folder, true)?;
@@ -170,7 +176,6 @@ pub(crate) async fn write_template(
         &model.output_filename_template,
         true,
     )?;
-    row.field("cookies", &model.cookies, true)?;
     row.field("output_file_format", &model.output_file_format, true)?;
     row.field("min_segment_size_bytes", model.min_segment_size_bytes, true)?;
     row.field(
@@ -181,14 +186,13 @@ pub(crate) async fn write_template(
     row.field("max_part_size_bytes", model.max_part_size_bytes, true)?;
     row.field("record_danmu", model.record_danmu, true)?;
     row.field("danmu_statistics", &model.danmu_statistics, true)?;
-    row.field("platform_overrides", &model.platform_overrides, true)?;
+    row.field("platform_overrides", &platform_overrides, true)?;
     row.field("download_retry_policy", &model.download_retry_policy, true)?;
     row.field("download_engine", &model.download_engine, true)?;
     if mode != WriteMode::Import {
         row.field("extractor", &model.extractor, true)?;
     }
     row.field("engines_override", &model.engines_override, true)?;
-    row.field("proxy_config", &model.proxy_config, true)?;
     row.field(
         "stream_selection_config",
         &model.stream_selection_config,
@@ -209,13 +213,14 @@ pub(crate) async fn write_template(
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
     row.field("created_at", model.created_at.timestamp_millis(), false)?;
     row.field("updated_at", updated_at, true)?;
-    row.execute(connection).await
+    row.execute(&mut *connection).await?;
+    credential_selections::write_template(connection, &model.id, selections).await
 }
 
 pub(crate) async fn import_template(
     connection: &mut sqlx::SqliteConnection,
     model: &TemplateConfigDbModel,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     write_template(
         connection,
         model,
@@ -225,11 +230,14 @@ pub(crate) async fn import_template(
     .await
 }
 
+/// Writes the row and, when given, the platform's own selection. `None` keeps
+/// the stored selection.
 pub(crate) async fn write_platform(
     connection: &mut sqlx::SqliteConnection,
     model: &PlatformConfigDbModel,
     mode: WriteMode,
-) -> Result<(), sqlx::Error> {
+    selection: Option<&CredentialSelection>,
+) -> crate::Result<()> {
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -239,13 +247,11 @@ pub(crate) async fn write_platform(
     row.field("platform_name", &model.platform_name, true)?;
     row.field("fetch_delay_ms", model.fetch_delay_ms, true)?;
     row.field("download_delay_ms", model.download_delay_ms, true)?;
-    row.field("cookies", &model.cookies, true)?;
     row.field(
         "platform_specific_config",
         &model.platform_specific_config,
         true,
     )?;
-    row.field("proxy_config", &model.proxy_config, true)?;
     row.field("record_danmu", model.record_danmu, true)?;
     row.field("danmu_statistics", &model.danmu_statistics, true)?;
     row.field("output_folder", &model.output_folder, true)?;
@@ -285,14 +291,28 @@ pub(crate) async fn write_platform(
     )?;
     row.field("offline_check_count", model.offline_check_count, true)?;
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
-    row.execute(connection).await
+    row.execute(&mut *connection).await?;
+    if let Some(selection) = selection {
+        credential_selections::set(
+            connection,
+            &CredentialOwner::Platform {
+                platform_id: model.id.clone(),
+            },
+            &model.id,
+            selection,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
+/// Updates an existing platform row; `selection` as in [`write_platform`].
 pub(crate) async fn import_platform(
     connection: &mut sqlx::SqliteConnection,
     model: &PlatformConfigDbModel,
-) -> Result<(), sqlx::Error> {
-    write_platform(connection, model, WriteMode::Import).await
+    selection: Option<&CredentialSelection>,
+) -> crate::Result<()> {
+    write_platform(connection, model, WriteMode::Import, selection).await
 }
 
 pub(crate) async fn delete_engine(

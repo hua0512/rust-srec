@@ -31,7 +31,6 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
-import { listEngines } from '@/server/functions';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import {
   CONFIG_DESCRIPTION,
@@ -41,13 +40,12 @@ import {
   ConfigSectionHeading,
   FieldInfo,
 } from '@/components/config/shared/config-field';
+import { enginesQueryOptions } from '@/api/engines';
 
 export const ConcurrencyCard = memo(() => {
   const { i18n } = useLingui();
-  const { data: enginesData, isLoading: enginesLoading } = useQuery({
-    queryKey: ['engines'],
-    queryFn: () => listEngines(),
-  });
+  const { data: enginesData, isLoading: enginesLoading } =
+    useQuery(enginesQueryOptions);
 
   // The pipeline timeouts are read when the worker pools are built, which currently only happens
   // at startup, so a save alone does not apply them. Warn once any of the three is edited.

@@ -150,6 +150,7 @@ where
                             value: (committed.len(), complete),
                             rows: committed,
                             removed: Vec::new(),
+                            reconfigured: Vec::new(),
                         })
                     })
                 })

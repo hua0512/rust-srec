@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+
 export class BackendApiError extends Error {
   constructor(
     public status: number,
@@ -23,6 +25,44 @@ export function hasErrorCode(body: unknown, code: string): boolean {
     body !== null &&
     (body as { code?: unknown }).code === code
   );
+}
+
+/**
+ * The body of a backend error. Read by shape: a server function rethrows
+ * `BackendApiError` as a plain `Error` that keeps only its own properties.
+ */
+export function errorBody(error: unknown): unknown {
+  return error instanceof Error
+    ? (error as { body?: unknown }).body
+    : undefined;
+}
+
+/** The `details` object of a backend error body, when it has one. */
+export function errorDetails(
+  error: unknown,
+): Record<string, unknown> | undefined {
+  const body = errorBody(error);
+  const value =
+    typeof body === 'object' && body !== null
+      ? (body as { details?: unknown }).details
+      : undefined;
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The `details.references` of a refused deletion, when the backend refused it
+ * with `code` and they match `schema`.
+ */
+export function referencesFromConflict<T>(
+  error: unknown,
+  code: string,
+  schema: z.ZodType<T>,
+): T | undefined {
+  if (!hasErrorCode(errorBody(error), code)) return undefined;
+  const parsed = schema.safeParse(errorDetails(error)?.references);
+  return parsed.success ? parsed.data : undefined;
 }
 
 // Body code the backend attaches to 403 responses on every authenticated

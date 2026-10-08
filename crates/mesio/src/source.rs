@@ -68,7 +68,7 @@ impl Default for SourceHealth {
 }
 
 /// Represents a content source (URL) with priority
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ContentSource {
     /// The URL of the content source
     pub url: String,
@@ -78,6 +78,15 @@ pub struct ContentSource {
     pub label: Option<String>,
     /// Optional geographic location information
     pub location: Option<String>,
+}
+
+impl std::fmt::Debug for ContentSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContentSource")
+            .field("url", &crate::redact::redact_url_for_log(&self.url))
+            .field("priority", &self.priority)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ContentSource {
@@ -105,7 +114,6 @@ impl ContentSource {
 }
 
 /// Manager for handling multiple content sources
-#[derive(Debug)]
 pub struct SourceManager {
     /// Available content sources
     sources: Vec<ContentSource>,
@@ -117,6 +125,15 @@ pub struct SourceManager {
     current_index: usize,
     /// History of last selected sources (to avoid consecutive failures)
     recent_selections: Vec<String>,
+}
+
+impl std::fmt::Debug for SourceManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceManager")
+            .field("source_count", &self.sources.len())
+            .field("strategy", &self.strategy)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for SourceManager {
@@ -429,7 +446,7 @@ impl SourceManager {
             health.disabled_until = Some(Instant::now() + backoff_duration);
 
             debug!(
-                url = url,
+                url = %crate::redact::redact_url_for_log(url),
                 consecutive_failures = health.consecutive_failures,
                 backoff_seconds = backoff_duration.as_secs(),
                 "Source temporarily disabled due to consecutive failures"
@@ -442,7 +459,7 @@ impl SourceManager {
         // `active` is reserved for permanent deactivation.
 
         trace!(
-            url = url,
+            url = %crate::redact::redact_url_for_log(url),
             success = success,
             response_time_ms = time_ms,
             avg_response_time_ms = health.avg_response_time,
@@ -512,7 +529,7 @@ impl SourceManager {
         if let Some(health) = self.health.get_mut(url) {
             health.active = active;
             debug!(
-                url = url,
+                url = %crate::redact::redact_url_for_log(url),
                 active = active,
                 "Source active status updated manually"
             );

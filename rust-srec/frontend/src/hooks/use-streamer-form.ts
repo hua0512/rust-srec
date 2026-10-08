@@ -11,6 +11,7 @@ import {
   StreamerFormValues,
 } from '@/api/schemas';
 import { parseUrl, getStreamer } from '@/server/functions';
+import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import { danmuStatisticsFormValue } from '@/components/config/shared/danmu-statistics-value';
 
 type Streamer = NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
@@ -50,6 +51,9 @@ export function useStreamerForm({ streamer }: UseStreamerFormOptions = {}) {
     return {
       ...config,
       danmu_statistics: danmuStatisticsFormValue(config.danmu_statistics),
+      // The response leaves out a route that inherits; seeding it keeps the
+      // form clean until the route is changed.
+      proxy_route: config.proxy_route ?? INHERIT_ROUTE,
     };
   }, [streamer?.streamer_specific_config]);
 

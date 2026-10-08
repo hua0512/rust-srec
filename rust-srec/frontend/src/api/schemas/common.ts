@@ -107,14 +107,6 @@ export const DownloadRetryPolicyObjectSchema = z.object({
   use_jitter: z.boolean(),
 });
 
-export const ProxyConfigObjectSchema = z.object({
-  enabled: z.boolean().default(false).optional(),
-  url: z.string().optional(),
-  username: z.string().optional(),
-  password: z.string().optional(),
-  use_system_proxy: z.boolean().default(false).optional(),
-});
-
 // --- Pipeline Step Schemas ---
 // Preset step: references a job preset by name
 export const PresetPipelineStepSchema = z.object({

@@ -5,6 +5,8 @@
 
 pub(crate) mod committed_writer;
 pub mod filter_store;
+pub(crate) mod legacy_credential_upgrade;
+pub(crate) mod legacy_proxy_upgrade;
 pub mod maintenance;
 pub mod models;
 pub mod repositories;
@@ -273,13 +275,68 @@ pub async fn init_database_pools(database_url: &str) -> Result<(DbPool, WritePoo
     Ok((pool, write_pool))
 }
 
-pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
+pub async fn run_migrations(pool: &DbPool) -> crate::Result<()> {
+    // Unit tests convert as if no proxy variables were set, whatever the
+    // developer's shell exports.
+    let environment_proxy = !cfg!(test) && crate::proxies::SystemProxy::current().detected();
+    run_migrations_with_environment_proxy(pool, environment_proxy).await
+}
+
+/// [`run_migrations`] with `environment_proxy` standing for whether proxy
+/// environment variables are set, which the proxy settings conversion reads.
+#[doc(hidden)]
+pub async fn run_migrations_with_environment_proxy(
+    pool: &DbPool,
+    environment_proxy: bool,
+) -> crate::Result<()> {
     tracing::info!("Running database migrations...");
 
     prepare_fresh_database(pool).await?;
-    sqlx::migrate!("./migrations").run(pool).await?;
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .map_err(sqlx::Error::from)?;
+    // Data conversions that need application logic run once the schema they
+    // target exists; each owns a marker table installed by its migration.
+    legacy_credential_upgrade::run(pool).await?;
+    legacy_proxy_upgrade::run(pool, environment_proxy).await?;
     tracing::info!("Database migrations completed");
     Ok(())
+}
+
+/// Runs a data conversion its migration left owed by installing the `marker`
+/// table. `stash` holds old values a later migration moved out of dropped
+/// columns for the conversion to read; it is removed with the marker, or on
+/// its own when nothing was owed. The conversion and the removals commit
+/// together, so an interrupted start retries the whole conversion. `None`
+/// when nothing was owed.
+pub(crate) async fn run_marked_conversion<T>(
+    pool: &DbPool,
+    marker: &'static str,
+    stash: &'static str,
+    convert: impl AsyncFnOnce(&mut sqlx::SqliteConnection) -> crate::Result<T>,
+) -> crate::Result<Option<T>> {
+    let mut tx = begin_immediate(pool).await?;
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?)",
+    )
+    .bind(marker)
+    .fetch_one(&mut *tx)
+    .await?;
+    let converted = if pending {
+        let converted = convert(&mut tx).await?;
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {marker}")))
+            .execute(&mut *tx)
+            .await?;
+        Some(converted)
+    } else {
+        None
+    };
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {stash}")))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(converted)
 }
 
 /// Prepare SQLite before migrations or bootstrap state create the first table.

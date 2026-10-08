@@ -29,7 +29,7 @@
 
 注意：分享链接每次开播都会变化，请在每次开播时重新复制分享链接。
 
-分享链接无需配置 Cookie。如果配置了 Cookie，必须包含非空的 `a1` 字段，否则会报解析错误。
+分享链接无需账号。如果选用了[账号凭据配置](../concepts/configuration.md#账号配置与选择)，其 Cookie 必须包含非空的 `a1` 字段，否则会报解析错误。
 :::
 
 ## Twitcasting
@@ -44,5 +44,5 @@
 - **协议**: HLS
 - **弹幕**: ❌ 不支持
 ::: info
-使用 `https://weibo.com/u/{uid}` 格式的链接需要配置已授权的用户 Cookie。
+使用 `https://weibo.com/u/{uid}` 格式的链接需要已登录的[账号凭据配置](../concepts/configuration.md#账号配置与选择)。
 :::

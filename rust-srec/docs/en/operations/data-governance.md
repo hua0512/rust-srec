@@ -8,7 +8,7 @@ Rust-Srec is a recording tool, not a source of rights to record or process a bro
 |---|---|---|
 | Video, audio, and chat/danmaku | `OUTPUT_DIR` and pipeline destinations | Copyrighted content, personal data, usernames, messages |
 | Streamer and session metadata | SQLite in `DATA_DIR` | Identifiers, URLs, titles, session history, per-check history. Every session also stores the streamer name it was recorded under, and that copy is kept after the streamer itself is deleted; per-check history is not. |
-| Platform credentials and cookies | Database/configuration and exports | Account takeover and access to restricted content |
+| Platform credentials and cookies | Database (account profiles) and exports | Account takeover and access to restricted content |
 | User accounts and password hashes | SQLite and configuration exports | Authentication data |
 | Notification and upload secrets | SQLite and configuration exports | Third-party account or endpoint access |
 | Logs and notification events | `LOG_DIR`, container logs, database | Paths, platform metadata, operational history |

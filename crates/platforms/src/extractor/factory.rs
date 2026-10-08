@@ -8,6 +8,7 @@ use crate::extractor::platforms::{
     pandatv::PandaTV, picarto::Picarto, redbook::RedBook, soop::Soop, tiktok::TikTok,
     twitcasting::Twitcasting, twitch::Twitch, weibo::Weibo,
 };
+use crate::proxy::ProxyTarget;
 use regex::Regex;
 use reqwest::Client;
 
@@ -105,11 +106,36 @@ static PLATFORMS: &[PlatformEntry] = platform_registry![
 /// A factory for creating platform-specific extractors.
 pub struct ExtractorFactory {
     client: Client,
+    proxy: ProxyTarget,
 }
 
 impl ExtractorFactory {
     pub fn new(client: Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            proxy: ProxyTarget::System,
+        }
+    }
+
+    /// The path `client` uses, for extractors that make requests from another
+    /// process (Streamlink), which the client's proxy does not reach. Without
+    /// one the environment decides, as it does for a client without a proxy.
+    pub fn with_proxy(mut self, proxy: ProxyTarget) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
+    fn streamlink(
+        &self,
+        url: &str,
+        cookies: Option<String>,
+        extras: Option<serde_json::Value>,
+    ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
+        StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
+            .map(|extractor| {
+                Box::new(extractor.with_proxy(self.proxy.clone())) as Box<dyn PlatformExtractor>
+            })
+            .or(Err(ExtractorError::UnsupportedExtractor))
     }
 
     pub fn create_extractor(
@@ -122,9 +148,7 @@ impl ExtractorFactory {
         // Checked before the RedBook guard below: that guard steers users toward share links for
         // the native RedBook extractor, which is moot once streamlink is doing the extraction.
         if selection == ExtractorSelection::Streamlink {
-            return StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
-                .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
-                .or(Err(ExtractorError::UnsupportedExtractor));
+            return self.streamlink(url, cookies, extras);
         }
 
         if REDBOOK_PROFILE_URL_REGEX.is_match(url) {
@@ -146,9 +170,7 @@ impl ExtractorFactory {
 
         // Automatic fallback: try Streamlink for anything not covered by built-in extractors.
         // If Streamlink isn't available or can't handle the URL, preserve the legacy behavior.
-        StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
-            .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
-            .or(Err(ExtractorError::UnsupportedExtractor))
+        self.streamlink(url, cookies, extras)
     }
 }
 

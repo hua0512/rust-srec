@@ -11,6 +11,7 @@ import {
   UpdateTemplateRequestSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
+import { CredentialSelectionSchema } from '@/api/schemas/credential-profiles';
 
 // --- Global Config ---
 export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
@@ -30,7 +31,6 @@ const jsonToString = z.any().transform((val) => {
 // Extend the write schema to handle stringification
 const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
   danmu_statistics: jsonToString.optional(),
-  proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),
   paired_segment_pipeline: jsonToString.optional(),
@@ -74,7 +74,6 @@ const emptyStringToNull = z
 // same override fields.
 const OVERRIDE_WRITE_FIELDS = {
   // Transform empty strings to null for text fields
-  cookies: emptyStringToNull,
   output_folder: emptyStringToNull,
   output_filename_template: emptyStringToNull,
   download_engine: emptyStringToNull,
@@ -83,7 +82,6 @@ const OVERRIDE_WRITE_FIELDS = {
   stream_selection_config: jsonToString.optional(),
   download_retry_policy: jsonToString.optional(),
   danmu_statistics: jsonToString.optional(),
-  proxy_config: jsonToString.optional(),
   pipeline: jsonToString.optional(),
   session_complete_pipeline: jsonToString.optional(),
   paired_segment_pipeline: jsonToString.optional(),
@@ -91,6 +89,9 @@ const OVERRIDE_WRITE_FIELDS = {
 
 const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
   ...OVERRIDE_WRITE_FIELDS,
+  credential_selection: CredentialSelectionSchema.optional().transform(
+    (value) => (value === undefined ? undefined : JSON.stringify(value)),
+  ),
   platform_specific_config: jsonToString.optional(),
 });
 

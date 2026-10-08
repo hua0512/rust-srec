@@ -57,17 +57,23 @@ The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
 `backoff_threshold` are also deprecated. These compatibility formats will be removed in a future
 version. New integrations must use `offline_check_count` and `offline_check_delay_ms`, and include
 `backoff_threshold` in every serialized transient-error event.
+
+The `cookies` and `proxy_config` fields that platforms, templates and global settings carried
+before [account profiles](#credential-selection-json) and [proxy routes](#proxy-route-json) are
+deprecated too. The first start of this version converts what the database stored in them and
+leaves them empty, and imports convert them from older backups; they will be removed in a future
+version.
 :::
 
-### Cookies: "present wins" (including empty strings) {#cookies-present-wins-including-empty-strings}
+### Cookies are not a configuration field {#cookies-present-wins-including-empty-strings}
 
-Cookies are treated as a single optional string. If a higher layer provides `cookies`, it
-overrides lower layers.
+Cookies belong to account profiles, not to platform, template or streamer configuration. Which
+account a scope uses is set by its [credential selection](#credential-selection-json).
 
-::: tip Cookies best practice
-Avoid setting cookies to an empty string. An empty string is still "present" and will override
-lower layers, effectively disabling fallback cookies.
-:::
+The former `cookies` field of the platform and template configuration is no longer read. A request
+that still sets it fails with HTTP 422 `COOKIES_REPLACED`, so a client cannot lose an account
+silently; `null` or an empty string is accepted and ignored. Add the account as a profile under
+`/api/credentials` and select it instead.
 
 ### Stream selection: merged by `StreamSelectionConfig::merge` {#stream-selection-merged-by-streamselectionconfig-merge}
 
@@ -118,49 +124,38 @@ layer cannot "unset" a lower-layer key via `null`; it can only override with a n
 
 The same merge function is applied each time in layer order.
 
-::: tip About credentials in platform extras
-Platform, template and streamer records may all contain credential-related keys. Each layer is
-stripped of `refresh_token`, `access_token`, `session_cookies`, `last_cookie_check_date` and
-`last_cookie_check_result` before it is merged into `platform_extras`, so extractor config never
-carries credentials.
+::: tip Account fields are not platform extras
+Account material lives in profiles. A configuration write that contains `cookies`,
+`refresh_token`, `access_token`, `oauth_token`, `ttwid`, `device_id`, `session_cookies`,
+`reauth_config`, `last_cookie_check_date` or `last_cookie_check_result` — or SOOP's `username`
+and `password` — at any layer, including inside `platform_specific_config` or
+`platform_extras`, is rejected with a validation error. The extractor receives these only from the
+selected profile. Room passwords (`stream_password`, Bigo and TwitCasting `password`) are content
+settings and stay.
 :::
 
-## Credentials (`cookies` + `refresh_token`) are resolved separately {#credentials-cookies-refresh-token-are-resolved-separately}
+## Credentials come from account profiles {#credentials-cookies-refresh-token-are-resolved-separately}
 
-The runtime derives a `credential_source` (a sidecar on `ResolvedStreamerContext`) for
-authentication and refresh-token handling. It is intentionally not part of `MergedConfig` and
-must not be exposed via serialized config APIs.
+Cookies, refresh and access tokens, and SOOP logins are stored in account profiles that belong to
+a platform. Each scope's [credential selection](#credential-selection-json) decides which profiles
+a check uses; the selected profile's material is passed to the extractor, download and chat
+collection, and never appears in `MergedConfig` or serialized config APIs. See
+[Account profiles and selection](../concepts/configuration.md#account-profiles-and-selection).
 
-Precedence (highest to lowest):
+## Player upstream proxy {#player-upstream-proxy}
 
-1. Streamer override: `streamer_specific_config.cookies`
-   (+ optional `streamer_specific_config.refresh_token` / `access_token`)
-2. Template: `template_config.cookies`
-   (+ optional `template_config.platform_overrides[platform].refresh_token` / `access_token`)
-3. Platform: `platform_config.cookies`
-   (+ optional `platform_config.platform_specific_config.refresh_token` / `access_token`)
-
-Unlike `MergedConfig.cookies`, an empty or whitespace-only `cookies` value does **not** claim the
-credential source: that layer is skipped and the next one down is considered. A `refresh_token`
-or `access_token` is only picked up from the layer whose cookies won, so a `refresh_token` on a
-streamer with no streamer-level cookies is ignored.
-
-A platform can also produce a credential source without cookies: for SOOP, a
-`platform_specific_config` carrying `username` and `password` yields a credential source whose
-cookies are minted on first use.
-
-## Player upstream proxy
-
-Choosing **Server proxy** makes web and desktop playback use the same effective
-`proxy_config` as URL extraction. Registered streamers use their merged configuration
-(including template and streamer overrides); other source URLs use the platform
-override when recognized, otherwise the global configuration. **Direct** playback
-connects from the browser and does not use the server's upstream proxy.
+Choosing **Server proxy** makes web and desktop playback connect the same way as URL
+extraction: through the source's effective [proxy setting](../concepts/configuration.md#choosing-a-proxy).
+Registered streamers use their resolved setting (including template and streamer choices);
+other source URLs use the platform's setting when the platform is recognized, otherwise the global
+one. Playback with an account goes through the connection its extraction used, the account's own
+setting included, because platforms may sign stream URLs for that address. **Direct** playback
+connects from the browser and does not use the server's proxy.
 
 The original source URL is retained through HLS playlists, segments, and keys, so a
 CDN URL does not accidentally select different settings. Configuration updates apply
 to subsequent requests; reload a continuous FLV/MPEG-TS stream to change its existing
-connection. Invalid explicit proxy URLs fail playback rather than falling back to
+connection. A proxy that cannot be used fails playback rather than falling back to
 direct access. The frontend and backend must be upgraded together for web playback.
 
 ## Streamer overrides: `streamer_specific_config` {#streamer-overrides-streamer-specific-config}
@@ -171,22 +166,16 @@ Supported keys that affect `MergedConfig`:
 
 - `output_folder`, `output_filename_template`, `output_file_format`
 - `min_segment_size_bytes`, `max_download_duration_secs`, `max_part_size_bytes`
-- `record_danmu`, `danmu_statistics`, `cookies`, `download_engine`, `extractor`,
+- `record_danmu`, `danmu_statistics`, `download_engine`, `extractor`,
   `offline_check_count`, `offline_check_delay_ms`
-- `proxy_config` (JSON object)
+- `proxy_route` (route object; see [Proxy route JSON](#proxy-route-json))
 - `stream_selection_config` (JSON object)
 - `download_retry_policy` (JSON object)
 - `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline` (JSON objects)
 - `platform_extras` (JSON object)
 
-Keys used by the credentials subsystem (not part of `MergedConfig`):
-
-- `refresh_token`, `access_token`
-
-Both are read from the same layer whose `cookies` won. They are two of the five keys —
-`refresh_token`, `access_token`, `session_cookies`, `last_cookie_check_date` and
-`last_cookie_check_result` — stripped from every layer before it is merged into
-`platform_extras`.
+`credential_selection` chooses the streamer's accounts (see below). Account fields such as
+`cookies` and `refresh_token` are rejected here, as on every layer.
 
 ::: tip Invalid JSON is ignored
 Most JSON fields in platform/template/global records are parsed best-effort. If JSON parsing
@@ -241,3 +230,69 @@ selected engine ID. If so, it:
 `engines_override` removes a key when the override sets it to `null`, whereas `platform_extras`
 ignores `null` in the overlay.
 :::
+
+## Credential selection JSON
+
+Requests, responses and backups carry a selection as `credential_selection` in the configuration
+it belongs to: on the platform configuration (as a JSON string), inside a template's
+`platform_overrides[canonical_platform_name]`, or inside a streamer's `streamer_specific_config`.
+Platform names are case-sensitive here; use the exact name returned by platform configuration.
+Omitted update fields keep the stored policy, whereas `{ "mode": "inherit" }` explicitly resets
+the scope to inherit. This holds for platform, template and streamer saves alike: a template
+override or streamer document without `credential_selection` keeps the stored selection. A scope
+that inherits is returned without `credential_selection`.
+
+```json
+{
+  "credential_selection": {
+    "mode": "pool",
+    "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
+    "strategy": "priority",
+    "failover": true,
+    "max_attempts": 3
+  }
+}
+```
+
+Other policies are `{ "mode": "none" }`, `{ "mode": "inherit" }`, and
+`{ "mode": "fixed", "credential_id": "profile-uuid-a" }`. Pools accept `priority`
+or `round_robin`, require a nonempty unique ordered ID list, and accept 1–10 total attempts.
+Omitted `strategy`, `failover` and `max_attempts` default to `priority`, `true` and `3`.
+A one-member pool is valid. Unknown modes/fields are rejected. A selection that names a missing
+profile or another platform's profile fails with HTTP 409 `CREDENTIAL_REFERENCE_INACCESSIBLE`
+and lists the configuration that selects it. Disabled profiles may remain referenced, but are
+unavailable at execution time. A selected profile cannot be deleted: the request fails with HTTP 409
+`CREDENTIAL_PROFILE_REFERENCED` and lists the selecting configurations. A streamer whose URL moves
+it to another platform loses its own selection and inherits on the new platform, even if the
+request repeats the old selection; a streamer that is deleted stops selecting immediately. See
+[selection and inheritance](../concepts/configuration.md#account-profiles-and-selection).
+
+On the `streamlink` platform only a streamer stores a selection, and only `none` or `fixed`. A
+selection on that platform or in a template's `platform_overrides["streamlink"]`, or a pool on a
+Streamlink streamer, fails with HTTP 422 `CREDENTIAL_SELECTION_PER_STREAMER`; a Streamlink streamer
+without its own selection uses no account. Backup import moves such selections onto the Streamlink
+streamers instead. See [Streamlink accounts](../concepts/configuration.md#streamlink-accounts).
+
+## Proxy route JSON {#proxy-route-json}
+
+Each scope's proxy setting is `proxy_route`: a field of the global, platform and template
+configuration, and a key inside a streamer's `streamer_specific_config`. Accounts carry it too,
+when they are created or edited and when a QR login creates one.
+
+```json
+{ "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }
+```
+
+`kind` is `inherit`, `direct`, `system` or `proxy`; only `proxy` takes an `id`, the ID of a
+[saved proxy](../api/index.md#proxies). Unknown kinds and extra fields are rejected. The global
+setting cannot be `inherit` (HTTP 422 `PROXY_ROUTE_INVALID`). For an account, `inherit` means
+following the proxy of the recording that uses it. An omitted or `null` `proxy_route` keeps the
+stored setting, whereas `{ "kind": "inherit" }` resets it. A streamer that inherits is returned
+without `proxy_route`. Naming a proxy that does not exist fails with HTTP 422 `PROXY_NOT_FOUND`.
+See [choosing how to connect](../concepts/configuration.md#choosing-a-proxy) for precedence.
+
+The former `proxy_config` object is no longer read. A request that still sets it — on the global,
+platform or template configuration, inside `streamer_specific_config`, or inside a template's
+`platform_overrides` — fails with HTTP 422 `PROXY_CONFIG_REPLACED`, so a client cannot lose its
+proxy silently; `null` is accepted and ignored. Backups written before saved proxies still carry
+it and are [converted on import](../operations/backup-restore.md#proxies-in-backups).

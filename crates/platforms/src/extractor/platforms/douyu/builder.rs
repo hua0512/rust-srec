@@ -43,6 +43,9 @@ static VIDEO_LOOP_REGEX: LazyLock<Regex> =
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
 
+/// The main-site session cookie a signed-in account carries.
+const SESSION_COOKIE: &str = "acf_auth";
+
 /// Global cache for encryption key (used for fallback authentication)
 static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<FxHashMap<String, CachedEncryptionKey>>> =
     LazyLock::new(|| RwLock::new(FxHashMap::default()));
@@ -189,6 +192,64 @@ impl Douyu {
         Ok(())
     }
 
+    /// Whether the account's cookies carry a main-site session. Play requests
+    /// carry the account only then, so anonymous extraction sends exactly what
+    /// it would without an account.
+    pub(super) fn signed_in(&self) -> bool {
+        self.extractor
+            .cookies
+            .get(SESSION_COOKIE)
+            .is_some_and(|session| !session.is_empty())
+    }
+
+    /// The device a signed-in account's web play requests sign with: its
+    /// `dy_did`, as Douyu's own web player does. Anonymous requests keep the
+    /// default device.
+    fn web_did(&self) -> Option<&str> {
+        self.signed_in()
+            .then(|| self.extractor.cookies.get("dy_did"))
+            .flatten()
+            .map(String::as_str)
+            .filter(|did| super::app_device::is_valid_did(did))
+    }
+
+    /// A signed-in account's cookies for the web play request, as the browser
+    /// sends them to www.douyu.com.
+    fn web_play_cookie(&self) -> Option<reqwest::header::HeaderValue> {
+        if !self.signed_in() {
+            return None;
+        }
+        let mut cookies: Vec<_> = self.extractor.cookies.iter().collect();
+        cookies.sort();
+        let cookie = cookies
+            .into_iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let mut value = reqwest::header::HeaderValue::from_str(&cookie).ok()?;
+        value.set_sensitive(true);
+        Some(value)
+    }
+
+    fn h5_play_request(
+        &self,
+        rid: u64,
+        user_agent: &str,
+        form_data: &HashMap<&str, String>,
+    ) -> reqwest::RequestBuilder {
+        let request = self
+            .extractor
+            .client
+            .post(format!("https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"))
+            .header(reqwest::header::USER_AGENT, user_agent)
+            .header(reqwest::header::REFERER, Self::BASE_URL)
+            .form(form_data);
+        match self.web_play_cookie() {
+            Some(cookie) => request.header(reqwest::header::COOKIE, cookie),
+            None => request,
+        }
+    }
+
     pub(super) fn uses_app(&self) -> bool {
         // The Android endpoint has no verified audio-only contract. Preserve
         // existing audio-only recordings through the web endpoint's `fa` option.
@@ -295,7 +356,7 @@ impl Douyu {
                         "Betard API attempt {} failed for room {}: {}",
                         attempt + 1,
                         rid,
-                        e
+                        e.category()
                     );
 
                     // Don't retry if the error indicates room doesn't exist (not transient)
@@ -384,10 +445,7 @@ impl Douyu {
                 Ok(has_game)
             }
             Err(e) => {
-                debug!(
-                    "Failed to parse interactive game response for room {}: {}",
-                    rid, e
-                );
+                debug!(rid, category = ?e.classify(), "Failed to parse Douyu interactive game response");
                 // If we can't parse, assume no interactive game
                 Ok(false)
             }
@@ -492,11 +550,7 @@ impl Douyu {
 
         let status = response.status();
         let body = response.text().await.map_err(ExtractorError::from)?;
-        debug!(
-            "Encryption key response (status {}): {}",
-            status,
-            &body[..body.len().min(500)]
-        );
+        debug!(%status, response_bytes = body.len(), "Received Douyu encryption key response");
 
         let enc_response: DouyuEncryptionResponse = serde_json::from_str(&body).map_err(|e| {
             ExtractorError::ValidationError(format!(
@@ -517,10 +571,7 @@ impl Douyu {
             ExtractorError::ValidationError("Encryption API returned no data".to_string())
         })?;
 
-        debug!(
-            "Encryption key fetched: rand_str={}, enc_time={}, is_special={}",
-            data.rand_str, data.enc_time, data.is_special
-        );
+        debug!(is_special = data.is_special, "Fetched Douyu encryption key");
 
         Ok(CachedEncryptionKey::new(data, user_agent))
     }
@@ -647,8 +698,8 @@ impl Douyu {
         for attempt in 0..2 {
             if attempt == 1 {
                 debug!(
-                    "Retrying getH5PlayV1 after auth failure by refreshing encryption key (rid={}, did={})",
-                    rid, did
+                    rid,
+                    "Refreshing Douyu encryption key after authentication failure"
                 );
                 Self::invalidate_encryption_key(did);
             }
@@ -671,26 +722,16 @@ impl Douyu {
             form_data.insert("sov", "0".to_string());
 
             // Fallback auth always uses V1 API with POST
-            debug!(
-                "Requesting getH5PlayV1 with auth={}, ts={}, did={}",
-                form_data.get("auth").unwrap_or(&String::new()),
-                form_data.get("tt").unwrap_or(&String::new()),
-                did
-            );
+            debug!(rid, attempt, "Requesting Douyu getH5PlayV1");
 
             let api_response = self
-                .extractor
-                .client
-                .post(format!("https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"))
-                .header(reqwest::header::USER_AGENT, &key_data.user_agent)
-                .header(reqwest::header::REFERER, Self::BASE_URL)
-                .form(&form_data)
+                .h5_play_request(rid, &key_data.user_agent, &form_data)
                 .send()
                 .await?;
 
             let status = api_response.status();
             let body = api_response.text().await?;
-            debug!("getH5PlayV1 response (status {}): {}", status, body);
+            debug!(%status, response_bytes = body.len(), "Received Douyu getH5PlayV1 response");
 
             if is_douyu_auth_failed(status, &body) {
                 if attempt == 0 {
@@ -723,8 +764,8 @@ impl Douyu {
                         // `parse_web_response` matches on `NoStreamsFound` to recover the
                         // went-offline race without inspecting message text.
                         debug!(
-                            "getH5PlayV1 reports room unavailable (error {}): {}",
-                            resp.error, resp.msg
+                            code = resp.error,
+                            "Douyu getH5PlayV1 reports room unavailable"
                         );
                         return Err(ExtractorError::NoStreamsFound);
                     }
@@ -883,7 +924,11 @@ impl Douyu {
                     avatar_url = Some(room_info.data.avatar);
                 }
                 Err(e) => {
-                    debug!("Failed to fetch RoomApi metadata for {}: {}", rid, e);
+                    debug!(
+                        "Failed to fetch RoomApi metadata for {}: {}",
+                        rid,
+                        e.category()
+                    );
                 }
             }
 
@@ -927,7 +972,7 @@ impl Douyu {
                 )
             }
             Err(e) => {
-                debug!("Betard API failed, falling back: {}", e);
+                debug!("Betard API failed, falling back: {}", e.category());
 
                 let live = live_from_html.unwrap_or(true);
 
@@ -945,7 +990,7 @@ impl Douyu {
                         Some(room_info.data.avatar),
                     ),
                     Err(e) => {
-                        debug!("RoomApi failed for {}: {}", rid, e);
+                        debug!("RoomApi failed for {}: {}", rid, e.category());
                         (live, false, "Douyu".to_string(), String::new(), None, None)
                     }
                 }
@@ -987,7 +1032,7 @@ impl Douyu {
                 }
                 Err(e) => {
                     // Log the error but continue - don't fail the whole extraction
-                    debug!("Failed to check interactive game status: {}", e);
+                    debug!("Failed to check interactive game status: {}", e.category());
                 }
             }
         }
@@ -1032,7 +1077,7 @@ impl Douyu {
 
         // Use stable server-side authentication to get play info (with scdn avoidance)
         let (data, actual_cdn) = self
-            .get_play_info_fallback_with_scdn_avoidance(rid, &self.cdn, self.rate, None)
+            .get_play_info_fallback_with_scdn_avoidance(rid, &self.cdn, self.rate, self.web_did())
             .await?;
 
         // Prepare the list of CDNs to process
@@ -1209,7 +1254,7 @@ impl PlatformExtractor for Douyu {
 
         debug!("Resolving Douyu stream URL for rid: {}", rid);
         let (resp, _actual_cdn) = self
-            .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, None)
+            .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, self.web_did())
             .await?;
 
         stream_info.url = Self::stream_url(&resp, is_h265, only_audio);
@@ -1353,6 +1398,52 @@ mod tests {
             Douyu::stream_url(&play_info, true, false),
             "https://example.com/live/stream.flv"
         );
+    }
+
+    #[test]
+    fn a_signed_in_account_sends_its_cookies_and_device_on_web_play_requests() {
+        let did = "b0123456789abcdefghijklmnopqrstu";
+        let douyu = |cookies: &str| {
+            Douyu::new(
+                "https://www.douyu.com/100".into(),
+                default_client(),
+                Some(cookies.to_owned()),
+                Some(json!({"api_mode":"web"})),
+            )
+        };
+        let form = std::collections::HashMap::from([("rid", "100".to_owned())]);
+
+        let signed_in = douyu(&format!("dy_did={did}; acf_uid=42; acf_auth=session"));
+        assert_eq!(signed_in.web_did(), Some(did));
+        let request = signed_in
+            .h5_play_request(100, "agent", &form)
+            .build()
+            .unwrap();
+        let cookie = request.headers()[reqwest::header::COOKIE].clone();
+        assert!(cookie.is_sensitive());
+        assert_eq!(
+            cookie,
+            format!("acf_auth=session; acf_uid=42; dy_did={did}").as_str()
+        );
+
+        // Without a session nothing of the account is sent and the default
+        // device signs.
+        for anonymous in [
+            douyu(&format!("dy_did={did}; acf_did={did}; acf_uid=42")),
+            Douyu::new(
+                "https://www.douyu.com/100".into(),
+                default_client(),
+                None,
+                Some(json!({"api_mode":"web"})),
+            ),
+        ] {
+            assert_eq!(anonymous.web_did(), None);
+            let request = anonymous
+                .h5_play_request(100, "agent", &form)
+                .build()
+                .unwrap();
+            assert!(request.headers().get(reqwest::header::COOKIE).is_none());
+        }
     }
 
     #[test]

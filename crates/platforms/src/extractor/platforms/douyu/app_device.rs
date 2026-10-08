@@ -61,7 +61,7 @@ fn configured_string<'a>(
 
 /// Accept alphanumeric 32-byte IDs or UUID-shaped word groups.
 /// Restrict word characters to ASCII for the HTTP cookie boundary.
-fn is_valid_did(did: &str) -> bool {
+pub(super) fn is_valid_did(did: &str) -> bool {
     if did == DEFAULT_DID {
         return false;
     }

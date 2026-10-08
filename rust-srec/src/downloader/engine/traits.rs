@@ -6,6 +6,7 @@ use flv_fix::FlvPipelineConfig;
 use hls_fix::HlsPipelineConfig;
 use parking_lot::RwLock;
 use pipeline_common::config::PipelineConfig;
+use platforms_parser::proxy::ProxyTarget;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -90,8 +91,10 @@ impl DownloadProtocol {
 }
 
 /// Configuration for a download.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DownloadConfig {
+    pub managed_credentials: bool,
+    pub credential_binding: Option<crate::credentials::CredentialBinding>,
     /// Stream URL to download.
     pub url: String,
     /// Output directory.
@@ -104,10 +107,9 @@ pub struct DownloadConfig {
     pub max_segment_duration_secs: u64,
     /// Maximum segment size in bytes (0 = no limit).
     pub max_segment_size_bytes: u64,
-    /// Proxy URL (if any).
-    pub proxy_url: Option<String>,
-    /// Whether to use system proxy settings (ignored if proxy_url is set).
-    pub use_system_proxy: bool,
+    /// How the engine connects. Engine processes on a direct target do not
+    /// inherit proxy environment variables either.
+    pub proxy: ProxyTarget,
     /// Cookies for authentication.
     pub cookies: Option<String>,
     /// Additional headers.
@@ -156,14 +158,15 @@ impl DownloadConfig {
         session_id: impl Into<String>,
     ) -> Self {
         Self {
+            managed_credentials: false,
+            credential_binding: None,
             url: url.into(),
             output_dir: output_dir.into(),
             filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
             output_format: "flv".to_string(),
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,
-            proxy_url: None,
-            use_system_proxy: false,
+            proxy: ProxyTarget::Direct,
             cookies: None,
             headers: Vec::new(),
             streamer_id: streamer_id.into(),
@@ -215,17 +218,9 @@ impl DownloadConfig {
         self
     }
 
-    /// Set the proxy URL (disables system proxy).
-    pub fn with_proxy(mut self, url: impl Into<String>) -> Self {
-        self.proxy_url = Some(url.into());
-        self.use_system_proxy = false;
-        self
-    }
-
-    /// Set whether to use system proxy settings.
-    /// Note: If a proxy URL is set, system proxy is ignored.
-    pub fn with_system_proxy(mut self, use_system: bool) -> Self {
-        self.use_system_proxy = use_system;
+    /// Set how the engine connects.
+    pub fn with_proxy(mut self, proxy: ProxyTarget) -> Self {
+        self.proxy = proxy;
         self
     }
 
@@ -305,6 +300,18 @@ impl DownloadConfig {
     /// Otherwise, returns the default FlvPipelineConfig.
     pub fn build_flv_pipeline_config(&self) -> FlvPipelineConfig {
         self.flv_pipeline_config.clone().unwrap_or_default()
+    }
+}
+
+impl std::fmt::Debug for DownloadConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DownloadConfig")
+            .field("streamer_id", &self.streamer_id)
+            .field("session_id", &self.session_id)
+            .field("managed_credentials", &self.managed_credentials)
+            .field("network_material", &"[redacted]")
+            .finish_non_exhaustive()
     }
 }
 
@@ -464,6 +471,10 @@ impl IoErrorKindSer {
 /// Classified error kind for download failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadFailureKind {
+    /// A bound diagnostic obtained fresh media; retry uses the session budget.
+    CredentialRecovery,
+    /// No eligible account; keep the logical session pending without circuit breaking.
+    CredentialUnavailable,
     /// HTTP 4xx client error (not rate-limiting). Resource permanently unavailable at this URL.
     HttpClientError { status: u16 },
     /// HTTP 429 Too Many Requests.
@@ -497,6 +508,18 @@ pub enum DownloadFailureKind {
 }
 
 impl DownloadFailureKind {
+    pub(crate) fn requests_credential_diagnostic(self, engine: EngineType) -> bool {
+        matches!(
+            (engine, self),
+            (
+                EngineType::Mesio,
+                Self::HttpClientError { status: 401 | 403 }
+            ) | (
+                EngineType::Ffmpeg | EngineType::Streamlink,
+                Self::ProcessExit { .. } | Self::Other
+            )
+        )
+    }
     /// Whether this failure should count toward the circuit breaker.
     ///
     /// Permanent HTTP client errors (4xx except 429) and configuration errors
@@ -512,6 +535,7 @@ impl DownloadFailureKind {
                 | Self::Configuration
                 | Self::Cancelled
                 | Self::OutputRootUnavailable { .. }
+                | Self::CredentialUnavailable
         )
     }
 
@@ -520,6 +544,8 @@ impl DownloadFailureKind {
         matches!(
             self,
             Self::RateLimited
+                | Self::CredentialRecovery
+                | Self::CredentialUnavailable
                 | Self::HttpServerError { .. }
                 | Self::Network
                 | Self::Io
@@ -836,6 +862,7 @@ pub trait DownloadEngine: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platforms_parser::proxy::ProxyEndpoint;
 
     #[tokio::test(start_paused = true)]
     async fn an_already_cancelled_handle_notifies_only_earlier_stop_deadlines() {
@@ -900,15 +927,23 @@ mod tests {
         .with_output_format("mp4")
         .with_max_segment_duration(3600)
         .with_max_segment_size(1024 * 1024)
-        .with_proxy("http://proxy:8080");
+        .with_proxy(ProxyTarget::Explicit(ProxyEndpoint::new(
+            "http://proxy:8080",
+            None,
+        )));
 
         assert_eq!(config.url, "https://example.com/stream");
         assert_eq!(config.output_format, "mp4");
         assert_eq!(config.protocol, DownloadProtocol::Unknown);
         assert_eq!(config.max_segment_duration_secs, 3600);
         assert_eq!(config.max_segment_size_bytes, 1024 * 1024);
-        assert_eq!(config.proxy_url, Some("http://proxy:8080".to_string()));
-        assert!(!config.use_system_proxy); // Explicit proxy disables system proxy
+        assert_eq!(
+            config
+                .proxy
+                .endpoint()
+                .map(|endpoint| endpoint.url.as_str()),
+            Some("http://proxy:8080")
+        );
     }
 
     #[test]

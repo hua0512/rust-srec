@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use platforms_parser::danmaku::error::Result as DanmakuResult;
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmakuError, DanmuConnection, DanmuItem, DanmuProvider, DanmuStream,
+    ConnectionConfig, DanmakuError, DanmuConnection, DanmuItem, DanmuProvider, DanmuProxy,
+    DanmuStream,
 };
 use tokio::sync::mpsc;
 
@@ -22,6 +23,8 @@ pub(crate) struct FakeProvider {
     streams: Mutex<VecDeque<mpsc::Receiver<DanmuItem>>>,
     connects: AtomicUsize,
     disconnects: AtomicUsize,
+    cookies: Mutex<Vec<Option<String>>>,
+    proxies: Mutex<Vec<Option<DanmuProxy>>>,
 }
 
 impl FakeProvider {
@@ -31,6 +34,8 @@ impl FakeProvider {
             streams: Mutex::new(streams.into()),
             connects: AtomicUsize::new(0),
             disconnects: AtomicUsize::new(0),
+            cookies: Mutex::new(Vec::new()),
+            proxies: Mutex::new(Vec::new()),
         }
     }
 
@@ -44,6 +49,22 @@ impl FakeProvider {
     pub(crate) fn disconnects(&self) -> usize {
         self.disconnects.load(Ordering::SeqCst)
     }
+
+    /// The cookies each `connect` received, in order.
+    pub(crate) fn connected_cookies(&self) -> Vec<Option<String>> {
+        self.cookies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .clone()
+    }
+
+    /// The proxy each `connect` received, in order.
+    pub(crate) fn connected_proxies(&self) -> Vec<Option<DanmuProxy>> {
+        self.proxies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .clone()
+    }
 }
 
 #[async_trait]
@@ -52,12 +73,16 @@ impl DanmuProvider for FakeProvider {
         &self.platform
     }
 
-    async fn connect(
-        &self,
-        room_id: &str,
-        _config: ConnectionConfig,
-    ) -> DanmakuResult<DanmuStream> {
+    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> DanmakuResult<DanmuStream> {
         let attempt = self.connects.fetch_add(1, Ordering::SeqCst);
+        self.cookies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .push(config.cookies);
+        self.proxies
+            .lock()
+            .expect("fake provider mutex poisoned")
+            .push(config.proxy);
         // The guard is released by the end of this statement, before any await.
         let next = self
             .streams
