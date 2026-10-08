@@ -25,6 +25,7 @@ use crate::credentials::{
     ProviderCapabilities,
 };
 use crate::credentials::{CredentialSelection, ResolvedCredentialPolicy};
+use crate::database::repositories::credential_profiles::ProfileEdit;
 
 #[derive(Clone)]
 pub struct CredentialProfileRouteState {
@@ -106,6 +107,10 @@ pub struct CreateProfileRequest {
     /// `inherit`, the default, follows the recording using the account.
     #[serde(default)]
     pub proxy_route: crate::proxies::ProxyRoute,
+    /// For a Streamlink account, the sites it is for, as host names or URLs.
+    /// Streamlink streamers on them that choose no account use it.
+    #[serde(default)]
+    pub sites: Vec<String>,
 }
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -117,6 +122,9 @@ pub struct UpdateProfileRequest {
     /// Replaces the account's own route; omitting it keeps it.
     #[serde(default)]
     pub proxy_route: Option<crate::proxies::ProxyRoute>,
+    /// Replaces a Streamlink account's sites; omitting them keeps them.
+    #[serde(default)]
+    pub sites: Option<Vec<String>>,
 }
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -132,6 +140,8 @@ pub struct ProfileCapabilities {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProfileDetail {
     pub profile: CredentialProfileSummary,
+    /// The sites a Streamlink account is for, sorted.
+    pub sites: Vec<String>,
     pub health: Option<CredentialProfileHealth>,
     /// The selections that list the profile and the live recordings bound to it.
     pub references: ProfileReferences,
@@ -149,6 +159,10 @@ pub struct EffectiveCredentialSelection {
     pub candidates: Vec<ProfileDetail>,
     pub unavailable_reason: Option<crate::credentials::UnavailableReason>,
     pub active_binding: Option<crate::credentials::CredentialBinding>,
+    /// For a Streamlink streamer, its site and the accounts that name it.
+    /// `resolved` comes from that site when the streamer chooses no account
+    /// and `site.site` is present.
+    pub site: Option<crate::credentials::StreamerSite>,
 }
 
 pub fn router<S>() -> Router<S>
@@ -190,6 +204,7 @@ async fn details(
     let ids: Vec<String> = records.iter().map(|record| record.id.clone()).collect();
     let mut health = state.credential_profiles.health_of(&ids).await?;
     let mut references = state.credential_profiles.references_of(&ids).await?;
+    let mut sites = state.credential_profiles.sites_of(&ids).await?;
     let mut platforms: HashMap<String, String> = HashMap::new();
     let mut result = Vec::with_capacity(records.len());
     for record in records {
@@ -215,6 +230,7 @@ async fn details(
                 health.as_ref(),
             )?,
             references: references.remove(&record.id).unwrap_or_default(),
+            sites: sites.remove(&record.id).unwrap_or_default(),
             capabilities: ProfileCapabilities {
                 validate: capabilities.check,
                 refresh: capabilities.refresh && provider.refreshable(&record.material()?),
@@ -232,7 +248,9 @@ async fn details(
 pub struct PlatformCredentialCapabilities {
     #[serde(flatten)]
     pub provider: ProviderCapabilities,
-    /// Accounts are chosen per streamer, as none or one fixed account.
+    /// The platform serves many unrelated sites: its accounts name the sites
+    /// they are for, and only a streamer chooses, as none or one fixed
+    /// account. Without a choice, a streamer uses the account for its site.
     pub per_streamer_selection: bool,
 }
 
@@ -299,14 +317,15 @@ pub async fn get_selection(
     // The stored candidates outrank the last operation's outcome, which can
     // predate a re-enable or a new login.
     let current = (selectable == 0).then(|| exclusions.reason()).flatten();
-    let active_binding = match &owner {
-        CredentialOwner::Streamer { streamer_id } => {
+    let (active_binding, site) = match &owner {
+        CredentialOwner::Streamer { streamer_id } => (
             state
                 .credential_profiles
                 .active_binding(streamer_id)
-                .await?
-        }
-        _ => None,
+                .await?,
+            state.credential_profiles.streamer_site(streamer_id).await?,
+        ),
+        _ => (None, None),
     };
     let last_unavailable = resolved
         .as_ref()
@@ -318,6 +337,7 @@ pub async fn get_selection(
         candidates,
         unavailable_reason,
         active_binding,
+        site,
     }))
 }
 
@@ -364,12 +384,13 @@ pub async fn create_profile(
     mutation(async move {
         let record = state
             .credential_profiles
-            .create(
+            .create_with_sites(
                 &body.platform_id,
                 &body.label,
                 body.enabled,
                 &body.material,
                 &body.proxy_route,
+                &body.sites,
             )
             .await?;
         Ok(Json(record.summary()))
@@ -386,13 +407,16 @@ pub async fn update_profile(
     mutation(async move {
         let record = state
             .credential_profiles
-            .update(
+            .edit(
                 &id,
                 body.expected_version,
-                body.label.as_deref(),
-                body.enabled,
-                body.replacement.as_ref(),
-                body.proxy_route.as_ref(),
+                ProfileEdit {
+                    label: body.label.as_deref(),
+                    enabled: body.enabled,
+                    replacement: body.replacement.as_ref(),
+                    route: body.proxy_route.as_ref(),
+                    sites: body.sites.as_deref(),
+                },
             )
             .await?;
         Ok(Json(record.summary()))
@@ -837,6 +861,121 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn a_streamlink_streamer_shows_its_site_and_inherits_the_account_for_it() {
+        let fixture = fixture().await;
+        let streamer = crate::database::models::StreamerDbModel::new(
+            "YouTube streamer",
+            "https://www.youtube.com/@someone/live",
+            "platform-streamlink",
+        );
+        crate::database::repositories::StreamerRepository::create_streamer(
+            &SqlxStreamerRepository::new(fixture.pool.clone(), fixture.pool.clone()),
+            &streamer,
+        )
+        .await
+        .unwrap();
+        let account = |label: &str, sites: serde_json::Value| serde_json::json!({"platform_id":"platform-streamlink","label":label,"enabled":true,"material":{"cookies":"sid=secret-sentinel"},"sites":sites});
+        let (status, created) = request(
+            &fixture.app,
+            "POST",
+            "/api/credentials/profiles",
+            Some(&fixture.full_key),
+            account("YouTube", serde_json::json!(["https://www.youtube.com/"])),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let id = created["id"].as_str().unwrap().to_owned();
+        let (status, taken) = request(
+            &fixture.app,
+            "POST",
+            "/api/credentials/profiles",
+            Some(&fixture.full_key),
+            account("Other", serde_json::json!(["youtube.com"])),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{taken}");
+        assert_eq!(taken["code"], "CREDENTIAL_SITE_TAKEN");
+        assert_eq!(taken["details"]["label"], "YouTube");
+        let mut elsewhere = create_body("Bilibili");
+        elsewhere["sites"] = serde_json::json!(["bilibili.com"]);
+        let (status, _) = request(
+            &fixture.app,
+            "POST",
+            "/api/credentials/profiles",
+            Some(&fixture.full_key),
+            elsewhere,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+        let path = format!("/api/credentials/profiles/{id}");
+        let (_, detail) = request(
+            &fixture.app,
+            "GET",
+            &path,
+            Some(&fixture.full_key),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(detail["sites"], serde_json::json!(["youtube.com"]));
+        let selection = format!(
+            "/api/credentials/selection?scope_type=streamer&scope_id={}&platform_id=platform-streamlink",
+            streamer.id
+        );
+        let (status, effective) = request(
+            &fixture.app,
+            "GET",
+            &selection,
+            Some(&fixture.full_key),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{effective}");
+        assert!(effective["configured"].is_null());
+        assert_eq!(effective["resolved"]["owner"]["type"], "platform");
+        assert_eq!(effective["resolved"]["selection"]["credential_id"], id);
+        assert_eq!(
+            effective["site"],
+            serde_json::json!({"host": "youtube.com", "site": "youtube.com", "accounts": [id]})
+        );
+        assert_eq!(effective["candidates"][0]["profile"]["id"], id);
+
+        let (status, cleared) = request(
+            &fixture.app,
+            "PATCH",
+            &path,
+            Some(&fixture.full_key),
+            serde_json::json!({"expected_version": created["version"], "sites": []}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{cleared}");
+        assert_eq!(cleared["revision"], created["revision"]);
+        let (_, effective) = request(
+            &fixture.app,
+            "GET",
+            &selection,
+            Some(&fixture.full_key),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(effective["resolved"].is_null());
+        assert_eq!(
+            effective["site"],
+            serde_json::json!({"host": "youtube.com", "site": null, "accounts": []})
+        );
+        // Other scopes have no site.
+        let (_, platform) = request(
+            &fixture.app,
+            "GET",
+            "/api/credentials/selection?scope_type=platform&scope_id=platform-streamlink&platform_id=platform-streamlink",
+            Some(&fixture.full_key),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(platform["site"].is_null());
     }
 
     #[tokio::test]

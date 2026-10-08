@@ -148,8 +148,9 @@ interface SummarySegment {
 
 /**
  * The summary under an account's name. An account that needs the user
- * says why, in the colour of its state; any other says who selects it and when
- * it was last used. Both end with what is known of its timing.
+ * says why, in the colour of its state; any other says which sites it is for,
+ * who selects it and when it was last used. Both end with what is known of its
+ * timing.
  */
 export function AccountSummaryLine({
   detail,
@@ -191,16 +192,23 @@ export function AccountSummaryLine({
     });
     checked();
   } else {
+    const sites = detail.sites ?? [];
+    if (sites.length) {
+      const list = sites.join(', ');
+      segments.push({ text: t(i18n)`For ${list}` });
+    }
     const names = references.selections.map(selectionLabel);
     const shown = names.slice(0, SUMMARY_NAMES).join(', ');
     const rest = names.length - SUMMARY_NAMES;
-    segments.push({
-      text: !names.length
-        ? t(i18n)`Not selected anywhere`
-        : rest > 0
-          ? `${shown} +${rest}`
-          : shown,
-    });
+    // An account for some sites is used without being selected.
+    if (names.length || !sites.length)
+      segments.push({
+        text: !names.length
+          ? t(i18n)`Not selected anywhere`
+          : rest > 0
+            ? `${shown} +${rest}`
+            : shown,
+      });
     const recordings = references.recordings.length;
     if (recordings > 0)
       segments.push({
@@ -260,9 +268,10 @@ function When({ time }: { time: number }) {
 const MUTED_VALUE = 'text-muted-foreground/80';
 
 /**
- * Everything known about an account, as a short definition list: every
- * configuration selecting it and recording with it, when it was used, checked,
- * refreshed and is next renewed, what went wrong, and how it connects.
+ * Everything known about an account, as a short definition list: the sites
+ * it is for, every configuration selecting it and recording with it, when it
+ * was used, checked, refreshed and is next renewed, what went wrong, and how
+ * it connects.
  */
 export function AccountDetails({
   detail,
@@ -274,6 +283,7 @@ export function AccountDetails({
   const { i18n } = useLingui();
   const { profile, health, references, capabilities } = detail;
   const { selections, recordings } = references;
+  const sites = detail.sites ?? [];
   const lastUsed = profile.last_used_at;
   const lastCheck = health?.last_check_at;
   const lastRefresh = health?.last_refresh_at;
@@ -299,6 +309,14 @@ export function AccountDetails({
   return (
     <div className={cn('space-y-2 text-xs', className)}>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+        {sites.length > 0 && (
+          <>
+            <dt className={TERM}>
+              <Trans>Sites</Trans>
+            </dt>
+            <dd className="break-words">{sites.join(', ')}</dd>
+          </>
+        )}
         <dt className={TERM}>
           <Trans>Selected by</Trans>
         </dt>

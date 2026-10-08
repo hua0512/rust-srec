@@ -293,6 +293,10 @@ pub struct CredentialProfileExport {
     /// and inherits on a replace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_route: Option<BackupRoute>,
+    /// The sites a Streamlink account is for; absent keeps the stored sites
+    /// on a merge and names none on a replace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sites: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for CredentialProfileExport {

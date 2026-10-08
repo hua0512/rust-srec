@@ -32,9 +32,14 @@ pub(super) async fn export_profiles(
     let profiles = sqlx::query_as::<_, ProfileExportRow>(
         "SELECT p.*, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE NOT EXISTS(SELECT 1 FROM retirement_credential_profiles r WHERE r.profile_id = p.id) ORDER BY p.id"
     ).fetch_all(pool).await?;
+    let ids: Vec<String> = profiles.iter().map(|row| row.profile.id.clone()).collect();
+    let mut sites = credential_profiles::sites_of(&mut *pool.acquire().await?, &ids).await?;
     let mut result = Vec::with_capacity(profiles.len());
     for row in profiles {
         let profile = row.profile;
+        // Only Streamlink accounts name sites, so only they carry the list.
+        let sites = crate::domain::is_streamlink_platform(&row.platform_name)
+            .then(|| sites.remove(&profile.id).unwrap_or_default());
         let material = profile.material()?;
         let proxy_route = BackupRoute::from_route(&profile.route()?, proxy_names)?;
         result.push(CredentialProfileExport {
@@ -47,6 +52,7 @@ pub(super) async fn export_profiles(
             access_token: material.access_token,
             reauth_config: material.reauth_config,
             proxy_route: Some(proxy_route),
+            sites,
         });
     }
     Ok(result)
@@ -96,6 +102,21 @@ pub(super) fn validate(config: &ConfigExport) -> Result<(), ConfigurationImportE
         material(profile)
             .validate(&profile.platform)
             .map_err(|error| validation_error(error.to_string()))?;
+    }
+    let mut claimed = HashSet::new();
+    for profile in &config.credential_profiles {
+        let sites = crate::credentials::normalize_sites(
+            &profile.platform,
+            profile.sites.as_deref().unwrap_or_default(),
+        )
+        .map_err(|error| validation_error(error.to_string()))?;
+        for site in sites {
+            if !claimed.insert(site.clone()) {
+                return validation(format!(
+                    "Site {site} is named by more than one credential profile"
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -159,6 +180,37 @@ pub(super) async fn upsert(
     Ok(())
 }
 
+/// Write the sites of the bundle's profiles. Runs after [`retire_omitted`],
+/// which frees the sites of retired profiles, and clears every rewritten
+/// profile's sites first, so sites can move between the bundle's profiles. A
+/// site still named by a profile the bundle leaves alone rejects the bundle.
+pub(super) async fn write_sites(
+    tx: &mut sqlx::SqliteConnection,
+    config: &ConfigExport,
+    replace: bool,
+) -> Result<(), ConfigurationImportError> {
+    let written: Vec<(&str, &[String])> = config
+        .credential_profiles
+        .iter()
+        .filter_map(|profile| match &profile.sites {
+            Some(sites) => Some((profile.id.as_str(), sites.as_slice())),
+            None => replace.then_some((profile.id.as_str(), &[][..])),
+        })
+        .collect();
+    for (id, _) in &written {
+        sqlx::query("DELETE FROM credential_profile_sites WHERE profile_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for (id, sites) in written {
+        credential_profiles::set_sites(tx, id, sites)
+            .await
+            .map_err(super::write_error)?;
+    }
+    Ok(())
+}
+
 /// Replace mode retires the profiles a `1.0.0` bundle omits. Runs after the
 /// configuration writes, which removed the selections of retired streamers
 /// and templates, so a remaining selection is retained configuration.
@@ -198,6 +250,11 @@ pub(super) async fn retire_omitted(
             .bind(&id)
             .execute(&mut *tx)
             .await?;
+            // A retiring profile is no longer any site's account.
+            sqlx::query("DELETE FROM credential_profile_sites WHERE profile_id = ?")
+                .bind(&id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("UPDATE credential_profiles SET enabled = 0, revision = revision + 1, version = version + 1 WHERE id = ?").bind(&id).execute(&mut *tx).await?;
         }
     }

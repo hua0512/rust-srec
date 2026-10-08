@@ -25,6 +25,7 @@ mod provider;
 mod resolution;
 mod selection;
 mod service;
+mod site;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod types;
@@ -64,4 +65,7 @@ pub use selection::{
     ResolvedCredentialPolicy,
 };
 pub use service::CredentialProviderRegistry;
+pub use site::{
+    MAX_SITES, StreamerSite, covering_sites, normalize_site, normalize_sites, site_host,
+};
 pub use types::{CredentialEvent, CredentialScope};

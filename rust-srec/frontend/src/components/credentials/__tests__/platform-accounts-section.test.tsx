@@ -747,3 +747,105 @@ it.each([
     1,
   );
 });
+
+describe('Streamlink account sites', () => {
+  it('a new Streamlink account names the sites it is for', async () => {
+    await show('streamlink');
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+    fireEvent.change(screen.getByLabelText('Label'), {
+      target: { value: 'YouTube' },
+    });
+    fireEvent.change(screen.getByLabelText('Cookies'), {
+      target: { value: 'sid=y' },
+    });
+    fireEvent.change(screen.getByLabelText('Sites'), {
+      target: { value: 'www.youtube.com, kick.com\n m.example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
+    await waitFor(() =>
+      expect(createCredentialProfile).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          label: 'YouTube',
+          sites: ['www.youtube.com', 'kick.com', 'm.example.com'],
+        }),
+      }),
+    );
+  });
+
+  it('accounts on other platforms name no sites', async () => {
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+    expect(screen.queryByLabelText('Sites')).not.toBeInTheDocument();
+  });
+
+  it('an edit sends the sites only when they change', async () => {
+    vi.mocked(listCredentialProfiles).mockResolvedValue([
+      accountDetail({ sites: ['youtube.com'] }),
+    ]);
+    await show('streamlink');
+    await openMenuItem('Edit');
+    expect(screen.getByLabelText('Sites')).toHaveValue('youtube.com');
+    fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
+    await waitFor(() =>
+      expect(updateCredentialProfile).toHaveBeenCalledWith({
+        data: { id: 'account-a', expected_version: 2, label: 'Account A' },
+      }),
+    );
+    vi.mocked(updateCredentialProfile).mockClear();
+    await openMenuItem('Edit');
+    fireEvent.change(screen.getByLabelText('Sites'), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
+    await waitFor(() =>
+      expect(updateCredentialProfile).toHaveBeenCalledWith({
+        data: {
+          id: 'account-a',
+          expected_version: 2,
+          label: 'Account A',
+          sites: [],
+        },
+      }),
+    );
+  });
+
+  it('names the account that already has a site', async () => {
+    vi.mocked(createCredentialProfile).mockRejectedValue(
+      Object.assign(new Error('Another account already uses this site'), {
+        status: 409,
+        body: {
+          code: 'CREDENTIAL_SITE_TAKEN',
+          message: 'Another account already uses this site',
+          details: { site: 'youtube.com', profile_id: 'x', label: 'Main' },
+        },
+      }),
+    );
+    await show('streamlink');
+    fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+    fireEvent.change(screen.getByLabelText('Label'), {
+      target: { value: 'Second' },
+    });
+    fireEvent.change(screen.getByLabelText('Cookies'), {
+      target: { value: 'sid=s' },
+    });
+    fireEvent.change(screen.getByLabelText('Sites'), {
+      target: { value: 'youtube.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
+    expect(
+      await screen.findByText(
+        'youtube.com already belongs to the account Main. A site can belong to one account only.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('the list says which sites an account is for', async () => {
+    vi.mocked(listCredentialProfiles).mockResolvedValue([
+      accountDetail({ sites: ['kick.com', 'youtube.com'] }),
+    ]);
+    await show('streamlink');
+    expect(summaryOf()).toHaveTextContent('For kick.com, youtube.com');
+    expect(summaryOf()).not.toHaveTextContent('Not selected anywhere');
+    expect(detailFor('Sites')).toHaveTextContent('kick.com, youtube.com');
+  });
+});

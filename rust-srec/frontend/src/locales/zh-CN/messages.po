@@ -219,7 +219,7 @@ msgstr "{0}/{1, plural, other {# 个步骤}}"
 msgid "{0}h {1}m"
 msgstr "{0}小时{1}分"
 
-#: src/components/credentials/account-selection-section.tsx:251
+#: src/components/credentials/account-selection-section.tsx:274
 msgid "{attempts, plural, one {up to # try} other {up to # tries}}"
 msgstr "{attempts, plural, other {最多尝试 # 次}}"
 
@@ -255,12 +255,12 @@ msgstr "{displayName} 配置"
 msgid "{eta} left"
 msgstr "剩余 {eta}"
 
-#: src/components/credentials/account-usage.tsx:292
+#: src/components/credentials/account-usage.tsx:302
 msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 msgstr "{failures, plural, other {连续 # 次刷新失败}}"
 
 #: src/components/credential-attention-indicator.tsx:69
-#: src/components/credentials/account-usage.tsx:181
+#: src/components/credentials/account-usage.tsx:182
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, other {刷新已失败 # 次}}"
 
@@ -277,6 +277,10 @@ msgstr "剩余 {free}"
 msgid "{hours}h"
 msgstr "{hours} 小时"
 
+#: src/components/credentials/account-selection-section.tsx:113
+msgid "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
+msgstr "{label} 是为 {sites} 设置的账号，但该主播位于 {host}。它的 Cookie 将被发送到 {host}。"
+
 #: src/components/streamers/edit/status-check-history.tsx:474
 msgid "{minutes}m"
 msgstr "{minutes} 分钟"
@@ -289,7 +293,7 @@ msgstr "{pending, plural, other {# 个上传排队中}}"
 msgid "{pending} queued"
 msgstr "{pending} 个排队中"
 
-#: src/components/credentials/account-usage.tsx:207
+#: src/components/credentials/account-usage.tsx:215
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
 msgstr "{recordings, plural, other {# 个录制进行中}}"
 
@@ -316,6 +320,10 @@ msgstr "{selections, plural, other {请先从 # 项配置的账号选择中移�
 #: src/components/credentials/delete-profile-dialog.tsx:97
 msgid "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
 msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制结束。}}"
+
+#: src/components/credentials/profile-editor-dialog.tsx:77
+msgid "{site} already belongs to the account {label}. A site can belong to one account only."
+msgstr "{site} 已属于账号 {label}。一个网站只能属于一个账号。"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:347
 msgid "{totalOutputs, plural, one {# file} other {# files}}"
@@ -353,12 +361,12 @@ msgstr "<1>已选</1><0>{selectedCount}</0>"
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> 表示不限速（rclone 默认值）。例如：当服务方将你限制为每秒 10 次请求时，可设为 <1>10</1>。"
 
-#: src/components/credentials/account-selection-section.tsx:218
+#: src/components/credentials/account-selection-section.tsx:241
 msgid "<0>Recording rotates between</0> {names}"
 msgstr "<0>录制轮流使用</0> {names}"
 
-#: src/components/credentials/account-selection-section.tsx:203
-#: src/components/credentials/account-selection-section.tsx:234
+#: src/components/credentials/account-selection-section.tsx:226
+#: src/components/credentials/account-selection-section.tsx:257
 msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
@@ -442,7 +450,7 @@ msgstr "90 天"
 msgid "A check found it needs a refresh"
 msgstr "检查发现需要刷新"
 
-#: src/components/credentials/credential-selection-editor.tsx:252
+#: src/components/credentials/credential-selection-editor.tsx:260
 msgid "A recording keeps using the account it started with."
 msgstr "一次录制会一直使用开始时的账号。"
 
@@ -482,7 +490,7 @@ msgstr "权限"
 msgid "Access level"
 msgstr "权限级别"
 
-#: src/components/credentials/profile-editor-dialog.tsx:266
+#: src/components/credentials/profile-editor-dialog.tsx:305
 msgid "Access token"
 msgstr "访问令牌"
 
@@ -490,11 +498,11 @@ msgstr "访问令牌"
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应用登录已过期，请重新登录。"
 
-#: src/components/credentials/credential-selection-editor.tsx:266
+#: src/components/credentials/credential-selection-editor.tsx:274
 msgid "Account"
 msgstr "账号"
 
-#: src/components/credentials/profile-editor-dialog.tsx:316
+#: src/components/credentials/profile-editor-dialog.tsx:381
 msgid "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 msgstr "使用此账号的账号检查、刷新、录制、弹幕和播放都按此设置连接。选择“跟随录制”时，使用账号的录制用什么代理就走什么代理，账号检查则使用平台的代理设置。"
 
@@ -511,7 +519,7 @@ msgstr "已复制账号 ID"
 msgid "Account needs login"
 msgstr "账号需要登录"
 
-#: src/components/credentials/credential-selection-editor.tsx:209
+#: src/components/credentials/credential-selection-editor.tsx:217
 msgid "Account selection"
 msgstr "账号选择"
 
@@ -520,7 +528,7 @@ msgid "Account unavailable"
 msgstr "账号不可用"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:80
-#: src/components/credentials/credential-selection-editor.tsx:304
+#: src/components/credentials/credential-selection-editor.tsx:312
 #: src/components/credentials/platform-accounts-section.tsx:129
 #: src/components/credentials/read-only-accounts-section.tsx:25
 msgid "Accounts"
@@ -547,7 +555,7 @@ msgstr "账号已停用"
 msgid "Accounts failing"
 msgstr "账号均不可用"
 
-#: src/components/credentials/credential-selection-editor.tsx:302
+#: src/components/credentials/credential-selection-editor.tsx:310
 msgid "Accounts, in the order they are tried"
 msgstr "账号（按尝试顺序）"
 
@@ -601,9 +609,9 @@ msgstr "添加一个流以开始观看会话。"
 msgid "Add a streamer"
 msgstr "添加主播"
 
-#: src/components/credentials/credential-selection-editor.tsx:375
+#: src/components/credentials/credential-selection-editor.tsx:383
 #: src/components/credentials/platform-accounts-section.tsx:122
-#: src/components/credentials/profile-editor-dialog.tsx:159
+#: src/components/credentials/profile-editor-dialog.tsx:198
 msgid "Add account"
 msgstr "添加账号"
 
@@ -1633,7 +1641,7 @@ msgstr "原因："
 msgid "CDN"
 msgstr "CDN"
 
-#: src/components/credentials/account-selection-section.tsx:482
+#: src/components/credentials/account-selection-section.tsx:527
 msgid "Change"
 msgstr "更改"
 
@@ -1750,7 +1758,7 @@ msgstr "检查能否访问"
 msgid "Check this streamer and record when it goes live."
 msgstr "检查该主播，并在开播时自动录制。"
 
-#: src/components/credentials/account-usage.tsx:170
+#: src/components/credentials/account-usage.tsx:171
 msgid "checked {when}"
 msgstr "{when}检查"
 
@@ -2195,7 +2203,7 @@ msgstr "只转换本次会话各分段录制的弹幕"
 msgid "Cookie string"
 msgstr "Cookie 字符串"
 
-#: src/components/credentials/profile-editor-dialog.tsx:244
+#: src/components/credentials/profile-editor-dialog.tsx:283
 #: src/components/player/url-input-form.tsx:247
 #: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
@@ -3152,7 +3160,7 @@ msgstr "禁用所选"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/credentials/account-row.tsx:92
-#: src/components/credentials/account-selection-section.tsx:134
+#: src/components/credentials/account-selection-section.tsx:157
 #: src/components/credentials/credential-selection-editor.tsx:107
 #: src/components/streamers/card/use-streamer-status.tsx:151
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
@@ -3162,7 +3170,7 @@ msgstr "禁用所选"
 msgid "Disabled"
 msgstr "已禁用"
 
-#: src/components/credentials/account-usage.tsx:405
+#: src/components/credentials/account-usage.tsx:423
 msgid "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
 msgstr "已禁用的账号不会被使用、校验或刷新，但仍可编辑或重新登录。"
 
@@ -3300,7 +3308,7 @@ msgstr "丢帧数"
 msgid "Dual Format"
 msgstr "双格式输出"
 
-#: src/components/credentials/account-usage.tsx:381
+#: src/components/credentials/account-usage.tsx:399
 msgid "Due at its next use"
 msgstr "下次使用时续期"
 
@@ -3427,7 +3435,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/credentials/profile-editor-dialog.tsx:159
+#: src/components/credentials/profile-editor-dialog.tsx:198
 msgid "Edit account"
 msgstr "编辑账号"
 
@@ -3635,11 +3643,11 @@ msgstr "输入要排除的关键词..."
 msgid "Enter keywords to include..."
 msgstr "输入要包含的关键词..."
 
-#: src/components/credentials/profile-editor-dialog.tsx:236
+#: src/components/credentials/profile-editor-dialog.tsx:275
 msgid "Enter the credentials of this one account. Never mix cookies from different accounts."
 msgstr "只填写这一个账号的凭据。切勿混用不同账号的 Cookie。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:231
+#: src/components/credentials/profile-editor-dialog.tsx:270
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除。已保存的凭据不会显示。"
 
@@ -4230,11 +4238,11 @@ msgstr "更新模板失败：{0}"
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
 
-#: src/components/credentials/account-selection-section.tsx:250
+#: src/components/credentials/account-selection-section.tsx:273
 msgid "Failover off"
 msgstr "故障切换关闭"
 
-#: src/components/credentials/account-selection-section.tsx:250
+#: src/components/credentials/account-selection-section.tsx:273
 msgid "Failover on"
 msgstr "故障切换开启"
 
@@ -4455,7 +4463,7 @@ msgstr "修复 FLV 流"
 msgid "Fix HLS Discontinuities"
 msgstr "修复 HLS 不连续性"
 
-#: src/components/credentials/credential-selection-editor.tsx:235
+#: src/components/credentials/credential-selection-editor.tsx:243
 msgid "Fixed account"
 msgstr "固定账号"
 
@@ -4502,6 +4510,10 @@ msgstr "跟随录制"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "字体目录"
+
+#: src/components/credentials/account-usage.tsx:198
+msgid "For {list}"
+msgstr "用于 {list}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:902
 msgid "Force IPv4 (Default: Off)"
@@ -5136,7 +5148,7 @@ msgstr "进行中"
 msgid "In the desktop app, the operating system's proxy setting reaches only some requests."
 msgstr "在桌面应用中，操作系统的代理设置只对部分请求生效。"
 
-#: src/components/credentials/account-selection-section.tsx:424
+#: src/components/credentials/account-selection-section.tsx:449
 msgid "In use by the active recording"
 msgstr "当前录制正在使用"
 
@@ -5159,7 +5171,7 @@ msgstr "在输出中包含原始文件"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
-#: src/components/credentials/credential-selection-editor.tsx:228
+#: src/components/credentials/credential-selection-editor.tsx:236
 msgid "Inherit"
 msgstr "继承"
 
@@ -5171,9 +5183,9 @@ msgstr "继承 — {resolved}"
 msgid "Inherit — each streamer's platform setting"
 msgstr "继承 — 各主播所在平台的设置"
 
-#: src/components/credentials/credential-selection-editor.tsx:226
-msgid "Inherit (no account)"
-msgstr "继承（不使用账号）"
+#: src/components/credentials/credential-selection-editor.tsx:234
+msgid "Inherit (the site's account)"
+msgstr "继承（该网站的账号）"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
@@ -5412,7 +5424,7 @@ msgstr "密钥超时（毫秒）"
 msgid "Keyword"
 msgstr "关键字"
 
-#: src/components/credentials/profile-editor-dialog.tsx:170
+#: src/components/credentials/profile-editor-dialog.tsx:209
 msgid "Label"
 msgstr "名称"
 
@@ -5433,7 +5445,7 @@ msgstr "最后检查"
 msgid "Last check {0} ago"
 msgstr "上次检查于 {0} 前"
 
-#: src/components/credentials/account-usage.tsx:349
+#: src/components/credentials/account-usage.tsx:367
 msgid "Last checked"
 msgstr "最近检查"
 
@@ -5450,11 +5462,11 @@ msgstr "最后错误"
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
-#: src/components/credentials/account-usage.tsx:367
+#: src/components/credentials/account-usage.tsx:385
 msgid "Last refreshed"
 msgstr "最近刷新"
 
-#: src/components/credentials/account-usage.tsx:337
+#: src/components/credentials/account-usage.tsx:355
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
 msgid "Last used"
 msgstr "最近使用"
@@ -5485,7 +5497,7 @@ msgstr "留空则保留当前密码。"
 msgid "Leave empty to use the saved account selection."
 msgstr "留空以使用已保存的账号选择策略。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:186
+#: src/components/credentials/profile-editor-dialog.tsx:225
 msgid "Leave off to keep the stored credentials."
 msgstr "保持关闭则保留已保存的凭据。"
 
@@ -5931,7 +5943,7 @@ msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/credentials/credential-selection-editor.tsx:408
+#: src/components/credentials/credential-selection-editor.tsx:416
 msgid "Maximum attempts (1–10)"
 msgstr "最大尝试次数（1–10）"
 
@@ -6134,11 +6146,11 @@ msgstr "上午"
 msgid "Move"
 msgstr "移动"
 
-#: src/components/credentials/credential-selection-editor.tsx:340
+#: src/components/credentials/credential-selection-editor.tsx:348
 msgid "Move account down"
 msgstr "下移账号"
 
-#: src/components/credentials/credential-selection-editor.tsx:329
+#: src/components/credentials/credential-selection-editor.tsx:337
 msgid "Move account up"
 msgstr "上移账号"
 
@@ -6270,8 +6282,8 @@ msgstr "网络与系统"
 msgid "Never"
 msgstr "永不"
 
-#: src/components/credentials/account-usage.tsx:344
-#: src/components/credentials/account-usage.tsx:357
+#: src/components/credentials/account-usage.tsx:362
+#: src/components/credentials/account-usage.tsx:375
 msgctxt "an account never used or checked"
 msgid "Never"
 msgstr "从未"
@@ -6317,7 +6329,7 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
 
-#: src/components/credentials/account-usage.tsx:377
+#: src/components/credentials/account-usage.tsx:395
 msgid "Next renewal"
 msgstr "下次续期"
 
@@ -6325,11 +6337,14 @@ msgstr "下次续期"
 msgid "Night"
 msgstr "夜间"
 
-#: src/components/credentials/account-selection-section.tsx:193
-#: src/components/credentials/account-selection-section.tsx:308
-#: src/components/credentials/account-selection-section.tsx:316
+#: src/components/credentials/account-selection-section.tsx:216
+#: src/components/credentials/account-selection-section.tsx:336
 msgid "No account — records signed out"
 msgstr "不使用账号——以未登录状态录制"
+
+#: src/components/credentials/account-selection-section.tsx:340
+msgid "No account is set up for {host}"
+msgstr "没有为 {host} 设置账号"
 
 #: src/components/credentials/account-list.tsx:17
 msgid "No accounts yet"
@@ -6351,7 +6366,7 @@ msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服
 msgid "No Archives Found"
 msgstr "未找到归档"
 
-#: src/components/credentials/credential-selection-editor.tsx:232
+#: src/components/credentials/credential-selection-editor.tsx:240
 msgid "No authentication"
 msgstr "不使用身份验证"
 
@@ -6706,8 +6721,8 @@ msgstr "未安装"
 msgid "Not logged in"
 msgstr "未登录"
 
-#: src/components/credentials/account-usage.tsx:199
-#: src/components/credentials/account-usage.tsx:315
+#: src/components/credentials/account-usage.tsx:207
+#: src/components/credentials/account-usage.tsx:333
 msgid "Not selected anywhere"
 msgstr "未被任何配置选用"
 
@@ -6723,11 +6738,11 @@ msgstr "未使用"
 msgid "Not used anywhere"
 msgstr "未被任何设置使用"
 
-#: src/components/credentials/account-usage.tsx:173
+#: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "已禁用，不会使用"
 
-#: src/components/credentials/account-selection-section.tsx:319
+#: src/components/credentials/account-selection-section.tsx:341
 msgid "Nothing it inherits from chooses an account"
 msgstr "继承来源未选择任何账号"
 
@@ -7205,7 +7220,7 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/credentials/profile-editor-dialog.tsx:295
+#: src/components/credentials/profile-editor-dialog.tsx:334
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
@@ -7242,7 +7257,7 @@ msgstr "过去"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "先粘贴频道链接，其他设置稍后再填。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:204
+#: src/components/credentials/profile-editor-dialog.tsx:243
 msgid "Paste cookies"
 msgstr "粘贴 Cookie"
 
@@ -7772,7 +7787,7 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
-#: src/components/credentials/credential-selection-editor.tsx:240
+#: src/components/credentials/credential-selection-editor.tsx:248
 msgid "Primary and backups"
 msgstr "主账号与备用账号"
 
@@ -7814,7 +7829,7 @@ msgstr "优先级从低到高"
 msgid "Private Network Access"
 msgstr "私有网络访问"
 
-#: src/components/credentials/account-usage.tsx:391
+#: src/components/credentials/account-usage.tsx:409
 msgid "Problems"
 msgstr "问题"
 
@@ -7912,8 +7927,8 @@ msgstr "代理"
 #: src/components/config/global/network-system-card.tsx:156
 #: src/components/config/shared-config-editor.tsx:190
 #: src/components/config/shared/proxy-route-picker.tsx:445
-#: src/components/credentials/account-usage.tsx:397
-#: src/components/credentials/profile-editor-dialog.tsx:306
+#: src/components/credentials/account-usage.tsx:415
+#: src/components/credentials/profile-editor-dialog.tsx:371
 msgid "Proxy"
 msgstr "代理"
 
@@ -8119,7 +8134,7 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/credentials/account-usage.tsx:117
-#: src/components/credentials/account-usage.tsx:322
+#: src/components/credentials/account-usage.tsx:340
 msgctxt "live recordings using an account"
 msgid "Recording"
 msgstr "正在录制"
@@ -8199,7 +8214,7 @@ msgstr "刷新状态"
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
-#: src/components/credentials/profile-editor-dialog.tsx:258
+#: src/components/credentials/profile-editor-dialog.tsx:297
 msgid "Refresh token"
 msgstr "刷新令牌"
 
@@ -8250,7 +8265,7 @@ msgstr "移除 {item}"
 msgid "Remove {tag}"
 msgstr "移除 {tag}"
 
-#: src/components/credentials/credential-selection-editor.tsx:359
+#: src/components/credentials/credential-selection-editor.tsx:367
 msgid "Remove account"
 msgstr "移除账号"
 
@@ -8345,11 +8360,11 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
-#: src/components/credentials/account-usage.tsx:220
+#: src/components/credentials/account-usage.tsx:228
 msgid "renewal due"
 msgstr "待续期"
 
-#: src/components/credentials/account-usage.tsx:223
+#: src/components/credentials/account-usage.tsx:231
 msgid "renews {when}"
 msgstr "{when}续期"
 
@@ -8373,7 +8388,7 @@ msgstr "全部替换"
 msgid "Replace configuration?"
 msgstr "替换配置？"
 
-#: src/components/credentials/profile-editor-dialog.tsx:184
+#: src/components/credentials/profile-editor-dialog.tsx:223
 msgid "Replace credentials"
 msgstr "替换凭据"
 
@@ -8603,7 +8618,7 @@ msgstr "已吊销"
 msgid "Right"
 msgstr "右侧"
 
-#: src/components/credentials/credential-selection-editor.tsx:243
+#: src/components/credentials/credential-selection-editor.tsx:251
 msgid "Round-robin pool"
 msgstr "轮询账号池"
 
@@ -8702,7 +8717,7 @@ msgstr "清理后的主播名称"
 msgid "Saturday"
 msgstr "星期六"
 
-#: src/components/credentials/profile-editor-dialog.tsx:346
+#: src/components/credentials/profile-editor-dialog.tsx:411
 msgid "Save account"
 msgstr "保存账号"
 
@@ -8728,7 +8743,7 @@ msgstr "保存更改"
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
-#: src/components/credentials/account-selection-section.tsx:337
+#: src/components/credentials/account-selection-section.tsx:361
 msgid "Save this configuration to see what it inherits."
 msgstr "保存此配置后即可查看其继承结果。"
 
@@ -8773,11 +8788,11 @@ msgstr "全局、平台、模板、主播和账号设置可选用这些已保存
 msgid "Saved proxy"
 msgstr "已保存的代理"
 
-#: src/components/credentials/profile-editor-dialog.tsx:162
+#: src/components/credentials/profile-editor-dialog.tsx:201
 msgid "Saved right away, separately from the rest of this page."
 msgstr "立即保存，与本页其他设置分开保存。"
 
-#: src/components/credentials/account-selection-section.tsx:522
+#: src/components/credentials/account-selection-section.tsx:567
 msgid "Saved together with this configuration."
 msgstr "随此配置一起保存。"
 
@@ -8805,7 +8820,7 @@ msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传
 msgid "Scan Directory"
 msgstr "扫描目录"
 
-#: src/components/credentials/profile-editor-dialog.tsx:200
+#: src/components/credentials/profile-editor-dialog.tsx:239
 msgid "Scan QR code"
 msgstr "扫码登录"
 
@@ -9131,7 +9146,7 @@ msgid "Selected"
 msgstr "已选择"
 
 #: src/components/credentials/account-usage.tsx:106
-#: src/components/credentials/account-usage.tsx:303
+#: src/components/credentials/account-usage.tsx:321
 msgid "Selected by"
 msgstr "选用者"
 
@@ -9343,7 +9358,7 @@ msgstr "收起"
 msgid "Show password"
 msgstr "显示密码"
 
-#: src/components/credentials/profile-editor-dialog.tsx:338
+#: src/components/credentials/profile-editor-dialog.tsx:403
 msgid "Show QR code"
 msgstr "显示二维码"
 
@@ -9360,11 +9375,11 @@ msgstr "侧边栏布局"
 msgid "Sign In"
 msgstr "登录"
 
-#: src/components/credentials/profile-editor-dialog.tsx:212
+#: src/components/credentials/profile-editor-dialog.tsx:251
 msgid "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 msgstr "使用 {appName} App 扫描二维码登录，无需复制粘贴。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:217
+#: src/components/credentials/profile-editor-dialog.tsx:256
 msgid "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 msgstr "使用平台 App 扫描二维码登录，无需复制粘贴。"
 
@@ -9401,6 +9416,11 @@ msgstr "自 {0} 起"
 #: src/components/player/url-input-form.tsx:141
 msgid "Single URL"
 msgstr "单个 URL"
+
+#: src/components/credentials/account-usage.tsx:315
+#: src/components/credentials/profile-editor-dialog.tsx:346
+msgid "Sites"
+msgstr "网站"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:88
@@ -9774,6 +9794,10 @@ msgstr "主播"
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
+#: src/components/credentials/profile-editor-dialog.tsx:359
+msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
+msgstr "这些网站上未选择账号的主播会使用此账号。网站也包括其子域名，因此 youtube.com 也包括 www.youtube.com 和 m.youtube.com。多个网站用逗号分隔。"
+
 #: src/components/credential-attention-indicator.tsx:122
 msgid "Streamers that select only these accounts stop recording until one works again."
 msgstr "仅选择这些账号的主播会停止录制，直到其中一个账号恢复可用。"
@@ -9786,17 +9810,17 @@ msgstr "流媒体服务"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/credentials/account-selection-section.tsx:500
+#: src/components/credentials/account-selection-section.tsx:545
 msgid "Streamlink receives only the account's cookies, and the account is not checked automatically."
 msgstr "Streamlink 只会收到该账号的 Cookie，且不会自动检查账号状态。"
 
-#: src/components/credentials/account-selection-section.tsx:449
-msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer, not in a template."
-msgstr "Streamlink 覆盖许多不同的网站，因此其账号需在每个主播上单独选择，而不是在模板中选择。"
+#: src/components/credentials/account-selection-section.tsx:489
+msgid "Streamlink serves many different sites, so each account names the sites it is for. Streamers on those sites use it unless they choose another account in their settings."
+msgstr "Streamlink 支持许多不同的网站，因此每个账号需注明其适用的网站。这些网站上的主播会使用该账号，除非在主播设置中选择了其他账号。"
 
-#: src/components/credentials/account-selection-section.tsx:443
-msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer. Add accounts here, then pick one in a streamer's settings."
-msgstr "Streamlink 支持许多不同的网站，因此其账号在各主播中选择。请先在这里添加账号，再到主播设置中选择。"
+#: src/components/credentials/account-selection-section.tsx:495
+msgid "Streamlink serves many different sites, so its accounts are chosen by site or on each streamer, not in a template."
+msgstr "Streamlink 支持许多不同的网站，因此其账号按网站或在每个主播上选择，而不是在模板中选择。"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:664
 msgid "Streams"
@@ -9874,7 +9898,7 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
-#: src/components/credentials/credential-selection-editor.tsx:403
+#: src/components/credentials/credential-selection-editor.tsx:411
 msgid "Switch to the next account when one stops working"
 msgstr "账号失效时切换到下一个账号"
 
@@ -10036,7 +10060,7 @@ msgstr "测试通知已发送"
 msgid "Testing…"
 msgstr "测试中…"
 
-#: src/components/credentials/profile-editor-dialog.tsx:271
+#: src/components/credentials/profile-editor-dialog.tsx:310
 msgid "The access token alone signs in; cookies are optional."
 msgstr "仅凭访问令牌即可登录；Cookie 可选。"
 
@@ -10047,6 +10071,10 @@ msgstr "账号或其使用的代理已在此期间被修改或删除。请刷新
 #: src/components/streamers/card/use-streamer-status.tsx:59
 msgid "The account selection changed while the recording was using an account."
 msgstr "录制使用账号期间，账号选择发生了变更。"
+
+#: src/components/credentials/account-selection-section.tsx:353
+msgid "The account set up for {site}"
+msgstr "为 {site} 设置的账号"
 
 #: src/components/credentials/account-selection-section.tsx:63
 msgid "The account the active recording uses can no longer be used."
@@ -10174,7 +10202,7 @@ msgstr "主题模式"
 msgid "Theme Preset"
 msgstr "主题预设"
 
-#: src/components/credentials/account-selection-section.tsx:167
+#: src/components/credentials/account-selection-section.tsx:190
 msgid "then"
 msgstr "然后"
 
@@ -10231,11 +10259,11 @@ msgstr "浏览器不支持此媒体格式。请选择其他格式或使用其他
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
-#: src/components/credentials/account-selection-section.tsx:514
+#: src/components/credentials/account-selection-section.tsx:559
 msgid "This platform has no accounts yet. Add them in the platform settings."
 msgstr "该平台还没有账号，请在平台设置中添加。"
 
-#: src/components/credentials/account-selection-section.tsx:509
+#: src/components/credentials/account-selection-section.tsx:554
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "该平台还没有账号。请使用上方的“添加账号”创建一个。"
 
@@ -10755,9 +10783,9 @@ msgstr "Unix 时间戳"
 msgid "Unknown"
 msgstr "未知"
 
-#: src/components/credentials/account-selection-section.tsx:153
-#: src/components/credentials/account-selection-section.tsx:406
-#: src/components/credentials/credential-selection-editor.tsx:168
+#: src/components/credentials/account-selection-section.tsx:176
+#: src/components/credentials/account-selection-section.tsx:431
+#: src/components/credentials/credential-selection-editor.tsx:176
 msgid "Unknown account"
 msgstr "未知账号"
 
@@ -10791,7 +10819,7 @@ msgstr "不限"
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
-#: src/components/credentials/account-selection-section.tsx:356
+#: src/components/credentials/account-selection-section.tsx:380
 msgid "Unsaved"
 msgstr "未保存"
 
@@ -10952,7 +10980,7 @@ msgstr "使用播放器默认的缓冲与延迟平衡设置。"
 msgid "Use TLS"
 msgstr "启用 TLS"
 
-#: src/components/credentials/account-usage.tsx:215
+#: src/components/credentials/account-usage.tsx:223
 msgid "used {when}"
 msgstr "{when}使用"
 
@@ -10974,7 +11002,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/credentials/profile-editor-dialog.tsx:282
+#: src/components/credentials/profile-editor-dialog.tsx:321
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
@@ -10996,19 +11024,19 @@ msgstr "用户"
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "会占用额外的磁盘空间和 I/O。文件收尾失败时会保留临时分块。"
 
-#: src/components/credentials/account-selection-section.tsx:335
+#: src/components/credentials/account-selection-section.tsx:359
 msgid "Uses the inherited setting"
 msgstr "使用继承的设置"
 
-#: src/components/credentials/account-selection-section.tsx:265
+#: src/components/credentials/account-selection-section.tsx:288
 msgid "Uses the platform's setting"
 msgstr "使用平台的设置"
 
-#: src/components/credentials/account-selection-section.tsx:269
+#: src/components/credentials/account-selection-section.tsx:292
 msgid "Uses the streamer's setting"
 msgstr "使用主播的设置"
 
-#: src/components/credentials/account-selection-section.tsx:267
+#: src/components/credentials/account-selection-section.tsx:290
 msgid "Uses the template's setting"
 msgstr "使用模板的设置"
 
@@ -11025,7 +11053,7 @@ msgstr "校验"
 msgid "Validation Failed"
 msgstr "校验失败"
 
-#: src/components/credentials/account-usage.tsx:359
+#: src/components/credentials/account-usage.tsx:377
 msgid "Validation not supported"
 msgstr "不支持校验"
 

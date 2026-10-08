@@ -111,8 +111,8 @@ function DisabledMarker() {
 
 /**
  * An account as the pickers show it: its health, its label on one line (the
- * full label in its tooltip) and whether it is disabled. `account` is absent
- * for an ID the platform no longer has.
+ * full label in its tooltip), the sites it is for and whether it is disabled.
+ * `account` is absent for an ID the platform no longer has.
  */
 function AccountName({
   account,
@@ -136,6 +136,11 @@ function AccountName({
       >
         {label}
       </span>
+      {account?.sites?.length ? (
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {account.sites.join(', ')}
+        </span>
+      ) : null}
       {account && !account.profile.enabled && <DisabledMarker />}
     </span>
   );
@@ -157,7 +162,10 @@ export function CredentialSelectionEditor({
   onChange: (value: CredentialSelection) => void;
   /** The platform's accounts with their health. */
   accounts: CredentialProfileDetail[];
-  /** Offer only inherit, none and one fixed account; inheriting is anonymous. */
+  /**
+   * Offer only inherit, none and one fixed account; inheriting uses the
+   * account set up for the streamer's site, if any.
+   */
   singleAccount?: boolean;
   /** Shown while the platform has no accounts to choose from. */
   emptyHint?: ReactNode;
@@ -223,7 +231,7 @@ export function CredentialSelectionEditor({
           <SelectContent className={CONFIG_SELECT_CONTENT}>
             <SelectItem value="inherit">
               {singleAccount ? (
-                <Trans>Inherit (no account)</Trans>
+                <Trans>Inherit (the site&apos;s account)</Trans>
               ) : (
                 <Trans>Inherit</Trans>
               )}

@@ -95,6 +95,29 @@ function UnavailableNotice({
   }
 }
 
+/**
+ * Warns that a Streamlink streamer uses an account set up for other sites:
+ * the account's cookies would go to this streamer's site.
+ */
+function OffSiteNotice({
+  label,
+  sites,
+  host,
+}: {
+  label: string;
+  sites: string;
+  host: string;
+}) {
+  return (
+    <Callout tone="warning" icon={AlertTriangle} role="status">
+      <Trans>
+        {label} is set up for {sites}, but this streamer is on {host}. Its
+        cookies will be sent to {host}.
+      </Trans>
+    </Callout>
+  );
+}
+
 /** How many accounts a selection names; inherit and none name none. */
 function selectedCount(selection: CredentialSelection | undefined | null) {
   if (selection?.mode === 'fixed') return 1;
@@ -275,13 +298,13 @@ function inheritedFrom(
  * order and with their health, and a muted line with where an inherited
  * selection comes from and how a pool fails over. The effective selection
  * describes the saved configuration, so an inherit selection is resolved only
- * while the form still matches it.
+ * while the form still matches it. A Streamlink streamer inherits the account
+ * set up for its site, if any.
  */
 function SelectionSummary({
   selection,
   accounts,
   effective,
-  singleAccount = false,
   topLevel = false,
   dirty = false,
   action,
@@ -289,8 +312,6 @@ function SelectionSummary({
   selection: CredentialSelection | undefined;
   accounts: CredentialProfileDetail[];
   effective: EffectiveCredentialSelection | undefined;
-  /** Inheriting means no account, as for Streamlink streamers. */
-  singleAccount?: boolean;
   /** The scope has nothing to inherit from, as for a platform. */
   topLevel?: boolean;
   /** The form holds a selection that is not saved yet. */
@@ -304,19 +325,20 @@ function SelectionSummary({
   if (selection && selection.mode !== 'inherit') {
     sentence = <SelectionSentence selection={selection} accounts={accounts} />;
     details = poolBehaviour(selection, i18n);
-  } else if (singleAccount) {
-    sentence = <Trans>No account — records signed out</Trans>;
-    details = [];
   } else if (
     effective &&
     (!effective.configured || effective.configured.mode === 'inherit')
   ) {
     const resolved = effective.resolved;
+    const host = effective.site?.host;
+    const site = effective.site?.site;
     if (!resolved) {
       sentence = <Trans>No account — records signed out</Trans>;
       details = topLevel
         ? []
-        : [t(i18n)`Nothing it inherits from chooses an account`];
+        : host
+          ? [t(i18n)`No account is set up for ${host}`]
+          : [t(i18n)`Nothing it inherits from chooses an account`];
     } else {
       // The inherited accounts come with the effective selection, so their
       // health shows even before the platform's list has loaded.
@@ -327,7 +349,9 @@ function SelectionSummary({
         />
       );
       details = [
-        inheritedFrom(resolved.owner, i18n),
+        site && resolved.owner.type === 'platform'
+          ? t(i18n)`The account set up for ${site}`
+          : inheritedFrom(resolved.owner, i18n),
         ...poolBehaviour(resolved.selection, i18n),
       ];
     }
@@ -374,8 +398,9 @@ function SelectionSummary({
  * the configuration form: a summary of the selection with a Change button that
  * expands the editor. Notices about the saved selection (an unavailable one,
  * the account pinned to an active recording) stay under the summary while the
- * editor is closed. Streamlink accounts are chosen per streamer, so the
- * platform and templates only explain that.
+ * editor is closed, as does a warning about a Streamlink account chosen for a
+ * streamer on a site the account is not for. Streamlink accounts are chosen by
+ * site or per streamer, so the platform and templates only explain that.
  */
 export function AccountSelectionSection({
   scope,
@@ -427,9 +452,30 @@ export function AccountSelectionSection({
       </span>
     </Callout>
   );
-  const notices = (pinnedNotice || unavailableNotice) && (
+  // A Streamlink account sends its cookies to whatever site the streamer is
+  // on, so one set up for other sites is most likely a mistake.
+  const site = effective.data?.site;
+  const chosen =
+    selection?.mode === 'fixed'
+      ? accounts.data?.find(
+          (entry) => entry.profile.id === selection.credential_id,
+        )
+      : undefined;
+  const chosenSites = chosen?.sites ?? [];
+  const offSiteNotice = site &&
+    chosen &&
+    chosenSites.length > 0 &&
+    !site.accounts.includes(chosen.profile.id) && (
+      <OffSiteNotice
+        label={chosen.profile.label}
+        sites={chosenSites.join(', ')}
+        host={site.host}
+      />
+    );
+  const notices = (pinnedNotice || unavailableNotice || offSiteNotice) && (
     <div className="space-y-2 px-3 pb-3 sm:px-4">
       {pinnedNotice}
+      {offSiteNotice}
       {unavailableNotice}
     </div>
   );
@@ -441,14 +487,14 @@ export function AccountSelectionSection({
           <Callout tone="info" icon={Info}>
             {onPlatformPage ? (
               <Trans>
-                Streamlink serves many different sites, so its accounts are
-                chosen on each streamer. Add accounts here, then pick one in a
-                streamer&apos;s settings.
+                Streamlink serves many different sites, so each account names
+                the sites it is for. Streamers on those sites use it unless they
+                choose another account in their settings.
               </Trans>
             ) : (
               <Trans>
                 Streamlink serves many different sites, so its accounts are
-                chosen on each streamer, not in a template.
+                chosen by site or on each streamer, not in a template.
               </Trans>
             )}
           </Callout>
@@ -463,7 +509,6 @@ export function AccountSelectionSection({
           selection={selection}
           accounts={accounts.data ?? []}
           effective={effective.data}
-          singleAccount={perStreamer}
           topLevel={onPlatformPage}
           dirty={dirty}
           action={

@@ -65,6 +65,14 @@
       "reason_code"
     ]
   },
+  "credential_profile_sites": {
+    "required_epoch_ms": [],
+    "nullable_epoch_ms": [],
+    "non_timestamp_columns": [
+      "site",
+      "profile_id"
+    ]
+  },
   "credential_profiles": {
     "required_epoch_ms": [
       "created_at",

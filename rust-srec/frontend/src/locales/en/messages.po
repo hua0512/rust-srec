@@ -219,7 +219,7 @@ msgstr "{0}/{1, plural, one {# step} other {# steps}}"
 msgid "{0}h {1}m"
 msgstr "{0}h {1}m"
 
-#: src/components/credentials/account-selection-section.tsx:251
+#: src/components/credentials/account-selection-section.tsx:274
 msgid "{attempts, plural, one {up to # try} other {up to # tries}}"
 msgstr "{attempts, plural, one {up to # try} other {up to # tries}}"
 
@@ -255,12 +255,12 @@ msgstr "{displayName} Configuration"
 msgid "{eta} left"
 msgstr "{eta} left"
 
-#: src/components/credentials/account-usage.tsx:292
+#: src/components/credentials/account-usage.tsx:302
 msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 msgstr "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 
 #: src/components/credential-attention-indicator.tsx:69
-#: src/components/credentials/account-usage.tsx:181
+#: src/components/credentials/account-usage.tsx:182
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 
@@ -277,6 +277,10 @@ msgstr "{free} free"
 msgid "{hours}h"
 msgstr "{hours}h"
 
+#: src/components/credentials/account-selection-section.tsx:113
+msgid "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
+msgstr "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
+
 #: src/components/streamers/edit/status-check-history.tsx:474
 msgid "{minutes}m"
 msgstr "{minutes}m"
@@ -289,7 +293,7 @@ msgstr "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgid "{pending} queued"
 msgstr "{pending} queued"
 
-#: src/components/credentials/account-usage.tsx:207
+#: src/components/credentials/account-usage.tsx:215
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
 msgstr "{recordings, plural, one {# live recording} other {# live recordings}}"
 
@@ -316,6 +320,10 @@ msgstr "{selections, plural, one {Remove it from the account selection of # conf
 #: src/components/credentials/delete-profile-dialog.tsx:97
 msgid "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
 msgstr "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
+
+#: src/components/credentials/profile-editor-dialog.tsx:77
+msgid "{site} already belongs to the account {label}. A site can belong to one account only."
+msgstr "{site} already belongs to the account {label}. A site can belong to one account only."
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:347
 msgid "{totalOutputs, plural, one {# file} other {# files}}"
@@ -353,12 +361,12 @@ msgstr "<0>{selectedCount}</0><1>selected</1>"
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 
-#: src/components/credentials/account-selection-section.tsx:218
+#: src/components/credentials/account-selection-section.tsx:241
 msgid "<0>Recording rotates between</0> {names}"
 msgstr "<0>Recording rotates between</0> {names}"
 
-#: src/components/credentials/account-selection-section.tsx:203
-#: src/components/credentials/account-selection-section.tsx:234
+#: src/components/credentials/account-selection-section.tsx:226
+#: src/components/credentials/account-selection-section.tsx:257
 msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
@@ -442,7 +450,7 @@ msgstr "90 days"
 msgid "A check found it needs a refresh"
 msgstr "A check found it needs a refresh"
 
-#: src/components/credentials/credential-selection-editor.tsx:252
+#: src/components/credentials/credential-selection-editor.tsx:260
 msgid "A recording keeps using the account it started with."
 msgstr "A recording keeps using the account it started with."
 
@@ -482,7 +490,7 @@ msgstr "Access"
 msgid "Access level"
 msgstr "Access level"
 
-#: src/components/credentials/profile-editor-dialog.tsx:266
+#: src/components/credentials/profile-editor-dialog.tsx:305
 msgid "Access token"
 msgstr "Access token"
 
@@ -490,11 +498,11 @@ msgstr "Access token"
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 
-#: src/components/credentials/credential-selection-editor.tsx:266
+#: src/components/credentials/credential-selection-editor.tsx:274
 msgid "Account"
 msgstr "Account"
 
-#: src/components/credentials/profile-editor-dialog.tsx:316
+#: src/components/credentials/profile-editor-dialog.tsx:381
 msgid "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 msgstr "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 
@@ -511,7 +519,7 @@ msgstr "Account ID copied"
 msgid "Account needs login"
 msgstr "Account needs login"
 
-#: src/components/credentials/credential-selection-editor.tsx:209
+#: src/components/credentials/credential-selection-editor.tsx:217
 msgid "Account selection"
 msgstr "Account selection"
 
@@ -520,7 +528,7 @@ msgid "Account unavailable"
 msgstr "Account unavailable"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:80
-#: src/components/credentials/credential-selection-editor.tsx:304
+#: src/components/credentials/credential-selection-editor.tsx:312
 #: src/components/credentials/platform-accounts-section.tsx:129
 #: src/components/credentials/read-only-accounts-section.tsx:25
 msgid "Accounts"
@@ -547,7 +555,7 @@ msgstr "Accounts disabled"
 msgid "Accounts failing"
 msgstr "Accounts failing"
 
-#: src/components/credentials/credential-selection-editor.tsx:302
+#: src/components/credentials/credential-selection-editor.tsx:310
 msgid "Accounts, in the order they are tried"
 msgstr "Accounts, in the order they are tried"
 
@@ -601,9 +609,9 @@ msgstr "Add a stream to start your viewing session."
 msgid "Add a streamer"
 msgstr "Add a streamer"
 
-#: src/components/credentials/credential-selection-editor.tsx:375
+#: src/components/credentials/credential-selection-editor.tsx:383
 #: src/components/credentials/platform-accounts-section.tsx:122
-#: src/components/credentials/profile-editor-dialog.tsx:159
+#: src/components/credentials/profile-editor-dialog.tsx:198
 msgid "Add account"
 msgstr "Add account"
 
@@ -1633,7 +1641,7 @@ msgstr "Cause:"
 msgid "CDN"
 msgstr "CDN"
 
-#: src/components/credentials/account-selection-section.tsx:482
+#: src/components/credentials/account-selection-section.tsx:527
 msgid "Change"
 msgstr "Change"
 
@@ -1750,7 +1758,7 @@ msgstr "Check that it reaches"
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
 
-#: src/components/credentials/account-usage.tsx:170
+#: src/components/credentials/account-usage.tsx:171
 msgid "checked {when}"
 msgstr "checked {when}"
 
@@ -2195,7 +2203,7 @@ msgstr "Convert only the danmu recorded for this session's segments"
 msgid "Cookie string"
 msgstr "Cookie string"
 
-#: src/components/credentials/profile-editor-dialog.tsx:244
+#: src/components/credentials/profile-editor-dialog.tsx:283
 #: src/components/player/url-input-form.tsx:247
 #: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
@@ -3152,7 +3160,7 @@ msgstr "Disable selected"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:231
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/credentials/account-row.tsx:92
-#: src/components/credentials/account-selection-section.tsx:134
+#: src/components/credentials/account-selection-section.tsx:157
 #: src/components/credentials/credential-selection-editor.tsx:107
 #: src/components/streamers/card/use-streamer-status.tsx:151
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
@@ -3162,7 +3170,7 @@ msgstr "Disable selected"
 msgid "Disabled"
 msgstr "Disabled"
 
-#: src/components/credentials/account-usage.tsx:405
+#: src/components/credentials/account-usage.tsx:423
 msgid "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
 msgstr "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
 
@@ -3300,7 +3308,7 @@ msgstr "Dropped frames"
 msgid "Dual Format"
 msgstr "Dual Format"
 
-#: src/components/credentials/account-usage.tsx:381
+#: src/components/credentials/account-usage.tsx:399
 msgid "Due at its next use"
 msgstr "Due at its next use"
 
@@ -3427,7 +3435,7 @@ msgstr "Earlier files are still being finalized, so the cut was not made. Record
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/credentials/profile-editor-dialog.tsx:159
+#: src/components/credentials/profile-editor-dialog.tsx:198
 msgid "Edit account"
 msgstr "Edit account"
 
@@ -3635,11 +3643,11 @@ msgstr "Enter keywords to exclude..."
 msgid "Enter keywords to include..."
 msgstr "Enter keywords to include..."
 
-#: src/components/credentials/profile-editor-dialog.tsx:236
+#: src/components/credentials/profile-editor-dialog.tsx:275
 msgid "Enter the credentials of this one account. Never mix cookies from different accounts."
 msgstr "Enter the credentials of this one account. Never mix cookies from different accounts."
 
-#: src/components/credentials/profile-editor-dialog.tsx:231
+#: src/components/credentials/profile-editor-dialog.tsx:270
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 
@@ -4230,11 +4238,11 @@ msgstr "Failed to update template: {0}"
 msgid "Failed to update workflow: {0}"
 msgstr "Failed to update workflow: {0}"
 
-#: src/components/credentials/account-selection-section.tsx:250
+#: src/components/credentials/account-selection-section.tsx:273
 msgid "Failover off"
 msgstr "Failover off"
 
-#: src/components/credentials/account-selection-section.tsx:250
+#: src/components/credentials/account-selection-section.tsx:273
 msgid "Failover on"
 msgstr "Failover on"
 
@@ -4455,7 +4463,7 @@ msgstr "Fix FLV Streams"
 msgid "Fix HLS Discontinuities"
 msgstr "Fix HLS Discontinuities"
 
-#: src/components/credentials/credential-selection-editor.tsx:235
+#: src/components/credentials/credential-selection-editor.tsx:243
 msgid "Fixed account"
 msgstr "Fixed account"
 
@@ -4502,6 +4510,10 @@ msgstr "Follows the recording"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
+
+#: src/components/credentials/account-usage.tsx:198
+msgid "For {list}"
+msgstr "For {list}"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:902
 msgid "Force IPv4 (Default: Off)"
@@ -5136,7 +5148,7 @@ msgstr "In progress"
 msgid "In the desktop app, the operating system's proxy setting reaches only some requests."
 msgstr "In the desktop app, the operating system's proxy setting reaches only some requests."
 
-#: src/components/credentials/account-selection-section.tsx:424
+#: src/components/credentials/account-selection-section.tsx:449
 msgid "In use by the active recording"
 msgstr "In use by the active recording"
 
@@ -5159,7 +5171,7 @@ msgstr "Include original files in outputs"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
-#: src/components/credentials/credential-selection-editor.tsx:228
+#: src/components/credentials/credential-selection-editor.tsx:236
 msgid "Inherit"
 msgstr "Inherit"
 
@@ -5171,9 +5183,9 @@ msgstr "Inherit — {resolved}"
 msgid "Inherit — each streamer's platform setting"
 msgstr "Inherit — each streamer's platform setting"
 
-#: src/components/credentials/credential-selection-editor.tsx:226
-msgid "Inherit (no account)"
-msgstr "Inherit (no account)"
+#: src/components/credentials/credential-selection-editor.tsx:234
+msgid "Inherit (the site's account)"
+msgstr "Inherit (the site's account)"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:62
@@ -5412,7 +5424,7 @@ msgstr "Key Timeout (ms)"
 msgid "Keyword"
 msgstr "Keyword"
 
-#: src/components/credentials/profile-editor-dialog.tsx:170
+#: src/components/credentials/profile-editor-dialog.tsx:209
 msgid "Label"
 msgstr "Label"
 
@@ -5433,7 +5445,7 @@ msgstr "Last Check"
 msgid "Last check {0} ago"
 msgstr "Last check {0} ago"
 
-#: src/components/credentials/account-usage.tsx:349
+#: src/components/credentials/account-usage.tsx:367
 msgid "Last checked"
 msgstr "Last checked"
 
@@ -5450,11 +5462,11 @@ msgstr "Last Error"
 msgid "Last Error Log"
 msgstr "Last Error Log"
 
-#: src/components/credentials/account-usage.tsx:367
+#: src/components/credentials/account-usage.tsx:385
 msgid "Last refreshed"
 msgstr "Last refreshed"
 
-#: src/components/credentials/account-usage.tsx:337
+#: src/components/credentials/account-usage.tsx:355
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
 msgid "Last used"
 msgstr "Last used"
@@ -5485,7 +5497,7 @@ msgstr "Leave empty to keep the current password."
 msgid "Leave empty to use the saved account selection."
 msgstr "Leave empty to use the saved account selection."
 
-#: src/components/credentials/profile-editor-dialog.tsx:186
+#: src/components/credentials/profile-editor-dialog.tsx:225
 msgid "Leave off to keep the stored credentials."
 msgstr "Leave off to keep the stored credentials."
 
@@ -5931,7 +5943,7 @@ msgstr "Max transactions/second to the remote API (--tpslimit)."
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
-#: src/components/credentials/credential-selection-editor.tsx:408
+#: src/components/credentials/credential-selection-editor.tsx:416
 msgid "Maximum attempts (1–10)"
 msgstr "Maximum attempts (1–10)"
 
@@ -6134,11 +6146,11 @@ msgstr "Morning"
 msgid "Move"
 msgstr "Move"
 
-#: src/components/credentials/credential-selection-editor.tsx:340
+#: src/components/credentials/credential-selection-editor.tsx:348
 msgid "Move account down"
 msgstr "Move account down"
 
-#: src/components/credentials/credential-selection-editor.tsx:329
+#: src/components/credentials/credential-selection-editor.tsx:337
 msgid "Move account up"
 msgstr "Move account up"
 
@@ -6270,8 +6282,8 @@ msgstr "Network & System"
 msgid "Never"
 msgstr "Never"
 
-#: src/components/credentials/account-usage.tsx:344
-#: src/components/credentials/account-usage.tsx:357
+#: src/components/credentials/account-usage.tsx:362
+#: src/components/credentials/account-usage.tsx:375
 msgctxt "an account never used or checked"
 msgid "Never"
 msgstr "Never"
@@ -6317,7 +6329,7 @@ msgctxt "pagination"
 msgid "Next"
 msgstr "Next"
 
-#: src/components/credentials/account-usage.tsx:377
+#: src/components/credentials/account-usage.tsx:395
 msgid "Next renewal"
 msgstr "Next renewal"
 
@@ -6325,11 +6337,14 @@ msgstr "Next renewal"
 msgid "Night"
 msgstr "Night"
 
-#: src/components/credentials/account-selection-section.tsx:193
-#: src/components/credentials/account-selection-section.tsx:308
-#: src/components/credentials/account-selection-section.tsx:316
+#: src/components/credentials/account-selection-section.tsx:216
+#: src/components/credentials/account-selection-section.tsx:336
 msgid "No account — records signed out"
 msgstr "No account — records signed out"
+
+#: src/components/credentials/account-selection-section.tsx:340
+msgid "No account is set up for {host}"
+msgstr "No account is set up for {host}"
 
 #: src/components/credentials/account-list.tsx:17
 msgid "No accounts yet"
@@ -6351,7 +6366,7 @@ msgstr "No API keys yet. Create one to let scripts or AI assistants access this 
 msgid "No Archives Found"
 msgstr "No Archives Found"
 
-#: src/components/credentials/credential-selection-editor.tsx:232
+#: src/components/credentials/credential-selection-editor.tsx:240
 msgid "No authentication"
 msgstr "No authentication"
 
@@ -6706,8 +6721,8 @@ msgstr "Not installed"
 msgid "Not logged in"
 msgstr "Not logged in"
 
-#: src/components/credentials/account-usage.tsx:199
-#: src/components/credentials/account-usage.tsx:315
+#: src/components/credentials/account-usage.tsx:207
+#: src/components/credentials/account-usage.tsx:333
 msgid "Not selected anywhere"
 msgstr "Not selected anywhere"
 
@@ -6723,11 +6738,11 @@ msgstr "not used"
 msgid "Not used anywhere"
 msgstr "Not used anywhere"
 
-#: src/components/credentials/account-usage.tsx:173
+#: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "Not used while disabled"
 
-#: src/components/credentials/account-selection-section.tsx:319
+#: src/components/credentials/account-selection-section.tsx:341
 msgid "Nothing it inherits from chooses an account"
 msgstr "Nothing it inherits from chooses an account"
 
@@ -7205,7 +7220,7 @@ msgstr "Parsing..."
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
-#: src/components/credentials/profile-editor-dialog.tsx:295
+#: src/components/credentials/profile-editor-dialog.tsx:334
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
@@ -7242,7 +7257,7 @@ msgstr "Past"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "Paste a channel link. Everything else can wait."
 
-#: src/components/credentials/profile-editor-dialog.tsx:204
+#: src/components/credentials/profile-editor-dialog.tsx:243
 msgid "Paste cookies"
 msgstr "Paste cookies"
 
@@ -7772,7 +7787,7 @@ msgstr "Primary"
 msgid "Primary Action"
 msgstr "Primary Action"
 
-#: src/components/credentials/credential-selection-editor.tsx:240
+#: src/components/credentials/credential-selection-editor.tsx:248
 msgid "Primary and backups"
 msgstr "Primary and backups"
 
@@ -7814,7 +7829,7 @@ msgstr "Priority low-high"
 msgid "Private Network Access"
 msgstr "Private Network Access"
 
-#: src/components/credentials/account-usage.tsx:391
+#: src/components/credentials/account-usage.tsx:409
 msgid "Problems"
 msgstr "Problems"
 
@@ -7912,8 +7927,8 @@ msgstr "Proxies"
 #: src/components/config/global/network-system-card.tsx:156
 #: src/components/config/shared-config-editor.tsx:190
 #: src/components/config/shared/proxy-route-picker.tsx:445
-#: src/components/credentials/account-usage.tsx:397
-#: src/components/credentials/profile-editor-dialog.tsx:306
+#: src/components/credentials/account-usage.tsx:415
+#: src/components/credentials/profile-editor-dialog.tsx:371
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -8119,7 +8134,7 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/credentials/account-usage.tsx:117
-#: src/components/credentials/account-usage.tsx:322
+#: src/components/credentials/account-usage.tsx:340
 msgctxt "live recordings using an account"
 msgid "Recording"
 msgstr "Recording"
@@ -8199,7 +8214,7 @@ msgstr "Refresh status"
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
 
-#: src/components/credentials/profile-editor-dialog.tsx:258
+#: src/components/credentials/profile-editor-dialog.tsx:297
 msgid "Refresh token"
 msgstr "Refresh token"
 
@@ -8250,7 +8265,7 @@ msgstr "Remove {item}"
 msgid "Remove {tag}"
 msgstr "Remove {tag}"
 
-#: src/components/credentials/credential-selection-editor.tsx:359
+#: src/components/credentials/credential-selection-editor.tsx:367
 msgid "Remove account"
 msgstr "Remove account"
 
@@ -8345,11 +8360,11 @@ msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the c
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
-#: src/components/credentials/account-usage.tsx:220
+#: src/components/credentials/account-usage.tsx:228
 msgid "renewal due"
 msgstr "renewal due"
 
-#: src/components/credentials/account-usage.tsx:223
+#: src/components/credentials/account-usage.tsx:231
 msgid "renews {when}"
 msgstr "renews {when}"
 
@@ -8373,7 +8388,7 @@ msgstr "Replace All"
 msgid "Replace configuration?"
 msgstr "Replace configuration?"
 
-#: src/components/credentials/profile-editor-dialog.tsx:184
+#: src/components/credentials/profile-editor-dialog.tsx:223
 msgid "Replace credentials"
 msgstr "Replace credentials"
 
@@ -8603,7 +8618,7 @@ msgstr "Revoked"
 msgid "Right"
 msgstr "Right"
 
-#: src/components/credentials/credential-selection-editor.tsx:243
+#: src/components/credentials/credential-selection-editor.tsx:251
 msgid "Round-robin pool"
 msgstr "Round-robin pool"
 
@@ -8702,7 +8717,7 @@ msgstr "Sanitized streamer name"
 msgid "Saturday"
 msgstr "Saturday"
 
-#: src/components/credentials/profile-editor-dialog.tsx:346
+#: src/components/credentials/profile-editor-dialog.tsx:411
 msgid "Save account"
 msgstr "Save account"
 
@@ -8728,7 +8743,7 @@ msgstr "Save Changes"
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
-#: src/components/credentials/account-selection-section.tsx:337
+#: src/components/credentials/account-selection-section.tsx:361
 msgid "Save this configuration to see what it inherits."
 msgstr "Save this configuration to see what it inherits."
 
@@ -8773,11 +8788,11 @@ msgstr "Saved proxies that global, platform, template, streamer and account sett
 msgid "Saved proxy"
 msgstr "Saved proxy"
 
-#: src/components/credentials/profile-editor-dialog.tsx:162
+#: src/components/credentials/profile-editor-dialog.tsx:201
 msgid "Saved right away, separately from the rest of this page."
 msgstr "Saved right away, separately from the rest of this page."
 
-#: src/components/credentials/account-selection-section.tsx:522
+#: src/components/credentials/account-selection-section.tsx:567
 msgid "Saved together with this configuration."
 msgstr "Saved together with this configuration."
 
@@ -8805,7 +8820,7 @@ msgstr "Scan a directory for new files created by the command. Detected files wi
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
-#: src/components/credentials/profile-editor-dialog.tsx:200
+#: src/components/credentials/profile-editor-dialog.tsx:239
 msgid "Scan QR code"
 msgstr "Scan QR code"
 
@@ -9131,7 +9146,7 @@ msgid "Selected"
 msgstr "Selected"
 
 #: src/components/credentials/account-usage.tsx:106
-#: src/components/credentials/account-usage.tsx:303
+#: src/components/credentials/account-usage.tsx:321
 msgid "Selected by"
 msgstr "Selected by"
 
@@ -9343,7 +9358,7 @@ msgstr "Show less"
 msgid "Show password"
 msgstr "Show password"
 
-#: src/components/credentials/profile-editor-dialog.tsx:338
+#: src/components/credentials/profile-editor-dialog.tsx:403
 msgid "Show QR code"
 msgstr "Show QR code"
 
@@ -9360,11 +9375,11 @@ msgstr "Sidebar Layout"
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/credentials/profile-editor-dialog.tsx:212
+#: src/components/credentials/profile-editor-dialog.tsx:251
 msgid "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 msgstr "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 
-#: src/components/credentials/profile-editor-dialog.tsx:217
+#: src/components/credentials/profile-editor-dialog.tsx:256
 msgid "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 msgstr "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 
@@ -9401,6 +9416,11 @@ msgstr "Since {0}"
 #: src/components/player/url-input-form.tsx:141
 msgid "Single URL"
 msgstr "Single URL"
+
+#: src/components/credentials/account-usage.tsx:315
+#: src/components/credentials/profile-editor-dialog.tsx:346
+msgid "Sites"
+msgstr "Sites"
 
 #: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:88
@@ -9774,6 +9794,10 @@ msgstr "Streamers"
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
+#: src/components/credentials/profile-editor-dialog.tsx:359
+msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
+msgstr "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
+
 #: src/components/credential-attention-indicator.tsx:122
 msgid "Streamers that select only these accounts stop recording until one works again."
 msgstr "Streamers that select only these accounts stop recording until one works again."
@@ -9786,17 +9810,17 @@ msgstr "Streaming services"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/credentials/account-selection-section.tsx:500
+#: src/components/credentials/account-selection-section.tsx:545
 msgid "Streamlink receives only the account's cookies, and the account is not checked automatically."
 msgstr "Streamlink receives only the account's cookies, and the account is not checked automatically."
 
-#: src/components/credentials/account-selection-section.tsx:449
-msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer, not in a template."
-msgstr "Streamlink serves many different sites, so its accounts are chosen on each streamer, not in a template."
+#: src/components/credentials/account-selection-section.tsx:489
+msgid "Streamlink serves many different sites, so each account names the sites it is for. Streamers on those sites use it unless they choose another account in their settings."
+msgstr "Streamlink serves many different sites, so each account names the sites it is for. Streamers on those sites use it unless they choose another account in their settings."
 
-#: src/components/credentials/account-selection-section.tsx:443
-msgid "Streamlink serves many different sites, so its accounts are chosen on each streamer. Add accounts here, then pick one in a streamer's settings."
-msgstr "Streamlink serves many different sites, so its accounts are chosen on each streamer. Add accounts here, then pick one in a streamer's settings."
+#: src/components/credentials/account-selection-section.tsx:495
+msgid "Streamlink serves many different sites, so its accounts are chosen by site or on each streamer, not in a template."
+msgstr "Streamlink serves many different sites, so its accounts are chosen by site or on each streamer, not in a template."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:664
 msgid "Streams"
@@ -9874,7 +9898,7 @@ msgstr "Switch language"
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
-#: src/components/credentials/credential-selection-editor.tsx:403
+#: src/components/credentials/credential-selection-editor.tsx:411
 msgid "Switch to the next account when one stops working"
 msgstr "Switch to the next account when one stops working"
 
@@ -10036,7 +10060,7 @@ msgstr "Test notification sent"
 msgid "Testing…"
 msgstr "Testing…"
 
-#: src/components/credentials/profile-editor-dialog.tsx:271
+#: src/components/credentials/profile-editor-dialog.tsx:310
 msgid "The access token alone signs in; cookies are optional."
 msgstr "The access token alone signs in; cookies are optional."
 
@@ -10047,6 +10071,10 @@ msgstr "The account or the proxy it uses was changed or removed in the meantime.
 #: src/components/streamers/card/use-streamer-status.tsx:59
 msgid "The account selection changed while the recording was using an account."
 msgstr "The account selection changed while the recording was using an account."
+
+#: src/components/credentials/account-selection-section.tsx:353
+msgid "The account set up for {site}"
+msgstr "The account set up for {site}"
 
 #: src/components/credentials/account-selection-section.tsx:63
 msgid "The account the active recording uses can no longer be used."
@@ -10174,7 +10202,7 @@ msgstr "Theme Mode"
 msgid "Theme Preset"
 msgstr "Theme Preset"
 
-#: src/components/credentials/account-selection-section.tsx:167
+#: src/components/credentials/account-selection-section.tsx:190
 msgid "then"
 msgstr "then"
 
@@ -10231,11 +10259,11 @@ msgstr "This media format is not supported by your browser. Choose another forma
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
-#: src/components/credentials/account-selection-section.tsx:514
+#: src/components/credentials/account-selection-section.tsx:559
 msgid "This platform has no accounts yet. Add them in the platform settings."
 msgstr "This platform has no accounts yet. Add them in the platform settings."
 
-#: src/components/credentials/account-selection-section.tsx:509
+#: src/components/credentials/account-selection-section.tsx:554
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "This platform has no accounts yet. Use Add account above to create one."
 
@@ -10755,9 +10783,9 @@ msgstr "Unix timestamp"
 msgid "Unknown"
 msgstr "Unknown"
 
-#: src/components/credentials/account-selection-section.tsx:153
-#: src/components/credentials/account-selection-section.tsx:406
-#: src/components/credentials/credential-selection-editor.tsx:168
+#: src/components/credentials/account-selection-section.tsx:176
+#: src/components/credentials/account-selection-section.tsx:431
+#: src/components/credentials/credential-selection-editor.tsx:176
 msgid "Unknown account"
 msgstr "Unknown account"
 
@@ -10791,7 +10819,7 @@ msgstr "Unlimited"
 msgid "Unrecognised event kind."
 msgstr "Unrecognised event kind."
 
-#: src/components/credentials/account-selection-section.tsx:356
+#: src/components/credentials/account-selection-section.tsx:380
 msgid "Unsaved"
 msgstr "Unsaved"
 
@@ -10952,7 +10980,7 @@ msgstr "Use the player's default balance of buffering and delay."
 msgid "Use TLS"
 msgstr "Use TLS"
 
-#: src/components/credentials/account-usage.tsx:215
+#: src/components/credentials/account-usage.tsx:223
 msgid "used {when}"
 msgstr "used {when}"
 
@@ -10974,7 +11002,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"
 
-#: src/components/credentials/profile-editor-dialog.tsx:282
+#: src/components/credentials/profile-editor-dialog.tsx:321
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
@@ -10996,19 +11024,19 @@ msgstr "Users"
 msgid "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 msgstr "Uses extra disk space and I/O. Temporary chunks are kept if file finalization fails."
 
-#: src/components/credentials/account-selection-section.tsx:335
+#: src/components/credentials/account-selection-section.tsx:359
 msgid "Uses the inherited setting"
 msgstr "Uses the inherited setting"
 
-#: src/components/credentials/account-selection-section.tsx:265
+#: src/components/credentials/account-selection-section.tsx:288
 msgid "Uses the platform's setting"
 msgstr "Uses the platform's setting"
 
-#: src/components/credentials/account-selection-section.tsx:269
+#: src/components/credentials/account-selection-section.tsx:292
 msgid "Uses the streamer's setting"
 msgstr "Uses the streamer's setting"
 
-#: src/components/credentials/account-selection-section.tsx:267
+#: src/components/credentials/account-selection-section.tsx:290
 msgid "Uses the template's setting"
 msgstr "Uses the template's setting"
 
@@ -11025,7 +11053,7 @@ msgstr "Validate"
 msgid "Validation Failed"
 msgstr "Validation Failed"
 
-#: src/components/credentials/account-usage.tsx:359
+#: src/components/credentials/account-usage.tsx:377
 msgid "Validation not supported"
 msgstr "Validation not supported"
 

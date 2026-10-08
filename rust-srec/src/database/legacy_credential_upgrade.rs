@@ -15,9 +15,9 @@
 //! platform's SOOP login, and account extras merged down the chain. Identical
 //! bundles on one platform share a profile. Blank cookie fields are unset. A
 //! template's top-level cookie converts only for platforms whose streamers use
-//! the template. Streamlink accounts are chosen per streamer, so a converted
-//! Streamlink platform or template account becomes the fixed selection of each
-//! Streamlink streamer that used it instead.
+//! the template. A Streamlink account is never shared by every site, so a
+//! converted Streamlink platform or template account becomes the fixed
+//! selection of each Streamlink streamer that used it instead.
 
 use std::collections::{HashMap, HashSet};
 
@@ -134,6 +134,7 @@ pub(crate) fn upgrade_bundle(
             access_token: profile.material.access_token.clone(),
             reauth_config: profile.material.reauth_config.clone(),
             proxy_route: None,
+            sites: None,
         });
     }
     for platform in &mut export.platforms {

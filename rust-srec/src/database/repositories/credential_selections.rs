@@ -12,7 +12,9 @@
 //! its platform or template level would send that site's cookies to every
 //! other site; there only a streamer may choose, and only `none` or one fixed
 //! account, because Streamlink failures are never classified as account
-//! failures that a pool could fail over from.
+//! failures that a pool could fail over from. A Streamlink streamer that does
+//! not choose uses the account whose site covers its URL, which
+//! `load_for_streamer` adds as a layer of its own.
 //!
 //! The HTTP API and backups carry a selection inside the configuration it
 //! belongs to (`credential_selection` on a platform, inside a template's
@@ -40,6 +42,9 @@ pub struct StoredSelection {
     pub platform_id: String,
     pub platform_name: String,
     pub selection: CredentialSelection,
+    /// For the account a Streamlink streamer uses through its site, that
+    /// site. Such a layer is owned by the platform and never stored.
+    pub site: Option<String>,
 }
 
 /// How a refused selection write names the selecting scope:
@@ -120,6 +125,7 @@ fn decode(row: SelectionRow, members: Vec<String>) -> Result<StoredSelection> {
         platform_id: row.platform_config_id,
         platform_name: row.platform_name,
         selection,
+        site: None,
     })
 }
 
@@ -189,7 +195,9 @@ pub(crate) async fn load_owner(
 }
 
 /// The layers a streamer resolves through, most specific first: its own
-/// selection, its template's for the platform, and the platform's.
+/// selection, its template's for the platform, and the platform's. On the
+/// Streamlink platform the account whose site covers the streamer's URL
+/// follows as a fixed selection of the platform.
 pub(crate) async fn load_for_streamer(
     connection: &mut SqliteConnection,
     streamer_id: &str,
@@ -206,7 +214,45 @@ pub(crate) async fn load_for_streamer(
         layers.retain(|stored| !matches!(stored.owner, CredentialOwner::Template { .. }));
     }
     layers.sort_by_key(|stored| stored.owner.precedence());
+    layers.extend(site_layer(connection, streamer_id, platform_id).await?);
     Ok(layers)
+}
+
+async fn site_layer(
+    connection: &mut SqliteConnection,
+    streamer_id: &str,
+    platform_id: &str,
+) -> Result<Option<StoredSelection>> {
+    let streamer: Option<(String, String)> = sqlx::query_as(
+        "SELECT s.url, p.platform_name FROM streamers s JOIN platform_config p ON p.id = ? WHERE s.id = ?",
+    )
+    .bind(platform_id)
+    .bind(streamer_id)
+    .fetch_optional(&mut *connection)
+    .await?;
+    let Some((url, platform_name)) = streamer else {
+        return Ok(None);
+    };
+    if !crate::domain::is_streamlink_platform(&platform_name) {
+        return Ok(None);
+    }
+    let Some((site, credential_id)) =
+        credential_profiles::site_accounts(connection, platform_id, &url)
+            .await?
+            .into_iter()
+            .next()
+    else {
+        return Ok(None);
+    };
+    Ok(Some(StoredSelection {
+        owner: CredentialOwner::Platform {
+            platform_id: platform_id.to_owned(),
+        },
+        platform_id: platform_id.to_owned(),
+        platform_name,
+        selection: CredentialSelection::Fixed { credential_id },
+        site: Some(site),
+    }))
 }
 
 /// The layers a selection at `owner` resolves through: a platform reads only
@@ -435,7 +481,7 @@ fn require_scope_allowed(
     }
     if !matches!(owner, CredentialOwner::Streamer { .. }) {
         return Err(ProfileError::PerStreamerOnly(
-            "Streamlink serves many unrelated sites, so its accounts are chosen on each streamer, not on the platform or a template",
+            "Streamlink serves many unrelated sites, so its accounts are chosen by the sites they name or on each streamer, not on the platform or a template",
         )
         .into());
     }

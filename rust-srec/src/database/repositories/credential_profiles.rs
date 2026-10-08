@@ -16,6 +16,22 @@ use crate::{Error, Result};
 
 type CredentialPublication = Arc<dyn Fn(CredentialOwner) + Send + Sync>;
 
+/// What an account edit changes; each field left `None` keeps the stored
+/// value.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ProfileEdit<'a> {
+    pub label: Option<&'a str>,
+    pub enabled: Option<bool>,
+    /// Replaces the whole material bundle.
+    pub replacement: Option<&'a CredentialMaterial>,
+    /// Replaces the account's own route.
+    pub route: Option<&'a ProxyRoute>,
+    /// Replaces a Streamlink account's sites. Sites are not material: they
+    /// change which streamers use the account, not the account, so they keep
+    /// its revision.
+    pub sites: Option<&'a [String]>,
+}
+
 #[derive(Clone)]
 pub struct CredentialProfileRepository {
     pool: SqlitePool,
@@ -240,19 +256,44 @@ impl CredentialProfileRepository {
         material: &CredentialMaterial,
         route: &ProxyRoute,
     ) -> Result<CredentialProfile> {
+        self.create_with_sites(platform_id, label, enabled, material, route, &[])
+            .await
+    }
+
+    /// [`Self::create`] for an account that names the `sites` it is for.
+    pub async fn create_with_sites(
+        &self,
+        platform_id: &str,
+        label: &str,
+        enabled: bool,
+        material: &CredentialMaterial,
+        route: &ProxyRoute,
+        sites: &[String],
+    ) -> Result<CredentialProfile> {
         let repository = self.clone();
         let platform_id = platform_id.to_owned();
         let label = label.to_owned();
         let material = material.clone();
         let route = route.clone();
+        let sites = sites.to_vec();
         self.run_owned(async move {
             let profile = repository
-                .create_inner(&platform_id, &label, enabled, &material, &route)
+                .create_inner(&platform_id, &label, enabled, &material, &route, &sites)
                 .await?;
-            repository.publish_material(profile.owner());
+            repository.publish_sites(&profile, !sites.is_empty());
             Ok(profile)
         })
         .await
+    }
+
+    /// Publishes a committed account write. Sites decide which account a
+    /// Streamlink streamer resolves to, so a change of sites republishes the
+    /// platform's configuration as well as the account.
+    fn publish_sites(&self, profile: &CredentialProfile, sites_changed: bool) {
+        if sites_changed {
+            self.publish_owner(profile.owner());
+        }
+        self.publish_material(profile.owner());
     }
 
     /// Admits writes one at a time and runs each as an owned operation, so it
@@ -282,9 +323,11 @@ impl CredentialProfileRepository {
         enabled: bool,
         material: &CredentialMaterial,
         route: &ProxyRoute,
+        sites: &[String],
     ) -> Result<CredentialProfile> {
         let mut tx = begin_immediate(&self.write_pool).await?;
         let profile = create_in(&mut tx, platform_id, label, enabled, material, route).await?;
+        set_sites(&mut tx, &profile.id, sites).await?;
         crate::database::committed_writer::prepare_owned_commit()?;
         tx.commit().await?;
         self.after_commit().await;
@@ -301,52 +344,57 @@ impl CredentialProfileRepository {
         replacement: Option<&CredentialMaterial>,
         route: Option<&ProxyRoute>,
     ) -> Result<CredentialProfile> {
-        let repository = self.clone();
-        let id = id.to_owned();
-        let label = label.map(str::to_owned);
-        let replacement = replacement.cloned();
-        let route = route.cloned();
-        self.run_owned(async move {
-            let profile = repository
-                .update_inner(
-                    &id,
-                    expected_version,
-                    label.as_deref(),
-                    enabled,
-                    replacement.as_ref(),
-                    route.as_ref(),
-                )
-                .await?;
-            repository.publish_material(profile.owner());
-            Ok(profile)
-        })
+        self.edit(
+            id,
+            expected_version,
+            ProfileEdit {
+                label,
+                enabled,
+                replacement,
+                route,
+                sites: None,
+            },
+        )
         .await
     }
 
-    async fn update_inner(
+    /// Applies `edit` to the account at `expected_version`.
+    pub async fn edit(
         &self,
         id: &str,
         expected_version: i64,
-        label: Option<&str>,
-        enabled: Option<bool>,
-        replacement: Option<&CredentialMaterial>,
-        route: Option<&ProxyRoute>,
+        edit: ProfileEdit<'_>,
     ) -> Result<CredentialProfile> {
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let updated = update_in(
-            &mut tx,
-            id,
-            expected_version,
-            label,
-            enabled,
-            replacement,
-            route,
-        )
-        .await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        self.after_commit().await;
-        Ok(updated)
+        let repository = self.clone();
+        let id = id.to_owned();
+        let label = edit.label.map(str::to_owned);
+        let enabled = edit.enabled;
+        let replacement = edit.replacement.cloned();
+        let route = edit.route.cloned();
+        let sites = edit.sites.map(<[String]>::to_vec);
+        self.run_owned(async move {
+            let mut tx = begin_immediate(&repository.write_pool).await?;
+            let profile = update_in(
+                &mut tx,
+                &id,
+                expected_version,
+                label.as_deref(),
+                enabled,
+                replacement.as_ref(),
+                route.as_ref(),
+            )
+            .await?;
+            let sites_changed = match &sites {
+                Some(sites) => set_sites(&mut tx, &id, sites).await?,
+                None => false,
+            };
+            crate::database::committed_writer::prepare_owned_commit()?;
+            tx.commit().await?;
+            repository.after_commit().await;
+            repository.publish_sites(&profile, sites_changed);
+            Ok(profile)
+        })
+        .await
     }
 
     /// Provider replacement preserves absent tokens; manual replacement clears them.
@@ -504,6 +552,38 @@ impl CredentialProfileRepository {
             .collect())
     }
 
+    /// The sites of several profiles at once, each list sorted; profiles
+    /// without sites have no entry.
+    pub async fn sites_of(&self, ids: &[String]) -> Result<HashMap<String, Vec<String>>> {
+        sites_of(&mut *self.pool.acquire().await?, ids).await
+    }
+
+    /// The host of a Streamlink streamer's URL and the accounts whose sites
+    /// cover it, most specific site first. `None` for a streamer on another
+    /// platform.
+    pub async fn streamer_site(
+        &self,
+        streamer_id: &str,
+    ) -> Result<Option<crate::credentials::StreamerSite>> {
+        let mut connection = self.pool.acquire().await?;
+        let streamer: Option<(String, String, String)> = sqlx::query_as("SELECT s.url, s.platform_config_id, p.platform_name FROM streamers s JOIN platform_config p ON p.id = s.platform_config_id WHERE s.id = ? AND s.deleted_at IS NULL")
+            .bind(streamer_id)
+            .fetch_optional(&mut *connection)
+            .await?;
+        let Some((url, platform_id, platform_name)) = streamer else {
+            return Err(Error::not_found("Streamer", streamer_id));
+        };
+        if !crate::domain::is_streamlink_platform(&platform_name) {
+            return Ok(None);
+        }
+        let accounts = site_accounts(&mut connection, &platform_id, &url).await?;
+        Ok(Some(crate::credentials::StreamerSite {
+            host: crate::credentials::site_host(&url).unwrap_or_default(),
+            site: accounts.first().map(|(site, _)| site.clone()),
+            accounts: accounts.into_iter().map(|(_, id)| id).collect(),
+        }))
+    }
+
     pub async fn references(&self, id: &str) -> Result<ProfileReferences> {
         references(&mut *self.pool.acquire().await?, id).await
     }
@@ -569,14 +649,22 @@ impl CredentialProfileRepository {
         let repository = self.clone();
         let id = id.to_owned();
         self.run_owned(async move {
-            let owner = repository.delete_inner(&id, expected_version).await?;
+            let (owner, had_sites) = repository.delete_inner(&id, expected_version).await?;
+            if had_sites {
+                repository.publish_owner(owner.clone());
+            }
             repository.publish_material(owner);
             Ok(())
         })
         .await
     }
 
-    async fn delete_inner(&self, id: &str, expected_version: i64) -> Result<CredentialOwner> {
+    /// Returns the deleted account's owner and whether it named any sites.
+    async fn delete_inner(
+        &self,
+        id: &str,
+        expected_version: i64,
+    ) -> Result<(CredentialOwner, bool)> {
         let mut tx = begin_immediate(&self.write_pool).await?;
         let current = load(&mut tx, id).await?;
         if current.version != expected_version {
@@ -586,6 +674,7 @@ impl CredentialProfileRepository {
         if !references.is_empty() {
             return Err(ProfileError::Referenced(references).into());
         }
+        let had_sites = !sites_in(&mut tx, id).await?.is_empty();
         // SQLite refuses to delete a selected profile too; checking first, in
         // the same transaction, lets the refusal name the selecting scopes.
         sqlx::query("DELETE FROM credential_profiles WHERE id = ?")
@@ -595,7 +684,7 @@ impl CredentialProfileRepository {
         crate::database::committed_writer::prepare_owned_commit()?;
         tx.commit().await?;
         self.after_commit().await;
-        Ok(current.owner())
+        Ok((current.owner(), had_sites))
     }
 }
 
@@ -798,6 +887,101 @@ pub(crate) async fn require_not_retiring(
         return Err(ProfileError::SourceChanged.into());
     }
     Ok(())
+}
+
+/// The sites `profile_id` names, sorted.
+pub(crate) async fn sites_in(
+    connection: &mut SqliteConnection,
+    profile_id: &str,
+) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT site FROM credential_profile_sites WHERE profile_id = ? ORDER BY site",
+    )
+    .bind(profile_id)
+    .fetch_all(connection)
+    .await?)
+}
+
+/// The sites of several profiles at once, each list sorted; profiles without
+/// sites have no entry.
+pub(crate) async fn sites_of(
+    connection: &mut SqliteConnection,
+    ids: &[String],
+) -> Result<HashMap<String, Vec<String>>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT profile_id, site FROM credential_profile_sites WHERE profile_id IN (SELECT value FROM json_each(?)) ORDER BY profile_id, site")
+        .bind(serde_json::to_string(ids)?)
+        .fetch_all(connection)
+        .await?;
+    let mut sites: HashMap<String, Vec<String>> = HashMap::new();
+    for (profile_id, site) in rows {
+        sites.entry(profile_id).or_default().push(site);
+    }
+    Ok(sites)
+}
+
+/// Caller owns BEGIN IMMEDIATE. Replaces the sites `profile_id` names and
+/// returns whether they changed. A site another account names is refused,
+/// naming that account.
+pub(crate) async fn set_sites(
+    connection: &mut SqliteConnection,
+    profile_id: &str,
+    sites: &[String],
+) -> Result<bool> {
+    let current = load(&mut *connection, profile_id).await?;
+    let platform = require_platform(&mut *connection, &current.platform_config_id).await?;
+    let sites = crate::credentials::normalize_sites(&platform, sites)?;
+    if sites_in(&mut *connection, profile_id).await? == sites {
+        return Ok(false);
+    }
+    for site in &sites {
+        let holder: Option<(String, String)> = sqlx::query_as("SELECT p.id, p.label FROM credential_profile_sites s JOIN credential_profiles p ON p.id = s.profile_id WHERE s.site = ? AND s.profile_id != ?")
+            .bind(site)
+            .bind(profile_id)
+            .fetch_optional(&mut *connection)
+            .await?;
+        if let Some((holder, label)) = holder {
+            return Err(ProfileError::SiteTaken {
+                site: site.clone(),
+                profile_id: holder,
+                label,
+            }
+            .into());
+        }
+    }
+    sqlx::query("DELETE FROM credential_profile_sites WHERE profile_id = ?")
+        .bind(profile_id)
+        .execute(&mut *connection)
+        .await?;
+    for site in &sites {
+        sqlx::query("INSERT INTO credential_profile_sites(site, profile_id) VALUES (?, ?)")
+            .bind(site)
+            .bind(profile_id)
+            .execute(&mut *connection)
+            .await?;
+    }
+    Ok(true)
+}
+
+/// The accounts on `platform_id` whose sites cover `url`, as (site, profile)
+/// pairs, most specific site first. Accounts an import is retiring are left
+/// out.
+pub(crate) async fn site_accounts(
+    connection: &mut SqliteConnection,
+    platform_id: &str,
+    url: &str,
+) -> Result<Vec<(String, String)>> {
+    let covering = crate::credentials::covering_sites(url);
+    if covering.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as("SELECT s.site, s.profile_id FROM credential_profile_sites s JOIN credential_profiles p ON p.id = s.profile_id WHERE p.platform_config_id = ? AND s.site IN (SELECT value FROM json_each(?)) AND NOT EXISTS(SELECT 1 FROM retirement_credential_profiles r WHERE r.profile_id = p.id) ORDER BY length(s.site) DESC")
+        .bind(platform_id)
+        .bind(serde_json::to_string(&covering)?)
+        .fetch_all(connection)
+        .await?)
 }
 
 pub(crate) async fn commit_session_binding(
