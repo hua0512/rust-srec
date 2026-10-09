@@ -43,7 +43,7 @@ A Douyu session lasts about six days. Once the profile's session is four days ol
 
 ### Manual cookies
 
-Add a profile and paste the cookies of a signed-in browser session. To have them renewed like a QR login, the cookies must include `dy_did`, and the `LTP0` cookie from `passport.douyu.com` must be in **Refresh token** or among the cookies. Without both, the cookies are used as they are until Douyu stops accepting them, and the profile offers no **Refresh**. A profile holding only an `acf_did` cookie supplies just the App device ID.
+Add a profile and paste the cookies of a signed-in browser session. App playback uses the session only when the cookies include `acf_uid`, `acf_auth`, `acf_biz`, `acf_stk`, `acf_ct`, and `acf_ltkid`, which signing in on www.douyu.com sets; with any of them missing, App playback stays anonymous. To have them renewed like a QR login, the cookies must include `dy_did`, and the `LTP0` cookie from `passport.douyu.com` must be in **Refresh token** or among the cookies. Without both, the cookies are used as they are until Douyu stops accepting them, and the profile offers no **Refresh**. A profile holding only an `acf_did` cookie supplies just the App device ID.
 
 ## Extraction settings
 

@@ -24,7 +24,8 @@ pub const PASSPORT_CREDENTIAL_COOKIE: &str = "LTP0";
 /// The web device ID a login and its renewals are bound to.
 pub const DEVICE_ID_COOKIE: &str = "dy_did";
 const APP_DEVICE_ID_COOKIE: &str = "acf_did";
-const SESSION_COOKIE: &str = "acf_auth";
+/// The main-site session cookie a signed-in account carries.
+pub(super) const SESSION_COOKIE: &str = "acf_auth";
 const UID_COOKIE: &str = "acf_uid";
 const MAIN_LOGIN_PATH: &str = "/api/passport/login";
 

@@ -320,6 +320,9 @@ pub struct DouyuH5PlayData {
     #[serde(rename = "cdnsWithName")]
     pub cdns: Vec<CdnsWithName>,
     pub multirates: Vec<Multirates>,
+    /// The rate served, which may be lower than the one requested.
+    #[serde(default)]
+    pub rate: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

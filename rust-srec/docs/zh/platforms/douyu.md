@@ -43,7 +43,7 @@ https://www.douyu.com/{房间号}
 
 ### 手动设置 Cookie
 
-添加凭据配置并粘贴已登录浏览器会话的 Cookie。若要像扫码登录一样自动续期，Cookie 中须包含 `dy_did`，并且 `passport.douyu.com` 的 `LTP0` Cookie 须填写在 **刷新令牌** 中或包含在 Cookie 里。两者缺一时，Cookie 会原样使用，直到斗鱼不再接受，该凭据配置也不提供 **刷新**。只含 `acf_did` Cookie 的凭据配置仅提供 App 设备 ID。
+添加凭据配置并粘贴已登录浏览器会话的 Cookie。App 方式仅在 Cookie 包含 `acf_uid`、`acf_auth`、`acf_biz`、`acf_stk`、`acf_ct` 和 `acf_ltkid` 时使用该会话取流，这些 Cookie 在 www.douyu.com 登录后设置；缺少任何一个时，App 取流仍为匿名。若要像扫码登录一样自动续期，Cookie 中须包含 `dy_did`，并且 `passport.douyu.com` 的 `LTP0` Cookie 须填写在 **刷新令牌** 中或包含在 Cookie 里。两者缺一时，Cookie 会原样使用，直到斗鱼不再接受，该凭据配置也不提供 **刷新**。只含 `acf_did` Cookie 的凭据配置仅提供 App 设备 ID。
 
 ## 提取设置
 
