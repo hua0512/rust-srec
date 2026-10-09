@@ -19,7 +19,7 @@ https://www.douyu.com/{room_id}
 - ✅ QR code login with automatic renewal
 
 ::: info
-- **Authentication**: Without a signed-in account, playback is anonymous, and Douyu may hold rooms with several qualities below the original (for example at 超清). A signed-in account, added as described in [Authentication](#authentication), is sent with stream requests by both the App and the Web method and can unlock the original quality. A valid `acf_did` cookie in the selected account profile supplies the device ID. Access to restricted streams is not guaranteed.
+- **Authentication**: Without a signed-in account, playback is anonymous, and Douyu may hold rooms with several qualities below the original (for example at 超清). A signed-in account, added as described in [Authentication](#authentication), is sent with stream requests by both the App and the Web method and can unlock the original quality; see [Recording without an account](#recording-without-an-account). A valid `acf_did` cookie in the selected account profile supplies the device ID. Access to restricted streams is not guaranteed.
 - **Preferred Format**: Douyu primarily uses **FLV** for live streams.
 - **Quality Control**: Use the `rate` setting to choose quality (0 for source/original).
 - **CDN Switching**: You can specify a preferred CDN in the configuration if you face buffering issues.
@@ -29,6 +29,17 @@ https://www.douyu.com/{room_id}
 ## Authentication
 
 Douyu accounts are [account profiles](../concepts/configuration.md#account-profiles-and-selection) on the Douyu platform.
+
+### Recording without an account
+
+Douyu limits what signed-out viewers get, and the two extraction methods are limited differently:
+
+| Method | Without an account | With a signed-in account |
+| --- | --- | --- |
+| **App** (default) | In rooms with several qualities, usually limited to 超清, but recordings run without interruption | Original quality |
+| **Web** | Can get a higher quality than App, though not always the original, but Douyu cuts the stream about every five minutes, so recordings split into many short files with brief gaps | Original quality, without the five-minute cuts |
+
+To record in the best quality, add a signed-in account. Without one, keep the App method unless a higher quality matters more to you than uninterrupted recordings.
 
 ### QR code login
 
