@@ -64,13 +64,19 @@ jobs:
           fi
 
           echo "Diff base: $BASE_TAG"
-          CHANGED=$(git diff --name-only "$BASE_TAG...HEAD")
-
-          if echo "$CHANGED" | grep -Eq '^(rust-srec/src-tauri/|rust-srec/frontend/|rust-srec/src/|crates/|Cargo\.(toml|lock)$)'; then
-            echo "desktop_changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "desktop_changed=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Let git test the paths rather than piping the file list into
+          # `grep -q`: grep exits at its first match, and with pipefail the
+          # writer's broken pipe on a large diff made the test report no change.
+          # `git diff --quiet` exits 1 when the paths changed, above 1 on error.
+          status=0
+          git diff --quiet "$BASE_TAG...HEAD" -- \
+            rust-srec/src-tauri rust-srec/frontend rust-srec/src crates \
+            Cargo.toml Cargo.lock || status=$?
+          case "$status" in
+            0) echo "desktop_changed=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "desktop_changed=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
 
   check-and-test:
     name: Check and Test
