@@ -5,7 +5,7 @@ This file is the human-facing release notes guide for the docs workflow.
 ## GitHub Release body source
 
 - Machine-friendly release body file: [`./release-notes-body.md`](./release-notes-body.md)
-- Current release version: `v0.5.1`
+- Current release version: `v0.6.0`
 
 The GitHub release workflow now reads `rust-srec/docs/release-notes-body.md` directly.
 
@@ -26,6 +26,6 @@ Preparation includes the version/lockfile update, curated en/zh notes, the GitHu
 ## Current docs targets
 
 - Release notes archive: [`/en/release-notes/`](./en/release-notes/index.md)
-- English release page: [`/en/release-notes/v0.5.1`](./en/release-notes/v0.5.1.md)
+- English release page: [`/en/release-notes/v0.6.0`](./en/release-notes/v0.6.0.md)
 - 中文更新日志归档：[`/zh/release-notes/`](./zh/release-notes/index.md)
-- 中文文档页面：[`/zh/release-notes/v0.5.1`](./zh/release-notes/v0.5.1.md)
+- 中文文档页面：[`/zh/release-notes/v0.6.0`](./zh/release-notes/v0.6.0.md)

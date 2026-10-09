@@ -73,6 +73,16 @@ const ALL_NAMES: PipelineNames = {
   session: 'session_complete_pipeline',
 };
 
+beforeAll(() => {
+  // Pressing a tab also opens its Radix tooltip, which measures its content;
+  // jsdom does not provide ResizeObserver.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+
 describe('PipelineTabsSection', () => {
   it('offers all three pipelines and loads the selected editor', async () => {
     renderSection({ names: ALL_NAMES });
