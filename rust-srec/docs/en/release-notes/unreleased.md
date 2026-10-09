@@ -47,6 +47,7 @@ This release adds multiple accounts per platform, saved proxies, API keys and MC
 - Fixed Mesio HLS variant selection: the lowest- and closest-bitrate choices no longer pick keyframe-only playlists, and the audio-only and video-only choices now select by the streams a variant actually contains.
 - Fixed Twitch ad detection in Mesio logging a warning on every playlist refresh and, on long streams, missing newly announced ads.
 - Twitch accounts are now checked: a token that Twitch no longer accepts, for example after signing out or changing the password, marks the account invalid and moves on to the next account instead of failing every check with an unrelated error. A Twitch account can now also use the `auth-token` browser cookie, and tokens copied with the `oauth:` prefix work.
+- Fixed Douyu Web recordings showing the requested quality when Douyu served a lower one. They now show the quality actually recorded.
 - Live checks that go through Streamlink, for sites without a built-in extractor or when Streamlink is chosen as the extractor, now use your proxy settings instead of connecting directly.
 - Danmu now follows your proxy settings, including an account's own, instead of always connecting directly. With **System proxy** it uses the server's proxy environment variables and connects directly to hosts in `NO_PROXY`.
 - Improved Mesio FLV recovery from corrupted data: after a damaged section, recording resumes at the next genuine packet instead of merging following packets into one invalid packet.

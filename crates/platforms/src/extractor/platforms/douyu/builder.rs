@@ -11,7 +11,7 @@ use tracing::debug;
 
 use std::collections::HashMap;
 
-use super::app_device::AppDevice;
+use super::{app_device::AppDevice, passport::SESSION_COOKIE};
 
 use crate::{
     extractor::{
@@ -43,11 +43,11 @@ static VIDEO_LOOP_REGEX: LazyLock<Regex> =
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
 
-/// The main-site session cookie a signed-in account carries.
-const SESSION_COOKIE: &str = "acf_auth";
+/// A web signing key belongs to the device and to the session that fetched it.
+type EncryptionKeyId = (String, String);
 
 /// Global cache for encryption key (used for fallback authentication)
-static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<FxHashMap<String, CachedEncryptionKey>>> =
+static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<FxHashMap<EncryptionKeyId, CachedEncryptionKey>>> =
     LazyLock::new(|| RwLock::new(FxHashMap::default()));
 
 fn normalize_douyu_error_body(body: &str) -> String {
@@ -196,10 +196,15 @@ impl Douyu {
     /// carry the account only then, so anonymous extraction sends exactly what
     /// it would without an account.
     pub(super) fn signed_in(&self) -> bool {
+        self.session().is_some()
+    }
+
+    fn session(&self) -> Option<&str> {
         self.extractor
             .cookies
             .get(SESSION_COOKIE)
-            .is_some_and(|session| !session.is_empty())
+            .map(String::as_str)
+            .filter(|session| !session.is_empty())
     }
 
     /// The device a signed-in account's web play requests sign with: its
@@ -213,9 +218,16 @@ impl Douyu {
             .filter(|did| super::app_device::is_valid_did(did))
     }
 
-    /// A signed-in account's cookies for the web play request, as the browser
-    /// sends them to www.douyu.com.
-    fn web_play_cookie(&self) -> Option<reqwest::header::HeaderValue> {
+    /// Adds a signed-in account's cookies to a www.douyu.com request, as the
+    /// browser sends them. Anonymous requests are left unchanged.
+    fn with_web_session(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match self.web_session_cookie() {
+            Some(cookie) => request.header(reqwest::header::COOKIE, cookie),
+            None => request,
+        }
+    }
+
+    fn web_session_cookie(&self) -> Option<reqwest::header::HeaderValue> {
         if !self.signed_in() {
             return None;
         }
@@ -244,10 +256,21 @@ impl Douyu {
             .header(reqwest::header::USER_AGENT, user_agent)
             .header(reqwest::header::REFERER, Self::BASE_URL)
             .form(form_data);
-        match self.web_play_cookie() {
-            Some(cookie) => request.header(reqwest::header::COOKIE, cookie),
-            None => request,
-        }
+        self.with_web_session(request)
+    }
+
+    /// The signing key request. A signed-in play request authenticates only
+    /// with a key fetched by the same session; an anonymous key gets 403
+    /// "鉴权失败".
+    fn encryption_key_request(&self, did: &str, user_agent: &str) -> reqwest::RequestBuilder {
+        let request = self
+            .extractor
+            .client
+            .get("https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption")
+            .query(&[("did", did)])
+            .header(reqwest::header::USER_AGENT, user_agent)
+            .header(reqwest::header::REFERER, Self::BASE_URL);
+        self.with_web_session(request)
     }
 
     pub(super) fn uses_app(&self) -> bool {
@@ -538,15 +561,7 @@ impl Douyu {
     async fn fetch_encryption_key(&self, did: &str) -> Result<CachedEncryptionKey, ExtractorError> {
         let user_agent = Self::random_desktop_user_agent();
 
-        let response = self
-            .extractor
-            .client
-            .get("https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption")
-            .query(&[("did", did)])
-            .header(reqwest::header::USER_AGENT, &user_agent)
-            .header(reqwest::header::REFERER, Self::BASE_URL)
-            .send()
-            .await?;
+        let response = self.encryption_key_request(did, &user_agent).send().await?;
 
         let status = response.status();
         let body = response.text().await.map_err(ExtractorError::from)?;
@@ -579,9 +594,10 @@ impl Douyu {
     /// Gets a valid encryption key, fetching a new one if needed
     /// Uses a global cache to avoid repeated API calls
     async fn get_encryption_key(&self, did: &str) -> Result<CachedEncryptionKey, ExtractorError> {
+        let id = self.encryption_key_id(did);
         {
             let cache = ENCRYPTION_KEY_CACHE.read();
-            if let Some(cached) = cache.get(did)
+            if let Some(cached) = cache.get(&id)
                 && cached.is_valid()
             {
                 return Ok(cached.clone());
@@ -591,7 +607,7 @@ impl Douyu {
         {
             let mut cache = ENCRYPTION_KEY_CACHE.write();
             cache.retain(|_, v| v.is_valid());
-            if let Some(cached) = cache.get(did) {
+            if let Some(cached) = cache.get(&id) {
                 return Ok(cached.clone());
             }
         }
@@ -601,14 +617,25 @@ impl Douyu {
         {
             let mut cache = ENCRYPTION_KEY_CACHE.write();
             cache.retain(|_, v| v.is_valid());
-            cache.insert(did.to_string(), new_key.clone());
+            cache.insert(id, new_key.clone());
         }
 
         Ok(new_key)
     }
 
-    fn invalidate_encryption_key(did: &str) {
-        ENCRYPTION_KEY_CACHE.write().remove(did);
+    fn invalidate_encryption_key(&self, did: &str) {
+        ENCRYPTION_KEY_CACHE
+            .write()
+            .remove(&self.encryption_key_id(did));
+    }
+
+    /// The device and the session cookie, empty when anonymous, so neither
+    /// anonymous extraction nor another account reuses a session's key.
+    fn encryption_key_id(&self, did: &str) -> EncryptionKeyId {
+        (
+            did.to_owned(),
+            self.session().unwrap_or_default().to_owned(),
+        )
     }
 
     /// Generates authentication signature using fallback method (no JS engine required)
@@ -701,7 +728,7 @@ impl Douyu {
                     rid,
                     "Refreshing Douyu encryption key after authentication failure"
                 );
-                Self::invalidate_encryption_key(did);
+                self.invalidate_encryption_key(did);
             }
 
             let (sign_result, key_data) = self.fallback_sign_with_key(rid, did, None).await?;
@@ -833,6 +860,28 @@ impl Douyu {
         }
 
         format!("{}/{}", play_info.rtmp_url, play_info.rtmp_live)
+    }
+
+    /// Labels a resolved stream with the rate Douyu served rather than the
+    /// one requested, from the response's `(name, rate, bitrate)` table.
+    pub(super) fn apply_served_rate<'a>(
+        stream: &mut StreamInfo,
+        served: Option<u64>,
+        rates: impl IntoIterator<Item = (&'a str, u64, u64)>,
+    ) {
+        let Some(served) = served else {
+            return;
+        };
+        match rates.into_iter().find(|&(_, rate, _)| rate == served) {
+            Some((name, _, bitrate)) => {
+                stream.quality = name.to_owned();
+                stream.bitrate = bitrate;
+            }
+            None => {
+                stream.quality = format!("Rate {served}");
+                stream.bitrate = 0;
+            }
+        }
     }
 
     #[expect(
@@ -1261,6 +1310,13 @@ impl PlatformExtractor for Douyu {
         let has_hevc = is_h265 && resp.player_1.as_deref().is_some_and(|url| !url.is_empty());
         stream_info.codec = Self::stream_codec(has_hevc, only_audio).to_string();
         stream_info.is_audio_only = only_audio;
+        Self::apply_served_rate(
+            stream_info,
+            resp.rate,
+            resp.multirates
+                .iter()
+                .map(|rate| (rate.name.as_str(), rate.rate, rate.bit)),
+        );
         Ok(())
     }
 }
@@ -1273,6 +1329,7 @@ mod tests {
     use crate::extractor::{
         default::default_client, platform_extractor::PlatformExtractor, platforms::douyu::Douyu,
     };
+    use crate::media::{MediaFormat, StreamFormat, StreamInfo};
 
     #[tokio::test]
     #[ignore]
@@ -1383,6 +1440,51 @@ mod tests {
     }
 
     #[test]
+    fn a_resolved_web_stream_reports_the_rate_served_not_requested() {
+        let play_info: DouyuH5PlayData = serde_json::from_value(json!({
+            "room_id": 1,
+            "rtmp_cdn": "ws-h5",
+            "rtmp_url": "https://example.com/live",
+            "rtmp_live": "stream_4000.flv",
+            "cdnsWithName": [],
+            "multirates": [
+                {"name": "原画1080P60", "rate": 0, "highBit": 1, "bit": 10000, "diamondFan": 0},
+                {"name": "蓝光4M", "rate": 4, "highBit": 0, "bit": 4000, "diamondFan": 0}
+            ],
+            "rate": 4
+        }))
+        .unwrap();
+        let rates = || {
+            play_info
+                .multirates
+                .iter()
+                .map(|rate| (rate.name.as_str(), rate.rate, rate.bit))
+        };
+        let requested = || {
+            StreamInfo::builder("", StreamFormat::Flv, MediaFormat::Flv)
+                .quality("原画1080P60")
+                .bitrate(10000)
+                .build()
+        };
+
+        let mut stream = requested();
+        Douyu::apply_served_rate(&mut stream, play_info.rate, rates());
+        assert_eq!((stream.quality.as_str(), stream.bitrate), ("蓝光4M", 4000));
+
+        let mut stream = requested();
+        Douyu::apply_served_rate(&mut stream, Some(9), rates());
+        assert_eq!((stream.quality.as_str(), stream.bitrate), ("Rate 9", 0));
+
+        // A response without `rate` keeps the requested label.
+        let mut stream = requested();
+        Douyu::apply_served_rate(&mut stream, None, rates());
+        assert_eq!(
+            (stream.quality.as_str(), stream.bitrate),
+            ("原画1080P60", 10000)
+        );
+    }
+
+    #[test]
     fn test_stream_url_falls_back_when_player_1_is_missing() {
         let play_info: DouyuH5PlayData = serde_json::from_value(json!({
             "room_id": 1,
@@ -1425,6 +1527,18 @@ mod tests {
             cookie,
             format!("acf_auth=session; acf_uid=42; dy_did={did}").as_str()
         );
+        // The signing key must come from the same session.
+        let key_request = signed_in
+            .encryption_key_request(did, "agent")
+            .build()
+            .unwrap();
+        assert_eq!(key_request.headers()[reqwest::header::COOKIE], cookie);
+        // Keys are never shared between sessions or with anonymous extraction,
+        // even on the same device.
+        let renewed = douyu(&format!("dy_did={did}; acf_uid=42; acf_auth=renewed"));
+        let anonymous = douyu(&format!("dy_did={did}; acf_uid=42"));
+        let ids = [&signed_in, &renewed, &anonymous].map(|douyu| douyu.encryption_key_id(did));
+        assert!(ids[0] != ids[1] && ids[0] != ids[2] && ids[1] != ids[2]);
 
         // Without a session nothing of the account is sent and the default
         // device signs.
@@ -1443,6 +1557,11 @@ mod tests {
                 .build()
                 .unwrap();
             assert!(request.headers().get(reqwest::header::COOKIE).is_none());
+            let key_request = anonymous
+                .encryption_key_request(super::DOUYU_DEFAULT_DID, "agent")
+                .build()
+                .unwrap();
+            assert!(key_request.headers().get(reqwest::header::COOKIE).is_none());
         }
     }
 

@@ -91,10 +91,11 @@ impl Douyu {
             .as_ref()
             .map_err(|error| ExtractorError::ValidationError(error.clone()))?;
         let identity = device.identity(&self.extractor.client).await?;
+        let token = self.app_token();
         let mut params: Params = [
             ("txdw", "0"),
             ("cdn", app_cdn(cdn)),
-            ("token", ""),
+            ("token", token.as_str()),
             (
                 "hevc",
                 if self.codec == DouyuCodec::Hevc {
@@ -130,13 +131,34 @@ impl Douyu {
             .header(header::COOKIE, cookie))
     }
 
+    /// The app's login `token` parameter, which is what lets Douyu serve the
+    /// qualities it reserves for logged-in viewers; the session cookies alone do
+    /// not. The app joins `uid_biz_short-token_client-type_long-token-id`, and a
+    /// main-site login carries the same fields as `acf_uid`, `acf_biz`,
+    /// `acf_stk`, `acf_ct`, and `acf_ltkid`. Without all of them the token is
+    /// empty, as the signed-out app sends it.
+    fn app_token(&self) -> String {
+        if !self.signed_in() {
+            return String::new();
+        }
+        let cookies = &self.extractor.cookies;
+        ["acf_uid", "acf_biz", "acf_stk", "acf_ct", "acf_ltkid"]
+            .into_iter()
+            .map(|name| {
+                cookies
+                    .get(name)
+                    .map(String::as_str)
+                    .filter(|value| !value.is_empty())
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|fields| fields.join("_"))
+            .unwrap_or_default()
+    }
+
     /// The app play request's Cookie: the device cookie, plus a signed-in
-    /// account's session, which lets Douyu serve the qualities it reserves for
-    /// logged-in viewers. The session is `acf_uid` and `acf_auth`, with the
-    /// account's `dy_did` when it is the signing device. The `token` parameter
-    /// stays empty: it is the Android app's own login, which web cookies do not
-    /// provide. The app host is not on douyu.com, so the account's other
-    /// cookies stay away from it.
+    /// account's session `acf_uid` and `acf_auth`, with the account's `dy_did`
+    /// when it is the signing device. The app host is not on douyu.com, so the
+    /// account's other cookies stay away from it.
     fn app_cookie(&self, identity: &DeviceIdentity) -> Result<HeaderValue, ExtractorError> {
         if !self.signed_in() {
             return Ok(identity.cookie.clone());
@@ -352,15 +374,13 @@ impl Douyu {
             stream.stream_format = StreamFormat::Flv;
             stream.media_format = MediaFormat::Flv;
         }
-        if let Some(rate) = data.rate {
-            if let Some(quality) = data.rates.iter().find(|quality| quality.rate == rate) {
-                stream.quality.clone_from(&quality.name);
-                stream.bitrate = quality.bit;
-            } else {
-                stream.quality = format!("Rate {rate}");
-                stream.bitrate = 0;
-            }
-        }
+        Self::apply_served_rate(
+            stream,
+            data.rate,
+            data.rates
+                .iter()
+                .map(|rate| (rate.name.as_str(), rate.rate, rate.bit)),
+        );
         if let Some(extras) = stream
             .extras
             .as_mut()
@@ -471,6 +491,13 @@ mod tests {
             .build()
             .unwrap()
         };
+        let token = |request: &reqwest::Request| {
+            request
+                .url()
+                .query_pairs()
+                .find(|(key, _)| key == "token")
+                .map(|(_, value)| value.into_owned())
+        };
         let signed_in = format!(
             "dy_did={did}; acf_did={did}; acf_uid=42; acf_auth=session; acf_nickname=n; LTP0=passport"
         );
@@ -486,12 +513,15 @@ mod tests {
                 .unwrap(),
             format!("{did}|v8.2.2.0").as_bytes()
         );
-        let token = built
-            .url()
-            .query_pairs()
-            .find(|(key, _)| key == "token")
-            .map(|(_, value)| value.into_owned());
-        assert_eq!(token.as_deref(), Some(""));
+        // Without every token field the app request stays signed out.
+        assert_eq!(token(&built).as_deref(), Some(""));
+
+        let built = request(
+            format!("{signed_in}; acf_biz=1; acf_stk=0123456789abcdef; acf_ct=0; acf_ltkid=77"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(token(&built).as_deref(), Some("42_1_0123456789abcdef_0_77"));
 
         // `dy_did` goes along only when it is the device that signs.
         let other = "0123456789abcdef0123456789abcdef";
@@ -503,7 +533,9 @@ mod tests {
 
         // Without a session the request is the anonymous one.
         let built = request(
-            format!("dy_did={did}; acf_did={did}; acf_uid=42"),
+            format!(
+                "dy_did={did}; acf_did={did}; acf_uid=42; acf_biz=1; acf_stk=s; acf_ct=0; acf_ltkid=7"
+            ),
             json!({}),
         )
         .await;
@@ -511,6 +543,7 @@ mod tests {
             built.headers()[header::COOKIE],
             format!("acf_did={did}").as_str()
         );
+        assert_eq!(token(&built).as_deref(), Some(""));
     }
 
     #[test]
@@ -563,30 +596,44 @@ mod tests {
         }
     }
 
+    /// Resolves the preferred stream of a live room.
+    async fn resolve_live(douyu: &Douyu) -> StreamInfo {
+        let info = douyu.extract().await.unwrap();
+        assert!(info.is_live);
+        let mut stream = info
+            .streams
+            .into_iter()
+            .min_by_key(|stream| stream.priority)
+            .unwrap();
+        douyu.get_url(&mut stream).await.unwrap();
+        assert!(!stream.url.is_empty());
+        stream
+    }
+
+    fn live_douyu(url: &str, cookies: Option<&str>, options: serde_json::Value) -> Douyu {
+        let client = crate::extractor::default::create_client_builder(None)
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap();
+        Douyu::new(
+            url.into(),
+            client,
+            cookies.map(str::to_owned),
+            Some(options),
+        )
+    }
+
     #[tokio::test]
     #[ignore = "live Douyu integration; requires room 100 to be broadcasting"]
     async fn live_app_playback() {
         tokio::time::timeout(std::time::Duration::from_secs(45), async {
             for (codec, device_id_mode) in [("avc", "local"), ("hevc", "server")] {
-                let client = crate::extractor::default::create_client_builder(None)
-                    .timeout(std::time::Duration::from_secs(10))
-                    .build()
-                    .unwrap();
-                let douyu = Douyu::new(
-                    "https://www.douyu.com/100".into(),
-                    client,
+                let douyu = live_douyu(
+                    "https://www.douyu.com/100",
                     None,
-                    Some(json!({"codec":codec, "device_id_mode":device_id_mode})),
+                    json!({"codec":codec, "device_id_mode":device_id_mode}),
                 );
-                let info = douyu.extract().await.unwrap();
-                assert!(info.is_live);
-                let mut stream = info
-                    .streams
-                    .into_iter()
-                    .min_by_key(|stream| stream.priority)
-                    .unwrap();
-                douyu.get_url(&mut stream).await.unwrap();
-                assert!(!stream.url.is_empty());
+                let stream = resolve_live(&douyu).await;
                 assert!(matches!(stream.codec.as_str(), "avc,aac" | "hevc,aac"));
                 let mut response = douyu
                     .extractor
@@ -602,6 +649,36 @@ mod tests {
                     magic.extend_from_slice(&chunk[..chunk.len().min(4 - magic.len())]);
                 }
                 assert_eq!(&magic[..3], b"FLV");
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    /// A signed-in account unlocks the qualities Douyu holds back from
+    /// anonymous App playback, through both the App and the Web method.
+    #[tokio::test]
+    #[ignore = "live Douyu integration; set DOUYU_COOKIES to a signed-in account and DOUYU_LIVE_URL to a live room offering more than 超清"]
+    async fn live_signed_in_playback() {
+        let cookies = std::env::var("DOUYU_COOKIES").expect("DOUYU_COOKIES");
+        let url = std::env::var("DOUYU_LIVE_URL").expect("DOUYU_LIVE_URL");
+        tokio::time::timeout(std::time::Duration::from_secs(60), async {
+            let anonymous = resolve_live(&live_douyu(&url, None, json!({"rate":0}))).await;
+            for mode in ["app", "web"] {
+                let douyu = live_douyu(&url, Some(&cookies), json!({"api_mode":mode, "rate":0}));
+                assert!(
+                    !douyu.app_token().is_empty(),
+                    "DOUYU_COOKIES lacks acf_auth, acf_uid, acf_biz, acf_stk, acf_ct, or acf_ltkid"
+                );
+                let stream = resolve_live(&douyu).await;
+                assert!(
+                    stream.bitrate > anonymous.bitrate,
+                    "{mode}: signed in got {} ({} kbps), anonymous App got {} ({} kbps)",
+                    stream.quality,
+                    stream.bitrate,
+                    anonymous.quality,
+                    anonymous.bitrate,
+                );
             }
         })
         .await
