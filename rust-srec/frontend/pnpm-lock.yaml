@@ -267,7 +267,7 @@ importers:
         version: 2.5.5
       '@xyflow/react':
         specifier: ^12.12.0
-        version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(immer@11.1.21)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       artplayer:
         specifier: ^5.4.0
         version: 5.4.0
@@ -296,8 +296,8 @@ importers:
         specifier: ^1.53.0
         version: 1.53.0(@types/react@19.3.0)(react@19.3.0)
       motion:
-        specifier: ^13.5.1
-        version: 13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^14.0.0
+        version: 14.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       mpegts.js:
         specifier: ^1.8.2
         version: 1.8.2
@@ -339,7 +339,7 @@ importers:
         version: 4.6.5
       zustand:
         specifier: ^5.0.15
-        version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
+        version: 5.0.15(@types/react@19.3.0)(immer@11.1.21)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
       '@babel/core':
         specifier: ^8.0.7
@@ -364,10 +364,10 @@ importers:
         version: 6.9.0
       '@lingui/vite-plugin':
         specifier: ^6.9.0
-        version: 6.9.0(@babel/core@8.0.7)(@lingui/babel-plugin-lingui-macro@6.9.0(@babel/core@8.0.7))(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(rolldown@1.2.13)(supports-color@7.2.0)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
+        version: 6.9.0(@babel/core@8.0.7)(@lingui/babel-plugin-lingui-macro@6.9.0(@babel/core@8.0.7))(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(rolldown@1.2.13)(supports-color@7.2.0)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
       '@rolldown/plugin-babel':
         specifier: ^0.2.4
-        version: 0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
+        version: 0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
       '@tanstack/devtools-vite':
         specifier: ^0.8.5
         version: 0.8.5(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
@@ -391,7 +391,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
         specifier: ^6.1.2
-        version: 6.1.2(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
+        version: 6.1.2(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
@@ -3472,8 +3472,8 @@ packages:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
 
-  framer-motion@13.5.1:
-    resolution: {integrity: sha512-HeWOaeHD3kyTSIEMT6+nw7fBn4saIfxxabZyAITbycAl4xr1kzGJKIvGt/OWghSlvIA9qTnZ1zTGelHAe6S8DA==}
+  framer-motion@14.0.0:
+    resolution: {integrity: sha512-QAtHmybrDFSliyW1sexMtSQTQd+1jw2ajibEmzpuI4XdPVzQkn+dAzJMm2sW3pl9MJuSS4xN51djQ7huhlP/VA==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -4075,14 +4075,14 @@ packages:
   moo@0.5.3:
     resolution: {integrity: sha512-m2fmM2dDm7GZQsY7KK2cme8agi+AAljILjQnof7p1ZMDe6dQ4bdnSMx0cPppudoeNv5hEFQirN6u+O4fDE0IWA==}
 
-  motion-dom@13.5.1:
-    resolution: {integrity: sha512-/7CVCD20Mz1KobktorpdgvowV0V41J7UxqE+qWS3GkSJqrRr5ft+2RloOYtEKv+wvBp3JaSFBclhxt4ja8ovHg==}
+  motion-dom@14.0.0:
+    resolution: {integrity: sha512-aU3ApXo1yTpeUi3JU+jbDk2TELjxPE3MbBMUP7nZHlARb6RweJK+ojmLjpuB0YsY6zhbBl1YWGo8LMsI1/Llqw==}
 
-  motion-utils@13.5.0:
-    resolution: {integrity: sha512-Hqe/sqjIKliPZg8sVjWAkdySDPJNIeKH+euVkDOG8ri3DUUU7ZjndmHsGqEPz2iHpiyVaV5I22iguCMHU2he+Q==}
+  motion-utils@14.0.0:
+    resolution: {integrity: sha512-jBsyjVxTTRZNeuvd/v+btVXr90LQkYl4HhRu9T2ARc+PMnvkmjsjRVeAg4Qm10b6TlTw+kykWI8gu/6LuvpLSQ==}
 
-  motion@13.5.1:
-    resolution: {integrity: sha512-eV9SUem6KnzEa9+eT+dVBeDlhy5TTdn09YWR1WhUsKoZCJPw/n4TcYhjbxq2Gy5PTwDr//4H3r5vxkcZnNnO1w==}
+  motion@14.0.0:
+    resolution: {integrity: sha512-oGc2lkge2lkRZCP+J8/JsnYu4NFjqP1MtXirNdetn3QbvK2JqwM9A200EdT4C598KfzDhjLT12zF21xDM4Oilw==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -5797,7 +5797,7 @@ snapshots:
     transitivePeerDependencies:
       - '@babel/core'
 
-  '@lingui/vite-plugin@6.9.0(@babel/core@8.0.7)(@lingui/babel-plugin-lingui-macro@6.9.0(@babel/core@8.0.7))(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(rolldown@1.2.13)(supports-color@7.2.0)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
+  '@lingui/vite-plugin@6.9.0(@babel/core@8.0.7)(@lingui/babel-plugin-lingui-macro@6.9.0(@babel/core@8.0.7))(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(rolldown@1.2.13)(supports-color@7.2.0)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
     dependencies:
       '@lingui/cli': 6.9.0(rolldown@1.2.13)(supports-color@7.2.0)
       '@lingui/conf': 6.9.0
@@ -5806,7 +5806,7 @@ snapshots:
     optionalDependencies:
       '@babel/core': 8.0.7
       '@lingui/babel-plugin-lingui-macro': 6.9.0(@babel/core@8.0.7)
-      '@rolldown/plugin-babel': 0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
+      '@rolldown/plugin-babel': 0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
       rolldown: 1.2.13
     transitivePeerDependencies:
       - babel-plugin-macros
@@ -6658,12 +6658,13 @@ snapshots:
   '@rolldown/binding-win32-x64-msvc@1.2.13':
     optional: true
 
-  '@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
+  '@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
     dependencies:
       '@babel/core': 8.0.7
       picomatch: 4.0.7
       rolldown: 1.2.13
     optionalDependencies:
+      '@babel/runtime': 7.29.10
       vite: 8.3.3(@types/node@26.6.4)(jiti@2.7.0)
 
   '@rolldown/pluginutils@1.0.1': {}
@@ -7414,12 +7415,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitejs/plugin-react@6.1.2(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
+  '@vitejs/plugin-react@6.1.2(@rolldown/plugin-babel@0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0)))(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.3(@types/node@26.6.4)(jiti@2.7.0)
     optionalDependencies:
-      '@rolldown/plugin-babel': 0.2.4(@babel/core@8.0.7)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
+      '@rolldown/plugin-babel': 0.2.4(@babel/core@8.0.7)(@babel/runtime@7.29.10)(rolldown@1.2.13)(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))
 
   '@vitest/mocker@5.0.3(vite@8.3.3(@types/node@26.6.4)(jiti@2.7.0))':
     dependencies:
@@ -7432,13 +7433,13 @@ snapshots:
 
   '@vitest/spy@5.0.3': {}
 
-  '@xyflow/react@12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@xyflow/react@12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(immer@11.1.21)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@xyflow/system': 0.0.83
       classcat: 5.0.5
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      zustand: 4.5.7(@types/react@19.3.0)(react@19.3.0)
+      zustand: 4.5.7(@types/react@19.3.0)(immer@11.1.21)(react@19.3.0)
     optionalDependencies:
       '@types/react': 19.3.0
       '@types/react-dom': 19.3.0(@types/react@19.3.0)
@@ -8029,10 +8030,10 @@ snapshots:
 
   forwarded@0.2.0: {}
 
-  framer-motion@13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  framer-motion@14.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
-      motion-dom: 13.5.1
-      motion-utils: 13.5.0
+      motion-dom: 14.0.0
+      motion-utils: 14.0.0
       tslib: 2.8.1
     optionalDependencies:
       react: 19.3.0
@@ -8480,15 +8481,15 @@ snapshots:
 
   moo@0.5.3: {}
 
-  motion-dom@13.5.1:
+  motion-dom@14.0.0:
     dependencies:
-      motion-utils: 13.5.0
+      motion-utils: 14.0.0
 
-  motion-utils@13.5.0: {}
+  motion-utils@14.0.0: {}
 
-  motion@13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  motion@14.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
-      framer-motion: 13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      framer-motion: 14.0.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       tslib: 2.8.1
     optionalDependencies:
       react: 19.3.0
@@ -9472,15 +9473,17 @@ snapshots:
 
   zod@4.6.5: {}
 
-  zustand@4.5.7(@types/react@19.3.0)(react@19.3.0):
+  zustand@4.5.7(@types/react@19.3.0)(immer@11.1.21)(react@19.3.0):
     dependencies:
       use-sync-external-store: 1.7.0(react@19.3.0)
     optionalDependencies:
       '@types/react': 19.3.0
+      immer: 11.1.21
       react: 19.3.0
 
-  zustand@5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
+  zustand@5.0.15(@types/react@19.3.0)(immer@11.1.21)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
     optionalDependencies:
       '@types/react': 19.3.0
+      immer: 11.1.21
       react: 19.3.0
       use-sync-external-store: 1.7.0(react@19.3.0)
