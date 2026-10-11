@@ -40,8 +40,9 @@ use crate::hls::config::GapSkipStrategy;
 use crate::hls::events::{GapSkipReason, HlsStreamEvent};
 
 use super::config::SegmentCoreConfig;
+use super::control::EngineNotice;
 use super::identity::{SegmentKey, SegmentKind};
-use super::input::{AssemblerInput, PlaylistNotice};
+use super::input::AssemblerInput;
 use super::payload::SegmentPayload;
 
 // --- Dead ranges: MSNs that will never arrive ---
@@ -580,16 +581,14 @@ impl SequenceAssembler {
                         }
                         Some(AssemblerInput::Notice(notice)) => {
                             let event = match notice {
-                                PlaylistNotice::PlaylistRefreshed {
-                                    media_sequence_base,
+                                EngineNotice::ManifestRefreshed {
+                                    sequence_base,
                                     target_duration,
                                 } => HlsStreamEvent::PlaylistRefreshed {
-                                    media_sequence_base,
+                                    media_sequence_base: sequence_base,
                                     target_duration,
                                 },
-                                PlaylistNotice::EndlistEncountered => {
-                                    HlsStreamEvent::EndlistEncountered
-                                }
+                                EngineNotice::End => HlsStreamEvent::EndlistEncountered,
                             };
                             if self.event_tx.send(Ok(event)).await.is_err() {
                                 return;
@@ -1583,7 +1582,7 @@ mod tests {
     async fn notices_forward_immediately() {
         let mut h = spawn_assembler(HlsConfig::default(), true, 100);
         h.input_tx
-            .send(AssemblerInput::Notice(PlaylistNotice::EndlistEncountered))
+            .send(AssemblerInput::Notice(EngineNotice::End))
             .await
             .unwrap();
         let evt = tokio::time::timeout(Duration::from_secs(1), h.event_rx.recv())

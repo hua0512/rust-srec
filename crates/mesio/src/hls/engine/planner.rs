@@ -18,8 +18,12 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 use url::Url;
 
+use crate::DownloadError;
 use crate::hls::twitch_processor::{PREFETCH_SEGMENT_TITLE, TwitchPlaylistProcessor};
 use crate::redact::redact_url_for_log;
+use crate::segment_engine::control::{
+    EngineNotice, PlanOutcome, PruneWindow, ResetKind, SegmentPlanner, SourceFailure, TerminalCause,
+};
 
 use super::super::soop_processor::is_preloading_segment;
 
@@ -102,6 +106,57 @@ impl PlannerContext {
             twitch: twitch.then(TwitchPlaylistProcessor::new),
             soop,
         }
+    }
+}
+
+impl SegmentPlanner for PlannerContext {
+    type Snapshot = PlaylistSnapshot;
+
+    fn plan(&mut self, snapshot: &PlaylistSnapshot) -> PlanOutcome {
+        let mut outcome = PlanOutcome {
+            generation: snapshot.generation,
+            terminal: snapshot.terminal.clone(),
+            ..PlanOutcome::default()
+        };
+        // A failed snapshot ends the stream; planning it would only advance
+        // the context.
+        if matches!(
+            snapshot.terminal,
+            Some(TerminalCause::Failed(_) | TerminalCause::HttpFailure { .. })
+        ) {
+            return outcome;
+        }
+        let planned = plan(snapshot, self);
+        let playlist = snapshot.playlist.as_ref();
+        outcome.descriptors = planned.descriptors;
+        outcome.missing = planned.missing;
+        outcome.skipped = planned.skipped;
+        outcome.reset = planned.reset.then_some(ResetKind::SequenceRegressed);
+        outcome.prune = Some(PruneWindow {
+            start: playlist.media_sequence,
+            len: playlist.segments.len(),
+        });
+        outcome.notices.push(EngineNotice::ManifestRefreshed {
+            sequence_base: playlist.media_sequence,
+            target_duration: playlist.target_duration as f64,
+        });
+        if matches!(snapshot.terminal, Some(TerminalCause::End)) {
+            outcome.notices.push(EngineNotice::End);
+        }
+        outcome
+    }
+
+    fn failure_error(&self, failure: SourceFailure<'_>) -> DownloadError {
+        let reason = match failure {
+            SourceFailure::Failed(reason) => format!("playlist refresh failed: {reason}"),
+            SourceFailure::Reset(ResetKind::SequenceRegressed) => {
+                "media-sequence reset on the playlist; stream must restart".to_string()
+            }
+            SourceFailure::Lost => {
+                "playlist watcher stopped without signalling a cause".to_string()
+            }
+        };
+        DownloadError::Playlist { reason }
     }
 }
 
