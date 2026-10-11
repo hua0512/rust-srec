@@ -49,6 +49,7 @@ import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate } from '@/lib/datetime';
+import { COMPACT_CARD_GRID } from '@/lib/grid';
 
 const SHORT_DATE: Intl.DateTimeFormatOptions = {
   month: 'short',
@@ -272,7 +273,7 @@ function SessionsPage() {
               className="md:w-56 min-w-[200px]"
             />
 
-            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
+            <div className="hidden sm:block h-6 w-px bg-border/50 mx-1 shrink-0" />
 
             {/* Status Pills */}
             <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
@@ -304,8 +305,8 @@ function SessionsPage() {
               })}
             </div>
 
-            {/* Time Range */}
-            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
+            {/* Time Range: wider than a phone, so it scrolls rather than widening the page. */}
+            <div className="flex max-w-full items-center overflow-x-auto no-scrollbar bg-muted/30 p-1 rounded-full border border-border/50 shrink-0 [&>*]:shrink-0">
               <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -521,7 +522,7 @@ function SessionsPage() {
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
         {query.isPending ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+          <div className={cn(COMPACT_CARD_GRID, 'gap-4')}>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
               <div
                 key={i}

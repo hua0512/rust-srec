@@ -138,10 +138,10 @@ function CreatePipelineJobPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-7xl mx-auto space-y-8"
+        className="@container max-w-7xl mx-auto space-y-8"
       >
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <Button
               variant="ghost"
@@ -194,9 +194,9 @@ function CreatePipelineJobPage() {
         </div>
 
         <Form {...form}>
-          <form className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <form className="grid grid-cols-1 @3xl:grid-cols-12 gap-8">
             {/* Left Column: Configuration */}
-            <div className="lg:col-span-4 space-y-6">
+            <div className="@3xl:col-span-4 min-w-0 space-y-6">
               <Card className="p-6 border-white/5 bg-background/40 backdrop-blur-xl dark:bg-card/30 shadow-2xl relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
@@ -331,7 +331,7 @@ function CreatePipelineJobPage() {
             </div>
 
             {/* Right Column: Workflow Editor */}
-            <div className="lg:col-span-8">
+            <div className="@3xl:col-span-8 min-w-0">
               <Card className="p-6 border-white/5 bg-background/40 backdrop-blur-xl dark:bg-card/30 shadow-2xl relative overflow-hidden h-full">
                 <div className="relative z-10 flex flex-col h-full">
                   <PipelineWorkflowEditor

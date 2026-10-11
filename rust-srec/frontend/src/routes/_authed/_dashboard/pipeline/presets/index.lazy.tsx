@@ -59,6 +59,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/presets/',
@@ -228,7 +230,7 @@ function PresetsPage() {
                 updateSearch({ q: value || undefined, page: undefined })
               }
               placeholder={i18n._(msg`Search presets...`)}
-              className="flex-1 md:w-64"
+              className="flex-1 md:w-64 min-w-[200px]"
             />
             <Badge
               variant="secondary"
@@ -242,7 +244,7 @@ function PresetsPage() {
         <nav className="flex items-center gap-1">
           <button
             onClick={() => handleCategoryChange(null)}
-            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+            className={`relative shrink-0 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
               selectedCategory === null
                 ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -257,7 +259,7 @@ function PresetsPage() {
             <button
               key={cat}
               onClick={() => handleCategoryChange(cat)}
-              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
+              className={`relative shrink-0 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
                 selectedCategory === cat
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -279,7 +281,7 @@ function PresetsPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
             >
               {[1, 2, 3, 4].map((i) => (
                 <CardSkeleton key={i}>
@@ -300,7 +302,7 @@ function PresetsPage() {
           ) : presets && presets.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"

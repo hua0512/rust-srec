@@ -57,6 +57,7 @@ import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
+import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/notifications/events',
@@ -419,7 +420,7 @@ function NotificationEventsPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              className={cn(CARD_GRID, 'gap-4')}
             >
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <CardSkeleton key={i} className="min-h-[128px]">
@@ -451,7 +452,7 @@ function NotificationEventsPage() {
           ) : (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              className={cn(CARD_GRID, 'gap-4')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"

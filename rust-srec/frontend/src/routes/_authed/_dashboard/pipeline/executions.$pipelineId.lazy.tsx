@@ -31,6 +31,7 @@ import { useLingui } from '@lingui/react';
 import { msg, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
+import { STAT_GRID } from '@/lib/grid';
 import { cn } from '@/lib/utils';
 import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
@@ -167,7 +168,7 @@ function PipelineExecutionPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.05),rgba(255,255,255,0))]" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-32">
+      <div className="@container relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-32">
         {/* Navigation & Header */}
         <div className="flex flex-col gap-6 sm:gap-8 mb-8 sm:mb-12">
           <motion.div
@@ -278,7 +279,7 @@ function PipelineExecutionPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-10 sm:mb-16"
+          className={cn(STAT_GRID, 'gap-3 sm:gap-4 mb-10 sm:mb-16')}
         >
           <StatsCard
             icon={<Timer className="h-5 w-5 text-blue-400" />}

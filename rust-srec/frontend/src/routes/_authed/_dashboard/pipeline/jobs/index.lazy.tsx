@@ -60,9 +60,11 @@ import { toast } from 'sonner';
 import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
 import { PipelineBatchActionBar } from '@/components/pipeline/jobs/pipeline-batch-action-bar';
 import { SearchInput } from '@/components/shared/search-input';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { formatDuration } from '@/lib/format';
+import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
@@ -375,140 +377,126 @@ function PipelineJobsPage() {
 
   return (
     <div className="min-h-screen space-y-6">
-      {/* Header */}
-      <div className="border-b border-border/40">
-        <div className="w-full">
-          {/* Title Row */}
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <ListTodo className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Pipeline Jobs</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>Monitor and manage processing jobs</Trans>
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-              <SearchInput
-                defaultValue={q ?? ''}
-                onSearch={(value) =>
-                  updateSearch({ q: value || undefined, page: undefined })
-                }
-                placeholder={i18n._(msg`Search jobs...`)}
-                className="flex-1 sm:w-64"
-              />
-              {/* Scrolls rather than overflowing the page: the count badge grows
-                  with the pipeline total and the buttons keep their labels. */}
-              <div className="flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar">
-                <Badge
-                  variant="secondary"
-                  className="h-9 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
-                >
-                  {totalPipelines} <Trans>pipelines</Trans>
-                </Badge>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleSelectionMode}
-                  aria-pressed={selectionMode}
-                  aria-label={i18n._(msg`Select pipelines`)}
-                  className={cn(
-                    'h-9 gap-2 whitespace-nowrap rounded-full px-3',
-                    selectionMode &&
-                      'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-                  )}
-                >
-                  <ListChecks className="h-4 w-4" />
-                  <Trans>Select</Trans>
-                </Button>
-                <Button
-                  className="h-9 gap-2 whitespace-nowrap"
-                  variant="default"
-                  onClick={() => navigate({ to: '/pipeline/jobs/new' })}
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="hidden xs:inline">
-                    <Trans>Create Pipeline</Trans>
-                  </span>
-                  <span className="xs:hidden">
-                    <Trans>Create</Trans>
-                  </span>
-                </Button>
-              </div>
+      <DashboardHeader
+        icon={ListTodo}
+        title={<Trans>Pipeline Jobs</Trans>}
+        subtitle={<Trans>Monitor and manage processing jobs</Trans>}
+        actions={
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <SearchInput
+              defaultValue={q ?? ''}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search jobs...`)}
+              className="flex-1 sm:w-64 min-w-[200px]"
+            />
+            {/* Scrolls rather than overflowing the page: the count badge grows
+                with the pipeline total and the buttons keep their labels. */}
+            <div className="flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar">
+              <Badge
+                variant="secondary"
+                className="h-9 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
+              >
+                {totalPipelines} <Trans>pipelines</Trans>
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleSelectionMode}
+                aria-pressed={selectionMode}
+                aria-label={i18n._(msg`Select pipelines`)}
+                className={cn(
+                  'h-9 gap-2 whitespace-nowrap rounded-full px-3',
+                  selectionMode &&
+                    'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
+                )}
+              >
+                <ListChecks className="h-4 w-4" />
+                <Trans>Select</Trans>
+              </Button>
+              <Button
+                className="h-9 gap-2 whitespace-nowrap"
+                variant="default"
+                onClick={() => navigate({ to: '/pipeline/jobs/new' })}
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden xs:inline">
+                  <Trans>Create Pipeline</Trans>
+                </span>
+                <span className="xs:hidden">
+                  <Trans>Create</Trans>
+                </span>
+              </Button>
             </div>
           </div>
-
-          {/* Stats Overview */}
-          <div className="px-4 md:px-8 pb-4 w-full">
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-              <StatCard
-                title={<Trans>Pending</Trans>}
-                value={stats?.pending_count}
-                loading={isStatsLoading}
-                icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-              />
-              <StatCard
-                title={<Trans>Processing</Trans>}
-                value={stats?.processing_count}
-                loading={isStatsLoading}
-                color="text-blue-500"
-                icon={
-                  <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
-                }
-              />
-              <StatCard
-                title={<Trans>Completed</Trans>}
-                value={stats?.completed_count}
-                loading={isStatsLoading}
-                color="text-green-500"
-                icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
-              />
-              <StatCard
-                title={<Trans>Failed</Trans>}
-                value={stats?.failed_count}
-                loading={isStatsLoading}
-                color="text-red-500"
-                icon={<XCircle className="h-4 w-4 text-red-500" />}
-              />
-              <StatCard
-                title={<Trans>Avg. Duration</Trans>}
-                value={stats?.avg_duration_secs}
-                loading={isStatsLoading}
-                color="text-purple-500"
-                icon={<Timer className="h-4 w-4 text-purple-500" />}
-                formatValue={formatDuration}
-              />
-            </div>
-          </div>
-
-          {/* Status Filter */}
-          <div className="px-4 md:px-8 pb-3 -mx-4 md:mx-0">
-            <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1 flex-1">
-              {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
-                <button
-                  key={label}
-                  onClick={() => handleStatusChange(value)}
-                  className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${
-                    selectedStatus === value
-                      ? 'bg-primary text-primary-foreground ring-primary'
-                      : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="relative z-10 whitespace-nowrap">
-                    {label}
-                  </span>
-                </button>
-              ))}
-            </nav>
+        }
+        // The stat cards' rings and shadows reach past the row's top edge, which a
+        // scrolling row would clip; the status strip below scrolls on its own.
+        childrenClassName="overflow-visible"
+      >
+        <div className="pb-4">
+          <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))]">
+            <StatCard
+              title={<Trans>Pending</Trans>}
+              value={stats?.pending_count}
+              loading={isStatsLoading}
+              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+            />
+            <StatCard
+              title={<Trans>Processing</Trans>}
+              value={stats?.processing_count}
+              loading={isStatsLoading}
+              color="text-blue-500"
+              icon={
+                <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
+              }
+            />
+            <StatCard
+              title={<Trans>Completed</Trans>}
+              value={stats?.completed_count}
+              loading={isStatsLoading}
+              color="text-green-500"
+              icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
+            />
+            <StatCard
+              title={<Trans>Failed</Trans>}
+              value={stats?.failed_count}
+              loading={isStatsLoading}
+              color="text-red-500"
+              icon={<XCircle className="h-4 w-4 text-red-500" />}
+            />
+            <StatCard
+              title={<Trans>Avg. Duration</Trans>}
+              value={stats?.avg_duration_secs}
+              loading={isStatsLoading}
+              color="text-purple-500"
+              icon={<Timer className="h-4 w-4 text-purple-500" />}
+              formatValue={formatDuration}
+            />
           </div>
         </div>
-      </div>
+
+        {/* Status Filter */}
+        <div className="-mx-4 md:mx-0">
+          <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1 flex-1">
+            {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
+              <button
+                key={label}
+                onClick={() => handleStatusChange(value)}
+                className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${
+                  selectedStatus === value
+                    ? 'bg-primary text-primary-foreground ring-primary'
+                    : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="relative z-10 whitespace-nowrap">{label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      </DashboardHeader>
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
@@ -517,7 +505,7 @@ function PipelineJobsPage() {
           ) : pipelines.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"
@@ -766,7 +754,7 @@ const LoadingSkeleton = memo(function LoadingSkeleton() {
       initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.1 } }}
-      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+      className={cn(CARD_GRID, 'gap-6')}
     >
       {SKELETON_ITEMS.map((i) => (
         <div

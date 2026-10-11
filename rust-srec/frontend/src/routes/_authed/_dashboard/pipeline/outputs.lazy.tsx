@@ -61,6 +61,7 @@ import {
 } from '@/lib/media-file-type';
 import { plural, t } from '@lingui/core/macro';
 import { formatBytes } from '@/lib/format';
+import { COMPACT_CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/outputs',
@@ -338,7 +339,7 @@ function PipelineOutputsPage() {
                 updateSearch({ q: value || undefined, page: undefined })
               }
               placeholder={i18n._(msg`Search outputs...`)}
-              className="flex-1 md:w-64"
+              className="flex-1 md:w-64 min-w-[200px]"
             />
             <Badge
               variant="secondary"
@@ -415,7 +416,7 @@ function PipelineOutputsPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(COMPACT_CARD_GRID, 'gap-6')}
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <CardSkeleton key={i}>
@@ -441,7 +442,8 @@ function PipelineOutputsPage() {
               // one loads; dimming it marks the rows as not yet the ones asked
               // for, and blocks clicks on cards that are about to be replaced.
               className={cn(
-                'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 transition-opacity duration-200',
+                COMPACT_CARD_GRID,
+                'gap-6 transition-opacity duration-200',
                 isPlaceholderData && 'pointer-events-none opacity-60',
               )}
               aria-busy={isPlaceholderData}

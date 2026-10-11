@@ -100,7 +100,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
 
       {!event.read && (
         <div
-          className="absolute top-6 right-6 h-1.5 w-1.5 rounded-full bg-primary"
+          className="absolute top-3 right-3 h-1.5 w-1.5 rounded-full bg-primary"
           style={{ filter: 'drop-shadow(0 0 4px hsl(var(--primary)))' }}
         />
       )}

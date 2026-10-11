@@ -72,13 +72,15 @@ export function OverviewTab({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2 }}
-      className="space-y-8"
+      className="@container space-y-8"
     >
+      {/* Columns follow this tab's own width: the page pads itself heavily and sits beside the
+          app sidebar, so viewport breakpoints overestimate the room. */}
       <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xl">
         <div className="absolute top-0 right-0 p-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
         <CardContent className="p-4 md:p-8">
-          <div className="flex flex-col lg:flex-row gap-6 md:gap-8 items-start lg:items-center justify-between">
-            <div className="flex items-center gap-4 md:gap-6">
+          <div className="flex flex-col @4xl:flex-row gap-6 md:gap-8 items-start @4xl:items-center justify-between">
+            <div className="flex min-w-0 max-w-full items-center gap-4 md:gap-6">
               <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-br from-primary to-blue-600 rounded-full opacity-20 group-hover:opacity-40 transition-opacity blur-md" />
                 <Avatar className="h-16 w-16 md:h-24 md:w-24 border-2 md:border-4 border-background shadow-xl relative">
@@ -97,7 +99,7 @@ export function OverviewTab({
                 <div className="absolute bottom-1 right-1 h-4 w-4 md:h-5 md:w-5 bg-green-500 border-2 md:border-4 border-white dark:border-zinc-900 rounded-full" />
               </div>
 
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <div className="flex items-center gap-3">
                   <Badge
                     variant="secondary"
@@ -117,7 +119,7 @@ export function OverviewTab({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 w-full lg:w-auto min-w-0 md:min-w-[300px]">
+            <div className="grid grid-cols-2 @4xl:grid-cols-3 gap-3 md:gap-4 w-full @4xl:w-auto @4xl:shrink-0 min-w-0 md:min-w-[300px]">
               <StatBox
                 icon={HardDrive}
                 label={<Trans>Total Size</Trans>}
@@ -138,15 +140,15 @@ export function OverviewTab({
                 value={session.danmu_count?.toLocaleString() || '0'}
                 color="text-orange-500"
                 bg="bg-orange-500/10"
-                className="col-span-2 lg:col-span-1"
+                className="col-span-2 @4xl:col-span-1"
               />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        <div className="xl:col-span-2 space-y-8">
+      <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-8">
+        <div className="@4xl:col-span-2 space-y-8">
           <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xs h-full min-h-[400px] flex flex-col">
             <CardHeader className="pb-3 border-b border-border/40">
               <CardTitle className="text-lg font-semibold flex items-center gap-2">

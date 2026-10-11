@@ -176,7 +176,7 @@ export const SessionCard = memo(
               )}
             </div>
             <h3
-              className="text-[14px] font-bold leading-tight tracking-tight text-foreground/90 line-clamp-2 transition-colors duration-300 group-hover:text-foreground min-h-[1.25rem]"
+              className="text-[14px] font-bold leading-tight tracking-tight text-foreground/90 line-clamp-2 wrap-break-word transition-colors duration-300 group-hover:text-foreground min-h-[1.25rem]"
               title={session.title}
             >
               {session.title || <Trans>Untitled Stream</Trans>}

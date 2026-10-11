@@ -388,7 +388,7 @@ export function ProxyRouteField<T extends FieldValues>({
       control={control}
       name={name}
       render={({ field }) => (
-        <FormItem className="space-y-2">
+        <FormItem className="grid-cols-1 space-y-2">
           {label && (
             <Label htmlFor={id} className="px-1 text-sm font-semibold">
               {label}

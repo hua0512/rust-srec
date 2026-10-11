@@ -29,6 +29,7 @@ import {
 } from '@/api/dashboard';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { CARD_GRID, STAT_GRID } from '@/lib/grid';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
 import { formatBytes } from '@/lib/format';
@@ -36,9 +37,8 @@ import type { ComponentHealth } from '@/api/schemas/system';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
 const SKELETON_COUNT = 4;
-const GRID_4 = 'grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4';
-const GRID_STREAMERS =
-  'grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+const GRID_4 = cn(STAT_GRID, 'gap-4 md:gap-6');
+const GRID_STREAMERS = cn(CARD_GRID, 'gap-4 md:gap-6');
 
 // --- Skeleton components ---
 
@@ -188,7 +188,7 @@ function Dashboard() {
     <div className="min-h-screen p-3 md:p-8 space-y-6 md:space-y-8 bg-gradient-to-br from-background via-background to-muted/20">
       <div className="space-y-10 relative z-10">
         {/* System Health Section */}
-        <section className="space-y-6">
+        <section className="@container space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10 text-primary">
@@ -296,7 +296,7 @@ function Dashboard() {
         </section>
 
         {/* Pipeline Stats Section */}
-        <section className="space-y-6">
+        <section className="@container space-y-6">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10 text-primary">

@@ -30,6 +30,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { TemplateSchema } from '@/api/schemas';
 import { z } from 'zod';
+import { COMPACT_CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/config/templates/',
@@ -142,7 +144,7 @@ function TemplatesConfigPage() {
             initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.1 } }}
-            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6"
+            className={cn(COMPACT_CARD_GRID, 'gap-6')}
           >
             {[1, 2, 3, 4].map((i) => (
               <CardSkeleton key={i} />
@@ -151,7 +153,7 @@ function TemplatesConfigPage() {
         ) : filteredTemplates.length > 0 ? (
           <motion.div
             key="list"
-            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6"
+            className={cn(COMPACT_CARD_GRID, 'gap-6')}
             variants={containerVariants}
             initial="hidden"
             animate="visible"

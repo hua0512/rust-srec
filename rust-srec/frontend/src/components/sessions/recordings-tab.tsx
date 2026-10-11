@@ -298,7 +298,7 @@ const TimelineNode = memo(function TimelineNode({
       {/* Group Card */}
       <div className="bg-card w-full border border-border/40 hover:border-border/80 transition-colors rounded-xl overflow-hidden shadow-sm hover:shadow-md">
         <div className="bg-muted/30 px-4 py-3 border-b border-border/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
+          <div className="min-w-0">
             <h4
               className="font-semibold text-sm truncate"
               title={group.baseName}

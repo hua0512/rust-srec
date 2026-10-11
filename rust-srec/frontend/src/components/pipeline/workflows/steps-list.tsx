@@ -155,7 +155,7 @@ export const StepsList = memo(
                           )}
                           {dagStep.depends_on &&
                             dagStep.depends_on.length > 0 && (
-                              <div className="flex items-center gap-1 opacity-60">
+                              <div className="flex min-w-0 items-center gap-1 opacity-60">
                                 <ArrowRight className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                                 <span className="text-[8px] sm:text-[9px] font-mono leading-none truncate max-w-[100px] sm:max-w-none">
                                   {i18n._(

@@ -45,6 +45,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/workflows/',
@@ -152,7 +154,7 @@ function WorkflowsPage() {
                 updateSearch({ q: value || undefined, page: undefined })
               }
               placeholder={i18n._(msg`Search workflows...`)}
-              className="flex-1 md:w-64"
+              className="flex-1 md:w-64 min-w-[200px]"
             />
             <Badge
               variant="secondary"
@@ -172,7 +174,7 @@ function WorkflowsPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
             >
               {[1, 2, 3].map((i) => (
                 <div
@@ -196,7 +198,7 @@ function WorkflowsPage() {
           ) : workflows && workflows.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"

@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
  */
 export function EditStreamerSkeleton() {
   return (
-    <div className="mx-auto max-w-7xl space-y-8 p-4 pb-32 md:p-8 md:pb-32">
+    <div className="@container mx-auto max-w-7xl space-y-8 p-4 pb-32 md:p-8 md:pb-32">
       <div className="flex items-center gap-4">
         <Skeleton className="h-10 w-10 rounded-full" />
         <div className="space-y-2">
@@ -17,8 +17,8 @@ export function EditStreamerSkeleton() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
-        <div className="space-y-6 lg:col-span-3">
+      <div className="grid grid-cols-1 gap-8 @4xl:grid-cols-4">
+        <div className="space-y-6 @4xl:col-span-3">
           {/* Same shape as `StreamerTabs`' `TabsList`, which stacks its triggers below `sm`
               and only becomes an auto-width pill at `md`. A single fixed-width bar here would
               be a third of the real height on a phone. */}
@@ -32,7 +32,7 @@ export function EditStreamerSkeleton() {
           </div>
           <Skeleton className="h-[420px] w-full rounded-xl" />
         </div>
-        <div className="space-y-6 lg:col-span-1">
+        <div className="space-y-6 @4xl:col-span-1">
           <Skeleton className="h-40 w-full rounded-xl" />
           <Skeleton className="h-56 w-full rounded-xl" />
         </div>

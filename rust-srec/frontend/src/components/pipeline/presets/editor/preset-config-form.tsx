@@ -75,7 +75,7 @@ export function PresetConfigForm({
     >
       <Card className="border-border/40 shadow-sm bg-card/80 backdrop-blur-sm">
         <CardHeader className="pb-6 border-b border-border/40 bg-muted/10">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-3">
             <div className="flex flex-col gap-0.5">
               <CardTitle className="text-lg font-semibold tracking-tight">
                 <Trans>Configuration</Trans>

@@ -1,13 +1,6 @@
 import { memo, useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { Link } from '@tanstack/react-router';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +21,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import {
-  MoreHorizontal,
   XCircle,
   CheckCircle2,
   Check,
@@ -43,6 +35,13 @@ import { useLingui } from '@lingui/react';
 import { type DagSummary } from '@/api/schemas';
 
 import { cn } from '@/lib/utils';
+import {
+  CardHeaderRow,
+  CardIconTile,
+  CardMenuButton,
+  CardMetaFooter,
+  DecoratedCard,
+} from '@/components/shared/decorated-card';
 import { formatRelativeTime } from '@/lib/date-utils';
 import {
   getStatusConfig,
@@ -103,7 +102,6 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   }, []);
   const statusKey = pipeline.status;
   const statusConfig = getStatusConfig(statusKey);
-  const StatusIcon = statusConfig.icon;
 
   const isCompleted = statusKey === 'COMPLETED';
   const isFailed = statusKey === 'FAILED';
@@ -124,7 +122,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   };
 
   return (
-    <Card
+    <DecoratedCard
       onClick={handleCardClick}
       role={selectionMode ? 'checkbox' : undefined}
       aria-checked={selectionMode ? isSelected : undefined}
@@ -136,7 +134,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
         }
       }}
       className={cn(
-        'relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 border-border/40 hover:border-primary/20 cursor-pointer',
+        'cursor-pointer',
         selectionMode && 'select-none [&_a]:pointer-events-none',
         isSelected && 'border-primary/50 ring-2 ring-primary',
       )}
@@ -153,156 +151,154 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
           <Check className="h-3.5 w-3.5" />
         </div>
       )}
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-      {/* Hover Glow Effect */}
-      <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
-      <CardHeader className="relative flex flex-row items-center gap-3 sm:gap-4 p-3 sm:pb-2 sm:space-y-0 z-10">
-        <div
-          className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl ${statusConfig.bgColor} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
-        >
-          <StatusIcon
-            className={`h-4 w-4 sm:h-5 sm:w-5 ${statusConfig.animate ? 'animate-spin' : ''}`}
+      <CardHeaderRow
+        className="gap-3 sm:gap-4 p-3 sm:pb-2"
+        icon={
+          <CardIconTile
+            icon={statusConfig.icon}
+            className={cn(
+              'p-2.5 sm:p-3 rounded-xl sm:rounded-2xl',
+              statusConfig.bgColor,
+            )}
+            iconClassName={cn(
+              'h-4 w-4 sm:h-5 sm:w-5',
+              statusConfig.animate && 'animate-spin',
+            )}
           />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            <Link
-              to="/pipeline/executions/$pipelineId"
-              params={{ pipelineId: pipeline.id }}
-              className="hover:underline underline-offset-4 decoration-primary/50"
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            >
-              PIPE-{pipeline.id.substring(0, 8)}
-            </Link>
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {pipeline.streamer_name ?? pipeline.name ?? pipeline.streamer_id}
-            </span>
-          </div>
-        </div>
-        <Badge
-          variant={statusConfig.badgeVariant}
-          className="py-0 h-6 text-[10px] sm:text-xs"
-        >
-          {statusLabel}
-        </Badge>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            asChild
-            onClick={(e) => e.stopPropagation()}
-            // Hidden while selecting so the row has a single click target.
-            className={cn(selectionMode && 'hidden')}
+        }
+        title={
+          <Link
+            to="/pipeline/executions/$pipelineId"
+            params={{ pipelineId: pipeline.id }}
+            className="hover:underline underline-offset-4 decoration-primary/50"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 -mr-2 text-muted-foreground/40 hover:text-foreground transition-colors"
+            PIPE-{pipeline.id.substring(0, 8)}
+          </Link>
+        }
+        subtitle={
+          pipeline.streamer_name ?? pipeline.name ?? pipeline.streamer_id
+        }
+        actions={
+          <>
+            <Badge
+              variant={statusConfig.badgeVariant}
+              className="py-0 h-6 text-[10px] sm:text-xs"
             >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">
-                <Trans>Open menu</Trans>
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                onViewDetails(pipeline.id);
-              }}
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />{' '}
-              <Trans>View Details</Trans>
-            </DropdownMenuItem>
-            {canCancel && onCancelPipeline && (
-              <>
-                <DropdownMenuSeparator />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={(e) => e.preventDefault()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <XCircle className="mr-2 h-4 w-4" /> <Trans>Cancel</Trans>
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        <Trans>Cancel Pipeline?</Trans>
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        <Trans>
-                          This will cancel all pending and processing jobs in
-                          this pipeline.
-                        </Trans>
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>
-                        <Trans>Keep Running</Trans>
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => onCancelPipeline(pipeline.id)}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        <Trans>Cancel</Trans>
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
+              {statusLabel}
+            </Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                asChild
+                onClick={(e) => e.stopPropagation()}
+                // Hidden while selecting so the row has a single click target.
+                className={cn(selectionMode && 'hidden')}
+              >
+                <CardMenuButton />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewDetails(pipeline.id);
+                  }}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />{' '}
+                  <Trans>View Details</Trans>
+                </DropdownMenuItem>
+                {canCancel && onCancelPipeline && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={(e) => e.preventDefault()}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <XCircle className="mr-2 h-4 w-4" />{' '}
+                          <Trans>Cancel</Trans>
+                        </DropdownMenuItem>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            <Trans>Cancel Pipeline?</Trans>
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            <Trans>
+                              This will cancel all pending and processing jobs
+                              in this pipeline.
+                            </Trans>
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>
+                            <Trans>Keep Running</Trans>
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => onCancelPipeline(pipeline.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            <Trans>Cancel</Trans>
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
+                )}
 
-            {/* Delete option for terminal states */}
-            {(isCompleted || isFailed || isCancelled) && onDeletePipeline && (
-              <>
-                <DropdownMenuSeparator />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={(e) => e.preventDefault()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        <Trans>Delete Pipeline?</Trans>
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        <Trans>
-                          This will permanently delete the pipeline and all its
-                          associated jobs and logs. This action cannot be
-                          undone.
-                        </Trans>
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>
-                        <Trans>Cancel</Trans>
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => onDeletePipeline(pipeline.id)}
-                        className="bg-destructive text-white hover:bg-destructive/90"
-                      >
-                        <Trans>Delete</Trans>
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </CardHeader>
+                {/* Delete option for terminal states */}
+                {(isCompleted || isFailed || isCancelled) &&
+                  onDeletePipeline && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={(e) => e.preventDefault()}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />{' '}
+                            <Trans>Delete</Trans>
+                          </DropdownMenuItem>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              <Trans>Delete Pipeline?</Trans>
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              <Trans>
+                                This will permanently delete the pipeline and
+                                all its associated jobs and logs. This action
+                                cannot be undone.
+                              </Trans>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>
+                              <Trans>Cancel</Trans>
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => onDeletePipeline(pipeline.id)}
+                              className="bg-destructive text-white hover:bg-destructive/90"
+                            >
+                              <Trans>Delete</Trans>
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
+                  )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       <CardContent className="relative pb-4 flex-1 z-10">
         <p className="text-[10px] sm:text-xs text-muted-foreground/80 mb-3 sm:mb-4 leading-relaxed font-light truncate">
@@ -365,7 +361,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
         )}
       </CardContent>
 
-      <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
+      <CardMetaFooter>
         <span className="font-mono opacity-50">
           {t(
             i18n,
@@ -374,7 +370,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
         <span className="font-mono opacity-50">
           {(pipeline.progress_percent || 0).toFixed(1)}%
         </span>
-      </CardFooter>
-    </Card>
+      </CardMetaFooter>
+    </DecoratedCard>
   );
 }, arePropsEqual);

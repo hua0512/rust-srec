@@ -39,6 +39,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { formatDate } from '@/lib/datetime';
 import { formatRelativeTime } from '@/lib/date-utils';
+import { STAT_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({
   component: SystemHealthPage,
@@ -95,13 +96,13 @@ function SystemHealthPage() {
             initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.1 } }}
-            className="space-y-8"
+            className="@container space-y-8"
           >
             <div className="flex items-center justify-between">
               <Skeleton className="h-10 w-48" />
               <Skeleton className="h-10 w-32" />
             </div>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className={cn(STAT_GRID, 'gap-4')}>
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-32" />
               ))}
@@ -115,7 +116,7 @@ function SystemHealthPage() {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="space-y-8"
+            className="@container space-y-8"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -145,7 +146,7 @@ function SystemHealthPage() {
             {/* Top level metrics */}
             <motion.div
               variants={itemVariants}
-              className="grid gap-4 md:grid-cols-2 lg:grid-cols-4"
+              className={cn(STAT_GRID, 'gap-4')}
             >
               <MetricCard
                 title={<Trans>Status</Trans>}
@@ -258,7 +259,7 @@ function SystemHealthPage() {
                             <TableCell>
                               <HealthStatusBadge status={component.status} />
                             </TableCell>
-                            <TableCell className="max-w-[400px]">
+                            <TableCell className="max-w-[400px] whitespace-normal wrap-break-word">
                               {component.message ? (
                                 <span className="text-sm text-muted-foreground">
                                   {component.message}

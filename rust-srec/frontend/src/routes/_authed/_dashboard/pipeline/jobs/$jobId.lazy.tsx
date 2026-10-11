@@ -323,7 +323,9 @@ function JobDetailsPage() {
         <div className="absolute top-0 left-0 -mt-20 -ml-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
       </div>
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
+      {/* Columns follow this page's own width, which the app sidebar narrows without the
+          viewport breakpoints noticing. */}
+      <div className="@container relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
         {/* Header */}
         <div className="flex flex-col gap-8 mb-10">
           <motion.div
@@ -343,12 +345,12 @@ function JobDetailsPage() {
             </Button>
           </motion.div>
 
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+          <div className="flex flex-wrap items-start justify-between gap-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="flex items-start gap-5"
+              className="flex min-w-0 items-start gap-5"
             >
               <div
                 className={cn(
@@ -364,7 +366,7 @@ function JobDetailsPage() {
                   )}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-3 mb-1.5">
                   <h1 className="text-3xl font-bold tracking-tight text-foreground">
                     <Trans>Job Details</Trans>
@@ -391,7 +393,7 @@ function JobDetailsPage() {
                     })()}
                   </span>
                   <span className="opacity-40">•</span>
-                  <span className="font-mono text-xs opacity-70 selection:bg-muted select-all">
+                  <span className="font-mono text-xs opacity-70 selection:bg-muted select-all break-all">
                     ID: {job.id}
                   </span>
                 </div>
@@ -475,9 +477,9 @@ function JobDetailsPage() {
         </div>
 
         {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 @3xl:grid-cols-3 gap-6">
           {/* Left Column: Metadata & Config */}
-          <div className="space-y-6 lg:col-span-2">
+          <div className="min-w-0 space-y-6 @3xl:col-span-2">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -490,7 +492,7 @@ function JobDetailsPage() {
                     <Trans>Context</Trans>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-6 grid md:grid-cols-2 gap-8">
+                <CardContent className="p-6 grid grid-cols-1 @xl:grid-cols-2 gap-8">
                   <InfoGroup
                     label={i18n._(msg`Session ID`)}
                     value={job.session_id}
@@ -557,7 +559,7 @@ function JobDetailsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 @xl:grid-cols-2 gap-6">
                 <Card className="bg-card/40 backdrop-blur-sm border-border/40 hover:bg-card/60 transition-colors">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base font-medium flex items-center gap-2">
@@ -737,7 +739,7 @@ function JobDetailsPage() {
           </motion.div>
 
           {/* Full Width: Error & Logs */}
-          <div className="lg:col-span-3 space-y-6">
+          <div className="min-w-0 @3xl:col-span-3 space-y-6">
             {job.error_message && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
@@ -752,7 +754,7 @@ function JobDetailsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="font-mono text-sm text-destructive/90 bg-background/50 p-4 rounded-lg border border-destructive/20 selection:bg-destructive/20">
+                    <div className="font-mono text-sm text-destructive/90 bg-background/50 p-4 rounded-lg border border-destructive/20 selection:bg-destructive/20 wrap-break-word">
                       {job.error_message}
                     </div>
                     {job.retry_after && (
