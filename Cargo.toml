@@ -129,6 +129,7 @@ aes-gcm = "0.11"
 hkdf = "0.13"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh"] }
 tower = { version = "0.5.3", features = ["util"] }
+roxmltree = "0.21"
 
 [profile.dev]
 incremental = true

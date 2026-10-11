@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Nested and absolute BaseURLs; availabilityTimeOffset at BaseURL and segment-information levels. -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="2024-01-01T00:00:00Z"
+     minimumUpdatePeriod="PT2S" minBufferTime="PT2S">
+  <BaseURL availabilityTimeOffset="0.5">cdn/</BaseURL>
+  <Period id="0" start="PT10S">
+    <BaseURL availabilityTimeOffset="0.25">live/</BaseURL>
+    <SegmentTemplate timescale="1000" duration="2000" startNumber="1" media="$Number$.m4s" initialization="init.mp4"
+                     availabilityTimeOffset="1"/>
+    <AdaptationSet mimeType="video/mp4">
+      <BaseURL>video/</BaseURL>
+      <Representation id="relative" bandwidth="1">
+        <BaseURL>../hd/</BaseURL>
+      </Representation>
+      <Representation id="absolute" bandwidth="1">
+        <BaseURL availabilityTimeOffset="0.75">https://edge.example.net/abs/</BaseURL>
+        <SegmentTemplate availabilityTimeOffset="0.25"/>
+      </Representation>
+      <Representation id="infinite" bandwidth="1">
+        <SegmentTemplate availabilityTimeOffset="INF"/>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

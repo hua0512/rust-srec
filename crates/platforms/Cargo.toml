@@ -91,7 +91,7 @@ prost = { workspace = true }
 prost-build = { workspace = true }
 
 [dev-dependencies]
-roxmltree = "0.21"
+roxmltree = { workspace = true }
 
 
 [features]

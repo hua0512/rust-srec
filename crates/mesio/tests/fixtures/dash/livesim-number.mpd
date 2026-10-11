@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Modelled on livesim2 testpic_2s: epoch-anchored $Number$ live stream. -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011,http://dashif.org/guidelines/dash-if-simple"
+     type="dynamic" availabilityStartTime="1970-01-01T00:00:00Z" publishTime="1970-01-01T00:00:00Z"
+     minimumUpdatePeriod="PT2S" minBufferTime="PT2S" timeShiftBufferDepth="PT5M"
+     suggestedPresentationDelay="PT4S" maxSegmentDuration="PT2S">
+  <ProgramInformation><Title>testpic_2s</Title></ProgramInformation>
+  <BaseURL>https://livesim2.example.com/livesim2/testpic_2s/</BaseURL>
+  <Period id="P0" start="PT0S">
+    <AdaptationSet id="1" contentType="audio" mimeType="audio/mp4" lang="en" segmentAlignment="true" startWithSAP="1">
+      <Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" initialization="$RepresentationID$/init.mp4"
+                       duration="96000" startNumber="0" timescale="48000"/>
+      <Representation id="A48" bandwidth="48000" audioSamplingRate="48000" codecs="mp4a.40.2">
+        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="2" contentType="video" mimeType="video/mp4" segmentAlignment="true" startWithSAP="1"
+                   maxWidth="640" maxHeight="360" par="16:9">
+      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" initialization="$RepresentationID$/init.mp4"
+                       duration="180000" startNumber="0" timescale="90000"/>
+      <Representation id="V300" bandwidth="300000" width="640" height="360" sar="1:1" frameRate="60/2" codecs="avc1.64001e"/>
+    </AdaptationSet>
+  </Period>
+  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="https://time.akamai.com/?iso&amp;ms"/>
+</MPD>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Period starts and durations are derived; the second Period has PTO != 0. -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1M30S" minBufferTime="PT2S">
+  <BaseURL>https://vod.example.com/show/</BaseURL>
+  <Period id="intro" duration="PT30S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate timescale="1000" duration="4000" media="intro/$Number%05d$.m4s" initialization="intro/init.mp4"/>
+      <Representation id="v" bandwidth="1000000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="main">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate timescale="90000" presentationTimeOffset="900000"
+                       media="main/$Time%010d$.m4s" initialization="main/init.mp4">
+        <SegmentTimeline>
+          <S t="900000" d="540000" r="-1"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="credits" start="PT60S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate duration="10" media="credits/$Number$.m4s"/>
+      <Representation id="v" bandwidth="1000000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

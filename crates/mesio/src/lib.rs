@@ -19,6 +19,7 @@ pub mod builder;
 pub mod bytes_stream;
 pub mod cache;
 pub mod config;
+pub mod dash;
 pub mod downloader;
 pub mod error;
 pub mod flv;
