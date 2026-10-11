@@ -110,6 +110,7 @@ impl HlsDownloader {
         MesioDownloader::new(MesioConfig {
             hls: hls_config,
             flv: FlvProtocolConfig::default(),
+            dash: Default::default(),
             token,
         })
     }

@@ -3730,6 +3730,7 @@ dependencies = [
  "hls",
  "m3u8-rs",
  "moka",
+ "mp4",
  "parking_lot",
  "rand 0.10.3",
  "reqwest 0.12.28",

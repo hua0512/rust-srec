@@ -49,6 +49,7 @@ tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 # Workspace crates
 flv = { path = "../flv" }
 hls = { path = "../hls" }
+mp4 = { path = "../mp4" }
 
 [dev-dependencies]
 tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "time"] }

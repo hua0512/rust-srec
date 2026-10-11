@@ -5,6 +5,7 @@
 
 use crate::{
     CacheConfig, DownloadError, DownloaderConfig,
+    dash::{AudioSelection, DashConfig, DashDownloader, LiveStartPolicy, VideoSelection},
     flv::{FlvDownloader, FlvProtocolConfig},
     hls::{
         HlsDownloader,
@@ -386,6 +387,175 @@ impl ProtocolBuilder for HlsProtocolBuilder {
 }
 
 impl Default for HlsProtocolBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Builder for DASH protocol handlers
+pub struct DashProtocolBuilder {
+    config: DashConfig,
+}
+
+impl DashProtocolBuilder {
+    /// Create a new DASH protocol builder with default configuration
+    pub fn new() -> Self {
+        Self {
+            config: DashConfig::default(),
+        }
+    }
+
+    pub fn with_base_config(mut self, base_config: DownloaderConfig) -> Self {
+        self.config.base = base_config;
+        self
+    }
+
+    // --- Base DownloaderConfig methods ---
+
+    impl_base_downloader_config_methods!(config.base);
+
+    /// Set proxy configuration
+    pub fn proxy(mut self, proxy_config: ProxyConfig) -> Self {
+        self.config.base.proxy = Some(proxy_config);
+        self
+    }
+
+    /// Set whether to use system proxy settings
+    pub fn use_system_proxy(mut self, use_system_proxy: bool) -> Self {
+        self.config.base.use_system_proxy = use_system_proxy;
+        self
+    }
+
+    /// Set whether to accept invalid TLS certificates (use with caution)
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.config.base.danger_accept_invalid_certs = accept;
+        self
+    }
+
+    // --- Manifest ---
+
+    /// Set the timeout of one MPD request.
+    pub fn manifest_fetch_timeout(mut self, timeout: Duration) -> Self {
+        self.config.manifest.fetch_timeout = timeout;
+        self
+    }
+
+    /// Set the lower bound of the MPD refresh interval.
+    pub fn min_refresh_interval(mut self, interval: Duration) -> Self {
+        self.config.manifest.min_refresh_interval = interval;
+        self
+    }
+
+    /// Set how many consecutive MPD refresh failures are tolerated.
+    pub fn max_refresh_retries(mut self, retries: u32) -> Self {
+        self.config.manifest.max_refresh_retries = retries;
+        self
+    }
+
+    /// Set the delay after a failed MPD refresh.
+    pub fn refresh_retry_delay(mut self, delay: Duration) -> Self {
+        self.config.manifest.retry_delay = delay;
+        self
+    }
+
+    /// Set where recording of a live presentation starts.
+    pub fn live_start(mut self, policy: LiveStartPolicy) -> Self {
+        self.config.live_start = policy;
+        self
+    }
+
+    // --- Selection ---
+
+    /// Set the video Representation policy.
+    pub fn video_selection(mut self, policy: VideoSelection) -> Self {
+        self.config.selection.video = policy;
+        self
+    }
+
+    /// Set the audio Representation policy.
+    pub fn audio_selection(mut self, policy: AudioSelection) -> Self {
+        self.config.selection.audio = policy;
+        self
+    }
+
+    /// Prefer audio in this language (RFC 5646 tag).
+    pub fn audio_language(mut self, language: impl Into<String>) -> Self {
+        self.config.selection.audio_language = Some(language.into());
+        self
+    }
+
+    /// Record the video track (default: true).
+    pub fn include_video(mut self, include: bool) -> Self {
+        self.config.selection.include_video = include;
+        self
+    }
+
+    /// Record the audio track (default: true).
+    pub fn include_audio(mut self, include: bool) -> Self {
+        self.config.selection.include_audio = include;
+        self
+    }
+
+    // --- Segments ---
+
+    /// Set maximum concurrent segment downloads per track.
+    pub fn download_concurrency(mut self, concurrency: usize) -> Self {
+        self.config.scheduler.download_concurrency = concurrency;
+        self
+    }
+
+    /// Set timeout for downloading a single segment.
+    pub fn segment_download_timeout(mut self, timeout: Duration) -> Self {
+        self.config.fetcher.segment_download_timeout = timeout;
+        self
+    }
+
+    /// Set maximum number of retries for downloading a segment.
+    pub fn max_segment_retries(mut self, retries: u32) -> Self {
+        self.config.fetcher.max_segment_retries = retries;
+        self
+    }
+
+    // --- Muxing ---
+
+    /// Set how long a video segment waits for its audio.
+    pub fn max_audio_lag(mut self, lag: Duration) -> Self {
+        self.config.mux.max_audio_lag = lag;
+        self
+    }
+
+    /// Set the bytes the muxer may buffer across both tracks.
+    pub fn max_mux_buffered_bytes(mut self, bytes: usize) -> Self {
+        self.config.mux.max_buffered_bytes = bytes;
+        self
+    }
+
+    // --- General Builder Methods ---
+
+    /// Access the raw DASH configuration for more advanced customization.
+    pub fn with_config<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut DashConfig),
+    {
+        f(&mut self.config);
+        self
+    }
+
+    /// Get a copy of the current DASH configuration.
+    pub fn get_config(&self) -> DashConfig {
+        self.config.clone()
+    }
+}
+
+impl ProtocolBuilder for DashProtocolBuilder {
+    type Protocol = DashDownloader;
+
+    fn build(self) -> Result<Self::Protocol, DownloadError> {
+        DashDownloader::with_config(self.config)
+    }
+}
+
+impl Default for DashProtocolBuilder {
     fn default() -> Self {
         Self::new()
     }

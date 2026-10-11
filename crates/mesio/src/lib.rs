@@ -1,12 +1,12 @@
 //! # Mesio
 //!
 //! A library for downloading media content from various sources.
-//! Supports FLV, HLS, and other streaming formats with efficient
+//! Supports FLV, HLS, MPEG-DASH, and other streaming formats with efficient
 //! processing pipeline integration.
 //!
 //! ## Features
 //!
-//! - Multiple protocol support (HLS, FLV)
+//! - Multiple protocol support (HLS, MPEG-DASH, FLV)
 //! - Efficient download management with caching
 //! - Source selection with fallback capabilities
 //! - Protocol-neutral session and event API
@@ -42,7 +42,9 @@ pub use config::{DownloaderConfig, HttpVersionPreference};
 pub use error::DownloadError;
 
 // Re-export protocol builders
-pub use protocol_builder::{FlvProtocolBuilder, HlsProtocolBuilder, ProtocolBuilder};
+pub use protocol_builder::{
+    DashProtocolBuilder, FlvProtocolBuilder, HlsProtocolBuilder, ProtocolBuilder,
+};
 pub use source::{ContentSource, SourceManager, SourceSelectionStrategy};
 
 // Re-export downloader utilities
@@ -50,11 +52,14 @@ pub use downloader::create_client;
 
 // Re-export session/event API
 pub use session::{
-    DownloadEvent, DownloadEventStream, DownloadHandle, DownloadOptions, DownloadRequest,
-    DownloadSession, DownloadTerminal, DownloaderSession, EventSink, FlvReconnect,
+    DashRequestOptions, DownloadEvent, DownloadEventStream, DownloadHandle, DownloadOptions,
+    DownloadRequest, DownloadSession, DownloadTerminal, DownloaderSession, EventSink, FlvReconnect,
     FlvRequestOptions, HlsRequestOptions, MediaEngine, MesioConfig, MesioDownloader,
     ProtocolSelection, ProtocolType, ResourceId,
 };
+
+// Re-export the DASH engine entry points
+pub use dash::{DashConfig, DashDownloader, MediaTrack};
 
 // Re-export proxy utilities
 pub use proxy::{ProxyAuth, ProxyConfig, ProxyType};

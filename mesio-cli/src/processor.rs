@@ -40,6 +40,7 @@ pub async fn process_inputs(
     let downloader = MesioDownloader::new(MesioConfig {
         flv: config.flv_config.clone().unwrap_or_default(),
         hls: config.hls_config.clone().unwrap_or_default(),
+        dash: Default::default(),
         token: token.clone(),
     });
 
@@ -73,7 +74,9 @@ pub async fn process_inputs(
                     .instrument(input_span.clone())
                     .await?;
                 }
-                DownloaderSession::Hls(session) => {
+                // DASH output is fMP4 `HlsData`, processed and written like
+                // HLS.
+                DownloaderSession::Hls(session) | DownloaderSession::Dash(session) => {
                     hls::process_hls_stream(
                         input,
                         output_dir,
