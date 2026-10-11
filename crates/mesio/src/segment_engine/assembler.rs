@@ -1,13 +1,13 @@
 //! The sequence assembler: ordered stream events from one typed input stream.
 //!
 //! Consumes `AssemblerInput` (payloads, skips, terminal failures, notices,
-//! fatal errors, end) and emits `HlsStreamEvent` to the consumer channel — the
-//! single producer of consumer-facing events. Reorders media by MSN, gates
-//! fMP4 media behind init segments, applies gap policies, and keeps draining
-//! input even under reorder-buffer pressure (the next item may be the one
-//! that unblocks the buffer).
+//! fatal errors, end) and hands ordered [`AssembledItem`]s to its
+//! [`AssemblerSink`] — the single producer of consumer-facing events. Reorders
+//! media by MSN, gates fMP4 media behind init segments, applies gap policies,
+//! and keeps draining input even under reorder-buffer pressure (the next item
+//! may be the one that unblocks the buffer).
 //!
-//! Terminal semantics: an explicit `End` item (authoritative ENDLIST path)
+//! Terminal semantics: an explicit `End` item (authoritative-end path)
 //! drains the buffer in order and emits `StreamEnded`; `Fatal` drops the
 //! buffer and emits the error; a channel close without either is a cancel and
 //! emits nothing.
@@ -27,23 +27,63 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::hls::HlsDownloaderError;
+use crate::DownloadError;
 use crate::hls::PerformanceMetrics;
 use crate::hls::config::GapSkipStrategy;
-use crate::hls::events::{GapSkipReason, HlsStreamEvent};
+use crate::hls::events::GapSkipReason;
 
 use super::config::SegmentCoreConfig;
 use super::control::EngineNotice;
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
 use super::payload::SegmentPayload;
+
+// --- Output ---
+
+/// One ordered output item. Payloads arrive in sequence order, each preceded
+/// by its discontinuity and, for fMP4, the init it is decoded with.
+#[derive(Debug)]
+pub enum AssembledItem {
+    Payload(SegmentPayload),
+    /// The next payload starts a discontinuity.
+    Discontinuity,
+    /// The cursor advanced past sequence numbers `from_sequence` up to (not
+    /// including) `to_sequence` without emitting them.
+    GapSkipped {
+        from_sequence: u64,
+        to_sequence: u64,
+        reason: GapSkipReason,
+    },
+    /// VOD: a missing segment was skipped after the per-segment timeout.
+    SegmentTimeout {
+        sequence_number: u64,
+        waited_duration: Duration,
+    },
+    Notice(EngineNotice),
+    /// Authoritative end; nothing follows.
+    StreamEnded,
+}
+
+/// The sink's consumer is gone; every later send would fail too.
+#[derive(Debug)]
+pub struct SinkClosed;
+
+/// Receives the assembler's output. Called inline from the assembler task, so
+/// a sink converts and forwards without another channel hop; an `Err` item is
+/// the stream's terminal error.
+pub trait AssemblerSink: Send + 'static {
+    fn send(
+        &mut self,
+        item: Result<AssembledItem, DownloadError>,
+    ) -> impl Future<Output = Result<(), SinkClosed>> + Send;
+}
 
 // --- Dead ranges: MSNs that will never arrive ---
 
@@ -307,10 +347,10 @@ enum InitState {
     Failed,
 }
 
-pub struct SequenceAssembler {
+pub struct SequenceAssembler<S> {
     config: Arc<SegmentCoreConfig>,
     input_rx: mpsc::Receiver<AssemblerInput>,
-    event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
+    sink: S,
     reorder_buffer: BTreeMap<u64, BufferedPayload>,
     /// fMP4 init payloads that have arrived, kept out of `reorder_buffer`
     /// because an init is not part of the media sequence. A media segment
@@ -347,20 +387,22 @@ pub struct SequenceAssembler {
     cancel: CancellationToken,
 }
 
-impl SequenceAssembler {
+impl<S: AssemblerSink> SequenceAssembler<S> {
+    /// `initial_cursor` is the first sequence number the stream will emit;
+    /// anything below it is stale.
     pub fn new(
         config: Arc<SegmentCoreConfig>,
         input_rx: mpsc::Receiver<AssemblerInput>,
-        event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
+        sink: S,
         is_live_stream: bool,
-        initial_media_sequence: u64,
+        initial_cursor: u64,
         cancel: CancellationToken,
     ) -> Self {
         let max_retained_inits = config.output.max_pending_init_segments;
         Self {
             config,
             input_rx,
-            event_tx,
+            sink,
             reorder_buffer: BTreeMap::new(),
             inits: RetainedInits::new(max_retained_inits),
             active_init_key: None,
@@ -369,7 +411,7 @@ impl SequenceAssembler {
             failed_init_keys: BoundedKeySet::new(256),
             has_emitted_media_segment: false,
             is_live_stream,
-            expected_next_media_sequence: initial_media_sequence,
+            expected_next_media_sequence: initial_cursor,
             gap_state: None,
             dead: DeadRanges::default(),
             last_input_received_time: is_live_stream.then(Instant::now),
@@ -530,8 +572,8 @@ impl SequenceAssembler {
                             max_stall
                         );
                         if self
-                            .event_tx
-                            .send(Err(HlsDownloaderError::Timeout {
+                            .sink
+                            .send(Err(DownloadError::Timeout {
                                 reason: "Stalled: No input received for max duration.".to_string(),
                             }))
                             .await
@@ -580,17 +622,7 @@ impl SequenceAssembler {
                             }
                         }
                         Some(AssemblerInput::Notice(notice)) => {
-                            let event = match notice {
-                                EngineNotice::ManifestRefreshed {
-                                    sequence_base,
-                                    target_duration,
-                                } => HlsStreamEvent::PlaylistRefreshed {
-                                    media_sequence_base: sequence_base,
-                                    target_duration,
-                                },
-                                EngineNotice::End => HlsStreamEvent::EndlistEncountered,
-                            };
-                            if self.event_tx.send(Ok(event)).await.is_err() {
+                            if self.sink.send(Ok(AssembledItem::Notice(notice))).await.is_err() {
                                 return;
                             }
                         }
@@ -598,7 +630,7 @@ impl SequenceAssembler {
                             // Pipeline error: buffered payloads are dropped,
                             // the error is the stream's terminal item.
                             warn!(error = %crate::redact::redact_diagnostic(&err), "fatal pipeline error; dropping reorder buffer");
-                            if self.event_tx.send(Err(err)).await.is_err() {
+                            if self.sink.send(Err(err)).await.is_err() {
                                 debug!("consumer closed before receiving fatal pipeline error");
                             }
                             self.finish_summaries();
@@ -612,8 +644,8 @@ impl SequenceAssembler {
                             }
                             self.finish_summaries();
                             if self
-                                .event_tx
-                                .send(Ok(HlsStreamEvent::StreamEnded))
+                                .sink
+                                .send(Ok(AssembledItem::StreamEnded))
                                 .await
                                 .is_err()
                             {
@@ -734,8 +766,8 @@ impl SequenceAssembler {
                 if run_end == u64::MAX {
                     error!("dead range extends to u64::MAX; aborting stream");
                     if self
-                        .event_tx
-                        .send(Err(HlsDownloaderError::Playlist {
+                        .sink
+                        .send(Err(DownloadError::Playlist {
                             reason: "media sequence reached u64::MAX".to_string(),
                         }))
                         .await
@@ -753,8 +785,8 @@ impl SequenceAssembler {
                     .fetch_add(to - from, Ordering::Relaxed);
                 debug!(from, to, "advancing past upstream-skipped MSNs");
                 if self
-                    .event_tx
-                    .send(Ok(HlsStreamEvent::GapSkipped {
+                    .sink
+                    .send(Ok(AssembledItem::GapSkipped {
                         from_sequence: from,
                         to_sequence: to,
                         reason: GapSkipReason::Upstream,
@@ -875,8 +907,8 @@ impl SequenceAssembler {
                             "VOD segment timed out; skipping"
                         );
                         if self
-                            .event_tx
-                            .send(Ok(HlsStreamEvent::SegmentTimeout {
+                            .sink
+                            .send(Ok(AssembledItem::SegmentTimeout {
                                 sequence_number: gap_state.missing_sequence,
                                 waited_duration: elapsed,
                             }))
@@ -901,8 +933,8 @@ impl SequenceAssembler {
                     );
                     self.record_gap_skip(first_msn);
                     if self
-                        .event_tx
-                        .send(Ok(HlsStreamEvent::GapSkipped {
+                        .sink
+                        .send(Ok(AssembledItem::GapSkipped {
                             from_sequence: self.expected_next_media_sequence,
                             to_sequence: first_msn,
                             reason,
@@ -954,8 +986,8 @@ impl SequenceAssembler {
         self.metrics
             .total_segments_skipped
             .fetch_add(to.saturating_sub(from), Ordering::Relaxed);
-        self.event_tx
-            .send(Ok(HlsStreamEvent::GapSkipped {
+        self.sink
+            .send(Ok(AssembledItem::GapSkipped {
                 from_sequence: from,
                 to_sequence: to,
                 reason,
@@ -966,8 +998,8 @@ impl SequenceAssembler {
 
     async fn abort_u64_max_cursor(&mut self) -> Result<(), ()> {
         error!("media sequence reached u64::MAX; aborting stream");
-        self.event_tx
-            .send(Err(HlsDownloaderError::Playlist {
+        self.sink
+            .send(Err(DownloadError::Playlist {
                 reason: "media sequence reached u64::MAX".to_string(),
             }))
             .await
@@ -1008,8 +1040,8 @@ impl SequenceAssembler {
             debug!(msn, "emitting discontinuity event");
             self.gap_state = None;
             if self
-                .event_tx
-                .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
+                .sink
+                .send(Ok(AssembledItem::Discontinuity))
                 .await
                 .is_err()
             {
@@ -1025,8 +1057,8 @@ impl SequenceAssembler {
 
         let is_media = !payload.is_init();
         if self
-            .event_tx
-            .send(Ok(HlsStreamEvent::Data(Box::new(payload.into_hls_data()))))
+            .sink
+            .send(Ok(AssembledItem::Payload(payload)))
             .await
             .is_err()
         {
@@ -1074,8 +1106,8 @@ impl SequenceAssembler {
             && init_payload.discontinuity()
             && !discontinuity_already_emitted
             && self
-                .event_tx
-                .send(Ok(HlsStreamEvent::DiscontinuityTagEncountered {}))
+                .sink
+                .send(Ok(AssembledItem::Discontinuity))
                 .await
                 .is_err()
         {
@@ -1083,10 +1115,8 @@ impl SequenceAssembler {
         }
 
         if self
-            .event_tx
-            .send(Ok(HlsStreamEvent::Data(Box::new(
-                init_payload.into_hls_data(),
-            ))))
+            .sink
+            .send(Ok(AssembledItem::Payload(init_payload)))
             .await
             .is_err()
         {
@@ -1194,7 +1224,10 @@ impl SequenceAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hls::HlsDownloaderError;
     use crate::hls::config::HlsConfig;
+    use crate::hls::engine::output::HlsEventSink;
+    use crate::hls::events::HlsStreamEvent;
     use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentMeta, SegmentSource};
     use crate::segment_engine::identity::SegmentKey;
     use bytes::Bytes;
@@ -1299,7 +1332,7 @@ mod tests {
         let assembler = SequenceAssembler::new(
             Arc::new(SegmentCoreConfig::from(&config)),
             input_rx,
-            event_tx,
+            HlsEventSink::new(event_tx),
             live,
             initial_msn,
             cancel.clone(),

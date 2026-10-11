@@ -16,7 +16,7 @@
 //! `crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md` for the full design.
 
 mod decrypt;
-mod output;
+pub(crate) mod output;
 pub mod planner;
 pub mod watcher;
 
@@ -49,6 +49,7 @@ use crypto::{CryptoBackend, CryptoExecutor, KeyCache};
 use decrypt::HlsDecryptor;
 use fetch::FetchContext;
 use identity::{SegmentIdentityPolicy, StripQueryIdentity};
+use output::HlsEventSink;
 use planner::PlannerContext;
 pub use reactor::Terminal;
 use reactor::{ReactorConfig, run_reactor};
@@ -217,7 +218,7 @@ pub async fn start_with_events(
     let mut assembler = SequenceAssembler::new(
         core_config,
         assembler_rx,
-        client_event_tx,
+        HlsEventSink::new(client_event_tx),
         is_live,
         initial_media_sequence,
         cancel.clone(),
