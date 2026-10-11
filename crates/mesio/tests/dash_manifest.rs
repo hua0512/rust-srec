@@ -6,8 +6,8 @@ use std::time::Duration;
 use chrono::{DateTime, TimeZone, Utc};
 use mesio_engine::DownloadError;
 use mesio_engine::dash::manifest::{
-    AvailabilityTimeOffset, ByteRange, ContentType, Manifest, ManifestError, PresentationType,
-    Representation, UnsupportedFeature, UtcTiming,
+    AddressingKind, AvailabilityTimeOffset, ByteRange, ContentType, Manifest, ManifestError,
+    PresentationType, Representation, UnsupportedFeature, UtcTiming,
 };
 use url::Url;
 
@@ -390,4 +390,168 @@ fn malformed_durations_and_dates_are_manifest_errors() {
         );
         assert!(!error.is_non_recoverable_source_error());
     }
+}
+
+fn dynamic(attributes: &str, set: &str) -> Manifest {
+    let xml = format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" {attributes}>
+  <Period id="0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">{set}<Representation id="v" bandwidth="1"/></AdaptationSet>
+  </Period>
+</MPD>"#
+    );
+    parse(&xml, "https://live.example.com/manifest.mpd")
+}
+
+#[test]
+fn addressing_kind_and_identity_are_exposed() {
+    let manifest = parse(
+        &fixture("timeline-time.mpd"),
+        "https://live.example.com/channel/manifest.mpd",
+    );
+    let video = representation(&manifest, 0, "1080p");
+    assert_eq!(video.addressing_kind(), AddressingKind::Time);
+    assert!(video.uses_segment_timeline());
+
+    let manifest = parse(&fixture("livesim-number.mpd"), "https://e.com/m.mpd");
+    let video = representation(&manifest, 0, "V300");
+    assert_eq!(video.addressing_kind(), AddressingKind::Number);
+    assert!(!video.uses_segment_timeline());
+
+    let manifest = parse(&fixture("segment-list.mpd"), "https://e.com/m.mpd");
+    assert_eq!(
+        representation(&manifest, 0, "files").addressing_kind(),
+        AddressingKind::List
+    );
+}
+
+#[test]
+fn overlapping_open_repeat_never_returns_unavailable_segments() {
+    let manifest = dynamic(
+        "",
+        r#"<SegmentTemplate media="$Time$.m4s"><SegmentTimeline><S t="0" d="10" r="-1"/><S t="35" d="1" r="-1"/></SegmentTimeline></SegmentTemplate>"#,
+    );
+    let video = representation(&manifest, 0, "v");
+    for x in 0..=60 {
+        let window = video.segments(at(NEW_YEAR_2024 + x, 0)).unwrap();
+        let mut previous_end = 0;
+        for segment in &window {
+            let segment = segment.unwrap();
+            let end = segment.time + segment.duration;
+            assert!(end <= x as u64, "x={x}: segment ending at {end} returned");
+            assert!(end > previous_end, "x={x}: ends must increase");
+            previous_end = end;
+        }
+    }
+    let window = video.segments(at(NEW_YEAR_2024 + 37, 0)).unwrap();
+    let ends: Vec<_> = window
+        .iter()
+        .map(|segment| {
+            let segment = segment.unwrap();
+            segment.time + segment.duration
+        })
+        .collect();
+    assert_eq!(ends, [10, 20, 30, 35, 36, 37]);
+}
+
+#[test]
+fn infinite_offset_is_bounded_by_finite_addressing() {
+    let now = at(NEW_YEAR_2024, 0);
+    let timeline = dynamic(
+        "",
+        r#"<SegmentTemplate media="$Time$" availabilityTimeOffset="INF"><SegmentTimeline><S t="0" d="2" r="2"/></SegmentTimeline></SegmentTemplate>"#,
+    );
+    assert_eq!(
+        representation(&timeline, 0, "v")
+            .segments(now)
+            .unwrap()
+            .len(),
+        3
+    );
+    let end_number = dynamic(
+        "",
+        r#"<SegmentTemplate media="$Number$" duration="2" endNumber="4" availabilityTimeOffset="INF"/>"#,
+    );
+    assert_eq!(
+        representation(&end_number, 0, "v")
+            .segments(now)
+            .unwrap()
+            .numbers(),
+        1..5
+    );
+    let list = dynamic(
+        "",
+        r#"<SegmentList duration="2" availabilityTimeOffset="INF"><SegmentURL media="a"/><SegmentURL media="b"/></SegmentList>"#,
+    );
+    assert_eq!(
+        representation(&list, 0, "v").segments(now).unwrap().len(),
+        2
+    );
+    let open = dynamic(
+        "",
+        r#"<SegmentTemplate media="$Number$" duration="2" availabilityTimeOffset="INF"/>"#,
+    );
+    assert!(matches!(
+        representation(&open, 0, "v").segments(now),
+        Err(ManifestError::Unsupported(
+            UnsupportedFeature::UnboundedAvailability
+        ))
+    ));
+}
+
+#[test]
+fn segment_numbers_beyond_u64_are_typed_errors() {
+    let manifest = dynamic(
+        "",
+        r#"<SegmentTemplate media="$Number$" duration="2" startNumber="18446744073709551610"/>"#,
+    );
+    let video = representation(&manifest, 0, "v");
+    let window = video.segments(at(NEW_YEAR_2024 + 8, 0)).unwrap();
+    let numbers = window.numbers();
+    assert_eq!(numbers.end - numbers.start, window.len());
+    assert!(matches!(
+        video.segments(at(NEW_YEAR_2024 + 20, 0)),
+        Err(ManifestError::Overflow { .. })
+    ));
+}
+
+#[test]
+fn availability_end_time_ends_the_presentation() {
+    let manifest = dynamic(
+        r#"availabilityEndTime="2024-01-01T00:01:00Z""#,
+        r#"<SegmentTemplate media="$Number$" duration="2"/>"#,
+    );
+    assert_eq!(
+        manifest.availability_end_time,
+        Some(Utc.timestamp_opt(NEW_YEAR_2024 + 60, 0).unwrap())
+    );
+    let video = representation(&manifest, 0, "v");
+    assert_eq!(video.segments(at(NEW_YEAR_2024 + 60, 0)).unwrap().len(), 30);
+    assert!(
+        video
+            .segments(at(NEW_YEAR_2024 + 60, 1))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn sub_nanosecond_times_round_half_up() {
+    // availabilityStartTime rounds up to 1 ns; the first 2 s segment is then
+    // available from 2 s + 1 ns.
+    let xml = r#"<MPD type="dynamic" availabilityStartTime="2024-01-01T00:00:00.0000000005Z">
+  <Period start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <SegmentTemplate media="$Number$" duration="2"/><Representation id="v" bandwidth="1"/>
+  </AdaptationSet></Period></MPD>"#;
+    let manifest = parse(xml, "https://e.com/m.mpd");
+    let video = representation(&manifest, 0, "v");
+    assert!(video.segments(at(NEW_YEAR_2024 + 2, 0)).unwrap().is_empty());
+    assert_eq!(video.segments(at(NEW_YEAR_2024 + 2, 1)).unwrap().len(), 1);
+    // A Period start of 0.0000000004 s rounds down to 0.
+    let xml = xml
+        .replace(".0000000005Z", "Z")
+        .replace(r#"start="PT0S""#, r#"start="PT0.0000000004S""#);
+    let manifest = parse(&xml, "https://e.com/m.mpd");
+    assert_eq!(manifest.periods[0].start, Duration::ZERO);
 }

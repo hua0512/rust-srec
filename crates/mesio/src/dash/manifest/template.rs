@@ -1,10 +1,14 @@
 //! `SegmentTemplate` URL templates (ISO/IEC 23009-1 §5.3.9.4.4).
 
 use super::error::{ManifestError, UnsupportedFeature};
+use super::limits::MAX_URL_BYTES;
 
 /// Widths above this are rejected rather than allocating arbitrarily long
 /// padding; a `u64` has at most 20 digits.
 const MAX_WIDTH: usize = 64;
+
+/// Decimal digits of `u64::MAX`.
+const MAX_U64_DIGITS: usize = 20;
 
 /// Which template attribute is compiled; they allow different identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +40,8 @@ enum Part {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Template {
     parts: Vec<Part>,
+    /// Upper bound on the length of an expansion.
+    max_len: usize,
 }
 
 impl Template {
@@ -55,11 +61,26 @@ impl Template {
             reason: reason.to_owned(),
         };
 
+        // Every substitution is accounted for before it is written, so a long
+        // `$RepresentationID$` repeated many times fails before allocating.
+        let mut max_len = 0usize;
+        let mut reserve = |additional: usize| -> Result<(), ManifestError> {
+            max_len = max_len
+                .checked_add(additional)
+                .filter(|&len| len <= MAX_URL_BYTES)
+                .ok_or(ManifestError::LimitExceeded {
+                    what: "expanded URL template",
+                    limit: MAX_URL_BYTES,
+                })?;
+            Ok(())
+        };
+
         let mut parts = Vec::new();
         let mut literal = String::new();
         let mut rest = template;
         let (mut has_number, mut has_time) = (false, false);
         while let Some(start) = rest.find('$') {
+            reserve(start)?;
             literal.push_str(&rest[..start]);
             let after = &rest[start + 1..];
             let end = after.find('$').ok_or_else(|| invalid("unterminated `$`"))?;
@@ -67,6 +88,7 @@ impl Template {
             rest = &after[end + 1..];
 
             if token.is_empty() {
+                reserve(1)?;
                 literal.push('$');
                 continue;
             }
@@ -83,18 +105,22 @@ impl Template {
                     if format.is_some() {
                         return Err(invalid("$RepresentationID$ takes no format tag"));
                     }
+                    reserve(representation_id.len())?;
                     literal.push_str(representation_id);
                     None
                 }
                 "Bandwidth" => {
+                    reserve(width.max(MAX_U64_DIGITS))?;
                     push_padded(&mut literal, bandwidth, width);
                     None
                 }
                 "Number" => {
+                    reserve(width.max(MAX_U64_DIGITS))?;
                     has_number = true;
                     Some(Part::Number { width })
                 }
                 "Time" => {
+                    reserve(width.max(MAX_U64_DIGITS))?;
                     has_time = true;
                     Some(Part::Time { width })
                 }
@@ -113,6 +139,7 @@ impl Template {
                 parts.push(part);
             }
         }
+        reserve(rest.len())?;
         literal.push_str(rest);
         if !literal.is_empty() {
             parts.push(Part::Literal(literal));
@@ -125,14 +152,21 @@ impl Template {
                 _ => {}
             }
         }
-        Ok(Self { parts })
+        Ok(Self { parts, max_len })
+    }
+
+    /// Whether segments are addressed by `$Time$` rather than `$Number$`.
+    pub(crate) fn uses_time(&self) -> bool {
+        self.parts
+            .iter()
+            .any(|part| matches!(part, Part::Time { .. }))
     }
 
     /// Substitutes the segment number and media time (`$Time$` is the raw
     /// media time in timescale units; `@presentationTimeOffset` is not
     /// subtracted).
     pub(crate) fn expand(&self, number: u64, time: u64) -> String {
-        let mut out = String::new();
+        let mut out = String::with_capacity(self.max_len);
         for part in &self.parts {
             match *part {
                 Part::Literal(ref text) => out.push_str(text),
@@ -250,5 +284,26 @@ mod tests {
                 UnsupportedFeature::TemplateIdentifier(_)
             ))
         ));
+    }
+
+    #[test]
+    fn expansion_length_is_bounded_before_allocating() {
+        // 4 KiB identifier × 1 000 occurrences would expand to 4 MB.
+        let id = "x".repeat(4_096);
+        let template = format!("{}$Number$", "$RepresentationID$".repeat(1_000));
+        assert!(matches!(
+            Template::compile(&template, TemplateKind::Media, &id, 1),
+            Err(ManifestError::LimitExceeded { .. })
+        ));
+        let wide = "$Number%064d$".repeat(1_000);
+        assert!(matches!(
+            Template::compile(&wide, TemplateKind::Media, "v", 1),
+            Err(ManifestError::LimitExceeded { .. })
+        ));
+        let template =
+            Template::compile("$RepresentationID$/$Number$", TemplateKind::Media, &id, 1).unwrap();
+        assert!(template.expand(u64::MAX, 0).len() <= template.max_len);
+        assert!(!template.uses_time());
+        assert!(media("$Time$").unwrap().uses_time());
     }
 }

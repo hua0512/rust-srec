@@ -21,15 +21,17 @@
 //!   are inclusive. Without `B` the window starts at the Period start.
 //! - Segments are clamped to the Period: a segment must end after the Period
 //!   start and start before the Period end.
+//! - After `MPD@availabilityEndTime` no segment is available.
 
 use std::ops::Range;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use url::Url;
 
 use super::error::{ManifestError, UnsupportedFeature};
-use super::parse::RawS;
+use super::parse::{RawS, RawSegmentUrl};
 use super::resolve::PresentationType;
 use super::template::Template;
 use super::xs;
@@ -71,7 +73,28 @@ pub struct InitSegment {
     pub byte_range: Option<ByteRange>,
 }
 
+/// How a Representation's segments are addressed.
+///
+/// This determines a segment's stable identity across MPD updates: with a
+/// `SegmentTimeline` (see [`super::Representation::uses_segment_timeline`]),
+/// [`Segment::time`]; otherwise [`Segment::number`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressingKind {
+    /// `SegmentTemplate@media` with `$Number$`.
+    Number,
+    /// `SegmentTemplate@media` with `$Time$`.
+    Time,
+    /// `SegmentList`.
+    List,
+}
+
 /// A media segment.
+///
+/// Identity across MPD updates: for `SegmentTimeline` addressing it is
+/// [`Self::time`], because numbers are positions in the listed timeline and
+/// shift when expired `S` entries are removed; for `@duration` addressing
+/// (`$Number$` templates and lists) it is [`Self::number`], from which the
+/// time is derived.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     /// Segment number (`$Number$`): `startNumber` + position in the
@@ -80,7 +103,8 @@ pub struct Segment {
     /// Earliest presentation time in media timescale units (`$Time$`); the
     /// presentationTimeOffset is not subtracted.
     pub time: u64,
-    /// Duration in media timescale units.
+    /// Duration in media timescale units. The last repetition of an `S@r=-1`
+    /// entry that would overlap the next `S@t` is shortened to end there.
     pub duration: u64,
     pub timescale: u64,
     /// Start on the MPD timeline in seconds (relative to
@@ -116,8 +140,16 @@ pub(crate) struct Run {
 /// Where segment URLs come from.
 #[derive(Debug, Clone)]
 pub(crate) enum SegmentUrls {
-    Template { media: Template, base: Url },
-    List(Vec<InitSegment>),
+    Template {
+        media: Template,
+        base: Url,
+    },
+    /// `SegmentURL`s are shared with every Representation inheriting the
+    /// list and resolved against `base` when a segment is produced.
+    List {
+        urls: Arc<[RawSegmentUrl]>,
+        base: Url,
+    },
 }
 
 /// Resolved segment addressing of a Representation.
@@ -127,7 +159,10 @@ pub(crate) struct Addressing {
     pub presentation_time_offset: u64,
     pub start_number: u64,
     pub end_number: Option<u64>,
-    pub runs: Vec<Run>,
+    /// Whether the runs come from a `SegmentTimeline` (else `@duration`).
+    pub has_timeline: bool,
+    /// Shared by every Representation inheriting the same timeline.
+    pub runs: Arc<[Run]>,
     pub urls: SegmentUrls,
 }
 
@@ -142,21 +177,37 @@ pub(crate) struct PeriodTiming {
     /// Period duration in nanoseconds; `None` while open.
     pub period_duration: Option<i128>,
     pub time_shift_buffer_depth: Option<i128>,
+    /// `MPD@availabilityEndTime` in nanoseconds since the Unix epoch.
+    pub availability_end: Option<i128>,
 }
 
 impl Addressing {
     /// Builds the runs of a `SegmentTimeline` (ISO/IEC 23009-1 §5.3.9.6).
     ///
     /// `S@t` omitted takes the previous segment's end, or 0 for the first `S`.
-    /// `S@r=-1` repeats until the next `S@t` (rounding up, as the reference
-    /// players do) or, on the last `S`, until the Period end or the
-    /// availability window, which are only known at evaluation time. Each run
-    /// is stored arithmetically; repetitions are never expanded.
+    /// `S@r=-1` repeats until the next `S@t` or, on the last `S`, until the
+    /// Period end or the availability window, which are only known at
+    /// evaluation time. Before a next `S@t`, the repetition count rounds up as
+    /// the reference players do, and a last repetition that would overlap the
+    /// next `S@t` is shortened to end there, so segment ends stay increasing.
+    /// Each run is stored arithmetically; repetitions are never expanded.
     pub(crate) fn timeline_runs(entries: &[RawS]) -> Result<Vec<Run>, ManifestError> {
         let overflow = || ManifestError::overflow("SegmentTimeline");
         let mut runs = Vec::with_capacity(entries.len());
         let mut previous_end: Option<u64> = None;
         let mut first_index: u64 = 0;
+        let mut push = |runs: &mut Vec<Run>, start: u64, duration: u64, count: Option<u64>| {
+            runs.push(Run {
+                start,
+                duration,
+                count,
+                first_index,
+            });
+            if let Some(count) = count {
+                first_index = first_index.checked_add(count).ok_or_else(overflow)?;
+            }
+            Ok::<(), ManifestError>(())
+        };
         for (position, entry) in entries.iter().enumerate() {
             let start = match (entry.t, previous_end) {
                 (Some(t), Some(end)) if t < end => {
@@ -167,52 +218,39 @@ impl Addressing {
                 (Some(t), _) => t,
                 (None, end) => end.unwrap_or(0),
             };
-            let count = if entry.r >= 0 {
+            if entry.r >= 0 {
                 let repeats = u64::try_from(entry.r).map_err(|_| overflow())?;
-                Some(repeats.checked_add(1).ok_or_else(overflow)?)
-            } else {
-                match entries.get(position + 1) {
-                    None => None,
-                    Some(next) => {
-                        let next_t = next.t.ok_or_else(|| {
-                            ManifestError::timeline(format!(
-                                "S[{position}]@r=-1 must be last or followed by an S with @t"
-                            ))
-                        })?;
-                        if next_t < start {
-                            return Err(ManifestError::timeline(format!(
-                                "S[{}]@t={next_t} is before S[{position}]@t={start}",
-                                position + 1
-                            )));
-                        }
-                        Some((next_t - start).div_ceil(entry.d))
-                    }
-                }
-            };
-            runs.push(Run {
-                start,
-                duration: entry.d,
-                count,
-                first_index,
-            });
-            match count {
-                Some(count) => {
-                    let length = count.checked_mul(entry.d).ok_or_else(overflow)?;
-                    let end = start.checked_add(length).ok_or_else(overflow)?;
-                    // An `r=-1` run ends where the next `S@t` begins even if its
-                    // last repetition overlaps it.
-                    previous_end = Some(if entry.r < 0 {
-                        entries
-                            .get(position + 1)
-                            .and_then(|next| next.t)
-                            .unwrap_or(end)
-                    } else {
-                        end
-                    });
-                    first_index = first_index.checked_add(count).ok_or_else(overflow)?;
-                }
-                None => previous_end = None,
+                let count = repeats.checked_add(1).ok_or_else(overflow)?;
+                let length = count.checked_mul(entry.d).ok_or_else(overflow)?;
+                previous_end = Some(start.checked_add(length).ok_or_else(overflow)?);
+                push(&mut runs, start, entry.d, Some(count))?;
+                continue;
             }
+            let Some(next) = entries.get(position + 1) else {
+                push(&mut runs, start, entry.d, None)?;
+                previous_end = None;
+                continue;
+            };
+            let next_t = next.t.ok_or_else(|| {
+                ManifestError::timeline(format!(
+                    "S[{position}]@r=-1 must be last or followed by an S with @t"
+                ))
+            })?;
+            let span = next_t.checked_sub(start).ok_or_else(|| {
+                ManifestError::timeline(format!(
+                    "S[{}]@t={next_t} is before S[{position}]@t={start}",
+                    position + 1
+                ))
+            })?;
+            let full = span / entry.d;
+            let remainder = span % entry.d;
+            if full > 0 {
+                push(&mut runs, start, entry.d, Some(full))?;
+            }
+            if remainder > 0 {
+                push(&mut runs, next_t - remainder, remainder, Some(1))?;
+            }
+            previous_end = Some(next_t);
         }
         Ok(runs)
     }
@@ -228,6 +266,30 @@ impl Addressing {
         let overflow = || ManifestError::overflow("segment availability");
         let timescale = i128::from(self.timescale);
         let pto = i128::from(self.presentation_time_offset);
+
+        if let Some(end) = timing.availability_end
+            && xs::instant_nanos(now) > end
+        {
+            return Ok(0..0);
+        }
+        if self
+            .end_number
+            .is_some_and(|end_number| end_number < self.start_number)
+        {
+            return Err(ManifestError::inconsistent(
+                "@endNumber is below @startNumber",
+            ));
+        }
+        // Positions available at all: up to `@endNumber`, and one per
+        // `SegmentURL`. `@endNumber` is the number of the last segment
+        // (inclusive); `u64::MAX − 0 + 1` overflows only when nothing is capped.
+        let mut cap = self
+            .end_number
+            .and_then(|end_number| (end_number - self.start_number).checked_add(1));
+        if let SegmentUrls::List { urls, .. } = &self.urls {
+            let len = u64::try_from(urls.len()).map_err(|_| overflow())?;
+            cap = Some(cap.map_or(len, |cap| cap.min(len)));
+        }
 
         // Bounds in "scaled" units (nanoseconds × timescale) relative to the
         // Period start, so that a media time m compares as (m − PTO) · 1e9.
@@ -269,7 +331,8 @@ impl Addressing {
                 (upper, lower)
             }
         };
-        if upper.is_none() && period_end.is_none() {
+        let finite_runs = self.runs.iter().all(|run| run.count.is_some());
+        if upper.is_none() && period_end.is_none() && cap.is_none() && !finite_runs {
             return Err(match timing.presentation_type {
                 PresentationType::Static => ManifestError::inconsistent(
                     "static presentation whose last Period has no duration",
@@ -280,7 +343,7 @@ impl Addressing {
 
         let mut first: Option<u64> = None;
         let mut end: u64 = 0;
-        for run in &self.runs {
+        for run in self.runs.iter() {
             let duration = i128::from(run.duration);
             let step = duration.checked_mul(NANOS_PER_SEC).ok_or_else(overflow)?;
             // Scaled offset of the run's first segment start from the Period start.
@@ -294,6 +357,9 @@ impl Addressing {
                 Some(count) => i128::from(count) - 1,
                 None => i128::MAX,
             };
+            if let Some(cap) = cap {
+                high = high.min(i128::from(cap) - i128::from(run.first_index) - 1);
+            }
             // Starts before the Period end: origin + i·step < end.
             if let Some(period_end) = period_end {
                 let room = period_end.checked_sub(origin).ok_or_else(overflow)?;
@@ -324,22 +390,29 @@ impl Addressing {
             end = end.max(run_end);
         }
 
-        let Some(mut first) = first else {
+        let Some(first) = first else {
             return Ok(0..0);
         };
-        if let Some(end_number) = self.end_number {
-            // `@endNumber` is the number of the last segment (inclusive).
-            let limit = end_number
-                .checked_sub(self.start_number)
-                .and_then(|last| last.checked_add(1))
-                .unwrap_or(0);
-            end = end.min(limit);
-        }
-        if let SegmentUrls::List(urls) = &self.urls {
-            end = end.min(u64::try_from(urls.len()).map_err(|_| overflow())?);
-        }
-        first = first.min(end);
         Ok(first..end)
+    }
+
+    /// The window available at `now`, with its segment numbers validated.
+    pub(crate) fn segments(
+        &self,
+        timing: &PeriodTiming,
+        offset: AvailabilityTimeOffset,
+        now: DateTime<Utc>,
+    ) -> Result<SegmentWindow<'_>, ManifestError> {
+        let positions = self.window(timing, offset, now)?;
+        SegmentWindow::new(self, timing.period_start, positions)
+    }
+
+    pub(crate) fn kind(&self) -> AddressingKind {
+        match &self.urls {
+            SegmentUrls::Template { media, .. } if media.uses_time() => AddressingKind::Time,
+            SegmentUrls::Template { .. } => AddressingKind::Number,
+            SegmentUrls::List { .. } => AddressingKind::List,
+        }
     }
 
     /// The segment at sequence position `index`, which must be covered by a
@@ -370,12 +443,23 @@ impl Addressing {
                 })?;
                 (url, None)
             }
-            SegmentUrls::List(urls) => {
+            SegmentUrls::List { urls, base } => {
                 let entry = usize::try_from(index)
                     .ok()
                     .and_then(|index| urls.get(index))
                     .ok_or_else(overflow)?;
-                (entry.url.clone(), entry.byte_range)
+                // Without `@media` the BaseURL itself is the resource.
+                let url = match &entry.media {
+                    Some(media) => {
+                        base.join(media)
+                            .map_err(|source| ManifestError::InvalidUrl {
+                                element: "SegmentURL@media",
+                                source,
+                            })?
+                    }
+                    None => base.clone(),
+                };
+                (url, entry.media_range)
             }
         };
         let offset_ticks = i128::from(time) - i128::from(self.presentation_time_offset);
@@ -412,19 +496,29 @@ pub struct SegmentWindow<'a> {
     addressing: &'a Addressing,
     period_start: i128,
     positions: Range<u64>,
+    numbers: Range<u64>,
 }
 
 impl<'a> SegmentWindow<'a> {
+    /// Fails when a segment number in the window would exceed `u64`.
     pub(crate) fn new(
         addressing: &'a Addressing,
         period_start: i128,
         positions: Range<u64>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ManifestError> {
+        let number = |position: u64| {
+            addressing
+                .start_number
+                .checked_add(position)
+                .ok_or(ManifestError::overflow("segment number"))
+        };
+        let numbers = number(positions.start)?..number(positions.end)?;
+        Ok(Self {
             addressing,
             period_start,
             positions,
-        }
+            numbers,
+        })
     }
 
     pub fn len(&self) -> u64 {
@@ -435,10 +529,10 @@ impl<'a> SegmentWindow<'a> {
         self.positions.is_empty()
     }
 
-    /// Segment numbers in the window (`$Number$` values), half-open.
+    /// Segment numbers in the window (`$Number$` values), half-open; its
+    /// length equals [`Self::len`].
     pub fn numbers(&self) -> Range<u64> {
-        let start = self.addressing.start_number;
-        start.saturating_add(self.positions.start)..start.saturating_add(self.positions.end)
+        self.numbers.clone()
     }
 
     /// The `offset`-th segment of the window (0 is the oldest).
@@ -459,8 +553,9 @@ impl<'a> SegmentWindow<'a> {
             .and_then(|offset| self.get(offset))
     }
 
-    /// Iterates from the oldest segment. `nth`, `skip` and `rev` are O(1) per
-    /// step, so the newest segments of a long window are cheap to reach.
+    /// Iterates from the oldest segment. `nth`, `nth_back`, `last`, `skip` and
+    /// `rev` are O(1) per step, so the newest segments of a long window are
+    /// cheap to reach.
     pub fn iter(&self) -> SegmentIter<'a> {
         SegmentIter {
             addressing: self.addressing,
@@ -503,11 +598,25 @@ impl Iterator for SegmentIter<'_> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.positions.size_hint()
     }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    fn count(self) -> usize {
+        // Saturates only where `usize` is narrower than `u64`.
+        usize::try_from(self.positions.end - self.positions.start).unwrap_or(usize::MAX)
+    }
 }
 
 impl DoubleEndedIterator for SegmentIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let index = self.positions.next_back()?;
+        Some(self.addressing.segment(index, self.period_start))
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        let index = self.positions.nth_back(n)?;
         Some(self.addressing.segment(index, self.period_start))
     }
 }
@@ -537,7 +646,8 @@ mod tests {
             presentation_time_offset: pto,
             start_number: 1,
             end_number: None,
-            runs,
+            has_timeline: false,
+            runs: runs.into(),
             urls: SegmentUrls::Template {
                 media: Template::compile(media, TemplateKind::Media, "v", 1).unwrap(),
                 base: Url::parse("https://cdn.example.com/live/").unwrap(),
@@ -566,6 +676,7 @@ mod tests {
             period_start,
             period_duration: None,
             time_shift_buffer_depth: depth,
+            availability_end: None,
         }
     }
 
@@ -633,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_time_shift_buffer_keeps_the_live_edge_segment() {
+    fn zero_time_shift_buffer_retains_the_live_edge_segment_only_at_exact_boundaries() {
         let addressing = grid(2, 1, 0);
         let window = addressing
             .window(&dynamic(0, Some(0)), finite(0), at(21, 0))
@@ -689,6 +800,7 @@ mod tests {
             period_start: 0,
             period_duration: Some(9 * SEC),
             time_shift_buffer_depth: None,
+            availability_end: None,
         };
         let window = addressing.window(&timing, finite(0), at(0, 0)).unwrap();
         assert_eq!(window, 0..5);
@@ -736,13 +848,28 @@ mod tests {
     #[test]
     fn timeline_r_minus_one_is_bounded_by_next_t() {
         let runs = Addressing::timeline_runs(&[s(Some(0), 10, -1), s(Some(35), 5, 0)]).unwrap();
+        // Rounds up like the reference players (4 repetitions), with the
+        // fourth cut to end at the next `S@t`.
+        let layout: Vec<_> = runs
+            .iter()
+            .map(|run| (run.start, run.duration, run.count, run.first_index))
+            .collect();
         assert_eq!(
-            runs[0].count,
-            Some(4),
-            "rounds up like the reference players"
+            layout,
+            [
+                (0, 10, Some(3), 0),
+                (30, 5, Some(1), 3),
+                (35, 5, Some(1), 4)
+            ]
         );
-        assert_eq!(runs[1].first_index, 4);
-        assert_eq!(runs[1].start, 35);
+        // An exact multiple needs no shortened repetition.
+        let runs = Addressing::timeline_runs(&[s(Some(0), 10, -1), s(Some(40), 5, 0)]).unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].count, Some(4));
+        // A next `S@t` equal to the start leaves no repetition.
+        let runs = Addressing::timeline_runs(&[s(Some(0), 10, -1), s(Some(0), 5, 0)]).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].first_index, 0);
     }
 
     #[test]
@@ -781,7 +908,7 @@ mod tests {
         let now = at(ten_years as i64, 0);
         let window = addressing.window(&timing, finite(0), now).unwrap();
         assert_eq!(window, 0..ten_years);
-        let segment_window = SegmentWindow::new(&addressing, 0, window);
+        let segment_window = SegmentWindow::new(&addressing, 0, window).unwrap();
         let newest = segment_window.last().unwrap().unwrap();
         assert_eq!(newest.time, (ten_years - 1) * 1_000_000);
         let tail: Vec<_> = segment_window
@@ -805,6 +932,7 @@ mod tests {
             period_start: 30 * SEC,
             period_duration: Some(3 * SEC),
             time_shift_buffer_depth: None,
+            availability_end: None,
         };
         // Media 700..1300; segments ending at or before 900 are outside the
         // Period, and the Period ends at media 1200.
@@ -840,10 +968,30 @@ mod tests {
             .unwrap();
         assert_eq!(window, 0..3);
         addressing.end_number = Some(5);
+        assert!(matches!(
+            addressing.window(&dynamic(0, None), finite(0), at(100, 0)),
+            Err(ManifestError::Inconsistent { .. })
+        ));
+        // `@endNumber` = `u64::MAX` with `@startNumber` = 0 caps nothing.
+        addressing.start_number = 0;
+        addressing.end_number = Some(u64::MAX);
         let window = addressing
             .window(&dynamic(0, None), finite(0), at(100, 0))
             .unwrap();
-        assert!(window.is_empty());
+        assert_eq!(window, 0..50);
+    }
+
+    #[test]
+    fn numbers_past_u64_are_typed_errors() {
+        let mut addressing = grid(2, 1, 0);
+        addressing.start_number = u64::MAX - 10;
+        let timing = dynamic(0, None);
+        let window = addressing.segments(&timing, finite(0), at(20, 0)).unwrap();
+        assert_eq!(window.numbers().end - window.numbers().start, window.len());
+        assert!(matches!(
+            addressing.segments(&timing, finite(0), at(30, 0)),
+            Err(ManifestError::Overflow { .. })
+        ));
     }
 
     #[test]
@@ -871,7 +1019,7 @@ mod tests {
     fn window_accessors() {
         let mut addressing = grid(2, 1, 0);
         addressing.start_number = 100;
-        let window = SegmentWindow::new(&addressing, 0, 3..6);
+        let window = SegmentWindow::new(&addressing, 0, 3..6).unwrap();
         assert_eq!(window.len(), 3);
         assert_eq!(window.numbers(), 103..106);
         assert_eq!(window.first().unwrap().unwrap().number, 103);
@@ -882,5 +1030,127 @@ mod tests {
         let segment = window.get(1).unwrap().unwrap();
         assert_eq!(segment.url.as_str(), "https://cdn.example.com/live/104.m4s");
         assert_eq!(segment.duration_secs(), 2.0);
+    }
+
+    #[test]
+    fn iterator_reaches_the_back_in_constant_time() {
+        // A window of ~1.8e19 positions: any per-step walk would never finish.
+        let addressing = grid(1, 1_000_000_000, 0);
+        let window = SegmentWindow::new(&addressing, 0, 0..u64::MAX - 1).unwrap();
+        let mut iter = window.iter();
+        assert_eq!(iter.nth_back(9).unwrap().unwrap().number, u64::MAX - 10);
+        assert_eq!(iter.next_back().unwrap().unwrap().number, u64::MAX - 11);
+        assert_eq!(window.iter().last().unwrap().unwrap().number, u64::MAX - 1);
+        assert_eq!(
+            window.iter().count(),
+            usize::try_from(u64::MAX - 1).unwrap()
+        );
+    }
+
+    /// Asserts that every returned segment satisfies the availability
+    /// predicate and that segment ends increase.
+    fn assert_available(window: &SegmentWindow<'_>, x_secs: f64) {
+        let mut previous_end = f64::NEG_INFINITY;
+        for segment in window.iter() {
+            let segment = segment.unwrap();
+            let end = segment.start_secs + segment.duration_secs();
+            assert!(
+                end <= x_secs,
+                "segment {} ends at {end} > {x_secs}",
+                segment.number
+            );
+            assert!(end > previous_end, "segment ends must increase");
+            previous_end = end;
+        }
+    }
+
+    #[test]
+    fn overlapping_open_repeat_is_clamped_to_the_next_t() {
+        // Round-up gives 4 repetitions of 10 before t=35; the 4th is cut to
+        // [30, 35), so ends are 10, 20, 30, 35, 36.
+        let runs = Addressing::timeline_runs(&[s(Some(0), 10, -1), s(Some(35), 1, 0)]).unwrap();
+        let addressing = addressing(runs, 1, 0, "$Time$.m4s");
+        let timing = dynamic(0, None);
+        let window = addressing.segments(&timing, finite(0), at(37, 0)).unwrap();
+        let ends: Vec<_> = window
+            .iter()
+            .map(|segment| {
+                let segment = segment.unwrap();
+                segment.time + segment.duration
+            })
+            .collect();
+        assert_eq!(ends, [10, 20, 30, 35, 36]);
+        assert_available(&window, 37.0);
+        for x in 0..=40 {
+            let window = addressing.segments(&timing, finite(0), at(x, 0)).unwrap();
+            assert_available(&window, x as f64);
+        }
+    }
+
+    #[test]
+    fn infinite_offset_with_finite_addressing_is_bounded() {
+        let timing = dynamic(0, None);
+        let inf = AvailabilityTimeOffset::Infinite;
+        // A timeline without a trailing open repeat.
+        let runs = Addressing::timeline_runs(&[s(Some(0), 2, 4)]).unwrap();
+        let finite_timeline = addressing(runs, 1, 0, "$Time$");
+        assert_eq!(
+            finite_timeline.window(&timing, inf, at(0, 0)).unwrap(),
+            0..5
+        );
+        // `@endNumber`.
+        let mut capped = grid(2, 1, 0);
+        capped.end_number = Some(3);
+        assert_eq!(capped.window(&timing, inf, at(0, 0)).unwrap(), 0..3);
+        // A SegmentList.
+        let mut list = grid(2, 1, 0);
+        list.urls = SegmentUrls::List {
+            urls: vec![
+                RawSegmentUrl {
+                    media: Some("a.m4s".into()),
+                    media_range: None,
+                };
+                4
+            ]
+            .into(),
+            base: Url::parse("https://cdn.example.com/").unwrap(),
+        };
+        assert_eq!(list.window(&timing, inf, at(0, 0)).unwrap(), 0..4);
+        assert_eq!(
+            list.segment(3, 0).unwrap().url.as_str(),
+            "https://cdn.example.com/a.m4s"
+        );
+        // A static presentation without a Period duration but with a
+        // finite timeline.
+        let static_open = PeriodTiming {
+            presentation_type: PresentationType::Static,
+            availability_start: None,
+            ..timing
+        };
+        assert_eq!(
+            finite_timeline
+                .window(&static_open, finite(0), at(0, 0))
+                .unwrap(),
+            0..5
+        );
+    }
+
+    #[test]
+    fn nothing_is_available_after_availability_end_time() {
+        let addressing = grid(2, 1, 0);
+        let timing = PeriodTiming {
+            availability_end: Some(20 * SEC),
+            ..dynamic(0, None)
+        };
+        assert_eq!(
+            addressing.window(&timing, finite(0), at(20, 0)).unwrap(),
+            0..10
+        );
+        assert!(
+            addressing
+                .window(&timing, finite(0), at(20, 1))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

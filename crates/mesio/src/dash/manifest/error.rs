@@ -56,6 +56,10 @@ pub enum ManifestError {
     #[error("inconsistent MPD: {reason}")]
     Inconsistent { reason: String },
 
+    /// A resource limit from [`super::limits`] was reached.
+    #[error("{what} exceeds the limit of {limit}")]
+    LimitExceeded { what: &'static str, limit: usize },
+
     #[error("arithmetic overflow while computing {context}")]
     Overflow { context: &'static str },
 
@@ -114,8 +118,6 @@ pub enum UnsupportedFeature {
     ContentProtection,
     /// A container other than ISO BMFF (`video/mp4`, `audio/mp4`), e.g. WebM.
     MimeType(String),
-    /// An `AdaptationSet@contentType` other than video or audio.
-    ContentType(String),
     /// Indexed addressing (`SegmentBase`, `sidx`) or a Representation that is
     /// a single resource without segment information.
     SegmentBase,
@@ -136,9 +138,16 @@ pub enum UnsupportedFeature {
     /// A template identifier defined by the standard but not implemented,
     /// e.g. `$SubNumber$`.
     TemplateIdentifier(String),
-    /// `availabilityTimeOffset="INF"` on a dynamic Period without an end: every
-    /// segment up to infinity would be available.
+    /// `availabilityTimeOffset="INF"` on a dynamic Period without an end and
+    /// with unbounded addressing: every segment up to infinity would be
+    /// available.
     UnboundedAvailability,
+    /// A negative `@availabilityTimeOffset`: a valid `xs:double` that the
+    /// standard gives no meaning.
+    NegativeAvailabilityTimeOffset,
+    /// MPD chaining or fallback (`urn:mpeg:dash:mpd-chaining:2016`,
+    /// `urn:mpeg:dash:fallback:2016`), signalled by the given scheme.
+    MpdChaining(String),
 }
 
 impl fmt::Display for UnsupportedFeature {
@@ -146,7 +155,6 @@ impl fmt::Display for UnsupportedFeature {
         match self {
             Self::ContentProtection => f.write_str("content protection (DRM)"),
             Self::MimeType(mime) => write!(f, "container `{mime}` (only ISO BMFF is supported)"),
-            Self::ContentType(content) => write!(f, "content type `{content}`"),
             Self::SegmentBase => f.write_str("SegmentBase / single-resource addressing"),
             Self::XLink { element } => write!(f, "xlink on `{element}`"),
             Self::EssentialProperty(scheme) => write!(f, "EssentialProperty `{scheme}`"),
@@ -158,6 +166,8 @@ impl fmt::Display for UnsupportedFeature {
             Self::UnboundedAvailability => {
                 f.write_str("availabilityTimeOffset=INF on an open dynamic Period")
             }
+            Self::NegativeAvailabilityTimeOffset => f.write_str("negative availabilityTimeOffset"),
+            Self::MpdChaining(scheme) => write!(f, "MPD chaining `{scheme}`"),
         }
     }
 }

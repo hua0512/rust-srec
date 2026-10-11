@@ -3,22 +3,22 @@
 //! The raw model keeps attributes as they appear at each level, so the
 //! resolver can apply inheritance. Elements and attributes outside this
 //! engine's needs are ignored, as are elements from other namespaces.
+//! Element counts and string lengths are bounded by [`super::limits`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use roxmltree::{Document, Node, ParsingOptions};
 
 use super::error::ManifestError;
+use super::limits::{
+    MAX_ATTRIBUTE_BYTES, MAX_MPD_BYTES, MAX_PERIODS, MAX_REPRESENTATIONS, MAX_SEGMENT_URLS,
+    MAX_TIMELINE_ENTRIES, MAX_URL_BYTES,
+};
 use super::resolve::PresentationType;
-use super::timeline::{AvailabilityTimeOffset, ByteRange};
-use super::xs;
-
-/// Upper bound on the size of an MPD body.
-///
-/// Live MPDs with long `SegmentTimeline`s reach a few megabytes; the limit
-/// bounds the parser's memory use on hostile input.
-pub const MAX_MPD_BYTES: usize = 16 * 1024 * 1024;
+use super::timeline::ByteRange;
+use super::xs::{self, RawOffset};
 
 const DASH_NS: &str = "urn:mpeg:dash:schema:mpd:2011";
 const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
@@ -27,6 +27,7 @@ const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
 pub(crate) struct RawMpd {
     pub presentation_type: PresentationType,
     pub availability_start_time: Option<DateTime<Utc>>,
+    pub availability_end_time: Option<DateTime<Utc>>,
     pub publish_time: Option<DateTime<Utc>>,
     pub media_presentation_duration: Option<Duration>,
     pub minimum_update_period: Option<Duration>,
@@ -37,6 +38,7 @@ pub(crate) struct RawMpd {
     pub base_url: Option<RawBaseUrl>,
     pub location: Option<String>,
     pub utc_timings: Vec<RawUtcTiming>,
+    pub properties: Vec<RawProperty>,
     pub periods: Vec<RawPeriod>,
 }
 
@@ -46,10 +48,17 @@ pub(crate) struct RawUtcTiming {
     pub value: Option<String>,
 }
 
+/// An `EssentialProperty` or `SupplementalProperty` descriptor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RawProperty {
+    pub essential: bool,
+    pub scheme_id_uri: String,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct RawBaseUrl {
     pub url: String,
-    pub availability_time_offset: Option<AvailabilityTimeOffset>,
+    pub availability_time_offset: Option<RawOffset>,
     pub availability_time_complete: Option<bool>,
     pub has_byte_range: bool,
 }
@@ -62,6 +71,22 @@ pub(crate) struct RawSegmentInfo {
     pub has_base: bool,
 }
 
+impl RawSegmentInfo {
+    /// At most one addressing scheme per element (ISO/IEC 23009-1 §5.3.9.1);
+    /// two at the same level leave the addressing undefined.
+    fn validate(&self, element: &'static str) -> Result<(), ManifestError> {
+        let schemes = usize::from(self.template.is_some())
+            + usize::from(self.list.is_some())
+            + usize::from(self.has_base);
+        if schemes > 1 {
+            return Err(ManifestError::inconsistent(format!(
+                "`{element}` has more than one of SegmentBase, SegmentList and SegmentTemplate"
+            )));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct RawPeriod {
     pub id: Option<String>,
@@ -69,6 +94,7 @@ pub(crate) struct RawPeriod {
     pub duration: Option<Duration>,
     pub has_xlink: bool,
     pub base_url: Option<RawBaseUrl>,
+    pub properties: Vec<RawProperty>,
     pub segment_info: RawSegmentInfo,
     pub adaptation_sets: Vec<RawAdaptationSet>,
 }
@@ -109,7 +135,7 @@ pub(crate) struct RawRepresentation {
 }
 
 /// Attributes of `MultipleSegmentBaseType` (ISO/IEC 23009-1 §5.3.9.2), as
-/// written at one level.
+/// written at one level. Child lists are shared, not copied, when inherited.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct RawMultipleSegmentBase {
     pub timescale: Option<u64>,
@@ -118,9 +144,9 @@ pub(crate) struct RawMultipleSegmentBase {
     pub start_number: Option<u64>,
     pub end_number: Option<u64>,
     pub ept_delta: Option<i64>,
-    pub availability_time_offset: Option<AvailabilityTimeOffset>,
+    pub availability_time_offset: Option<RawOffset>,
     pub availability_time_complete: Option<bool>,
-    pub timeline: Option<Vec<RawS>>,
+    pub timeline: Option<Arc<[RawS]>>,
     pub initialization: Option<RawUrl>,
 }
 
@@ -135,10 +161,10 @@ pub(crate) struct RawSegmentTemplate {
 pub(crate) struct RawSegmentList {
     pub base: RawMultipleSegmentBase,
     pub has_xlink: bool,
-    pub segment_urls: Vec<RawSegmentUrl>,
+    pub segment_urls: Arc<[RawSegmentUrl]>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RawSegmentUrl {
     pub media: Option<String>,
     pub media_range: Option<ByteRange>,
@@ -188,7 +214,20 @@ pub(crate) fn parse_mpd(body: &[u8]) -> Result<RawMpd, ManifestError> {
             found: root.tag_name().name().chars().take(64).collect(),
         });
     }
-    parse_mpd_element(root)
+    let mpd = parse_mpd_element(root)?;
+    let representations: usize = mpd
+        .periods
+        .iter()
+        .flat_map(|period| &period.adaptation_sets)
+        .map(|set| set.representations.len())
+        .sum();
+    if representations > MAX_REPRESENTATIONS {
+        return Err(ManifestError::LimitExceeded {
+            what: "Representations per MPD",
+            limit: MAX_REPRESENTATIONS,
+        });
+    }
+    Ok(mpd)
 }
 
 fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
@@ -209,6 +248,7 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
     let mut mpd = RawMpd {
         presentation_type,
         availability_start_time: attr(node, E, "availabilityStartTime", xs::parse_date_time)?,
+        availability_end_time: attr(node, E, "availabilityEndTime", xs::parse_date_time)?,
         publish_time: attr(node, E, "publishTime", xs::parse_date_time)?,
         media_presentation_duration: attr(
             node,
@@ -229,6 +269,7 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
         base_url: None,
         location: None,
         utc_timings: Vec::new(),
+        properties: Vec::new(),
         periods: Vec::new(),
     };
 
@@ -237,15 +278,28 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
             "BaseURL" => first(&mut mpd.base_url, child, parse_base_url)?,
             "Location" => {
                 if mpd.location.is_none() {
-                    mpd.location = Some(child.text().unwrap_or("").trim().to_owned());
+                    mpd.location = Some(element_text(child, "Location", MAX_URL_BYTES)?);
                 }
             }
             "UTCTiming" => mpd.utc_timings.push(RawUtcTiming {
-                scheme_id_uri: required_str(child, "UTCTiming", "schemeIdUri")?,
-                value: child.attribute("value").map(|v| v.trim().to_owned()),
+                scheme_id_uri: required_text(
+                    child,
+                    "UTCTiming",
+                    "schemeIdUri",
+                    MAX_ATTRIBUTE_BYTES,
+                )?,
+                value: text_attr(child, "value", MAX_URL_BYTES)?,
             }),
-            "Period" => mpd.periods.push(parse_period(child)?),
-            _ => {}
+            "Period" => {
+                if mpd.periods.len() == MAX_PERIODS {
+                    return Err(ManifestError::LimitExceeded {
+                        what: "Periods per MPD",
+                        limit: MAX_PERIODS,
+                    });
+                }
+                mpd.periods.push(parse_period(child)?);
+            }
+            name => parse_property(&mut mpd.properties, child, name)?,
         }
     }
     Ok(mpd)
@@ -254,11 +308,12 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
 fn parse_period(node: Node<'_, '_>) -> Result<RawPeriod, ManifestError> {
     const E: &str = "Period";
     let mut period = RawPeriod {
-        id: node.attribute("id").map(str::to_owned),
+        id: text_attr(node, "id", MAX_ATTRIBUTE_BYTES)?,
         start: attr(node, E, "start", xs::parse_duration)?,
         duration: attr(node, E, "duration", xs::parse_duration)?,
         has_xlink: has_xlink(node),
         base_url: None,
+        properties: Vec::new(),
         segment_info: RawSegmentInfo::default(),
         adaptation_sets: Vec::new(),
     };
@@ -266,18 +321,22 @@ fn parse_period(node: Node<'_, '_>) -> Result<RawPeriod, ManifestError> {
         match child.tag_name().name() {
             "BaseURL" => first(&mut period.base_url, child, parse_base_url)?,
             "AdaptationSet" => period.adaptation_sets.push(parse_adaptation_set(child)?),
-            _ => parse_segment_info(&mut period.segment_info, child)?,
+            name => {
+                parse_property(&mut period.properties, child, name)?;
+                parse_segment_info(&mut period.segment_info, child)?;
+            }
         }
     }
+    period.segment_info.validate(E)?;
     Ok(period)
 }
 
 fn parse_adaptation_set(node: Node<'_, '_>) -> Result<RawAdaptationSet, ManifestError> {
     const E: &str = "AdaptationSet";
     let mut set = RawAdaptationSet {
-        id: node.attribute("id").map(|v| v.trim().to_owned()),
-        content_type: node.attribute("contentType").map(|v| v.trim().to_owned()),
-        lang: node.attribute("lang").map(|v| v.trim().to_owned()),
+        id: text_attr(node, "id", MAX_ATTRIBUTE_BYTES)?,
+        content_type: text_attr(node, "contentType", MAX_ATTRIBUTE_BYTES)?,
+        lang: text_attr(node, "lang", MAX_ATTRIBUTE_BYTES)?,
         segment_alignment: attr(node, E, "segmentAlignment", parse_conditional_uint)?
             .unwrap_or(false),
         has_xlink: has_xlink(node),
@@ -296,13 +355,14 @@ fn parse_adaptation_set(node: Node<'_, '_>) -> Result<RawAdaptationSet, Manifest
             }
         }
     }
+    set.segment_info.validate(E)?;
     Ok(set)
 }
 
 fn parse_representation(node: Node<'_, '_>) -> Result<RawRepresentation, ManifestError> {
     const E: &str = "Representation";
     let mut representation = RawRepresentation {
-        id: required_str(node, E, "id")?,
+        id: required_text(node, E, "id", MAX_ATTRIBUTE_BYTES)?,
         bandwidth: required(node, E, "bandwidth", xs::parse_u64)?,
         common: parse_common(node, E)?,
         base_url: None,
@@ -317,6 +377,7 @@ fn parse_representation(node: Node<'_, '_>) -> Result<RawRepresentation, Manifes
             }
         }
     }
+    representation.segment_info.validate(E)?;
     Ok(representation)
 }
 
@@ -329,8 +390,8 @@ fn parse_common(node: Node<'_, '_>, element: &'static str) -> Result<RawCommon, 
             .ok_or("expected a SAP type from 0 to 6")
     })?;
     Ok(RawCommon {
-        mime_type: node.attribute("mimeType").map(|v| v.trim().to_owned()),
-        codecs: node.attribute("codecs").map(|v| v.trim().to_owned()),
+        mime_type: text_attr(node, "mimeType", MAX_ATTRIBUTE_BYTES)?,
+        codecs: text_attr(node, "codecs", MAX_ATTRIBUTE_BYTES)?,
         width: attr(node, element, "width", parse_u32)?,
         height: attr(node, element, "height", parse_u32)?,
         start_with_sap,
@@ -346,13 +407,32 @@ fn parse_descriptor(
 ) -> Result<(), ManifestError> {
     match name {
         "ContentProtection" => common.has_content_protection = true,
-        "EssentialProperty" => common.essential_properties.push(required_str(
+        "EssentialProperty" => common.essential_properties.push(required_text(
             node,
             "EssentialProperty",
             "schemeIdUri",
+            MAX_ATTRIBUTE_BYTES,
         )?),
         _ => {}
     }
+    Ok(())
+}
+
+/// Collects MPD- and Period-level `EssentialProperty` / `SupplementalProperty`.
+fn parse_property(
+    properties: &mut Vec<RawProperty>,
+    node: Node<'_, '_>,
+    name: &str,
+) -> Result<(), ManifestError> {
+    let (essential, element) = match name {
+        "EssentialProperty" => (true, "EssentialProperty"),
+        "SupplementalProperty" => (false, "SupplementalProperty"),
+        _ => return Ok(()),
+    };
+    properties.push(RawProperty {
+        essential,
+        scheme_id_uri: required_text(node, element, "schemeIdUri", MAX_ATTRIBUTE_BYTES)?,
+    });
     Ok(())
 }
 
@@ -433,30 +513,43 @@ fn parse_multiple_segment_base(
 fn parse_segment_template(node: Node<'_, '_>) -> Result<RawSegmentTemplate, ManifestError> {
     Ok(RawSegmentTemplate {
         base: parse_multiple_segment_base(node, "SegmentTemplate")?,
-        media: node.attribute("media").map(str::to_owned),
-        initialization: node.attribute("initialization").map(str::to_owned),
+        media: text_attr(node, "media", MAX_URL_BYTES)?,
+        initialization: text_attr(node, "initialization", MAX_URL_BYTES)?,
     })
 }
 
 fn parse_segment_list(node: Node<'_, '_>) -> Result<RawSegmentList, ManifestError> {
-    let mut list = RawSegmentList {
-        base: parse_multiple_segment_base(node, "SegmentList")?,
-        has_xlink: has_xlink(node),
-        segment_urls: Vec::new(),
-    };
+    let base = parse_multiple_segment_base(node, "SegmentList")?;
+    let mut segment_urls = Vec::new();
     for child in dash_children(node).filter(|child| child.tag_name().name() == "SegmentURL") {
-        list.segment_urls.push(RawSegmentUrl {
-            media: child.attribute("media").map(str::to_owned),
+        if segment_urls.len() == MAX_SEGMENT_URLS {
+            return Err(ManifestError::LimitExceeded {
+                what: "SegmentURL elements per SegmentList",
+                limit: MAX_SEGMENT_URLS,
+            });
+        }
+        segment_urls.push(RawSegmentUrl {
+            media: text_attr(child, "media", MAX_URL_BYTES)?,
             media_range: attr(child, "SegmentURL", "mediaRange", parse_byte_range)?,
         });
     }
-    Ok(list)
+    Ok(RawSegmentList {
+        base,
+        has_xlink: has_xlink(node),
+        segment_urls: segment_urls.into(),
+    })
 }
 
-fn parse_segment_timeline(node: Node<'_, '_>) -> Result<Vec<RawS>, ManifestError> {
+fn parse_segment_timeline(node: Node<'_, '_>) -> Result<Arc<[RawS]>, ManifestError> {
     const E: &str = "S";
     let mut entries = Vec::new();
     for s in dash_children(node).filter(|child| child.tag_name().name() == E) {
+        if entries.len() == MAX_TIMELINE_ENTRIES {
+            return Err(ManifestError::LimitExceeded {
+                what: "S elements per SegmentTimeline",
+                limit: MAX_TIMELINE_ENTRIES,
+            });
+        }
         let d = required(s, E, "d", xs::parse_u64)?;
         if d == 0 {
             return Err(ManifestError::invalid_attribute(
@@ -483,12 +576,12 @@ fn parse_segment_timeline(node: Node<'_, '_>) -> Result<Vec<RawS>, ManifestError
             k: attr(s, E, "k", xs::parse_u64)?,
         });
     }
-    Ok(entries)
+    Ok(entries.into())
 }
 
 fn parse_url(node: Node<'_, '_>) -> Result<RawUrl, ManifestError> {
     Ok(RawUrl {
-        source_url: node.attribute("sourceURL").map(str::to_owned),
+        source_url: text_attr(node, "sourceURL", MAX_URL_BYTES)?,
         range: attr(node, "Initialization", "range", parse_byte_range)?,
     })
 }
@@ -496,7 +589,7 @@ fn parse_url(node: Node<'_, '_>) -> Result<RawUrl, ManifestError> {
 fn parse_base_url(node: Node<'_, '_>) -> Result<RawBaseUrl, ManifestError> {
     const E: &str = "BaseURL";
     Ok(RawBaseUrl {
-        url: node.text().unwrap_or("").trim().to_owned(),
+        url: element_text(node, E, MAX_URL_BYTES)?,
         availability_time_offset: attr(
             node,
             E,
@@ -582,14 +675,40 @@ fn required<T>(
         .ok_or(ManifestError::MissingAttribute { element, attribute })
 }
 
-fn required_str(
+/// A trimmed string attribute of at most `limit` bytes.
+fn text_attr(
+    node: Node<'_, '_>,
+    attribute: &'static str,
+    limit: usize,
+) -> Result<Option<String>, ManifestError> {
+    node.attribute(attribute)
+        .map(|value| bounded(value.trim(), attribute, limit))
+        .transpose()
+}
+
+fn required_text(
     node: Node<'_, '_>,
     element: &'static str,
     attribute: &'static str,
+    limit: usize,
 ) -> Result<String, ManifestError> {
-    node.attribute(attribute)
-        .map(|value| value.trim().to_owned())
-        .ok_or(ManifestError::MissingAttribute { element, attribute })
+    text_attr(node, attribute, limit)?.ok_or(ManifestError::MissingAttribute { element, attribute })
+}
+
+/// The trimmed text content of an element, of at most `limit` bytes.
+fn element_text(
+    node: Node<'_, '_>,
+    element: &'static str,
+    limit: usize,
+) -> Result<String, ManifestError> {
+    bounded(node.text().unwrap_or("").trim(), element, limit)
+}
+
+fn bounded(value: &str, what: &'static str, limit: usize) -> Result<String, ManifestError> {
+    if value.len() > limit {
+        return Err(ManifestError::LimitExceeded { what, limit });
+    }
+    Ok(value.to_owned())
 }
 
 /// Keeps the first occurrence of a repeatable element (v1 uses the first
@@ -621,6 +740,7 @@ fn first_only<T>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::timeline::AvailabilityTimeOffset;
     use super::*;
 
     fn parse(xml: &str) -> Result<RawMpd, ManifestError> {
@@ -674,7 +794,9 @@ mod tests {
         assert_eq!(base.url, "https://cdn.example.com/");
         assert_eq!(
             base.availability_time_offset,
-            Some(AvailabilityTimeOffset::Finite(Duration::from_millis(1500)))
+            Some(RawOffset::Offset(AvailabilityTimeOffset::Finite(
+                Duration::from_millis(1500)
+            )))
         );
         assert_eq!(
             mpd.location.as_deref(),
@@ -699,7 +821,7 @@ mod tests {
         assert_eq!(template.base.start_number, Some(5));
         assert_eq!(
             template.base.availability_time_offset,
-            Some(AvailabilityTimeOffset::Infinite)
+            Some(RawOffset::Offset(AvailabilityTimeOffset::Infinite))
         );
         assert_eq!(template.base.availability_time_complete, Some(false));
 
@@ -792,8 +914,8 @@ mod tests {
                 "sap",
             ),
             (
-                r#"<MPD><BaseURL availabilityTimeOffset="-1">a/</BaseURL></MPD>"#,
-                "negative ato",
+                r#"<MPD><BaseURL availabilityTimeOffset="NaN">a/</BaseURL></MPD>"#,
+                "NaN ato",
             ),
             (r#"<!DOCTYPE MPD [<!ENTITY a "aaaa">]><MPD/>"#, "dtd"),
         ];

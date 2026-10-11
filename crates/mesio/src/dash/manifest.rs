@@ -20,6 +20,7 @@
 
 mod clock;
 mod error;
+pub mod limits;
 mod parse;
 mod resolve;
 mod template;
@@ -28,10 +29,11 @@ mod xs;
 
 pub use clock::{Clock, ClockOffset, ManualClock, SystemClock, UtcTiming, parse_http_date};
 pub use error::{ManifestError, UnsupportedFeature};
-pub use parse::MAX_MPD_BYTES;
+pub use limits::MAX_MPD_BYTES;
 pub use resolve::{
     AdaptationSet, ContentType, Manifest, Period, PresentationType, Rejected, Representation,
 };
 pub use timeline::{
-    AvailabilityTimeOffset, ByteRange, InitSegment, Segment, SegmentIter, SegmentWindow,
+    AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, Segment, SegmentIter,
+    SegmentWindow,
 };
