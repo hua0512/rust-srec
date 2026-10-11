@@ -1,11 +1,11 @@
 //! The scheduler reactor: the single task that owns the control plane.
 //!
 //! Owns the `SegmentStateStore` (never shared, never locked), runs the
-//! protocol's [`SegmentPlanner`] on each manifest snapshot, drives bounded fetch-and-process tasks through a
-//! `JoinSet`, applies their outcomes, and forwards `AssemblerInput` items
-//! downstream via permit-reserve. The loop never blocks: network I/O lives in
-//! the spawned tasks, AES in the crypto executor, and every `select!` arm
-//! stays live under backpressure.
+//! protocol's [`SegmentPlanner`] on each manifest snapshot, drives bounded
+//! fetch-and-process tasks through a `JoinSet`, applies their outcomes, and
+//! forwards `AssemblerInput` items downstream via permit-reserve. The loop
+//! never blocks: network I/O lives in the spawned tasks, AES in the crypto
+//! executor, and every `select!` arm stays live under backpressure.
 //!
 //! Concurrency is bounded by the dispatch gate's
 //! `inflight.len() < max_concurrency` check — the reactor is the sole

@@ -107,6 +107,12 @@ pub enum SourceFailure<'a> {
 
 /// Turns manifest snapshots into reactor control results. Owned by the
 /// reactor, so cross-snapshot planning state needs no synchronization.
+///
+/// Contract: each media descriptor's `msn` is a per-stream ordinal. The
+/// assembler emits in `msn` order, advances its cursor by one per segment,
+/// rejects anything below the cursor as stale and treats a missing `msn` as a
+/// gap. A protocol whose native numbering restarts or jumps (a new period,
+/// time-based addressing) must map it to consecutive ordinals.
 pub trait SegmentPlanner: Send + 'static {
     type Snapshot: Clone + Send + Sync + 'static;
 
