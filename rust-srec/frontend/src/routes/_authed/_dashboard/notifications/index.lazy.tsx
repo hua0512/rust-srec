@@ -50,6 +50,7 @@ import {
   testDesktopNotifications,
   type DesktopNotificationConfig,
 } from '@/desktop/desktop-notifications';
+import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/notifications/')({
   component: NotificationsPage,
@@ -346,8 +347,8 @@ function NotificationsPage() {
       {/* Header */}
       <motion.div className="border-b border-border/40" variants={itemVariants}>
         <div className="w-full">
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-wrap gap-4 items-center justify-between p-4 md:px-8">
+            <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
               <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
                 <Bell className="h-6 w-6 text-primary" />
               </div>
@@ -360,7 +361,7 @@ function NotificationsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <Badge variant="secondary" className="h-9 px-3 text-sm">
                 {(channels?.length || 0) + 1} <Trans>channels</Trans>
               </Badge>
@@ -404,7 +405,7 @@ function NotificationsPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
             >
               {[1, 2, 3, 4].map((i) => (
                 <CardSkeleton key={i}>
@@ -426,7 +427,7 @@ function NotificationsPage() {
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
             >
               {/* Browser Card First */}
               <motion.div variants={itemVariants}>

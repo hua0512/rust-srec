@@ -63,6 +63,7 @@ import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { formatDuration } from '@/lib/format';
+import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
@@ -379,8 +380,8 @@ function PipelineJobsPage() {
       <div className="border-b border-border/40">
         <div className="w-full">
           {/* Title Row */}
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between p-4 md:px-8">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-wrap gap-4 items-center justify-between p-4 md:px-8">
+            <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
               <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
                 <ListTodo className="h-6 w-6 text-primary" />
               </div>
@@ -393,14 +394,14 @@ function PipelineJobsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <SearchInput
                 defaultValue={q ?? ''}
                 onSearch={(value) =>
                   updateSearch({ q: value || undefined, page: undefined })
                 }
                 placeholder={i18n._(msg`Search jobs...`)}
-                className="flex-1 sm:w-64"
+                className="flex-1 sm:w-64 min-w-[200px]"
               />
               {/* Scrolls rather than overflowing the page: the count badge grows
                   with the pipeline total and the buttons keep their labels. */}
@@ -445,7 +446,7 @@ function PipelineJobsPage() {
 
           {/* Stats Overview */}
           <div className="px-4 md:px-8 pb-4 w-full">
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))]">
               <StatCard
                 title={<Trans>Pending</Trans>}
                 value={stats?.pending_count}
@@ -517,7 +518,7 @@ function PipelineJobsPage() {
           ) : pipelines.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"
@@ -766,7 +767,7 @@ const LoadingSkeleton = memo(function LoadingSkeleton() {
       initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.1 } }}
-      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+      className={cn(CARD_GRID, 'gap-6')}
     >
       {SKELETON_ITEMS.map((i) => (
         <div

@@ -13,6 +13,8 @@ import {
   SIDEBAR_COOKIE_MAX_AGE_SECONDS,
   readSidebarCookie,
 } from '@/lib/sidebar-cookie';
+import { STAT_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/_dashboard')({
   component: DashboardBaseLayout,
@@ -124,12 +126,12 @@ function DashboardLayout() {
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
+    <div className="@container space-y-6 animate-pulse">
       <div className="space-y-2">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-72" />
       </div>
-      <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className={cn(STAT_GRID, 'gap-4 md:gap-6')}>
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-32 rounded-2xl" />
         ))}

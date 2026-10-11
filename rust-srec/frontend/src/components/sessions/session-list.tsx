@@ -3,6 +3,8 @@ import { SessionCard } from './session-card';
 import { SessionSchema } from '../../api/schemas';
 import { z } from 'zod';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { COMPACT_CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 type Session = z.infer<typeof SessionSchema>;
 
@@ -13,8 +15,7 @@ interface SessionListProps {
   onSelectionChange?: (id: string, selected: boolean) => void;
 }
 
-const GRID =
-  'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4';
+const GRID = cn(COMPACT_CARD_GRID, 'gap-4');
 
 export function SessionList({
   sessions,

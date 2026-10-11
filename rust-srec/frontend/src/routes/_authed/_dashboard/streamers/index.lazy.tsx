@@ -71,6 +71,8 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { StreamerBatchActionBar } from '@/components/streamers/streamer-batch-action-bar';
+import { CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
@@ -713,7 +715,7 @@ function StreamersPage() {
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.1 } }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <div
@@ -734,7 +736,7 @@ function StreamersPage() {
           ) : streamers.length > 0 ? (
             <motion.div
               key="list"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className={cn(CARD_GRID, 'gap-6')}
               variants={containerVariants}
               initial="hidden"
               animate="visible"

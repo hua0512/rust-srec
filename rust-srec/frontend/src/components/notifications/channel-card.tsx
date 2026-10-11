@@ -238,7 +238,7 @@ export function ChannelCard({
         </DropdownMenu>
       </CardHeader>
       <CardContent className="relative pb-4 flex-1 z-10">
-        <div className="text-sm text-muted-foreground grid gap-2">
+        <div className="text-sm text-muted-foreground grid grid-cols-1 gap-2">
           {renderConfigDetails()}
         </div>
       </CardContent>

@@ -107,8 +107,8 @@ export const StreamerCard = memo(
           </div>
         )}
         <CardHeader className="px-5 py-2">
-          <div className="flex justify-between items-start">
-            <div className="space-y-3 w-full">
+          <div className="flex min-w-0 justify-between items-start">
+            <div className="min-w-0 space-y-3 w-full">
               <div className="flex items-center justify-between w-full">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <StatusBadge status={status} />

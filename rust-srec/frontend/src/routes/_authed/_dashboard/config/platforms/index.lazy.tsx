@@ -14,6 +14,8 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { useMemo } from 'react';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { COMPACT_CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/config/platforms/',
@@ -91,7 +93,7 @@ function PlatformsConfigPage() {
             initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.1 } }}
-            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6"
+            className={cn(COMPACT_CARD_GRID, 'gap-6')}
           >
             {[1, 2, 3, 4].map((i) => (
               <CardSkeleton key={i} />
@@ -100,7 +102,7 @@ function PlatformsConfigPage() {
         ) : filteredPlatforms.length > 0 ? (
           <motion.div
             key="list"
-            className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6"
+            className={cn(COMPACT_CARD_GRID, 'gap-6')}
             variants={containerVariants}
             initial="hidden"
             animate="visible"
