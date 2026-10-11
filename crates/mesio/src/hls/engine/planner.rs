@@ -24,7 +24,7 @@ use crate::redact::redact_url_for_log;
 use super::super::soop_processor::is_preloading_segment;
 
 use super::descriptor::{
-    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor,
+    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor, SegmentMeta,
     SegmentSource,
 };
 use super::identity::{
@@ -442,7 +442,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
             discontinuity: scanned.discontinuity,
             encryption,
             init_key: active_init_key,
-            media_segment: Arc::new(media_segment),
+            meta: SegmentMeta::Hls(Arc::new(media_segment)),
         });
     }
 
@@ -493,7 +493,7 @@ fn build_init_descriptor(
         discontinuity,
         encryption,
         init_key: None,
-        media_segment: Arc::new(media_segment),
+        meta: SegmentMeta::Hls(Arc::new(media_segment)),
     })
 }
 

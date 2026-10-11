@@ -1166,7 +1166,7 @@ impl SequenceAssembler {
                 .range(..self.expected_next_media_sequence)
                 .rev()
             {
-                total += buffered.payload.descriptor().media_segment.duration;
+                total += buffered.payload.descriptor().meta.duration_secs();
                 if total > max_duration {
                     cutoff = Some(msn);
                     break;
@@ -1194,7 +1194,7 @@ impl SequenceAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentSource};
+    use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentMeta, SegmentSource};
     use crate::segment_engine::identity::SegmentKey;
     use bytes::Bytes;
     use std::time::Duration;
@@ -1213,11 +1213,11 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key: None,
-            media_segment: Arc::new(m3u8_rs::MediaSegment {
+            meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 duration: 2.0,
                 ..Default::default()
-            }),
+            })),
         })
     }
 

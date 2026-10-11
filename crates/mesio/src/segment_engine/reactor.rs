@@ -22,7 +22,7 @@ use tracing::{debug, info, warn};
 use crate::hls::HlsDownloaderError;
 use crate::hls::engine::planner::{PlannerContext, plan};
 use crate::hls::engine::watcher::{PlaylistSnapshot, TerminalCause};
-use crate::session::{DownloadEvent, ResourceId};
+use crate::session::DownloadEvent;
 
 use super::fetch::{FetchContext, fetch_and_process};
 use super::input::{AssemblerInput, PendingQueue, PlaylistNotice};
@@ -202,7 +202,7 @@ pub async fn run_reactor(
                             && let Some(events) = &fetch_ctx.events
                         {
                             events.emit(DownloadEvent::RetryScheduled {
-                                resource: Some(ResourceId::HlsSegment { key: notice.key }),
+                                resource: Some(notice.descriptor.resource_id()),
                                 attempt: notice.attempt,
                                 delay: notice.delay,
                                 reason: notice.reason,

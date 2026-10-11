@@ -7,7 +7,6 @@ pub mod events;
 mod hls_downloader;
 mod metrics;
 mod playlist;
-pub(crate) mod segment_utils;
 mod soop_processor;
 mod twitch_processor;
 

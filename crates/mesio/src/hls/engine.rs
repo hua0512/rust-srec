@@ -15,6 +15,7 @@
 //! payloads move by value as `Bytes` handles. See
 //! `crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md` for the full design.
 
+mod output;
 pub mod planner;
 pub mod watcher;
 

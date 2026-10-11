@@ -5,6 +5,7 @@
 
 pub mod assembler;
 pub mod budget;
+pub mod container;
 pub mod crypto;
 pub mod descriptor;
 pub mod fetch;

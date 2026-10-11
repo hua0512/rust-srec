@@ -22,16 +22,17 @@ use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::PerformanceMetrics;
 use crate::hls::config::HlsConfig;
-use crate::hls::segment_utils::is_m4s_segment;
 use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 use super::budget::{ByteBudget, ByteReservation};
+use super::container::{ContainerKind, is_m4s_segment};
 use super::crypto::{CryptoExecutor, KeyCache, validate_key_bytes};
 use super::descriptor::{
-    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentSource,
+    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor,
+    SegmentSource,
 };
-use super::identity::{ByteRangeKey, SegmentKind};
+use super::identity::{ByteRangeKey, SegmentKey, SegmentKind};
 use super::payload::SegmentPayload;
 use super::store::{FailureClass, ReadyJob, SegmentOutcome};
 
@@ -102,9 +103,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         emit_event(
             &ctx,
             DownloadEvent::ResourceFinished {
-                resource: ResourceId::HlsSegment {
-                    key: descriptor.key.clone(),
-                },
+                resource: descriptor.resource_id(),
                 bytes: bytes.len() as u64,
                 from_cache: true,
             },
@@ -126,14 +125,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     }
 
     // --- Download (attempt-level retry, deliberately tight) ---
-    let raw = match download_body(
-        &ctx,
-        &descriptor.parsed_url,
-        &descriptor.key,
-        &mut reservation,
-    )
-    .await
-    {
+    let raw = match download_body(&ctx, &descriptor, &mut reservation).await {
         Ok(bytes) => bytes,
         Err(failure) => {
             if let Some(metrics) = &ctx.metrics {
@@ -201,7 +193,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
 
 /// Keyed like `SegmentKey`: an init and a media segment at the same URI and
 /// range are distinct identities, so they must not share a cache entry.
-fn segment_cache_key(key: &super::identity::SegmentKey) -> CacheKey {
+fn segment_cache_key(key: &SegmentKey) -> CacheKey {
     let kind = match key.kind {
         SegmentKind::Init => "init",
         SegmentKind::Media => "media",
@@ -217,24 +209,34 @@ fn segment_cache_key(key: &super::identity::SegmentKey) -> CacheKey {
     )
 }
 
-fn wrap_payload(
-    data: Bytes,
-    descriptor: &Arc<super::descriptor::SegmentDescriptor>,
-) -> SegmentPayload {
+fn wrap_payload(data: Bytes, descriptor: &Arc<SegmentDescriptor>) -> SegmentPayload {
     let descriptor = Arc::clone(descriptor);
-    // RFC 8216 allows EXT-X-MAP for MPEG-TS too, so a map says nothing about
-    // the container; the bytes do.
-    let is_ts = is_mpeg_ts(&data);
-    if descriptor.key.kind == SegmentKind::Init {
-        if is_ts {
-            SegmentPayload::TsInit { data, descriptor }
-        } else {
-            SegmentPayload::Mp4Init { data, descriptor }
-        }
-    } else if !is_ts && (descriptor.init_key.is_some() || is_m4s_segment(&descriptor.parsed_url)) {
-        SegmentPayload::Mp4Media { data, descriptor }
+    let container = descriptor
+        .meta
+        .container()
+        .unwrap_or_else(|| detect_container(&data, &descriptor));
+    match (descriptor.key.kind, container) {
+        (SegmentKind::Init, ContainerKind::Ts) => SegmentPayload::TsInit { data, descriptor },
+        (SegmentKind::Init, ContainerKind::Fmp4) => SegmentPayload::Mp4Init { data, descriptor },
+        (SegmentKind::Media, ContainerKind::Ts) => SegmentPayload::Ts { data, descriptor },
+        (SegmentKind::Media, ContainerKind::Fmp4) => SegmentPayload::Mp4Media { data, descriptor },
+    }
+}
+
+/// Container of a body whose manifest does not declare one. An init map says
+/// nothing about the container (RFC 8216 allows `EXT-X-MAP` for MPEG-TS too);
+/// the bytes do. Media that is not TS is fMP4 when it has an init or its URL
+/// looks like a fragment.
+fn detect_container(data: &[u8], descriptor: &SegmentDescriptor) -> ContainerKind {
+    if is_mpeg_ts(data) {
+        ContainerKind::Ts
+    } else if descriptor.key.kind == SegmentKind::Init
+        || descriptor.init_key.is_some()
+        || is_m4s_segment(&descriptor.parsed_url)
+    {
+        ContainerKind::Fmp4
     } else {
-        SegmentPayload::Ts { data, descriptor }
+        ContainerKind::Ts
     }
 }
 
@@ -258,8 +260,7 @@ fn is_mpeg_ts(data: &[u8]) -> bool {
 /// frees the slot and re-engages the refreshed-URL path) handle it.
 async fn download_body(
     ctx: &FetchContext,
-    url: &Url,
-    key: &super::identity::SegmentKey,
+    descriptor: &SegmentDescriptor,
     reservation: &mut ByteReservation,
 ) -> Result<Bytes, Failure> {
     const MAX_ATTEMPT_RETRIES: u32 = 2;
@@ -284,7 +285,7 @@ async fn download_body(
                 _ = tokio::time::sleep(retry_delay) => {}
             }
         }
-        match download_once(ctx, url, key, reservation).await {
+        match download_once(ctx, descriptor, reservation).await {
             Ok(bytes) => return Ok(bytes),
             Err((failure, retryable)) => {
                 if !retryable {
@@ -308,16 +309,18 @@ async fn download_body(
 /// (network hiccups and 5xx); everything else goes straight back to the store.
 async fn download_once(
     ctx: &FetchContext,
-    url: &Url,
-    key: &super::identity::SegmentKey,
+    descriptor: &SegmentDescriptor,
     reservation: &mut ByteReservation,
 ) -> Result<Bytes, (Failure, bool)> {
+    let url: &Url = &descriptor.parsed_url;
+    let byte_range = descriptor.key.byte_range;
+    let resource = descriptor.resource_id();
     let client = ctx.clients.client_for_url(url);
     let mut request = client
         .get(url.clone())
         .query(&ctx.config.base.params)
         .timeout(ctx.config.fetcher_config.segment_download_timeout);
-    if let Some(range) = key.byte_range {
+    if let Some(range) = byte_range {
         let Some(end) = range_end(range) else {
             return Err((
                 Failure::new(
@@ -358,14 +361,14 @@ async fn download_once(
         // store (it owns 404/429 pacing and the 401/403 freshness rule).
         return Err((failure, status.is_server_error()));
     }
-    let range_mode = validate_range_response(status, response.headers(), key.byte_range)
-        .map_err(|e| (e, false))?;
+    let range_mode =
+        validate_range_response(status, response.headers(), byte_range).map_err(|e| (e, false))?;
     let http_version = response.version();
     let content_length = response.content_length();
     emit_event(
         ctx,
         DownloadEvent::ResourceStarted {
-            resource: ResourceId::HlsSegment { key: key.clone() },
+            resource: resource.clone(),
             display_url: Arc::from(Redacted(url).to_string()),
             content_length,
         },
@@ -458,7 +461,7 @@ async fn download_once(
             emit_event(
                 ctx,
                 DownloadEvent::Progress {
-                    resource: ResourceId::HlsSegment { key: key.clone() },
+                    resource: resource.clone(),
                     bytes_delta: progress_since_last,
                     bytes_total: new_len,
                 },
@@ -504,7 +507,7 @@ async fn download_once(
         emit_event(
             ctx,
             DownloadEvent::Progress {
-                resource: ResourceId::HlsSegment { key: key.clone() },
+                resource: resource.clone(),
                 bytes_delta: progress_since_last,
                 bytes_total: bytes.len() as u64,
             },
@@ -523,7 +526,7 @@ async fn download_once(
     emit_event(
         ctx,
         DownloadEvent::ResourceFinished {
-            resource: ResourceId::HlsSegment { key: key.clone() },
+            resource,
             bytes: bytes.len() as u64,
             from_cache: false,
         },
@@ -881,8 +884,7 @@ fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment_engine::descriptor::SegmentDescriptor;
-    use crate::segment_engine::identity::SegmentKey;
+    use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentMeta};
 
     fn descriptor(
         uri: &str,
@@ -901,10 +903,10 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key,
-            media_segment: Arc::new(m3u8_rs::MediaSegment {
+            meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 ..Default::default()
-            }),
+            })),
         })
     }
 

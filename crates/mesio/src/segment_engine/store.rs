@@ -108,6 +108,8 @@ impl SegmentOutcome {
 #[derive(Debug, Clone)]
 pub struct RetryNotice {
     pub key: SegmentKey,
+    /// The descriptor the retry will fetch, for the event's resource identity.
+    pub descriptor: Arc<SegmentDescriptor>,
     pub msn: u64,
     pub attempt: u32,
     pub delay: Duration,
@@ -609,6 +611,7 @@ impl SegmentStateStore {
                         class,
                         reason: Arc::clone(&reason),
                     };
+                    let descriptor = Arc::clone(&record.descriptor);
                     self.lifecycle_retries += 1;
                     debug!(
                         msn,
@@ -628,6 +631,7 @@ impl SegmentStateStore {
                         assembler_inputs: Vec::new(),
                         retry_notice: Some(RetryNotice {
                             key,
+                            descriptor,
                             msn,
                             attempt: reschedules,
                             delay,
@@ -809,6 +813,7 @@ fn encryption_fetch_eq(a: &SegmentDescriptor, b: &SegmentDescriptor) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::segment_engine::descriptor::SegmentMeta;
     use crate::segment_engine::identity::ByteRangeKey;
     use bytes::Bytes;
     use url::Url;
@@ -840,11 +845,11 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key: None,
-            media_segment: Arc::new(m3u8_rs::MediaSegment {
+            meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 duration: 2.0,
                 ..Default::default()
-            }),
+            })),
         }
     }
 
