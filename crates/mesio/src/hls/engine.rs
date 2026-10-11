@@ -15,18 +15,12 @@
 //! payloads move by value as `Bytes` handles. See
 //! `crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md` for the full design.
 
-pub mod assembler;
-pub mod budget;
-pub mod crypto;
-pub mod descriptor;
-pub mod fetch;
-pub mod identity;
-pub mod input;
-pub mod payload;
 pub mod planner;
-pub mod reactor;
-pub mod store;
 pub mod watcher;
+
+pub use crate::segment_engine::{
+    assembler, budget, crypto, descriptor, fetch, identity, input, payload, reactor, store,
+};
 
 use std::sync::Arc;
 

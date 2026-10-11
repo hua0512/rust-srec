@@ -20,13 +20,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::hls::HlsDownloaderError;
+use crate::hls::engine::planner::{PlannerContext, plan};
+use crate::hls::engine::watcher::{PlaylistSnapshot, TerminalCause};
 use crate::session::{DownloadEvent, ResourceId};
 
 use super::fetch::{FetchContext, fetch_and_process};
 use super::input::{AssemblerInput, PendingQueue, PlaylistNotice};
-use super::planner::{PlannerContext, plan};
 use super::store::{SegmentOutcome, SegmentStateStore, StoreConfig};
-use super::watcher::{PlaylistSnapshot, TerminalCause};
 
 /// Why the reactor stopped. Reported to the runtime for logging; the
 /// consumer-visible effect (StreamEnded / nothing / `Err`) is delivered

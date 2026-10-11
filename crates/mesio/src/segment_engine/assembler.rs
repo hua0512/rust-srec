@@ -35,9 +35,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::hls::HlsDownloaderError;
+use crate::hls::PerformanceMetrics;
 use crate::hls::config::{GapSkipStrategy, HlsConfig};
 use crate::hls::events::{GapSkipReason, HlsStreamEvent};
-use crate::hls::metrics::PerformanceMetrics;
 
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::{AssemblerInput, PlaylistNotice};
@@ -1194,8 +1194,8 @@ impl SequenceAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hls::engine::descriptor::{SegmentDescriptor, SegmentSource};
-    use crate::hls::engine::identity::SegmentKey;
+    use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentSource};
+    use crate::segment_engine::identity::SegmentKey;
     use bytes::Bytes;
     use std::time::Duration;
     use url::Url;

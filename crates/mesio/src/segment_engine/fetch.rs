@@ -20,8 +20,8 @@ use crate::CacheManager;
 use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
+use crate::hls::PerformanceMetrics;
 use crate::hls::config::HlsConfig;
-use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::segment_utils::is_m4s_segment;
 use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
@@ -881,8 +881,8 @@ fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hls::engine::descriptor::SegmentDescriptor;
-    use crate::hls::engine::identity::SegmentKey;
+    use crate::segment_engine::descriptor::SegmentDescriptor;
+    use crate::segment_engine::identity::SegmentKey;
 
     fn descriptor(
         uri: &str,

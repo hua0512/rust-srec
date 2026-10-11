@@ -809,7 +809,7 @@ fn encryption_fetch_eq(a: &SegmentDescriptor, b: &SegmentDescriptor) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hls::engine::identity::ByteRangeKey;
+    use crate::segment_engine::identity::ByteRangeKey;
     use bytes::Bytes;
     use url::Url;
 
