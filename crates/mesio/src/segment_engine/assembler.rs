@@ -36,9 +36,10 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::hls::HlsDownloaderError;
 use crate::hls::PerformanceMetrics;
-use crate::hls::config::{GapSkipStrategy, HlsConfig};
+use crate::hls::config::GapSkipStrategy;
 use crate::hls::events::{GapSkipReason, HlsStreamEvent};
 
+use super::config::SegmentCoreConfig;
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::{AssemblerInput, PlaylistNotice};
 use super::payload::SegmentPayload;
@@ -306,7 +307,7 @@ enum InitState {
 }
 
 pub struct SequenceAssembler {
-    config: Arc<HlsConfig>,
+    config: Arc<SegmentCoreConfig>,
     input_rx: mpsc::Receiver<AssemblerInput>,
     event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
     reorder_buffer: BTreeMap<u64, BufferedPayload>,
@@ -347,14 +348,14 @@ pub struct SequenceAssembler {
 
 impl SequenceAssembler {
     pub fn new(
-        config: Arc<HlsConfig>,
+        config: Arc<SegmentCoreConfig>,
         input_rx: mpsc::Receiver<AssemblerInput>,
         event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
         is_live_stream: bool,
         initial_media_sequence: u64,
         cancel: CancellationToken,
     ) -> Self {
-        let max_retained_inits = config.output_config.max_pending_init_segments;
+        let max_retained_inits = config.output.max_pending_init_segments;
         Self {
             config,
             input_rx,
@@ -385,9 +386,9 @@ impl SequenceAssembler {
 
     fn gap_strategy(&self) -> &GapSkipStrategy {
         if self.is_live_stream {
-            &self.config.output_config.live_gap_strategy
+            &self.config.output.live_gap_strategy
         } else {
-            &self.config.output_config.vod_gap_strategy
+            &self.config.output.vod_gap_strategy
         }
     }
 
@@ -395,7 +396,7 @@ impl SequenceAssembler {
     /// over its byte/segment limit and blocked on a gap, the gap policy's
     /// count/duration thresholds are bypassed.
     fn buffer_at_limit(&self) -> bool {
-        let limits = &self.config.output_config.buffer_limits;
+        let limits = &self.config.output.buffer_limits;
         (limits.max_segments > 0 && self.reorder_buffer.len() >= limits.max_segments)
             || (limits.max_bytes > 0 && self.current_buffer_bytes >= limits.max_bytes)
     }
@@ -487,7 +488,7 @@ impl SequenceAssembler {
         debug!(live = self.is_live_stream, "sequence assembler started");
 
         let gap_evaluation_interval = {
-            let interval = self.config.output_config.gap_evaluation_interval;
+            let interval = self.config.output.gap_evaluation_interval;
             if interval.is_zero() {
                 std::time::Duration::from_millis(1)
             } else {
@@ -497,7 +498,7 @@ impl SequenceAssembler {
 
         loop {
             let overall_stall_timeout = if self.is_live_stream
-                && let Some(max_stall) = self.config.output_config.live_max_overall_stall_duration
+                && let Some(max_stall) = self.config.output.live_max_overall_stall_duration
                 && let Some(last_input) = self.last_input_received_time
             {
                 max_stall.saturating_sub(last_input.elapsed())
@@ -516,11 +517,11 @@ impl SequenceAssembler {
                 // Live stall watchdog: triggers regardless of gap strategy.
                 _ = sleep(overall_stall_timeout),
                     if self.is_live_stream
-                        && self.config.output_config.live_max_overall_stall_duration.is_some() =>
+                        && self.config.output.live_max_overall_stall_duration.is_some() =>
                 {
                     if let Some(last_input) = self.last_input_received_time
                         && let Some(max_stall) =
-                            self.config.output_config.live_max_overall_stall_duration
+                            self.config.output.live_max_overall_stall_duration
                         && last_input.elapsed() >= max_stall
                     {
                         error!(
@@ -864,7 +865,7 @@ impl SequenceAssembler {
 
                 // VOD per-segment timeout.
                 if !self.is_live_stream
-                    && let Some(vod_timeout) = self.config.output_config.vod_segment_timeout
+                    && let Some(vod_timeout) = self.config.output.vod_segment_timeout
                     && let Some(gap_state) = self.gap_state.as_ref()
                 {
                     let elapsed = gap_state.detected_at.elapsed();
@@ -1135,7 +1136,7 @@ impl SequenceAssembler {
     /// Live pruning by count and buffered duration (only entries below the
     /// emit cursor are eligible — entries at/above it are pending output).
     fn prune_reorder_buffer(&mut self) {
-        let max_segments = self.config.output_config.live_reorder_buffer_max_segments;
+        let max_segments = self.config.output.live_reorder_buffer_max_segments;
         if max_segments > 0 && self.reorder_buffer.len() > max_segments {
             let excess = self.reorder_buffer.len() - max_segments;
             let stale: Vec<u64> = self
@@ -1155,7 +1156,7 @@ impl SequenceAssembler {
 
         let max_duration = self
             .config
-            .output_config
+            .output
             .live_reorder_buffer_duration
             .as_secs_f32();
         if max_duration > 0.0 {
@@ -1194,6 +1195,7 @@ impl SequenceAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hls::config::HlsConfig;
     use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentMeta, SegmentSource};
     use crate::segment_engine::identity::SegmentKey;
     use bytes::Bytes;
@@ -1296,7 +1298,7 @@ mod tests {
         let (event_tx, event_rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
         let assembler = SequenceAssembler::new(
-            Arc::new(config),
+            Arc::new(SegmentCoreConfig::from(&config)),
             input_rx,
             event_tx,
             live,

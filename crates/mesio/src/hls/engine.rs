@@ -15,6 +15,7 @@
 //! payloads move by value as `Bytes` handles. See
 //! `crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md` for the full design.
 
+mod decrypt;
 mod output;
 pub mod planner;
 pub mod watcher;
@@ -39,11 +40,13 @@ use crate::hls::events::HlsStreamEvent;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
+use crate::segment_engine::config::{FetchConfig, OutputConfig, SegmentCoreConfig};
 use crate::session::EventSink;
 
 use assembler::SequenceAssembler;
 use budget::ByteBudget;
 use crypto::{CryptoBackend, CryptoExecutor, KeyCache};
+use decrypt::HlsDecryptor;
 use fetch::FetchContext;
 use identity::{SegmentIdentityPolicy, StripQueryIdentity};
 use planner::PlannerContext;
@@ -156,15 +159,20 @@ pub async fn start_with_events(
     } else {
         CryptoBackend::Inline
     };
-    let fetch_ctx = Arc::new(FetchContext {
-        clients: Arc::clone(&clients),
-        config: Arc::clone(&config),
-        budget,
-        crypto: CryptoExecutor::new(crypto_backend),
-        key_cache: KeyCache::new(
+    let core_config = Arc::new(SegmentCoreConfig::from(config.as_ref()));
+    let decryptor = HlsDecryptor::new(
+        CryptoExecutor::new(crypto_backend),
+        KeyCache::new(
             config.decryption_config.key_cache_ttl,
             engine.key_cache_max_entries,
         ),
+        config.fetcher_config.clone(),
+    );
+    let fetch_ctx = Arc::new(FetchContext {
+        clients: Arc::clone(&clients),
+        config: Arc::clone(&core_config),
+        budget,
+        decryptor: Some(Arc::new(decryptor)),
         cache_manager,
         metrics: performance_metrics.clone(),
         cancel: cancel.clone(),
@@ -207,7 +215,7 @@ pub async fn start_with_events(
     // --- Task C: assembler (spawned before the reactor so its receiver is
     // live the moment outcomes start flowing) ---
     let mut assembler = SequenceAssembler::new(
-        Arc::clone(&config),
+        core_config,
         assembler_rx,
         client_event_tx,
         is_live,
@@ -258,4 +266,34 @@ pub async fn start_with_events(
             performance_metrics,
         },
     ))
+}
+
+impl From<&HlsConfig> for SegmentCoreConfig {
+    fn from(config: &HlsConfig) -> Self {
+        let fetcher = &config.fetcher_config;
+        let output = &config.output_config;
+        Self {
+            fetch: FetchConfig {
+                params: config.base.params.clone(),
+                segment_download_timeout: fetcher.segment_download_timeout,
+                max_segment_retries: fetcher.max_segment_retries,
+                segment_retry_delay_base: fetcher.segment_retry_delay_base,
+                progress_emit_min_bytes: fetcher.progress_emit_min_bytes,
+                progress_emit_min_interval: fetcher.progress_emit_min_interval,
+                processed_segment_ttl: config.processor_config.processed_segment_ttl,
+                max_segment_size_bytes: config.engine_config.max_segment_size_bytes,
+            },
+            output: OutputConfig {
+                live_reorder_buffer_duration: output.live_reorder_buffer_duration,
+                live_reorder_buffer_max_segments: output.live_reorder_buffer_max_segments,
+                gap_evaluation_interval: output.gap_evaluation_interval,
+                max_pending_init_segments: output.max_pending_init_segments,
+                live_max_overall_stall_duration: output.live_max_overall_stall_duration,
+                live_gap_strategy: output.live_gap_strategy.clone(),
+                vod_gap_strategy: output.vod_gap_strategy.clone(),
+                vod_segment_timeout: output.vod_segment_timeout,
+                buffer_limits: output.buffer_limits.clone(),
+            },
+        }
+    }
 }
