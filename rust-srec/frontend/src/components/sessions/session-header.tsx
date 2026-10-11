@@ -74,7 +74,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="flex items-start gap-5"
+          className="flex min-w-0 items-start gap-5"
         >
           <div
             className={cn(
@@ -90,7 +90,7 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               )}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-3 mb-1.5">
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
                 <Trans>Session Details</Trans>
@@ -107,8 +107,8 @@ export function SessionHeader({ session }: SessionHeaderProps) {
               </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium">
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/50 border border-border/50">
-                <Hash className="h-3.5 w-3.5" />
+              <span className="flex min-w-0 items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/50 border border-border/50 break-all">
+                <Hash className="h-3.5 w-3.5 shrink-0" />
                 ID: {session.id}
               </span>
               {session.title && (

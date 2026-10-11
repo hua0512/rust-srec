@@ -181,7 +181,7 @@ function DanmuStatisticsCardImpl<TFieldValues extends FieldValues>({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="@container space-y-6">
         <FormField
           control={form.control}
           name={path('enabled')}
@@ -208,7 +208,7 @@ function DanmuStatisticsCardImpl<TFieldValues extends FieldValues>({
           )}
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 @md:grid-cols-2 gap-6">
           {numberField(
             'top_talkers',
             <Trans>Top chatters to keep</Trans>,

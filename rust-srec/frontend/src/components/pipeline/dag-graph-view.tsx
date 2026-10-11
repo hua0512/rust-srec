@@ -268,7 +268,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   </div>
                 )}
 
-                <div className="flex items-start justify-between mb-4 relative z-10">
+                <div className="flex items-start justify-between gap-2 mb-4 relative z-10">
                   <div
                     className={cn(
                       'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
@@ -285,12 +285,16 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   </div>
                   <Badge
                     variant="outline"
-                    className="bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
+                    className="min-w-0 shrink bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
                   >
-                    {(() => {
-                      const def = getProcessorDefinition(node.processor || '');
-                      return def ? i18n._(def.label) : node.processor || '';
-                    })()}
+                    <span className="truncate">
+                      {(() => {
+                        const def = getProcessorDefinition(
+                          node.processor || '',
+                        );
+                        return def ? i18n._(def.label) : node.processor || '';
+                      })()}
+                    </span>
                   </Badge>
                 </div>
 

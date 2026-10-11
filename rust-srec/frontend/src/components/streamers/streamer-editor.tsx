@@ -25,6 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { extractMetadata, getPlatformConfig } from '@/server/functions';
 import { templatesQueryOptions } from '@/api/templates';
@@ -289,23 +290,33 @@ export function StreamerEditor({
           header && <motion.div variants={itemVariants}>{header}</motion.div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
-          <div className={sidebar ? 'lg:col-span-3' : 'lg:col-span-4'}>
-            <form id="streamer-form" onSubmit={submit}>
-              <motion.div variants={itemVariants}>
-                <StreamerTabs tabs={tabs} />
-              </motion.div>
-            </form>
-          </div>
-
-          {sidebar && (
-            <motion.div
-              variants={itemVariants}
-              className="space-y-6 lg:col-span-1"
+        {/* The sidebar column needs the editor itself to be wide, which a viewport breakpoint
+            cannot tell once the app sidebar takes its share. The query container wraps only the
+            grid, so the fixed save button is never inside it. */}
+        <div className="@container">
+          <div className="grid grid-cols-1 gap-8 @4xl:grid-cols-4">
+            <div
+              className={cn(
+                'min-w-0',
+                sidebar ? '@4xl:col-span-3' : '@4xl:col-span-4',
+              )}
             >
-              {sidebar}
-            </motion.div>
-          )}
+              <form id="streamer-form" onSubmit={submit}>
+                <motion.div variants={itemVariants}>
+                  <StreamerTabs tabs={tabs} />
+                </motion.div>
+              </form>
+            </div>
+
+            {sidebar && (
+              <motion.div
+                variants={itemVariants}
+                className="min-w-0 space-y-6 @4xl:col-span-1"
+              >
+                {sidebar}
+              </motion.div>
+            )}
+          </div>
         </div>
 
         <SaveFab

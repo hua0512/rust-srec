@@ -111,25 +111,30 @@ export function PresetEditor({
     <div className="min-h-screen pb-20 pt-4">
       <div className="max-w-6xl mx-auto p-4 md:p-6 relative">
         <Form {...form}>
-          <form className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-            {/* Left Column: Meta Info */}
-            <div className="lg:col-span-4 space-y-6">
-              <PresetMetaForm
-                form={form}
-                initialData={initialData}
-                title={title}
-                isUpdating={isUpdating}
-              />
-            </div>
+          {/* Two columns only when the editor itself is wide enough: the app sidebar takes a share
+              of the viewport that a breakpoint cannot see. The query container wraps only the
+              form, so the fixed save button is never inside it. */}
+          <div className="@container">
+            <form className="grid grid-cols-1 @3xl:grid-cols-12 gap-6 @3xl:gap-8 items-start">
+              {/* Left Column: Meta Info */}
+              <div className="@3xl:col-span-4 min-w-0 space-y-6">
+                <PresetMetaForm
+                  form={form}
+                  initialData={initialData}
+                  title={title}
+                  isUpdating={isUpdating}
+                />
+              </div>
 
-            {/* Right Column: Configuration */}
-            <div className="lg:col-span-8 space-y-6">
-              <PresetConfigForm
-                form={form}
-                currentProcessor={currentProcessor}
-              />
-            </div>
-          </form>
+              {/* Right Column: Configuration */}
+              <div className="@3xl:col-span-8 min-w-0 space-y-6">
+                <PresetConfigForm
+                  form={form}
+                  currentProcessor={currentProcessor}
+                />
+              </div>
+            </form>
+          </div>
         </Form>
 
         <PresetSaveFab

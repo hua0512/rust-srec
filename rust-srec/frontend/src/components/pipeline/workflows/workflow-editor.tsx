@@ -116,7 +116,7 @@ export function WorkflowEditor({
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <div className="border-b border-border/40">
-        <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-3 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -172,14 +172,14 @@ export function WorkflowEditor({
         </div>
       </div>
 
-      <div className="flex-1 max-w-[1600px] mx-auto w-full px-4 md:px-8 py-8">
+      <div className="@container flex-1 max-w-[1600px] mx-auto w-full px-4 md:px-8 py-8">
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full"
+            className="grid grid-cols-1 @3xl:grid-cols-12 gap-8 h-full"
           >
             {/* Left Column: Basic Info & Toolbox */}
-            <div className="lg:col-span-4 space-y-6">
+            <div className="@3xl:col-span-4 min-w-0 space-y-6">
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -245,7 +245,7 @@ export function WorkflowEditor({
             <WorkflowStructurePanel
               controller={controller}
               variant="standalone"
-              className="lg:col-span-8 flex flex-col h-full min-h-[600px] space-y-4"
+              className="@3xl:col-span-8 min-w-0 flex flex-col h-full min-h-[600px] space-y-4"
             />
           </form>
         </Form>
