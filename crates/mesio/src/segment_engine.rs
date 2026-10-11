@@ -13,6 +13,7 @@ pub mod descriptor;
 pub mod fetch;
 pub mod identity;
 pub mod input;
+pub mod metrics;
 pub mod payload;
 pub mod reactor;
 pub(crate) mod refresh;

@@ -37,10 +37,10 @@ use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, IdentityPolicyConfig};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
 use crate::segment_engine::config::{FetchConfig, OutputConfig, SegmentCoreConfig};
+use crate::segment_engine::metrics::PerformanceMetrics;
 use crate::session::EventSink;
 
 use assembler::SequenceAssembler;

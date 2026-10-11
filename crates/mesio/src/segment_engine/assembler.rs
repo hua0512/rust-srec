@@ -35,17 +35,34 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::DownloadError;
-use crate::hls::PerformanceMetrics;
-use crate::hls::config::GapSkipStrategy;
-use crate::hls::events::GapSkipReason;
 
-use super::config::SegmentCoreConfig;
+use super::config::{GapSkipStrategy, SegmentCoreConfig};
 use super::control::EngineNotice;
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
+use super::metrics::PerformanceMetrics;
 use super::payload::SegmentPayload;
 
 // --- Output ---
+
+/// Reason why a gap was skipped in the reorder buffer
+#[derive(Debug, Clone)]
+pub enum GapSkipReason {
+    /// Gap skipped because count threshold was exceeded
+    CountThreshold(u64),
+    /// Gap skipped because duration threshold was exceeded
+    DurationThreshold(Duration),
+    /// Gap skipped because both count and duration thresholds were exceeded
+    BothThresholds { count: u64, duration: Duration },
+    /// Upstream declared these MSNs will never arrive (window slide, ad
+    /// filtering, or terminal segment failure) — the assembler advances
+    /// without waiting on any threshold.
+    Upstream,
+    /// The reorder buffer reached its byte/segment cap while blocked on this
+    /// gap; the skip decision is forced immediately instead of waiting at the
+    /// cap (which would deadlock output behind an out-of-order result).
+    BufferPressure,
+}
 
 /// One ordered output item. Payloads arrive in sequence order, each preceded
 /// by its discontinuity and, for fMP4, the init it is decoded with.

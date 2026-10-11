@@ -2,51 +2,7 @@ use std::time::Duration;
 
 use crate::DownloaderConfig;
 
-// --- Gap Skip Strategy ---
-/// Strategy for handling gaps in segment sequences
-#[derive(Debug, Clone)]
-pub enum GapSkipStrategy {
-    /// Wait indefinitely for missing segments (VOD default)
-    WaitIndefinitely,
-    /// Skip after receiving N subsequent segments
-    SkipAfterCount(u64),
-    /// Skip after waiting for a duration
-    SkipAfterDuration(Duration),
-    /// Skip when EITHER count OR duration threshold is exceeded
-    SkipAfterBoth { count: u64, duration: Duration },
-}
-
-impl Default for GapSkipStrategy {
-    fn default() -> Self {
-        // Default: skip after 10 segments OR 5 second for live.
-        // Rationale: with concurrent downloads, segments can arrive out-of-order.
-        // A low count threshold (e.g. 3) can cause false skips where the missing
-        // segment arrives shortly after the skip decision.
-        GapSkipStrategy::SkipAfterBoth {
-            count: 10,
-            duration: Duration::from_secs(5),
-        }
-    }
-}
-
-// --- Buffer Limits ---
-/// Configuration for buffer size limits
-#[derive(Debug, Clone)]
-pub struct BufferLimits {
-    /// Maximum number of segments in buffer (0 = unlimited)
-    pub max_segments: usize,
-    /// Maximum total bytes in buffer (0 = unlimited)
-    pub max_bytes: usize,
-}
-
-impl Default for BufferLimits {
-    fn default() -> Self {
-        Self {
-            max_segments: 50,             // Reasonable default for most streams
-            max_bytes: 100 * 1024 * 1024, // 100MB
-        }
-    }
-}
+pub use crate::segment_engine::config::{BufferLimits, GapSkipStrategy};
 
 // --- Engine (reactor) Configuration ---
 

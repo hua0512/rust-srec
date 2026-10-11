@@ -20,7 +20,6 @@ use url::Url;
 use crate::CacheManager;
 use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::downloader::ClientPool;
-use crate::hls::PerformanceMetrics;
 use crate::redact::Redacted;
 use crate::session::{DownloadEvent, EventSink};
 
@@ -31,6 +30,7 @@ use super::descriptor::{
     EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor, SegmentSource,
 };
 use super::identity::{ByteRangeKey, SegmentKey, SegmentKind};
+use super::metrics::PerformanceMetrics;
 use super::payload::SegmentPayload;
 use super::store::{FailureClass, ReadyJob, SegmentOutcome};
 

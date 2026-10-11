@@ -38,7 +38,7 @@ impl BoundedHostSet {
     }
 }
 
-/// Performance metrics for HLS pipeline
+/// Performance metrics for the segment download pipeline
 ///
 /// Tracks various performance counters for observability and tuning.
 /// All counters use atomic operations for thread-safe access.
