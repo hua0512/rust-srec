@@ -838,6 +838,7 @@ mod tests {
                 kind,
                 uri: Arc::from(uri),
                 byte_range: None,
+                scope: None,
             },
             msn,
             source,

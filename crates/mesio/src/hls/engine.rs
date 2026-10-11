@@ -181,12 +181,7 @@ pub async fn start_with_events(
     });
 
     // --- Identity policy + planner context (per-source) ---
-    let policy = match &engine.identity_policy {
-        IdentityPolicyConfig::FullUrl => SegmentIdentityPolicy::default(),
-        IdentityPolicyConfig::StripQueryKeys(keys) => {
-            SegmentIdentityPolicy::StripQuery(StripQueryIdentity::new(keys.iter().cloned()))
-        }
-    };
+    let policy = identity_policy(&engine.identity_policy);
     // Either the requested URL or the redirect target identifies the platform.
     let is_twitch = TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str())
         || TwitchPlaylistProcessor::is_twitch_playlist(&base_url);
@@ -267,6 +262,16 @@ pub async fn start_with_events(
             performance_metrics,
         },
     ))
+}
+
+/// The runtime identity policy for a configured one.
+pub(crate) fn identity_policy(config: &IdentityPolicyConfig) -> SegmentIdentityPolicy {
+    match config {
+        IdentityPolicyConfig::FullUrl => SegmentIdentityPolicy::default(),
+        IdentityPolicyConfig::StripQueryKeys(keys) => {
+            SegmentIdentityPolicy::StripQuery(StripQueryIdentity::new(keys.iter().cloned()))
+        }
+    }
 }
 
 impl From<&HlsConfig> for SegmentCoreConfig {

@@ -86,5 +86,12 @@ impl SegmentPayload {
 fn media_segment(descriptor: &SegmentDescriptor) -> m3u8_rs::MediaSegment {
     match &descriptor.meta {
         SegmentMeta::Hls(segment) => segment.as_ref().clone(),
+        // DASH output is built by its muxer; this keeps a stray DASH payload
+        // describable rather than unrepresentable.
+        SegmentMeta::Dash(meta) => m3u8_rs::MediaSegment {
+            uri: crate::redact::redact_url(&descriptor.parsed_url).to_string(),
+            duration: meta.duration_secs() as f32,
+            ..Default::default()
+        },
     }
 }

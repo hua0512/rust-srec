@@ -23,6 +23,7 @@ use crate::hls::config::HlsVariantSelectionPolicy;
 use crate::hls::engine::identity::SegmentKey;
 use crate::hls::{GapSkipReason, MetricsSnapshot, PerformanceMetrics};
 use crate::hls::{HlsConfig, HlsDownloader};
+use crate::segment_engine::descriptor::MediaTrack;
 use crate::source::{ContentSource, SourceManager};
 use crate::{BoxMediaStream, DownloadError};
 
@@ -289,6 +290,8 @@ pub enum ResourceId {
     HlsSegment { key: SegmentKey },
     HlsKey { uri: Arc<str> },
     FlvStream { url: Arc<str> },
+    DashManifest { url: Arc<str> },
+    DashSegment { track: MediaTrack, key: SegmentKey },
 }
 
 #[derive(Clone)]

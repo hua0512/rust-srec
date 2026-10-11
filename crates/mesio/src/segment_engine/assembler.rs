@@ -1257,6 +1257,7 @@ mod tests {
                 kind,
                 uri: Arc::from(uri),
                 byte_range: None,
+                scope: None,
             },
             msn,
             source: SegmentSource::Playlist,
@@ -1310,6 +1311,7 @@ mod tests {
             kind: SegmentKind::Init,
             uri: Arc::from(uri),
             byte_range: None,
+            scope: None,
         }
     }
 
@@ -1410,6 +1412,7 @@ mod tests {
                     kind: SegmentKind::Media,
                     uri: Arc::from("https://e.com/seg100.ts"),
                     byte_range: None,
+                    scope: None,
                 },
                 msn: 100,
             })
@@ -1871,6 +1874,7 @@ mod tests {
                 kind: SegmentKind::Media,
                 uri: Arc::from(format!("https://e.com/seg{msn}.m4s")),
                 byte_range: None,
+                scope: None,
             },
             msn,
         }

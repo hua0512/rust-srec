@@ -29,7 +29,7 @@ use super::super::soop_processor::is_preloading_segment;
 
 use super::descriptor::{
     EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor, SegmentMeta,
-    SegmentSource,
+    SegmentSource, inherit_query_params, query_params,
 };
 use super::identity::{
     ByteRangeKey, IdentityPolicy, SegmentIdentityPolicy, SegmentKey, SegmentKind,
@@ -234,15 +234,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     }
 
     let base_url = Url::parse(snapshot.base_url.as_ref()).ok();
-    let parent_params: Vec<(String, String)> = snapshot
-        .parent_query
-        .as_deref()
-        .map(|q| {
-            url::form_urlencoded::parse(q.as_bytes())
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let parent_params = query_params(snapshot.parent_query.as_deref());
 
     let scan: Vec<ScanSegment<'_>> = match ctx.twitch.as_mut() {
         Some(twitch) => twitch
@@ -490,6 +482,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 kind: SegmentKind::Media,
                 uri: ctx.policy.canonical_uri(&parsed_url),
                 byte_range: byte_range_key,
+                scope: None,
             },
             msn,
             source,
@@ -539,6 +532,7 @@ fn build_init_descriptor(
             kind: SegmentKind::Init,
             uri: policy.canonical_uri(&parsed_url),
             byte_range: byte_range_key,
+            scope: None,
         },
         // For init, msn is the MSN of the first segment the map covers —
         // assembler ordering metadata, never identity.
@@ -668,12 +662,7 @@ fn merge_params(parent_params: &[(String, String)], uri: &str) -> String {
     let Ok(mut url) = Url::parse(uri) else {
         return uri.to_string();
     };
-    for (k, v) in parent_params {
-        if url.query_pairs().any(|(existing, _)| existing == *k) {
-            continue;
-        }
-        url.query_pairs_mut().append_pair(k, v);
-    }
+    inherit_query_params(&mut url, parent_params);
     url.to_string()
 }
 
