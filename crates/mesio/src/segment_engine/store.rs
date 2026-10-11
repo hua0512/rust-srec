@@ -569,7 +569,10 @@ impl SegmentStateStore {
                 };
 
                 let retryable = match class {
-                    FailureClass::Http(404 | 429) | FailureClass::Http(500..=599) => true,
+                    // 425 Too Early: an origin that enforces live availability
+                    // (DASH) rejects a request that lands before the segment is
+                    // published on its clock; it is published moments later.
+                    FailureClass::Http(404 | 425 | 429) | FailureClass::Http(500..=599) => true,
                     FailureClass::Network
                     | FailureClass::Timeout
                     | FailureClass::Decode
@@ -973,6 +976,29 @@ mod tests {
         let (jobs, _) = s.next_ready_jobs(1, later, &b);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].attempt, 2);
+    }
+
+    #[test]
+    fn too_early_is_retried_like_not_found() {
+        let mut s = store();
+        let b = budget_unlimited();
+        let now = Instant::now();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            now,
+        );
+        let job = take_one(&mut s, &b).expect("schedulable");
+        let out = s.apply_outcome(
+            SegmentOutcome::Failed {
+                key: job.descriptor.key.clone(),
+                msn: 1,
+                class: FailureClass::Http(425),
+                reason: Arc::from("425"),
+            },
+            now,
+        );
+        assert!(out.assembler_inputs.is_empty(), "425 is not terminal");
+        assert_eq!(out.retry_notice.expect("retry scheduled").attempt, 1);
     }
 
     #[test]
