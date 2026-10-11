@@ -1,0 +1,44 @@
+# Fuzz targets for the mp4 crate's untrusted-input parsers. Not a workspace
+# member: requires nightly and cargo-fuzz.
+#
+#   cargo +nightly fuzz run merge_media_segment -- -max_total_time=300
+#
+# Run from `crates/mp4`. Seed corpora from `tests/fixtures/dash`.
+[package]
+name = "mp4-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+bytes = "1"
+libfuzzer-sys = "0.4"
+mp4 = { path = ".." }
+
+# Standalone workspace so the repository workspace does not pick it up.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "merge_init"
+path = "fuzz_targets/merge_init.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "merge_media_segment"
+path = "fuzz_targets/merge_media_segment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "independent_fragment"
+path = "fuzz_targets/independent_fragment.rs"
+test = false
+doc = false
+bench = false

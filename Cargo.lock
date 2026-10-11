@@ -3839,6 +3839,7 @@ dependencies = [
  "h264",
  "h265",
  "media-types",
+ "thiserror 2.0.21",
  "tracing",
 ]
 
