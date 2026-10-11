@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import {
-  Card,
   CardContent,
   CardFooter,
   CardHeader,
@@ -12,9 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
 import {
-  MoreHorizontal,
   HardDrive,
   Check,
   Copy,
@@ -36,6 +33,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import {
+  CardIconTile,
+  CardMenuButton,
+  DecoratedCard,
+} from '@/components/shared/decorated-card';
 import { getMediaFileTypeMeta } from '@/lib/media-file-type';
 import type { MediaOutput } from '@/api/schemas';
 
@@ -79,7 +81,6 @@ export function OutputCard({
   // `format` carries `media_outputs.file_type` (VIDEO, THUMBNAIL, ...), so the
   // icon and colours come from the type map rather than a file extension.
   const typeMeta = getMediaFileTypeMeta(output.format);
-  const TypeIcon = typeMeta.icon;
   const hasFailedUpload = output.uploads.some((u) => u.status === 'FAILED');
   const sessionLabel = output.session_id.substring(0, 8);
 
@@ -90,7 +91,7 @@ export function OutputCard({
   };
 
   return (
-    <Card
+    <DecoratedCard
       onClick={toggleSelection}
       role={selectionMode ? 'checkbox' : undefined}
       aria-checked={selectionMode ? isSelected : undefined}
@@ -104,7 +105,7 @@ export function OutputCard({
       className={cn(
         // Tighter than the shared Card default (gap-6 py-6): three short rows
         // of metadata otherwise leave most of the card empty.
-        'relative h-full flex flex-col gap-3 py-4 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 border-border/40 hover:border-primary/20',
+        'gap-3 py-4',
         selectionMode && 'cursor-pointer select-none',
         isSelected && 'border-primary/50 ring-2 ring-primary',
       )}
@@ -121,17 +122,12 @@ export function OutputCard({
           <Check className="h-3.5 w-3.5" />
         </div>
       )}
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-      {/* Hover Glow Effect */}
-      <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
       <CardHeader className="relative flex flex-row items-center gap-3 space-y-0 z-10">
-        <div
-          className={`p-2 rounded-xl bg-gradient-to-br ${typeMeta.tile} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
-        >
-          <TypeIcon className="h-4 w-4" />
-        </div>
+        <CardIconTile
+          icon={typeMeta.icon}
+          className={cn('p-2 rounded-xl bg-gradient-to-br', typeMeta.tile)}
+          iconClassName="h-4 w-4"
+        />
         {/* min-w-0 lets the timestamp truncate instead of forcing the row wider;
             everything after this column is shrink-0 so it never gets squeezed.
             Deliberately not `uppercase`: that renders the translated type label
@@ -209,16 +205,7 @@ export function OutputCard({
             // Hidden while selecting so the row has a single click target.
             className={cn('shrink-0', selectionMode && 'hidden')}
           >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 -mr-2 text-muted-foreground/40 hover:text-foreground transition-colors"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">
-                <Trans>Open menu</Trans>
-              </span>
-            </Button>
+            <CardMenuButton />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={handleCopyPath}>
@@ -298,6 +285,6 @@ export function OutputCard({
           <Trans>Session {sessionLabel}</Trans>
         </span>
       </CardFooter>
-    </Card>
+    </DecoratedCard>
   );
 }

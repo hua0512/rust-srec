@@ -1,12 +1,5 @@
 import { JobPresetSchema } from '@/api/schemas';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +17,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Edit, MoreHorizontal, Trash, CopyPlus } from 'lucide-react';
+import { Edit, Trash, CopyPlus } from 'lucide-react';
 import { z } from 'zod';
+import { CardField } from '@/components/shared/card-field';
+import {
+  CardHeaderRow,
+  CardIconTile,
+  CardMenuButton,
+  CardMetaFooter,
+  DecoratedCard,
+} from '@/components/shared/decorated-card';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import {
@@ -85,91 +86,67 @@ export function PresetCard({
   );
 
   return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/5 group overflow-hidden bg-gradient-to-br from-background/50 to-background/80 border-border/40 hover:border-primary/20">
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-      {/* Hover Glow Effect */}
-      <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
-      <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
-        <div
-          className={`p-3 rounded-2xl ${colorClass} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {DEFAULT_JOB_PRESET_NAMES[preset.id]
-              ? i18n._(DEFAULT_JOB_PRESET_NAMES[preset.id])
-              : preset.name}
-          </CardTitle>
-          {categoryLabel && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-                {categoryLabel}
-              </span>
-            </div>
-          )}
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 -mr-2 text-muted-foreground/40 hover:text-foreground transition-colors"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">
-                <Trans>Open menu</Trans>
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => onEdit(preset)}>
-              <Edit className="mr-2 h-4 w-4" /> <Trans>Edit</Trans>
-            </DropdownMenuItem>
-            {onClone && (
-              <DropdownMenuItem onClick={() => onClone(preset)}>
-                <CopyPlus className="mr-2 h-4 w-4" /> <Trans>Clone</Trans>
+    <DecoratedCard>
+      <CardHeaderRow
+        icon={<CardIconTile icon={Icon} className={colorClass} />}
+        title={
+          DEFAULT_JOB_PRESET_NAMES[preset.id]
+            ? i18n._(DEFAULT_JOB_PRESET_NAMES[preset.id])
+            : preset.name
+        }
+        subtitle={categoryLabel}
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <CardMenuButton />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => onEdit(preset)}>
+                <Edit className="mr-2 h-4 w-4" /> <Trans>Edit</Trans>
               </DropdownMenuItem>
-            )}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <Trash className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
+              {onClone && (
+                <DropdownMenuItem onClick={() => onClone(preset)}>
+                  <CopyPlus className="mr-2 h-4 w-4" /> <Trans>Clone</Trans>
                 </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    <Trans>Delete Preset?</Trans>
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    <Trans>
-                      This will permanently delete the preset "{preset.name}".
-                      Pipelines using this preset may fail if not updated.
-                    </Trans>
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>
-                    <Trans>Cancel</Trans>
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => onDelete(preset.id)}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              )}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={(e) => e.preventDefault()}
                   >
-                    <Trans>Delete</Trans>
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </CardHeader>
+                    <Trash className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      <Trans>Delete Preset?</Trans>
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      <Trans>
+                        This will permanently delete the preset "{preset.name}".
+                        Pipelines using this preset may fail if not updated.
+                      </Trans>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>
+                      <Trans>Cancel</Trans>
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => onDelete(preset.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      <Trans>Delete</Trans>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
       <CardContent className="relative pb-4 flex-1 z-10">
         {/* Description or Config Summary */}
         <div className="text-xs text-muted-foreground/70 mb-4 line-clamp-2 leading-relaxed min-h-[2.5em]">
@@ -183,18 +160,12 @@ export function PresetCard({
           {configKeys.length > 0 ? (
             <div className="grid grid-cols-2 gap-2">
               {configKeys.slice(0, 4).map((key) => (
-                <div
+                <CardField
                   key={key}
                   title={`${key}: ${formatConfigValue(configObj[key])}`}
-                  className="flex min-w-0 flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors"
-                >
-                  <span className="text-[9px] uppercase tracking-wider opacity-50 truncate">
-                    {key}
-                  </span>
-                  <span className="text-[11px] font-medium truncate text-foreground/80">
-                    {formatConfigValue(configObj[key])}
-                  </span>
-                </div>
+                  label={key}
+                  value={formatConfigValue(configObj[key])}
+                />
               ))}
             </div>
           ) : (
@@ -204,9 +175,9 @@ export function PresetCard({
           )}
         </div>
       </CardContent>
-      <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
+      <CardMetaFooter>
         <span className="font-mono opacity-50">#{preset.processor}</span>
-      </CardFooter>
-    </Card>
+      </CardMetaFooter>
+    </DecoratedCard>
   );
 }

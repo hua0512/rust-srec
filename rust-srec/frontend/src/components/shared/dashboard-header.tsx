@@ -2,12 +2,16 @@ import { motion, HTMLMotionProps } from 'motion/react';
 import { LucideIcon } from 'lucide-react';
 import React from 'react';
 
+import { cn } from '@/lib/utils';
+
 interface DashboardHeaderProps extends Omit<HTMLMotionProps<'div'>, 'title'> {
   icon: LucideIcon;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
   children?: React.ReactNode;
+  /** Classes for the row around `children`, which scrolls horizontally by default. */
+  childrenClassName?: string;
 }
 
 const item = {
@@ -21,6 +25,7 @@ export function DashboardHeader({
   subtitle,
   actions,
   children,
+  childrenClassName,
   ...props
 }: DashboardHeaderProps) {
   return (
@@ -53,7 +58,12 @@ export function DashboardHeader({
 
         {/* Extra Row (e.g. Filters) */}
         {children && (
-          <div className="px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar">
+          <div
+            className={cn(
+              'px-4 md:px-8 pb-3 overflow-x-auto no-scrollbar',
+              childrenClassName,
+            )}
+          >
             {children}
           </div>
         )}

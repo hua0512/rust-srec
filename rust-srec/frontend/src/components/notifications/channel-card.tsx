@@ -1,6 +1,5 @@
 import { NotificationChannel } from '@/api/schemas';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +18,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  MoreHorizontal,
   Edit,
   Trash2,
   Bell,
@@ -31,6 +29,13 @@ import {
   Send,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { CardField } from '@/components/shared/card-field';
+import {
+  CardHeaderRow,
+  CardIconTile,
+  CardMenuButton,
+  DecoratedCard,
+} from '@/components/shared/decorated-card';
 
 interface ChannelCardProps {
   channel: NotificationChannel;
@@ -81,72 +86,48 @@ export function ChannelCard({
     switch (channel.channel_type) {
       case 'Discord':
         return (
-          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-            <span className="text-[9px] uppercase tracking-wider opacity-50">
-              <Trans>Webhook URL</Trans>
-            </span>
-            <span className="text-[11px] font-medium truncate text-foreground/80">
-              {configObj.webhook_url || '...'}
-            </span>
-          </div>
+          <CardField
+            label={<Trans>Webhook URL</Trans>}
+            value={configObj.webhook_url || '...'}
+          />
         );
       case 'Email':
         return (
-          <>
-            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-              <span className="text-[9px] uppercase tracking-wider opacity-50">
-                <Trans>To</Trans>
-              </span>
-              <span className="text-[11px] font-medium truncate text-foreground/80">
-                {(configObj.to_addresses || []).join(', ')}
-              </span>
-            </div>
-          </>
+          <CardField
+            label={<Trans>To</Trans>}
+            value={(configObj.to_addresses || []).join(', ')}
+          />
         );
       case 'Telegram':
         return (
           <>
-            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-              <span className="text-[9px] uppercase tracking-wider opacity-50">
-                <Trans>Bot Token</Trans>
-              </span>
-              <span className="text-[11px] font-medium truncate text-foreground/80">
-                {configObj.bot_token
+            <CardField
+              label={<Trans>Bot Token</Trans>}
+              value={
+                configObj.bot_token
                   ? `${configObj.bot_token.slice(0, 6)}${'*'.repeat(20)}`
-                  : '...'}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-              <span className="text-[9px] uppercase tracking-wider opacity-50">
-                <Trans>Chat ID</Trans>
-              </span>
-              <span className="text-[11px] font-medium truncate text-foreground/80">
-                {configObj.chat_id || '...'}
-              </span>
-            </div>
+                  : '...'
+              }
+            />
+            <CardField
+              label={<Trans>Chat ID</Trans>}
+              value={configObj.chat_id || '...'}
+            />
           </>
         );
       case 'Gotify':
         return (
-          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-            <span className="text-[9px] uppercase tracking-wider opacity-50">
-              <Trans>Server URL</Trans>
-            </span>
-            <span className="text-[11px] font-medium truncate text-foreground/80">
-              {configObj.server_url || '...'}
-            </span>
-          </div>
+          <CardField
+            label={<Trans>Server URL</Trans>}
+            value={configObj.server_url || '...'}
+          />
         );
       case 'Webhook':
         return (
-          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-            <span className="text-[9px] uppercase tracking-wider opacity-50">
-              <Trans>URL</Trans>
-            </span>
-            <span className="text-[11px] font-medium truncate text-foreground/80">
-              {configObj.url || '...'}
-            </span>
-          </div>
+          <CardField
+            label={<Trans>URL</Trans>}
+            value={configObj.url || '...'}
+          />
         );
       default:
         return null;
@@ -154,94 +135,71 @@ export function ChannelCard({
   };
 
   return (
-    <Card className="relative h-full flex flex-col transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 group overflow-hidden bg-gradient-to-br from-background/80 to-background/40 border-border/40 hover:border-primary/20">
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-      {/* Hover Glow Effect */}
-      <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
-
-      <CardHeader className="relative flex flex-row items-center gap-4 pb-2 space-y-0 z-10">
-        <div
-          className={`p-3 rounded-2xl ${colorClass} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <CardTitle className="text-base font-medium truncate tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-            {channel.name}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {channel.channel_type}
-            </span>
-          </div>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 -mr-2 text-muted-foreground/40 hover:text-foreground transition-colors"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">
-                <Trans>Open menu</Trans>
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => onEdit(channel)}>
-              <Edit className="mr-2 h-4 w-4" /> <Trans>Edit</Trans>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onManageSubscriptions(channel)}>
-              <Activity className="mr-2 h-4 w-4" /> <Trans>Subscriptions</Trans>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onTest(channel.id)}>
-              <BellRing className="mr-2 h-4 w-4" />
-              <Trans>Test Notification</Trans>
-            </DropdownMenuItem>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    <Trans>Delete Channel?</Trans>
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    <Trans>
-                      This will permanently delete the notification channel "
-                      {channel.name}".
-                    </Trans>
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>
-                    <Trans>Cancel</Trans>
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => onDelete(channel.id)}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+    <DecoratedCard>
+      <CardHeaderRow
+        icon={<CardIconTile icon={Icon} className={colorClass} />}
+        title={channel.name}
+        subtitle={channel.channel_type}
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <CardMenuButton />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => onEdit(channel)}>
+                <Edit className="mr-2 h-4 w-4" /> <Trans>Edit</Trans>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onManageSubscriptions(channel)}>
+                <Activity className="mr-2 h-4 w-4" />{' '}
+                <Trans>Subscriptions</Trans>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onTest(channel.id)}>
+                <BellRing className="mr-2 h-4 w-4" />
+                <Trans>Test Notification</Trans>
+              </DropdownMenuItem>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={(e) => e.preventDefault()}
                   >
-                    <Trans>Delete</Trans>
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </CardHeader>
+                    <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete</Trans>
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      <Trans>Delete Channel?</Trans>
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      <Trans>
+                        This will permanently delete the notification channel "
+                        {channel.name}".
+                      </Trans>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>
+                      <Trans>Cancel</Trans>
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => onDelete(channel.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      <Trans>Delete</Trans>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
       <CardContent className="relative pb-4 flex-1 z-10">
         <div className="text-sm text-muted-foreground grid grid-cols-1 gap-2">
           {renderConfigDetails()}
         </div>
       </CardContent>
-    </Card>
+    </DecoratedCard>
   );
 }

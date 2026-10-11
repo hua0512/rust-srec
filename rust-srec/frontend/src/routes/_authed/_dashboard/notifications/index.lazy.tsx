@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CardSkeleton } from '@/components/shared/card-skeleton';
+import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { Plus, Bell, Settings2, ListOrdered, Monitor } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -51,6 +52,14 @@ import {
   type DesktopNotificationConfig,
 } from '@/desktop/desktop-notifications';
 import { CARD_GRID } from '@/lib/grid';
+import { CardField } from '@/components/shared/card-field';
+import {
+  CardDecoration,
+  CardIconTile,
+} from '@/components/shared/decorated-card';
+
+const STATUS_VALUE_CLASS =
+  'text-base text-foreground tracking-tight group-hover:text-primary transition-colors duration-300';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/notifications/')({
   component: NotificationsPage,
@@ -344,58 +353,46 @@ function NotificationsPage() {
       initial="hidden"
       animate="visible"
     >
-      {/* Header */}
-      <motion.div className="border-b border-border/40" variants={itemVariants}>
-        <div className="w-full">
-          <div className="flex flex-wrap gap-4 items-center justify-between p-4 md:px-8">
-            <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-                <Bell className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  <Trans>Notifications</Trans>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>Manage where system notifications are sent</Trans>
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-              <Badge variant="secondary" className="h-9 px-3 text-sm">
-                {(channels?.length || 0) + 1} <Trans>channels</Trans>
-              </Badge>
-              <Button variant="outline" asChild className="relative">
-                <Link to="/notifications/events">
-                  <ListOrdered className="mr-2 h-4 w-4" />
-                  <Trans>Events</Trans>
-                  {hasCriticalDot && (
-                    <div className="absolute -top-1 -right-1 flex items-center justify-center">
-                      <motion.div
-                        animate={{
-                          scale: [1, 1.8, 1],
-                          opacity: [0.5, 0, 0.5],
-                        }}
-                        transition={{
-                          duration: 2,
-                          repeat: Infinity,
-                          ease: 'easeInOut',
-                        }}
-                        className="absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]"
-                      />
-                      <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
-                    </div>
-                  )}
-                </Link>
-              </Button>
-              <Button onClick={handleCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                <Trans>Add Channel</Trans>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
+      <DashboardHeader
+        variants={itemVariants}
+        icon={Bell}
+        title={<Trans>Notifications</Trans>}
+        subtitle={<Trans>Manage where system notifications are sent</Trans>}
+        actions={
+          <>
+            <Badge variant="secondary" className="h-9 px-3 text-sm">
+              {(channels?.length || 0) + 1} <Trans>channels</Trans>
+            </Badge>
+            <Button variant="outline" asChild className="relative">
+              <Link to="/notifications/events">
+                <ListOrdered className="mr-2 h-4 w-4" />
+                <Trans>Events</Trans>
+                {hasCriticalDot && (
+                  <div className="absolute -top-1 -right-1 flex items-center justify-center">
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.8, 1],
+                        opacity: [0.5, 0, 0.5],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                      className="absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]"
+                    />
+                    <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
+                  </div>
+                )}
+              </Link>
+            </Button>
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              <Trans>Add Channel</Trans>
+            </Button>
+          </>
+        }
+      />
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
@@ -439,16 +436,14 @@ function NotificationsPage() {
                   }
                   className="cursor-pointer relative overflow-hidden group border border-border/40 hover:border-primary/20 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl rounded-3xl p-6 h-full flex flex-col justify-between min-h-[220px]"
                 >
-                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
-
-                  {/* Hover Glow Effect */}
-                  <div className="absolute -inset-0.5 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-500 pointer-events-none" />
+                  <CardDecoration />
 
                   <div className="relative z-10">
                     <div className="flex justify-between items-start mb-4">
-                      <div className="p-3 rounded-2xl bg-primary/10 ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3">
-                        <Monitor className="h-5 w-5 text-primary" />
-                      </div>
+                      <CardIconTile
+                        icon={Monitor}
+                        className="bg-primary/10 text-primary"
+                      />
                       <Badge
                         variant={internalActive ? 'default' : 'secondary'}
                         className={cn(
@@ -479,58 +474,46 @@ function NotificationsPage() {
                     <div className="mt-4 space-y-2">
                       {isDesktop ? (
                         <>
-                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                            <span className="text-[9px] uppercase tracking-wider opacity-50">
-                              <Trans>Status</Trans>
-                            </span>
-                            <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
-                              {desktopNotificationsConfig?.enabled
+                          <CardField
+                            label={<Trans>Status</Trans>}
+                            value={
+                              desktopNotificationsConfig?.enabled
                                 ? i18n._(msg`Enabled`)
-                                : i18n._(msg`Disabled`)}
-                            </span>
-                          </div>
+                                : i18n._(msg`Disabled`)
+                            }
+                            valueClassName={STATUS_VALUE_CLASS}
+                          />
 
                           <div className="grid grid-cols-2 gap-2">
-                            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                              <span className="text-[9px] uppercase tracking-wider opacity-50">
-                                <Trans>Configured Events</Trans>
-                              </span>
-                              <span className="text-[11px] font-medium text-foreground/80">
-                                {desktopConfiguredEventsText}
-                              </span>
-                            </div>
-                            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                              <span className="text-[9px] uppercase tracking-wider opacity-50">
-                                <Trans>Min Priority</Trans>
-                              </span>
-                              <span className="text-[11px] font-medium text-foreground/80">
-                                {desktopMinPriorityLabel}
-                              </span>
-                            </div>
+                            <CardField
+                              label={<Trans>Configured Events</Trans>}
+                              value={desktopConfiguredEventsText}
+                            />
+                            <CardField
+                              label={<Trans>Min Priority</Trans>}
+                              value={desktopMinPriorityLabel}
+                            />
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                            <span className="text-[9px] uppercase tracking-wider opacity-50">
-                              <Trans>Live Polling</Trans>
-                            </span>
-                            <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
-                              {browserNotificationsEnabled
+                          <CardField
+                            label={<Trans>Live Polling</Trans>}
+                            value={
+                              browserNotificationsEnabled
                                 ? i18n._(msg`Enabled`)
-                                : i18n._(msg`Disabled`)}
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                            <span className="text-[9px] uppercase tracking-wider opacity-50">
-                              <Trans>Web Push</Trans>
-                            </span>
-                            <span className="text-[11px] font-medium text-foreground/80">
-                              {webPushEnabled
+                                : i18n._(msg`Disabled`)
+                            }
+                            valueClassName={STATUS_VALUE_CLASS}
+                          />
+                          <CardField
+                            label={<Trans>Web Push</Trans>}
+                            value={
+                              webPushEnabled
                                 ? i18n._(msg`Enabled`)
-                                : i18n._(msg`Disabled`)}
-                            </span>
-                          </div>
+                                : i18n._(msg`Disabled`)
+                            }
+                          />
                         </>
                       )}
                     </div>
