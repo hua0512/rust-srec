@@ -74,6 +74,16 @@ protocol side: the playlist watcher, the planner, AES-128 key fetching
 Fetch and the assembler read `SegmentCoreConfig`, built from `HlsConfig` once at
 engine start; decryption is reached through an optional `SegmentDecryptor`.
 
+The DASH engine (`crates/mesio/src/dash/`) plugs into the same seams: an MPD
+watcher publishes snapshots to one reactor per selected track, each with its
+own `ByteBudget` and a `DashPlanner` that maps (Period, Representation,
+segment) to consecutive per-track ordinals; descriptors carry
+`SegmentMeta::Dash` and declare `ContainerKind::Fmp4`. Each track's assembler
+sink forwards `AssembledItem`s to a muxer, which merges the tracks with
+`mp4::merge` and produces `HlsData`. `SegmentKey::scope` carries the Period and
+Representation, so a URL reused across them is a distinct resource (HLS leaves
+it `None`).
+
 Control-plane state lives in exactly one place — the reactor (Task B). It owns the
 `SegmentStateStore`, so identity, dedup, retry budget, and scheduling priority are
 all decided in one loop with no shared lock and no cross-task work-handoff
@@ -477,6 +487,8 @@ pub struct SegmentKey {
     pub kind: SegmentKind,
     pub uri: Arc<str>,
     pub byte_range: Option<ByteRangeKey>,
+    /// Manifest context (DASH Period + Representation); `None` for HLS.
+    pub scope: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
