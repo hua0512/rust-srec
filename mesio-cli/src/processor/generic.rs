@@ -1,11 +1,11 @@
-use crate::cut::{CutSession, CutWriter};
+use crate::cut::CutSession;
 use crate::error::{AppError, is_broken_pipe_error};
 use crate::utils::spans;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
     CancellationToken, ChannelSpec, FormatStrategy, PipelineError, PipelineProvider,
-    ProtocolWriter, RunCompletionError, StreamerContext, WriterConfig, WriterStats, WriterTask,
-    config::PipelineConfig, settle_run, spawn_pipeline,
+    ProtocolWriter, RunCompletionError, StreamerContext, WriterCallbacks, WriterConfig,
+    WriterStats, WriterTask, config::PipelineConfig, settle_run, spawn_pipeline,
 };
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -25,7 +25,7 @@ where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
-    W: ProtocolWriter<Item = P::Item> + CutWriter,
+    W: ProtocolWriter<Item = P::Item> + WriterCallbacks,
 {
     let writer_span = span!(Level::INFO, "writer_processing");
     spans::init_writing_span(&writer_span, writer_message);
@@ -60,7 +60,7 @@ where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
-    W: ProtocolWriter<Item = P::Item> + CutWriter,
+    W: ProtocolWriter<Item = P::Item> + WriterCallbacks,
 {
     let mut context = StreamerContext::new(token.clone());
     if let Some(cut) = cut {

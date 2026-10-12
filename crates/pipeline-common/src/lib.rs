@@ -19,6 +19,7 @@
 //! - hua0512
 //!
 
+use std::path::Path;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -100,6 +101,26 @@ pub trait ProtocolWriter: Send + 'static {
     fn get_state(&self) -> &WriterState;
 
     fn run(&mut self, input: PipelineReceiver<Self::Item>) -> Result<WriterStats, WriterError>;
+}
+
+/// A writer that reports the files it opens and closes, and its progress.
+pub trait WriterCallbacks {
+    /// Called when a file is opened, with its path and sequence number.
+    fn set_on_segment_start_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Path, u32) + Send + Sync + 'static;
+
+    /// Called when a file is closed, with its path, sequence number, duration
+    /// in seconds, size in bytes, and the reason it was closed, if it was
+    /// split.
+    fn set_on_segment_complete_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static;
+
+    /// Called with the writer's progress, at the default intervals.
+    fn set_progress_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static;
 }
 
 pub trait PipelineProvider: Send + 'static {
