@@ -65,7 +65,7 @@ async fn handle_terminal_input(token: CancellationToken) {
             };
 
             if should_cancel {
-                println!("Cancellation requested. Shutting down gracefully...");
+                info!("Cancellation requested. Shutting down gracefully...");
                 token.cancel();
                 break;
             }
@@ -108,7 +108,7 @@ async fn handle_stdin_input(token: CancellationToken) {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(line) => {
                 if line.trim() == "q" {
-                    println!("Cancellation requested. Shutting down gracefully...");
+                    info!("Cancellation requested. Shutting down gracefully...");
                     token.cancel();
                     break;
                 }

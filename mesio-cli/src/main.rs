@@ -11,7 +11,7 @@ use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use output::provider::OutputFormat;
 use pipeline_common::{CancellationToken, config::PipelineConfig};
-use tracing::{Level, error, info};
+use tracing::{Level, error, info, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -22,6 +22,7 @@ mod error;
 mod input;
 mod output;
 mod processor;
+mod signal;
 mod utils;
 
 use cli::CliArgs;
@@ -140,6 +141,16 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(file_layer)
             .with(console_layer)
             .init();
+    }
+
+    match signal::install() {
+        Ok(signals) => {
+            tokio::spawn(signal::stop_on_signal(signals, token.clone()));
+        }
+        Err(error) => warn!(
+            %error,
+            "Failed to install signal handlers; a signal will stop mesio without finishing the current file"
+        ),
     }
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");
