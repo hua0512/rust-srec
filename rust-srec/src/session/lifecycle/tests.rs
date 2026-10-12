@@ -1432,6 +1432,13 @@ fn make_terminal_completed_clean_disconnect(session_id: &str) -> DownloadTermina
 }
 
 fn make_terminal_completed_hls_endlist(session_id: &str) -> DownloadTerminalEvent {
+    make_terminal_completed_with_signal(session_id, crate::downloader::EngineEndSignal::HlsEndlist)
+}
+
+fn make_terminal_completed_with_signal(
+    session_id: &str,
+    engine_signal: crate::downloader::EngineEndSignal,
+) -> DownloadTerminalEvent {
     DownloadTerminalEvent::Completed {
         download_id: "dl-i".into(),
         streamer_id: STREAMER_ID.into(),
@@ -1441,7 +1448,7 @@ fn make_terminal_completed_hls_endlist(session_id: &str) -> DownloadTerminalEven
         total_duration_secs: 0.0,
         total_segments: 0,
         file_path: None,
-        engine_signal: crate::downloader::EngineEndSignal::HlsEndlist,
+        engine_signal,
         stop_cause: None,
     }
 }
@@ -1949,6 +1956,35 @@ async fn completed_with_hls_endlist_skips_hysteresis() {
     match rx.recv().await.unwrap() {
         SessionTransition::Ended { via_hysteresis, .. } => {
             assert!(!via_hysteresis, "HlsEndlist authoritative → no hysteresis");
+        }
+        other => panic!("expected Ended, got {other:?}"),
+    }
+}
+
+/// The end of a DASH presentation is as authoritative as HLS ENDLIST.
+#[tokio::test]
+async fn completed_with_dash_end_skips_hysteresis() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle_fast(pool);
+    let mut rx = lifecycle.subscribe();
+
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let _ = rx.recv().await.unwrap(); // Started
+
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_with_signal(
+            started.session_id(),
+            crate::downloader::EngineEndSignal::DashEnd,
+        ))
+        .await
+        .unwrap();
+
+    match rx.recv().await.unwrap() {
+        SessionTransition::Ended { via_hysteresis, .. } => {
+            assert!(!via_hysteresis, "DashEnd authoritative → no hysteresis");
         }
         other => panic!("expected Ended, got {other:?}"),
     }

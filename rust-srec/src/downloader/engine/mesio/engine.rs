@@ -4,8 +4,10 @@
 //! stream downloading.
 //!
 //! The engine acts as a thin coordinator that:
-//! 1. Detects the protocol type from the URL
-//! 2. Delegates to `HlsDownloader` or `FlvDownloader` for actual download logic
+//! 1. Takes the protocol from the download configuration, or detects it from
+//!    the URL when the platform did not label the stream
+//! 2. Delegates to `HlsDownloader`, `DashDownloader` or `FlvDownloader` for
+//!    actual download logic
 //!
 //! Progress tracking is handled by the writers internally via `WriterTask` and
 //! `WriterState`, eliminating the need for duplicate tracking in the engine.
@@ -13,27 +15,32 @@
 use async_trait::async_trait;
 use axum::http::HeaderMap;
 use mesio::flv::FlvProtocolConfig;
-use mesio::{FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloader, ProtocolType};
+use mesio::{
+    DashConfig, DashProtocolBuilder, FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloader,
+    ProtocolType,
+};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
+use super::dash_downloader::DashDownloader;
 use super::flv_downloader::FlvDownloader;
 use super::hls_downloader::HlsDownloader;
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
 use crate::downloader::engine::traits::{
-    DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError, EngineType,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadProtocol,
+    EngineStartError, EngineType,
 };
 use crate::downloader::engine::utils::sanitize_engine_message;
 
 /// Native Mesio download engine.
 ///
 /// This engine uses the `mesio` crate's session API for protocol detection and
-/// delegates to specialized downloaders for HLS and FLV formats.
+/// delegates to specialized downloaders for HLS, DASH and FLV formats.
 ///
 /// The engine is a thin coordinator that:
-/// - Detects protocol type from URL
-/// - Creates appropriate downloader (HlsDownloader or FlvDownloader)
+/// - Resolves the protocol type (see [`Self::resolve_protocol`])
+/// - Creates appropriate downloader (HlsDownloader, DashDownloader or FlvDownloader)
 /// - Delegates download execution and propagates results
 pub struct MesioEngine {
     /// Whether the engine is available.
@@ -44,6 +51,8 @@ pub struct MesioEngine {
     hls_config: Option<mesio::hls::HlsConfig>,
     /// Default FLV configuration.
     flv_config: Option<FlvProtocolConfig>,
+    /// Default DASH configuration.
+    dash_config: Option<DashConfig>,
 }
 
 impl MesioEngine {
@@ -69,6 +78,12 @@ impl MesioEngine {
                     .headers(HeaderMap::new())
                     .get_config(),
             ),
+            dash_config: Some(
+                DashProtocolBuilder::new()
+                    // override default headers
+                    .headers(HeaderMap::new())
+                    .get_config(),
+            ),
         }
     }
 
@@ -86,10 +101,51 @@ impl MesioEngine {
 
     /// Detect the protocol type from a URL using mesio's session entry point.
     ///
-    /// Returns the detected `ProtocolType` (HLS or FLV) based on URL patterns.
+    /// Returns the detected `ProtocolType` (HLS, DASH or FLV) based on URL
+    /// patterns.
     pub fn detect_protocol(url: &str) -> Result<ProtocolType> {
         MesioDownloader::detect_protocol(url)
             .map_err(|e| crate::Error::Other(format!("Protocol detection failed: {}", e)))
+    }
+
+    /// The protocol to record `config` with.
+    ///
+    /// A DASH label always wins: an MPD URL need not end in `.mpd` (e.g.
+    /// `/manifest?id=…`), and URL detection would otherwise take it for HLS.
+    /// For other streams the URL decides, as it always has, and an HLS or FLV
+    /// label is used only when the URL is not recognised.
+    fn resolve_protocol(
+        config: &DownloadConfig,
+    ) -> std::result::Result<ProtocolType, EngineStartError> {
+        let labelled = match config.protocol {
+            DownloadProtocol::Hls => Some(ProtocolType::Hls),
+            DownloadProtocol::Flv => Some(ProtocolType::Flv),
+            DownloadProtocol::Dash => Some(ProtocolType::Dash),
+            DownloadProtocol::Unknown => None,
+        };
+        let detected = MesioDownloader::detect_protocol(&config.url);
+        if let (Some(labelled), Ok(detected)) = (labelled, &detected)
+            && labelled != *detected
+        {
+            debug!(
+                streamer_id = %config.streamer_id,
+                labelled = ?labelled,
+                detected = ?detected,
+                "Stream protocol label differs from the URL"
+            );
+        }
+        match (labelled, detected) {
+            (Some(ProtocolType::Dash), _) => Ok(ProtocolType::Dash),
+            (_, Ok(detected)) => Ok(detected),
+            (Some(labelled), Err(_)) => Ok(labelled),
+            (None, Err(e)) => Err(EngineStartError::new(
+                DownloadFailureKind::Configuration,
+                sanitize_engine_message(
+                    &format!("Protocol detection failed: {}", e),
+                    config.managed_credentials,
+                ),
+            )),
+        }
     }
 }
 
@@ -111,18 +167,10 @@ impl DownloadEngine for MesioEngine {
 
         info!("Starting mesio download for streamer {}", streamer_id);
 
-        let protocol_type = Self::detect_protocol(&config_snapshot.url).map_err(|e| {
-            EngineStartError::new(
-                DownloadFailureKind::Configuration,
-                sanitize_engine_message(
-                    &format!("Protocol detection failed: {}", e),
-                    config_snapshot.managed_credentials,
-                ),
-            )
-        })?;
+        let protocol_type = Self::resolve_protocol(&config_snapshot)?;
 
         debug!(
-            "Detected protocol {:?} for URL: {}",
+            "Using protocol {:?} for URL: {}",
             protocol_type,
             if config_snapshot.managed_credentials {
                 "[managed URL redacted]"
@@ -140,6 +188,17 @@ impl DownloadEngine for MesioEngine {
                     handle.event_tx.clone(),
                     handle.cancellation_token.clone(),
                     self.hls_config.clone(),
+                )
+                .with_manual_split(handle.manual_split.clone());
+                downloader.run().await.map(|_| ())
+            }
+            ProtocolType::Dash => {
+                let downloader = DashDownloader::new(
+                    handle.config.clone(),
+                    self.config.clone(),
+                    handle.event_tx.clone(),
+                    handle.cancellation_token.clone(),
+                    self.dash_config.clone(),
                 )
                 .with_manual_split(handle.manual_split.clone());
                 downloader.run().await.map(|_| ())
@@ -235,5 +294,75 @@ mod tests {
         let result = MesioEngine::detect_protocol("https://example.com/stream.flv");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ProtocolType::Flv);
+    }
+
+    #[test]
+    fn test_detect_protocol_dash() {
+        let result = MesioEngine::detect_protocol("https://example.com/live/manifest.mpd?t=1");
+        assert_eq!(result.unwrap(), ProtocolType::Dash);
+    }
+
+    fn download_config(url: &str, protocol: DownloadProtocol) -> DownloadConfig {
+        DownloadConfig::new(url, "/tmp", "streamer", "streamer", "session").with_protocol(protocol)
+    }
+
+    #[test]
+    fn a_dash_label_wins_over_url_detection() {
+        let resolve =
+            |url, protocol| MesioEngine::resolve_protocol(&download_config(url, protocol)).unwrap();
+        assert_eq!(
+            resolve(
+                "https://cdn.example/live/manifest?id=1",
+                DownloadProtocol::Dash
+            ),
+            ProtocolType::Dash
+        );
+        assert_eq!(
+            resolve("https://cdn.example/live/stream", DownloadProtocol::Dash),
+            ProtocolType::Dash
+        );
+    }
+
+    #[test]
+    fn hls_and_flv_labels_only_apply_when_the_url_is_not_recognised() {
+        let resolve =
+            |url, protocol| MesioEngine::resolve_protocol(&download_config(url, protocol)).unwrap();
+        // The URL wins, as before labels were consulted.
+        assert_eq!(
+            resolve("https://cdn.example/live/stream.flv", DownloadProtocol::Hls),
+            ProtocolType::Flv
+        );
+        assert_eq!(
+            resolve(
+                "https://cdn.example/live/stream.m3u8",
+                DownloadProtocol::Flv
+            ),
+            ProtocolType::Hls
+        );
+        // Unrecognised URL: the label decides instead of failing.
+        assert_eq!(
+            resolve("https://cdn.example/live/stream", DownloadProtocol::Hls),
+            ProtocolType::Hls
+        );
+        assert_eq!(
+            resolve("https://cdn.example/live/stream", DownloadProtocol::Flv),
+            ProtocolType::Flv
+        );
+    }
+
+    #[test]
+    fn an_unlabelled_protocol_is_detected_from_the_url() {
+        let resolve =
+            |url| MesioEngine::resolve_protocol(&download_config(url, DownloadProtocol::Unknown));
+        assert_eq!(
+            resolve("https://cdn.example/live.mpd").unwrap(),
+            ProtocolType::Dash
+        );
+        assert_eq!(
+            resolve("https://cdn.example/live.m3u8").unwrap(),
+            ProtocolType::Hls
+        );
+        let error = resolve("https://cdn.example/clip.mp4").unwrap_err();
+        assert_eq!(error.kind, DownloadFailureKind::Configuration);
     }
 }

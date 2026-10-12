@@ -65,6 +65,8 @@ pub enum DownloadProtocol {
     Hls,
     /// FLV stream.
     Flv,
+    /// MPEG-DASH manifest (MPD) stream.
+    Dash,
     /// Protocol was not known at the call site.
     #[default]
     Unknown,
@@ -76,6 +78,7 @@ impl DownloadProtocol {
         match label.to_ascii_lowercase().as_str() {
             "hls" | "m3u8" => Self::Hls,
             "flv" => Self::Flv,
+            "dash" | "mpd" => Self::Dash,
             _ => Self::Unknown,
         }
     }
@@ -85,6 +88,7 @@ impl DownloadProtocol {
         match self {
             Self::Hls => "hls",
             Self::Flv => "flv",
+            Self::Dash => "dash",
             Self::Unknown => "unknown",
         }
     }
@@ -962,8 +966,17 @@ mod tests {
         );
         assert_eq!(
             DownloadProtocol::from_format_label("dash"),
+            DownloadProtocol::Dash
+        );
+        assert_eq!(
+            DownloadProtocol::from_format_label("MPD"),
+            DownloadProtocol::Dash
+        );
+        assert_eq!(
+            DownloadProtocol::from_format_label("mp4"),
             DownloadProtocol::Unknown
         );
+        assert_eq!(DownloadProtocol::Dash.as_str(), "dash");
     }
 
     #[test]

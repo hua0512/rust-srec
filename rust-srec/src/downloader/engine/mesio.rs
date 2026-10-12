@@ -4,6 +4,8 @@
 //!
 //! - `MesioEngine` - The main engine that coordinates protocol detection and delegation
 //! - `HlsDownloader` - HLS-specific download orchestrator
+//! - `DashDownloader` - MPEG-DASH download orchestrator, writing through the
+//!   HLS fMP4 path
 //! - `FlvDownloader` - FLV-specific download orchestrator
 //! - `config` - Configuration mapping utilities for mesio protocol configs
 //!
@@ -18,7 +20,8 @@
 //!
 //! The `MesioEngine` acts as a thin coordinator that:
 //! 1. Starts protocol sessions through `mesio::MesioDownloader`
-//! 2. Delegates to the appropriate downloader (`HlsDownloader` or `FlvDownloader`)
+//! 2. Delegates to the appropriate downloader (`HlsDownloader`, `DashDownloader`
+//!    or `FlvDownloader`)
 //! 3. Propagates results back to the caller
 //!
 //! Download telemetry is available from mesio session events. The rust-srec
@@ -26,11 +29,13 @@
 //! so byte accounting follows the actual persisted output.
 
 pub mod config;
+mod dash_downloader;
 mod engine;
 mod flv_downloader;
 mod helpers;
 mod hls_downloader;
 
+pub use dash_downloader::DashDownloader;
 pub use engine::MesioEngine;
 pub use flv_downloader::FlvDownloader;
 pub use helpers::DownloadStats;

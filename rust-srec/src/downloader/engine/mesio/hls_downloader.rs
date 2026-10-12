@@ -3,12 +3,17 @@
 //! This module provides the `HlsDownloader` struct which handles HLS stream
 //! downloading, including stream consumption, writer management, and event emission.
 //! It supports both pipeline-processed and raw download modes.
+//!
+//! DASH sessions deliver the same fMP4 `HlsData` items and are recorded
+//! through [`HlsDownloader::record`] as well, labelled with their protocol.
 
 use futures::StreamExt;
 use hls::{HlsData, SplitReason};
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio::flv::FlvProtocolConfig;
-use mesio::{DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
+use mesio::{
+    BoxMediaStream, DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection,
+};
 use parking_lot::RwLock;
 use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
@@ -25,25 +30,65 @@ use super::classify_download_error;
 use super::config::build_hls_config;
 use super::helpers::{self, DownloadStats};
 use crate::database::models::engine::MesioEngineConfig;
+use crate::downloader::EngineEndSignal;
 use crate::downloader::engine::traits::{
     DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
 };
+
+/// A protocol whose sessions deliver fMP4/TS `HlsData` and are written by
+/// [`HlsDownloader::record`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SegmentedProtocol {
+    Hls,
+    Dash,
+}
+
+impl SegmentedProtocol {
+    /// Label used in log fields and in event and error messages.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Hls => "HLS",
+            Self::Dash => "DASH",
+        }
+    }
+
+    /// The engine signal of a stream that ended with an `EndOfStream` marker:
+    /// HLS `#EXT-X-ENDLIST`, or a static or ended DASH presentation recorded
+    /// to its last segment.
+    fn authoritative_end(self) -> EngineEndSignal {
+        match self {
+            Self::Hls => EngineEndSignal::HlsEndlist,
+            Self::Dash => EngineEndSignal::DashEnd,
+        }
+    }
+
+    fn fix_enabled(self, engine_config: &MesioEngineConfig) -> bool {
+        match self {
+            Self::Hls => engine_config.fix_hls,
+            Self::Dash => engine_config.fix_dash,
+        }
+    }
+}
 
 async fn next_initial_item<T>(
     next: impl std::future::Future<Output = T>,
     cancellation: &CancellationToken,
     session_cancellation: &CancellationToken,
+    protocol: SegmentedProtocol,
 ) -> std::result::Result<T, EngineStartError> {
+    let cancelled = || {
+        EngineStartError::new(
+            DownloadFailureKind::Cancelled,
+            format!(
+                "{} download cancelled before the first segment",
+                protocol.label()
+            ),
+        )
+    };
     tokio::select! {
         biased;
-        _ = cancellation.cancelled() => Err(EngineStartError::new(
-            DownloadFailureKind::Cancelled,
-            "HLS download cancelled before the first segment",
-        )),
-        _ = session_cancellation.cancelled() => Err(EngineStartError::new(
-            DownloadFailureKind::Cancelled,
-            "HLS download cancelled before the first segment",
-        )),
+        _ = cancellation.cancelled() => Err(cancelled()),
+        _ = session_cancellation.cancelled() => Err(cancelled()),
         item = next => Ok(item),
     }
 }
@@ -117,14 +162,8 @@ impl HlsDownloader {
 
     /// Run the HLS download, consuming the stream and writing to files.
     ///
-    /// This method:
-    /// 1. Creates a MesioDownloader with the configured HLS settings
-    /// 2. Starts a typed HLS download session
-    /// 4. Peeks the first segment to determine file extension (ts vs m4s)
-    /// 5. If `enable_processing` is true, routes stream through HlsPipeline
-    /// 6. Creates an HlsWriter with callbacks for segment events
-    /// 7. Sends HlsData items to the writer via channel
-    /// 8. Handles cancellation, progress tracking, and error reporting
+    /// Starts a typed HLS download session with the configured HLS settings
+    /// and records it through [`Self::record`].
     ///
     /// Returns download statistics on success.
     pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
@@ -132,9 +171,7 @@ impl HlsDownloader {
 
         let downloader = self.create_downloader(token.clone());
 
-        let config = self.config_snapshot();
-        let streamer_id = config.streamer_id;
-        let url = config.url;
+        let url = self.config_snapshot().url;
 
         let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
@@ -148,15 +185,48 @@ impl HlsDownloader {
             let kind = classify_download_error(&e);
             EngineStartError::new(kind, format!("Failed to start HLS download: {}", e))
         })?;
-        let mut hls_stream = session.items;
+
+        self.record(SegmentedProtocol::Hls, token, session.items)
+            .await
+    }
+
+    /// Record the items of a started session to files.
+    ///
+    /// This method:
+    /// 1. Peeks the first segment to determine file extension (ts vs m4s)
+    /// 2. If `enable_processing` and the protocol's fix flag are set, routes
+    ///    the stream through HlsPipeline
+    /// 3. Creates an HlsWriter with callbacks for segment events
+    /// 4. Sends HlsData items to the writer via channel
+    /// 5. Handles cancellation, progress tracking, and error reporting
+    ///
+    /// `token` is the session's cancellation token, a child of this
+    /// downloader's token.
+    pub(super) async fn record(
+        self,
+        protocol: SegmentedProtocol,
+        token: CancellationToken,
+        mut hls_stream: BoxMediaStream<HlsData, DownloadError>,
+    ) -> std::result::Result<DownloadStats, EngineStartError> {
+        let label = protocol.label();
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id;
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {
-            let next =
-                next_initial_item(hls_stream.next(), &self.cancellation_token, &token).await?;
+            let next = next_initial_item(
+                hls_stream.next(),
+                &self.cancellation_token,
+                &token,
+                protocol,
+            )
+            .await?;
             match next {
                 Some(Ok(HlsData::EndMarker(_))) => {
-                    debug!("Skipping leading HLS EndMarker before first data segment");
+                    debug!(
+                        protocol = label,
+                        "Skipping leading EndMarker before first data segment"
+                    );
                     continue;
                 }
                 Some(Ok(segment)) => break segment,
@@ -167,7 +237,7 @@ impl HlsDownloader {
                             .send(SegmentEvent::DownloadFailed {
                                 kind,
                                 message: sanitize_engine_message(
-                                    &format!("Failed to get first HLS segment: {}", e),
+                                    &format!("Failed to get first {label} segment: {e}"),
                                     config.managed_credentials,
                                 ),
                             })
@@ -176,7 +246,7 @@ impl HlsDownloader {
                     );
                     return Err(EngineStartError::new(
                         kind,
-                        format!("Failed to get first HLS segment: {}", e),
+                        format!("Failed to get first {label} segment: {e}"),
                     ));
                 }
                 None => {
@@ -184,14 +254,14 @@ impl HlsDownloader {
                         self.event_tx
                             .send(SegmentEvent::DownloadFailed {
                                 kind: DownloadFailureKind::SourceUnavailable,
-                                message: "HLS stream is empty".to_string(),
+                                message: format!("{label} stream is empty"),
                             })
                             .await,
                         &streamer_id,
                     );
                     return Err(EngineStartError::new(
                         DownloadFailureKind::SourceUnavailable,
-                        "HLS stream is empty",
+                        format!("{label} stream is empty"),
                     ));
                 }
             }
@@ -205,19 +275,23 @@ impl HlsDownloader {
         };
 
         let config_snapshot = self.config_snapshot();
+        let processing =
+            config_snapshot.enable_processing && protocol.fix_enabled(&self.engine_config);
         info!(
-            "Detected HLS stream type for {}: {}, processing_enabled: {}",
+            protocol = label,
+            "Detected {} stream type for {}: {}, processing_enabled: {}",
+            label,
             config_snapshot.streamer_id,
             extension.to_uppercase(),
             config_snapshot.enable_processing
         );
 
         // Route based on enable_processing flag AND engine config
-        if config_snapshot.enable_processing && self.engine_config.fix_hls {
-            self.download_with_pipeline(token, hls_stream, first_segment, extension)
+        if processing {
+            self.download_with_pipeline(protocol, token, hls_stream, first_segment, extension)
                 .await
         } else {
-            self.download_raw(token, hls_stream, first_segment, extension)
+            self.download_raw(protocol, token, hls_stream, first_segment, extension)
                 .await
         }
     }
@@ -228,6 +302,7 @@ impl HlsDownloader {
     /// and other processing before writing to HlsWriter.
     async fn download_with_pipeline(
         &self,
+        protocol: SegmentedProtocol,
         token: CancellationToken,
         hls_stream: impl futures::Stream<
             Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
@@ -239,7 +314,8 @@ impl HlsDownloader {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
-            "Starting HLS download with pipeline processing for {}",
+            "Starting {} download with pipeline processing for {}",
+            protocol.label(),
             streamer_id
         );
 
@@ -288,11 +364,11 @@ impl HlsDownloader {
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
 
-        // Tap each HLS item to detect the authoritative EXT-X-ENDLIST marker
-        // emitted by mesio (see `crates/mesio/src/hls/playlist.rs` ENDLIST
-        // path). When set, the engine signal escalates from CleanDisconnect
-        // (ambiguous) to HlsEndlist (authoritative → lifecycle bypasses
-        // hysteresis).
+        // Tap each item to detect the `EndOfStream` marker mesio emits only
+        // when the platform ended the stream (HLS `#EXT-X-ENDLIST`, the end of
+        // a static or ended DASH presentation). When set, the engine signal
+        // escalates from CleanDisconnect (ambiguous) to the protocol's
+        // authoritative end (lifecycle bypasses hysteresis).
         let saw_endlist = Arc::new(AtomicBool::new(false));
         let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
 
@@ -312,7 +388,7 @@ impl HlsDownloader {
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
-                protocol: "HLS",
+                protocol: protocol.label(),
             },
             classify_download_error,
             move |item: &HlsData| {
@@ -327,9 +403,9 @@ impl HlsDownloader {
         drop(pipeline_input_tx);
 
         let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
-            crate::downloader::EngineEndSignal::HlsEndlist
+            protocol.authoritative_end()
         } else {
-            crate::downloader::EngineEndSignal::CleanDisconnect
+            EngineEndSignal::CleanDisconnect
         };
 
         helpers::handle_writer_result(
@@ -340,7 +416,7 @@ impl HlsDownloader {
                 managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
-                protocol: "HLS",
+                protocol: protocol.label(),
                 output_dir: &config.output_dir,
                 engine_signal,
             },
@@ -354,6 +430,7 @@ impl HlsDownloader {
     /// Sends stream data directly to HlsWriter without any processing.
     async fn download_raw(
         &self,
+        protocol: SegmentedProtocol,
         token: CancellationToken,
         hls_stream: impl futures::Stream<
             Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
@@ -365,7 +442,8 @@ impl HlsDownloader {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
-            "Starting HLS download without pipeline processing for {}",
+            "Starting {} download without pipeline processing for {}",
+            protocol.label(),
             streamer_id
         );
 
@@ -397,7 +475,7 @@ impl HlsDownloader {
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
 
         // See `download_with_pipeline` for the rationale; raw mode uses the
-        // same EXT-X-ENDLIST observer.
+        // same end-of-stream observer.
         let saw_endlist = Arc::new(AtomicBool::new(false));
         let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
 
@@ -416,7 +494,7 @@ impl HlsDownloader {
                 parent_token: &self.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
-                protocol: "HLS",
+                protocol: protocol.label(),
             },
             classify_download_error,
             move |item: &HlsData| {
@@ -431,9 +509,9 @@ impl HlsDownloader {
         drop(tx);
 
         let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
-            crate::downloader::EngineEndSignal::HlsEndlist
+            protocol.authoritative_end()
         } else {
-            crate::downloader::EngineEndSignal::CleanDisconnect
+            EngineEndSignal::CleanDisconnect
         };
 
         helpers::handle_writer_result(
@@ -444,7 +522,7 @@ impl HlsDownloader {
                 managed_credentials: config.managed_credentials,
                 event_tx: &self.event_tx,
                 streamer_id: &streamer_id,
-                protocol: "HLS",
+                protocol: protocol.label(),
                 output_dir: &config.output_dir,
                 engine_signal,
             },
@@ -473,7 +551,12 @@ mod tests {
             };
             let (result, ()) = timeout(Duration::from_secs(2), async {
                 tokio::join!(
-                    next_initial_item(std::future::pending::<()>(), &parent, &session),
+                    next_initial_item(
+                        std::future::pending::<()>(),
+                        &parent,
+                        &session,
+                        SegmentedProtocol::Hls,
+                    ),
                     async {
                         tokio::task::yield_now().await;
                         stopped.cancel();
@@ -551,7 +634,13 @@ mod tests {
         });
 
         let result = downloader
-            .download_raw(CancellationToken::new(), hls_stream, first_segment, "ts")
+            .download_raw(
+                SegmentedProtocol::Hls,
+                CancellationToken::new(),
+                hls_stream,
+                first_segment,
+                "ts",
+            )
             .await;
         assert!(result.is_err(), "expected stream error");
 

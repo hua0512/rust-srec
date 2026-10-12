@@ -1042,7 +1042,7 @@ impl SessionLifecycle {
     ///    failures get promoted to `DefinitiveOffline`.
     /// 3. **Already Ended → no-op** (idempotency).
     /// 4. **Authoritative cause** (`DefinitiveOffline`, `Rejected`, OR
-    ///    `Completed` with `EngineEndSignal::HlsEndlist`) → straight to
+    ///    `Completed` with `EngineEndSignal::HlsEndlist` / `DashEnd`) → straight to
     ///    `Ended` via `enter_ended_state`. Pipeline fires
     ///    immediately.
     /// 5. **Ambiguous cause** (`Failed{Network/etc.}`, `Completed` with

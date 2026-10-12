@@ -1,15 +1,21 @@
 //! Configuration mapping utilities for mesio download engine.
 //!
 //! This module provides functions to map rust-srec's `DownloadConfig` to
-//! the configuration structures used by the mesio crate for HLS and FLV
-//! protocol handling.
+//! the configuration structures used by the mesio crate for HLS, DASH and
+//! FLV protocol handling.
 
+use std::time::Duration;
+
+use mesio::dash::{AudioSelection, LiveStartPolicy, VideoSelection};
 use mesio::flv::FlvProtocolConfig;
 use mesio::proxy::{ProxyAuth, ProxyConfig, ProxyType};
-use mesio::{FlvProtocolBuilder, HlsProtocolBuilder};
+use mesio::{
+    DashConfig, DashProtocolBuilder, DownloadError, FlvProtocolBuilder, HlsProtocolBuilder,
+};
 use tracing::debug;
 
 use crate::database::models::engine::{
+    MesioDashAudioQuality, MesioDashConfig, MesioDashLiveStart, MesioDashVideoQuality,
     MesioEngineConfig, MesioGapSkipStrategy, MesioHlsVariantSelectionPolicy,
     MesioHttpVersionPreference,
 };
@@ -321,6 +327,145 @@ fn map_http_version(version: &MesioHttpVersionPreference) -> mesio::config::Http
         MesioHttpVersionPreference::Auto => mesio::config::HttpVersionPreference::Auto,
         MesioHttpVersionPreference::Http2Only => mesio::config::HttpVersionPreference::Http2Only,
         MesioHttpVersionPreference::Http1Only => mesio::config::HttpVersionPreference::Http1Only,
+    }
+}
+
+/// Build DASH configuration from rust-srec DownloadConfig using
+/// DashProtocolBuilder.
+///
+/// Maps headers, cookies and proxy settings like [`build_hls_config`], applies
+/// `MesioEngineConfig.dash`, and rejects settings the engine cannot run with
+/// as [`DownloadError::Configuration`].
+pub fn build_dash_config(
+    config: &DownloadConfig,
+    base_config: Option<DashConfig>,
+    engine_config: &MesioEngineConfig,
+) -> Result<DashConfig, DownloadError> {
+    let mut builder = if let Some(base) = base_config {
+        DashProtocolBuilder::new().with_config(|c| *c = base)
+    } else {
+        DashProtocolBuilder::new()
+    };
+
+    for (key, value) in &config.headers {
+        debug!("Adding header: {}", key);
+        builder = builder.add_header(key, value);
+    }
+
+    if let Some(ref cookies) = config.cookies {
+        builder = builder.add_header("Cookie", cookies);
+    }
+
+    // A direct route turns off the environment's proxy too.
+    builder = match &config.proxy {
+        ProxyTarget::Explicit(endpoint) => builder.proxy(mesio_proxy(endpoint)),
+        ProxyTarget::System => builder.use_system_proxy(true),
+        ProxyTarget::Direct => builder.use_system_proxy(false),
+    };
+
+    if let Some(ref dash) = engine_config.dash {
+        builder = apply_dash_engine_overrides(builder, dash)?;
+    }
+
+    let dash_config = builder.get_config();
+    dash_config.validate()?;
+    Ok(dash_config)
+}
+
+fn apply_dash_engine_overrides(
+    builder: DashProtocolBuilder,
+    cfg: &MesioDashConfig,
+) -> Result<DashProtocolBuilder, DownloadError> {
+    let invalid = |reason: &str| DownloadError::Configuration {
+        reason: format!("DASH: {reason}"),
+    };
+    if cfg.download_concurrency == 0 {
+        return Err(invalid("download_concurrency must be at least 1"));
+    }
+    for (name, value) in [
+        ("manifest_timeout_ms", cfg.manifest_timeout_ms),
+        ("min_refresh_interval_ms", cfg.min_refresh_interval_ms),
+        ("segment_timeout_ms", cfg.segment_timeout_ms),
+    ] {
+        if value == 0 {
+            return Err(invalid(&format!("{name} must be positive")));
+        }
+    }
+    match cfg.video_quality {
+        MesioDashVideoQuality::MaxHeight { height: 0 } => {
+            return Err(invalid("video_quality height must be positive"));
+        }
+        MesioDashVideoQuality::ClosestBandwidth { bandwidth: 0 } => {
+            return Err(invalid("video_quality bandwidth must be positive"));
+        }
+        _ => {}
+    }
+    if let MesioDashAudioQuality::ClosestBandwidth { bandwidth: 0 } = cfg.audio_quality {
+        return Err(invalid("audio_quality bandwidth must be positive"));
+    }
+
+    let ms = Duration::from_millis;
+    let mut builder = builder
+        .video_selection(map_dash_video_quality(cfg.video_quality))
+        .audio_selection(map_dash_audio_quality(cfg.audio_quality))
+        .include_video(cfg.include_video)
+        .include_audio(cfg.include_audio)
+        .download_concurrency(cfg.download_concurrency)
+        .manifest_fetch_timeout(ms(cfg.manifest_timeout_ms))
+        .min_refresh_interval(ms(cfg.min_refresh_interval_ms))
+        .max_refresh_retries(cfg.max_refresh_retries)
+        .segment_download_timeout(ms(cfg.segment_timeout_ms))
+        .max_segment_retries(cfg.max_segment_retries)
+        .live_start(map_dash_live_start(cfg.live_start));
+    if let Some(language) = cfg.audio_language.as_deref() {
+        let language = language.trim();
+        if !is_language_tag(language) {
+            return Err(invalid(
+                "audio_language must be a language tag such as 'en' or 'pt-BR'",
+            ));
+        }
+        builder = builder.audio_language(language);
+    }
+    Ok(builder)
+}
+
+/// Language tag shape: subtags of 1 to 8 ASCII letters or digits separated by
+/// '-'. The engine matches tags case-insensitively.
+fn is_language_tag(tag: &str) -> bool {
+    !tag.is_empty()
+        && tag.split('-').all(|subtag| {
+            (1..=8).contains(&subtag.len()) && subtag.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+}
+
+fn map_dash_video_quality(quality: MesioDashVideoQuality) -> VideoSelection {
+    match quality {
+        MesioDashVideoQuality::Highest => VideoSelection::Highest,
+        MesioDashVideoQuality::Lowest => VideoSelection::Lowest,
+        MesioDashVideoQuality::MaxHeight { height } => VideoSelection::MaxHeight(height),
+        MesioDashVideoQuality::ClosestBandwidth { bandwidth } => {
+            VideoSelection::ClosestBandwidth(bandwidth)
+        }
+    }
+}
+
+fn map_dash_audio_quality(quality: MesioDashAudioQuality) -> AudioSelection {
+    match quality {
+        MesioDashAudioQuality::Highest => AudioSelection::Highest,
+        MesioDashAudioQuality::Lowest => AudioSelection::Lowest,
+        MesioDashAudioQuality::ClosestBandwidth { bandwidth } => {
+            AudioSelection::ClosestBandwidth(bandwidth)
+        }
+    }
+}
+
+fn map_dash_live_start(live_start: MesioDashLiveStart) -> LiveStartPolicy {
+    match live_start {
+        MesioDashLiveStart::Auto => LiveStartPolicy::PresentationDelay(None),
+        MesioDashLiveStart::LiveEdge => LiveStartPolicy::LiveEdge,
+        MesioDashLiveStart::Delay { delay_ms } => {
+            LiveStartPolicy::PresentationDelay(Some(Duration::from_millis(delay_ms)))
+        }
     }
 }
 
@@ -843,5 +988,148 @@ mod tests {
         assert_eq!(hls_config.output_config.buffer_limits.max_segments, 11);
         assert_eq!(hls_config.output_config.buffer_limits.max_bytes, 123456);
         assert!(!hls_config.output_config.metrics_enabled);
+    }
+
+    fn dash_engine_config(dash: serde_json::Value) -> MesioEngineConfig {
+        serde_json::from_value(serde_json::json!({ "dash": dash })).unwrap()
+    }
+
+    #[test]
+    fn build_dash_config_maps_request_settings() {
+        let mut config = create_test_download_config();
+        config.url = "https://example.com/live.mpd".to_string();
+        config.headers = vec![("Referer".to_string(), "https://example.com".to_string())];
+        config.cookies = Some("auth=secret".to_string());
+        config.proxy =
+            ProxyTarget::Explicit(ProxyEndpoint::new("socks5://proxy.example.com:1080", None));
+
+        let dash = build_dash_config(&config, None, &MesioEngineConfig::default()).unwrap();
+
+        let header = |name| {
+            dash.base
+                .headers
+                .get(name)
+                .map(|value| value.to_str().unwrap().to_owned())
+        };
+        assert_eq!(
+            header(reqwest::header::REFERER).as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            header(reqwest::header::COOKIE).as_deref(),
+            Some("auth=secret")
+        );
+        let proxy = dash.base.proxy.unwrap();
+        assert_eq!(proxy.proxy_type, ProxyType::Socks5);
+
+        let direct = build_dash_config(
+            &create_test_download_config(),
+            None,
+            &MesioEngineConfig::default(),
+        )
+        .unwrap();
+        assert!(direct.base.proxy.is_none());
+        assert!(!direct.base.use_system_proxy);
+    }
+
+    #[test]
+    fn build_dash_config_without_overrides_keeps_engine_defaults() {
+        let config = create_test_download_config();
+        let dash = build_dash_config(&config, None, &MesioEngineConfig::default()).unwrap();
+        let engine = DashConfig::default();
+        assert_eq!(dash.selection.video, engine.selection.video);
+        assert_eq!(dash.live_start, engine.live_start);
+        assert_eq!(
+            dash.scheduler.download_concurrency,
+            engine.scheduler.download_concurrency
+        );
+
+        // An empty `dash` object is the same as none.
+        let empty =
+            build_dash_config(&config, None, &dash_engine_config(serde_json::json!({}))).unwrap();
+        assert_eq!(empty.selection.video, engine.selection.video);
+        assert_eq!(empty.manifest.fetch_timeout, engine.manifest.fetch_timeout);
+        assert_eq!(
+            empty.fetcher.max_segment_retries,
+            engine.fetcher.max_segment_retries
+        );
+    }
+
+    #[test]
+    fn build_dash_config_applies_engine_overrides() {
+        let config = create_test_download_config();
+        let engine_config = dash_engine_config(serde_json::json!({
+            "video_quality": { "type": "max_height", "height": 720 },
+            "audio_quality": { "type": "lowest" },
+            "audio_language": " pt-BR ",
+            "include_video": true,
+            "include_audio": false,
+            "download_concurrency": 2,
+            "manifest_timeout_ms": 3000,
+            "min_refresh_interval_ms": 500,
+            "max_refresh_retries": 9,
+            "segment_timeout_ms": 4000,
+            "max_segment_retries": 7,
+            "live_start": { "type": "delay", "delay_ms": 6000 }
+        }));
+
+        let dash = build_dash_config(&config, None, &engine_config).unwrap();
+
+        assert_eq!(dash.selection.video, VideoSelection::MaxHeight(720));
+        assert_eq!(dash.selection.audio, AudioSelection::Lowest);
+        assert_eq!(dash.selection.audio_language.as_deref(), Some("pt-BR"));
+        assert!(dash.selection.include_video);
+        assert!(!dash.selection.include_audio);
+        assert_eq!(dash.scheduler.download_concurrency, 2);
+        assert_eq!(dash.manifest.fetch_timeout, Duration::from_millis(3000));
+        assert_eq!(
+            dash.manifest.min_refresh_interval,
+            Duration::from_millis(500)
+        );
+        assert_eq!(dash.manifest.max_refresh_retries, 9);
+        assert_eq!(
+            dash.fetcher.segment_download_timeout,
+            Duration::from_millis(4000)
+        );
+        assert_eq!(dash.fetcher.max_segment_retries, 7);
+        assert_eq!(
+            dash.live_start,
+            LiveStartPolicy::PresentationDelay(Some(Duration::from_millis(6000)))
+        );
+
+        let edge = dash_engine_config(serde_json::json!({
+            "video_quality": { "type": "closest_bandwidth", "bandwidth": 3000000 },
+            "live_start": { "type": "live_edge" }
+        }));
+        let dash = build_dash_config(&config, None, &edge).unwrap();
+        assert_eq!(
+            dash.selection.video,
+            VideoSelection::ClosestBandwidth(3_000_000)
+        );
+        assert_eq!(dash.live_start, LiveStartPolicy::LiveEdge);
+    }
+
+    #[test]
+    fn build_dash_config_rejects_unusable_settings_as_configuration_errors() {
+        let config = create_test_download_config();
+        for dash in [
+            serde_json::json!({ "include_video": false, "include_audio": false }),
+            serde_json::json!({ "download_concurrency": 0 }),
+            serde_json::json!({ "manifest_timeout_ms": 0 }),
+            serde_json::json!({ "min_refresh_interval_ms": 0 }),
+            serde_json::json!({ "segment_timeout_ms": 0 }),
+            serde_json::json!({ "video_quality": { "type": "max_height", "height": 0 } }),
+            serde_json::json!({ "video_quality": { "type": "closest_bandwidth", "bandwidth": 0 } }),
+            serde_json::json!({ "audio_quality": { "type": "closest_bandwidth", "bandwidth": 0 } }),
+            serde_json::json!({ "audio_language": "" }),
+            serde_json::json!({ "audio_language": "english please" }),
+            serde_json::json!({ "audio_language": "toolongsubtag" }),
+        ] {
+            let result = build_dash_config(&config, None, &dash_engine_config(dash.clone()));
+            assert!(
+                matches!(result, Err(DownloadError::Configuration { .. })),
+                "{dash}"
+            );
+        }
     }
 }

@@ -299,9 +299,10 @@ pub(super) struct StreamConsumeContext<'a> {
 /// if it completed cleanly (or was cancelled).
 ///
 /// `inspect` is invoked on every successful item before forwarding so callers
-/// can tap protocol-specific signals (e.g. HLS observing
+/// can tap protocol-specific signals (e.g. HLS and DASH observing
 /// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
-/// `EngineEndSignal::HlsEndlist`). FLV callers pass a no-op closure.
+/// `EngineEndSignal::HlsEndlist` / `DashEnd`). FLV callers pass a no-op
+/// closure.
 pub(super) async fn consume_stream<T: Send, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
     tx: &impl StreamSender<T>,
@@ -432,7 +433,8 @@ pub(super) struct WriterSettleContext<'a> {
     /// precede it).
     pub event_tx: &'a mpsc::Sender<SegmentEvent>,
     pub streamer_id: &'a str,
-    /// `"FLV"` or `"HLS"`, used only in log and event message prefixes.
+    /// `"FLV"`, `"HLS"` or `"DASH"`, used only in log and event message
+    /// prefixes.
     pub protocol: &'a str,
     /// Directory the writer was told to write into
     /// (`DownloadConfig::output_dir`). Carried in the
@@ -441,8 +443,9 @@ pub(super) struct WriterSettleContext<'a> {
     pub output_dir: &'a Path,
     /// How this download ended from the engine's POV — see
     /// [`crate::downloader::EngineEndSignal`]. Callers pass `CleanDisconnect`
-    /// for mesio FLV's TCP-close path and `HlsEndlist` for HLS when the
-    /// playlist contained `#EXT-X-ENDLIST`.
+    /// for mesio FLV's TCP-close path, `HlsEndlist` for HLS when the
+    /// playlist contained `#EXT-X-ENDLIST`, and `DashEnd` for DASH when the
+    /// presentation ended.
     pub engine_signal: crate::downloader::EngineEndSignal,
 }
 

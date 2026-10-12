@@ -274,12 +274,116 @@ pub struct MesioEngineConfig {
     /// Enable HLS fixing
     #[serde(default = "default_true")]
     pub fix_hls: bool,
+    /// Enable fixing of MPEG-DASH output (the same fMP4 pipeline as HLS).
+    #[serde(default = "default_true")]
+    pub fix_dash: bool,
     /// Extra FLV-fix tuning knobs for Mesio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flv_fix: Option<MesioFlvFixConfig>,
     /// Extra HLS runtime tuning knobs for Mesio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hls: Option<MesioHlsConfig>,
+    /// MPEG-DASH settings; `None` uses the engine defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dash: Option<MesioDashConfig>,
+}
+
+/// Mesio MPEG-DASH settings. Fields missing from the stored JSON take the
+/// engine defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MesioDashConfig {
+    /// Which video Representation is recorded.
+    pub video_quality: MesioDashVideoQuality,
+    /// Which audio Representation is recorded within the chosen language.
+    pub audio_quality: MesioDashAudioQuality,
+    /// Preferred audio language as a language tag (e.g. `en`, `pt-BR`); any
+    /// language is used when none matches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_language: Option<String>,
+    /// Record the video track.
+    pub include_video: bool,
+    /// Record separately delivered audio tracks. Audio carried inside the
+    /// video Representation is kept either way.
+    pub include_audio: bool,
+    /// Concurrent segment downloads per track (at least 1).
+    pub download_concurrency: usize,
+    /// Timeout of one MPD request.
+    pub manifest_timeout_ms: u64,
+    /// Lower bound of the live MPD refresh interval; the MPD's
+    /// `minimumUpdatePeriod` applies when longer.
+    pub min_refresh_interval_ms: u64,
+    /// Consecutive failed MPD refreshes tolerated before the stream fails.
+    pub max_refresh_retries: u32,
+    /// Timeout of one segment download.
+    pub segment_timeout_ms: u64,
+    /// Retries of a failed segment download.
+    pub max_segment_retries: u32,
+    /// Where recording of a live presentation starts.
+    pub live_start: MesioDashLiveStart,
+}
+
+impl Default for MesioDashConfig {
+    fn default() -> Self {
+        Self {
+            video_quality: MesioDashVideoQuality::default(),
+            audio_quality: MesioDashAudioQuality::default(),
+            audio_language: None,
+            include_video: true,
+            include_audio: true,
+            download_concurrency: 5,
+            manifest_timeout_ms: 15_000,
+            min_refresh_interval_ms: 1_000,
+            max_refresh_retries: 5,
+            segment_timeout_ms: 10_000,
+            max_segment_retries: 3,
+            live_start: MesioDashLiveStart::default(),
+        }
+    }
+}
+
+/// DASH video Representation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashVideoQuality {
+    /// Highest bandwidth.
+    #[default]
+    Highest,
+    /// Lowest bandwidth.
+    Lowest,
+    /// Highest bandwidth at most `height` pixels tall; the smallest picture
+    /// when none fits.
+    MaxHeight { height: u32 },
+    /// Bandwidth closest to `bandwidth` bits per second.
+    ClosestBandwidth { bandwidth: u64 },
+}
+
+/// DASH audio Representation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashAudioQuality {
+    /// Highest bandwidth.
+    #[default]
+    Highest,
+    /// Lowest bandwidth.
+    Lowest,
+    /// Bandwidth closest to `bandwidth` bits per second.
+    ClosestBandwidth { bandwidth: u64 },
+}
+
+/// Where recording of a live DASH presentation starts. Static presentations
+/// always start at their first segment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioDashLiveStart {
+    /// The MPD's `suggestedPresentationDelay` behind the live edge, else three
+    /// segment durations.
+    #[default]
+    Auto,
+    /// The newest available segment.
+    LiveEdge,
+    /// This far behind the live edge.
+    Delay { delay_ms: u64 },
 }
 
 /// Mesio HLS tuning configuration.
@@ -510,8 +614,10 @@ impl Default for MesioEngineConfig {
             buffer_size: default_buffer_size(),
             fix_flv: true,
             fix_hls: true,
+            fix_dash: true,
             flv_fix: None,
             hls: None,
+            dash: None,
         }
     }
 }
@@ -550,6 +656,85 @@ mod tests {
         assert!(!parsed.fix_hls);
         assert!(parsed.flv_fix.is_none());
         assert!(parsed.hls.is_none());
+        assert!(parsed.fix_dash);
+        assert!(parsed.dash.is_none());
+    }
+
+    #[test]
+    fn mesio_dash_defaults_match_the_engine() {
+        let ours = MesioDashConfig::default();
+        let engine = mesio::DashConfig::default();
+        let ms = |value: u64| std::time::Duration::from_millis(value);
+        assert_eq!(engine.selection.video, mesio::dash::VideoSelection::Highest);
+        assert_eq!(ours.video_quality, MesioDashVideoQuality::Highest);
+        assert_eq!(engine.selection.audio, mesio::dash::AudioSelection::Highest);
+        assert_eq!(ours.audio_quality, MesioDashAudioQuality::Highest);
+        assert_eq!(ours.audio_language, engine.selection.audio_language);
+        assert_eq!(ours.include_video, engine.selection.include_video);
+        assert_eq!(ours.include_audio, engine.selection.include_audio);
+        assert_eq!(
+            ours.download_concurrency,
+            engine.scheduler.download_concurrency
+        );
+        assert_eq!(ms(ours.manifest_timeout_ms), engine.manifest.fetch_timeout);
+        assert_eq!(
+            ms(ours.min_refresh_interval_ms),
+            engine.manifest.min_refresh_interval
+        );
+        assert_eq!(
+            ours.max_refresh_retries,
+            engine.manifest.max_refresh_retries
+        );
+        assert_eq!(
+            ms(ours.segment_timeout_ms),
+            engine.fetcher.segment_download_timeout
+        );
+        assert_eq!(ours.max_segment_retries, engine.fetcher.max_segment_retries);
+        assert_eq!(
+            engine.live_start,
+            mesio::dash::LiveStartPolicy::PresentationDelay(None)
+        );
+        assert_eq!(ours.live_start, MesioDashLiveStart::Auto);
+    }
+
+    #[test]
+    fn mesio_dash_config_parses_partially_with_defaults() {
+        let json = r#"
+        {
+          "fix_dash": false,
+          "dash": {
+            "video_quality": { "type": "max_height", "height": 720 },
+            "audio_quality": { "type": "closest_bandwidth", "bandwidth": 128000 },
+            "audio_language": "pt-BR",
+            "include_audio": false,
+            "live_start": { "type": "delay", "delay_ms": 6000 }
+          }
+        }"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        assert!(!parsed.fix_dash);
+        let dash = parsed.dash.unwrap();
+        assert_eq!(
+            dash.video_quality,
+            MesioDashVideoQuality::MaxHeight { height: 720 }
+        );
+        assert_eq!(
+            dash.audio_quality,
+            MesioDashAudioQuality::ClosestBandwidth { bandwidth: 128000 }
+        );
+        assert_eq!(dash.audio_language.as_deref(), Some("pt-BR"));
+        assert!(dash.include_video);
+        assert!(!dash.include_audio);
+        assert_eq!(
+            dash.live_start,
+            MesioDashLiveStart::Delay { delay_ms: 6000 }
+        );
+        let defaults = MesioDashConfig::default();
+        assert_eq!(dash.download_concurrency, defaults.download_concurrency);
+        assert_eq!(dash.manifest_timeout_ms, defaults.manifest_timeout_ms);
+
+        let round_trip: MesioDashConfig =
+            serde_json::from_value(serde_json::to_value(&dash).unwrap()).unwrap();
+        assert_eq!(round_trip, dash);
     }
 
     #[test]
