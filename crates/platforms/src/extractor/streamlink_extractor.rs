@@ -400,12 +400,15 @@ fn twitch_token(
 }
 
 fn infer_stream_format(stream_type: Option<&str>, url: &str) -> StreamFormat {
+    let lower = url.to_lowercase();
     match stream_type.unwrap_or_default().to_lowercase().as_str() {
         "hls" => StreamFormat::Hls,
-        "http" | "dash" => {
-            if url.to_lowercase().contains(".m3u8") {
+        // Streamlink reports the MPD as the URL of every DASH stream.
+        "dash" => StreamFormat::Dash,
+        "http" => {
+            if lower.contains(".m3u8") {
                 StreamFormat::Hls
-            } else if url.to_lowercase().contains(".flv") {
+            } else if lower.contains(".flv") {
                 StreamFormat::Flv
             } else {
                 StreamFormat::Mp4
@@ -413,9 +416,10 @@ fn infer_stream_format(stream_type: Option<&str>, url: &str) -> StreamFormat {
         }
         "rtmp" => StreamFormat::Flv,
         _ => {
-            let lower = url.to_lowercase();
             if lower.contains(".m3u8") {
                 StreamFormat::Hls
+            } else if lower.contains(".mpd") {
+                StreamFormat::Dash
             } else if lower.contains(".flv") {
                 StreamFormat::Flv
             } else if lower.contains(".mp4") {
@@ -433,6 +437,7 @@ fn infer_media_format(stream_format: StreamFormat, _url: &str) -> MediaFormat {
         StreamFormat::Flv => MediaFormat::Flv,
         StreamFormat::Mp4 => MediaFormat::Mp4,
         StreamFormat::Wss => MediaFormat::Flv,
+        StreamFormat::Dash => MediaFormat::Fmp4,
     }
 }
 
@@ -513,6 +518,61 @@ mod tests {
         assert_eq!(parsed.plugin.as_deref(), Some("hls"));
         assert!(parsed.error.is_none());
         assert!(parsed.streams.as_ref().unwrap().contains_key("best"));
+    }
+
+    #[test]
+    fn dash_streams_are_labelled_dash_and_fragmented_mp4() {
+        for url in [
+            "https://cdn.example/live/manifest.mpd",
+            "https://cdn.example/live/manifest.mpd?token=1",
+            "https://cdn.example/live/stream?format=dash",
+        ] {
+            let format = infer_stream_format(Some("dash"), url);
+            assert_eq!(format, StreamFormat::Dash, "{url}");
+            assert_eq!(infer_media_format(format, url), MediaFormat::Fmp4);
+        }
+        assert_eq!(
+            infer_stream_format(Some("DASH"), "https://cdn.example/a.flv"),
+            StreamFormat::Dash
+        );
+        assert_eq!(
+            infer_stream_format(None, "https://cdn.example/live/manifest.mpd?x=1"),
+            StreamFormat::Dash
+        );
+    }
+
+    #[test]
+    fn other_stream_types_keep_their_labels() {
+        use StreamFormat::{Flv, Hls, Mp4};
+        let cases = [
+            (Some("hls"), "https://cdn.example/a", Hls),
+            (Some("http"), "https://cdn.example/a.m3u8", Hls),
+            (Some("http"), "https://cdn.example/a.flv", Flv),
+            (Some("http"), "https://cdn.example/a.mp4", Mp4),
+            (Some("rtmp"), "rtmp://cdn.example/live", Flv),
+            (None, "https://cdn.example/a.m3u8", Hls),
+            (None, "https://cdn.example/a", Flv),
+        ];
+        for (stream_type, url, expected) in cases {
+            assert_eq!(infer_stream_format(stream_type, url), expected, "{url}");
+        }
+    }
+
+    #[test]
+    fn test_parse_streamlink_json_dash() {
+        let raw = r#"{
+          "plugin": "dash",
+          "streams": {
+            "1080p+a128k": { "type": "dash", "url": "https://example.com/live.mpd" }
+          }
+        }"#;
+        let parsed: StreamlinkJson = serde_json::from_str(raw).unwrap();
+        let stream = &parsed.streams.as_ref().unwrap()["1080p+a128k"];
+        let format = infer_stream_format(
+            stream.stream_type.as_deref(),
+            stream.url.as_deref().unwrap(),
+        );
+        assert_eq!(format, StreamFormat::Dash);
     }
 
     #[test]
