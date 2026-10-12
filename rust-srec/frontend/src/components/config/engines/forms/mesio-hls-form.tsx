@@ -1058,7 +1058,6 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
             name={`${path}.buffer_limits.max_bytes`}
             label={<Trans>Max Bytes</Trans>}
             fallback={104857600}
-            fallbackLabel="104857600, 100 MiB"
             size="sm"
           />
         </SettingGrid>

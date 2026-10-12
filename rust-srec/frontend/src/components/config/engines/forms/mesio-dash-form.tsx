@@ -442,8 +442,10 @@ function TrackField({
 
   return (
     <div className={cn('space-y-1', box)}>
-      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
+      {/* The switch stays beside its label: wrapping it under a description would put the two
+          track switches of a row in different places. */}
+      <div className="flex flex-row items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-0.5">
           {labelText}
           {descriptionText}
         </div>
@@ -452,7 +454,7 @@ function TrackField({
           aria-invalid={error ? true : undefined}
           checked={value ?? MESIO_DASH_DEFAULTS[setting]}
           onCheckedChange={change}
-          className="scale-75 origin-right"
+          className="scale-75 origin-right shrink-0"
         />
       </div>
       {errorText}
