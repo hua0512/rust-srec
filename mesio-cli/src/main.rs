@@ -58,8 +58,15 @@ async fn bootstrap() -> Result<(), AppError> {
     // Create a cancellation token
     let token = CancellationToken::new();
 
-    // Spawn the input handler
-    tokio::spawn(input_handler(token.clone()));
+    // Ends the input handler however bootstrap returns: the runtime waits for
+    // blocking tasks before the process can exit. A child token, so that the
+    // signal handler still tells a requested stop from this one.
+    let input_done = token.child_token();
+    let _end_input = input_done.clone().drop_guard();
+    tokio::task::spawn_blocking({
+        let token = token.clone();
+        move || input_handler(token, input_done)
+    });
 
     // Setup logging with tracing-indicatif
     let log_level = if args.verbose {
@@ -348,15 +355,12 @@ async fn bootstrap() -> Result<(), AppError> {
     )
     .await;
 
-    // Ensure the token is always cancelled to terminate the input_handler.
     let final_result = if token.is_cancelled() {
         info!("Operation cancelled by user. Exiting gracefully.");
         Ok(())
     } else {
         result
     };
-
-    token.cancel();
 
     // Give a moment for any background spans to complete
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

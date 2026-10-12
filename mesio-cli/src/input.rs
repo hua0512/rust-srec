@@ -9,30 +9,32 @@ use std::thread;
 use std::time::Duration;
 use tracing::info;
 
-/// Asynchronously listens for user input to trigger cancellation.
+/// Listens for user input that requests a stop, and cancels `token` on it.
 ///
 /// This function checks if stdin is a terminal or piped input:
 /// - If stdin is a terminal, it enables raw mode and listens for key presses.
 ///   Pressing 'q' or Ctrl+C will trigger the cancellation token.
 /// - If stdin is not a terminal (piped input), it reads lines from stdin.
-///   If a line contains 'q', it triggers the cancellation token.
+///   A line consisting of 'q' triggers the cancellation token.
 ///
-/// The function will clean up by disabling raw mode when the token is cancelled.
-pub async fn input_handler(token: CancellationToken) {
+/// It polls, so it blocks its thread: run it with `spawn_blocking`. It returns
+/// after restoring the terminal mode once `done` is cancelled, which, with
+/// `done` a child of `token`, includes any requested stop.
+pub fn input_handler(token: CancellationToken, done: CancellationToken) {
     let stdin = io::stdin();
 
     // Check if stdin is a terminal
     if stdin.is_terminal() {
         // Terminal mode: use keyboard events
-        handle_terminal_input(token).await;
+        handle_terminal_input(token, done);
     } else {
         // Stdin mode: read from piped input
-        handle_stdin_input(token).await;
+        handle_stdin_input(token, done);
     }
 }
 
 /// Handle input from terminal keyboard events
-async fn handle_terminal_input(token: CancellationToken) {
+fn handle_terminal_input(token: CancellationToken, done: CancellationToken) {
     if terminal::enable_raw_mode().is_err() {
         info!("Failed to enable raw mode. Input handling will be disabled.");
         return;
@@ -40,7 +42,7 @@ async fn handle_terminal_input(token: CancellationToken) {
 
     loop {
         // Check for cancellation signal first.
-        if token.is_cancelled() {
+        if done.is_cancelled() {
             break;
         }
 
@@ -78,7 +80,7 @@ async fn handle_terminal_input(token: CancellationToken) {
 }
 
 /// Handle input from stdin (piped input)
-async fn handle_stdin_input(token: CancellationToken) {
+fn handle_stdin_input(token: CancellationToken, done: CancellationToken) {
     let (tx, rx) = mpsc::channel();
 
     // Spawn a blocking thread to read from stdin
@@ -100,7 +102,7 @@ async fn handle_stdin_input(token: CancellationToken) {
 
     loop {
         // Check for cancellation signal first.
-        if token.is_cancelled() {
+        if done.is_cancelled() {
             break;
         }
 

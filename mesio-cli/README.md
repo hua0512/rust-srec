@@ -246,8 +246,9 @@ Mesio stops gracefully, finishing and closing the current file, when:
 - it receives `SIGINT` or `SIGTERM` (for example from `kill`, `docker stop` or a service
   manager), or Ctrl+C or Ctrl+Break on Windows.
 
-A graceful stop exits with status 0. To stop without waiting, send the signal again (or press
-`Ctrl+C` again): mesio exits at once with status 130, and the current file may be incomplete.
+A graceful stop exits with status 0. A signal received while a stop is already under way,
+including one started with `q`, exits at once with status 130 instead, and the current file
+may be incomplete. Pressing `Ctrl+C` twice does the same.
 
 ### Custom Output Names
 

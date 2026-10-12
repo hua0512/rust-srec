@@ -17,8 +17,8 @@ pub fn install() -> io::Result<Signals> {
 }
 
 /// Cancels `token` on the first termination signal, so the current file is
-/// finished. A signal that arrives once the token is already cancelled
-/// (a second signal, or one during a slow stop after `q`) exits immediately.
+/// finished. A signal that arrives once a stop is under way (after a signal,
+/// `q`, or a closed output pipe) exits immediately.
 pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
     while let Some(signal) = signals.recv().await {
         if token.is_cancelled() {
@@ -96,20 +96,42 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn a_first_signal_cancels_the_token() {
-        let signals = install().expect("signal handlers install");
-        let token = CancellationToken::new();
-        tokio::spawn(stop_on_signal(signals, token.clone()));
+    const CHILD_ENV: &str = "MESIO_SIGNAL_TEST_CHILD";
+    const TEST_NAME: &str = "signal::tests::a_signal_stops_gracefully_and_a_second_one_at_once";
 
+    fn send_sigterm_to_self() {
         let status = Command::new("kill")
             .args(["-TERM", &std::process::id().to_string()])
             .status()
             .expect("kill runs");
         assert!(status.success());
+    }
 
+    /// Runs in a child process: the installed handlers stay for the life of
+    /// the process, and the second signal exits it.
+    #[tokio::test]
+    async fn a_signal_stops_gracefully_and_a_second_one_at_once() {
+        if std::env::var_os(CHILD_ENV).is_none() {
+            let status = Command::new(std::env::current_exe().expect("test binary path"))
+                .args([TEST_NAME, "--exact", "--nocapture"])
+                .env(CHILD_ENV, "1")
+                .status()
+                .expect("child test runs");
+            assert_eq!(status.code(), Some(FORCED_EXIT_CODE));
+            return;
+        }
+
+        let signals = install().expect("signal handlers install");
+        let token = CancellationToken::new();
+        tokio::spawn(stop_on_signal(signals, token.clone()));
+
+        send_sigterm_to_self();
         tokio::time::timeout(Duration::from_secs(5), token.cancelled())
             .await
-            .expect("the token is cancelled");
+            .expect("the first signal cancels the token");
+
+        send_sigterm_to_self();
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        panic!("the second signal did not exit the process");
     }
 }
