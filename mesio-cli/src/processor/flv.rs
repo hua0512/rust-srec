@@ -1,10 +1,11 @@
-use crate::cut::{Boundary, CutSession, CutTarget};
+use crate::cut::{Boundary, CutSession};
 use crate::output::pipe_flv_strategy::PipeFlvStrategy;
 use crate::output::provider::PipeStream;
 use crate::processor::generic::{
     process_pipe_stream, process_pipe_stream_with_processing, process_stream,
     process_stream_with_span,
 };
+use crate::processor::{Recording, SessionCleanup};
 use crate::utils::{expand_name_url, format_bytes, spans};
 use crate::{config::ProgramConfig, error::AppError};
 use flv::data::FlvData;
@@ -25,7 +26,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
-use tracing::{Instrument, Level, Span, info, span, warn};
+use tracing::{Instrument, Level, Span, info, span};
 
 async fn process_raw_stream(
     stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
@@ -223,14 +224,17 @@ pub async fn process_file(
 
 /// Process an FLV stream
 pub async fn process_flv_stream(
-    url_str: &str,
-    output_dir: &Path,
-    config: &ProgramConfig,
-    name_template: &str,
+    recording: Recording<'_>,
     session: DownloadSession<FlvData>,
-    token: &CancellationToken,
-    cut_target: &CutTarget,
 ) -> Result<u64, AppError> {
+    let Recording {
+        url: url_str,
+        output_dir,
+        config,
+        name_template,
+        token,
+        cut_target,
+    } = recording;
     // Check if we're in pipe output mode
     let pipe_stream = PipeStream::of(config.output_format);
     let is_pipe_mode = pipe_stream.is_some();
@@ -265,6 +269,7 @@ pub async fn process_flv_stream(
             download_span.clone(),
         )))
     };
+    let cleanup = SessionCleanup::new(handle, progress_task, download_span);
 
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
@@ -312,8 +317,7 @@ pub async fn process_flv_stream(
             "FLV pipe output complete"
         );
 
-        handle.cancel();
-        spans::summarize_dropped_events(&handle, &download_span);
+        cleanup.finish().await;
         return Ok(pipe_stats.items_written as u64);
     } else {
         let cut = CutSession::start(cut_target, token, Boundary::Keyframe);
@@ -357,13 +361,7 @@ pub async fn process_flv_stream(
     };
 
     let elapsed = start_time.elapsed();
-    handle.cancel();
-    if let Some(task) = progress_task
-        && let Err(error) = task.await
-    {
-        warn!(%error, "download progress task failed");
-    }
-    spans::summarize_dropped_events(&handle, &download_span);
+    cleanup.finish().await;
 
     // Log completion (goes to stderr in pipe mode)
     info!(
@@ -384,7 +382,7 @@ mod tests {
     use pipeline_common::ManualSplitStatus;
 
     use super::*;
-    use crate::cut::{CutOutcome, CutSource, Unavailable};
+    use crate::cut::{CutOutcome, CutSource, CutTarget, Unavailable};
     use crate::processor::fixtures::{
         FRAME_MS, files, flv_recording, frames, item_stream, read_flv,
     };
