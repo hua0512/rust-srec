@@ -314,6 +314,8 @@ struct MuxState {
     leader_ended_at: Option<Instant>,
     /// When the follower last delivered anything.
     follower_input_at: Option<Instant>,
+    /// When a media item was last written (or the muxer started).
+    last_media_at: Instant,
     /// Periods the leader's planner reported without leader content, with
     /// the leader sequence number they follow.
     leader_absent: VecDeque<(PeriodKey, u64)>,
@@ -336,12 +338,17 @@ struct MuxState {
 /// A failure that ends the stream.
 struct Fatal(DownloadError);
 
+/// `media_stall`: fail the session when no media item was written for this
+/// long. Track-level watchdogs cannot cover this: a track that is absent by
+/// design keeps reporting so, which would keep a session whose remaining
+/// track failed alive forever.
 pub(crate) async fn run_muxer(
     leader: MuxTrack,
     follower: Option<MuxTrack>,
     out: mpsc::Sender<Result<HlsData, DownloadError>>,
     events: Option<EventSink>,
     config: DashMuxConfig,
+    media_stall: Option<Duration>,
     cancel: CancellationToken,
 ) -> MuxOutcome {
     let mut leader_rx = Some(leader.rx);
@@ -364,6 +371,7 @@ pub(crate) async fn run_muxer(
         follower_stalled: false,
         leader_ended_at: None,
         follower_input_at: None,
+        last_media_at: Instant::now(),
         leader_absent: VecDeque::new(),
         leader_next_sequence: 0,
         leader_end: None,
@@ -410,6 +418,12 @@ pub(crate) async fn run_muxer(
                 .as_ref()
                 .is_some_and(|f| f.queued_bytes < state.config.max_buffered_bytes);
         let deadline = state.wait_deadline;
+        let stall_deadline = media_stall.map(|stall| {
+            state
+                .last_media_at
+                .checked_add(stall.min(Duration::from_secs(24 * 3600)))
+                .unwrap_or(state.last_media_at)
+        });
 
         tokio::select! {
             biased;
@@ -424,6 +438,24 @@ pub(crate) async fn run_muxer(
             }
             // Wakes the next pump, which stops waiting past the deadline.
             _ = sleep_until(deadline), if deadline.is_some() => {}
+            _ = sleep_until(stall_deadline), if stall_deadline.is_some() => {
+                let stalled_for = media_stall.unwrap_or_default();
+                warn!(
+                    stalled_ms = stalled_for.as_millis() as u64,
+                    "no DASH media was written; failing the session"
+                );
+                break fail(
+                    &out,
+                    DownloadError::Timeout {
+                        reason: format!(
+                            "no media was written for {} s",
+                            stalled_for.as_secs_f32()
+                        ),
+                    },
+                    &cancel,
+                )
+                .await;
+            }
         }
     };
 
@@ -968,7 +1000,12 @@ impl MuxState {
                     .max()
                     .unwrap_or(now);
                 let deadline = self.deadline(since);
-                if self.follower_active() && now < deadline && self.under_buffer_limit() {
+                if self.follower_active() && now < deadline {
+                    if !self.under_buffer_limit() {
+                        // Write what is queued rather than stop reading:
+                        // the buffer bound must not end the recording.
+                        self.flush_follower(false);
+                    }
                     return Step::Wait(Some(deadline));
                 }
                 if self.follower_active() {
@@ -1214,6 +1251,7 @@ impl MuxState {
         group.push(item);
         self.out.push(group);
         self.stats.items += 1;
+        self.last_media_at = Instant::now();
     }
 
     fn write_slice(
@@ -1379,6 +1417,23 @@ impl MuxState {
             let after_output = output_period
                 .as_ref()
                 .is_none_or(|output| is_after(&run_period, output));
+            let audio_only_output = self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.leader.track != self.leader.track);
+            if audio_only_output
+                && output_period
+                    .as_ref()
+                    .is_some_and(|output| run_period.same(output))
+            {
+                // An audio-only epoch keeps writing its Period's audio as it
+                // arrives; nothing else will.
+                for media in self.pop_follower_run() {
+                    self.write_audio_only(media);
+                }
+                written = true;
+                continue;
+            }
             if !after_output {
                 // The output Period's tail goes first, once audio of a
                 // leader-less Period is queued behind it.
@@ -1986,6 +2041,7 @@ mod tests {
             out_tx,
             Some(sink),
             config,
+            None,
             CancellationToken::new(),
         ));
         Harness {
@@ -2604,6 +2660,147 @@ mod tests {
         assert_eq!(tracks, [1, 2], "back to video and audio");
     }
 
+    /// A p0 A/V start, then `count` audio segments of the audio-only p1, under
+    /// a buffer far smaller than that audio.
+    async fn long_audio_only_period(video_ended: bool, count: u64) -> Vec<&'static str> {
+        let config = DashMuxConfig {
+            max_audio_lag: WAIT,
+            max_buffered_bytes: 16 * 1024,
+        };
+        let mut h = start(MediaTrack::Video, true, config);
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        if video_ended {
+            h.video(Ok(AssembledItem::StreamEnded)).await;
+        } else {
+            h.video(absent("p1", 1, 2)).await;
+        }
+        h.audio(init(a, Some("p0"), 0, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p0"), 0, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        h.audio(init(a, Some("p1"), 1, AUDIO_INIT)).await;
+        let audio = h.audio.take().unwrap();
+        let feeder = tokio::spawn(async move {
+            for number in 1..=count {
+                audio
+                    .send(media(
+                        a,
+                        Some("p1"),
+                        1,
+                        number,
+                        with_tfdt(AUDIO_1, (number - 1) * 48_000),
+                    ))
+                    .await
+                    .unwrap();
+            }
+            audio
+        });
+        let mut kinds = Vec::new();
+        // Everything of p1 is written while the video track stays silent
+        // (or has ended) and audio keeps coming.
+        while kinds.iter().filter(|kind| **kind == "media").count() < 1 + count as usize {
+            let item = tokio::time::timeout(WAIT, h.out.recv())
+                .await
+                .expect("audio of the audio-only Period keeps being written")
+                .unwrap()
+                .unwrap();
+            kinds.push(kind(&item));
+        }
+        let audio = feeder.await.unwrap();
+        audio.send(Ok(AssembledItem::StreamEnded)).await.unwrap();
+        if !video_ended {
+            h.video(Ok(AssembledItem::StreamEnded)).await;
+        }
+        let ending = tokio::time::timeout(WAIT, h.out.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        kinds.push(kind(&ending));
+        let outcome = tokio::time::timeout(WAIT, h.muxer).await.unwrap().unwrap();
+        assert_eq!(outcome, MuxOutcome::Ended);
+        kinds
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_period_is_written_completely_while_video_is_silent() {
+        let kinds = long_audio_only_period(false, 40).await;
+        let audio_only = kinds
+            .iter()
+            .skip(4)
+            .filter(|kind| **kind == "media")
+            .count();
+        assert_eq!(&kinds[..4], ["init", "media", "epoch", "init"]);
+        assert_eq!(audio_only, 40);
+        assert_eq!(kinds.last(), Some(&"end"));
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_period_is_written_completely_after_video_ended() {
+        let kinds = long_audio_only_period(true, 40).await;
+        let audio_only = kinds
+            .iter()
+            .skip(4)
+            .filter(|kind| **kind == "media")
+            .count();
+        assert_eq!(&kinds[..4], ["init", "media", "epoch", "init"]);
+        assert_eq!(audio_only, 40);
+        assert_eq!(kinds.last(), Some(&"end"));
+    }
+
+    #[tokio::test]
+    async fn absence_notices_cannot_keep_a_session_without_media_alive() {
+        let (video, video_rx) = mpsc::channel(64);
+        let (out_tx, mut out) = mpsc::channel(64);
+        let muxer = tokio::spawn(run_muxer(
+            MuxTrack {
+                track: MediaTrack::Video,
+                rx: video_rx,
+                cancel: CancellationToken::new(),
+            },
+            None,
+            out_tx,
+            None,
+            lag(WAIT),
+            Some(Duration::from_millis(200)),
+            CancellationToken::new(),
+        ));
+        let v = MediaTrack::Video;
+        video
+            .send(init(v, Some("p0"), 0, VIDEO_INIT))
+            .await
+            .unwrap();
+        video
+            .send(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await
+            .unwrap();
+        // The only other track failed; video keeps reporting it is absent.
+        let notices = tokio::spawn(async move {
+            for _ in 0..100 {
+                if video.send(absent("p1", 1, 2)).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        });
+        let mut last = None;
+        while let Some(item) = tokio::time::timeout(WAIT, out.recv())
+            .await
+            .expect("the session ends")
+        {
+            last = Some(item);
+        }
+        assert!(
+            matches!(last, Some(Err(DownloadError::Timeout { .. }))),
+            "{last:?}"
+        );
+        let outcome = tokio::time::timeout(WAIT, muxer).await.unwrap().unwrap();
+        assert!(matches!(outcome, MuxOutcome::Failed(_)));
+        notices.abort();
+    }
+
     #[tokio::test]
     async fn changed_init_audio_tails_survive_a_period_change() {
         let h = start(MediaTrack::Video, true, lag(WAIT));
@@ -2720,6 +2917,7 @@ mod tests {
             out_tx,
             None,
             lag(WAIT),
+            None,
             cancel.clone(),
         ));
         (video, out, cancel, muxer)
@@ -2833,6 +3031,7 @@ mod tests {
             out_tx,
             None,
             lag(WAIT),
+            None,
             cancel.clone(),
         ));
         video

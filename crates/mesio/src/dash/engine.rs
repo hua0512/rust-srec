@@ -239,6 +239,8 @@ pub(crate) async fn start(
         out_tx,
         events,
         config.mux.clone(),
+        live.then_some(config.output.live_max_overall_stall_duration)
+            .flatten(),
         cancel,
     ));
 

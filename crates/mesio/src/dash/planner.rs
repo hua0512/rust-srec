@@ -297,6 +297,10 @@ impl DashPlanner {
             Some(epoch) => epoch.period.clone(),
             None => self.start.period.clone(),
         };
+        // Whether every segment of the Periods iterated so far is planned,
+        // including one that overlaps a Period's end and only becomes
+        // available after the next Period has begun.
+        let mut earlier_complete = true;
         for period in &manifest.periods {
             let key = PeriodKey::of(period);
             if !key.at_or_after(&lower) {
@@ -307,7 +311,10 @@ impl DashPlanner {
                 Ok(None) => {
                     // Lets the muxer record the other track through this
                     // Period, and keeps this track's stall detection quiet.
-                    if has_started(manifest, period, now) {
+                    // Only once everything before it is planned: the notice
+                    // tells the muxer that no earlier media of this track
+                    // remains beyond `after_sequence`.
+                    if earlier_complete && has_started(manifest, period, now) {
                         outcome.notices.push(EngineNotice::TrackAbsent {
                             section_id: key.id.clone(),
                             section_start: key.start,
@@ -340,6 +347,9 @@ impl DashPlanner {
                     break;
                 }
             }
+            let nothing_to_plan =
+                window.is_empty() && manifest.presentation_type == PresentationType::Static;
+            earlier_complete &= self.period_fully_planned(period, &key, nothing_to_plan);
         }
 
         let planned = self.next_ordinal - first_new;
@@ -367,6 +377,31 @@ impl DashPlanner {
             len: backlog,
         });
         Ok(())
+    }
+
+    /// Whether no further segment of `period` can be planned: its last
+    /// planned segment reaches the Period's end (an open Period never
+    /// qualifies), or it has no segments at all (`nothing_to_plan`).
+    fn period_fully_planned(
+        &self,
+        period: &Period,
+        key: &PeriodKey,
+        nothing_to_plan: bool,
+    ) -> bool {
+        let Some(duration) = period.duration else {
+            return false;
+        };
+        let end =
+            i128::try_from(period.start.saturating_add(duration).as_nanos()).unwrap_or(i128::MAX);
+        match self
+            .epochs
+            .iter()
+            .rev()
+            .find(|epoch| epoch.period.same(key))
+        {
+            Some(epoch) => epoch.last_end >= end,
+            None => nothing_to_plan,
+        }
     }
 
     /// Drops bookkeeping for consumed segments and for epochs fully behind
@@ -1821,5 +1856,64 @@ mod tests {
         let manifest = Manifest::parse(known.as_bytes(), &url).unwrap();
         assert_eq!(rejection_for(&manifest.periods[0], MediaTrack::Audio), None);
         assert_eq!(rejection_for(&manifest.periods[0], MediaTrack::Video), None);
+    }
+
+    #[test]
+    fn a_video_gap_is_announced_only_after_overlapping_video_is_planned() {
+        // p0 ends at 10 s with 4 s video segments, so its last one, [8, 12),
+        // becomes available only at 12 s; p1 (audio only) starts at 10 s.
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT1S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="4" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="p1" start="PT10S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let absent = |outcome: &PlanOutcome| -> Vec<u64> {
+            outcome
+                .notices
+                .iter()
+                .filter_map(|notice| match notice {
+                    EngineNotice::TrackAbsent { after_sequence, .. } => Some(*after_sequence),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut fixture = Fixture::new(
+            MediaTrack::Video,
+            LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(11))),
+            11,
+        );
+        let early = fixture.plan(mpd);
+        assert_eq!(
+            media(&early)
+                .iter()
+                .map(|(_, meta, _)| meta.number)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+        assert!(
+            absent(&early).is_empty(),
+            "segment 3 of p0 is still to come"
+        );
+        fixture.consume_all();
+        fixture.advance(1);
+        let complete = fixture.plan(mpd);
+        assert_eq!(
+            media(&complete)
+                .iter()
+                .map(|(msn, meta, _)| (*msn, meta.number))
+                .collect::<Vec<_>>(),
+            [(2, 3)]
+        );
+        assert_eq!(absent(&complete), [3], "after every p0 video segment");
     }
 }
