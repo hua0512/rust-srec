@@ -42,3 +42,10 @@ path = "fuzz_targets/independent_fragment.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sidx"
+path = "fuzz_targets/sidx.rs"
+test = false
+doc = false
+bench = false
