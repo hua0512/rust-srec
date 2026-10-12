@@ -32,7 +32,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
@@ -424,6 +424,9 @@ pub struct SequenceAssembler<S> {
     has_emitted_media_segment: bool,
     is_live_stream: bool,
     expected_next_media_sequence: u64,
+    /// Publishes `expected_next_media_sequence` (see
+    /// [`Self::subscribe_cursor`]).
+    cursor: Option<watch::Sender<u64>>,
     gap_state: Option<GapState>,
     dead: DeadRanges,
     last_input_received_time: Option<Instant>,
@@ -464,6 +467,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             has_emitted_media_segment: false,
             is_live_stream,
             expected_next_media_sequence: initial_cursor,
+            cursor: None,
             gap_state: None,
             dead: DeadRanges::default(),
             last_input_received_time: is_live_stream.then(Instant::now),
@@ -483,6 +487,26 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     ) -> Self {
         self.performance_metrics = Some((metrics, protocol));
         self
+    }
+
+    /// The emit cursor: the next media sequence number the stream emits or
+    /// skips. Every media segment below it has been passed downstream or
+    /// given up on, so the reorder buffer only holds segments at or above it.
+    pub fn subscribe_cursor(&mut self) -> watch::Receiver<u64> {
+        self.cursor
+            .get_or_insert_with(|| watch::channel(self.expected_next_media_sequence).0)
+            .subscribe()
+    }
+
+    fn publish_cursor(&self) {
+        if let Some(cursor) = &self.cursor {
+            let next = self.expected_next_media_sequence;
+            cursor.send_if_modified(|published| {
+                let advanced = *published != next;
+                *published = next;
+                advanced
+            });
+        }
     }
 
     fn gap_strategy(&self) -> &GapSkipStrategy {
@@ -1057,6 +1081,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         if self.is_live_stream {
             self.prune_reorder_buffer();
         }
+        self.publish_cursor();
         EmitOutcome::Continue
     }
 

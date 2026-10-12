@@ -493,6 +493,19 @@ impl SegmentStateStore {
         now: Instant,
         budget: &ByteBudget,
     ) -> (Vec<ReadyJob>, Vec<AssemblerInput>) {
+        self.next_ready_jobs_below(slots, now, budget, None)
+    }
+
+    /// [`Self::next_ready_jobs`], admitting no media segment whose MSN is
+    /// at or beyond `media_limit`; such segments stay ready for a later
+    /// call. Inits are always admitted: media waits for them.
+    pub fn next_ready_jobs_below(
+        &mut self,
+        slots: usize,
+        now: Instant,
+        budget: &ByteBudget,
+        media_limit: Option<u64>,
+    ) -> (Vec<ReadyJob>, Vec<AssemblerInput>) {
         self.promote_due_retries(now);
 
         let mut jobs = Vec::new();
@@ -514,6 +527,13 @@ impl SegmentStateStore {
             if record.ready_entry.as_ref() != Some(&entry) || !record.state.is_schedulable() {
                 self.remove_ready_entry(&entry);
                 continue;
+            }
+            // Ready media follows every init in MSN order (prefetch, newer
+            // still, last), so no later entry is below the limit either.
+            if record.descriptor.key.kind == SegmentKind::Media
+                && media_limit.is_some_and(|limit| record.descriptor.msn >= limit)
+            {
+                break;
             }
 
             // fMP4 media whose own init terminally failed cannot be decoded,
@@ -1062,6 +1082,38 @@ mod tests {
                 (SegmentKind::Media, 5),
                 (SegmentKind::Media, 1), // prefetch ranks last despite lowest MSN
             ]
+        );
+    }
+
+    #[test]
+    fn media_at_or_beyond_the_limit_waits_while_inits_are_admitted() {
+        let mut s = store();
+        let b = budget_unlimited();
+        s.ingest(
+            vec![
+                descriptor("https://e.com/m4.ts", 4, SegmentKind::Media),
+                descriptor("https://e.com/m3.ts", 3, SegmentKind::Media),
+                descriptor("https://e.com/init.mp4", 9, SegmentKind::Init),
+                descriptor("https://e.com/m5.ts", 5, SegmentKind::Media),
+            ],
+            Instant::now(),
+        );
+        let admitted = |s: &mut SegmentStateStore, limit| {
+            let (jobs, inputs) = s.next_ready_jobs_below(10, Instant::now(), &b, Some(limit));
+            assert!(inputs.is_empty());
+            jobs.into_iter()
+                .map(|job| (job.descriptor.key.kind, job.descriptor.msn))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            admitted(&mut s, 4),
+            [(SegmentKind::Init, 9), (SegmentKind::Media, 3)]
+        );
+        assert_eq!(admitted(&mut s, 4), []);
+        assert_eq!(
+            admitted(&mut s, 6),
+            [(SegmentKind::Media, 4), (SegmentKind::Media, 5)]
         );
     }
 

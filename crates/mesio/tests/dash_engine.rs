@@ -1617,6 +1617,42 @@ async fn presentations_longer_than_the_planning_window_are_recorded_whole() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_static_segment_outlasting_many_later_ones_is_still_recorded() {
+    let origin = Origin::default();
+    let mpd = long_static(&origin, 300);
+    origin.set_mpd(mpd);
+    let held = origin.gate("v/10.m4s");
+    let base = origin.clone().serve().await;
+    let mut config = config(None);
+    config.selection.include_audio = false;
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    // Segment 10 is answered only once nothing else is downloading: by
+    // then, far more later segments than the reorder buffer holds could
+    // have completed.
+    let release = {
+        let origin = origin.clone();
+        tokio::spawn(async move {
+            wait_until_backpressured(&origin, 300).await;
+            held.send_replace(true);
+        })
+    };
+    let (items, error, _, terminal) = drain(session).await;
+    release.await.expect("segment 10 is released");
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    let seconds: Vec<u64> = media(&items)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE)
+        .collect();
+    assert_eq!(seconds, (0..300).collect::<Vec<_>>());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_static_presentation_with_a_protected_first_period_fails_typed() {
     let origin = Origin::default();
     origin.add_av();

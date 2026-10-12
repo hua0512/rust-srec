@@ -200,7 +200,7 @@ pub(crate) async fn start(
         // The track's logs carry its name. The download metrics are
         // shared by both tracks and logged once, by `join`.
         let span = info_span!("dash_track", %track);
-        let assembler = SequenceAssembler::new(
+        let mut assembler = SequenceAssembler::new(
             Arc::clone(&core_config),
             assembler_rx,
             TrackSink::new(track_tx, frontier),
@@ -208,6 +208,7 @@ pub(crate) async fn start(
             0,
             track_cancel.clone(),
         );
+        let emit_cursor = (!live).then(|| assembler.subscribe_cursor());
         let assembler_handle = tokio::spawn(assembler.run().instrument(span.clone()));
 
         let reactor_config = ReactorConfig {
@@ -223,6 +224,7 @@ pub(crate) async fn start(
             max_concurrency: concurrency,
             max_pending_payload_bytes: split.share(engine.max_pending_payload_bytes, video, both),
             max_pending_items: engine.max_pending_items,
+            emit_cursor,
         };
         let reactor_rx = snapshot_rx.clone();
         let reactor_cancel = track_cancel.clone();
