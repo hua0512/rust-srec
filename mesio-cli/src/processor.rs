@@ -6,6 +6,7 @@ mod hls;
 
 use crate::cut::{CutTarget, Unavailable};
 use crate::output::pipe_hls_strategy::SegmentedProtocol;
+use crate::output::provider::PipeStream;
 use crate::{config::ProgramConfig, error::AppError};
 use mesio_engine::{DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader};
 use pipeline_common::CancellationToken;
@@ -41,7 +42,7 @@ pub async fn process_inputs(
     });
 
     // Pipe output is one continuous stream, with no file to cut.
-    let pipe_mode = config.output_format.is_pipe();
+    let pipe_mode = PipeStream::of(config.output_format).is_some();
     let _pipe_output = pipe_mode.then(|| cut_target.set_unavailable(Unavailable::PipeOutput));
 
     let downloader = MesioDownloader::new(MesioConfig {

@@ -15,6 +15,8 @@ use tracing::warn;
 
 use pipeline_common::{FormatStrategy, PostWriteAction, WriterConfig, WriterState};
 
+use crate::output::provider::{PipeStream, PipeWriter};
+
 /// Error type for pipe FLV strategy
 #[derive(Debug, Error)]
 pub enum PipeFlvStrategyError {
@@ -39,7 +41,7 @@ impl PipeFlvStrategyError {
 
 /// FLV pipe output strategy
 ///
-/// This strategy writes FLV data to a pipe (stdout) and detects segment boundaries
+/// This strategy writes FLV data to a pipe (stdout or stderr) and detects segment boundaries
 /// to signal when the pipe should be closed. Boundaries are detected when:
 /// - A new FLV header is received after data has already been written
 /// - An EndOfSequence marker is received
@@ -52,6 +54,8 @@ pub struct PipeFlvStrategy {
     should_close: bool,
     /// Count of segment boundaries encountered
     segment_count: u32,
+    /// Where media is written
+    stream: PipeStream,
 }
 
 impl Default for PipeFlvStrategy {
@@ -61,14 +65,21 @@ impl Default for PipeFlvStrategy {
 }
 
 impl PipeFlvStrategy {
-    /// Create a new PipeFlvStrategy
+    /// Create a new PipeFlvStrategy that writes to stdout
     pub fn new() -> Self {
         Self {
             has_written_data: false,
             bytes_written: 0,
             should_close: false,
             segment_count: 0,
+            stream: PipeStream::default(),
         }
+    }
+
+    /// Write to `stream` instead of stdout
+    pub fn with_stream(mut self, stream: PipeStream) -> Self {
+        self.stream = stream;
+        self
     }
 
     /// Check if the pipe should be closed based on the current item
@@ -143,12 +154,11 @@ impl PipeFlvStrategy {
 }
 
 impl FormatStrategy<FlvData> for PipeFlvStrategy {
-    type Writer = BufWriter<std::io::Stdout>;
+    type Writer = BufWriter<PipeWriter>;
     type StrategyError = PipeFlvStrategyError;
 
     fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
-        // For pipe output, we always write to stdout
-        Ok(BufWriter::with_capacity(64 * 1024, io::stdout()))
+        Ok(BufWriter::with_capacity(64 * 1024, self.stream.open()))
     }
 
     fn write_item(

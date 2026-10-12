@@ -346,6 +346,8 @@ When using pipe output mode, mesio writes:
 - **Binary media data** to **stdout** (piped to ffmpeg/mpv/etc.)
 - **Log messages** to **stderr** (INFO, WARN, progress, etc.)
 
+With `-O stderr`, the roles swap: media goes to stderr and log messages to stdout.
+
 You must redirect stderr to prevent log messages from corrupting the binary stream:
 
 | Shell | Discard stderr | Save to file |
@@ -367,7 +369,7 @@ mesio --fix -O stdout https://example.com/stream.flv 2>mesio.log | ffmpeg -i pip
 When using pipe output mode:
 
 - Progress bars are automatically disabled to avoid corrupting the output stream
-- All logging is redirected to stderr
+- All logging goes to the other stream: stderr with `-O stdout`, stdout with `-O stderr`
 - The pipe closes automatically on segment boundaries (FLV headers, HLS and DASH discontinuities)
 - Use `--fix` flag to enable FLV processing (timestamp repair, GOP sorting) before piping
 

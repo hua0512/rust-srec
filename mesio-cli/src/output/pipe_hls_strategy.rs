@@ -13,6 +13,8 @@ use tracing::warn;
 
 use pipeline_common::{FormatStrategy, PostWriteAction, WriterConfig, WriterState};
 
+use crate::output::provider::{PipeStream, PipeWriter};
+
 /// Error type for pipe HLS strategy
 #[derive(Debug, Error)]
 pub enum PipeHlsStrategyError {
@@ -68,7 +70,7 @@ impl SegmentedProtocol {
 
 /// HLS pipe output strategy
 ///
-/// This strategy writes HLS data to a pipe (stdout) and detects segment boundaries
+/// This strategy writes HLS data to a pipe (stdout or stderr) and detects segment boundaries
 /// to signal when the pipe should be closed. Boundaries are detected when:
 /// - A discontinuity flag is set on a segment
 /// - An EndMarker is received
@@ -81,6 +83,8 @@ pub struct PipeHlsStrategy {
     discontinuity_count: u32,
     /// Protocol named in boundary logs
     protocol: SegmentedProtocol,
+    /// Where media is written
+    stream: PipeStream,
 }
 
 impl Default for PipeHlsStrategy {
@@ -95,14 +99,21 @@ impl PipeHlsStrategy {
         Self::for_protocol(SegmentedProtocol::Hls)
     }
 
-    /// Create a strategy whose logs name `protocol`
+    /// Create a strategy that writes to stdout and whose logs name `protocol`
     pub fn for_protocol(protocol: SegmentedProtocol) -> Self {
         Self {
             has_written_data: false,
             bytes_written: 0,
             discontinuity_count: 0,
             protocol,
+            stream: PipeStream::default(),
         }
+    }
+
+    /// Write to `stream` instead of stdout
+    pub fn with_stream(mut self, stream: PipeStream) -> Self {
+        self.stream = stream;
+        self
     }
 
     /// Check if the pipe should be closed based on the current item
@@ -192,12 +203,11 @@ impl PipeHlsStrategy {
 }
 
 impl FormatStrategy<HlsData> for PipeHlsStrategy {
-    type Writer = BufWriter<std::io::Stdout>;
+    type Writer = BufWriter<PipeWriter>;
     type StrategyError = PipeHlsStrategyError;
 
     fn create_writer(&self, _path: &Path) -> Result<Self::Writer, Self::StrategyError> {
-        // For pipe output, we always write to stdout
-        Ok(BufWriter::with_capacity(64 * 1024, io::stdout()))
+        Ok(BufWriter::with_capacity(64 * 1024, self.stream.open()))
     }
 
     fn write_item(

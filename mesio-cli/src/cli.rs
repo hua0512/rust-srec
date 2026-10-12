@@ -46,7 +46,7 @@ pub struct CliArgs {
         long = "output-format",
         default_value = "file",
         value_enum,
-        help = "Output format: 'file' for files, 'stdout' for pipe output"
+        help = "Output format: 'file' for files, 'stdout' or 'stderr' to pipe the media to that stream"
     )]
     pub output_format: OutputFormat,
 
