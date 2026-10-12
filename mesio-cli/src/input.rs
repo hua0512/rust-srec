@@ -1,13 +1,14 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal,
 };
 use pipeline_common::CancellationToken;
 use std::io::{self, BufRead, IsTerminal};
-use std::sync::{Mutex, PoisonError, mpsc};
-use std::thread;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 use tracing::info;
+
+use crate::cut::{CutSource, CutTarget};
 
 /// Whether this process has put the terminal in raw mode. Enabling and
 /// restoring hold the lock, so raw mode is never enabled after
@@ -56,32 +57,61 @@ pub fn restore_terminal() -> io::Result<()> {
     Ok(())
 }
 
-/// Listens for user input that requests a stop, and cancels `token` on it.
+/// What a key press or a line of stdin asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputAction {
+    Stop,
+    Cut,
+}
+
+/// Terminals may report releases and repeats too; only a press acts.
+fn key_action(key: &KeyEvent) -> Option<InputAction> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('q'), KeyModifiers::NONE) => Some(InputAction::Stop),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InputAction::Stop),
+        (KeyCode::Char('s'), KeyModifiers::NONE) => Some(InputAction::Cut),
+        _ => None,
+    }
+}
+
+fn line_action(line: &str) -> Option<InputAction> {
+    match line.trim() {
+        "q" => Some(InputAction::Stop),
+        "s" => Some(InputAction::Cut),
+        _ => None,
+    }
+}
+
+/// Listens for user input that requests a stop or a cut: a stop cancels
+/// `token`, a cut goes to `cut`.
 ///
 /// This function checks if stdin is a terminal or piped input:
-/// - If stdin is a terminal, it enables raw mode and listens for key presses.
-///   Pressing 'q' or Ctrl+C will trigger the cancellation token.
-/// - If stdin is not a terminal (piped input), it reads lines from stdin.
-///   A line consisting of 'q' triggers the cancellation token.
+/// - If stdin is a terminal, it enables raw mode and listens for key presses:
+///   'q' or Ctrl+C stops, 's' cuts.
+/// - If stdin is not a terminal (piped input), it reads lines from stdin: a
+///   line consisting of 'q' stops, one consisting of 's' cuts.
 ///
 /// It blocks its thread, possibly beyond its poll timeout (a terminal read
 /// waits for an escape sequence to complete), so run it on a thread of its
 /// own that nothing waits for, and call [`restore_terminal`] before exiting.
-pub fn input_handler(token: CancellationToken) {
+pub fn input_handler(token: CancellationToken, cut: CutTarget) {
     let stdin = io::stdin();
 
     // Check if stdin is a terminal
     if stdin.is_terminal() {
         // Terminal mode: use keyboard events
-        handle_terminal_input(token);
+        handle_terminal_input(token, cut);
     } else {
         // Stdin mode: read from piped input
-        handle_stdin_input(token);
+        handle_stdin_input(token, cut);
     }
 }
 
 /// Handle input from terminal keyboard events
-fn handle_terminal_input(token: CancellationToken) {
+fn handle_terminal_input(token: CancellationToken, cut: CutTarget) {
     if !enable_raw_mode() {
         return;
     }
@@ -97,26 +127,18 @@ fn handle_terminal_input(token: CancellationToken) {
         if let Ok(true) = event::poll(Duration::from_millis(100))
             && let Ok(Event::Key(key_event)) = event::read()
         {
-            let should_cancel = match key_event {
-                // Handle 'q' key press
-                KeyEvent {
-                    code: KeyCode::Char('q'),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                } => true,
-                // Handle Ctrl+C
-                KeyEvent {
-                    code: KeyCode::Char('c'),
-                    modifiers: KeyModifiers::CONTROL,
-                    ..
-                } => true,
-                _ => false,
-            };
-
-            if should_cancel {
-                token.cancel();
-                requested = true;
-                break;
+            match key_action(&key_event) {
+                Some(InputAction::Stop) => {
+                    token.cancel();
+                    requested = true;
+                    break;
+                }
+                // Neither blocks nor logs, so `q` keeps working while the
+                // acknowledgement is written.
+                Some(InputAction::Cut) => {
+                    cut.trigger(CutSource::Key);
+                }
+                None => {}
             }
         }
     }
@@ -133,50 +155,77 @@ fn handle_terminal_input(token: CancellationToken) {
     }
 }
 
-/// Handle input from stdin (piped input)
-fn handle_stdin_input(token: CancellationToken) {
-    let (tx, rx) = mpsc::channel();
-
-    // Spawn a blocking thread to read from stdin
-    thread::spawn(move || {
-        let stdin = io::stdin();
-        let reader = stdin.lock();
-
-        for line in reader.lines() {
-            match line {
-                Ok(line) => {
-                    if tx.send(line).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
-
-    loop {
-        // Check for cancellation signal first.
-        if token.is_cancelled() {
+/// Handle input from stdin (piped input). Each line acts as it is read, so a
+/// cut is never held back for a later recording.
+fn handle_stdin_input(token: CancellationToken, cut: CutTarget) {
+    for line in io::stdin().lock().lines() {
+        let Ok(line) = line else {
             break;
-        }
-
-        // Try to receive a line from stdin with timeout
-        match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(line) => {
-                if line.trim() == "q" {
-                    token.cancel();
-                    info!("Cancellation requested. Shutting down gracefully...");
-                    break;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Continue waiting
-                continue;
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Stdin closed
+        };
+        match line_action(&line) {
+            Some(InputAction::Stop) => {
+                token.cancel();
+                info!("Cancellation requested. Shutting down gracefully...");
                 break;
             }
+            Some(InputAction::Cut) => {
+                cut.trigger(CutSource::Stdin);
+            }
+            None => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::KeyEventState;
+
+    use super::*;
+
+    fn key(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn keys_stop_or_cut_only_when_pressed() {
+        let press = |code, modifiers| key_action(&key(code, modifiers, KeyEventKind::Press));
+        assert_eq!(
+            press(KeyCode::Char('q'), KeyModifiers::NONE),
+            Some(InputAction::Stop)
+        );
+        assert_eq!(
+            press(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            Some(InputAction::Stop)
+        );
+        assert_eq!(
+            press(KeyCode::Char('s'), KeyModifiers::NONE),
+            Some(InputAction::Cut)
+        );
+        assert_eq!(press(KeyCode::Char('s'), KeyModifiers::CONTROL), None);
+        assert_eq!(press(KeyCode::Char('S'), KeyModifiers::SHIFT), None);
+        assert_eq!(press(KeyCode::Char('c'), KeyModifiers::NONE), None);
+        for kind in [KeyEventKind::Release, KeyEventKind::Repeat] {
+            assert_eq!(
+                key_action(&key(KeyCode::Char('s'), KeyModifiers::NONE, kind)),
+                None
+            );
+            assert_eq!(
+                key_action(&key(KeyCode::Char('q'), KeyModifiers::NONE, kind)),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn lines_stop_or_cut_when_they_consist_of_the_command() {
+        assert_eq!(line_action("q"), Some(InputAction::Stop));
+        assert_eq!(line_action(" s \r"), Some(InputAction::Cut));
+        assert_eq!(line_action("split"), None);
+        assert_eq!(line_action(""), None);
     }
 }

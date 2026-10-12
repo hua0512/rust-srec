@@ -118,10 +118,47 @@ impl StreamState {
     }
 }
 
+/// Whether a script tag body is stream metadata: an AMF0 `onMetaData` name,
+/// alone or after the `@setDataFrame` wrapper some encoders send.
+fn is_metadata_script(data: &[u8]) -> bool {
+    fn amf0_string(data: &[u8]) -> Option<(&[u8], &[u8])> {
+        let [0x02, high, low, rest @ ..] = data else {
+            return None;
+        };
+        let len = usize::from(u16::from_be_bytes([*high, *low]));
+        (rest.len() >= len).then(|| rest.split_at(len))
+    }
+    match amf0_string(data) {
+        Some((name, _)) if name == crate::AMF0_ON_METADATA.as_bytes() => true,
+        Some((b"@setDataFrame", rest)) => {
+            amf0_string(rest).is_some_and(|(name, _)| name == crate::AMF0_ON_METADATA.as_bytes())
+        }
+        _ => false,
+    }
+}
+
+/// How a split re-opens the next segment with the cached initialization tags.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ReinjectPolicy {
+    /// Replay the latest script tag and the sequence headers at timestamp 0.
+    /// For pipelines that rebase each segment's timeline after this operator.
+    #[default]
+    Rebased,
+    /// Replay only `onMetaData`, at timestamp 0, and the sequence headers,
+    /// stamped with the timestamp of the tag that opens the segment. For output
+    /// written with the timestamps the source sent, where sequence headers at 0
+    /// would make the new file jump from 0 to the running timestamp, and a
+    /// replayed timed script tag (such as `onCuePoint`) would repeat an event.
+    /// Metadata stays at 0 because demuxers such as FFmpeg's read a script tag
+    /// with a later timestamp as a data packet, not as the file's metadata.
+    AtBoundary,
+}
+
 /// Operator that limits FLV streams by size and/or duration
 pub struct LimitOperator {
     context: Arc<StreamerContext>,
     config: LimitConfig,
+    reinject: ReinjectPolicy,
     state: StreamState,
     last_split_time: Instant,
 }
@@ -135,9 +172,15 @@ impl LimitOperator {
         Self {
             context,
             config,
+            reinject: ReinjectPolicy::default(),
             state: StreamState::new(),
             last_split_time: Instant::now(),
         }
+    }
+
+    pub fn with_reinject_policy(mut self, policy: ReinjectPolicy) -> Self {
+        self.reinject = policy;
+        self
     }
 
     fn determine_split_reason(&self) -> SplitReason {
@@ -204,9 +247,12 @@ impl LimitOperator {
         false
     }
 
+    /// `boundary_timestamp_ms` is the timestamp of the tag that opens the new
+    /// segment.
     fn split_stream(
         &mut self,
         reason: SplitReason,
+        boundary_timestamp_ms: u32,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         info!(
@@ -220,9 +266,24 @@ impl LimitOperator {
         // Emit the Split marker before re-injecting the header.
         output(FlvData::Split(reason))?;
 
-        self.state
-            .cache
-            .reinject(output, Some(&self.context.name))?;
+        let name = Some(self.context.name.as_str());
+        match self.reinject {
+            ReinjectPolicy::Rebased => self.state.cache.reinject(output, name)?,
+            ReinjectPolicy::AtBoundary => self.state.cache.reinject(
+                &mut |item| match item {
+                    FlvData::Tag(mut tag) => {
+                        tag.timestamp_ms = if tag.is_script_tag() {
+                            0
+                        } else {
+                            boundary_timestamp_ms
+                        };
+                        output(FlvData::Tag(tag))
+                    }
+                    other => output(other),
+                },
+                name,
+            )?,
+        }
 
         // Reset accumulated counters for the new segment
         self.state.reset_counters();
@@ -264,15 +325,23 @@ impl Processor<FlvData> for LimitOperator {
                 let tag_size = tag.size() as u64 + PREVIOUS_TAG_SIZE_FIELD as u64;
                 self.state.accumulated_size += tag_size;
 
-                // Track key metadata. Sequence headers are cached with timestamp_ms
-                // zeroed so the tags re-injected by split_stream open the new segment
-                // at timestamp 0.
+                // Track key metadata. With `ReinjectPolicy::Rebased`, sequence headers
+                // are cached with timestamp_ms zeroed so the tags re-injected by
+                // split_stream open the new segment at timestamp 0; `AtBoundary`
+                // restamps them when they are re-injected.
+                let rebased = self.reinject == ReinjectPolicy::Rebased;
                 if tag.is_script_tag() {
-                    self.state.cache.store_metadata(tag.clone());
+                    if rebased || is_metadata_script(tag.data()) {
+                        self.state.cache.store_metadata(tag.clone());
+                    }
                 } else if tag.is_video_sequence_header() {
-                    self.state.cache.store_video_sequence_tag(tag.clone(), true);
+                    self.state
+                        .cache
+                        .store_video_sequence_tag(tag.clone(), rebased);
                 } else if tag.is_audio_sequence_header() {
-                    self.state.cache.store_audio_sequence_tag(tag.clone(), true);
+                    self.state
+                        .cache
+                        .store_audio_sequence_tag(tag.clone(), rebased);
                 } else {
                     // This is actual content (not sequence header or metadata)
                     // Update timestamp tracking only for content tags
@@ -353,7 +422,7 @@ impl Processor<FlvData> for LimitOperator {
                     }
 
                     // Perform the split
-                    self.split_stream(split_reason, output)?;
+                    self.split_stream(split_reason, tag.timestamp_ms, output)?;
 
                     self.state.media_tags += u64::from(is_media);
 
@@ -581,6 +650,196 @@ mod tests {
             out.iter()
                 .any(|item| matches!(item, FlvData::Split(SplitReason::Manual { .. })))
         );
+    }
+
+    fn cue_point_tag(timestamp: u32) -> FlvData {
+        let mut data = vec![0x02, 0x00, 0x0a];
+        data.extend_from_slice(b"onCuePoint");
+        data.push(0x05);
+        test_utils::create_test_tag(FlvTagType::ScriptData, timestamp, data)
+    }
+
+    /// Runs `items` through `operator`, requesting a manual cut just before
+    /// the item at `cut_before`, and returns everything it emitted.
+    fn run_with_cut(
+        operator: &mut LimitOperator,
+        context: &Arc<StreamerContext>,
+        control: &pipeline_common::ManualSplitControl,
+        items: Vec<FlvData>,
+        cut_before: usize,
+    ) -> Vec<FlvData> {
+        let mut out = Vec::new();
+        for (index, item) in items.into_iter().enumerate() {
+            if index == cut_before {
+                control.request(std::time::Duration::from_secs(30)).unwrap();
+            }
+            operator
+                .process(context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        out
+    }
+
+    fn manual_split_context() -> (
+        Arc<pipeline_common::ManualSplitControl>,
+        Arc<StreamerContext>,
+    ) {
+        let control = Arc::new(pipeline_common::ManualSplitControl::default());
+        control.enable();
+        let context = Arc::new(
+            StreamerContext::new(CancellationToken::new()).with_manual_split(control.clone()),
+        );
+        (control, context)
+    }
+
+    /// The items emitted after the manual split marker.
+    fn after_manual_split(out: &[FlvData]) -> &[FlvData] {
+        let index = out
+            .iter()
+            .position(|item| matches!(item, FlvData::Split(SplitReason::Manual { .. })))
+            .expect("a manual split");
+        &out[index + 1..]
+    }
+
+    #[test]
+    fn at_boundary_reinjection_keeps_running_timestamps_and_replays_only_metadata() {
+        let (control, context) = manual_split_context();
+        let mut operator =
+            LimitOperator::new(context.clone()).with_reinject_policy(ReinjectPolicy::AtBoundary);
+        let out = run_with_cut(
+            &mut operator,
+            &context,
+            &control,
+            vec![
+                test_utils::create_test_header(),
+                create_script_tag(0, false),
+                test_utils::create_video_sequence_header(0, 1),
+                test_utils::create_audio_sequence_header(0, 1),
+                test_utils::create_video_tag(1_000, true),
+                test_utils::create_video_tag(1_040, false),
+                cue_point_tag(1_050),
+                test_utils::create_video_tag(1_080, true),
+            ],
+            5,
+        );
+
+        // Everything before the cut is forwarded untouched, timed scripts included.
+        assert_eq!(
+            out.iter()
+                .filter(|item| matches!(item, FlvData::Tag(tag) if tag.is_script_tag()))
+                .count(),
+            3
+        );
+        let reopened = after_manual_split(&out);
+        assert!(matches!(&reopened[0], FlvData::Header(_)));
+        let FlvData::Tag(metadata) = &reopened[1] else {
+            panic!("metadata is replayed after the header");
+        };
+        assert!(is_metadata_script(metadata.data()));
+        assert!(matches!(&reopened[2], FlvData::Tag(tag) if tag.is_video_sequence_header()));
+        assert!(matches!(&reopened[3], FlvData::Tag(tag) if tag.is_audio_sequence_header()));
+        assert!(matches!(&reopened[4], FlvData::Tag(tag) if tag.is_key_frame_nalu()));
+        assert_eq!(reopened.len(), 5);
+        assert_eq!(metadata.timestamp_ms, 0);
+        for item in &reopened[2..] {
+            if let FlvData::Tag(tag) = item {
+                assert_eq!(tag.timestamp_ms, 1_080);
+            }
+        }
+    }
+
+    #[test]
+    fn at_boundary_reinjection_replays_the_latest_sequence_header_after_a_repeated_header() {
+        let (control, context) = manual_split_context();
+        let mut operator =
+            LimitOperator::new(context.clone()).with_reinject_policy(ReinjectPolicy::AtBoundary);
+        let out = run_with_cut(
+            &mut operator,
+            &context,
+            &control,
+            vec![
+                test_utils::create_test_header(),
+                test_utils::create_video_sequence_header(0, 1),
+                test_utils::create_audio_sequence_header(0, 1),
+                test_utils::create_video_tag(0, true),
+                // The source restarts its stream mid-recording.
+                test_utils::create_test_header(),
+                test_utils::create_video_sequence_header(5_000, 1),
+                test_utils::create_audio_sequence_header(5_000, 1),
+                test_utils::create_video_tag(5_000, true),
+                // A codec configuration change at a nonzero timestamp.
+                test_utils::create_video_sequence_header(6_000, 2),
+                test_utils::create_video_tag(6_000, true),
+                test_utils::create_video_tag(6_040, false),
+                test_utils::create_video_tag(6_080, true),
+            ],
+            10,
+        );
+
+        let reopened = after_manual_split(&out);
+        let FlvData::Tag(video_sequence) = &reopened[1] else {
+            panic!("the video sequence header follows the FLV header");
+        };
+        assert!(video_sequence.is_video_sequence_header());
+        assert_eq!(video_sequence.data()[5], 2, "the latest configuration");
+        assert_eq!(video_sequence.timestamp_ms, 6_080);
+        assert!(
+            matches!(&reopened[3], FlvData::Tag(tag) if tag.is_key_frame_nalu() && tag.timestamp_ms == 6_080)
+        );
+    }
+
+    #[test]
+    fn rebased_reinjection_replays_the_latest_script_and_zeroed_sequence_headers() {
+        let (control, context) = manual_split_context();
+        let mut operator = LimitOperator::new(context.clone());
+        let out = run_with_cut(
+            &mut operator,
+            &context,
+            &control,
+            vec![
+                test_utils::create_test_header(),
+                create_script_tag(0, false),
+                test_utils::create_video_sequence_header(0, 1),
+                test_utils::create_audio_sequence_header(0, 1),
+                test_utils::create_video_tag(1_000, true),
+                cue_point_tag(1_050),
+                test_utils::create_video_tag(1_080, true),
+            ],
+            5,
+        );
+
+        let reopened = after_manual_split(&out);
+        let FlvData::Tag(script) = &reopened[1] else {
+            panic!("a script tag is replayed after the header");
+        };
+        assert!(!is_metadata_script(script.data()));
+        assert!(
+            matches!(&reopened[2], FlvData::Tag(tag) if tag.is_video_sequence_header() && tag.timestamp_ms == 0)
+        );
+        assert!(
+            matches!(&reopened[3], FlvData::Tag(tag) if tag.is_audio_sequence_header() && tag.timestamp_ms == 0)
+        );
+    }
+
+    #[test]
+    fn metadata_scripts_are_recognised_with_or_without_the_data_frame_wrapper() {
+        let FlvData::Tag(metadata) = create_script_tag(0, false) else {
+            unreachable!()
+        };
+        assert!(is_metadata_script(metadata.data()));
+        let mut wrapped = vec![0x02, 0x00, 0x0d];
+        wrapped.extend_from_slice(b"@setDataFrame");
+        wrapped.extend_from_slice(metadata.data());
+        assert!(is_metadata_script(&wrapped));
+        let FlvData::Tag(cue) = cue_point_tag(0) else {
+            unreachable!()
+        };
+        assert!(!is_metadata_script(cue.data()));
+        assert!(!is_metadata_script(&[0x02, 0x00, 0x0a, b'o']));
+        assert!(!is_metadata_script(&[]));
     }
 
     #[test]
