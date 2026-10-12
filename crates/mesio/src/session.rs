@@ -745,21 +745,15 @@ where
                     .map(|err| err.to_string())
                     .unwrap_or_else(|| format!("all {name} sources failed"));
                 let error = DownloadError::source_exhausted(reason.clone());
-                if item_tx.send(Err(error)).await.is_err() {
-                    debug!(
-                        protocol = name,
-                        "error receiver closed after source exhaustion"
-                    );
+                if deliver(&item_tx, Err(error), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
             Err(err) => {
                 let reason = err.to_string();
-                if item_tx.send(Err(err)).await.is_err() {
-                    debug!(
-                        protocol = name,
-                        "error receiver closed after source selection failure"
-                    );
+                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
@@ -768,14 +762,13 @@ where
         attempt = attempt.saturating_add(1);
 
         if pending_discontinuity {
-            if item_tx
-                .send(Ok(HlsData::end_marker_with_reason(
-                    hls::SplitReason::Discontinuity,
-                )))
-                .await
-                .is_err()
-            {
-                return DownloadTerminal::DownstreamClosed;
+            let marker = Ok(HlsData::end_marker_with_reason(
+                hls::SplitReason::Discontinuity,
+            ));
+            match deliver(&item_tx, marker, &token).await {
+                Delivery::Sent => {}
+                Delivery::Closed => return DownloadTerminal::DownstreamClosed,
+                Delivery::Cancelled => return DownloadTerminal::Cancelled,
             }
             pending_discontinuity = false;
         }
@@ -800,11 +793,8 @@ where
             Ok(downloader) => downloader,
             Err(err) => {
                 let reason = err.to_string();
-                if item_tx.send(Err(err)).await.is_err() {
-                    debug!(
-                        protocol = name,
-                        "error receiver closed after downloader initialization failure"
-                    );
+                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
@@ -842,7 +832,8 @@ where
                         }
                         delivered_media = true;
                     }
-                    if item_tx.send(Ok(item)).await.is_err() {
+                    let delivery = deliver(&item_tx, Ok(item), &token).await;
+                    if delivery != Delivery::Sent {
                         // The item stream and the attempt's engine task both
                         // hold event sinks; the forwarder only finishes once
                         // both are gone.
@@ -854,7 +845,10 @@ where
                         if let Err(error) = event_task.await {
                             warn!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "event forwarding task failed during cancellation");
                         }
-                        return DownloadTerminal::DownstreamClosed;
+                        return match delivery {
+                            Delivery::Cancelled => DownloadTerminal::Cancelled,
+                            _ => DownloadTerminal::DownstreamClosed,
+                        };
                     }
                 }
                 Err(err) => {
@@ -897,6 +891,31 @@ where
                 pending_discontinuity = delivered_media;
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Sent,
+    Closed,
+    Cancelled,
+}
+
+/// Sends `item` downstream unless `token` is cancelled first. A consumer
+/// that stops reading without dropping the stream would otherwise keep a
+/// cancelled session blocked here forever. A dropped stream (which also
+/// cancels the session) reports `Closed`.
+async fn deliver<T>(tx: &mpsc::Sender<T>, item: T, token: &CancellationToken) -> Delivery {
+    if tx.is_closed() {
+        return Delivery::Closed;
+    }
+    tokio::select! {
+        biased;
+        sent = tx.send(item) => match sent {
+            Ok(()) => Delivery::Sent,
+            Err(_) => Delivery::Closed,
+        },
+        _ = token.cancelled() => Delivery::Cancelled,
     }
 }
 
