@@ -1,5 +1,5 @@
-//! The MPD watcher task: the only place the MPD and clock sources are
-//! fetched.
+//! The MPD watcher task: the only place the MPD, the Segment Indexes it
+//! refers to and clock sources are fetched.
 //!
 //! Publishes [`MpdSnapshot`] values through a coalescing `watch` channel
 //! shared by the per-track planners. Besides re-fetching at the MPD's
@@ -20,7 +20,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
@@ -38,10 +38,12 @@ use crate::dash::manifest::{
     ClockOffset, MAX_MPD_BYTES, Manifest, ManifestError, PresentationType, UtcTiming,
     parse_http_date,
 };
+use crate::dash::segment_index::{self, HttpRangeReader, OnIndexFailure};
 use crate::downloader::ClientPool;
 use crate::error::DownloadError;
 use crate::redact::Redacted;
 use crate::segment_engine::control::TerminalCause;
+use crate::segment_engine::descriptor::MediaTrack;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 /// How often the offset to a `UTCTiming` source is re-measured. Clocks drift
@@ -111,6 +113,9 @@ pub(crate) struct MpdFetcher {
     config: Arc<DashConfig>,
     events: Option<EventSink>,
     cancel: CancellationToken,
+    /// The tracks the session records, set once they are chosen. Until
+    /// then no Segment Index is read (see [`Self::read_segment_indexes`]).
+    tracks: OnceLock<Vec<MediaTrack>>,
 }
 
 impl MpdFetcher {
@@ -125,7 +130,46 @@ impl MpdFetcher {
             config,
             events,
             cancel,
+            tracks: OnceLock::new(),
         }
+    }
+
+    /// Sets the tracks the session records; later fetches read the Segment
+    /// Indexes those tracks select.
+    pub(crate) fn record_tracks(&self, tracks: Vec<MediaTrack>) {
+        if self.tracks.set(tracks).is_err() {
+            warn!("DASH tracks were already set; keeping the first selection");
+        }
+    }
+
+    /// Reads and applies the Segment Index of each `SegmentBase`
+    /// Representation the recorded tracks select, which planners need to
+    /// address its segments. Does nothing before [`Self::record_tracks`].
+    /// `url` is the MPD URL, whose query parameters segment URLs inherit.
+    pub(crate) async fn read_segment_indexes(
+        &self,
+        manifest: &mut Manifest,
+        url: &Url,
+        on_failure: OnIndexFailure,
+    ) -> Result<(), DownloadError> {
+        let Some(tracks) = self.tracks.get() else {
+            return Ok(());
+        };
+        let parent_params = crate::segment_engine::descriptor::query_params(url.query());
+        let reader = HttpRangeReader {
+            clients: &self.clients,
+            config: &self.config,
+            parent_params: &parent_params,
+            cancel: &self.cancel,
+        };
+        segment_index::read_selected(
+            manifest,
+            &self.config.selection,
+            tracks,
+            &reader,
+            on_failure,
+        )
+        .await
     }
 
     /// Fetch and resolve the MPD at `url`. `previous` lets an unchanged body
@@ -198,13 +242,17 @@ impl MpdFetcher {
                 let parse_url = Arc::clone(&document_url);
                 // Parsing a large MPD is CPU work measured in milliseconds;
                 // keep it off the async workers.
-                let parsed =
+                let mut parsed =
                     tokio::task::spawn_blocking(move || Manifest::parse(&parse_body, &parse_url))
                         .await
                         .map_err(|e| DownloadError::Internal {
                             reason: format!("MPD parse task failed: {e}"),
-                        })?;
-                Arc::new(parsed?)
+                        })??;
+                // Recording is under way: a planner keeps its Representation
+                // while it stays usable, so it may not need a failed index.
+                self.read_segment_indexes(&mut parsed, url, OnIndexFailure::Skip)
+                    .await?;
+                Arc::new(parsed)
             }
         };
 

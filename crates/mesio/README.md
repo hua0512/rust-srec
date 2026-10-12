@@ -131,9 +131,11 @@ selected track (video, audio), each with its own byte budget, fed by a single
 MPD watcher. A muxer combines the tracks into one fragmented MP4 stream (one
 item per video segment with the audio that overlaps it) and emits it as
 `HlsData`, so DASH recordings are processed and written like HLS fMP4. Static
-and dynamic MPDs with `SegmentTemplate` or `SegmentList` addressing of
-unencrypted ISO BMFF content are supported; DRM, WebM and `SegmentBase` are
-rejected with `DownloadError::Unsupported`.
+and dynamic MPDs with `SegmentTemplate` or `SegmentList` addressing, and
+static MPDs with `SegmentBase` addressing, of unencrypted ISO BMFF content are
+supported. The Segment Index (`sidx`) of each `SegmentBase` Representation the
+track selection records is read when the MPD is fetched. DRM, WebM and live
+`SegmentBase` are rejected with `DownloadError::Unsupported`.
 
 FLV uses a streaming byte forwarder into the FLV decoder. All protocols expose
 the same session and event contract.

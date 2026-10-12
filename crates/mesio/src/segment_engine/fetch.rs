@@ -18,6 +18,7 @@ use tracing::{debug, trace, warn};
 use url::Url;
 
 use crate::CacheManager;
+use crate::DownloadError;
 use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::downloader::ClientPool;
 use crate::redact::Redacted;
@@ -574,6 +575,70 @@ async fn download_once(
     );
     trace!(size = bytes.len(), url = %Redacted(url), "segment downloaded");
     Ok(bytes)
+}
+
+/// Fetches `range` of `url` outside the segment pipeline (no byte budget,
+/// cache or events), for small metadata such as a DASH Segment Index. The
+/// response is checked as for segments: a `206` must cover exactly the
+/// range, and of a `200` (a server ignoring Range) only the range is kept.
+pub(crate) async fn fetch_range(
+    clients: &ClientPool,
+    url: &Url,
+    params: &[(String, String)],
+    range: ByteRangeKey,
+    timeout: Duration,
+    cancel: &CancellationToken,
+    operation: &'static str,
+) -> Result<Bytes, DownloadError> {
+    let invalid = |reason: String| DownloadError::InvalidContent {
+        protocol: "http",
+        reason,
+    };
+    let end = range_end(range).ok_or_else(|| invalid("empty byte range".to_owned()))?;
+    let request = clients
+        .client_for_url(url)
+        .get(url.clone())
+        .query(params)
+        .header(RANGE, format!("bytes={}-{end}", range.offset))
+        .timeout(timeout);
+    let response = tokio::select! {
+        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+        response = request.send() => response?,
+    };
+    let status = response.status();
+    if !status.is_success() {
+        return Err(DownloadError::http_status(status, url.as_str(), operation));
+    }
+    let mode = validate_range_response(status, response.headers(), Some(range))
+        .map_err(|failure| invalid(failure.reason))?;
+    let mut window = match mode {
+        RangeMode::Full(range) => Some(RangeWindow::new(range)),
+        RangeMode::None | RangeMode::Partial(_) => None,
+    };
+    let mut buffer = BytesMut::new();
+    let mut stream = response.bytes_stream();
+    loop {
+        let chunk = tokio::select! {
+            _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+            chunk = stream.next() => chunk,
+        };
+        let Some(chunk) = chunk else { break };
+        let chunk = match window.as_mut() {
+            Some(window) => window.keep(chunk?),
+            None => chunk?,
+        };
+        if buffer.len() as u64 + chunk.len() as u64 > range.length {
+            return Err(invalid(format!(
+                "response is longer than the requested {} bytes",
+                range.length
+            )));
+        }
+        buffer.extend_from_slice(&chunk);
+        if window.as_ref().is_some_and(RangeWindow::is_complete) {
+            break;
+        }
+    }
+    materialize_range(buffer.freeze(), mode).map_err(|failure| invalid(failure.reason))
 }
 
 fn emit_event(ctx: &FetchContext, event: DownloadEvent) {

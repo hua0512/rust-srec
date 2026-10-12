@@ -101,16 +101,17 @@ impl DashConfig {
 /// MPD fetching and refreshing.
 #[derive(Debug, Clone)]
 pub struct DashManifestConfig {
-    /// Timeout of one MPD (or UTCTiming) request.
+    /// Timeout of one MPD, Segment Index or UTCTiming request.
     pub fetch_timeout: Duration,
     /// Lower bound of the refresh interval; the MPD's
     /// `minimumUpdatePeriod` applies when it is longer.
     pub min_refresh_interval: Duration,
     /// Consecutive failed refreshes (network, HTTP or invalid MPD) tolerated
-    /// before the stream fails.
+    /// before the stream fails. Also the retries of a Segment Index request
+    /// that failed with a network or server error.
     pub max_refresh_retries: u32,
-    /// Delay after a failed refresh, multiplied by the consecutive failure
-    /// count.
+    /// Delay after a failed refresh or Segment Index request, multiplied by
+    /// the consecutive failure count.
     pub retry_delay: Duration,
     /// Correct the local clock with the server's: the MPD's `UTCTiming`
     /// sources, else the MPD response's `Date` header. Disable only when the

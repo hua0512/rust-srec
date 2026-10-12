@@ -27,6 +27,30 @@ pub const MAX_TIMELINE_ENTRIES: usize = 262_144;
 /// `SegmentURL` elements per `SegmentList`.
 pub const MAX_SEGMENT_URLS: usize = 262_144;
 
+/// Subsegments per `SegmentBase` Representation, across its Segment Index
+/// boxes. A `sidx` box lists at most 65 535; a day of 1 s subsegments is
+/// 86 400.
+pub const MAX_SUBSEGMENTS: usize = 262_144;
+
+/// Segment Index boxes read per Representation. A hierarchical or
+/// daisy-chained index takes one request per nested box, all before
+/// recording starts; real indexes use one or a few.
+pub const MAX_SEGMENT_INDEX_BOXES: usize = 256;
+
+/// Bytes of Segment Index data read per Representation. A `sidx` box of 65 535
+/// references is about 768 KiB.
+pub const MAX_SEGMENT_INDEX_BYTES: usize = 16 * 1024 * 1024;
+
+/// Subsegments read across all Segment Indexes of one MPD. Each takes about
+/// 40 bytes once applied; a resource shared by several Periods counts once.
+pub const MAX_MPD_SUBSEGMENTS: usize = 1_048_576;
+
+/// Segment Index boxes (one request each) read for one MPD.
+pub const MAX_MPD_SEGMENT_INDEX_BOXES: usize = 4096;
+
+/// Bytes of Segment Index data read for one MPD.
+pub const MAX_MPD_SEGMENT_INDEX_BYTES: usize = 64 * 1024 * 1024;
+
 /// Length of any URL, URL template (after `$RepresentationID$` and
 /// `$Bandwidth$` substitution, with the widest per-segment substitutions) or
 /// resolved BaseURL. Common HTTP servers reject request lines above 8 KiB.

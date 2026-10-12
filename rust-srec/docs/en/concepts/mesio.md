@@ -59,7 +59,7 @@ Decryption runs on a separate **crypto pool**, off the scheduling loop, so decry
 
 Mesio records MPEG-DASH (`.mpd`) streams, both live and finished (on-demand) presentations. Streams that a platform labels as DASH, and addresses ending in `.mpd`, use this engine.
 
-- An **MPD watcher** loads the manifest and, for live streams, refreshes it no more often than the configured minimum interval or the manifest's own update period. It corrects for a difference between the local clock and the server's, so live segments are not requested before they exist.
+- An **MPD watcher** loads the manifest and, for live streams, refreshes it no more often than the configured minimum interval or the manifest's own update period. It corrects for a difference between the local clock and the server's, so live segments are not requested before they exist. When a finished presentation stores each version as one file with an index (`SegmentBase`), the watcher reads the index of the versions to be recorded before recording starts, so their segments can be downloaded piece by piece.
 - One video and one audio track are selected according to the configured quality and audio language. Each track is downloaded by the same reactor and assembler as HLS, with its own memory budget, so a slow track cannot stall the other.
 - A **muxer** merges the separately delivered video and audio into **one fragmented MP4 file**. The recording is then repaired, split, and written like an HLS fMP4 recording; **Fix DASH Streams** (`fix_dash`) turns that repair on or off.
 
@@ -67,7 +67,7 @@ A recording starts a new file when the presentation moves to a new Period (for e
 
 Limitations:
 
-- DRM-protected (encrypted) streams, WebM media, and manifests that address media with `SegmentBase` (a single indexed file) are refused. Manifests using `SegmentTemplate` or `SegmentList` are supported.
+- DRM-protected (encrypted) streams and WebM media are refused. Manifests using `SegmentTemplate` or `SegmentList` are supported, and so are finished presentations using `SegmentBase`; a live manifest using `SegmentBase` is refused.
 - Subtitles and other text tracks are not recorded.
 - Tracks are chosen from the Period where recording starts: a track kind that only appears in a later Period is not added.
 - The web player cannot play DASH streams; it reports the format as unsupported. Recorded files are ordinary MP4 files.

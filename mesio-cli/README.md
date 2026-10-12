@@ -233,8 +233,8 @@ DASH output is a fragmented MP4 (`.m4s`) that players and ffmpeg read directly. 
 
 - DRM-protected (encrypted) streams are not supported.
 - Only fragmented MP4 segments are supported; WebM segments are not.
-- Representations addressed with `SegmentBase` (a single indexed file) are not supported;
-  `SegmentTemplate` and `SegmentList` are.
+- `SegmentTemplate` and `SegmentList` manifests are supported, live or finished. `SegmentBase`
+  (one indexed file per Representation) is supported for finished presentations only.
 - Subtitle and text tracks are not recorded.
 
 ### Stopping a Recording
