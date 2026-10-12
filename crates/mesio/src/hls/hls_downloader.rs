@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::engine::{self, EngineHandles, Terminal};
 use super::{HlsConfig, HlsStreamEvent};
+use crate::segment_engine::assembler::AssemblerExit;
 
 struct CancelOnDropStream {
     inner: BoxMediaStream<HlsData, HlsDownloaderError>,
@@ -171,7 +172,7 @@ impl HlsDownloader {
                     crate::redact::redact_diagnostic(&e)
                 );
             }
-            let terminal = match reactor.await {
+            let mut terminal = match reactor.await {
                 Ok(terminal) => {
                     debug!(?terminal, "Reactor task finished");
                     terminal.into()
@@ -184,11 +185,21 @@ impl HlsDownloader {
                     DownloadTerminal::PipelineError(Arc::from(format!("reactor task failed: {e}")))
                 }
             };
-            if let Err(e) = assembler.await {
-                warn!(
-                    "Assembler task finished with error: {}",
-                    crate::redact::redact_diagnostic(&e)
-                );
+            match assembler.await {
+                Ok(AssemblerExit::Done) => {}
+                // The assembler ended the stream with an error the reactor
+                // only saw as the assembler stopping, or as a clean end.
+                Ok(AssemblerExit::Failed(reason)) => {
+                    if !matches!(terminal, DownloadTerminal::PipelineError(_)) {
+                        terminal = DownloadTerminal::PipelineError(reason);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Assembler task finished with error: {}",
+                        crate::redact::redact_diagnostic(&e)
+                    );
+                }
             }
 
             debug!("HLS pipeline tasks finished.");

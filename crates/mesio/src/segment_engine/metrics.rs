@@ -271,8 +271,9 @@ impl PerformanceMetrics {
     /// Log a performance summary using tracing
     ///
     /// Logs key metrics including download stats, cache performance,
-    /// and resource utilization.
-    pub fn log_summary(&self) {
+    /// and resource utilization, for the session of `protocol` (`"hls"`,
+    /// `"dash"`).
+    pub fn log_summary(&self, protocol: &'static str) {
         let downloads = self.downloads_total.load(Ordering::Relaxed);
         let download_bytes = self.download_bytes_total.load(Ordering::Relaxed);
         let download_errors = self.download_errors.load(Ordering::Relaxed);
@@ -305,6 +306,7 @@ impl PerformanceMetrics {
         let h1_bytes = self.http1_bytes.load(Ordering::Relaxed);
 
         info!(
+            protocol,
             downloads = downloads,
             download_bytes = download_bytes,
             download_errors = download_errors,
@@ -326,7 +328,7 @@ impl PerformanceMetrics {
             prefetch_initiated = prefetch_init,
             prefetch_used = prefetch_used,
             prefetch_effectiveness = format!("{:.1}%", prefetch_rate),
-            "HLS Performance Summary"
+            "Segment download summary"
         );
     }
 

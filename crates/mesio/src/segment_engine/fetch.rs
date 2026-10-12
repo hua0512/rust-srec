@@ -74,6 +74,8 @@ const NO_DECRYPTOR: &str = "no decryptor is configured for encrypted segments";
 pub struct Failure {
     pub class: FailureClass,
     pub reason: String,
+    /// See `SegmentOutcome::Failed::error`.
+    pub error: Option<DownloadError>,
 }
 
 impl Failure {
@@ -81,7 +83,13 @@ impl Failure {
         Self {
             class,
             reason: reason.into(),
+            error: None,
         }
+    }
+
+    pub fn with_error(mut self, error: DownloadError) -> Self {
+        self.error = Some(error);
+        self
     }
 }
 
@@ -99,6 +107,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                 msn,
                 class: FailureClass::UnsupportedCrypto,
                 reason: Arc::from(format!("unsupported encryption method: {token}")),
+                error: None,
             };
         }
         if let KeyFormat::Unsupported(format) = &enc.key_format {
@@ -107,6 +116,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                 msn,
                 class: FailureClass::UnsupportedCrypto,
                 reason: Arc::from(format!("unsupported key format: {format}")),
+                error: None,
             };
         }
         if ctx.decryptor.is_none() {
@@ -115,6 +125,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                 msn,
                 class: FailureClass::UnsupportedCrypto,
                 reason: Arc::from(NO_DECRYPTOR),
+                error: None,
             };
         }
     }
@@ -166,6 +177,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                 msn,
                 class: failure.class,
                 reason: Arc::from(failure.reason),
+                error: failure.error,
             };
         }
     };
@@ -202,6 +214,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                         msn,
                         class: failure.class,
                         reason: Arc::from(failure.reason),
+                        error: failure.error,
                     };
                 }
             }
@@ -398,7 +411,15 @@ async fn download_once(
         let failure = Failure::new(
             FailureClass::Http(status.as_u16()),
             format!("HTTP {status} for {}", Redacted(url)),
-        );
+        )
+        .with_error(DownloadError::http_status(
+            status,
+            url.as_str(),
+            match descriptor.key.kind {
+                SegmentKind::Init => "init segment download",
+                SegmentKind::Media => "segment download",
+            },
+        ));
         // 5xx gets one quick attempt-level retry; 4xx goes straight to the
         // store (it owns 404/429 pacing and the 401/403 freshness rule).
         return Err((failure, status.is_server_error()));

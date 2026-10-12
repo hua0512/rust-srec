@@ -10,7 +10,10 @@
 //! Terminal semantics: an explicit `End` item (authoritative-end path)
 //! drains the buffer in order and emits `StreamEnded`; `Fatal` drops the
 //! buffer and emits the error; a channel close without either is a cancel and
-//! emits nothing.
+//! emits nothing. A stream that emits no media fails rather than ending
+//! empty when segments failed: at `End`, with the first failure (an init's
+//! first). A live stream, which never ends, fails as soon as the media it
+//! would start with cannot be decoded because its init failed.
 //!
 //! fMP4 ordering contract, relied on by downstream processing (`hls-fix`):
 //! - An init is emitted only immediately before media it governs (matched by
@@ -22,7 +25,7 @@
 //!   another init.
 //! - A discontinuity event precedes the init and media it applies to.
 //! - Media whose init is missing or failed is skipped as a gap and never
-//!   emitted without that init.
+//!   emitted without that init (unless that fails a live stream, see above).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -35,6 +38,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::DownloadError;
+use crate::error::SharedError;
 
 use super::config::{GapSkipStrategy, SegmentCoreConfig};
 use super::control::EngineNotice;
@@ -150,41 +154,41 @@ impl DeadRanges {
     }
 }
 
-/// Bounded insertion-ordered set of init keys. Init rotations are infrequent
-/// (discontinuities / rendition changes), so a small cap with FIFO eviction
-/// keeps memory bounded on long-running streams. Eviction is safe because an
-/// unknown key is treated as unresolved: media still waits in the normal case,
-/// and the live buffer-pressure / ENDLIST flush fail-safes surface stuck media
-/// as visible gaps.
+/// Bounded insertion-ordered map of failed init keys to their failure. Init
+/// rotations are infrequent (discontinuities / rendition changes), so a small
+/// cap with FIFO eviction keeps memory bounded on long-running streams.
+/// Eviction is safe because an unknown key is treated as unresolved: media
+/// still waits in the normal case, and the live buffer-pressure / ENDLIST
+/// flush fail-safes surface stuck media as visible gaps.
 #[derive(Debug)]
-struct BoundedKeySet {
+struct FailedInits {
     cap: usize,
     order: std::collections::VecDeque<SegmentKey>,
-    set: std::collections::HashSet<SegmentKey>,
+    errors: HashMap<SegmentKey, SharedError>,
 }
 
-impl BoundedKeySet {
+impl FailedInits {
     fn new(cap: usize) -> Self {
         Self {
             cap: cap.max(1),
             order: std::collections::VecDeque::new(),
-            set: std::collections::HashSet::new(),
+            errors: HashMap::new(),
         }
     }
 
-    fn insert(&mut self, key: SegmentKey) {
-        if self.set.insert(key.clone()) {
+    fn insert(&mut self, key: SegmentKey, error: SharedError) {
+        if self.errors.insert(key.clone(), error).is_none() {
             self.order.push_back(key);
             while self.order.len() > self.cap {
                 if let Some(oldest) = self.order.pop_front() {
-                    self.set.remove(&oldest);
+                    self.errors.remove(&oldest);
                 }
             }
         }
     }
 
-    fn contains(&self, key: &SegmentKey) -> bool {
-        self.set.contains(key)
+    fn get(&self, key: &SegmentKey) -> Option<&SharedError> {
+        self.errors.get(key)
     }
 }
 
@@ -347,10 +351,22 @@ impl BufferedPayload {
     }
 }
 
+/// How a [`SequenceAssembler`] finished.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssemblerExit {
+    /// The stream ended, was cancelled, or its consumer went away.
+    Done,
+    /// The stream's terminal item was this error. The other pipeline tasks
+    /// see only that the assembler stopped, so the error is the session's
+    /// outcome.
+    Failed(Arc<str>),
+}
+
 enum EmitOutcome {
     Continue,
-    /// The consumer channel closed: every send fails from here on.
-    DownstreamClosed,
+    /// Nothing more is emitted: the consumer channel closed, or the stream's
+    /// terminal error was delivered.
+    Finished,
 }
 
 /// Whether the media segment at the cursor may be emitted yet, decided by its
@@ -384,11 +400,24 @@ pub struct SequenceAssembler<S> {
     /// The init most recently received, for fMP4 media without an `init_key`.
     latest_init_key: Option<SegmentKey>,
     is_fmp4_stream: bool,
-    /// Init keys that terminally failed. Media depending on a failed init can
-    /// never be decoded, so it is skipped (a visible gap) rather than gating
-    /// the stream forever. This is bounded to keep memory flat on long
-    /// streams; eviction is fail-safe at the cursor and on flush.
-    failed_init_keys: BoundedKeySet,
+    /// Init keys that terminally failed, with why. Media depending on a
+    /// failed init can never be decoded, so it is skipped (a visible gap)
+    /// rather than gating the stream forever. This is bounded to keep memory
+    /// flat on long streams; eviction is fail-safe at the cursor and on
+    /// flush.
+    failed_inits: FailedInits,
+    /// The first terminal failure of an init (or of media for want of its
+    /// init) and of a media segment. A stream that ends without emitting any
+    /// media ends with one of them, the init's first, instead of a clean end.
+    init_failure: Option<SharedError>,
+    media_failure: Option<SharedError>,
+    /// Live streams, before any media is emitted: media that failed because
+    /// its init did, by sequence number. A live stream does not end, so one
+    /// that would start with such media fails with its init's error rather
+    /// than skip media indefinitely.
+    undecodable: BTreeMap<u64, SharedError>,
+    /// The error the stream ended with, once it did.
+    failure: Option<Arc<str>>,
     /// Count-based gap skipping is suppressed on fMP4 streams until the first
     /// media emission: out-of-order completion under download concurrency
     /// makes early count triggers false positives.
@@ -400,7 +429,9 @@ pub struct SequenceAssembler<S> {
     last_input_received_time: Option<Instant>,
     current_buffer_bytes: usize,
     metrics: Arc<ReorderBufferMetrics>,
-    performance_metrics: Option<Arc<PerformanceMetrics>>,
+    /// Session-wide download metrics and the protocol they are logged
+    /// under when the stream finishes.
+    performance_metrics: Option<(Arc<PerformanceMetrics>, &'static str)>,
     cancel: CancellationToken,
 }
 
@@ -425,7 +456,11 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             active_init_key: None,
             latest_init_key: None,
             is_fmp4_stream: false,
-            failed_init_keys: BoundedKeySet::new(256),
+            failed_inits: FailedInits::new(256),
+            init_failure: None,
+            media_failure: None,
+            undecodable: BTreeMap::new(),
+            failure: None,
             has_emitted_media_segment: false,
             is_live_stream,
             expected_next_media_sequence: initial_cursor,
@@ -439,8 +474,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
     }
 
-    pub fn with_performance_metrics(mut self, metrics: Arc<PerformanceMetrics>) -> Self {
-        self.performance_metrics = Some(metrics);
+    /// Logs `metrics` when the stream finishes. A session with several
+    /// assemblers logs its metrics itself instead.
+    pub fn with_performance_metrics(
+        mut self,
+        metrics: Arc<PerformanceMetrics>,
+        protocol: &'static str,
+    ) -> Self {
+        self.performance_metrics = Some((metrics, protocol));
         self
     }
 
@@ -476,7 +517,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             Some(key) => {
                 if self.active_init_key.as_ref() == Some(key) || self.inits.contains(key) {
                     InitState::Ready
-                } else if self.failed_init_keys.contains(key) {
+                } else if self.failed_inits.get(key).is_some() {
                     InitState::Failed
                 } else {
                     InitState::Gated
@@ -544,7 +585,17 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
     }
 
-    pub async fn run(mut self) {
+    /// Assembles until the stream ends, fails or is cancelled. Returns the
+    /// reason when the stream ended with an error (see [`AssemblerExit`]).
+    pub async fn run(mut self) -> AssemblerExit {
+        self.assemble().await;
+        match self.failure {
+            Some(reason) => AssemblerExit::Failed(reason),
+            None => AssemblerExit::Done,
+        }
+    }
+
+    async fn assemble(&mut self) {
         debug!(live = self.is_live_stream, "sequence assembler started");
 
         let gap_evaluation_interval = {
@@ -588,17 +639,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             "live stream stalled beyond {:?} with no input; terminating",
                             max_stall
                         );
-                        if self
-                            .sink
-                            .send(Err(DownloadError::Timeout {
-                                reason: "Stalled: No input received for max duration.".to_string(),
-                            }))
-                            .await
-                            .is_err()
-                        {
-                            debug!("consumer closed before receiving stall timeout");
-                        }
-                        self.finish_summaries();
+                        self.fail(DownloadError::Timeout {
+                            reason: "Stalled: No input received for max duration.".to_string(),
+                        })
+                        .await;
                         return;
                     }
                 }
@@ -609,32 +653,44 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     }
                     match input {
                         Some(AssemblerInput::Payload(payload)) => {
-                            if matches!(self.handle_payload(payload).await, EmitOutcome::DownstreamClosed) {
+                            if matches!(self.handle_payload(payload).await, EmitOutcome::Finished) {
                                 return;
                             }
                         }
                         Some(AssemblerInput::Skipped { from_msn, to_msn }) => {
                             trace!(from_msn, to_msn, "upstream skip range");
                             self.dead.insert(from_msn, to_msn);
-                            if matches!(self.try_emit().await, EmitOutcome::DownstreamClosed) {
+                            if matches!(self.try_emit().await, EmitOutcome::Finished) {
                                 return;
                             }
                         }
-                        Some(AssemblerInput::TerminalFailed { key, msn }) => {
+                        Some(AssemblerInput::TerminalFailed {
+                            key,
+                            msn,
+                            error,
+                            init_failed,
+                        }) => {
                             if key.kind == SegmentKind::Init {
                                 // An init that will never arrive. Any media
                                 // depending on it (by init_key) can never be
-                                // decoded; record the failure so try_emit skips
-                                // those media as a visible gap instead of
-                                // gating the stream forever. This handles both
-                                // a first init failing before any media and a
-                                // mid-stream rotation failing.
+                                // decoded; record the failure so try_emit
+                                // skips those media as a visible gap instead
+                                // of gating the stream forever.
                                 warn!(msn, "init segment terminally failed; dependent media will be skipped");
-                                self.failed_init_keys.insert(key);
+                                self.failed_inits.insert(key, error.clone());
+                                self.init_failure.get_or_insert(error);
                             } else {
                                 self.dead.insert(msn, msn);
+                                if init_failed {
+                                    if self.is_live_stream && !self.has_emitted_media_segment {
+                                        self.undecodable.insert(msn, error.clone());
+                                    }
+                                    self.init_failure.get_or_insert(error);
+                                } else {
+                                    self.media_failure.get_or_insert(error);
+                                }
                             }
-                            if matches!(self.try_emit().await, EmitOutcome::DownstreamClosed) {
+                            if matches!(self.try_emit().await, EmitOutcome::Finished) {
                                 return;
                             }
                         }
@@ -647,16 +703,22 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             // Pipeline error: buffered payloads are dropped,
                             // the error is the stream's terminal item.
                             warn!(error = %crate::redact::redact_diagnostic(&err), "fatal pipeline error; dropping reorder buffer");
-                            if self.sink.send(Err(err)).await.is_err() {
-                                debug!("consumer closed before receiving fatal pipeline error");
-                            }
-                            self.finish_summaries();
+                            self.fail(err).await;
                             return;
                         }
                         Some(AssemblerInput::End) => {
                             // Authoritative end: ordered drain, then StreamEnded.
                             if self.flush_in_order().await.is_err() {
                                 error!("consumer channel closed during end-of-stream drain");
+                                return;
+                            }
+                            // Segments failed and none reached the consumer:
+                            // that is the failure, not an empty stream.
+                            if !self.has_emitted_media_segment
+                                && let Some(error) =
+                                    self.init_failure.take().or(self.media_failure.take())
+                            {
+                                self.fail_with_segments(error.to_error()).await;
                                 return;
                             }
                             self.finish_summaries();
@@ -682,7 +744,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 // Periodic gap evaluation so duration-based skipping and VOD
                 // timeouts fire even when no new input arrives.
                 _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() => {
-                    if matches!(self.try_emit().await, EmitOutcome::DownstreamClosed) {
+                    if matches!(self.try_emit().await, EmitOutcome::Finished) {
                         return;
                     }
                 }
@@ -782,18 +844,22 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 // it as a fatal stream error rather than spin.
                 if run_end == u64::MAX {
                     error!("dead range extends to u64::MAX; aborting stream");
-                    if self
-                        .sink
-                        .send(Err(DownloadError::Playlist {
-                            reason: "media sequence reached u64::MAX".to_string(),
-                        }))
-                        .await
-                        .is_err()
-                    {
-                        debug!("consumer closed before receiving invalid sequence error");
-                    }
-                    self.finish_summaries();
-                    return EmitOutcome::DownstreamClosed;
+                    self.fail(DownloadError::Playlist {
+                        reason: "media sequence reached u64::MAX".to_string(),
+                    })
+                    .await;
+                    return EmitOutcome::Finished;
+                }
+                // A live stream that would start with media its init cannot
+                // decode (see `undecodable`).
+                if let Some(error) = self
+                    .undecodable
+                    .range(from..=run_end)
+                    .next()
+                    .map(|(_, error)| error.to_error())
+                {
+                    self.fail_with_segments(error).await;
+                    return EmitOutcome::Finished;
                 }
                 let to = run_end + 1;
                 self.metrics.gap_skips.fetch_add(1, Ordering::Relaxed);
@@ -811,11 +877,12 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     .await
                     .is_err()
                 {
-                    return EmitOutcome::DownstreamClosed;
+                    return EmitOutcome::Finished;
                 }
                 self.expected_next_media_sequence = to;
                 self.gap_state = None;
                 self.dead.prune_below(to);
+                self.undecodable = self.undecodable.split_off(&to);
                 continue;
             }
 
@@ -846,13 +913,29 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                                 .await
                                 .is_err()
                             {
-                                return EmitOutcome::DownstreamClosed;
+                                return EmitOutcome::Finished;
                             }
                             continue;
                         }
                         break;
                     }
                     InitState::Failed => {
+                        // A live stream that would start with media its init
+                        // cannot decode (see `undecodable`).
+                        if self.is_live_stream
+                            && !self.has_emitted_media_segment
+                            && let Some(error) = self
+                                .reorder_buffer
+                                .get(&first_msn)
+                                .and_then(|buffered| {
+                                    buffered.payload.descriptor().init_key.as_ref()
+                                })
+                                .and_then(|key| self.failed_inits.get(key))
+                                .map(SharedError::to_error)
+                        {
+                            self.fail_with_segments(error).await;
+                            return EmitOutcome::Finished;
+                        }
                         // The governing init will never arrive: this media is
                         // undecodable. Skip it as a visible one-MSN gap rather
                         // than gating the stream forever.
@@ -879,7 +962,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 );
 
                 if self.emit_payload(buffered.payload).await.is_err() {
-                    return EmitOutcome::DownstreamClosed;
+                    return EmitOutcome::Finished;
                 }
 
                 self.expected_next_media_sequence += 1;
@@ -932,7 +1015,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             .await
                             .is_err()
                         {
-                            return EmitOutcome::DownstreamClosed;
+                            return EmitOutcome::Finished;
                         }
                         self.record_gap_skip(first_msn);
                         self.expected_next_media_sequence = first_msn;
@@ -959,7 +1042,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         .await
                         .is_err()
                     {
-                        return EmitOutcome::DownstreamClosed;
+                        return EmitOutcome::Finished;
                     }
                     self.expected_next_media_sequence = first_msn;
                     self.gap_state = None;
@@ -1015,13 +1098,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
     async fn abort_u64_max_cursor(&mut self) -> Result<(), ()> {
         error!("media sequence reached u64::MAX; aborting stream");
-        self.sink
-            .send(Err(DownloadError::Playlist {
-                reason: "media sequence reached u64::MAX".to_string(),
-            }))
-            .await
-            .map_err(|_| ())?;
-        self.finish_summaries();
+        self.fail(DownloadError::Playlist {
+            reason: "media sequence reached u64::MAX".to_string(),
+        })
+        .await;
         Err(())
     }
 
@@ -1086,6 +1166,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             .fetch_add(1, Ordering::Relaxed);
         if is_media {
             self.has_emitted_media_segment = true;
+            self.undecodable.clear();
         }
         Ok(())
     }
@@ -1230,10 +1311,26 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
     }
 
+    /// Ends the stream with `error` as its terminal item.
+    async fn fail(&mut self, error: DownloadError) {
+        let reason = Arc::from(error.to_string());
+        match self.sink.send(Err(error)).await {
+            Ok(()) => self.failure = Some(reason),
+            Err(_) => debug!("consumer closed before receiving the stream's error"),
+        }
+        self.finish_summaries();
+    }
+
+    /// Ends the stream with `error`, a failure of its segments.
+    async fn fail_with_segments(&mut self, error: DownloadError) {
+        warn!(error = %crate::redact::redact_diagnostic(&error), "segment stream failed");
+        self.fail(error).await;
+    }
+
     fn finish_summaries(&self) {
         self.metrics.log_summary();
-        if let Some(perf) = &self.performance_metrics {
-            perf.log_summary();
+        if let Some((perf, protocol)) = &self.performance_metrics {
+            perf.log_summary(protocol);
         }
     }
 }
@@ -1340,7 +1437,7 @@ mod tests {
         input_tx: mpsc::Sender<AssemblerInput>,
         event_rx: mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>,
         cancel: CancellationToken,
-        join: tokio::task::JoinHandle<()>,
+        join: tokio::task::JoinHandle<AssemblerExit>,
     }
 
     fn spawn_assembler(mut config: HlsConfig, live: bool, initial_msn: u64) -> Harness {
@@ -1407,15 +1504,15 @@ mod tests {
         h.input_tx.send(ts_payload(101)).await.unwrap();
         // Without this, WaitIndefinitely would stall forever on 100.
         h.input_tx
-            .send(AssemblerInput::TerminalFailed {
-                key: SegmentKey {
+            .send(terminal_failure(
+                SegmentKey {
                     kind: SegmentKind::Media,
                     uri: Arc::from("https://e.com/seg100.ts"),
                     byte_range: None,
                     scope: None,
                 },
-                msn: 100,
-            })
+                100,
+            ))
             .await
             .unwrap();
 
@@ -1868,7 +1965,26 @@ mod tests {
         (uris, discontinuity)
     }
 
-    fn media_failure(msn: u64) -> AssemblerInput {
+    fn http_error(status: u16, uri: &str) -> SharedError {
+        SharedError::new(DownloadError::http_status(
+            reqwest::StatusCode::from_u16(status).unwrap(),
+            uri,
+            "segment download",
+        ))
+    }
+
+    /// A terminal failure reported as HTTP 404 of the segment itself.
+    fn terminal_failure(key: SegmentKey, msn: u64) -> AssemblerInput {
+        AssemblerInput::TerminalFailed {
+            error: http_error(404, &key.uri),
+            key,
+            msn,
+            init_failed: false,
+        }
+    }
+
+    /// Media the store did not fetch because its init failed with `error`.
+    fn undecodable_media(msn: u64, error: &SharedError) -> AssemblerInput {
         AssemblerInput::TerminalFailed {
             key: SegmentKey {
                 kind: SegmentKind::Media,
@@ -1877,10 +1993,196 @@ mod tests {
                 scope: None,
             },
             msn,
+            error: error.clone(),
+            init_failed: true,
         }
     }
 
-    // hls-fix relies on these orderings; see the module-level contract.
+    fn media_failure(msn: u64) -> AssemblerInput {
+        terminal_failure(
+            SegmentKey {
+                kind: SegmentKind::Media,
+                uri: Arc::from(format!("https://e.com/seg{msn}.m4s")),
+                byte_range: None,
+                scope: None,
+            },
+            msn,
+        )
+    }
+
+    /// The stream's terminal error, when it ends with one before any data.
+    async fn first_error_before_data(h: &mut Harness) -> Option<DownloadError> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(event) = h.event_rx.recv().await {
+                match event {
+                    Err(error) => return Some(error),
+                    Ok(HlsStreamEvent::Data(_) | HlsStreamEvent::StreamEnded) => return None,
+                    Ok(_) => {}
+                }
+            }
+            None
+        })
+        .await
+        .expect("timed out waiting for the stream to end")
+    }
+
+    fn failed_url(error: &Option<DownloadError>) -> Option<&str> {
+        match error {
+            Some(DownloadError::HttpStatus { url, .. }) => Some(url),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stream_whose_segments_all_failed_ends_with_the_failure() {
+        let mut h = spawn_assembler(HlsConfig::default(), false, 0);
+        h.input_tx.send(media_failure(0)).await.unwrap();
+        h.input_tx.send(media_failure(1)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let error = first_error_before_data(&mut h).await;
+        assert_eq!(failed_url(&error), Some("https://e.com/seg0.m4s"));
+        assert!(matches!(h.join.await.unwrap(), AssemblerExit::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn an_empty_stream_without_failures_still_ends_cleanly() {
+        let mut h = spawn_assembler(HlsConfig::default(), false, 0);
+        h.input_tx
+            .send(AssemblerInput::Skipped {
+                from_msn: 0,
+                to_msn: 1,
+            })
+            .await
+            .unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert!(uris.is_empty());
+        assert_eq!(h.join.await.unwrap(), AssemblerExit::Done);
+    }
+
+    #[tokio::test]
+    async fn a_finished_stream_that_delivered_nothing_reports_the_init_failure() {
+        let mut h = spawn_assembler(HlsConfig::default(), false, 0);
+        let key = init_key("https://e.com/init.mp4");
+        let init_error = http_error(403, "https://e.com/init.mp4");
+        h.input_tx.send(media_failure(0)).await.unwrap();
+        h.input_tx
+            .send(AssemblerInput::TerminalFailed {
+                key: key.clone(),
+                msn: 0,
+                error: init_error.clone(),
+                init_failed: false,
+            })
+            .await
+            .unwrap();
+        h.input_tx
+            .send(undecodable_media(1, &init_error))
+            .await
+            .unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let error = first_error_before_data(&mut h).await;
+        assert_eq!(failed_url(&error), Some("https://e.com/init.mp4"));
+        h.join.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_finished_stream_records_what_follows_media_of_a_failed_init() {
+        // A first Period's init fails, its media is not fetched; the next
+        // Period records.
+        let mut h = spawn_assembler(HlsConfig::default(), false, 0);
+        let failed = init_key("https://e.com/p0.mp4");
+        let error = http_error(404, "https://e.com/p0.mp4");
+        h.input_tx
+            .send(AssemblerInput::TerminalFailed {
+                key: failed,
+                msn: 0,
+                error: error.clone(),
+                init_failed: false,
+            })
+            .await
+            .unwrap();
+        h.input_tx.send(undecodable_media(0, &error)).await.unwrap();
+        let (init, key) = mp4_init_keyed("https://e.com/p1.mp4", 1);
+        h.input_tx.send(init).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(1, &key)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(uris, ["https://e.com/p1.mp4", "https://e.com/seg1.m4s"]);
+        h.join.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_live_stream_starting_with_media_of_a_failed_init_fails_at_once() {
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        let error = http_error(404, "https://e.com/init.mp4");
+        h.input_tx
+            .send(AssemblerInput::TerminalFailed {
+                key: init_key("https://e.com/init.mp4"),
+                msn: 100,
+                error: error.clone(),
+                init_failed: false,
+            })
+            .await
+            .unwrap();
+        // No End follows: the live stream would otherwise skip forever.
+        h.input_tx
+            .send(undecodable_media(100, &error))
+            .await
+            .unwrap();
+        let error = first_error_before_data(&mut h).await;
+        assert_eq!(failed_url(&error), Some("https://e.com/init.mp4"));
+        h.join.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_live_stream_does_not_fail_on_an_init_of_media_it_already_passed() {
+        // Media 100 failed on its own and the cursor moved on before its
+        // init failed; media 101 has its own, working init.
+        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
+        h.input_tx.send(media_failure(100)).await.unwrap();
+        h.input_tx
+            .send(AssemblerInput::TerminalFailed {
+                key: init_key("https://e.com/p0.mp4"),
+                msn: 100,
+                error: http_error(404, "https://e.com/p0.mp4"),
+                init_failed: false,
+            })
+            .await
+            .unwrap();
+        let (init, key) = mp4_init_keyed("https://e.com/p1.mp4", 101);
+        h.input_tx.send(init).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key)).await.unwrap();
+        let uris = collect_data_uris(&mut h, 2).await;
+        assert_eq!(uris, ["https://e.com/p1.mp4", "https://e.com/seg101.m4s"]);
+        h.cancel.cancel();
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn a_live_stream_whose_first_media_needs_a_failed_map_fails_with_that_map() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
+        let mut h = spawn_assembler(config, true, 100);
+        let first = init_key("https://e.com/a.mp4");
+        // A later map fails first, with another error.
+        for (key, status) in [(init_key("https://e.com/b.mp4"), 403), (first.clone(), 503)] {
+            h.input_tx
+                .send(AssemblerInput::TerminalFailed {
+                    error: http_error(status, &key.uri),
+                    key,
+                    msn: 100,
+                    init_failed: false,
+                })
+                .await
+                .unwrap();
+        }
+        // An HLS map's container is unknown until its media arrives.
+        h.input_tx.send(mp4_media_keyed(100, &first)).await.unwrap();
+        let error = first_error_before_data(&mut h).await;
+        assert_eq!(failed_url(&error), Some("https://e.com/a.mp4"));
+        h.join.await.unwrap();
+    }
+
     #[tokio::test]
     async fn init_whose_media_fails_is_superseded_without_emission() {
         let mut h = spawn_assembler(HlsConfig::default(), true, 100);
@@ -1925,35 +2227,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn init_terminal_failure_before_media_skips_dependent_media_not_stall() {
+    async fn init_terminal_failure_mid_stream_skips_dependent_media_not_stall() {
         let mut config = HlsConfig::default();
         config.output_config.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
         let mut h = spawn_assembler(config, true, 100);
         let key = init_key("https://e.com/init.mp4");
 
-        // The init terminally fails before any media payload arrives.
+        h.input_tx.send(ts_payload(100)).await.unwrap();
+        // A map rotation terminally fails before its media payload arrives.
         h.input_tx
-            .send(AssemblerInput::TerminalFailed {
-                key: key.clone(),
-                msn: 100,
-            })
+            .send(terminal_failure(key.clone(), 101))
             .await
             .unwrap();
         // Media depending on the failed init, plus a clear TS that follows.
-        h.input_tx.send(mp4_media_keyed(100, &key)).await.unwrap();
-        h.input_tx.send(ts_payload(101)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key)).await.unwrap();
+        h.input_tx.send(ts_payload(102)).await.unwrap();
 
-        // The dependent media is skipped (visible gap), 101 still emits — no
+        // The dependent media is skipped (visible gap), 102 still emits — no
         // permanent gated stall, no unbounded buffer.
         let mut saw_gap = false;
-        let mut got = None;
+        let mut got = Vec::new();
         tokio::time::timeout(Duration::from_secs(2), async {
             while let Some(evt) = h.event_rx.recv().await {
                 match evt {
                     Ok(HlsStreamEvent::GapSkipped { .. }) => saw_gap = true,
                     Ok(HlsStreamEvent::Data(d)) => {
-                        got = d.media_segment().map(|s| s.uri.clone());
-                        break;
+                        got.extend(d.media_segment().map(|s| s.uri.clone()));
+                        if got.len() == 2 {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -1962,7 +2264,7 @@ mod tests {
         .await
         .expect("timed out: init failure stalled the stream");
         assert!(saw_gap, "failed-init media must surface as a gap skip");
-        assert_eq!(got.as_deref(), Some("https://e.com/seg101.ts"));
+        assert_eq!(got, ["https://e.com/seg100.ts", "https://e.com/seg102.ts"]);
         h.cancel.cancel();
         let _ = h.join.await;
     }

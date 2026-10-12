@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use crate::DownloadError;
+use crate::error::SharedError;
 
 use super::descriptor::SegmentDescriptor;
 
@@ -25,14 +26,10 @@ pub enum TerminalCause {
     /// the reactor drains.
     End,
     /// The source could not keep refreshing (fetch/parse failure after
-    /// retries). A pipeline error, never a clean end.
-    Failed(Arc<str>),
-    /// Preserve HTTP evidence across the watch channel after retries finish.
-    HttpFailure {
-        status: reqwest::StatusCode,
-        url: Arc<str>,
-        operation: &'static str,
-    },
+    /// retries), or its snapshot cannot be planned. A pipeline error, never a
+    /// clean end; it keeps its type, so consumers classify it as they would
+    /// the original.
+    Failed(SharedError),
 }
 
 /// A sequence discontinuity that output cannot be continued across.
@@ -99,16 +96,15 @@ pub struct PlanOutcome {
     pub reset: Option<ResetKind>,
     /// Notices forwarded after the skip ranges above, in order.
     pub notices: Vec<EngineNotice>,
-    /// The snapshot's terminal cause. On `Failed`/`HttpFailure` the reactor
+    /// The snapshot's terminal cause. On `Failed` the reactor
     /// ignores the rest of the outcome, so a planner need not plan it.
     pub terminal: Option<TerminalCause>,
 }
 
-/// A source failure the reactor surfaces as the stream's terminal error.
+/// A source failure without an error of its own, which the reactor surfaces
+/// as the stream's terminal error.
 #[derive(Debug, Clone, Copy)]
-pub enum SourceFailure<'a> {
-    /// The snapshot carried `TerminalCause::Failed` with this reason.
-    Failed(&'a str),
+pub enum SourceFailure {
     /// The planner reported a reset.
     Reset(ResetKind),
     /// The snapshot sender closed without publishing a terminal cause: the
@@ -130,5 +126,5 @@ pub trait SegmentPlanner: Send + 'static {
     fn plan(&mut self, snapshot: &Self::Snapshot) -> PlanOutcome;
 
     /// The error a source failure surfaces as, in the protocol's terms.
-    fn failure_error(&self, failure: SourceFailure<'_>) -> DownloadError;
+    fn failure_error(&self, failure: SourceFailure) -> DownloadError;
 }

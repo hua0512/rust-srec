@@ -64,8 +64,8 @@ protocol side: the playlist watcher, the planner, AES-128 key fetching
 - `SegmentPlanner` (`segment_engine/control.rs`): the reactor is generic over it.
   Each manifest snapshot becomes a `PlanOutcome` — descriptors, missing and
   skipped ranges, the prune window, a reset kind, `EngineNotice`s, and the
-  snapshot's `TerminalCause`. The planner also words source failures as
-  `DownloadError`s.
+  snapshot's `TerminalCause`. The planner also words the source failures that
+  carry no error of their own (a reset, a lost watcher) as `DownloadError`s.
 - `SegmentMeta` on each descriptor: the protocol metadata the core needs only
   through accessors (duration, declared container, `ResourceId`).
 - `AssemblerSink`: the assembler hands ordered `AssembledItem`s to it inline, in
@@ -195,14 +195,15 @@ snapshot is a superset:
   dies on a fetch/parse error. So the snapshot carries the cause explicitly:
 
   ```rust
-  pub enum TerminalCause { End, Failed(Arc<str>), HttpFailure { .. } }
+  pub enum TerminalCause { End, Failed(SharedError) }
   // PlaylistSnapshot { ..., terminal: Option<TerminalCause> }
   ```
 
   On `EXT-X-ENDLIST` the watcher publishes a snapshot with
   `terminal = Some(End)` (retained as the latest value), then drops the sender.
-  On a fetch/parse failure it publishes `terminal = Some(Failed(reason))` if it can,
-  then drops. The reactor reads the retained value before the close, so:
+  On a fetch/parse failure it publishes `terminal = Some(Failed(error))` if it can,
+  then drops. The error keeps its type (HTTP status, network, unsupported, ...);
+  every reactor reading the snapshot surfaces its own copy. The reactor reads the retained value before the close, so:
   - `Some(End)` → begin the authoritative-end drain (→ `StreamEnded`).
   - `Some(Failed(_))` → pipeline error (→ `Err`).
   - `changed()` → `Err` with no terminal value seen → the watcher died before
@@ -381,8 +382,9 @@ pub enum AssemblerInput {
     /// segment the assembler is waiting on). The assembler must stop waiting and
     /// advance past them.
     Skipped { from_msn: u64, to_msn: u64 },
-    /// A specific segment will never arrive (terminal failure).
-    TerminalFailed { key: SegmentKey, msn: u64 },
+    /// A specific segment will never arrive (terminal failure), and why;
+    /// `init_failed` when it was not fetched because its init failed.
+    TerminalFailed { key: SegmentKey, msn: u64, error: SharedError, init_failed: bool },
     /// Notice the planner derived from a snapshot.
     /// Forwarded to the sink immediately on drain, never reordered; counts
     /// toward max_pending_items, never toward payload bytes.
@@ -428,8 +430,17 @@ Responsibilities:
   media segment until that specific init key has arrived, so a rotated or
   slow-to-fetch init cannot lose the race against the first media it covers. An
   init that terminally fails marks its key failed, and dependent media is then
-  skipped as a visible gap rather than gating the stream forever (this also
-  covers a first init failing before any media payload arrives). Which init is
+  skipped as a visible gap rather than gating the stream forever. The store
+  does not fetch fMP4 media whose own init failed (declared fMP4 by the
+  manifest, or, for HLS, shown fMP4 by other media of that map); it fails it
+  with the init's error, and keeps the failed init while such media is
+  unfinished. A stream that reaches its end without emitting media
+  while segments failed ends with the first failure (an init's first) rather
+  than `StreamEnded`; a live stream, which does not end, fails as soon as the
+  media it would start with cannot be decoded because its init failed. The
+  assembler returns that error as its exit; the reactor stops when the
+  assembler does, and the session reports the error as its outcome. Which
+  init is
   emitted is decided by the same key, never by MSN: before each media segment
   the assembler emits that segment's init if it differs from the last one
   emitted. Arrived inits are retained by key, because the store never

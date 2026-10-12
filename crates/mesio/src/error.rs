@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use flv::error::FlvError;
 use reqwest::StatusCode;
 
@@ -148,6 +150,134 @@ impl DownloadError {
     }
 }
 
+/// A [`DownloadError`] delivered to several consumers, such as every track of
+/// a stream whose manifest source failed. Each takes its own copy with
+/// [`Self::to_error`]. Two are equal when they are the same shared error.
+#[derive(Debug, Clone)]
+pub struct SharedError(Arc<DownloadError>);
+
+impl SharedError {
+    pub fn new(error: DownloadError) -> Self {
+        Self(Arc::new(error))
+    }
+
+    pub fn get(&self) -> &DownloadError {
+        &self.0
+    }
+
+    /// An owned error of the same variant and message. A source that cannot
+    /// be copied keeps its classification: a `reqwest` failure becomes
+    /// [`DownloadError::StreamNetwork`], an I/O error keeps its
+    /// [`std::io::ErrorKind`].
+    pub fn to_error(&self) -> DownloadError {
+        use DownloadError as E;
+        match self.get() {
+            E::Cancelled => E::Cancelled,
+            E::InvalidUrl { input, reason } => E::InvalidUrl {
+                input: input.clone(),
+                reason: reason.clone(),
+            },
+            E::UnsupportedProtocol { protocol } => E::UnsupportedProtocol {
+                protocol: protocol.clone(),
+            },
+            E::ProtocolDetectionFailed { url } => E::ProtocolDetectionFailed { url: url.clone() },
+            E::ProxyConfiguration { reason } => E::ProxyConfiguration {
+                reason: reason.clone(),
+            },
+            E::Network { source } => E::StreamNetwork {
+                reason: source.to_string(),
+            },
+            E::StreamNetwork { reason } => E::StreamNetwork {
+                reason: reason.clone(),
+            },
+            E::HttpStatus {
+                status,
+                url,
+                operation,
+            } => E::HttpStatus {
+                status: *status,
+                url: url.clone(),
+                operation,
+            },
+            E::Io { source } => E::Io {
+                source: std::io::Error::new(source.kind(), source.to_string()),
+            },
+            E::Cache { reason } => E::Cache {
+                reason: reason.clone(),
+            },
+            E::Playlist { reason } => E::Playlist {
+                reason: reason.clone(),
+            },
+            E::Manifest { reason } => E::Manifest {
+                reason: reason.clone(),
+            },
+            E::Unsupported { protocol, feature } => E::Unsupported {
+                protocol,
+                feature: feature.clone(),
+            },
+            E::SegmentFetch { reason, retryable } => E::SegmentFetch {
+                reason: reason.clone(),
+                retryable: *retryable,
+            },
+            E::SegmentProcess { reason } => E::SegmentProcess {
+                reason: reason.clone(),
+            },
+            E::Decryption { reason } => E::Decryption {
+                reason: reason.clone(),
+            },
+            E::InvalidContent { protocol, reason } => E::InvalidContent {
+                protocol,
+                reason: reason.clone(),
+            },
+            E::Configuration { reason } => E::Configuration {
+                reason: reason.clone(),
+            },
+            E::Timeout { reason } => E::Timeout {
+                reason: reason.clone(),
+            },
+            E::NotFound { resource } => E::NotFound {
+                resource: resource.clone(),
+            },
+            E::SourceExhausted { reason } => E::SourceExhausted {
+                reason: reason.clone(),
+            },
+            E::FlvDecode { source } => E::FlvDecode {
+                source: match source {
+                    FlvError::InvalidHeader => FlvError::InvalidHeader,
+                    FlvError::Io(error) => {
+                        FlvError::Io(std::io::Error::new(error.kind(), error.to_string()))
+                    }
+                    FlvError::IncompleteData => FlvError::IncompleteData,
+                    FlvError::TagParseError(reason) => FlvError::TagParseError(reason.clone()),
+                    FlvError::ResyncFailed => FlvError::ResyncFailed,
+                    FlvError::InvalidTagType(tag) => FlvError::InvalidTagType(*tag),
+                    FlvError::TagTooLarge(size) => FlvError::TagTooLarge(*size),
+                },
+            },
+            E::Protocol { reason } => E::Protocol {
+                reason: reason.clone(),
+            },
+            E::Internal { reason } => E::Internal {
+                reason: reason.clone(),
+            },
+        }
+    }
+}
+
+impl PartialEq for SharedError {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for SharedError {}
+
+impl std::fmt::Display for SharedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// A 4xx that means the URL itself is invalid. Statuses that can clear
 /// without the URL changing are excluded: expired signed URLs (401/403) get
 /// refreshed, a live playlist may not be published yet (404), and timeouts or
@@ -182,6 +312,56 @@ impl From<DownloadError> for FlvError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_errors_copy_to_the_same_variant() {
+        let http = SharedError::new(DownloadError::http_status(
+            StatusCode::NOT_FOUND,
+            "https://e.com/a.mpd",
+            "MPD fetch",
+        ));
+        assert!(matches!(
+            http.to_error(),
+            DownloadError::HttpStatus { status, operation: "MPD fetch", .. } if status == StatusCode::NOT_FOUND
+        ));
+        let unsupported = SharedError::new(DownloadError::Unsupported {
+            protocol: "dash",
+            feature: "DRM".to_owned(),
+        });
+        assert!(unsupported.to_error().is_non_recoverable_source_error());
+        let io = SharedError::new(DownloadError::from(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "slow",
+        )));
+        assert!(matches!(
+            io.to_error(),
+            DownloadError::Io { source } if source.kind() == std::io::ErrorKind::TimedOut
+        ));
+        assert_eq!(http.to_error().to_string(), http.to_string());
+        assert_eq!(http, http.clone());
+        assert_ne!(
+            http,
+            SharedError::new(DownloadError::Manifest {
+                reason: String::new()
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_network_errors_stay_network_errors() {
+        // Nothing listens on port 9 (discard) of the loopback address.
+        let client = crate::downloader::create_client(&Default::default()).unwrap();
+        let error = client
+            .get("http://127.0.0.1:9/")
+            .send()
+            .await
+            .expect_err("connection refused");
+        let shared = SharedError::new(DownloadError::from(error));
+        assert!(matches!(
+            shared.to_error(),
+            DownloadError::StreamNetwork { reason } if reason == shared.get().to_string().trim_start_matches("HTTP request failed: ")
+        ));
+    }
 
     #[test]
     fn only_permanent_client_errors_are_non_recoverable() {

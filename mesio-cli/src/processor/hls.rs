@@ -89,33 +89,29 @@ pub async fn process_hls_stream(
         }
     };
 
-    // Peek at the first segment to determine the file extension
-    let first_segment = match stream.next().await {
-        Some(Ok(segment)) => segment,
-        Some(Err(e)) => {
-            cleanup_session(progress_task).await;
-            return Err(AppError::InvalidInput(format!(
-                "Failed to get first {label} segment: {e}"
-            )));
-        }
-        None => {
-            info!("{label} stream is empty.");
-            cleanup_session(progress_task).await;
-            return Err(AppError::Download(DownloadError::source_exhausted(
-                format!("{label} stream is empty"),
-            )));
-        }
-    };
-
-    let extension = match first_segment {
-        HlsData::TsData(_) => "ts",
-        HlsData::M4sData(_) => "m4s",
-        // should never happen
-        HlsData::EndMarker(_) => {
-            cleanup_session(progress_task).await;
-            return Err(AppError::InvalidInput(
-                "First segment is EndMarker".to_string(),
-            ));
+    // Peek at the first segment to determine the file extension. An end
+    // marker before any data (a DASH stream that ended at once) carries no
+    // output.
+    let (first_segment, extension) = loop {
+        match stream.next().await {
+            Some(Ok(HlsData::EndMarker(_))) => continue,
+            Some(Ok(segment @ HlsData::TsData(_))) => break (segment, "ts"),
+            Some(Ok(segment @ HlsData::M4sData(_))) => break (segment, "m4s"),
+            // The item stream can hold the session's event sender, so it
+            // is dropped before waiting for the event stream to end.
+            Some(Err(e)) => {
+                drop(stream);
+                cleanup_session(progress_task).await;
+                return Err(AppError::Download(e));
+            }
+            None => {
+                info!("{label} stream is empty.");
+                drop(stream);
+                cleanup_session(progress_task).await;
+                return Err(AppError::Download(DownloadError::source_exhausted(
+                    format!("{label} stream is empty"),
+                )));
+            }
         }
     };
 

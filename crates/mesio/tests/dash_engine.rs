@@ -843,6 +843,80 @@ async fn missing_segments_are_retried() {
     );
 }
 
+fn failed_url(error: &Option<DownloadError>) -> Option<&str> {
+    match error {
+        Some(DownloadError::HttpStatus { url, .. }) => Some(url),
+        _ => None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_video_init_that_cannot_be_fetched_fails_with_its_status() {
+    let origin = Origin::default();
+    origin.set_mpd(static_timeline_mpd());
+    add_timeline_files(&origin);
+    origin.add_file_failing("v/init.mp4", VIDEO_INIT, 404, u32::MAX);
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, _, _) = drain(session).await;
+
+    assert!(media(&items).is_empty(), "{}", describe(&items));
+    assert!(
+        failed_url(&error).is_some_and(|url| url.ends_with("/v/init.mp4")),
+        "{error:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_audio_init_that_cannot_be_fetched_drops_only_the_audio() {
+    let origin = Origin::default();
+    origin.set_mpd(static_timeline_mpd());
+    add_timeline_files(&origin);
+    origin.add_file_failing("a/init.mp4", AUDIO_INIT, 404, u32::MAX);
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, events, _) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(count_track(&items, 1), 2, "every video fragment");
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, DownloadEvent::TrackDropped { .. })),
+        "{events:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_live_stream_whose_init_cannot_be_fetched_fails_without_waiting() {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.add_file_failing("v/init.mp4", VIDEO_INIT, 404, u32::MAX);
+    origin.set_mpd(number_mpd(true, 0, "v"));
+    let base = origin.clone().serve().await;
+
+    let session = start(
+        &format!("{base}/manifest.mpd"),
+        config(Some(live_clock(10))),
+    )
+    .await
+    .expect("session starts");
+    // The stall watchdog is 10 s; the failure must come from the init.
+    let (items, error, _, _) = drain(session).await;
+
+    assert!(media(&items).is_empty(), "{}", describe(&items));
+    assert!(
+        failed_url(&error).is_some_and(|url| url.ends_with("/v/init.mp4")),
+        "{error:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn mpd_refresh_failures_end_the_stream_after_the_retry_budget() {
     let origin = Origin::default();

@@ -22,6 +22,7 @@ use tracing::{debug, error, info};
 use url::Url;
 
 use crate::downloader::ClientPool;
+use crate::error::SharedError;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::playlist::document_base_url;
@@ -162,7 +163,16 @@ impl PlaylistWatcher {
                 _ = tokio::time::sleep(refresh_delay) => {}
             }
 
-            match self.fetch_and_parse(&last_playlist_bytes, &base_url).await {
+            // A refresh nobody will read is abandoned, so the session settles
+            // as soon as its pipeline has.
+            let fetched = tokio::select! {
+                fetched = self.fetch_and_parse(&last_playlist_bytes, &base_url) => fetched,
+                _ = tx.closed() => {
+                    debug!("Playlist snapshot receiver dropped; watcher exiting");
+                    return;
+                }
+            };
+            match fetched {
                 Ok(Some(refreshed)) => {
                     let RefreshedPlaylist {
                         playlist,
@@ -225,24 +235,14 @@ impl PlaylistWatcher {
                         // Publish the explicit failure cause before dropping
                         // the sender, so the reactor can distinguish this from
                         // a clean end.
-                        let cause = match e {
-                            HlsDownloaderError::HttpStatus {
-                                status,
-                                url,
-                                operation,
-                            } => TerminalCause::HttpFailure {
-                                status,
-                                url: Arc::from(url),
-                                operation,
-                            },
-                            error => TerminalCause::Failed(Arc::from(error.to_string())),
-                        };
+                        let cause = TerminalCause::Failed(SharedError::new(e));
                         tx.send_modify(|snapshot| snapshot.terminal = Some(cause));
                         return;
                     }
                     tokio::select! {
                         biased;
                         _ = self.cancel.cancelled() => return,
+                        _ = tx.closed() => return,
                         _ = tokio::time::sleep(
                             self.config.playlist_config.live_refresh_retry_delay * retries,
                         ) => {}
