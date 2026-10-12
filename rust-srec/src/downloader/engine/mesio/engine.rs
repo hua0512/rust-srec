@@ -39,7 +39,7 @@ use crate::downloader::engine::utils::sanitize_engine_message;
 /// delegates to specialized downloaders for HLS, DASH and FLV formats.
 ///
 /// The engine is a thin coordinator that:
-/// - Resolves the protocol type (see [`Self::resolve_protocol`])
+/// - Resolves the protocol type (see `resolve_protocol`)
 /// - Creates appropriate downloader (HlsDownloader, DashDownloader or FlvDownloader)
 /// - Delegates download execution and propagates results
 pub struct MesioEngine {
