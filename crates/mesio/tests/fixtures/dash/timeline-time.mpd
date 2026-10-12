@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- $Time$ addressing with a SegmentTimeline: omitted S@t, repeats and a trailing open S@r="-1". -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" publishTime="2024-01-01T00:00:20Z"
+     minimumUpdatePeriod="PT2S" minBufferTime="PT2S" timeShiftBufferDepth="PT10S">
+  <Period id="1" start="PT0S">
+    <AdaptationSet mimeType="video/mp4" contentType="video" segmentAlignment="true">
+      <SegmentTemplate timescale="90000" media="video/$RepresentationID$/$Time$.m4s"
+                       initialization="video/$RepresentationID$/init.mp4">
+        <SegmentTimeline>
+          <S t="0" d="180000" r="2"/>
+          <S d="90000"/>
+          <S d="180000" r="-1"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="1080p" bandwidth="5000000" width="1920" height="1080" codecs="avc1.640028"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4" contentType="audio" lang="ja">
+      <SegmentTemplate timescale="48000" presentationTimeOffset="0"
+                       media="audio/$Time%012d$.m4s" initialization="audio/init.mp4">
+        <SegmentTimeline>
+          <S t="0" d="96256" r="-1"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="aac" bandwidth="128000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

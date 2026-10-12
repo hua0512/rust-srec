@@ -59,7 +59,8 @@ pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKin
         | DownloadError::ProtocolDetectionFailed { .. }
         | DownloadError::ProxyConfiguration { .. }
         | DownloadError::Configuration { .. }
-        | DownloadError::InvalidContent { .. } => DownloadFailureKind::Configuration,
+        | DownloadError::InvalidContent { .. }
+        | DownloadError::Unsupported { .. } => DownloadFailureKind::Configuration,
         DownloadError::FlvDecode { .. }
         | DownloadError::SegmentProcess { .. }
         | DownloadError::Decryption { .. }
@@ -74,6 +75,7 @@ pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKin
         DownloadError::Cancelled => DownloadFailureKind::Cancelled,
         DownloadError::Cache { .. }
         | DownloadError::Playlist { .. }
+        | DownloadError::Manifest { .. }
         | DownloadError::Internal { .. } => DownloadFailureKind::Network,
     }
 }
@@ -102,5 +104,32 @@ mod tests {
         };
 
         assert_eq!(classify_download_error(&err), DownloadFailureKind::Network);
+    }
+
+    #[test]
+    fn manifest_error_classifies_as_retryable_like_playlist_errors() {
+        let manifest = DownloadError::Manifest {
+            reason: "SegmentTimeline overlaps".to_string(),
+        };
+        let playlist = DownloadError::Playlist {
+            reason: "bad playlist".to_string(),
+        };
+
+        let kind = classify_download_error(&manifest);
+        assert_eq!(kind, classify_download_error(&playlist));
+        assert!(kind.is_recoverable());
+    }
+
+    #[test]
+    fn unsupported_feature_classifies_as_non_retryable_configuration() {
+        let err = DownloadError::Unsupported {
+            protocol: "dash",
+            feature: "content protection (DRM)".to_string(),
+        };
+
+        let kind = classify_download_error(&err);
+        assert_eq!(kind, DownloadFailureKind::Configuration);
+        assert!(!kind.is_recoverable());
+        assert!(!kind.affects_circuit_breaker());
     }
 }

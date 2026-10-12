@@ -46,6 +46,20 @@ pub enum DownloadError {
     #[error("playlist error: {reason}")]
     Playlist { reason: String },
 
+    /// A manifest (e.g. a DASH MPD) is malformed or inconsistent. A later
+    /// refresh may publish a valid one, so this is retryable like
+    /// [`Self::Playlist`].
+    #[error("manifest error: {reason}")]
+    Manifest { reason: String },
+
+    /// The stream uses a feature this engine deliberately does not support
+    /// (e.g. DRM). Retrying cannot succeed.
+    #[error("unsupported {protocol} feature: {feature}")]
+    Unsupported {
+        protocol: &'static str,
+        feature: String,
+    },
+
     #[error("segment fetch error: {reason}")]
     SegmentFetch { reason: String, retryable: bool },
 
@@ -125,6 +139,7 @@ impl DownloadError {
             | Self::UnsupportedProtocol { .. }
             | Self::ProtocolDetectionFailed { .. }
             | Self::InvalidContent { .. }
+            | Self::Unsupported { .. }
             | Self::NotFound { .. } => true,
             Self::StreamNetwork { .. } => false,
             Self::SegmentFetch { retryable, .. } => !retryable,
