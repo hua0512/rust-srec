@@ -35,9 +35,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() {
     let result = bootstrap();
     // The input thread may still hold the terminal in raw mode.
-    let restored = input::restore_terminal();
-    signal::restore_default_actions();
-    if let Err(error) = restored {
+    if let Err(error) = input::restore_terminal() {
         error!(%error, "Failed to restore the terminal mode");
     }
     if let Err(e) = result {
@@ -160,14 +158,11 @@ async fn bootstrap() -> Result<(), AppError> {
         warn!(%error, "Failed to start the input handler; `q` will not stop mesio");
     }
 
-    match signal::install() {
-        Ok(signals) => {
-            tokio::spawn(signal::stop_on_signal(signals, token.clone()));
-        }
-        Err(error) => warn!(
+    if let Err(error) = signal::spawn(token.clone()) {
+        warn!(
             %error,
             "Failed to install signal handlers; a signal will stop mesio without finishing the current file"
-        ),
+        );
     }
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");

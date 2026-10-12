@@ -1,6 +1,7 @@
 //! Turns termination signals into the same graceful stop as pressing `q`.
 
 use std::io;
+use std::sync::mpsc;
 use std::thread;
 
 use pipeline_common::CancellationToken;
@@ -10,10 +11,46 @@ use tracing::info;
 /// killed by SIGINT (128 + 2).
 const FORCED_EXIT_CODE: i32 = 130;
 
-/// Installs the signal handlers. Until this returns, signals keep their
-/// default action and end the process at once.
-pub fn install() -> io::Result<Signals> {
-    Signals::new()
+/// Starts handling termination signals on a thread with a runtime of its
+/// own, and returns once the handlers are installed; until then, signals keep
+/// their default action and end the process at once.
+///
+/// The forced exit must not wait for a worker of the main runtime: they may
+/// all be blocked, for example writing logs to a pipe that has stopped
+/// draining. The thread runs until the process exits.
+pub fn spawn(token: CancellationToken) -> io::Result<()> {
+    let (installed_tx, installed_rx) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("mesio-signal".to_owned())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    // The receiver only goes away once `spawn` has returned.
+                    let _ = installed_tx.send(Err(error));
+                    return;
+                }
+            };
+            runtime.block_on(async move {
+                match Signals::new() {
+                    Ok(signals) => {
+                        let _ = installed_tx.send(Ok(()));
+                        stop_on_signal(signals, token).await;
+                    }
+                    Err(error) => {
+                        let _ = installed_tx.send(Err(error));
+                    }
+                }
+            });
+        })?;
+    installed_rx.recv().unwrap_or_else(|_| {
+        Err(io::Error::other(
+            "the signal thread ended before installing handlers",
+        ))
+    })
 }
 
 /// Cancels `token` on the first termination signal, so the current file is
@@ -22,7 +59,7 @@ pub fn install() -> io::Result<Signals> {
 ///
 /// Nothing here writes to stderr or flushes stdout, either of which may be a
 /// pipe that has stopped draining, which is when a forced exit is most needed.
-pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
+async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
     while let Some(signal) = signals.recv().await {
         if token.is_cancelled() {
             // Exiting matters more than reporting a failure to restore.
@@ -42,17 +79,6 @@ pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
     }
 }
 
-/// Gives SIGINT and SIGTERM back their default action of ending the process,
-/// for when the runtime that handled them has shut down.
-pub fn restore_default_actions() {
-    #[cfg(unix)]
-    for signal in [libc::SIGINT, libc::SIGTERM] {
-        // SAFETY: `SIG_DFL` is a valid disposition for both signals, and
-        // nothing handles them once the runtime has shut down.
-        unsafe { libc::signal(signal, libc::SIG_DFL) };
-    }
-}
-
 /// Ends the process without flushing stdio or running exit handlers.
 #[cfg(unix)]
 fn exit_now(code: i32) -> ! {
@@ -69,7 +95,7 @@ fn exit_now(code: i32) -> ! {
 }
 
 #[cfg(unix)]
-pub struct Signals {
+struct Signals {
     interrupt: tokio::signal::unix::Signal,
     terminate: tokio::signal::unix::Signal,
 }
@@ -93,7 +119,7 @@ impl Signals {
 }
 
 #[cfg(windows)]
-pub struct Signals {
+struct Signals {
     ctrl_c: tokio::signal::windows::CtrlC,
     ctrl_break: tokio::signal::windows::CtrlBreak,
 }
@@ -119,7 +145,7 @@ impl Signals {
 #[cfg(all(test, unix))]
 mod tests {
     use std::process::Command;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -135,9 +161,11 @@ mod tests {
     }
 
     /// Runs in a child process: the installed handlers stay for the life of
-    /// the process, and the second signal exits it.
-    #[tokio::test]
-    async fn a_signal_stops_gracefully_and_a_second_one_at_once() {
+    /// the process, and the second signal exits it. Both signals arrive while
+    /// the test's own runtime is blocked, as a stalled log write would block
+    /// the main runtime.
+    #[test]
+    fn a_signal_stops_gracefully_and_a_second_one_at_once() {
         if std::env::var_os(CHILD_ENV).is_none() {
             let status = Command::new(std::env::current_exe().expect("test binary path"))
                 .args([TEST_NAME, "--exact", "--nocapture"])
@@ -148,17 +176,27 @@ mod tests {
             return;
         }
 
-        let signals = install().expect("signal handlers install");
-        let token = CancellationToken::new();
-        tokio::spawn(stop_on_signal(signals, token.clone()));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime builds");
+        runtime.block_on(async {
+            let token = CancellationToken::new();
+            spawn(token.clone()).expect("signal handlers install");
 
-        send_sigterm_to_self();
-        tokio::time::timeout(Duration::from_secs(5), token.cancelled())
-            .await
-            .expect("the first signal cancels the token");
+            send_sigterm_to_self();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !token.is_cancelled() {
+                assert!(
+                    Instant::now() < deadline,
+                    "the first signal cancels the token"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
 
-        send_sigterm_to_self();
-        tokio::time::sleep(Duration::from_secs(5)).await;
+            send_sigterm_to_self();
+            thread::sleep(Duration::from_secs(5));
+        });
         panic!("the second signal did not exit the process");
     }
 }
