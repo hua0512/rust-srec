@@ -13,4 +13,6 @@
 ## Web interface
 
 - Fixed cards, editors and detail pages overflowing or squeezing their content at laptop and desktop window sizes once the sidebar takes its share. Card lists now fit as many columns as the page has room for, page headers wrap their buttons, and long names, titles, URLs and settings end in "…" with the full text on hover.
+- Fixed Mesio engine overrides in templates. Every HLS and FLV setting, and the **Fix FLV Streams**, **Fix HLS Discontinuities** and **Fix DASH Streams** switches, now show the engine setting they inherit and can be set to use that, the default, or a custom value; previously unset switches showed as off, the HLS settings were locked until **Fix HLS Discontinuities** was turned on, and a template containing a reset setting could not be saved. **Disabled** is no longer offered for **Max Stall Duration** and **VOD Segment Timeout** in a template, because a template could never turn them off; set that on the engine instead.
+- The **HLS Tuning** tab of a Mesio engine is no longer locked while **Fix HLS Discontinuities** is off, since its download settings apply either way.
 - The engines settings page is now a list like proxies, showing each engine's type, installed version and status, with **Configure** beside it.

@@ -1,14 +1,12 @@
 import React from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import type { I18n, MessageDescriptor } from '@lingui/core';
 import {
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -28,16 +26,14 @@ import {
   ListMusic,
   Share2,
 } from 'lucide-react';
-import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
 import { useRowKeys } from '@/hooks/use-row-keys';
 import {
-  CONFIG_DESCRIPTION,
   CONFIG_INPUT,
   CONFIG_SELECT_CONTENT,
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import {
   Accordion,
@@ -47,27 +43,66 @@ import {
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  INHERIT,
+  OverrideStateItems,
+  RESET,
+  SettingInput,
+  SettingSelect,
+  SettingSwitch,
+  describeValue,
+  overrideMode,
+  useEngineOverride,
+  useSettingValue,
+  type SettingOption,
+} from './setting-fields';
 
 interface SubFormProps {
   hlsPath: string;
 }
 
-type TriStateMode = 'default' | 'disabled' | 'custom';
+/** Row styling of the on/off settings. */
+const SWITCH_ROW =
+  'rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm';
 
-type GapSkipStrategyType =
-  | 'wait_indefinitely'
-  | 'skip_after_count'
-  | 'skip_after_duration'
-  | 'skip_after_both';
+function SettingCard({
+  label,
+  labelId,
+  description,
+  children,
+}: {
+  label: React.ReactNode;
+  labelId?: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="border-border/40 bg-muted/5">
+      <CardContent className="p-3 space-y-3">
+        <div className="space-y-0.5">
+          <div id={labelId} className="text-xs font-medium">
+            {label}
+          </div>
+          {description && (
+            <div className="text-[10px] text-muted-foreground">
+              {description}
+            </div>
+          )}
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
 
-type VariantSelectionType =
-  | 'highest_bitrate'
-  | 'lowest_bitrate'
-  | 'closest_to_bitrate'
-  | 'audio_only'
-  | 'video_only'
-  | 'matching_resolution'
-  | 'custom';
+function describePairs(i18n: I18n, pairs: unknown): string {
+  const count = Array.isArray(pairs) ? pairs.length : 0;
+  return count === 0
+    ? i18n._(msg`None`)
+    : i18n._(
+        msg`${plural(count, { one: '# parameter', other: '# parameters' })}`,
+      );
+}
 
 function KeyValuePairsEditor({
   label,
@@ -78,360 +113,496 @@ function KeyValuePairsEditor({
   description?: React.ReactNode;
   path: string;
 }) {
-  const { setValue, control } = useFormContext<any>();
-  const value =
-    (useWatch({ control, name: path }) as
-      | Array<[string, string]>
-      | undefined) ?? [];
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const raw = useSettingValue(path) as
+    | Array<[string, string]>
+    | null
+    | undefined;
+  const value = raw ?? [];
   const rowKeys = useRowKeys(value.length);
+  const mode = overrideMode(raw);
 
   const addEntry = () => {
-    setValue(path, [...value, ['', '']], { shouldDirty: true });
+    setField(path, [...value, ['', '']]);
   };
 
   const updateEntry = (idx: number, next: [string, string]) => {
-    const nextValue = value.map((pair, i) => (i === idx ? next : pair));
-    setValue(path, nextValue, { shouldDirty: true });
+    setField(
+      path,
+      value.map((pair, i) => (i === idx ? next : pair)),
+    );
   };
 
   const removeEntry = (idx: number) => {
     rowKeys.removeAt(idx);
     const nextValue = value.filter((_, i) => i !== idx);
-    setValue(path, nextValue.length > 0 ? nextValue : undefined, {
-      shouldDirty: true,
-    });
+    // In an override, an empty list replaces the engine's parameters with none.
+    setField(path, nextValue.length > 0 || isOverride ? nextValue : undefined);
   };
 
-  return (
-    <Card className="border-border/40 bg-muted/5">
-      <CardContent className="p-3 space-y-3">
-        <div className="space-y-0.5">
-          <div className="text-xs font-medium">{label}</div>
-          {description && (
-            <div className="text-[10px] text-muted-foreground">
-              {description}
-            </div>
-          )}
+  const editor = (
+    <div className="space-y-2">
+      {value.length === 0 && (
+        <div className="text-[10px] text-muted-foreground">
+          <Trans>No parameters configured.</Trans>
         </div>
+      )}
 
-        <div className="space-y-2">
-          {value.length === 0 && (
-            <div className="text-[10px] text-muted-foreground">
-              <Trans>No parameters configured.</Trans>
-            </div>
-          )}
-
-          {value.map(([k, v], idx) => (
-            <div
-              key={rowKeys.keyAt(idx)}
-              className="grid grid-cols-1 sm:grid-cols-5 gap-2"
-            >
-              <Input
-                value={k}
-                onChange={(e) => updateEntry(idx, [e.target.value, v])}
-                className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
-                placeholder="key"
-              />
-              <Input
-                value={v}
-                onChange={(e) => updateEntry(idx, [k, e.target.value])}
-                className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
-                placeholder="value"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className={CONFIG_INPUT}
-                onClick={() => removeEntry(idx)}
-              >
-                <Trans>Remove</Trans>
-              </Button>
-            </div>
-          ))}
-
+      {value.map(([k, v], idx) => (
+        <div
+          key={rowKeys.keyAt(idx)}
+          className="grid grid-cols-1 sm:grid-cols-5 gap-2"
+        >
+          <Input
+            value={k}
+            onChange={(e) => updateEntry(idx, [e.target.value, v])}
+            className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
+            placeholder="key"
+          />
+          <Input
+            value={v}
+            onChange={(e) => updateEntry(idx, [k, e.target.value])}
+            className={cn(CONFIG_INPUT, 'font-mono sm:col-span-2')}
+            placeholder="value"
+          />
           <Button
             type="button"
             variant="outline"
-            className={cn(CONFIG_INPUT, 'w-full')}
-            onClick={addEntry}
+            className={CONFIG_INPUT}
+            onClick={() => removeEntry(idx)}
           >
-            <Trans>Add parameter</Trans>
+            <Trans>Remove</Trans>
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      ))}
+
+      <Button
+        type="button"
+        variant="outline"
+        className={cn(CONFIG_INPUT, 'w-full')}
+        onClick={addEntry}
+      >
+        <Trans>Add parameter</Trans>
+      </Button>
+    </div>
+  );
+
+  if (!isOverride) {
+    return (
+      <SettingCard label={label} description={description}>
+        {editor}
+      </SettingCard>
+    );
+  }
+
+  const engineValue = inherited(path);
+  return (
+    <SettingCard label={label} labelId={labelId} description={description}>
+      <Select
+        value={mode}
+        onValueChange={(next) =>
+          setField(
+            path,
+            next === INHERIT
+              ? undefined
+              : next === RESET
+                ? null
+                : Array.isArray(engineValue)
+                  ? engineValue.map((pair) => [...pair])
+                  : [],
+          )
+        }
+      >
+        <SelectTrigger
+          aria-labelledby={labelId}
+          className={CONFIG_SELECT_TRIGGER}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={CONFIG_SELECT_CONTENT}>
+          <OverrideStateItems
+            inherited={describePairs(i18n, engineValue)}
+            fallback={describePairs(i18n, [])}
+          />
+          <SelectItem value="custom">
+            <Trans>Custom</Trans>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      {mode === 'custom' && editor}
+    </SettingCard>
   );
 }
 
-function TriStateNullableDurationMsField({
+/**
+ * A timeout an engine can also disable, which it stores as `null`. A template override cannot:
+ * the backend merge reads `null` there as "use the default", so an override offers the usual
+ * override states instead.
+ */
+function DisableableDurationField({
   label,
   description,
   path,
-  placeholder,
+  fallback,
+  seed,
 }: {
   label: React.ReactNode;
   description?: React.ReactNode;
   path: string;
-  placeholder: string;
+  /** The engine default: a duration in ms, or `null` when it is disabled by default. */
+  fallback: number | null;
+  /** The value a custom duration starts from. */
+  seed: number;
 }) {
-  const { setValue, control } = useFormContext<any>();
-  const raw = useWatch({ control, name: path }) as unknown;
-  // react-hook-form can hold `''` (empty string) from the input.
-  // Treat that as "unset" so the mode reflects "Default".
-  const normalizedRaw = raw === '' ? undefined : raw;
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const raw = useSettingValue(path) as unknown;
+  // An emptied input holds `''`, which is unset, not disabled.
+  const value = raw === '' ? undefined : raw;
+  const custom = value !== undefined && value !== null;
 
-  const mode: TriStateMode =
-    normalizedRaw === null
-      ? 'disabled'
-      : normalizedRaw === undefined
-        ? 'default'
-        : 'custom';
+  let control: React.ReactNode;
+  if (isOverride) {
+    const engineValue = inherited(path);
+    control = (
+      <Select
+        value={overrideMode(value)}
+        onValueChange={(next) =>
+          setField(
+            path,
+            next === INHERIT
+              ? undefined
+              : next === RESET
+                ? null
+                : typeof engineValue === 'number'
+                  ? engineValue
+                  : seed,
+          )
+        }
+      >
+        <SelectTrigger
+          aria-labelledby={labelId}
+          className={CONFIG_SELECT_TRIGGER}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={CONFIG_SELECT_CONTENT}>
+          <OverrideStateItems
+            inherited={describeValue(
+              i18n,
+              engineValue === undefined ? fallback : engineValue,
+            )}
+            fallback={describeValue(i18n, fallback)}
+          />
+          <SelectItem value="custom">
+            <Trans>Custom</Trans>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  } else {
+    control = (
+      <Select
+        value={value === null ? 'disabled' : custom ? 'custom' : 'default'}
+        onValueChange={(next) => {
+          if (next === 'default') setField(path, undefined);
+          else if (next === 'disabled') setField(path, null);
+          else if (!custom) setField(path, seed);
+        }}
+      >
+        <SelectTrigger
+          aria-labelledby={labelId}
+          className={CONFIG_SELECT_TRIGGER}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={CONFIG_SELECT_CONTENT}>
+          <SelectItem value="default">
+            <Trans>Default</Trans>
+          </SelectItem>
+          <SelectItem value="disabled">
+            <Trans>Disabled</Trans>
+          </SelectItem>
+          <SelectItem value="custom">
+            <Trans>Custom</Trans>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
 
-  const setMode = (next: TriStateMode) => {
-    if (next === 'default') {
-      setValue(path, undefined, { shouldDirty: true });
-      return;
-    }
-    if (next === 'disabled') {
-      setValue(path, null, { shouldDirty: true });
-      return;
-    }
+  return (
+    <SettingCard
+      label={label}
+      labelId={labelId}
+      description={
+        isOverride ? (
+          <>
+            {description}{' '}
+            <Trans>
+              A template can't turn this off; do that on the engine.
+            </Trans>
+          </>
+        ) : (
+          description
+        )
+      }
+    >
+      {control}
+      {custom && (
+        <Input
+          type="number"
+          value={
+            typeof value === 'number' || typeof value === 'string' ? value : ''
+          }
+          aria-labelledby={labelId}
+          onChange={(e) =>
+            setField(path, e.target.value === '' ? undefined : e.target.value)
+          }
+          className={cn(CONFIG_INPUT, 'font-mono')}
+          placeholder={String(seed)}
+        />
+      )}
+    </SettingCard>
+  );
+}
 
-    // custom
-    if (normalizedRaw === undefined || normalizedRaw === null) {
-      // Seed with a reasonable value so "Custom" is never ambiguous.
-      const seeded = Number.isFinite(Number(placeholder))
-        ? Number(placeholder)
-        : 10000;
-      setValue(path, seeded, { shouldDirty: true });
-    }
+interface PolicyOption {
+  type: string;
+  label: MessageDescriptor;
+  /** The value written when this option is chosen. */
+  value: Record<string, unknown>;
+}
+
+/** A policy payload value as text, or `undefined` when it is not a plain value. */
+function scalar(value: unknown): string | undefined {
+  if (typeof value === 'number') return String(value);
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+function describePolicy(
+  i18n: I18n,
+  options: readonly PolicyOption[],
+  policy: unknown,
+): string {
+  if (!policy || typeof policy !== 'object') return describeValue(i18n, policy);
+  const fields = policy as Record<string, unknown>;
+  const option = options.find((candidate) => candidate.type === fields.type);
+  const label = option ? i18n._(option.label) : (scalar(fields.type) ?? '');
+  const duration = scalar(fields.duration_ms);
+  const width = scalar(fields.width);
+  const details = [
+    scalar(fields.count),
+    duration === undefined ? undefined : `${duration} ms`,
+    scalar(fields.target_bitrate),
+    width === undefined ? undefined : `${width}×${scalar(fields.height) ?? ''}`,
+    scalar(fields.value),
+  ].filter((detail) => detail !== undefined);
+  return details.length > 0 ? `${label} (${details.join(', ')})` : label;
+}
+
+/**
+ * A select for a tagged policy object (`{ type, ...payload }`). In an engine, "Default" leaves the
+ * field unset; in an override, the field can also inherit the engine's choice.
+ */
+function PolicyField({
+  label,
+  path,
+  options,
+  fallback,
+  renderPayload,
+}: {
+  label: React.ReactNode;
+  path: string;
+  options: readonly PolicyOption[];
+  /** The policy in effect when the field is unset. */
+  fallback: Record<string, unknown>;
+  renderPayload: (type: string) => React.ReactNode;
+}) {
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const value = useSettingValue(path) as { type?: string } | null | undefined;
+  const isPolicy = value !== null && typeof value === 'object';
+  const selected = isPolicy
+    ? (value.type ?? RESET)
+    : isOverride
+      ? overrideMode(value)
+      : RESET;
+
+  const select = (next: string) => {
+    const option = options.find((candidate) => candidate.type === next);
+    if (option) setField(path, { ...option.value });
+    else if (next === RESET && isOverride) setField(path, null);
+    else setField(path, undefined);
   };
 
   return (
-    <Card className="border-border/40 bg-muted/5">
-      <CardContent className="p-3 space-y-2">
-        <div className="space-y-0.5">
-          <div className="text-xs font-medium">{label}</div>
-          {description && (
-            <div className="text-[10px] text-muted-foreground">
-              {description}
-            </div>
-          )}
-        </div>
-
-        <Select value={mode} onValueChange={(v) => setMode(v as TriStateMode)}>
-          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className={CONFIG_SELECT_CONTENT}>
-            <SelectItem value="default">
+    <SettingCard label={label} labelId={labelId}>
+      <Select value={selected} onValueChange={select}>
+        <SelectTrigger
+          aria-labelledby={labelId}
+          className={CONFIG_SELECT_TRIGGER}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className={CONFIG_SELECT_CONTENT}>
+          {isOverride ? (
+            <OverrideStateItems
+              inherited={describePolicy(
+                i18n,
+                options,
+                inherited(path) ?? fallback,
+              )}
+              fallback={describePolicy(i18n, options, fallback)}
+            />
+          ) : (
+            <SelectItem value={RESET}>
               <Trans>Default</Trans>
             </SelectItem>
-            <SelectItem value="disabled">
-              <Trans>Disabled</Trans>
+          )}
+          {options.map((option) => (
+            <SelectItem key={option.type} value={option.type}>
+              {i18n._(option.label)}
             </SelectItem>
-            <SelectItem value="custom">
-              <Trans>Custom</Trans>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        {mode === 'custom' && (
-          <Input
-            type="number"
-            value={
-              typeof normalizedRaw === 'number' ||
-              typeof normalizedRaw === 'string'
-                ? normalizedRaw
-                : ''
-            }
-            onChange={(e) =>
-              setValue(
-                path,
-                e.target.value === '' ? undefined : e.target.value,
-                {
-                  shouldDirty: true,
-                },
-              )
-            }
-            className={cn(CONFIG_INPUT, 'font-mono')}
-            placeholder={placeholder}
-          />
-        )}
-      </CardContent>
-    </Card>
+          ))}
+        </SelectContent>
+      </Select>
+      {isPolicy && renderPayload(selected)}
+    </SettingCard>
   );
 }
+
+function PayloadInput({
+  name,
+  label,
+  placeholder,
+  numeric = true,
+}: {
+  name: string;
+  label: React.ReactNode;
+  placeholder?: string;
+  numeric?: boolean;
+}) {
+  return (
+    <FormField
+      name={name}
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <ConfigFieldLabel size="sm">{label}</ConfigFieldLabel>
+          <FormControl>
+            <Input
+              type={numeric ? 'number' : 'text'}
+              {...field}
+              value={field.value ?? ''}
+              className={cn(CONFIG_INPUT, 'font-mono')}
+              placeholder={placeholder}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+const GAP_STRATEGY_OPTIONS: readonly PolicyOption[] = [
+  {
+    type: 'wait_indefinitely',
+    label: msg`Wait indefinitely`,
+    value: { type: 'wait_indefinitely' },
+  },
+  {
+    type: 'skip_after_count',
+    label: msg`Skip after count`,
+    value: { type: 'skip_after_count', count: 10 },
+  },
+  {
+    type: 'skip_after_duration',
+    label: msg`Skip after duration`,
+    value: { type: 'skip_after_duration', duration_ms: 5000 },
+  },
+  {
+    type: 'skip_after_both',
+    label: msg`Skip after both`,
+    value: { type: 'skip_after_both', count: 10, duration_ms: 5000 },
+  },
+];
 
 function GapSkipStrategyField({
   label,
   path,
+  fallback,
 }: {
   label: React.ReactNode;
   path: string;
+  fallback: Record<string, unknown>;
 }) {
-  const { setValue, control } = useFormContext<any>();
-  const value = useWatch({ control, name: path }) as
-    | {
-        type?: GapSkipStrategyType;
-        count?: number | string;
-        duration_ms?: number | string;
-      }
-    | undefined;
-
-  const type: 'default' | GapSkipStrategyType =
-    value?.type != null ? (value.type as GapSkipStrategyType) : 'default';
-
-  const setType = (t: 'default' | GapSkipStrategyType) => {
-    if (t === 'default') {
-      setValue(path, undefined, { shouldDirty: true });
-      return;
-    }
-    if (t === 'wait_indefinitely') {
-      setValue(path, { type: 'wait_indefinitely' }, { shouldDirty: true });
-      return;
-    }
-    if (t === 'skip_after_count') {
-      setValue(
-        path,
-        { type: 'skip_after_count', count: 10 },
-        { shouldDirty: true },
-      );
-      return;
-    }
-    if (t === 'skip_after_duration') {
-      setValue(
-        path,
-        { type: 'skip_after_duration', duration_ms: 5000 },
-        { shouldDirty: true },
-      );
-      return;
-    }
-    setValue(
-      path,
-      { type: 'skip_after_both', count: 10, duration_ms: 5000 },
-      { shouldDirty: true },
-    );
-  };
-
   return (
-    <Card className="border-border/40 bg-muted/5">
-      <CardContent className="p-3 space-y-3">
-        <div className="text-xs font-medium">{label}</div>
-
-        <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
-          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className={CONFIG_SELECT_CONTENT}>
-            <SelectItem value="default">
-              <Trans>Default</Trans>
-            </SelectItem>
-            <SelectItem value="wait_indefinitely">
-              <Trans>Wait indefinitely</Trans>
-            </SelectItem>
-            <SelectItem value="skip_after_count">
-              <Trans>Skip after count</Trans>
-            </SelectItem>
-            <SelectItem value="skip_after_duration">
-              <Trans>Skip after duration</Trans>
-            </SelectItem>
-            <SelectItem value="skip_after_both">
-              <Trans>Skip after both</Trans>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        {type === 'skip_after_count' && (
-          <FormField
+    <PolicyField
+      label={label}
+      path={path}
+      options={GAP_STRATEGY_OPTIONS}
+      fallback={fallback}
+      renderPayload={(type) => {
+        const count = (
+          <PayloadInput
             name={`${path}.count`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Count</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className={cn(CONFIG_INPUT, 'font-mono')}
-                    placeholder="10"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            label={<Trans>Count</Trans>}
+            placeholder="10"
           />
-        )}
-
-        {type === 'skip_after_duration' && (
-          <FormField
+        );
+        const duration = (
+          <PayloadInput
             name={`${path}.duration_ms`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Duration (ms)</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className={cn(CONFIG_INPUT, 'font-mono')}
-                    placeholder="5000"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            label={<Trans>Duration (ms)</Trans>}
+            placeholder="5000"
           />
-        )}
-
-        {type === 'skip_after_both' && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormField
-              name={`${path}.count`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Count</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className={cn(CONFIG_INPUT, 'font-mono')}
-                      placeholder="10"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              name={`${path}.duration_ms`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Duration (ms)</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className={cn(CONFIG_INPUT, 'font-mono')}
-                      placeholder="5000"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        );
+        if (type === 'skip_after_count') return count;
+        if (type === 'skip_after_duration') return duration;
+        if (type === 'skip_after_both') {
+          return (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {count}
+              {duration}
+            </div>
+          );
+        }
+        return null;
+      }}
+    />
   );
 }
+
+const VARIANT_POLICY_OPTIONS: readonly PolicyOption[] = [
+  {
+    type: 'highest_bitrate',
+    label: msg`Highest bitrate`,
+    value: { type: 'highest_bitrate' },
+  },
+  {
+    type: 'lowest_bitrate',
+    label: msg`Lowest bitrate`,
+    value: { type: 'lowest_bitrate' },
+  },
+  {
+    type: 'closest_to_bitrate',
+    label: msg`Closest to bitrate`,
+    value: { type: 'closest_to_bitrate', target_bitrate: 0 },
+  },
+  { type: 'audio_only', label: msg`Audio only`, value: { type: 'audio_only' } },
+  { type: 'video_only', label: msg`Video only`, value: { type: 'video_only' } },
+  {
+    type: 'matching_resolution',
+    label: msg`Matching resolution`,
+    value: { type: 'matching_resolution', width: 1920, height: 1080 },
+  },
+  { type: 'custom', label: msg`Custom`, value: { type: 'custom', value: '' } },
+];
 
 function VariantSelectionPolicyField({
   label,
@@ -440,299 +611,85 @@ function VariantSelectionPolicyField({
   label: React.ReactNode;
   path: string;
 }) {
-  const { setValue, control } = useFormContext<any>();
-  const value = useWatch({ control, name: path }) as
-    | {
-        type?: VariantSelectionType;
-        target_bitrate?: number | string;
-        width?: number | string;
-        height?: number | string;
-        value?: string;
-      }
-    | undefined;
-
-  const type: 'default' | VariantSelectionType =
-    value?.type != null ? (value.type as VariantSelectionType) : 'default';
-
-  const setType = (t: 'default' | VariantSelectionType) => {
-    if (t === 'default') {
-      setValue(path, undefined, { shouldDirty: true });
-      return;
-    }
-
-    if (t === 'highest_bitrate') {
-      setValue(path, { type: 'highest_bitrate' }, { shouldDirty: true });
-      return;
-    }
-    if (t === 'lowest_bitrate') {
-      setValue(path, { type: 'lowest_bitrate' }, { shouldDirty: true });
-      return;
-    }
-    if (t === 'audio_only') {
-      setValue(path, { type: 'audio_only' }, { shouldDirty: true });
-      return;
-    }
-    if (t === 'video_only') {
-      setValue(path, { type: 'video_only' }, { shouldDirty: true });
-      return;
-    }
-    if (t === 'closest_to_bitrate') {
-      setValue(
-        path,
-        { type: 'closest_to_bitrate', target_bitrate: 0 },
-        { shouldDirty: true },
-      );
-      return;
-    }
-    if (t === 'matching_resolution') {
-      setValue(
-        path,
-        { type: 'matching_resolution', width: 1920, height: 1080 },
-        { shouldDirty: true },
-      );
-      return;
-    }
-
-    setValue(path, { type: 'custom', value: '' }, { shouldDirty: true });
-  };
-
   return (
-    <Card className="border-border/40 bg-muted/5">
-      <CardContent className="p-3 space-y-3">
-        <div className="text-xs font-medium">{label}</div>
-        <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
-          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className={CONFIG_SELECT_CONTENT}>
-            <SelectItem value="default">
-              <Trans>Default</Trans>
-            </SelectItem>
-            <SelectItem value="highest_bitrate">
-              <Trans>Highest bitrate</Trans>
-            </SelectItem>
-            <SelectItem value="lowest_bitrate">
-              <Trans>Lowest bitrate</Trans>
-            </SelectItem>
-            <SelectItem value="closest_to_bitrate">
-              <Trans>Closest to bitrate</Trans>
-            </SelectItem>
-            <SelectItem value="audio_only">
-              <Trans>Audio only</Trans>
-            </SelectItem>
-            <SelectItem value="video_only">
-              <Trans>Video only</Trans>
-            </SelectItem>
-            <SelectItem value="matching_resolution">
-              <Trans>Matching resolution</Trans>
-            </SelectItem>
-            <SelectItem value="custom">
-              <Trans>Custom</Trans>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-
-        {type === 'closest_to_bitrate' && (
-          <FormField
-            name={`${path}.target_bitrate`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Target bitrate</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className={cn(CONFIG_INPUT, 'font-mono')}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-
-        {type === 'matching_resolution' && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FormField
-              name={`${path}.width`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Width</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className={cn(CONFIG_INPUT, 'font-mono')}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+    <PolicyField
+      label={label}
+      path={path}
+      options={VARIANT_POLICY_OPTIONS}
+      fallback={{ type: 'highest_bitrate' }}
+      renderPayload={(type) => {
+        if (type === 'closest_to_bitrate') {
+          return (
+            <PayloadInput
+              name={`${path}.target_bitrate`}
+              label={<Trans>Target bitrate</Trans>}
             />
-            <FormField
-              name={`${path}.height`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Height</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className={cn(CONFIG_INPUT, 'font-mono')}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        )}
-
-        {type === 'custom' && (
-          <FormField
-            name={`${path}.value`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Value</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input {...field} className={cn(CONFIG_INPUT, 'font-mono')} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DecryptionOffloadToggle({
-  label,
-  description,
-  path,
-  defaultChecked,
-}: {
-  label: React.ReactNode;
-  description?: React.ReactNode;
-  path: string;
-  defaultChecked: boolean;
-}) {
-  const { setValue, control } = useFormContext<any>();
-  const value = useWatch({ control, name: path }) as boolean | undefined;
-
-  const checked = value ?? defaultChecked;
-
-  return (
-    <div className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-      <div className="space-y-0.5">
-        <div className="text-[11px] font-normal">{label}</div>
-        {description && (
-          <div className="text-[10px] text-muted-foreground">{description}</div>
-        )}
-      </div>
-      <Switch
-        checked={checked}
-        onCheckedChange={(next) =>
-          setValue(path, next, {
-            shouldDirty: true,
-          })
+          );
         }
-        className="scale-75 origin-right"
-      />
-    </div>
+        if (type === 'matching_resolution') {
+          return (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PayloadInput
+                name={`${path}.width`}
+                label={<Trans>Width</Trans>}
+              />
+              <PayloadInput
+                name={`${path}.height`}
+                label={<Trans>Height</Trans>}
+              />
+            </div>
+          );
+        }
+        if (type === 'custom') {
+          return (
+            <PayloadInput
+              name={`${path}.value`}
+              label={<Trans>Value</Trans>}
+              numeric={false}
+            />
+          );
+        }
+        return null;
+      }}
+    />
   );
 }
+
+const HTTP_VERSION_OPTIONS: readonly SettingOption[] = [
+  {
+    value: 'auto',
+    label: msg`Auto`,
+    content: <Trans>Auto (Default)</Trans>,
+  },
+  { value: 'http2_only', label: msg`HTTP/2 Only` },
+  { value: 'http1_only', label: msg`HTTP/1.1 Only` },
+];
 
 const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const { i18n } = useLingui();
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.base`;
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.base.timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Global Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder('0 (No timeout)')}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.timeout_ms`}
+          label={<Trans>Global Timeout (ms)</Trans>}
+          fallback={0}
+          fallbackLabel="0 (No timeout)"
         />
-        <FormField
-          name={`${hlsPath}.base.connect_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Connect Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(30000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.connect_timeout_ms`}
+          label={<Trans>Connect Timeout (ms)</Trans>}
+          fallback={30000}
         />
-        <FormField
-          name={`${hlsPath}.base.read_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Read Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(30000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.read_timeout_ms`}
+          label={<Trans>Read Timeout (ms)</Trans>}
+          fallback={30000}
         />
-        <FormField
-          name={`${hlsPath}.base.write_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Write Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(30000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.write_timeout_ms`}
+          label={<Trans>Write Timeout (ms)</Trans>}
+          fallback={30000}
         />
       </div>
 
@@ -743,190 +700,67 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
             Appended to all HLS requests. Useful for signed URLs or CDN routing.
           </Trans>
         }
-        path={`${hlsPath}.base.params`}
+        path={`${path}.params`}
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.base.user_agent`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>User Agent</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder('Mozilla/5.0...')}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.user_agent`}
+          label={<Trans>User Agent</Trans>}
+          numeric={false}
+          fallback=""
+          fallbackLabel="Mozilla/5.0..."
         />
-        <FormField
-          name={`${hlsPath}.base.http_version`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>HTTP Version Preference</Trans>
-              </ConfigFieldLabel>
-              <Select
-                onValueChange={field.onChange}
-                value={field.value || 'auto'}
-              >
-                <FormControl>
-                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
-                    <SelectValue placeholder={i18n._(msg`Auto`)} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent className={CONFIG_SELECT_CONTENT}>
-                  <SelectItem value="auto">
-                    <Trans>Auto (Default)</Trans>
-                  </SelectItem>
-                  <SelectItem value="http2_only">
-                    <Trans>HTTP/2 Only</Trans>
-                  </SelectItem>
-                  <SelectItem value="http1_only">
-                    <Trans>HTTP/1.1 Only</Trans>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingSelect
+          name={`${path}.http_version`}
+          label={<Trans>HTTP Version Preference</Trans>}
+          options={HTTP_VERSION_OPTIONS}
+          fallback="auto"
         />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <FormField
-          name={`${hlsPath}.base.http2_keep_alive_interval_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>H2 Keep-Alive (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(20000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.http2_keep_alive_interval_ms`}
+          label={<Trans>H2 Keep-Alive (ms)</Trans>}
+          fallback={20000}
         />
-        <FormField
-          name={`${hlsPath}.base.pool_max_idle_per_host`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Max Idle per Host</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(10)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.pool_max_idle_per_host`}
+          label={<Trans>Max Idle per Host</Trans>}
+          fallback={10}
         />
-        <FormField
-          name={`${hlsPath}.base.pool_idle_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Pool Idle Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(30000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.pool_idle_timeout_ms`}
+          label={<Trans>Pool Idle Timeout (ms)</Trans>}
+          fallback={30000}
         />
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.base.follow_redirects`}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-              <ConfigFieldLabel size="sm">
-                <Trans>Follow Redirects (Default: On)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value ?? true}
-                  onCheckedChange={field.onChange}
-                  className="scale-75 origin-right"
-                />
-              </FormControl>
-            </FormItem>
-          )}
+        <SettingSwitch
+          name={`${path}.follow_redirects`}
+          label={<Trans>Follow Redirects (Default: On)</Trans>}
+          fallback={true}
+          className={SWITCH_ROW}
         />
-        <FormField
-          name={`${hlsPath}.base.danger_accept_invalid_certs`}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-              <ConfigFieldLabel size="sm">
-                <Trans>Accept Invalid Certs (Default: Off)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value ?? false}
-                  onCheckedChange={field.onChange}
-                  className="scale-75 origin-right"
-                />
-              </FormControl>
-            </FormItem>
-          )}
+        <SettingSwitch
+          name={`${path}.danger_accept_invalid_certs`}
+          label={<Trans>Accept Invalid Certs (Default: Off)</Trans>}
+          fallback={false}
+          className={SWITCH_ROW}
         />
-        <FormField
-          name={`${hlsPath}.base.force_ipv4`}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-              <ConfigFieldLabel size="sm">
-                <Trans>Force IPv4 (Default: Off)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value ?? false}
-                  onCheckedChange={field.onChange}
-                  className="scale-75 origin-right"
-                />
-              </FormControl>
-            </FormItem>
-          )}
+        <SettingSwitch
+          name={`${path}.force_ipv4`}
+          label={<Trans>Force IPv4 (Default: Off)</Trans>}
+          fallback={false}
+          className={SWITCH_ROW}
         />
-        <FormField
-          name={`${hlsPath}.base.force_ipv6`}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-              <ConfigFieldLabel size="sm">
-                <Trans>Force IPv6 (Default: Off)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value ?? false}
-                  onCheckedChange={field.onChange}
-                  className="scale-75 origin-right"
-                />
-              </FormControl>
-            </FormItem>
-          )}
+        <SettingSwitch
+          name={`${path}.force_ipv6`}
+          label={<Trans>Force IPv6 (Default: Off)</Trans>}
+          fallback={false}
+          className={SWITCH_ROW}
         />
       </div>
     </div>
@@ -935,156 +769,59 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
 HlsBaseSettings.displayName = 'HlsBaseSettings';
 
 const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.playlist_config`;
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.playlist_config.initial_playlist_fetch_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Initial Fetch Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(15000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.initial_playlist_fetch_timeout_ms`}
+          label={<Trans>Initial Fetch Timeout (ms)</Trans>}
+          fallback={15000}
         />
-        <FormField
-          name={`${hlsPath}.playlist_config.live_refresh_interval_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Live Refresh Interval (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(1000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.live_refresh_interval_ms`}
+          label={<Trans>Live Refresh Interval (ms)</Trans>}
+          fallback={1000}
         />
-        <FormField
-          name={`${hlsPath}.playlist_config.live_max_refresh_retries`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Max Refresh Retries</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(5)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.live_max_refresh_retries`}
+          label={<Trans>Max Refresh Retries</Trans>}
+          fallback={5}
         />
-        <FormField
-          name={`${hlsPath}.playlist_config.live_refresh_retry_delay_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Retry Delay (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(1000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.live_refresh_retry_delay_ms`}
+          label={<Trans>Retry Delay (ms)</Trans>}
+          fallback={1000}
         />
       </div>
 
+      <VariantSelectionPolicyField
+        label={<Trans>Variant Selection Policy</Trans>}
+        path={`${path}.variant_selection_policy`}
+      />
+
       <Card className="border-border/40 bg-muted/5">
         <CardContent className="p-3 space-y-3">
-          <VariantSelectionPolicyField
-            label={<Trans>Variant Selection Policy</Trans>}
-            path={`${hlsPath}.playlist_config.variant_selection_policy`}
-          />
-
-          <FormField
-            name={`${hlsPath}.playlist_config.adaptive_refresh_enabled`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between">
-                <div className="space-y-0.5">
-                  <ConfigFieldLabel>
-                    <Trans>Adaptive Refresh (Default: On)</Trans>
-                  </ConfigFieldLabel>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Adjust rate based on target duration</Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value ?? true}
-                    onCheckedChange={field.onChange}
-                    className="scale-75 origin-right"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
+          <SettingSwitch
+            name={`${path}.adaptive_refresh_enabled`}
+            label={<Trans>Adaptive Refresh (Default: On)</Trans>}
+            description={<Trans>Adjust rate based on target duration</Trans>}
+            fallback={true}
+            size="default"
           />
 
           <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-border/40">
-            <FormField
-              name={`${hlsPath}.playlist_config.adaptive_refresh_min_interval_ms`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Min Interval (ms)</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className="h-7 text-xs font-mono"
-                      placeholder={defaultPlaceholder(500)}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <SettingInput
+              name={`${path}.adaptive_refresh_min_interval_ms`}
+              label={<Trans>Min Interval (ms)</Trans>}
+              fallback={500}
+              size="sm"
             />
-            <FormField
-              name={`${hlsPath}.playlist_config.adaptive_refresh_max_interval_ms`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel size="sm">
-                    <Trans>Max Interval (ms)</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className="h-7 text-xs font-mono"
-                      placeholder={defaultPlaceholder(3000)}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <SettingInput
+              name={`${path}.adaptive_refresh_max_interval_ms`}
+              label={<Trans>Max Interval (ms)</Trans>}
+              fallback={3000}
+              size="sm"
             />
           </div>
         </CardContent>
@@ -1095,431 +832,166 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
 HlsPlaylistSettings.displayName = 'HlsPlaylistSettings';
 
 const HlsSchedulerSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.scheduler_config`;
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.scheduler_config.download_concurrency`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Download Concurrency</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(5)}
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>Maximum number of concurrent segment downloads.</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          name={`${hlsPath}.scheduler_config.processed_segment_buffer_multiplier`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Processed Buffer Multiplier</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(4)}
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>
-                  Channel buffer size multiplier for processed segments.
-                </Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <SettingInput
+        name={`${path}.download_concurrency`}
+        label={<Trans>Download Concurrency</Trans>}
+        description={
+          <Trans>Maximum number of concurrent segment downloads.</Trans>
+        }
+        fallback={5}
+      />
+      <SettingInput
+        name={`${path}.processed_segment_buffer_multiplier`}
+        label={<Trans>Processed Buffer Multiplier</Trans>}
+        description={
+          <Trans>Channel buffer size multiplier for processed segments.</Trans>
+        }
+        fallback={4}
+      />
     </div>
   );
 });
 HlsSchedulerSettings.displayName = 'HlsSchedulerSettings';
 
 const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.fetcher_config`;
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.fetcher_config.segment_download_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Segment Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(10000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_segment_retries`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Max Segment Retries</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(3)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.segment_retry_delay_base_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Retry Delay Base (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(500)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_segment_retry_delay_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Max Retry Delay (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(10000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.key_download_timeout_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel size="sm">
-                <Trans>Key Timeout (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(5000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_key_retries`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel size="sm">
-                <Trans>Max Key Retries</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(3)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.key_retry_delay_base_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel size="sm">
-                <Trans>Key Retry Delay (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(200)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_key_retry_delay_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel size="sm">
-                <Trans>Max Key Retry Delay (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(5000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <SettingInput
+        name={`${path}.segment_download_timeout_ms`}
+        label={<Trans>Segment Timeout (ms)</Trans>}
+        fallback={10000}
+      />
+      <SettingInput
+        name={`${path}.max_segment_retries`}
+        label={<Trans>Max Segment Retries</Trans>}
+        fallback={3}
+      />
+      <SettingInput
+        name={`${path}.segment_retry_delay_base_ms`}
+        label={<Trans>Retry Delay Base (ms)</Trans>}
+        fallback={500}
+      />
+      <SettingInput
+        name={`${path}.max_segment_retry_delay_ms`}
+        label={<Trans>Max Retry Delay (ms)</Trans>}
+        fallback={10000}
+      />
+      <SettingInput
+        name={`${path}.key_download_timeout_ms`}
+        label={<Trans>Key Timeout (ms)</Trans>}
+        fallback={5000}
+        size="sm"
+      />
+      <SettingInput
+        name={`${path}.max_key_retries`}
+        label={<Trans>Max Key Retries</Trans>}
+        fallback={3}
+        size="sm"
+      />
+      <SettingInput
+        name={`${path}.key_retry_delay_base_ms`}
+        label={<Trans>Key Retry Delay (ms)</Trans>}
+        fallback={200}
+        size="sm"
+      />
+      <SettingInput
+        name={`${path}.max_key_retry_delay_ms`}
+        label={<Trans>Max Key Retry Delay (ms)</Trans>}
+        fallback={5000}
+        size="sm"
+      />
     </div>
   );
 });
 HlsFetcherSettings.displayName = 'HlsFetcherSettings';
 
-const HlsProcessorSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
-  return (
-    <div className="space-y-4">
-      <FormField
-        name={`${hlsPath}.processor_config.processed_segment_ttl_ms`}
-        render={({ field }) => (
-          <FormItem className="space-y-2">
-            <ConfigFieldLabel>
-              <Trans>Processed Segment TTL (ms)</Trans>
-            </ConfigFieldLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className={cn(CONFIG_INPUT, 'font-mono')}
-                placeholder={defaultPlaceholder(60000)}
-              />
-            </FormControl>
-            <FormDescription className={CONFIG_DESCRIPTION}>
-              <Trans>
-                How long to keep decrypted/processed segments in cache.
-              </Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-    </div>
-  );
-});
+const HlsProcessorSettings = React.memo(({ hlsPath }: SubFormProps) => (
+  <SettingInput
+    name={`${hlsPath}.processor_config.processed_segment_ttl_ms`}
+    label={<Trans>Processed Segment TTL (ms)</Trans>}
+    description={
+      <Trans>How long to keep decrypted/processed segments in cache.</Trans>
+    }
+    fallback={60000}
+  />
+));
 HlsProcessorSettings.displayName = 'HlsProcessorSettings';
 
 const HlsDecryptionSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.decryption_config`;
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.decryption_config.key_cache_ttl_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Key Cache TTL (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(3600000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <DecryptionOffloadToggle
-          label={<Trans>Offload Decryption (Default: On)</Trans>}
-          description={
-            <Trans>
-              Runs decryption on a blocking thread pool to avoid stalling async
-              tasks.
-            </Trans>
-          }
-          path={`${hlsPath}.decryption_config.offload_decryption_to_cpu_pool`}
-          defaultChecked={true}
-        />
-      </div>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <SettingInput
+        name={`${path}.key_cache_ttl_ms`}
+        label={<Trans>Key Cache TTL (ms)</Trans>}
+        fallback={3600000}
+      />
+      <SettingSwitch
+        name={`${path}.offload_decryption_to_cpu_pool`}
+        label={<Trans>Offload Decryption (Default: On)</Trans>}
+        description={
+          <Trans>
+            Runs decryption on a blocking thread pool to avoid stalling async
+            tasks.
+          </Trans>
+        }
+        fallback={true}
+        className={SWITCH_ROW}
+      />
     </div>
   );
 });
 HlsDecryptionSettings.displayName = 'HlsDecryptionSettings';
 
 const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.cache_config`;
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <FormField
-          name={`${hlsPath}.cache_config.playlist_ttl_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Playlist TTL (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(60000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.cache_config.segment_ttl_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Segment TTL (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(120000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.cache_config.decryption_key_ttl_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Decryption Key TTL (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(3600000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+    <div className="grid gap-4 sm:grid-cols-3">
+      <SettingInput
+        name={`${path}.playlist_ttl_ms`}
+        label={<Trans>Playlist TTL (ms)</Trans>}
+        fallback={60000}
+      />
+      <SettingInput
+        name={`${path}.segment_ttl_ms`}
+        label={<Trans>Segment TTL (ms)</Trans>}
+        fallback={120000}
+      />
+      <SettingInput
+        name={`${path}.decryption_key_ttl_ms`}
+        label={<Trans>Decryption Key TTL (ms)</Trans>}
+        fallback={3600000}
+      />
     </div>
   );
 });
 HlsCacheSettings.displayName = 'HlsCacheSettings';
 
 const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
-  const defaultPlaceholder = useDefaultPlaceholder();
+  const path = `${hlsPath}.output_config`;
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.output_config.live_reorder_buffer_duration_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Reorder Duration (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(30000)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.live_reorder_buffer_duration_ms`}
+          label={<Trans>Reorder Duration (ms)</Trans>}
+          fallback={30000}
         />
-        <FormField
-          name={`${hlsPath}.output_config.live_reorder_buffer_max_segments`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Reorder Max Segments</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(10)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.live_reorder_buffer_max_segments`}
+          label={<Trans>Reorder Max Segments</Trans>}
+          fallback={10}
         />
-        <FormField
-          name={`${hlsPath}.output_config.gap_evaluation_interval_ms`}
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Gap Eval Interval (ms)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
-                  placeholder={defaultPlaceholder(200)}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SettingInput
+          name={`${path}.gap_evaluation_interval_ms`}
+          label={<Trans>Gap Eval Interval (ms)</Trans>}
+          fallback={200}
         />
-        <TriStateNullableDurationMsField
+        <DisableableDurationField
           label={<Trans>Max Stall Duration (ms)</Trans>}
           description={
             <Trans>
@@ -1527,72 +999,49 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
               wait indefinitely.
             </Trans>
           }
-          path={`${hlsPath}.output_config.live_max_overall_stall_duration_ms`}
-          placeholder="60000"
+          path={`${path}.live_max_overall_stall_duration_ms`}
+          fallback={60000}
+          seed={60000}
         />
       </div>
 
-      <FormField
-        name={`${hlsPath}.output_config.max_pending_init_segments`}
-        render={({ field }) => (
-          <FormItem className="space-y-2">
-            <ConfigFieldLabel>
-              <Trans>Max Pending Init Segments</Trans>
-            </ConfigFieldLabel>
-            <FormControl>
-              <Input
-                type="number"
-                {...field}
-                className={cn(CONFIG_INPUT, 'font-mono')}
-                placeholder={defaultPlaceholder(8)}
-              />
-            </FormControl>
-            <FormDescription className={CONFIG_DESCRIPTION}>
-              <Trans>0 disables the limit.</Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
+      <SettingInput
+        name={`${path}.max_pending_init_segments`}
+        label={<Trans>Max Pending Init Segments</Trans>}
+        description={<Trans>0 disables the limit.</Trans>}
+        fallback={8}
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <GapSkipStrategyField
           label={<Trans>Live Gap Strategy</Trans>}
-          path={`${hlsPath}.output_config.live_gap_strategy`}
+          path={`${path}.live_gap_strategy`}
+          fallback={{ type: 'skip_after_both', count: 10, duration_ms: 5000 }}
         />
         <GapSkipStrategyField
           label={<Trans>VOD Gap Strategy</Trans>}
-          path={`${hlsPath}.output_config.vod_gap_strategy`}
+          path={`${path}.vod_gap_strategy`}
+          fallback={{ type: 'wait_indefinitely' }}
         />
       </div>
 
-      <TriStateNullableDurationMsField
+      <DisableableDurationField
         label={<Trans>VOD Segment Timeout (ms)</Trans>}
         description={
           <Trans>
             When enabled, each VOD segment must complete within this timeout.
           </Trans>
         }
-        path={`${hlsPath}.output_config.vod_segment_timeout_ms`}
-        placeholder="30000"
+        path={`${path}.vod_segment_timeout_ms`}
+        fallback={null}
+        seed={30000}
       />
 
-      <FormField
-        name={`${hlsPath}.output_config.metrics_enabled`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-            <ConfigFieldLabel size="sm">
-              <Trans>Enable Output Metrics (Default: On)</Trans>
-            </ConfigFieldLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? true}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
+      <SettingSwitch
+        name={`${path}.metrics_enabled`}
+        label={<Trans>Enable Output Metrics (Default: On)</Trans>}
+        fallback={true}
+        className={SWITCH_ROW}
       />
 
       <div className="space-y-3">
@@ -1600,43 +1049,18 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
           <Trans>Buffer Limits</Trans>
         </h4>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            name={`${hlsPath}.output_config.buffer_limits.max_segments`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Max Segments</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className={cn(CONFIG_INPUT, 'font-mono')}
-                    placeholder={defaultPlaceholder(50)}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          <SettingInput
+            name={`${path}.buffer_limits.max_segments`}
+            label={<Trans>Max Segments</Trans>}
+            fallback={50}
+            size="sm"
           />
-          <FormField
-            name={`${hlsPath}.output_config.buffer_limits.max_bytes`}
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel size="sm">
-                  <Trans>Max Bytes</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    className={cn(CONFIG_INPUT, 'font-mono')}
-                    placeholder={defaultPlaceholder('104857600 (100 MiB)')}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          <SettingInput
+            name={`${path}.buffer_limits.max_bytes`}
+            label={<Trans>Max Bytes</Trans>}
+            fallback={104857600}
+            fallbackLabel="104857600 (100 MiB)"
+            size="sm"
           />
         </div>
       </div>

@@ -41,6 +41,12 @@ import {
   type MesioDashSettings,
 } from '@/api/schemas/engine';
 import { cn } from '@/lib/utils';
+import {
+  INHERIT,
+  OverrideStateItems,
+  RESET,
+  overrideMode,
+} from './setting-fields';
 
 /** Fields sit side by side only when the form is wide enough for both. */
 const FIELD_GRID =
@@ -63,18 +69,6 @@ const DashFormContext = React.createContext<DashFormContextValue>({
   dashPath: 'config.dash',
   inherited: null,
 });
-
-/** Select values for the two non-value states of an override field. */
-const INHERIT = 'inherit';
-const RESET = 'reset';
-
-type OverrideMode = typeof INHERIT | typeof RESET | 'custom';
-
-function overrideMode(value: unknown): OverrideMode {
-  if (value === undefined) return INHERIT;
-  if (value === null) return RESET;
-  return 'custom';
-}
 
 interface PolicyOption {
   type: string;
@@ -106,27 +100,6 @@ function describeSetting(
   if (value === false) return i18n._(msg`Off`);
   if (value === undefined || value === '') return i18n._(msg`Any language`);
   return String(value);
-}
-
-/** The two non-value choices an override field offers, labelled with what they resolve to. */
-function OverrideStateItems({
-  inherited,
-  fallback,
-}: {
-  inherited: string;
-  fallback: string;
-}) {
-  const { i18n } = useLingui();
-  return (
-    <>
-      <SelectItem value={INHERIT}>
-        {i18n._(msg`Use engine setting (${inherited})`)}
-      </SelectItem>
-      <SelectItem value={RESET}>
-        {i18n._(msg`Default (${fallback})`)}
-      </SelectItem>
-    </>
-  );
 }
 
 function FieldCard({

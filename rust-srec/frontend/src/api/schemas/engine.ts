@@ -219,6 +219,29 @@ export const MesioHlsConfigSchema = z.object({
   output_config: MesioHlsOutputConfigOverrideSchema.optional(),
 });
 
+/**
+ * A settings object as a template override sees it: every field, at every depth, may also be
+ * `null`, which resets that setting (or that whole group) to the engine default. The backend
+ * merge removes null-valued keys, so an override cannot express an engine's own `null`, such as
+ * a disabled timeout.
+ */
+function allowResets(schema: z.ZodObject): z.ZodObject {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([key, field]) => {
+      const inner = field instanceof z.ZodOptional ? field.unwrap() : field;
+      return [
+        key,
+        inner instanceof z.ZodObject
+          ? allowResets(inner).nullable().optional()
+          : field.nullable(),
+      ];
+    }),
+  );
+  return z.object(shape);
+}
+
+const MesioHlsConfigOverrideSchema = allowResets(MesioHlsConfigSchema);
+
 // --- Mesio MPEG-DASH ---
 // Every field is optional and an unset field takes the engine default below. In a template
 // override an absent field inherits the engine's value, while `null` resets it to the engine
@@ -505,12 +528,14 @@ export type StreamlinkConfigOverride = z.infer<
   typeof StreamlinkConfigOverrideSchema
 >;
 
+// In the Mesio override, `null` at any level resets that setting or group to the engine default.
+
 const MesioDuplicateTagFilterOverrideSchema = z
   .object({
-    window_capacity_tags: optionalInt(1),
-    window_capacity_bytes: optionalInt(0),
-    replay_backjump_threshold_ms: optionalInt(0),
-    enable_replay_offset_matching: z.boolean().optional(),
+    window_capacity_tags: optionalInt(1).nullable(),
+    window_capacity_bytes: optionalInt(0).nullable(),
+    replay_backjump_threshold_ms: optionalInt(0).nullable(),
+    enable_replay_offset_matching: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -518,24 +543,23 @@ const MesioFlvFixOverrideSchema = z
   .object({
     sequence_header_change_mode: z
       .enum(['crc32', 'semantic_signature'])
+      .nullable()
       .optional(),
-    drop_duplicate_sequence_headers: z.boolean().optional(),
-    duplicate_tag_filtering: z.boolean().optional(),
+    drop_duplicate_sequence_headers: z.boolean().nullable().optional(),
+    duplicate_tag_filtering: z.boolean().nullable().optional(),
     duplicate_tag_filter_config:
-      MesioDuplicateTagFilterOverrideSchema.optional(),
+      MesioDuplicateTagFilterOverrideSchema.nullable().optional(),
   })
   .strict();
 
 export const MesioConfigOverrideSchema = z
   .object({
-    buffer_size: optionalInt(1),
-    fix_flv: z.boolean().optional(),
-    fix_hls: z.boolean().optional(),
-    // `null` resets to the engine default, like the DASH fields.
+    buffer_size: optionalInt(1).nullable(),
+    fix_flv: z.boolean().nullable().optional(),
+    fix_hls: z.boolean().nullable().optional(),
     fix_dash: z.boolean().nullable().optional(),
-    flv_fix: MesioFlvFixOverrideSchema.optional(),
-    hls: MesioHlsConfigSchema.optional(),
-    // `null` resets all of the engine's DASH settings to the defaults.
+    flv_fix: MesioFlvFixOverrideSchema.nullable().optional(),
+    hls: MesioHlsConfigOverrideSchema.nullable().optional(),
     dash: MesioDashConfigOverrideSchema.nullable()
       .optional()
       .transform((val) => (val ? unlessEmpty(val) : val)),

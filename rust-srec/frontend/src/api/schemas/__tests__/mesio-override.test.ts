@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  EngineConfigOverrideSchema,
+  MesioConfigOverrideSchema,
+  MesioConfigSchema,
+} from '../engine';
+
+describe('Mesio override resets', () => {
+  it.each([
+    { buffer_size: null, fix_flv: null, fix_hls: null, fix_dash: null },
+    { hls: null, flv_fix: null },
+    { hls: { base: null, output_config: { buffer_limits: null } } },
+    {
+      hls: {
+        base: { timeout_ms: null, params: null, http_version: null },
+        playlist_config: { variant_selection_policy: null },
+        output_config: {
+          live_gap_strategy: null,
+          vod_segment_timeout_ms: null,
+          live_max_overall_stall_duration_ms: null,
+          metrics_enabled: null,
+        },
+      },
+    },
+    {
+      flv_fix: {
+        sequence_header_change_mode: null,
+        duplicate_tag_filtering: null,
+        duplicate_tag_filter_config: { window_capacity_tags: null },
+      },
+    },
+    { flv_fix: { duplicate_tag_filter_config: null } },
+  ])('keeps the resets in %j', (override) => {
+    expect(MesioConfigOverrideSchema.parse(override)).toEqual(override);
+    expect(EngineConfigOverrideSchema.parse(override)).toEqual(override);
+  });
+
+  it('still validates the values beside the resets', () => {
+    expect(
+      MesioConfigOverrideSchema.safeParse({
+        hls: { base: null, fetcher_config: { max_segment_retries: -1 } },
+      }).success,
+    ).toBe(false);
+    expect(
+      MesioConfigOverrideSchema.safeParse({ flv_fix: { unknown: null } })
+        .success,
+    ).toBe(false);
+  });
+
+  it('leaves the engine settings as they were', () => {
+    expect(
+      MesioConfigSchema.safeParse({ hls: { base: { timeout_ms: null } } })
+        .success,
+    ).toBe(false);
+    // An engine disables these timeouts with `null`.
+    expect(
+      MesioConfigSchema.parse({
+        hls: { output_config: { vod_segment_timeout_ms: null } },
+      }).hls,
+    ).toEqual({ output_config: { vod_segment_timeout_ms: null } });
+  });
+});
