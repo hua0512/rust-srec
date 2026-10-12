@@ -1,4 +1,5 @@
-//! Turns termination signals into the same graceful stop as pressing `q`.
+//! Turns termination signals into the same graceful stop as pressing `q`,
+//! and, on Unix, `SIGUSR1` into the same cut as pressing `s`.
 
 use std::io;
 use std::sync::mpsc;
@@ -6,6 +7,8 @@ use std::thread;
 
 use pipeline_common::CancellationToken;
 use tracing::info;
+
+use crate::cut::{CutSource, CutTarget};
 
 /// Exit status after a forced stop: what a shell reports for a process
 /// killed by SIGINT (128 + 2).
@@ -18,7 +21,7 @@ const FORCED_EXIT_CODE: i32 = 130;
 /// The forced exit must not wait for a worker of the main runtime: they may
 /// all be blocked, for example writing logs to a pipe that has stopped
 /// draining. The thread runs until the process exits.
-pub fn spawn(token: CancellationToken) -> io::Result<()> {
+pub fn spawn(token: CancellationToken, cut: CutTarget) -> io::Result<()> {
     let (installed_tx, installed_rx) = mpsc::sync_channel(1);
     thread::Builder::new()
         .name("mesio-signal".to_owned())
@@ -38,7 +41,7 @@ pub fn spawn(token: CancellationToken) -> io::Result<()> {
                 match Signals::new() {
                     Ok(signals) => {
                         let _ = installed_tx.send(Ok(()));
-                        stop_on_signal(signals, token).await;
+                        handle_signals(signals, token, cut).await;
                     }
                     Err(error) => {
                         let _ = installed_tx.send(Err(error));
@@ -53,14 +56,30 @@ pub fn spawn(token: CancellationToken) -> io::Result<()> {
     })
 }
 
+/// What a received signal asks for.
+enum Received {
+    Stop(&'static str),
+    #[cfg_attr(windows, allow(dead_code))]
+    Cut,
+}
+
 /// Cancels `token` on the first termination signal, so the current file is
-/// finished. A signal that arrives once a stop is under way (after a signal,
-/// `q`, or a closed output pipe) exits immediately.
+/// finished. A termination signal that arrives once a stop is under way (after
+/// a signal, `q`, or a closed output pipe) exits immediately. A cut request
+/// goes to `cut` and never stops the process.
 ///
 /// Nothing here writes to stderr or flushes stdout, either of which may be a
 /// pipe that has stopped draining, which is when a forced exit is most needed.
-async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
-    while let Some(signal) = signals.recv().await {
+async fn handle_signals(mut signals: Signals, token: CancellationToken, cut: CutTarget) {
+    while let Some(received) = signals.recv().await {
+        let signal = match received {
+            Received::Stop(signal) => signal,
+            // Acknowledged on the cut notice thread, not here.
+            Received::Cut => {
+                cut.trigger(CutSource::Signal);
+                continue;
+            }
+        };
         if token.is_cancelled() {
             // Exiting matters more than reporting a failure to restore.
             let _ = crate::input::restore_terminal();
@@ -98,6 +117,7 @@ fn exit_now(code: i32) -> ! {
 struct Signals {
     interrupt: tokio::signal::unix::Signal,
     terminate: tokio::signal::unix::Signal,
+    cut: tokio::signal::unix::Signal,
 }
 
 #[cfg(unix)]
@@ -107,13 +127,15 @@ impl Signals {
         Ok(Self {
             interrupt: signal(SignalKind::interrupt())?,
             terminate: signal(SignalKind::terminate())?,
+            cut: signal(SignalKind::user_defined1())?,
         })
     }
 
-    async fn recv(&mut self) -> Option<&'static str> {
+    async fn recv(&mut self) -> Option<Received> {
         tokio::select! {
-            received = self.interrupt.recv() => received.map(|()| "SIGINT"),
-            received = self.terminate.recv() => received.map(|()| "SIGTERM"),
+            received = self.interrupt.recv() => received.map(|()| Received::Stop("SIGINT")),
+            received = self.terminate.recv() => received.map(|()| Received::Stop("SIGTERM")),
+            received = self.cut.recv() => received.map(|()| Received::Cut),
         }
     }
 }
@@ -134,10 +156,10 @@ impl Signals {
         })
     }
 
-    async fn recv(&mut self) -> Option<&'static str> {
+    async fn recv(&mut self) -> Option<Received> {
         tokio::select! {
-            received = self.ctrl_c.recv() => received.map(|()| "Ctrl+C"),
-            received = self.ctrl_break.recv() => received.map(|()| "Ctrl+Break"),
+            received = self.ctrl_c.recv() => received.map(|()| Received::Stop("Ctrl+C")),
+            received = self.ctrl_break.recv() => received.map(|()| Received::Stop("Ctrl+Break")),
         }
     }
 }
@@ -145,25 +167,34 @@ impl Signals {
 #[cfg(all(test, unix))]
 mod tests {
     use std::process::Command;
+    use std::sync::mpsc::Receiver;
     use std::time::{Duration, Instant};
 
     use super::*;
+    use crate::cut::{CutOutcome, Notice, Unavailable};
 
     const CHILD_ENV: &str = "MESIO_SIGNAL_TEST_CHILD";
     const TEST_NAME: &str = "signal::tests::a_signal_stops_gracefully_and_a_second_one_at_once";
 
-    fn send_sigterm_to_self() {
+    fn send_to_self(signal: &str) {
         let status = Command::new("kill")
-            .args(["-TERM", &std::process::id().to_string()])
+            .args([signal, &std::process::id().to_string()])
             .status()
             .expect("kill runs");
         assert!(status.success());
     }
 
+    fn next_notice(notices: &Receiver<Notice>) -> Notice {
+        notices
+            .recv_timeout(Duration::from_secs(5))
+            .expect("SIGUSR1 requests a cut")
+    }
+
     /// Runs in a child process: the installed handlers stay for the life of
-    /// the process, and the second signal exits it. Both signals arrive while
-    /// the test's own runtime is blocked, as a stalled log write would block
-    /// the main runtime.
+    /// the process, and the second termination signal exits it. The signals
+    /// arrive while the test's own runtime is blocked, as a stalled log write
+    /// would block the main runtime. `SIGUSR1` requests a cut, before or
+    /// during a stop, and never stops or exits the process.
     #[test]
     fn a_signal_stops_gracefully_and_a_second_one_at_once() {
         if std::env::var_os(CHILD_ENV).is_none() {
@@ -182,9 +213,19 @@ mod tests {
             .expect("runtime builds");
         runtime.block_on(async {
             let token = CancellationToken::new();
-            spawn(token.clone()).expect("signal handlers install");
+            let (cut, notices) = CutTarget::with_notice_receiver();
+            spawn(token.clone(), cut).expect("signal handlers install");
 
-            send_sigterm_to_self();
+            send_to_self("-USR1");
+            let notice = next_notice(&notices);
+            assert_eq!(notice.source, CutSource::Signal);
+            assert_eq!(
+                notice.outcome,
+                CutOutcome::Unavailable(Unavailable::NoRecording)
+            );
+            assert!(!token.is_cancelled(), "a cut request does not stop");
+
+            send_to_self("-TERM");
             let deadline = Instant::now() + Duration::from_secs(5);
             while !token.is_cancelled() {
                 assert!(
@@ -194,7 +235,11 @@ mod tests {
                 thread::sleep(Duration::from_millis(10));
             }
 
-            send_sigterm_to_self();
+            // During a stop, a cut request is still only a request.
+            send_to_self("-USR1");
+            next_notice(&notices);
+
+            send_to_self("-TERM");
             thread::sleep(Duration::from_secs(5));
         });
         panic!("the second signal did not exit the process");

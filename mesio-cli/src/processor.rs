@@ -1,7 +1,10 @@
+#[cfg(test)]
+mod fixtures;
 mod flv;
 mod generic;
 mod hls;
 
+use crate::cut::{CutTarget, Unavailable};
 use crate::output::pipe_hls_strategy::SegmentedProtocol;
 use crate::{config::ProgramConfig, error::AppError};
 use mesio_engine::{DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader};
@@ -16,6 +19,7 @@ pub async fn process_inputs(
     config: &ProgramConfig,
     name_template: &str,
     token: &CancellationToken,
+    cut_target: &CutTarget,
 ) -> Result<(), AppError> {
     if inputs.is_empty() {
         return Err(AppError::InvalidInput(
@@ -35,6 +39,10 @@ pub async fn process_inputs(
             if inputs_len == 1 { "" } else { "s" }
         );
     });
+
+    // Pipe output is one continuous stream, with no file to cut.
+    let pipe_mode = config.output_format.is_pipe();
+    let _pipe_output = pipe_mode.then(|| cut_target.set_unavailable(Unavailable::PipeOutput));
 
     let downloader = MesioDownloader::new(MesioConfig {
         flv: config.flv_config.clone().unwrap_or_default(),
@@ -69,6 +77,7 @@ pub async fn process_inputs(
                         name_template,
                         session,
                         token,
+                        cut_target,
                     )
                     .instrument(input_span.clone())
                     .await?;
@@ -82,6 +91,7 @@ pub async fn process_inputs(
                         name_template,
                         session,
                         token,
+                        cut_target,
                     )
                     .instrument(input_span.clone())
                     .await?;
@@ -97,6 +107,7 @@ pub async fn process_inputs(
                         name_template,
                         session,
                         token,
+                        cut_target,
                     )
                     .instrument(input_span.clone())
                     .await?;
@@ -104,6 +115,8 @@ pub async fn process_inputs(
             }
         } else {
             // It's a file path
+            let _local_file =
+                (!pipe_mode).then(|| cut_target.set_unavailable(Unavailable::LocalFile));
             let path = PathBuf::from(input);
             if path.exists() && path.is_file() {
                 // For files, check the extension to determine the type

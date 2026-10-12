@@ -18,6 +18,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli;
 mod config;
+mod cut;
 mod error;
 mod input;
 mod output;
@@ -62,6 +63,8 @@ async fn bootstrap() -> Result<(), AppError> {
 
     // Create a cancellation token
     let token = CancellationToken::new();
+    // Where `s`, a line of `s` on stdin and `SIGUSR1` request a cut.
+    let (cut_target, cut_notices) = cut::CutTarget::new();
 
     // A thread of its own rather than a runtime task: it blocks, and runtime
     // shutdown would wait for it. The process exits without joining it.
@@ -69,7 +72,8 @@ async fn bootstrap() -> Result<(), AppError> {
         .name("mesio-input".to_owned())
         .spawn({
             let token = token.clone();
-            move || input_handler(token)
+            let cut_target = cut_target.clone();
+            move || input_handler(token, cut_target)
         });
 
     // Setup logging with tracing-indicatif
@@ -158,7 +162,11 @@ async fn bootstrap() -> Result<(), AppError> {
         warn!(%error, "Failed to start the input handler; `q` will not stop mesio");
     }
 
-    if let Err(error) = signal::spawn(token.clone()) {
+    if let Err(error) = cut_notices {
+        warn!(%error, "Failed to start the cut notice thread; cut requests will not be acknowledged");
+    }
+
+    if let Err(error) = signal::spawn(token.clone(), cut_target.clone()) {
         warn!(
             %error,
             "Failed to install signal handlers; a signal will stop mesio without finishing the current file"
@@ -197,10 +205,7 @@ async fn bootstrap() -> Result<(), AppError> {
     );
 
     // Check if we're in pipe mode (stdout/stderr output)
-    let is_pipe_mode = matches!(
-        args.output_format,
-        OutputFormat::Stdout | OutputFormat::Stderr
-    );
+    let is_pipe_mode = args.output_format.is_pipe();
 
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()
@@ -357,6 +362,7 @@ async fn bootstrap() -> Result<(), AppError> {
         &program_config,
         &args.output_name_template,
         &token,
+        &cut_target,
     )
     .await;
 

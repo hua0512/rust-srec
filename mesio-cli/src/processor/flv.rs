@@ -1,7 +1,8 @@
+use crate::cut::{Boundary, CutSession, CutTarget};
 use crate::output::pipe_flv_strategy::PipeFlvStrategy;
-use crate::output::provider::OutputFormat;
 use crate::processor::generic::{
     process_pipe_stream, process_pipe_stream_with_processing, process_stream,
+    process_stream_with_span,
 };
 use crate::utils::{expand_name_url, format_bytes, spans};
 use crate::{config::ProgramConfig, error::AppError};
@@ -10,13 +11,16 @@ use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
 use flv_fix::FlvWriterConfig;
 use flv_fix::writer::FlvWriter;
+use flv_fix::{LimitOperator, ReinjectPolicy};
 use futures::{Stream, StreamExt};
 use mesio_engine::DownloadSession;
 use pipeline_common::{
-    CancellationToken, PipelineError, ProtocolWriter, WriterStats, config::PipelineConfig,
+    CancellationToken, ChannelSpec, Pipeline, PipelineError, PipelineProvider, ProtocolWriter,
+    StreamerContext, WriterStats, config::PipelineConfig,
 };
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
@@ -55,6 +59,30 @@ async fn process_raw_stream(
         .map_err(|e| AppError::Writer(e.to_string()))
 }
 
+/// What raw FLV recordings pass through: `LimitOperator` alone, without
+/// limits, so a cut can open the next file with the stream's header, metadata
+/// and sequence headers. Until a cut, it forwards every item unchanged; it
+/// keeps the timestamps the source sent.
+struct RawCutPipeline {
+    context: Arc<StreamerContext>,
+}
+
+impl PipelineProvider for RawCutPipeline {
+    type Item = FlvData;
+    type Config = ();
+
+    fn with_config(context: Arc<StreamerContext>, _: &PipelineConfig, (): ()) -> Self {
+        Self { context }
+    }
+
+    fn build_pipeline(&self) -> Pipeline<FlvData> {
+        Pipeline::new(Arc::clone(&self.context)).add_processor(
+            LimitOperator::new(Arc::clone(&self.context))
+                .with_reinject_policy(ReinjectPolicy::AtBoundary),
+        )
+    }
+}
+
 /// Process a single FLV file
 pub async fn process_file(
     input_path: &Path,
@@ -63,10 +91,7 @@ pub async fn process_file(
     token: &CancellationToken,
 ) -> Result<(), AppError> {
     // Check if we're in pipe output mode
-    let is_pipe_mode = matches!(
-        config.output_format,
-        OutputFormat::Stdout | OutputFormat::Stderr
-    );
+    let is_pipe_mode = config.output_format.is_pipe();
 
     // Only create output directory for file mode
     if !is_pipe_mode {
@@ -160,6 +185,7 @@ pub async fn process_file(
                     base_name: base_name.to_string(),
                 })
             },
+            None,
             token.clone(),
         )
         .instrument(pipeline_span)
@@ -201,12 +227,10 @@ pub async fn process_flv_stream(
     name_template: &str,
     session: DownloadSession<FlvData>,
     token: &CancellationToken,
+    cut_target: &CutTarget,
 ) -> Result<u64, AppError> {
     // Check if we're in pipe output mode
-    let is_pipe_mode = matches!(
-        config.output_format,
-        OutputFormat::Stdout | OutputFormat::Stderr
-    );
+    let is_pipe_mode = config.output_format.is_pipe();
 
     // Only create output directory for file mode
     if !is_pipe_mode {
@@ -288,29 +312,45 @@ pub async fn process_flv_stream(
         handle.cancel();
         spans::summarize_dropped_events(&handle, &download_span);
         return Ok(pipe_stats.items_written as u64);
-    } else if config.enable_processing {
-        process_stream::<FlvPipeline, FlvWriter>(
-            &config.pipeline_config,
-            config.flv_pipeline_config.clone(),
-            Box::pin(stream),
-            "Writing FLV output",
-            |_writer_span| {
-                FlvWriter::new(FlvWriterConfig {
-                    output_dir: output_dir.to_path_buf(),
-                    base_name: base_name.clone(),
-                })
-            },
-            token.clone(),
-        )
-        .await?
     } else {
-        process_raw_stream(
-            Box::pin(stream),
-            output_dir,
-            &base_name,
-            &config.pipeline_config,
-        )
-        .await?
+        let cut = CutSession::start(cut_target, token, Boundary::Keyframe);
+        let new_writer = |_: &Span| {
+            FlvWriter::new(FlvWriterConfig {
+                output_dir: output_dir.to_path_buf(),
+                base_name: base_name.clone(),
+            })
+        };
+        let result = if config.enable_processing {
+            process_stream::<FlvPipeline, FlvWriter>(
+                &config.pipeline_config,
+                config.flv_pipeline_config.clone(),
+                Box::pin(stream),
+                "Writing FLV output",
+                new_writer,
+                Some(&cut),
+                token.clone(),
+            )
+            .await
+        } else {
+            let writer_span = span!(Level::INFO, "writer_processing");
+            spans::init_writing_span(&writer_span, "Writing raw FLV");
+            process_stream_with_span::<RawCutPipeline, FlvWriter>(
+                &config.pipeline_config,
+                (),
+                Box::pin(stream),
+                ChannelSpec::items(config.pipeline_config.channel_size),
+                writer_span,
+                new_writer,
+                Some(&cut),
+                // Not the stop token: the pipeline would stop at once and
+                // drop the media still queued, which raw output writes. It
+                // ends when the download does.
+                CancellationToken::new(),
+            )
+            .await
+        };
+        cut.finish(result.is_err()).await;
+        result?
     };
 
     let elapsed = start_time.elapsed();
@@ -333,4 +373,281 @@ pub async fn process_flv_stream(
     );
 
     Ok(stats.items_written as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use flv_fix::FlvPipelineConfig;
+    use pipeline_common::ManualSplitStatus;
+
+    use super::*;
+    use crate::cut::{CutOutcome, CutSource, Unavailable};
+    use crate::processor::fixtures::{
+        FRAME_MS, files, flv_recording, frames, item_stream, read_flv,
+    };
+
+    const GOPS: u32 = 3;
+    const FRAMES: u32 = 10;
+
+    fn writer(dir: &Path) -> impl FnOnce(&Span) -> FlvWriter {
+        let output_dir = dir.to_path_buf();
+        move |_| {
+            FlvWriter::new(FlvWriterConfig {
+                output_dir,
+                base_name: "rec-%i".to_owned(),
+            })
+        }
+    }
+
+    fn pipeline_config() -> PipelineConfig {
+        PipelineConfig::builder().channel_size(16).build()
+    }
+
+    async fn record_raw(dir: &Path, items: Vec<FlvData>, cut: Option<&CutSession>) {
+        process_stream_with_span::<RawCutPipeline, FlvWriter>(
+            &pipeline_config(),
+            (),
+            item_stream(items),
+            ChannelSpec::items(16),
+            Span::none(),
+            writer(dir),
+            cut,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("raw recording");
+    }
+
+    /// Requests a cut before the recording's first item; the first keyframe
+    /// cannot end an empty file, so the cut lands on the second.
+    fn start_with_cut(token: &CancellationToken) -> (CutTarget, CutSession) {
+        let (target, _notices) = CutTarget::with_notice_receiver();
+        let cut = CutSession::start(&target, token, Boundary::Keyframe);
+        assert!(matches!(
+            target.trigger(CutSource::Key),
+            CutOutcome::Requested { .. }
+        ));
+        (target, cut)
+    }
+
+    #[tokio::test]
+    async fn a_fixed_recording_is_cut_at_the_next_keyframe_without_losing_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = CancellationToken::new();
+        let (_target, cut) = start_with_cut(&token);
+        let flv_config = FlvPipelineConfig::builder()
+            .duplicate_tag_filtering(false)
+            .continuity_mode(flv_fix::ContinuityMode::Reset)
+            .build();
+        let result = process_stream::<FlvPipeline, FlvWriter>(
+            &pipeline_config(),
+            flv_config,
+            item_stream(flv_recording(0, GOPS, FRAMES)),
+            "Writing FLV output",
+            writer(dir.path()),
+            Some(&cut),
+            token.clone(),
+        )
+        .await;
+        let control = cut.control();
+        cut.finish(result.is_err()).await;
+        result.expect("fixed recording");
+        assert_eq!(control.snapshot().status, ManualSplitStatus::Completed);
+
+        let files = files(dir.path(), "flv");
+        assert_eq!(files.len(), 2);
+        let first = read_flv(&files[0]);
+        let second = read_flv(&files[1]);
+        assert_eq!(frames(&first).len(), FRAMES as usize);
+        assert_eq!(
+            frames(&first).len() + frames(&second).len(),
+            (GOPS * FRAMES) as usize
+        );
+        let first_video = second
+            .iter()
+            .find(|tag| tag.is_video_tag())
+            .expect("video in the second file");
+        assert!(first_video.is_video_sequence_header());
+        assert!(frames(&second)[0].is_key_frame_nalu());
+    }
+
+    /// `GopSort` holds the last group of pictures until its input closes, so
+    /// the cut's keyframe reaches the limiter only after forwarding has ended.
+    #[tokio::test]
+    async fn a_cut_accepted_before_the_input_ends_is_honoured_by_queued_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = CancellationToken::new();
+        let (target, cut) = start_with_cut(&token);
+        let result = process_stream::<FlvPipeline, FlvWriter>(
+            &pipeline_config(),
+            FlvPipelineConfig::default(),
+            item_stream(flv_recording(0, 2, FRAMES)),
+            "Writing FLV output",
+            writer(dir.path()),
+            Some(&cut),
+            token.clone(),
+        )
+        .await;
+        assert_eq!(
+            target.trigger(CutSource::Key),
+            CutOutcome::Unavailable(Unavailable::Stopping)
+        );
+        let control = cut.control();
+        cut.finish(result.is_err()).await;
+        result.expect("fixed recording");
+        assert_eq!(control.snapshot().status, ManualSplitStatus::Completed);
+        let files = files(dir.path(), "flv");
+        assert_eq!(files.len(), 2);
+        assert_eq!(frames(&read_flv(&files[1])).len(), FRAMES as usize);
+    }
+
+    #[tokio::test]
+    async fn a_recording_can_be_cut_repeatedly() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = CancellationToken::new();
+        let (target, cut) = start_with_cut(&token);
+        let control = cut.control();
+        let (items, receiver) = futures::channel::mpsc::unbounded();
+        let mut recording = flv_recording(0, GOPS, FRAMES).into_iter();
+        // The initialization, the first group and the second keyframe.
+        for item in recording.by_ref().take(4 + 2 * FRAMES as usize + 1) {
+            items.unbounded_send(Ok(item)).unwrap();
+        }
+        let output = dir.path().to_path_buf();
+        let record = async {
+            process_stream_with_span::<RawCutPipeline, FlvWriter>(
+                &pipeline_config(),
+                (),
+                Box::pin(receiver),
+                ChannelSpec::items(16),
+                Span::none(),
+                writer(&output),
+                Some(&cut),
+                CancellationToken::new(),
+            )
+            .await
+        };
+        let drive = async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while control.snapshot().status != ManualSplitStatus::Completed {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("the first cut completes");
+            let first = control.snapshot().request_id;
+            assert!(matches!(
+                target.trigger(CutSource::Stdin),
+                CutOutcome::Requested { .. }
+            ));
+            assert!(control.snapshot().request_id > first);
+            for item in recording {
+                items.unbounded_send(Ok(item)).unwrap();
+            }
+            drop(items);
+        };
+        let (result, ()) = tokio::join!(record, drive);
+        cut.finish(result.is_err()).await;
+        result.expect("raw recording");
+        assert_eq!(control.snapshot().status, ManualSplitStatus::Completed);
+
+        let files = files(dir.path(), "flv");
+        assert_eq!(files.len(), 3);
+        for file in &files {
+            assert_eq!(frames(&read_flv(file)).len(), FRAMES as usize);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_raw_stage_writes_exactly_what_the_direct_path_writes_until_a_cut() {
+        let direct = tempfile::tempdir().unwrap();
+        let staged = tempfile::tempdir().unwrap();
+        let items = flv_recording(60_000, GOPS, FRAMES);
+        process_raw_stream(
+            item_stream(items.clone()),
+            direct.path(),
+            "rec-%i",
+            &pipeline_config(),
+        )
+        .await
+        .expect("direct recording");
+        let (target, _notices) = CutTarget::with_notice_receiver();
+        let cut = CutSession::start(&target, &CancellationToken::new(), Boundary::Keyframe);
+        record_raw(staged.path(), items, Some(&cut)).await;
+        cut.finish(false).await;
+
+        let direct = files(direct.path(), "flv");
+        let staged = files(staged.path(), "flv");
+        assert_eq!(direct.len(), 1);
+        assert_eq!(staged.len(), 1);
+        // The writer rewrites the metadata on close, with its own creation
+        // date; everything else is compared.
+        let media = |path| {
+            read_flv(path)
+                .into_iter()
+                .filter(|tag| !tag.is_script_tag())
+                .map(|tag| (tag.tag_type(), tag.timestamp_ms, tag.data().clone()))
+                .collect::<Vec<_>>()
+        };
+        let direct_media = media(&direct[0]);
+        assert_eq!(direct_media.len(), (2 * GOPS * FRAMES + 2) as usize);
+        assert_eq!(direct_media, media(&staged[0]));
+    }
+
+    #[tokio::test]
+    async fn a_raw_recording_is_cut_with_the_timestamps_the_source_sent() {
+        const START_MS: u32 = 60_000;
+        let dir = tempfile::tempdir().unwrap();
+        let (_target, cut) = start_with_cut(&CancellationToken::new());
+        record_raw(
+            dir.path(),
+            flv_recording(START_MS, GOPS, FRAMES),
+            Some(&cut),
+        )
+        .await;
+        let control = cut.control();
+        cut.finish(false).await;
+        assert_eq!(control.snapshot().status, ManualSplitStatus::Completed);
+
+        let files = files(dir.path(), "flv");
+        assert_eq!(files.len(), 2);
+        let first = read_flv(&files[0]);
+        let second = read_flv(&files[1]);
+        assert_eq!(frames(&first).len(), FRAMES as usize);
+        assert_eq!(frames(&second).len(), ((GOPS - 1) * FRAMES) as usize);
+
+        // The second file opens with the stream's metadata at 0, then the
+        // codec configuration at the cut's timestamp, then the keyframe.
+        let boundary = START_MS + FRAMES * FRAME_MS;
+        assert!(second[0].is_script_tag());
+        assert_eq!(second[0].timestamp_ms, 0);
+        assert!(second[1].is_video_sequence_header());
+        assert!(second[2].is_audio_sequence_header());
+        assert!(second[3].is_key_frame_nalu());
+        assert!(second[1..].iter().all(|tag| tag.timestamp_ms >= boundary));
+        assert!(second[1..4].iter().all(|tag| tag.timestamp_ms == boundary));
+        assert_eq!(
+            first.last().map(|tag| tag.timestamp_ms),
+            Some(boundary - FRAME_MS)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stopped_raw_recording_refuses_cuts_and_still_writes_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = CancellationToken::new();
+        let (target, _notices) = CutTarget::with_notice_receiver();
+        let cut = CutSession::start(&target, &token, Boundary::Keyframe);
+        token.cancel();
+        assert_eq!(
+            target.trigger(CutSource::Key),
+            CutOutcome::Unavailable(Unavailable::Stopping)
+        );
+        record_raw(dir.path(), flv_recording(0, GOPS, FRAMES), Some(&cut)).await;
+        cut.finish(false).await;
+
+        let files = files(dir.path(), "flv");
+        assert_eq!(files.len(), 1);
+        assert_eq!(frames(&read_flv(&files[0])).len(), (GOPS * FRAMES) as usize);
+    }
 }

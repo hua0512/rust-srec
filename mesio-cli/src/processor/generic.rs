@@ -1,3 +1,4 @@
+use crate::cut::{CutSession, CutWriter};
 use crate::error::{AppError, is_broken_pipe_error};
 use crate::utils::spans;
 use futures::{Stream, StreamExt};
@@ -17,13 +18,14 @@ pub async fn process_stream<P, W>(
     stream: Pin<Box<dyn Stream<Item = Result<P::Item, PipelineError>> + Send>>,
     writer_message: &str,
     writer_initializer: impl FnOnce(&Span) -> W,
+    cut: Option<&CutSession>,
     token: CancellationToken,
 ) -> Result<WriterStats, AppError>
 where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
-    W: ProtocolWriter<Item = P::Item>,
+    W: ProtocolWriter<Item = P::Item> + CutWriter,
 {
     let writer_span = span!(Level::INFO, "writer_processing");
     spans::init_writing_span(&writer_span, writer_message);
@@ -35,11 +37,15 @@ where
         ChannelSpec::items(pipeline_common_config.channel_size),
         writer_span,
         writer_initializer,
+        cut,
         token,
     )
     .await
 }
 
+/// Runs `stream` through the pipeline `P` into the writer. With `cut`, the
+/// recording can be cut while it runs. `token` stops the pipeline.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_stream_with_span<P, W>(
     pipeline_common_config: &PipelineConfig,
     pipeline_config: P::Config,
@@ -47,15 +53,20 @@ pub async fn process_stream_with_span<P, W>(
     channel_spec: ChannelSpec<P::Item>,
     writer_span: Span,
     writer_initializer: impl FnOnce(&Span) -> W,
+    cut: Option<&CutSession>,
     token: CancellationToken,
 ) -> Result<WriterStats, AppError>
 where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
-    W: ProtocolWriter<Item = P::Item>,
+    W: ProtocolWriter<Item = P::Item> + CutWriter,
 {
-    let context = Arc::new(StreamerContext::new(token.clone()));
+    let mut context = StreamerContext::new(token.clone());
+    if let Some(cut) = cut {
+        context = context.with_manual_split(cut.control());
+    }
+    let context = Arc::new(context);
     let pipeline_provider = P::with_config(context, pipeline_common_config, pipeline_config);
 
     // Create span for pipeline processing under the writer span
@@ -72,6 +83,9 @@ where
 
     // Initialize the writer using the provided span
     let mut writer = writer_initializer(&writer_span);
+    if let Some(cut) = cut {
+        cut.attach(&mut writer);
+    }
     let writer_task = {
         let span = writer_span.clone();
         tokio::task::spawn_blocking(move || {
@@ -86,6 +100,9 @@ where
             // Upstream channel closed
             break;
         }
+    }
+    if let Some(cut) = cut {
+        cut.end_forwarding();
     }
 
     drop(input_tx); // Close the channel to signal completion to the processing task

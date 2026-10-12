@@ -17,6 +17,14 @@ pub enum OutputFormat {
     Stderr,
 }
 
+impl OutputFormat {
+    /// Whether output is one continuous stream on stdout or stderr, rather
+    /// than files.
+    pub fn is_pipe(self) -> bool {
+        matches!(self, Self::Stdout | Self::Stderr)
+    }
+}
+
 impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

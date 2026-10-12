@@ -47,6 +47,8 @@ windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
 m3u8-rs = { workspace = true }
+mp4 = { path = "../crates/mp4", features = ["test-utils"] }
+tempfile = { workspace = true }
 
 [features]
 default = []

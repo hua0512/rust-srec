@@ -27,6 +27,7 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
 - **Pipe Output**: Stream data directly to stdout for integration with external tools like ffmpeg or mpv.
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
+- **Lossless Cutting**: Start a new file on demand while recording, without re-encoding or reconnecting.
 - **Customizable Output**: Use templates for file naming.
 - **Progress Reporting**: Detailed progress bars for downloads and processing.
 - **Keyframe Indexing**: Inject keyframe data into FLV files for better seeking.
@@ -249,6 +250,36 @@ Mesio stops gracefully, finishing and closing the current file, when:
 A graceful stop exits with status 0. A signal received while a stop is already under way,
 including one started with `q`, exits at once with status 130 instead, and the current file
 may be incomplete. Pressing `Ctrl+C` twice does the same.
+
+### Splitting the Current File
+
+While a live stream is being recorded to files, mesio can finish the current file and continue
+in a new one without stopping the recording, reconnecting, or re-encoding. Request a cut by:
+
+- pressing `s` in the terminal running mesio;
+- writing a line consisting of `s` to its stdin, when stdin is piped;
+- sending it `SIGUSR1` on Linux or macOS, for example `kill -USR1 <pid>`.
+
+The cut waits for the next point where a file can start on its own:
+
+- FLV: the next keyframe (the next audio packet for audio-only streams), once the stream's codec
+  headers and some media have been recorded. The new file starts with the stream's header,
+  metadata and codec headers.
+- HLS and DASH: the next segment whose content starts independently, such as a TS segment that
+  begins with a keyframe or an fMP4 fragment that begins with a sync sample. The new file starts
+  with the initialization segment, for fMP4.
+
+If no such point arrives within 30 seconds, the request expires, mesio logs why (no media, no
+keyframe, or no independent segment arrived), and the recording continues in the same file. The
+30 seconds limit finding the cut point, not finishing the file. Repeated requests while one is
+waiting count as one. Mesio logs when the cut completes, with the finished file and the new one.
+
+Cutting works for FLV, HLS and DASH URLs recorded to files, with or without `--fix`. It is not
+available with `-O stdout`/`-O stderr`, which write one continuous stream, or for local files.
+Where `-m`/`-d` limits apply, they count again from the cut. New files follow the `--name`
+template; a template without `%i` gets a numeric suffix such as `-001`. Without `--fix`, FLV timestamps are
+kept as the source sent them, so a file that starts after a cut starts at the stream's running
+timestamp rather than at 0.
 
 ### Custom Output Names
 
