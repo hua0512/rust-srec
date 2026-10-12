@@ -149,6 +149,83 @@ pub fn merge_init(sources: &[Bytes]) -> Result<MergedInit, MergeError> {
     })
 }
 
+/// Checks an initialization segment that is used as is, without merging
+/// (for example one source that already carries several tracks), and
+/// returns its track count.
+///
+/// Every track must be well-formed and unprotected, under the same rules
+/// [`merge_init`] applies to a source track: a `tkhd`, an `mdia` whose
+/// sample entries are clear and reference a `url ` data entry, and a `trex`
+/// in `mvex`. Track references are allowed, since nothing is renumbered.
+pub fn validate_init(data: &Bytes) -> Result<usize, MergeError> {
+    let mut moov = None;
+    for item in top_level_boxes(data) {
+        let item = item?;
+        match &item.fourcc {
+            b"moov" => set_once(&mut moov, item)?,
+            b"moof" | b"mdat" => {
+                return Err(MergeError::unsupported(
+                    &item.fourcc,
+                    "initialization segment contains media data",
+                ));
+            }
+            _ => {}
+        }
+    }
+    let moov = moov.ok_or_else(|| MergeError::missing(b"moov", b"file"))?;
+    let (mut mvhd, mut mvex) = (None, None);
+    let mut track_ids = Vec::new();
+    for child in children(data, moov.body_start, moov.end, b"moov") {
+        let child = child?;
+        match &child.fourcc {
+            b"mvhd" => set_once(&mut mvhd, child)?,
+            b"mvex" => set_once(&mut mvex, child)?,
+            b"pssh" => {
+                return Err(MergeError::Protected {
+                    fourcc: b"pssh".into(),
+                });
+            }
+            b"trak" => {
+                let (mut tkhd, mut mdia) = (None, None);
+                for item in children(data, child.body_start, child.end, b"trak") {
+                    let item = item?;
+                    match &item.fourcc {
+                        b"tkhd" => set_once(&mut tkhd, item)?,
+                        b"mdia" => set_once(&mut mdia, item)?,
+                        _ => {}
+                    }
+                }
+                let tkhd = tkhd.ok_or_else(|| MergeError::missing(b"tkhd", b"trak"))?;
+                let (_, track_id) = parse_tkhd(&data[tkhd.body_start..tkhd.end])?;
+                let mdia = mdia.ok_or_else(|| MergeError::missing(b"mdia", b"trak"))?;
+                parse_mdia(data, &mdia)?;
+                if track_ids.contains(&track_id) {
+                    return Err(MergeError::malformed(b"tkhd", "track ID is not unique"));
+                }
+                track_ids.push(track_id);
+            }
+            _ => {}
+        }
+    }
+    let mvhd = mvhd.ok_or_else(|| MergeError::missing(b"mvhd", b"moov"))?;
+    Mvhd::parse(data.slice(mvhd.body_start..mvhd.end))?;
+    if track_ids.is_empty() {
+        return Err(MergeError::missing(b"trak", b"moov"));
+    }
+    let mvex = mvex.ok_or_else(|| MergeError::missing(b"mvex", b"moov"))?;
+    let mut with_trex = Vec::new();
+    for item in children(data, mvex.body_start, mvex.end, b"mvex") {
+        let item = item?;
+        if item.fourcc == *b"trex" {
+            with_trex.push(Trex::parse(&data[item.body_start..item.end])?.track_id);
+        }
+    }
+    if let Some(&track_id) = track_ids.iter().find(|id| !with_trex.contains(id)) {
+        return Err(MergeError::UnknownTrack { track_id });
+    }
+    Ok(track_ids.len())
+}
+
 struct SourceInit {
     mvhd: Mvhd,
     trak: SourceTrak,
@@ -209,12 +286,7 @@ fn parse_source(data: &Bytes) -> Result<SourceInit, MergeError> {
     let trak = match traks.as_slice() {
         [trak] => SourceTrak::parse(data, trak)?,
         [] => return Err(MergeError::missing(b"trak", b"moov")),
-        _ => {
-            return Err(MergeError::unsupported(
-                b"moov",
-                "each source must contain exactly one track",
-            ));
-        }
+        traks => return Err(MergeError::MultipleTracks { count: traks.len() }),
     };
 
     // Fragments need `trex` defaults for their track (§8.8.3).

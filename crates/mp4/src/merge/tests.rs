@@ -786,7 +786,7 @@ fn source_inits_outside_the_contract_are_rejected() {
                 traks: 2,
                 ..Default::default()
             },
-            MergeError::unsupported(b"moov", "each source must contain exactly one track"),
+            MergeError::MultipleTracks { count: 2 },
         ),
         (
             InitSpec {
@@ -933,4 +933,33 @@ fn edit_lists_are_rescaled_to_the_movie_timescale() {
         merge_init(&[video.build(), too_long.build()]).unwrap_err(),
         MergeError::Overflow("edit list segment duration")
     );
+}
+
+#[test]
+fn validate_init_accepts_clear_multi_track_inits_and_rejects_protected_ones() {
+    let (video, _) = video_fixture();
+    let (audio, _) = audio_fixture();
+    assert_eq!(validate_init(&video), Ok(1));
+    let muxed = merge_init(&[video.clone(), audio]).unwrap();
+    assert_eq!(validate_init(muxed.data()), Ok(2));
+    assert_eq!(
+        merge_init(std::slice::from_ref(muxed.data())).err(),
+        Some(MergeError::MultipleTracks { count: 2 })
+    );
+
+    let mut protected = muxed.data().to_vec();
+    let at = protected
+        .windows(4)
+        .position(|window| window == b"avc1")
+        .unwrap();
+    protected[at..at + 4].copy_from_slice(b"encv");
+    assert_eq!(
+        validate_init(&Bytes::from(protected)),
+        Err(MergeError::Protected {
+            fourcc: FourCc(*b"encv")
+        })
+    );
+    let truncated = muxed.data().slice(..muxed.data().len() - 40);
+    assert!(validate_init(&truncated).is_err());
+    assert!(validate_init(&Bytes::from_static(b"\0\0\0\x08free")).is_err());
 }
