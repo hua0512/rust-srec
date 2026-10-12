@@ -2,10 +2,9 @@ mod flv;
 mod generic;
 mod hls;
 
+use crate::output::pipe_hls_strategy::SegmentedProtocol;
 use crate::{config::ProgramConfig, error::AppError};
-use mesio_engine::{
-    DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader, ProtocolSelection,
-};
+use mesio_engine::{DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader};
 use pipeline_common::CancellationToken;
 use std::path::{Path, PathBuf};
 use tracing::{Instrument, Level, error, info, span};
@@ -40,7 +39,7 @@ pub async fn process_inputs(
     let downloader = MesioDownloader::new(MesioConfig {
         flv: config.flv_config.clone().unwrap_or_default(),
         hls: config.hls_config.clone().unwrap_or_default(),
-        dash: Default::default(),
+        dash: config.dash_config.clone().unwrap_or_default(),
         token: token.clone(),
     });
 
@@ -57,7 +56,7 @@ pub async fn process_inputs(
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
             let request = DownloadRequest::from_url(input)?
-                .with_protocol(ProtocolSelection::Auto)
+                .with_protocol(config.protocol.clone())
                 .with_cancel(token.clone());
             let session = downloader.start(request).await?;
 
@@ -74,10 +73,24 @@ pub async fn process_inputs(
                     .instrument(input_span.clone())
                     .await?;
                 }
+                DownloaderSession::Hls(session) => {
+                    hls::process_hls_stream(
+                        SegmentedProtocol::Hls,
+                        input,
+                        output_dir,
+                        config,
+                        name_template,
+                        session,
+                        token,
+                    )
+                    .instrument(input_span.clone())
+                    .await?;
+                }
                 // DASH output is fMP4 `HlsData`, processed and written like
                 // HLS.
-                DownloaderSession::Hls(session) | DownloaderSession::Dash(session) => {
+                DownloaderSession::Dash(session) => {
                     hls::process_hls_stream(
+                        SegmentedProtocol::Dash,
                         input,
                         output_dir,
                         config,

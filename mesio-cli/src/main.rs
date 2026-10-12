@@ -203,7 +203,10 @@ async fn bootstrap() -> Result<(), AppError> {
     let hls_pipeline_config = HlsPipelineConfig::builder().build();
 
     // Determine output directory
-    let output_dir = args.output_dir.unwrap_or_else(|| PathBuf::from("./fix"));
+    let output_dir = args
+        .output_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("./fix"));
 
     // Handle proxy configuration
     let (proxy_config, use_system_proxy) = if args.no_proxy {
@@ -289,6 +292,9 @@ async fn bootstrap() -> Result<(), AppError> {
         .buffer_size(args.download_buffer)
         .build();
 
+    // DASH requests share the HTTP settings of FLV and HLS.
+    let dash_config = args.dash_config(download_config.clone())?;
+
     // Create HLS-specific configuration
     let hls_config = HlsProtocolBuilder::new()
         .with_base_config(download_config)
@@ -311,6 +317,8 @@ async fn bootstrap() -> Result<(), AppError> {
         .hls_pipeline_config(hls_pipeline_config)
         .flv_config(flv_config)
         .hls_config(hls_config)
+        .dash_config(dash_config)
+        .protocol(args.protocol.into())
         .enable_processing(args.enable_fix)
         .output_format(args.output_format)
         .build()

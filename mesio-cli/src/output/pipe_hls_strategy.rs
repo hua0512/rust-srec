@@ -2,7 +2,8 @@
 //!
 //! This module provides a strategy for writing HLS data to pipe output (stdout).
 //! It implements segment boundary detection to close the pipe when a discontinuity
-//! or EndMarker is received.
+//! or EndMarker is received. DASH sessions deliver the same `HlsData` items and
+//! share this strategy.
 
 use hls::{HlsData, M4sData};
 use std::io::{self, BufWriter, Write};
@@ -34,6 +35,37 @@ impl PipeHlsStrategyError {
     }
 }
 
+/// Manifest-based protocol whose segments are written, used to label logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SegmentedProtocol {
+    #[default]
+    Hls,
+    Dash,
+}
+
+impl SegmentedProtocol {
+    pub const fn label(self) -> &'static str {
+        match self {
+            SegmentedProtocol::Hls => "HLS",
+            SegmentedProtocol::Dash => "DASH",
+        }
+    }
+
+    const fn end_marker_boundary(self) -> &'static str {
+        match self {
+            SegmentedProtocol::Hls => "HLS EndMarker",
+            SegmentedProtocol::Dash => "DASH EndMarker",
+        }
+    }
+
+    const fn discontinuity_boundary(self) -> &'static str {
+        match self {
+            SegmentedProtocol::Hls => "HLS Discontinuity",
+            SegmentedProtocol::Dash => "DASH Discontinuity",
+        }
+    }
+}
+
 /// HLS pipe output strategy
 ///
 /// This strategy writes HLS data to a pipe (stdout) and detects segment boundaries
@@ -47,6 +79,8 @@ pub struct PipeHlsStrategy {
     bytes_written: u64,
     /// Count of discontinuities encountered
     discontinuity_count: u32,
+    /// Protocol named in boundary logs
+    protocol: SegmentedProtocol,
 }
 
 impl Default for PipeHlsStrategy {
@@ -58,10 +92,16 @@ impl Default for PipeHlsStrategy {
 impl PipeHlsStrategy {
     /// Create a new PipeHlsStrategy
     pub fn new() -> Self {
+        Self::for_protocol(SegmentedProtocol::Hls)
+    }
+
+    /// Create a strategy whose logs name `protocol`
+    pub fn for_protocol(protocol: SegmentedProtocol) -> Self {
         Self {
             has_written_data: false,
             bytes_written: 0,
             discontinuity_count: 0,
+            protocol,
         }
     }
 
@@ -219,8 +259,8 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
         if self.should_close_pipe(item) {
             // Log segment boundary event to stderr
             let boundary_type = match item {
-                HlsData::EndMarker(_) => "HLS EndMarker",
-                _ if item.is_discontinuity() => "HLS Discontinuity",
+                HlsData::EndMarker(_) => self.protocol.end_marker_boundary(),
+                _ if item.is_discontinuity() => self.protocol.discontinuity_boundary(),
                 _ => "Unknown",
             };
             tracing::info!(
@@ -393,6 +433,51 @@ mod tests {
         // EndMarker should write 0 bytes
         assert_eq!(bytes_written, 0);
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn protocol_labels_name_the_session_protocol() {
+        assert_eq!(PipeHlsStrategy::new().protocol, SegmentedProtocol::Hls);
+        assert_eq!(SegmentedProtocol::Hls.label(), "HLS");
+        assert_eq!(
+            SegmentedProtocol::Hls.end_marker_boundary(),
+            "HLS EndMarker"
+        );
+        assert_eq!(
+            SegmentedProtocol::Hls.discontinuity_boundary(),
+            "HLS Discontinuity"
+        );
+        assert_eq!(SegmentedProtocol::Dash.label(), "DASH");
+        assert_eq!(
+            SegmentedProtocol::Dash.end_marker_boundary(),
+            "DASH EndMarker"
+        );
+        assert_eq!(
+            SegmentedProtocol::Dash.discontinuity_boundary(),
+            "DASH Discontinuity"
+        );
+    }
+
+    #[test]
+    fn dash_strategy_writes_the_same_bytes_as_hls() {
+        let items = [
+            create_test_m4s_init_segment(false, vec![0x00, 0x00, 0x00, 0x08, b'f']),
+            create_test_m4s_segment(false, vec![0x00, 0x00, 0x00, 0x08, b'm']),
+            HlsData::end_marker(),
+        ];
+        let mut hls = Vec::new();
+        let mut dash = Vec::new();
+        let mut hls_strategy = PipeHlsStrategy::new();
+        let mut dash_strategy = PipeHlsStrategy::for_protocol(SegmentedProtocol::Dash);
+        for item in &items {
+            hls_strategy.write_to(&mut hls, item).unwrap();
+            dash_strategy.write_to(&mut dash, item).unwrap();
+            assert_eq!(
+                hls_strategy.should_close_pipe(item),
+                dash_strategy.should_close_pipe(item)
+            );
+        }
+        assert_eq!(hls, dash);
     }
 
     #[test]
