@@ -30,7 +30,6 @@ import { useRowKeys } from '@/hooks/use-row-keys';
 import {
   CONFIG_INPUT,
   CONFIG_SELECT_CONTENT,
-  CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { msg, plural } from '@lingui/core/macro';
@@ -50,6 +49,8 @@ import {
   SettingInput,
   SettingSelect,
   SettingSwitch,
+  SettingGrid,
+  OVERRIDE_SELECT_TRIGGER,
   describeValue,
   overrideMode,
   useEngineOverride,
@@ -79,17 +80,13 @@ function SettingCard({
   return (
     <Card className="border-border/40 bg-muted/5">
       <CardContent className="p-3 space-y-3">
-        <div className="space-y-0.5">
-          <div id={labelId} className="text-xs font-medium">
-            {label}
-          </div>
-          {description && (
-            <div className="text-[10px] text-muted-foreground">
-              {description}
-            </div>
-          )}
+        <div id={labelId} className="text-xs font-medium">
+          {label}
         </div>
         {children}
+        {description && (
+          <div className="text-[10px] text-muted-foreground">{description}</div>
+        )}
       </CardContent>
     </Card>
   );
@@ -217,7 +214,7 @@ function KeyValuePairsEditor({
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -285,7 +282,7 @@ function DisableableDurationField({
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -315,7 +312,7 @@ function DisableableDurationField({
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -445,7 +442,7 @@ function PolicyField({
       <Select value={selected} onValueChange={select}>
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -669,12 +666,12 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.base`;
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <SettingGrid>
         <SettingInput
           name={`${path}.timeout_ms`}
           label={<Trans>Global Timeout (ms)</Trans>}
           fallback={0}
-          fallbackLabel="0 (No timeout)"
+          fallbackLabel="0, no timeout"
         />
         <SettingInput
           name={`${path}.connect_timeout_ms`}
@@ -691,7 +688,7 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
           label={<Trans>Write Timeout (ms)</Trans>}
           fallback={30000}
         />
-      </div>
+      </SettingGrid>
 
       <KeyValuePairsEditor
         label={<Trans>Query Parameters</Trans>}
@@ -703,7 +700,7 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
         path={`${path}.params`}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <SettingGrid>
         <SettingInput
           name={`${path}.user_agent`}
           label={<Trans>User Agent</Trans>}
@@ -717,9 +714,9 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
           options={HTTP_VERSION_OPTIONS}
           fallback="auto"
         />
-      </div>
+      </SettingGrid>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <SettingGrid>
         <SettingInput
           name={`${path}.http2_keep_alive_interval_ms`}
           label={<Trans>H2 Keep-Alive (ms)</Trans>}
@@ -735,9 +732,9 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
           label={<Trans>Pool Idle Timeout (ms)</Trans>}
           fallback={30000}
         />
-      </div>
+      </SettingGrid>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <SettingGrid>
         <SettingSwitch
           name={`${path}.follow_redirects`}
           label={<Trans>Follow Redirects (Default: On)</Trans>}
@@ -762,7 +759,7 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
           fallback={false}
           className={SWITCH_ROW}
         />
-      </div>
+      </SettingGrid>
     </div>
   );
 });
@@ -772,7 +769,7 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.playlist_config`;
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <SettingGrid>
         <SettingInput
           name={`${path}.initial_playlist_fetch_timeout_ms`}
           label={<Trans>Initial Fetch Timeout (ms)</Trans>}
@@ -793,7 +790,7 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
           label={<Trans>Retry Delay (ms)</Trans>}
           fallback={1000}
         />
-      </div>
+      </SettingGrid>
 
       <VariantSelectionPolicyField
         label={<Trans>Variant Selection Policy</Trans>}
@@ -810,7 +807,7 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
             size="default"
           />
 
-          <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t border-border/40">
+          <SettingGrid className="pt-2 border-t border-border/40">
             <SettingInput
               name={`${path}.adaptive_refresh_min_interval_ms`}
               label={<Trans>Min Interval (ms)</Trans>}
@@ -823,7 +820,7 @@ const HlsPlaylistSettings = React.memo(({ hlsPath }: SubFormProps) => {
               fallback={3000}
               size="sm"
             />
-          </div>
+          </SettingGrid>
         </CardContent>
       </Card>
     </div>
@@ -834,7 +831,7 @@ HlsPlaylistSettings.displayName = 'HlsPlaylistSettings';
 const HlsSchedulerSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.scheduler_config`;
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <SettingGrid>
       <SettingInput
         name={`${path}.download_concurrency`}
         label={<Trans>Download Concurrency</Trans>}
@@ -851,7 +848,7 @@ const HlsSchedulerSettings = React.memo(({ hlsPath }: SubFormProps) => {
         }
         fallback={4}
       />
-    </div>
+    </SettingGrid>
   );
 });
 HlsSchedulerSettings.displayName = 'HlsSchedulerSettings';
@@ -859,7 +856,7 @@ HlsSchedulerSettings.displayName = 'HlsSchedulerSettings';
 const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.fetcher_config`;
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <SettingGrid>
       <SettingInput
         name={`${path}.segment_download_timeout_ms`}
         label={<Trans>Segment Timeout (ms)</Trans>}
@@ -904,7 +901,7 @@ const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => {
         fallback={5000}
         size="sm"
       />
-    </div>
+    </SettingGrid>
   );
 });
 HlsFetcherSettings.displayName = 'HlsFetcherSettings';
@@ -924,7 +921,7 @@ HlsProcessorSettings.displayName = 'HlsProcessorSettings';
 const HlsDecryptionSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.decryption_config`;
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <SettingGrid>
       <SettingInput
         name={`${path}.key_cache_ttl_ms`}
         label={<Trans>Key Cache TTL (ms)</Trans>}
@@ -942,7 +939,7 @@ const HlsDecryptionSettings = React.memo(({ hlsPath }: SubFormProps) => {
         fallback={true}
         className={SWITCH_ROW}
       />
-    </div>
+    </SettingGrid>
   );
 });
 HlsDecryptionSettings.displayName = 'HlsDecryptionSettings';
@@ -950,7 +947,7 @@ HlsDecryptionSettings.displayName = 'HlsDecryptionSettings';
 const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.cache_config`;
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <SettingGrid>
       <SettingInput
         name={`${path}.playlist_ttl_ms`}
         label={<Trans>Playlist TTL (ms)</Trans>}
@@ -966,7 +963,7 @@ const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => {
         label={<Trans>Decryption Key TTL (ms)</Trans>}
         fallback={3600000}
       />
-    </div>
+    </SettingGrid>
   );
 });
 HlsCacheSettings.displayName = 'HlsCacheSettings';
@@ -975,7 +972,7 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
   const path = `${hlsPath}.output_config`;
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <SettingGrid>
         <SettingInput
           name={`${path}.live_reorder_buffer_duration_ms`}
           label={<Trans>Reorder Duration (ms)</Trans>}
@@ -991,6 +988,29 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
           label={<Trans>Gap Eval Interval (ms)</Trans>}
           fallback={200}
         />
+        <SettingInput
+          name={`${path}.max_pending_init_segments`}
+          label={<Trans>Max Pending Init Segments</Trans>}
+          description={<Trans>0 disables the limit.</Trans>}
+          fallback={8}
+        />
+      </SettingGrid>
+
+      <SettingGrid>
+        <GapSkipStrategyField
+          label={<Trans>Live Gap Strategy</Trans>}
+          path={`${path}.live_gap_strategy`}
+          fallback={{ type: 'skip_after_both', count: 10, duration_ms: 5000 }}
+        />
+        <GapSkipStrategyField
+          label={<Trans>VOD Gap Strategy</Trans>}
+          path={`${path}.vod_gap_strategy`}
+          fallback={{ type: 'wait_indefinitely' }}
+        />
+      </SettingGrid>
+
+      {/* The two timeouts an engine can disable share a row of their own. */}
+      <SettingGrid>
         <DisableableDurationField
           label={<Trans>Max Stall Duration (ms)</Trans>}
           description={
@@ -1003,39 +1023,18 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
           fallback={60000}
           seed={60000}
         />
-      </div>
-
-      <SettingInput
-        name={`${path}.max_pending_init_segments`}
-        label={<Trans>Max Pending Init Segments</Trans>}
-        description={<Trans>0 disables the limit.</Trans>}
-        fallback={8}
-      />
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <GapSkipStrategyField
-          label={<Trans>Live Gap Strategy</Trans>}
-          path={`${path}.live_gap_strategy`}
-          fallback={{ type: 'skip_after_both', count: 10, duration_ms: 5000 }}
+        <DisableableDurationField
+          label={<Trans>VOD Segment Timeout (ms)</Trans>}
+          description={
+            <Trans>
+              When enabled, each VOD segment must complete within this timeout.
+            </Trans>
+          }
+          path={`${path}.vod_segment_timeout_ms`}
+          fallback={null}
+          seed={30000}
         />
-        <GapSkipStrategyField
-          label={<Trans>VOD Gap Strategy</Trans>}
-          path={`${path}.vod_gap_strategy`}
-          fallback={{ type: 'wait_indefinitely' }}
-        />
-      </div>
-
-      <DisableableDurationField
-        label={<Trans>VOD Segment Timeout (ms)</Trans>}
-        description={
-          <Trans>
-            When enabled, each VOD segment must complete within this timeout.
-          </Trans>
-        }
-        path={`${path}.vod_segment_timeout_ms`}
-        fallback={null}
-        seed={30000}
-      />
+      </SettingGrid>
 
       <SettingSwitch
         name={`${path}.metrics_enabled`}
@@ -1048,7 +1047,7 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
         <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-1">
           <Trans>Buffer Limits</Trans>
         </h4>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <SettingGrid>
           <SettingInput
             name={`${path}.buffer_limits.max_segments`}
             label={<Trans>Max Segments</Trans>}
@@ -1059,10 +1058,10 @@ const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => {
             name={`${path}.buffer_limits.max_bytes`}
             label={<Trans>Max Bytes</Trans>}
             fallback={104857600}
-            fallbackLabel="104857600 (100 MiB)"
+            fallbackLabel="104857600, 100 MiB"
             size="sm"
           />
-        </div>
+        </SettingGrid>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import {
   SettingInput,
   SettingSelect,
   SettingSwitch,
+  SettingGrid,
   useEffectiveValue,
   type SettingOption,
 } from './setting-fields';
@@ -136,7 +137,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
 
             {duplicateTagFiltering && (
               <div className="grid gap-3 pt-1">
-                <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 grid gap-4 sm:grid-cols-2">
+                <SettingGrid className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4">
                   <SettingInput
                     name={`${filterPath}.window_capacity_tags`}
                     label={<Trans>Filter Window Size</Trans>}
@@ -156,7 +157,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
                       fallback={false}
                     />
                   </div>
-                </div>
+                </SettingGrid>
               </div>
             )}
           </div>

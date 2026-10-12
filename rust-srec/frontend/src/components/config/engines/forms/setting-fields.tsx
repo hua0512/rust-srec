@@ -41,6 +41,40 @@ import { cn } from '@/lib/utils';
  * mounted under a `null` group would take `null` from it and turn the group back into an object.
  */
 
+/**
+ * A grid of settings, as many across as the form's width fits rather than the window's: beside
+ * the sidebar and the settings navigation a wide window can still leave a narrow form. Override
+ * fields name the value they resolve to in a select, so they get wider columns.
+ */
+export function SettingGrid({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const isOverride = React.useContext(EngineOverrideContext) !== null;
+  return (
+    <div
+      className={cn(
+        'grid gap-4',
+        isOverride
+          ? 'grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))]'
+          : 'grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** An override select trigger: its value wraps rather than cutting off what it resolves to. */
+export const OVERRIDE_SELECT_TRIGGER = cn(
+  CONFIG_SELECT_TRIGGER,
+  'h-auto min-h-11 whitespace-normal text-left *:data-[slot=select-value]:line-clamp-none',
+);
+
 /** Select values for the two non-value states of an override field. */
 export const INHERIT = 'inherit';
 export const RESET = 'reset';
@@ -237,28 +271,28 @@ export function useEffectiveValue<T>(path: string, fallback: T): T {
   return (inherited(path) as T | null | undefined) ?? fallback;
 }
 
-/** Label and description of an override field, which has no `FormItem` to label it. */
+/** Label of an override field, which has no `FormItem` to label it. */
 function OverrideLabel({
   labelId,
   label,
-  description,
   icon,
   size,
 }: {
   labelId: string;
   label: React.ReactNode;
-  description?: React.ReactNode;
   icon?: LucideIcon;
   size?: 'sm' | 'default';
 }) {
   return (
-    <div className="min-w-0 space-y-0.5">
-      <ConfigFieldLabel plain icon={icon} size={size}>
-        <span id={labelId}>{label}</span>
-      </ConfigFieldLabel>
-      {description && <p className={CONFIG_DESCRIPTION}>{description}</p>}
-    </div>
+    <ConfigFieldLabel plain icon={icon} size={size}>
+      <span id={labelId}>{label}</span>
+    </ConfigFieldLabel>
   );
+}
+
+/** Description of an override field, below its control as in an engine's fields. */
+function OverrideDescription({ children }: { children?: React.ReactNode }) {
+  return children ? <p className={CONFIG_DESCRIPTION}>{children}</p> : null;
 }
 
 interface SettingInputProps {
@@ -325,12 +359,7 @@ export function SettingInput({
   const mode = overrideMode(value);
   return (
     <div className="space-y-2">
-      <OverrideLabel
-        labelId={labelId}
-        label={label}
-        description={description}
-        size={size}
-      />
+      <OverrideLabel labelId={labelId} label={label} size={size} />
       <Select
         value={mode}
         onValueChange={(next) =>
@@ -346,7 +375,7 @@ export function SettingInput({
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -383,6 +412,7 @@ export function SettingInput({
           )}
         />
       )}
+      <OverrideDescription>{description}</OverrideDescription>
     </div>
   );
 }
@@ -452,19 +482,9 @@ export function SettingSwitch({
 
   const engineValue = inherited(name);
   return (
-    <div
-      className={cn(
-        'flex flex-row flex-wrap items-center justify-between gap-3',
-        className,
-      )}
-    >
-      <OverrideLabel
-        labelId={labelId}
-        label={label}
-        description={description}
-        icon={icon}
-        size={size}
-      />
+    // Label above the select, like the other override fields, so a row of them lines up.
+    <div className={cn('space-y-2', className)}>
+      <OverrideLabel labelId={labelId} label={label} icon={icon} size={size} />
       <Select
         value={typeof value === 'boolean' ? String(value) : overrideMode(value)}
         onValueChange={(next) =>
@@ -480,7 +500,7 @@ export function SettingSwitch({
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={cn(CONFIG_SELECT_TRIGGER, 'sm:w-56')}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -496,6 +516,7 @@ export function SettingSwitch({
           <SelectItem value="false">{i18n._(msg`Off`)}</SelectItem>
         </SelectContent>
       </Select>
+      <OverrideDescription>{description}</OverrideDescription>
     </div>
   );
 }
@@ -559,6 +580,7 @@ export function SettingSelect({
           )
         }
       >
+        {/* Kept to one line: an option's richer list content would otherwise fill it. */}
         <SelectTrigger
           aria-labelledby={labelId}
           className={CONFIG_SELECT_TRIGGER}
