@@ -925,6 +925,9 @@ async fn representation_switch_is_an_epoch_change() {
             .await
             .is_none()
     );
+    // At 11 s the early offer covers segment 12 too; the final MPD ends at
+    // 11 s, so it is only recorded if planned before that MPD is published.
+    wait_for_hit(&origin, "v-sd/12.m4s").await;
     origin.set_mpd(switch_mpd(false, "v-sd", false));
     assert!(read_until(&mut items, &mut out, |_| false).await.is_none());
     tokio::time::timeout(TEST_TIMEOUT, handle.join())
@@ -1493,4 +1496,134 @@ async fn a_static_presentation_with_a_protected_first_period_fails_typed() {
         "{error:?}"
     );
     assert_eq!(segment_hits(&origin, "v/"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_audio_only_period_between_video_periods_is_recorded_in_order() {
+    let origin = Origin::default();
+    origin.add_file("v/init.mp4", VIDEO_INIT);
+    origin.add_file("a/init.mp4", AUDIO_INIT);
+    let video = |id: &str| {
+        format!(
+            r#"<AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="{id}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>"#
+        )
+    };
+    let audio = |id: &str| {
+        format!(
+            r#"<AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="{id}/a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="24000"/>
+    </AdaptationSet>"#
+        )
+    };
+    for id in ["p0", "p1", "p2"] {
+        origin.add_numbered(&format!("{id}/v"), VIDEO_1, VIDEO_TIMESCALE);
+        origin.add_numbered(&format!("{id}/a"), AUDIO_1, AUDIO_TIMESCALE);
+    }
+    origin.set_mpd(format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="p0" duration="PT2S">{}{}</Period>
+  <Period id="p1" duration="PT2S">{}</Period>
+  <Period id="p2" duration="PT2S">{}{}</Period>
+</MPD>"#,
+        video("p0"),
+        audio("p0"),
+        audio("p1"),
+        video("p2"),
+        audio("p2"),
+    ));
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, _, terminal) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_eq!(origin.hits("p1/v/1.m4s"), 0);
+    // Three epochs: A/V, audio only, A/V.
+    let mut epochs: Vec<Vec<&HlsData>> = vec![Vec::new()];
+    for item in &items {
+        match item {
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. })) => {
+                epochs.push(Vec::new())
+            }
+            HlsData::EndMarker(Some(SplitReason::EndOfStream)) => {}
+            item => epochs.last_mut().unwrap().push(item),
+        }
+    }
+    assert_eq!(epochs.len(), 3, "{}", describe(&items));
+    // (track ID, decode time in seconds) of every fragment of an epoch.
+    let content = |epoch: &[&HlsData]| -> (bool, Vec<(u32, f64)>) {
+        let Some(HlsData::M4sData(M4sData::InitSegment(init))) = epoch.first() else {
+            panic!("an epoch without its init");
+        };
+        let info = mp4::isobmff::parse_init_segment(&init.data);
+        assert!(info.has_aac);
+        let mut fragments_seen = Vec::new();
+        for item in &epoch[1..] {
+            let HlsData::M4sData(M4sData::Segment(segment)) = item else {
+                panic!("an init inside an epoch");
+            };
+            for (_, track, time) in fragments(&segment.data) {
+                let timescale = if info.has_h264 && track == 1 {
+                    VIDEO_TIMESCALE
+                } else {
+                    AUDIO_TIMESCALE
+                };
+                fragments_seen.push((track, time as f64 / timescale as f64));
+            }
+        }
+        (info.has_h264, fragments_seen)
+    };
+    let (first_video, first) = content(&epochs[0]);
+    let (gap_video, gap) = content(&epochs[1]);
+    let (last_video, last) = content(&epochs[2]);
+    assert!(first_video && !gap_video && last_video);
+    assert_eq!(
+        first.len(),
+        4,
+        "two video and two audio fragments: {first:?}"
+    );
+    assert_eq!(gap, [(1, 2.0), (1, 3.0)], "p1's audio, on its own track");
+    assert_eq!(last.len(), 4, "{last:?}");
+    assert!(last.iter().all(|&(_, time)| time >= 4.0));
+    for segment in media(&items[..]) {
+        assert!(segment.segment.duration > 0.0 || fragments(&segment.data).is_empty());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejected_subtitles_do_not_count_against_the_media_tracks() {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.set_mpd(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT2S">
+  <Period>
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="text" mimeType="text/vtt" lang="en">
+      <Representation id="subtitles" bandwidth="100">
+        <BaseURL>subtitles.vtt</BaseURL>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>"#,
+    );
+    let base = origin.clone().serve().await;
+
+    // Default selection asks for audio too; the only rejection is text.
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("video and rejected subtitles still record");
+    let (items, error, _, terminal) = drain(session).await;
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_eq!(count_track(&items, 1), 2);
 }
