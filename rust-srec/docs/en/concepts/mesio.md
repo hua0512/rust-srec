@@ -1,14 +1,14 @@
 # Mesio Engine
 
-Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `Streamlink`, it is not an external program — it runs inside the recorder, which is why it has the lowest CPU and memory footprint of the three engines and supports multithreaded HLS downloads. This page covers Mesio's implementation; for a side-by-side comparison of all three engines and their features, see [Engines](./engines.md).
+Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `Streamlink`, it is not an external program — it runs inside the recorder, which is why it has the lowest CPU and memory footprint of the three engines and supports multithreaded HLS and MPEG-DASH downloads. This page covers Mesio's implementation; for a side-by-side comparison of all three engines and their features, see [Engines](./engines.md).
 
 ## Architecture
 
-A single `MesioDownloader` picks the protocol (HLS or FLV) and the source, then produces one **download session** regardless of protocol. The session exposes two streams — a guaranteed **items** stream of media data and terminal markers, and a best-effort **events** stream of progress/telemetry — plus a control handle for cancellation and optional metrics.
+A single `MesioDownloader` picks the protocol (HLS, MPEG-DASH or FLV) and the source, then produces one **download session** regardless of protocol. The session exposes two streams — a guaranteed **items** stream of media data and terminal markers, and a best-effort **events** stream of progress/telemetry — plus a control handle for cancellation and optional metrics.
 
 ```mermaid
 flowchart LR
-  SRC[Stream source<br/>playlist / FLV URL] --> MD[MesioDownloader<br/>protocol detection + source selection]
+  SRC[Stream source<br/>playlist / MPD / FLV URL] --> MD[MesioDownloader<br/>protocol detection + source selection]
   FLV[FLV downloader<br/>streaming download]
 
   subgraph HLS["HLS reactor engine"]
@@ -20,7 +20,15 @@ flowchart LR
     RX -->|ordered inputs| AS[SequenceAssembler<br/>order by sequence, init-before-media, gap policy]
   end
 
-  subgraph SESS["Download session (HLS or FLV)"]
+  subgraph DASH["MPEG-DASH engine"]
+    direction TB
+    MW[MPD watcher<br/>refreshes live manifests] -->|snapshot| VT[Video track<br/>segment reactor + assembler]
+    MW -->|snapshot| AT[Audio track<br/>segment reactor + assembler]
+    VT --> MX[Muxer<br/>merges video and audio<br/>into one fragmented MP4]
+    AT --> MX
+  end
+
+  subgraph SESS["Download session (HLS, DASH or FLV)"]
     direction TB
     ITEMS["items — guaranteed media + terminal markers"]
     EVENTS["events — best-effort progress / telemetry"]
@@ -28,8 +36,10 @@ flowchart LR
   end
 
   MD -->|HLS| PW
+  MD -->|DASH| MW
   MD -->|FLV| FLV
   AS --> SESS
+  MX --> SESS
   FLV --> SESS
   ITEMS --> REC[Recorder<br/>optional media repair + segment writing]
   EVENTS --> UI[Progress &amp; stats in the UI]
@@ -45,16 +55,35 @@ For HLS, all download state lives in one place — the **Scheduler Reactor**. It
 
 Decryption runs on a separate **crypto pool**, off the scheduling loop, so decryption does not block scheduling when many encrypted segments arrive at once. The **SequenceAssembler** then guarantees ordered output, writes fMP4 init segments before the media that depends on them (avoiding codec-mismatch corruption), and emits explicit gaps instead of silently stalling when segments drop out of the live window.
 
+## MPEG-DASH engine {#mpeg-dash-engine}
+
+Mesio records MPEG-DASH (`.mpd`) streams, both live and finished (on-demand) presentations. Streams that a platform labels as DASH, and addresses ending in `.mpd`, use this engine.
+
+- An **MPD watcher** loads the manifest and, for live streams, refreshes it no more often than the configured minimum interval or the manifest's own update period. It corrects for a difference between the local clock and the server's, so live segments are not requested before they exist.
+- One video and one audio track are selected according to the configured quality and audio language. Each track is downloaded by the same reactor and assembler as HLS, with its own memory budget, so a slow track cannot stall the other.
+- A **muxer** merges the separately delivered video and audio into **one fragmented MP4 file**. The recording is then repaired, split, and written like an HLS fMP4 recording; **Fix DASH Streams** (`fix_dash`) turns that repair on or off.
+
+A recording starts a new file when the presentation moves to a new Period (for example around an inserted ad) or the selected video or audio version changes. A finished presentation is recorded from its first segment and ends the recording when its last segment is written. A live recording starts behind the live edge according to the [live start setting](./engines.md#mpeg-dash).
+
+Limitations:
+
+- DRM-protected (encrypted) streams, WebM media, and manifests that address media with `SegmentBase` (a single indexed file) are refused. Manifests using `SegmentTemplate` or `SegmentList` are supported.
+- Subtitles and other text tracks are not recorded.
+- Tracks are chosen from the Period where recording starts: a track kind that only appears in a later Period is not added.
+- The web player cannot play DASH streams; it reports the format as unsupported. Recorded files are ordinary MP4 files.
+
+DASH settings are listed under [MPEG-DASH recording](./engines.md#mpeg-dash).
+
 ## Download sessions
 
-Mesio's HLS and FLV downloaders share this single session model, so progress reporting, retry handling, and cancellation behave consistently across both protocols. The **items** stream is authoritative — it carries the media and terminal markers the recorder relies on — while the **events** stream is best-effort telemetry used to render progress and statistics in the UI. The **handle** carries cancellation and the optional performance metrics.
+Mesio's HLS, DASH and FLV downloaders share this single session model, so progress reporting, retry handling, and cancellation behave consistently across protocols. The **items** stream is authoritative — it carries the media and terminal markers the recorder relies on — while the **events** stream is best-effort telemetry used to render progress and statistics in the UI. The **handle** carries cancellation and the optional performance metrics.
 
 ## Media-fix pipelines
 
 The download session and media repair are separate layers. When stream processing and the matching Mesio fix setting are enabled, downloaded items are repaired before they reach the writer. Otherwise, they go directly to the writer.
 
 - **FLV repair** fixes missing container structure and timestamp discontinuities, filters configured duplicates, starts a new output file when stream headers become incompatible, and maintains seek metadata. Processing buffers are bounded so malformed or unusual streams cannot grow them indefinitely.
-- **HLS repair** preserves fragmented-MP4 initialization order, checks delivered TS and fMP4 segments for incompatible format changes, starts a new output file when needed, and enforces file-size or duration limits. Memory use is bounded by data size rather than only by the number of queued segments.
+- **HLS and DASH repair** preserves fragmented-MP4 initialization order, checks delivered TS and fMP4 segments for incompatible format changes, starts a new output file when needed, and enforces file-size or duration limits. Memory use is bounded by data size rather than only by the number of queued segments.
 
 The HLS download reactor reports or skips unavailable media according to the configured gap policy. The fix pipeline receives only delivered media and explicit split or terminal markers; it cannot reconstruct bytes that the source never delivered and it does not transcode media payloads.
 
@@ -65,6 +94,7 @@ Mesio-specific processing options are documented on the [Engines](./engines.md) 
 - [FLV Consistency Fix](./engines.md#_2-flv-consistency-fix) — repair FLV structure and timing, and finalize AMF metadata without moving the file tail.
 - [Raw Data Mode](./engines.md#_3-raw-data-mode) — write stream bytes directly to disk without packet parsing to reduce CPU and memory use.
 - [HLS Consistency Fix](./engines.md#_4-hls-consistency-fix-mesio-exclusive) — guard segment structure and rotate output at discontinuities or meaningful stream changes before writing.
+- [MPEG-DASH recording](./engines.md#mpeg-dash) — record DASH streams with separately delivered video and audio merged into one file.
 
 > [!NOTE]
 > The full engine design lives alongside the source at [`crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md) and [`crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md).

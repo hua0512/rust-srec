@@ -1,14 +1,14 @@
 # Mesio 引擎
 
-Mesio 是 rust-srec 的**进程内 Rust 下载引擎**。与 `FFMPEG` 和 `Streamlink` 不同，它并非外部程序，而是运行在录制器内部——这也是它在三种引擎中 CPU 与内存占用最低、并支持 HLS 多线程下载的原因。本页介绍 Mesio 的内部工作原理；若需三种引擎的功能横向对比，请参阅[引擎](./engines.md)。
+Mesio 是 rust-srec 的**进程内 Rust 下载引擎**。与 `FFMPEG` 和 `Streamlink` 不同，它并非外部程序，而是运行在录制器内部——这也是它在三种引擎中 CPU 与内存占用最低、并支持 HLS 与 MPEG-DASH 多线程下载的原因。本页介绍 Mesio 的内部工作原理；若需三种引擎的功能横向对比，请参阅[引擎](./engines.md)。
 
 ## 架构
 
-单一的 `MesioDownloader` 负责选择协议（HLS 或 FLV）与来源，随后无论何种协议都产出一个统一的**下载会话（download session）**。该会话暴露两条流——保证交付的 **items**（媒体数据与终止标记）流，以及尽力而为的 **events**（进度／遥测）流——外加一个用于取消和可选指标的控制句柄。
+单一的 `MesioDownloader` 负责选择协议（HLS、MPEG-DASH 或 FLV）与来源，随后无论何种协议都产出一个统一的**下载会话（download session）**。该会话暴露两条流——保证交付的 **items**（媒体数据与终止标记）流，以及尽力而为的 **events**（进度／遥测）流——外加一个用于取消和可选指标的控制句柄。
 
 ```mermaid
 flowchart LR
-  SRC[流来源<br/>播放列表 / FLV 链接] --> MD[MesioDownloader<br/>协议探测 + 来源选择]
+  SRC[流来源<br/>播放列表 / MPD / FLV 链接] --> MD[MesioDownloader<br/>协议探测 + 来源选择]
   FLV[FLV 下载器<br/>流式下载]
 
   subgraph HLS["HLS 反应堆引擎"]
@@ -20,7 +20,15 @@ flowchart LR
     RX -->|有序输入| AS[SequenceAssembler<br/>按序号排序、初始化先于媒体、缺口策略]
   end
 
-  subgraph SESS["下载会话（HLS 或 FLV）"]
+  subgraph DASH["MPEG-DASH 引擎"]
+    direction TB
+    MW[MPD 监视器<br/>刷新直播清单] -->|快照| VT[视频轨道<br/>分段反应堆 + 组装器]
+    MW -->|快照| AT[音频轨道<br/>分段反应堆 + 组装器]
+    VT --> MX[合流器<br/>将视频和音频合并<br/>为一个分片 MP4]
+    AT --> MX
+  end
+
+  subgraph SESS["下载会话（HLS、DASH 或 FLV）"]
     direction TB
     ITEMS["items — 保证交付的媒体 + 终止标记"]
     EVENTS["events — 尽力而为的进度 / 遥测"]
@@ -28,8 +36,10 @@ flowchart LR
   end
 
   MD -->|HLS| PW
+  MD -->|DASH| MW
   MD -->|FLV| FLV
   AS --> SESS
+  MX --> SESS
   FLV --> SESS
   ITEMS --> REC[录制器<br/>可选媒体修复 + 分段写入]
   EVENTS --> UI[界面中的进度与统计]
@@ -45,16 +55,35 @@ flowchart LR
 
 解密在独立的**加密处理池**中运行，位于调度循环之外，因此大量加密分段同时到达时，解密也不会阻塞调度。随后 **SequenceAssembler** 保证输出有序、fMP4 初始化分段先于依赖它的媒体写入（避免编解码不匹配导致的损坏），并在分段掉出直播窗口时以明确的缺口取代无声卡死。
 
+## MPEG-DASH 引擎 {#mpeg-dash-engine}
+
+Mesio 可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的点播内容。平台标记为 DASH 的流，以及以 `.mpd` 结尾的地址，都会使用此引擎。
+
+- **MPD 监视器**负责加载清单；对于直播，它刷新清单的频率不会高于配置的最小间隔或清单自身的更新周期。它会校正本地时钟与服务器时钟之间的偏差，避免在直播分段生成之前就去请求。
+- 按配置的质量和音频语言选择一个视频轨道和一个音频轨道。每个轨道都由与 HLS 相同的反应堆和组装器下载，并拥有各自的内存预算，因此一个轨道变慢不会拖住另一个。
+- **合流器**将分开传输的视频和音频合并为**一个分片 MP4 文件**。之后的修复、分段与写入与 HLS fMP4 录制相同；**修复 DASH 流**（`fix_dash`）控制是否进行修复。
+
+当节目进入新的 Period（例如插入广告前后），或所选的视频、音频版本发生变化时，录制会开始新文件。已结束的节目从第一个分段开始录制，最后一个分段写入后录制随即结束。直播录制按[直播录制起点设置](./engines.md#mpeg-dash)从直播边缘之后开始。
+
+限制：
+
+- 拒绝录制 DRM 加密的流、WebM 媒体，以及使用 `SegmentBase`（单个带索引的文件）寻址媒体的清单。支持使用 `SegmentTemplate` 或 `SegmentList` 的清单。
+- 不录制字幕及其他文本轨道。
+- 轨道从开始录制时所在的 Period 中选择：只在之后的 Period 中出现的轨道类型不会被加入。
+- 网页播放器无法播放 DASH 流，会提示该格式不受支持。录制得到的文件是普通的 MP4 文件。
+
+DASH 设置列在 [MPEG-DASH 录制](./engines.md#mpeg-dash)中。
+
 ## 下载会话
 
-Mesio 的 HLS 与 FLV 下载器共用这同一套会话模型，因此进度上报、重试处理与取消行为在两种协议间表现一致。**items** 流是权威的——它承载录制器所依赖的媒体与终止标记——而 **events** 流则是尽力而为的遥测，用于在界面中呈现进度与统计；**handle** 则负责取消与可选的性能指标。
+Mesio 的 HLS、DASH 与 FLV 下载器共用这同一套会话模型，因此进度上报、重试处理与取消行为在各协议间表现一致。**items** 流是权威的——它承载录制器所依赖的媒体与终止标记——而 **events** 流则是尽力而为的遥测，用于在界面中呈现进度与统计；**handle** 则负责取消与可选的性能指标。
 
 ## 媒体修复流水线
 
 下载会话与媒体修复是两个独立层次。启用流处理和对应的 Mesio 修复开关时，下载数据会先经过修复再交给写入器；否则会直接进入写入器。
 
 - **FLV 修复**会补全缺失的容器结构、修正时间戳不连续、按配置过滤重复数据，并在流头不兼容时开始写入新文件，同时维护快速定位所需的元数据。处理缓冲区有明确上限，因此损坏或异常的流不会导致内存无限增长。
-- **HLS 修复**会保证分片 MP4 初始化数据的写入顺序，检查已交付的 TS 与 fMP4 分段是否出现不兼容的格式变化，必要时开始写入新文件，并执行文件大小或时长限制。内存限制按数据量计算，而不只依赖排队分段的数量。
+- **HLS 与 DASH 修复**会保证分片 MP4 初始化数据的写入顺序，检查已交付的 TS 与 fMP4 分段是否出现不兼容的格式变化，必要时开始写入新文件，并执行文件大小或时长限制。内存限制按数据量计算，而不只依赖排队分段的数量。
 
 HLS 下载反应堆会按配置的缺口策略报告或跳过无法获取的媒体。修复流水线只会接收已交付的媒体以及明确的分割或终止标记；它无法重建源站从未交付的字节，也不会对媒体载荷进行转码。
 
@@ -65,6 +94,7 @@ Mesio 专属的处理选项记录在[引擎](./engines.md)页面：
 - [FLV 一致性修复](./engines.md#_2-flv-一致性修复) —— 修复 FLV 结构与时间戳，并在不移动文件后续内容的前提下完成 AMF 元数据。
 - [原始数据模式](./engines.md#_3-原始数据模式-raw-data-mode) —— 不做包解析，直接把流字节写入磁盘，以降低 CPU 和内存开销。
 - [HLS 一致性修复](./engines.md#_4-hls-一致性修复-mesio-独占) —— 在写入前保护分段结构，并在不连续或有意义的流变化处轮换输出。
+- [MPEG-DASH 录制](./engines.md#mpeg-dash) —— 录制 DASH 流，并将分开传输的视频和音频合并为一个文件。
 
 > [!NOTE]
 > 完整的引擎设计与源码放在一起，见 [`crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md) 与 [`crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md)。

@@ -10,17 +10,19 @@ Streamlink can also be an **extractor**, which resolves the stream URL before do
 | :----------------------: | :-----------------------------------: | :-------------------------------------: | :-------------------------------------: |
 |       FLV Download       |                  ✅                   |                   ✅                    |                   ❌                    |
 |       HLS Download       |        ✅ <br/>(Multithreaded)        |                   ✅                    |         ✅ <br/>(Multithreaded)         |
+|  MPEG-DASH Download   | ✅ <br/>(Multithreaded; separate video and audio merged into one file) |   Depends on the installed FFmpeg   |   Depends on the installed Streamlink   |
 | Recording Duration Stats | ✅ <br/>(Raw data mode not supported) |                   ✅                    |                   ✅                    |
 |  Download Bitrate Stats  |                  ✅                   | ✅ <br/>(-f segmentation not supported) | ✅ <br/>(-f segmentation not supported) |
 |    Size Segmentation     | ✅ <br/>(Raw data mode not supported) | ✅ <br/>(-f segmentation not supported) |                   ✅                    |
 |  Duration Segmentation   | ✅ <br/>(Raw data mode not supported) |                   ✅                    |                   ✅                    |
-|     Download Format      |           FLV, M3U8, TS, M4S          |         Supports other formats          |         Supports other formats          |
+|     Download Format      |        FLV, M3U8, MPD, TS, M4S        |         Supports other formats          |         Supports other formats          |
 |    FLV Consistency Fix   |           ✅ (Recommended)            |                   ❌                    |                   ❌                    |
 |    HLS Consistency Fix   |           ✅ (Recommended)            |                   ❌                    |                   ❌                    |
+|   DASH Consistency Fix   |           ✅ (Recommended)            |                   ❌                    |                   ❌                    |
 |        CPU Usage         |                  Lowest               |                   Low                   |                   Low                   |
 |       Memory Usage       |                  Lowest               |                   Low                   |                 Medium                  |
 
-For Mesio, enable FLV and HLS Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
+For Mesio, enable FLV, HLS and DASH Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
 
 ## 2. FLV Consistency Fix
 
@@ -72,7 +74,7 @@ In Raw Data Mode, the **Mesio** engine writes stream data directly to disk as it
 Because the headers and packet structures are not inspected, some advanced features are unavailable when Raw Data Mode is enabled:
 - **Statistics**: Recording duration and bitrate stats cannot be calculated in real-time.
 - **Segmentation**: The engine cannot detect frame boundaries or duration, so it cannot perform precise segmentation by size or duration.
-- **Repair**: Features like FLV Consistency Fix or HLS Consistency Fix cannot be applied as they require packet-level manipulation.
+- **Repair**: Features like FLV, HLS or DASH Consistency Fix cannot be applied as they require packet-level manipulation.
 
 ## 4. HLS Consistency Fix (Mesio Exclusive)
 
@@ -82,6 +84,33 @@ Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities
 - The **consistency fix** starts a new output file when delivered segments contain incompatible codec, resolution, program-layout, or fMP4 initialization changes. It also enforces file-size and duration limits.
 
 The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate missing media, or transcode codecs. A skipped segment remains an observable gap; the pipeline keeps delivered output ordered and rotates when a detected format change requires a new file.
+
+## 5. MPEG-DASH Recording (Mesio Exclusive) {#mpeg-dash}
+
+Mesio records MPEG-DASH (`.mpd`) streams, live or finished. When video and audio are delivered separately, as is usual for DASH, they are merged into one fragmented MP4 file. DRM-protected streams, WebM media and `SegmentBase` manifests are not supported, and subtitles are not recorded. See [how the DASH engine works](./mesio.md#mpeg-dash-engine).
+
+**Fix DASH Streams** (`fix_dash`, default on) applies the same consistency fix as HLS to the merged output: it starts a new file on incompatible stream changes and enforces file-size and duration limits.
+
+The other settings are on the **DASH Tuning** tab of a Mesio engine and are stored in its `dash` object. An empty field uses the default below.
+
+| Setting | JSON field | Default | Meaning |
+| --- | --- | --- | --- |
+| Video Quality | `dash.video_quality` | `{"type": "highest"}` | Which video version is recorded: `highest` or `lowest` bandwidth, `{"type": "max_height", "height": 720}` for the best version at most that tall (the smallest picture when none fits), or `{"type": "closest_bandwidth", "bandwidth": 2500000}` in bits per second. |
+| Audio Quality | `dash.audio_quality` | `{"type": "highest"}` | Which audio version is recorded in the chosen language: `highest`, `lowest`, or `closest_bandwidth`. |
+| Preferred Audio Language | `dash.audio_language` | none | A language tag such as `en` or `pt-BR`. Any language is used when none matches. |
+| Record Video | `dash.include_video` | `true` | Record the video track. |
+| Record Separate Audio | `dash.include_audio` | `true` | Record separately delivered audio. Audio inside the video stream is kept either way. Video and audio cannot both be off. |
+| Live Start Position | `dash.live_start` | `{"type": "auto"}` | Where a live recording starts: `auto` uses the delay the stream suggests, else three segments behind the live edge; `live_edge` starts at the newest segment; `{"type": "delay", "delay_ms": 6000}` starts that far behind the live edge. Finished streams always start at the beginning. |
+| Download Concurrency | `dash.download_concurrency` | `5` | Segments downloaded at once, per track. |
+| Segment Timeout (ms) | `dash.segment_timeout_ms` | `10000` | Time limit for one segment download. |
+| Segment Retries | `dash.max_segment_retries` | `3` | Retries of a failed segment download. |
+| Manifest Timeout (ms) | `dash.manifest_timeout_ms` | `15000` | Time limit for one manifest request. |
+| Minimum Refresh Interval (ms) | `dash.min_refresh_interval_ms` | `1000` | Shortest time between live manifest refreshes; the manifest's own update period applies when longer. |
+| Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. |
+
+Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. A template's [engine override](../reference/configuration-overrides.md#engines-override-template-only) can change single DASH fields; `"dash": null` there returns all of them to the defaults.
+
+To prefer DASH when a platform offers several formats, add `dash` to the streamer's or template's **Preferred Formats**.
 
 ## Lossless cutting {#lossless-cutting}
 
@@ -93,6 +122,7 @@ The action waits for a safe media boundary. Repeated clicks share the pending re
 | --- | --- |
 | Mesio FLV | Requires FLV consistency processing and the headers needed to start the next file. Video cuts wait for a keyframe. |
 | Mesio HLS | Requires HLS consistency processing and an independently decodable TS or fMP4 segment. |
+| Mesio DASH | Requires DASH consistency processing and an independently decodable segment. |
 | FFmpeg | Requires experimental **Enable lossless cutting**, MP4, MKV, FLV, TS, or MOV output, and no custom output arguments. |
 | Streamlink | Requires experimental **Enable lossless cutting**, the same output formats, and no extra Streamlink arguments. |
 
