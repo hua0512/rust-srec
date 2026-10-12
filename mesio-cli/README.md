@@ -3,11 +3,11 @@
 [![crates.io](https://img.shields.io/crates/v/mesio-cli.svg)](https://crates.io/crates/mesio-cli)
 ![Version](https://img.shields.io/badge/version-0.2.4-blue)![Rust](https://img.shields.io/badge/rust-2024-orange)
 
-Mesio is a powerful command-line tool for downloading, processing, and repairing media streams and files, with support for both **FLV (Flash Video)** and **HLS (HTTP Live Streaming)**. It's part of the [rust-srec](https://github.com/hua0512/rust-srec) project, designed to handle common issues in media streams.
+Mesio is a powerful command-line tool for downloading, processing, and repairing media streams and files, with support for **FLV (Flash Video)**, **HLS (HTTP Live Streaming)** and **MPEG-DASH**. It's part of the [rust-srec](https://github.com/hua0512/rust-srec) project, designed to handle common issues in media streams.
 
 ## Features
 
-- **Multi-Protocol Support**: Download and process both **FLV** and **HLS** streams.
+- **Multi-Protocol Support**: Download and process **FLV**, **HLS** and **MPEG-DASH** streams.
 - **Stream Repair**: Fix common issues in FLV streams such as:
   - Timestamp anomalies
   - Out-of-order frames
@@ -19,6 +19,11 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Automatic retries for failed segments
   - Playlist caching to reduce redundant requests
   - Adaptive refresh intervals for live streams
+- **MPEG-DASH Downloader**:
+  - Live and on-demand manifests (MPD), including multi-Period presentations
+  - Video and audio delivered as separate tracks are merged into one fragmented MP4
+  - Video quality, audio quality and audio language selection
+  - Configurable live start position (live edge or behind it)
 - **Pipe Output**: Stream data directly to stdout for integration with external tools like ffmpeg or mpv.
 - **Advanced Proxy Support**: HTTP, HTTPS, and SOCKS5 proxies for all downloads.
 - **File Segmentation**: Split output files by size or duration.
@@ -57,6 +62,9 @@ mesio --progress https://example.com/stream.flv
 # Download an HLS stream from a URL
 mesio --progress https://example.com/playlist.m3u8
 
+# Download an MPEG-DASH stream from a URL
+mesio --progress https://example.com/manifest.mpd
+
 # Process an existing FLV file
 mesio --progress --fix path/to/file.flv
 
@@ -65,6 +73,16 @@ mesio --progress -o downloads/ https://example.com/stream.flv
 
 # Process multiple inputs (FLV, HLS, local files)
 mesio --progress --fix file1.flv https://example.com/playlist.m3u8
+```
+
+## Protocol Detection
+
+For URL inputs, the protocol is detected from the URL: a path ending in `.mpd` is MPEG-DASH,
+`.m3u8`/`.m3u` (or a path or query mentioning a playlist) is HLS, and `.flv` is FLV. When a URL
+does not reveal its protocol, choose it with `--protocol`:
+
+```bash
+mesio --protocol dash "https://example.com/live/stream?format=dash"
 ```
 
 ## Command-Line Options
@@ -104,6 +122,38 @@ OPTIONS:
       --hls-retries <NUM>         Number of retry attempts for failed segments [default: 3]
       --hls-segment-timeout <SEC> Timeout for individual segment downloads in seconds [default: 30]
       --hls-cache-playlists     Enable caching of HLS playlists [default: true]
+```
+
+### DASH Options
+
+```text
+      --dash-video-quality <POLICY>     Video quality: highest, lowest, max-height=N, bandwidth=N [default: highest]
+      --dash-audio-quality <POLICY>     Audio quality: highest, lowest, bandwidth=N [default: highest]
+      --dash-audio-lang <LANG>          Preferred audio language (e.g. 'en', 'pt-BR'); any language when none matches
+      --dash-no-audio                   Skip separate audio tracks (audio carried inside the video track is kept)
+      --dash-no-video                   Record audio only
+      --dash-concurrency <NUM>          Concurrent segment downloads per track [default: 5]
+      --dash-manifest-timeout <SEC>     Timeout of each manifest (MPD) request in seconds [default: 15]
+      --dash-min-refresh-interval <SEC> Minimum interval between live manifest refreshes in seconds [default: 1]
+      --dash-manifest-retries <NUM>     Consecutive failed manifest refreshes tolerated [default: 5]
+      --dash-segment-timeout <SEC>      Timeout for individual segment downloads in seconds [default: 10]
+      --dash-retries <NUM>              Number of retry attempts for failed segments [default: 3]
+      --dash-live-start <POLICY>        Live start: auto, edge, delay=SECONDS [default: auto]
+```
+
+- `max-height=N` picks the highest-bandwidth video at most `N` pixels tall (the smallest picture
+  when none fits); `bandwidth=N` picks the bandwidth closest to `N` bits per second.
+- `--dash-live-start auto` starts behind the live edge by the manifest's suggested presentation
+  delay, or by three segments when it has none; `edge` starts at the newest segment; `delay=30`
+  starts 30 seconds behind the edge. On-demand manifests always start at the beginning.
+- `--dash-no-audio` and `--dash-no-video` cannot be combined.
+- Network options (headers, parameters, proxy, timeouts, HTTP version) apply to DASH manifest and
+  segment requests as they do to FLV and HLS.
+
+### Other Protocol Options
+
+```text
+      --protocol <PROTOCOL>  Protocol of URL inputs: auto, flv, hls, dash [default: auto]
 ```
 
 ### Network Options
@@ -170,6 +220,29 @@ Download an HLS stream using 8 concurrent segment downloads:
 ```bash
 mesio --progress --hls-concurrency 8 https://example.com/playlist.m3u8
 ```
+
+### Download an MPEG-DASH Stream
+
+Record a live DASH stream at up to 720p with English audio, splitting files every 30 minutes:
+
+```bash
+mesio --progress --dash-video-quality max-height=720 --dash-audio-lang en -d 30m https://example.com/live/manifest.mpd
+```
+
+DASH output is a fragmented MP4 (`.m4s`) that players and ffmpeg read directly. Its limitations:
+
+- DRM-protected (encrypted) streams are not supported.
+- Only fragmented MP4 segments are supported; WebM segments are not.
+- Representations addressed with `SegmentBase` (a single indexed file) are not supported;
+  `SegmentTemplate` and `SegmentList` are.
+- Subtitle and text tracks are not recorded.
+
+### Stopping a Recording
+
+Press `q` or `Ctrl+C` in the terminal running mesio to stop gracefully: the current file is
+finished and closed. When stdin is piped, a line containing `q` does the same. Mesio does not
+install a `SIGINT` handler, so an interrupt delivered any other way (for example `kill -INT`)
+ends the process immediately without finishing the current file.
 
 ### Custom Output Names
 
@@ -258,7 +331,7 @@ When using pipe output mode:
 
 - Progress bars are automatically disabled to avoid corrupting the output stream
 - All logging is redirected to stderr
-- The pipe closes automatically on segment boundaries (FLV headers, HLS discontinuities)
+- The pipe closes automatically on segment boundaries (FLV headers, HLS and DASH discontinuities)
 - Use `--fix` flag to enable FLV processing (timestamp repair, GOP sorting) before piping
 
 ## License

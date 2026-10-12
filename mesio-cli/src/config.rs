@@ -1,6 +1,6 @@
 use flv_fix::FlvPipelineConfig;
 use hls_fix::HlsPipelineConfig;
-use mesio_engine::{flv::FlvProtocolConfig, hls::HlsConfig};
+use mesio_engine::{DashConfig, ProtocolSelection, flv::FlvProtocolConfig, hls::HlsConfig};
 use pipeline_common::config::PipelineConfig;
 
 use crate::output::provider::OutputFormat;
@@ -22,6 +22,12 @@ pub struct ProgramConfig {
 
     /// HLS-specific configuration
     pub hls_config: Option<HlsConfig>,
+
+    /// DASH-specific configuration
+    pub dash_config: Option<DashConfig>,
+
+    /// Protocol of URL inputs
+    pub protocol: ProtocolSelection,
 
     /// Whether to enable processing pipeline (vs raw download)
     pub enable_processing: bool,
@@ -46,6 +52,8 @@ pub struct ProgramConfigBuilder {
     hls_pipeline_config: Option<HlsPipelineConfig>,
     flv_config: Option<FlvProtocolConfig>,
     hls_config: Option<HlsConfig>,
+    dash_config: Option<DashConfig>,
+    protocol: ProtocolSelection,
     enable_processing: bool,
     output_format: OutputFormat,
 }
@@ -60,6 +68,8 @@ impl ProgramConfigBuilder {
             hls_pipeline_config: None,
             flv_config: None,
             hls_config: None,
+            dash_config: None,
+            protocol: ProtocolSelection::Auto,
             enable_processing: true,
             output_format: OutputFormat::File,
         }
@@ -100,6 +110,20 @@ impl ProgramConfigBuilder {
         self
     }
 
+    /// Set the DASH-specific configuration
+    #[inline]
+    pub fn dash_config(mut self, config: DashConfig) -> Self {
+        self.dash_config = Some(config);
+        self
+    }
+
+    /// Set the protocol of URL inputs
+    #[inline]
+    pub fn protocol(mut self, protocol: ProtocolSelection) -> Self {
+        self.protocol = protocol;
+        self
+    }
+
     /// Set whether to enable processing pipeline
     #[inline]
     pub fn enable_processing(mut self, enable: bool) -> Self {
@@ -130,6 +154,8 @@ impl ProgramConfigBuilder {
             hls_pipeline_config,
             flv_config: self.flv_config,
             hls_config: self.hls_config,
+            dash_config: self.dash_config,
+            protocol: self.protocol,
             enable_processing: self.enable_processing,
             output_format: self.output_format,
         })

@@ -1,4 +1,4 @@
-use crate::output::pipe_hls_strategy::PipeHlsStrategy;
+use crate::output::pipe_hls_strategy::{PipeHlsStrategy, SegmentedProtocol};
 use crate::output::provider::OutputFormat;
 use crate::processor::generic::process_pipe_stream;
 use crate::utils::spans;
@@ -14,8 +14,10 @@ use std::time::Instant;
 use tracing::{Level, debug, info, span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
-/// Process an HLS stream
+/// Process an HLS stream, or a DASH stream (also delivered as `HlsData`)
+/// with `protocol` naming it in spans and logs.
 pub async fn process_hls_stream(
+    protocol: SegmentedProtocol,
     url_str: &str,
     output_dir: &Path,
     config: &ProgramConfig,
@@ -35,6 +37,7 @@ pub async fn process_hls_stream(
     }
 
     let start_time = Instant::now();
+    let label = protocol.label();
 
     let base_name = expand_name_url(name_template, url_str)?;
     // Create the writer progress span up-front so downloads inherit it
@@ -43,10 +46,18 @@ pub async fn process_hls_stream(
 
     // Only initialize span visuals if not in pipe mode
     if !is_pipe_mode {
-        spans::init_writing_span(&writer_span, format!("Writing HLS {}", base_name));
+        spans::init_writing_span(&writer_span, format!("Writing {label} {base_name}"));
     }
 
-    let download_span = span!(parent: &writer_span, Level::INFO, "download_hls", url = %url_str);
+    // Span names must be literals.
+    let download_span = match protocol {
+        SegmentedProtocol::Hls => {
+            span!(parent: &writer_span, Level::INFO, "download_hls", url = %url_str)
+        }
+        SegmentedProtocol::Dash => {
+            span!(parent: &writer_span, Level::INFO, "download_dash", url = %url_str)
+        }
+    };
 
     // Only initialize download span visuals if not in pipe mode
     if !is_pipe_mode {
@@ -84,14 +95,14 @@ pub async fn process_hls_stream(
         Some(Err(e)) => {
             cleanup_session(progress_task).await;
             return Err(AppError::InvalidInput(format!(
-                "Failed to get first HLS segment: {e}"
+                "Failed to get first {label} segment: {e}"
             )));
         }
         None => {
-            info!("HLS stream is empty.");
+            info!("{label} stream is empty.");
             cleanup_session(progress_task).await;
             return Err(AppError::Download(DownloadError::source_exhausted(
-                "HLS stream is empty",
+                format!("{label} stream is empty"),
             )));
         }
     };
@@ -109,7 +120,7 @@ pub async fn process_hls_stream(
     };
 
     info!(
-        "Detected HLS stream type: {}. Saving with .{} extension.",
+        "Detected {label} stream type: {}. Saving with .{} extension.",
         extension.to_uppercase(),
         extension
     );
@@ -129,7 +140,7 @@ pub async fn process_hls_stream(
         let pipe_stats = process_pipe_stream(
             Box::pin(stream),
             &config.pipeline_config,
-            PipeHlsStrategy::new(),
+            PipeHlsStrategy::for_protocol(protocol),
             extension,
         )
         .await?;
@@ -143,7 +154,7 @@ pub async fn process_hls_stream(
             bytes_written = pipe_stats.bytes_written,
             segment_count = pipe_stats.segment_count,
             output_mode = %config.output_format,
-            "HLS pipe output complete"
+            "{label} pipe output complete"
         );
 
         handle.cancel();
@@ -197,7 +208,7 @@ pub async fn process_hls_stream(
         files = stats.files_created,
         duration = ?elapsed,
         output_mode = %config.output_format,
-        "HLS download complete"
+        "{label} download complete"
     );
 
     Ok(stats.items_written as u64)
