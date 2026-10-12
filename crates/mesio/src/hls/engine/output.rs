@@ -23,39 +23,50 @@ impl HlsEventSink {
 
 impl AssemblerSink for HlsEventSink {
     async fn send(&mut self, item: Result<AssembledItem, DownloadError>) -> Result<(), SinkClosed> {
-        let event = item.map(|item| match item {
-            AssembledItem::Payload(payload) => {
-                HlsStreamEvent::Data(Box::new(payload.into_hls_data()))
-            }
-            AssembledItem::Discontinuity => HlsStreamEvent::DiscontinuityTagEncountered {},
-            AssembledItem::GapSkipped {
-                from_sequence,
-                to_sequence,
-                reason,
-            } => HlsStreamEvent::GapSkipped {
-                from_sequence,
-                to_sequence,
-                reason,
+        let event = match item {
+            Ok(item) => match hls_event(item) {
+                Some(event) => Ok(event),
+                None => return Ok(()),
             },
-            AssembledItem::SegmentTimeout {
-                sequence_number,
-                waited_duration,
-            } => HlsStreamEvent::SegmentTimeout {
-                sequence_number,
-                waited_duration,
-            },
-            AssembledItem::Notice(EngineNotice::ManifestRefreshed {
-                sequence_base,
-                target_duration,
-            }) => HlsStreamEvent::PlaylistRefreshed {
-                media_sequence_base: sequence_base,
-                target_duration,
-            },
-            AssembledItem::Notice(EngineNotice::End) => HlsStreamEvent::EndlistEncountered,
-            AssembledItem::StreamEnded => HlsStreamEvent::StreamEnded,
-        });
+            Err(error) => Err(error),
+        };
         self.tx.send(event).await.map_err(|_| SinkClosed)
     }
+}
+
+/// The client event for an assembled item; `None` for notices HLS has no
+/// event for (playlists have no track-level sections).
+fn hls_event(item: AssembledItem) -> Option<HlsStreamEvent> {
+    Some(match item {
+        AssembledItem::Payload(payload) => HlsStreamEvent::Data(Box::new(payload.into_hls_data())),
+        AssembledItem::Discontinuity => HlsStreamEvent::DiscontinuityTagEncountered {},
+        AssembledItem::GapSkipped {
+            from_sequence,
+            to_sequence,
+            reason,
+        } => HlsStreamEvent::GapSkipped {
+            from_sequence,
+            to_sequence,
+            reason,
+        },
+        AssembledItem::SegmentTimeout {
+            sequence_number,
+            waited_duration,
+        } => HlsStreamEvent::SegmentTimeout {
+            sequence_number,
+            waited_duration,
+        },
+        AssembledItem::Notice(EngineNotice::ManifestRefreshed {
+            sequence_base,
+            target_duration,
+        }) => HlsStreamEvent::PlaylistRefreshed {
+            media_sequence_base: sequence_base,
+            target_duration,
+        },
+        AssembledItem::Notice(EngineNotice::End) => HlsStreamEvent::EndlistEncountered,
+        AssembledItem::Notice(EngineNotice::TrackAbsent { .. }) => return None,
+        AssembledItem::StreamEnded => HlsStreamEvent::StreamEnded,
+    })
 }
 
 impl SegmentPayload {

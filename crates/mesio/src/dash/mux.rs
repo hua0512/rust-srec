@@ -33,6 +33,13 @@
 //! when the video moves to a new Period is written first, under the old
 //! init.
 //!
+//! A Period without video (an audio-only interlude, or audio carried past
+//! the last video Period) is recorded as its own audio-only epoch: one item
+//! per audio segment under the audio track's own init, its duration the
+//! audio coverage. A Period counts as video-less once the video planner
+//! reports it (`TrackAbsent`), video arrives from a later Period, or the
+//! video track has ended.
+//!
 //! Audio never fails a recording. A video segment waits for the audio it
 //! overlaps at most `max_audio_lag` after it arrived here (less under buffer
 //! pressure), then is written with what has arrived; a `TrackStalled` event
@@ -70,6 +77,9 @@ use crate::session::{DownloadEvent, EventSink};
 /// fails. One corrupt segment is skipped; a systematic rejection is an error
 /// rather than a recording that silently writes nothing.
 const MAX_CONSECUTIVE_LEADER_REJECTIONS: u32 = 3;
+
+/// Leader-less Periods remembered; only the newest few can still matter.
+const MAX_ABSENT_PERIODS: usize = 16;
 
 pub(crate) type TrackItem = Result<AssembledItem, DownloadError>;
 
@@ -144,6 +154,7 @@ struct MuxStats {
 /// A track's initialization segment and what is derived from it.
 #[derive(Debug)]
 struct TrackInit {
+    track: MediaTrack,
     period: PeriodKey,
     representation: Arc<str>,
     data: Bytes,
@@ -301,6 +312,13 @@ struct MuxState {
     follower_stalled: bool,
     /// When the leader's authoritative end arrived.
     leader_ended_at: Option<Instant>,
+    /// When the follower last delivered anything.
+    follower_input_at: Option<Instant>,
+    /// Periods the leader's planner reported without leader content, with
+    /// the leader sequence number they follow.
+    leader_absent: VecDeque<(PeriodKey, u64)>,
+    /// The leader sequence number after the newest one received or skipped.
+    leader_next_sequence: u64,
     /// End of the newest leader slice written, with its timescale; follower
     /// fragments ending by then arrived too late for any slice.
     leader_end: Option<(i128, u32)>,
@@ -345,6 +363,9 @@ pub(crate) async fn run_muxer(
         wait_deadline: None,
         follower_stalled: false,
         leader_ended_at: None,
+        follower_input_at: None,
+        leader_absent: VecDeque::new(),
+        leader_next_sequence: 0,
         leader_end: None,
         origin_nanos: None,
         tail_flushed: false,
@@ -563,6 +584,9 @@ impl MuxState {
                 self.leader.latest_init = Some(Arc::new(init));
             }
             AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor }) => {
+                self.leader_next_sequence = self
+                    .leader_next_sequence
+                    .max(descriptor.msn.saturating_add(1));
                 let Some(init) = self.leader.latest_init.clone() else {
                     warn!(track = %self.leader.track, "media segment without an initialization segment; dropped");
                     return Ok(());
@@ -604,6 +628,38 @@ impl MuxState {
                 media_sequence_base: sequence_base,
                 target_duration,
             }),
+            AssembledItem::Notice(EngineNotice::TrackAbsent {
+                section_id,
+                section_start,
+                after_sequence,
+            }) => {
+                let period = PeriodKey {
+                    id: section_id,
+                    start: section_start,
+                };
+                if !self
+                    .leader_absent
+                    .iter()
+                    .any(|(known, _)| known.same(&period))
+                {
+                    if self.leader_absent.len() == MAX_ABSENT_PERIODS {
+                        self.leader_absent.pop_front();
+                    }
+                    self.leader_absent.push_back((period, after_sequence));
+                }
+            }
+            AssembledItem::GapSkipped {
+                from_sequence,
+                to_sequence,
+                reason,
+            } => {
+                self.leader_next_sequence = self.leader_next_sequence.max(to_sequence);
+                self.forward_engine_event(AssembledItem::GapSkipped {
+                    from_sequence,
+                    to_sequence,
+                    reason,
+                });
+            }
             other => self.forward_engine_event(other),
         }
         Ok(())
@@ -611,6 +667,7 @@ impl MuxState {
 
     fn accept_follower(&mut self, item: Option<TrackItem>, cancelled: bool) {
         self.follower_stalled = false;
+        self.follower_input_at = Some(Instant::now());
         let Some(follower) = self.follower.as_mut() else {
             return;
         };
@@ -840,6 +897,13 @@ impl MuxState {
     }
 
     fn step(&mut self, now: Instant) -> Result<Step, Fatal> {
+        let head_period = match self.leader.queue.front() {
+            Some(Queued::Media(head)) => Some(head.init.period.clone()),
+            _ => None,
+        };
+        if self.emit_gap_audio(head_period.as_ref()) {
+            return Ok(Step::Continue);
+        }
         let Some(Queued::Media(head)) = self.leader.queue.front() else {
             return Ok(self.leader_drained(now));
         };
@@ -865,6 +929,8 @@ impl MuxState {
             }
             self.flush_follower(true);
             self.tail_flushed = true;
+            // Audio of Periods without video may come next.
+            return Ok(Step::Continue);
         }
         let picks = match self.collect(&period, start, end, timescale, may_wait) {
             Collect::Wait => return Ok(Step::Wait(Some(deadline))),
@@ -893,8 +959,15 @@ impl MuxState {
             Status::Closed => Step::Finished,
             Status::Ended => {
                 // Completion is shared: the follower's tail belongs in the
-                // final item, so its end is awaited for one more lag.
-                let deadline = self.deadline(self.leader_ended_at.unwrap_or(now));
+                // final items, so its end is awaited while it keeps
+                // delivering, up to one lag after its last input.
+                let since = self
+                    .leader_ended_at
+                    .into_iter()
+                    .chain(self.follower_input_at)
+                    .max()
+                    .unwrap_or(now);
+                let deadline = self.deadline(since);
                 if self.follower_active() && now < deadline && self.under_buffer_limit() {
                     return Step::Wait(Some(deadline));
                 }
@@ -910,21 +983,20 @@ impl MuxState {
         }
     }
 
-    /// Whether the follower may still deliver fragments of the output's
-    /// epoch: everything queued belongs to it and the track is active.
+    /// Whether the follower may still deliver audio of the output's Period
+    /// (an A/V or an audio-only one): everything queued belongs to that
+    /// Period (under any init) and the track is active.
     fn follower_tail_pending(&self, may_wait: bool) -> bool {
         let (Some(follower), Some(output)) = (&self.follower, &self.output) else {
             return false;
         };
-        let Some(epoch) = &output.follower else {
-            return false;
-        };
+        let period = &output.leader.period;
         may_wait
             && follower.status == Status::Active
-            && follower
-                .queue
-                .iter()
-                .all(|item| matches!(item, Queued::Media(media) if media.init.same_epoch(epoch)))
+            && follower.queue.iter().all(|item| match item {
+                Queued::Media(media) => media.init.period.same(period),
+                Queued::Init(init) => init.period.same(period),
+            })
     }
 
     /// Decides which follower fragments belong to the leader slice
@@ -1264,56 +1336,209 @@ impl MuxState {
         );
     }
 
-    /// Writes queued follower fragments left after the slices as tail
-    /// items. `prefix_only`: only those of the output's epoch at the head of
-    /// the queue (ahead of a Period change). Otherwise the queue is drained
-    /// (at the end of the stream): a run under another init of the current
-    /// Period is announced with that init, earlier Periods are dropped.
+    /// The Period of the first queued follower media.
+    fn next_follower_period(&self) -> Option<PeriodKey> {
+        self.follower
+            .as_ref()?
+            .queue
+            .iter()
+            .find_map(|item| match item {
+                Queued::Media(media) => Some(media.init.period.clone()),
+                Queued::Init(_) => None,
+            })
+    }
+
+    /// Whether `period` is known to have no leader content: leader media
+    /// already comes from a later Period, the leader ended, or its planner
+    /// reported the Period.
+    fn leader_skips(&self, period: &PeriodKey, head: Option<&PeriodKey>) -> bool {
+        match head {
+            Some(head) => is_before(period, head),
+            None => {
+                self.leader.status == Status::Ended
+                    || self.leader_absent.iter().any(|(absent, after)| {
+                        absent.same(period) && self.leader_next_sequence >= *after
+                    })
+            }
+        }
+    }
+
+    /// Writes follower runs of Periods without leader content as audio-only
+    /// epochs, after the output Period's own follower tail. Returns whether
+    /// anything was written.
+    fn emit_gap_audio(&mut self, head: Option<&PeriodKey>) -> bool {
+        let mut written = false;
+        loop {
+            let Some(run_period) = self.next_follower_period() else {
+                return written;
+            };
+            let output_period = self
+                .output
+                .as_ref()
+                .map(|output| output.leader.period.clone());
+            let after_output = output_period
+                .as_ref()
+                .is_none_or(|output| is_after(&run_period, output));
+            if !after_output {
+                // The output Period's tail goes first, once audio of a
+                // leader-less Period is queued behind it.
+                let gap_behind = output_period
+                    .as_ref()
+                    .is_some_and(|output| run_period.same(output))
+                    && self.follower.as_ref().is_some_and(|follower| {
+                        follower.queue.iter().any(|item| {
+                            matches!(item, Queued::Media(media)
+                                if output_period.as_ref().is_some_and(|output| is_after(&media.init.period, output))
+                                    && self.leader_skips(&media.init.period, head))
+                        })
+                    });
+                if !gap_behind {
+                    return written;
+                }
+                self.flush_follower(true);
+                self.tail_flushed = true;
+                written = true;
+                continue;
+            }
+            if !self.leader_skips(&run_period, head) {
+                return written;
+            }
+            let run = self.pop_follower_run();
+            if run.is_empty() {
+                return written;
+            }
+            for media in run {
+                self.write_audio_only(media);
+            }
+            written = true;
+        }
+    }
+
+    /// Removes the next run of queued follower media under one init.
+    fn pop_follower_run(&mut self) -> Vec<QueuedMedia> {
+        let mut run = Vec::new();
+        let Some(follower) = self.follower.as_mut() else {
+            return run;
+        };
+        while matches!(follower.queue.front(), Some(Queued::Init(_))) {
+            follower.pop_front();
+        }
+        let Some(Queued::Media(head)) = follower.queue.front() else {
+            return run;
+        };
+        let run_init = Arc::clone(&head.init);
+        while matches!(
+            follower.queue.front(),
+            Some(Queued::Media(media)) if media.init.same_epoch(&run_init)
+        ) {
+            if let Some(Queued::Media(media)) = follower.pop_front() {
+                run.push(media);
+            }
+        }
+        run
+    }
+
+    /// Writes one follower segment as an item of an audio-only epoch under
+    /// the follower's own init.
+    fn write_audio_only(&mut self, media: QueuedMedia) {
+        let Some(&(start, _)) = media.fragments.get(media.consumed) else {
+            return;
+        };
+        let end = media.fragments.last().map_or(start, |&(_, end)| end);
+        let pending = self.prepare_output(&media.init, None);
+        self.choose_origin(std::iter::once((start, media.init.timescale)));
+        let shift = self.output_shift(&media.init);
+        let Some(init) = pending
+            .as_ref()
+            .map(|pending| &pending.output)
+            .or(self.output.as_ref())
+            .and_then(|output| output.init.as_ref())
+        else {
+            return;
+        };
+        let mut data = Vec::new();
+        let written = shift.and_then(|shift| {
+            init.parse_media_segment(0, &media.data, 0)?
+                .into_iter()
+                .skip(media.consumed)
+                .try_for_each(|mut fragment| {
+                    fragment.shift_decode_time(shift)?;
+                    self.writer.write(fragment, &mut data)
+                })
+        });
+        if let Err(error) = written {
+            warn!(%error, "audio of a Period without video rejected by the merger; dropped");
+            return;
+        }
+        let segment = media_segment(&media.descriptor, start, end, media.init.timescale);
+        self.emit_media(
+            pending,
+            HlsData::M4sData(M4sData::Segment(M4sSegmentData {
+                segment,
+                data: Bytes::from(data),
+            })),
+        );
+    }
+
+    /// Writes queued follower fragments left after the slices. `prefix_only`:
+    /// only those of the output's Period at the head of the queue (ahead of a
+    /// Period change), each run under a changed init announced with it.
+    /// Otherwise the queue is drained (at the end of the stream), Periods
+    /// after the output's as audio-only epochs and earlier ones dropped.
     fn flush_follower(&mut self, prefix_only: bool) {
         loop {
             let Some(output) = &self.output else {
                 return;
             };
-            let Some(follower) = self.follower.as_mut() else {
+            let Some(run_period) = self.next_follower_period() else {
                 return;
             };
-            // The next run: consecutive queued media under one init.
-            while matches!(follower.queue.front(), Some(Queued::Init(_))) {
-                follower.pop_front();
+            let output_period = output.leader.period.clone();
+            let audio_only = output.leader.track != self.leader.track;
+            if !run_period.same(&output_period) {
+                if prefix_only {
+                    return;
+                }
+                let run = self.pop_follower_run();
+                if is_before(&run_period, &output_period) {
+                    self.stats.stale_fragments += run
+                        .iter()
+                        .map(|media| (media.fragments.len() - media.consumed) as u64)
+                        .sum::<u64>();
+                } else {
+                    for media in run {
+                        self.write_audio_only(media);
+                    }
+                }
+                continue;
             }
-            let Some(Queued::Media(head)) = follower.queue.front() else {
+            let run = self.pop_follower_run();
+            let Some(run_init) = run.first().map(|media| Arc::clone(&media.init)) else {
                 return;
             };
-            let run_init = Arc::clone(&head.init);
-            let current = output
+            let Some(output) = &self.output else {
+                return;
+            };
+            if audio_only {
+                for media in run {
+                    self.write_audio_only(media);
+                }
+            } else if output
                 .follower
                 .as_ref()
-                .is_some_and(|epoch| epoch.same_epoch(&run_init));
-            if prefix_only && !current {
-                return;
-            }
-            let mut run = Vec::new();
-            while matches!(
-                follower.queue.front(),
-                Some(Queued::Media(media)) if media.init.same_epoch(&run_init)
-            ) {
-                if let Some(Queued::Media(media)) = follower.pop_front() {
-                    run.push(media);
-                }
-            }
-            let pending = if current {
-                None
-            } else if output.init.is_some() && run_init.period.same(&output.leader.period) {
+                .is_some_and(|epoch| epoch.same_epoch(&run_init))
+            {
+                self.write_tail(run, None);
+            } else if output.init.is_some() {
                 let leader = Arc::clone(&output.leader);
-                self.prepare_output(&leader, Some(Arc::clone(&run_init)))
+                let pending = self.prepare_output(&leader, Some(run_init));
+                self.write_tail(run, pending);
             } else {
                 self.stats.stale_fragments += run
                     .iter()
                     .map(|media| (media.fragments.len() - media.consumed) as u64)
                     .sum::<u64>();
-                continue;
-            };
-            self.write_tail(run, pending);
+            }
         }
     }
 
@@ -1428,6 +1653,7 @@ fn build_init(
     descriptor: Arc<SegmentDescriptor>,
     leader: bool,
 ) -> Result<TrackInit, MergeError> {
+    let track = dash_meta(&descriptor).map_or(MediaTrack::Video, |meta| meta.track);
     let (period, representation, period_start, pto, mpd_timescale) = match dash_meta(&descriptor) {
         Some(meta) => (
             PeriodKey {
@@ -1472,6 +1698,7 @@ fn build_init(
         None => 0,
     };
     Ok(TrackInit {
+        track,
         period,
         representation,
         data,
@@ -2297,33 +2524,139 @@ mod tests {
         assert_eq!(tracks, [1, 2], "the kept audio fragment is written");
     }
 
+    /// `item` re-keyed into another epoch scope: the same Period and
+    /// Representation id under a new init, as the planner issues after a PTO
+    /// or sample entry change.
+    fn rescoped(item: TrackItem, scope: &str) -> TrackItem {
+        let Ok(AssembledItem::Payload(payload)) = item else {
+            panic!("test items are payloads");
+        };
+        let rekey = |descriptor: &Arc<SegmentDescriptor>| {
+            let mut descriptor = descriptor.as_ref().clone();
+            descriptor.key.scope = Some(Arc::from(scope));
+            Arc::new(descriptor)
+        };
+        Ok(AssembledItem::Payload(match payload {
+            SegmentPayload::Mp4Init { data, descriptor } => SegmentPayload::Mp4Init {
+                data,
+                descriptor: rekey(&descriptor),
+            },
+            SegmentPayload::Mp4Media { data, descriptor } => SegmentPayload::Mp4Media {
+                data,
+                descriptor: rekey(&descriptor),
+            },
+            other => other,
+        }))
+    }
+
+    fn absent(period: &str, start_secs: u64, after_sequence: u64) -> TrackItem {
+        Ok(AssembledItem::Notice(EngineNotice::TrackAbsent {
+            section_id: Some(Arc::from(period)),
+            section_start: Duration::from_secs(start_secs),
+            after_sequence,
+        }))
+    }
+
+    #[tokio::test]
+    async fn an_audio_only_period_announced_by_the_video_planner_is_recorded_live() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.audio(init(a, Some("p0"), 0, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p0"), 0, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        // An ad break without video: no video item will come for p1, whose
+        // gap follows video sequence number 1.
+        h.video(absent("p1", 1, 2)).await;
+        h.audio(init(a, Some("p1"), 1, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p1"), 1, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        let mut h = h;
+        let mut seen = Vec::new();
+        while seen.len() < 5 {
+            let item = tokio::time::timeout(WAIT, h.out.recv())
+                .await
+                .expect("the audio-only Period is written without waiting for video")
+                .unwrap()
+                .unwrap();
+            seen.push(kind(&item));
+        }
+        assert_eq!(seen, ["init", "media", "epoch", "init", "media"]);
+        // Video returns with the next Period.
+        h.video(init(v, Some("p2"), 2, VIDEO_INIT)).await;
+        h.video(media(v, Some("p2"), 2, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(init(a, Some("p2"), 2, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p2"), 2, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let kinds: Vec<&str> = items.iter().map(kind).collect();
+        assert_eq!(kinds, ["epoch", "init", "media", "end"]);
+        let tracks: Vec<u32> = fragments(media_data(&items)[0])
+            .iter()
+            .map(|(_, id)| *id)
+            .collect();
+        assert_eq!(tracks, [1, 2], "back to video and audio");
+    }
+
+    #[tokio::test]
+    async fn changed_init_audio_tails_survive_a_period_change() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.audio(rescoped(init(a, Some("p0"), 0, AUDIO_INIT), "a#1"))
+            .await;
+        h.audio(rescoped(
+            media(a, Some("p0"), 0, 1, Bytes::from_static(AUDIO_1)),
+            "a#1",
+        ))
+        .await;
+        // p0's audio switches init after the only video segment.
+        h.audio(rescoped(init(a, Some("p0"), 0, AUDIO_INIT), "a#2"))
+            .await;
+        h.audio(rescoped(
+            media(a, Some("p0"), 0, 2, with_tfdt(AUDIO_1, 48_000)),
+            "a#2",
+        ))
+        .await;
+        h.video(init(v, Some("p1"), 2, VIDEO_INIT)).await;
+        h.video(media(v, Some("p1"), 2, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(init(a, Some("p1"), 2, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p1"), 2, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let kinds: Vec<&str> = items.iter().map(kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                "init", "media", "epoch", "init", "media", "epoch", "init", "media", "end"
+            ]
+        );
+        let tail = media_data(&items)[1];
+        assert!(
+            fragments(tail).iter().all(|(_, id)| *id == 2),
+            "the a#2 tail"
+        );
+    }
+
     #[tokio::test]
     async fn an_audio_tail_under_a_changed_init_is_announced_with_it() {
         let h = start(MediaTrack::Video, true, lag(WAIT));
         let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
         // Same Period and Representation id, but a new init (as the planner
         // issues after a PTO or sample entry change): a new epoch scope.
-        let rescoped = |item: TrackItem, scope: &str| -> TrackItem {
-            let Ok(AssembledItem::Payload(payload)) = item else {
-                unreachable!("test items are payloads")
-            };
-            let rekey = |descriptor: &Arc<SegmentDescriptor>| {
-                let mut descriptor = descriptor.as_ref().clone();
-                descriptor.key.scope = Some(Arc::from(scope));
-                Arc::new(descriptor)
-            };
-            Ok(AssembledItem::Payload(match payload {
-                SegmentPayload::Mp4Init { data, descriptor } => SegmentPayload::Mp4Init {
-                    data,
-                    descriptor: rekey(&descriptor),
-                },
-                SegmentPayload::Mp4Media { data, descriptor } => SegmentPayload::Mp4Media {
-                    data,
-                    descriptor: rekey(&descriptor),
-                },
-                other => other,
-            }))
-        };
         h.video(init(v, None, 0, VIDEO_INIT)).await;
         h.video(media(v, None, 0, 1, Bytes::from_static(VIDEO_1)))
             .await;

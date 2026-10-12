@@ -123,33 +123,64 @@ pub struct Rejected {
     pub adaptation_set_id: Option<String>,
     /// `None` when the whole AdaptationSet was rejected.
     pub representation_id: Option<String>,
-    /// Video or audio, when `@contentType` or the MIME type tells, so a
-    /// rejection can be attributed to the track it would have served.
-    pub content_type: Option<ContentType>,
+    /// What the element would have carried, so a rejection can be
+    /// attributed to the track it would have served.
+    pub content: RejectedContent,
     pub feature: UnsupportedFeature,
 }
 
-/// The media type `@contentType` or a `video/…`/`audio/…` MIME type
-/// declares, whatever the container.
-fn declared_content_type(
-    set: &RawAdaptationSet,
-    common: Option<&RawCommon>,
-) -> Option<ContentType> {
+/// The media type of a rejected AdaptationSet or Representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RejectedContent {
+    Video,
+    Audio,
+    /// Declared as something else: text (subtitles), images, metadata.
+    Other,
+    /// Nothing declares the type.
+    Unknown,
+}
+
+/// What `@contentType`, else the MIME type (with `@codecs` for ISO BMFF
+/// carried text), declares.
+fn declared_content(set: &RawAdaptationSet, common: Option<&RawCommon>) -> RejectedContent {
     match set.content_type.as_deref() {
-        Some("video") => return Some(ContentType::Video),
-        Some("audio") => return Some(ContentType::Audio),
-        _ => {}
+        Some("video") => return RejectedContent::Video,
+        Some("audio") => return RejectedContent::Audio,
+        Some(_) => return RejectedContent::Other,
+        None => {}
     }
-    let mime = common
+    let Some(mime) = common
         .and_then(|common| common.mime_type.as_deref())
-        .or(set.common.mime_type.as_deref())?;
+        .or(set.common.mime_type.as_deref())
+    else {
+        return RejectedContent::Unknown;
+    };
     let mime = mime.trim_start().to_ascii_lowercase();
-    if mime.starts_with("video/") {
-        Some(ContentType::Video)
-    } else if mime.starts_with("audio/") {
-        Some(ContentType::Audio)
-    } else {
-        None
+    let media = mime.split('/').next().unwrap_or("");
+    match media {
+        "video" => RejectedContent::Video,
+        "audio" => RejectedContent::Audio,
+        "text" | "image" => RejectedContent::Other,
+        "application" => {
+            let codecs = common
+                .and_then(|common| common.codecs.as_deref())
+                .or(set.common.codecs.as_deref())
+                .unwrap_or("");
+            let text_codec = codecs
+                .split(',')
+                .map(|codec| codec.trim().to_ascii_lowercase())
+                .any(|codec| {
+                    ["stpp", "wvtt", "tx3g", "c608", "evte"]
+                        .iter()
+                        .any(|text| codec.starts_with(text))
+                });
+            if text_codec || mime.contains("ttml") || mime.contains("vtt") {
+                RejectedContent::Other
+            } else {
+                RejectedContent::Unknown
+            }
+        }
+        _ => RejectedContent::Unknown,
     }
 }
 
@@ -438,7 +469,7 @@ impl Resolver {
             let set_base = match check_set(&set, &base) {
                 Ok(set_base) => set_base,
                 Err(ManifestError::Unsupported(feature)) => {
-                    let content_type = declared_content_type(
+                    let content = declared_content(
                         &set,
                         representations
                             .first()
@@ -447,7 +478,7 @@ impl Resolver {
                     rejected.push(Rejected {
                         adaptation_set_id: set.id.clone(),
                         representation_id: None,
-                        content_type,
+                        content,
                         feature,
                     });
                     continue;
@@ -458,7 +489,7 @@ impl Resolver {
             for representation in representations {
                 self.charge(REPRESENTATION_OVERHEAD + 2 * representation.id.len())?;
                 let id = representation.id.clone();
-                let content_type = declared_content_type(&set, Some(&representation.common));
+                let content = declared_content(&set, Some(&representation.common));
                 let context = SetContext {
                     set: &set,
                     period_info: &period.segment_info,
@@ -471,7 +502,7 @@ impl Resolver {
                         rejected.push(Rejected {
                             adaptation_set_id: set.id.clone(),
                             representation_id: Some(id),
-                            content_type,
+                            content,
                             feature,
                         });
                     }

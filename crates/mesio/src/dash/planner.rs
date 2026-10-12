@@ -35,6 +35,10 @@
 //! new MPD, so queued and retrying work picks up refreshed URLs (and signed
 //! URL renewals reach the store's 401/403 handling).
 //!
+//! A Period that has begun without this track is reported downstream
+//! (`EngineNotice::TrackAbsent`), so the muxer records the other track
+//! through it and this track's stall detection stays quiet.
+//!
 //! Where recording starts is decided once per session ([`decide_start`]) and
 //! shared by every track. A configured track that the starting Period lacks
 //! is not recorded, even if a later Period carries it; the first such Period
@@ -52,7 +56,7 @@ use url::Url;
 use crate::DownloadError;
 use crate::dash::config::{DashSelectionConfig, LiveStartPolicy};
 use crate::dash::manifest::{
-    ByteRange, Clock, ContentType, Manifest, ManifestError, Period, PresentationType,
+    ByteRange, Clock, Manifest, ManifestError, Period, PresentationType, RejectedContent,
     Representation, Segment, SegmentWindow, UnsupportedFeature,
 };
 use crate::dash::selection;
@@ -300,7 +304,18 @@ impl DashPlanner {
             }
             let representation = match self.representation_for(period, &key) {
                 Ok(Some(representation)) => representation,
-                Ok(None) => continue,
+                Ok(None) => {
+                    // Lets the muxer record the other track through this
+                    // Period, and keeps this track's stall detection quiet.
+                    if has_started(manifest, period, now) {
+                        outcome.notices.push(EngineNotice::TrackAbsent {
+                            section_id: key.id.clone(),
+                            section_start: key.start,
+                            after_sequence: self.next_ordinal,
+                        });
+                    }
+                    continue;
+                }
                 // Work planned before this Period is delivered first; the
                 // error ends the stream once nothing earlier is outstanding.
                 Err(error) if self.next_ordinal > frontier => {
@@ -768,17 +783,30 @@ pub(crate) fn decide_start(
     }))
 }
 
+/// Whether `period` has begun at `now` (always, for static presentations).
+fn has_started(manifest: &Manifest, period: &Period, now: DateTime<Utc>) -> bool {
+    let Some(availability_start) = manifest
+        .availability_start_time
+        .filter(|_| manifest.presentation_type == PresentationType::Dynamic)
+    else {
+        return true;
+    };
+    (now - availability_start)
+        .to_std()
+        .is_ok_and(|elapsed| elapsed >= period.start)
+}
+
 /// The unsupported feature that kept `track` out of `period`, when a
 /// rejected Representation was (or may have been) of that track's type.
 pub(crate) fn rejection_for(period: &Period, track: MediaTrack) -> Option<UnsupportedFeature> {
     let wanted = match track {
-        MediaTrack::Video => ContentType::Video,
-        MediaTrack::Audio => ContentType::Audio,
+        MediaTrack::Video => RejectedContent::Video,
+        MediaTrack::Audio => RejectedContent::Audio,
     };
     period
         .rejected
         .iter()
-        .find(|rejected| rejected.content_type.is_none_or(|kind| kind == wanted))
+        .find(|rejected| rejected.content == wanted || rejected.content == RejectedContent::Unknown)
         .map(|rejected| rejected.feature.clone())
 }
 
@@ -1762,5 +1790,36 @@ mod tests {
             rejection_for(&manifest.periods[0], MediaTrack::Video),
             Some(UnsupportedFeature::ContentProtection)
         ));
+    }
+
+    #[test]
+    fn rejected_text_image_and_metadata_belong_to_no_media_track() {
+        let sets = [
+            r#"<AdaptationSet contentType="text" mimeType="text/vtt"><Representation id="t1" bandwidth="1"><BaseURL>t.vtt</BaseURL></Representation></AdaptationSet>"#,
+            r#"<AdaptationSet mimeType="application/mp4" codecs="stpp"><Representation id="t2" bandwidth="1"><BaseURL>t.mp4</BaseURL></Representation></AdaptationSet>"#,
+            r#"<AdaptationSet contentType="image" mimeType="image/jpeg"><Representation id="i" bandwidth="1"><BaseURL>i.jpg</BaseURL></Representation></AdaptationSet>"#,
+            r#"<AdaptationSet mimeType="application/x-unknown"><Representation id="u" bandwidth="1"><BaseURL>u</BaseURL></Representation></AdaptationSet>"#,
+        ];
+        let mpd = static_periods(&[&format!("{CLEAR_VIDEO}{}", sets.concat())]);
+        let url = Url::parse(MPD_URL).unwrap();
+        let manifest = Manifest::parse(mpd.as_bytes(), &url).unwrap();
+        let contents: Vec<RejectedContent> = manifest.periods[0]
+            .rejected
+            .iter()
+            .map(|rejected| rejected.content)
+            .collect();
+        assert_eq!(
+            contents,
+            [
+                RejectedContent::Other,
+                RejectedContent::Other,
+                RejectedContent::Other,
+                RejectedContent::Unknown
+            ]
+        );
+        let known = static_periods(&[&format!("{CLEAR_VIDEO}{}", sets[..3].concat())]);
+        let manifest = Manifest::parse(known.as_bytes(), &url).unwrap();
+        assert_eq!(rejection_for(&manifest.periods[0], MediaTrack::Audio), None);
+        assert_eq!(rejection_for(&manifest.periods[0], MediaTrack::Video), None);
     }
 }
