@@ -45,6 +45,28 @@ impl SourceFragment {
     pub fn media_data_len(&self) -> usize {
         self.media_data.len()
     }
+
+    /// Moves the fragment by `delta` ticks of the track timescale, on top of
+    /// the time shift it was parsed with. Lets a caller parse a segment
+    /// unshifted, choose fragments by time, and shift only those it writes;
+    /// a result outside `0..=u64::MAX` is an error and leaves the fragment
+    /// unchanged.
+    pub fn shift_decode_time(&mut self, delta: i64) -> Result<(), MergeError> {
+        let decode_time = u64::try_from(i128::from(self.decode_time) + i128::from(delta))
+            .map_err(|_| MergeError::Overflow("decode time after time shift"))?;
+        let [traf] = self.moof.trafs.as_mut_slice() else {
+            return Err(MergeError::malformed(
+                b"moof",
+                "fragment lost its track fragment",
+            ));
+        };
+        let tfdt = traf
+            .tfdt_mut()
+            .ok_or_else(|| MergeError::missing(b"tfdt", b"traf"))?;
+        tfdt.set_base_media_decode_time(decode_time);
+        self.decode_time = decode_time;
+        Ok(())
+    }
 }
 
 impl MergedInit {

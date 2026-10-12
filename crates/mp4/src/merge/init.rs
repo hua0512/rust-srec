@@ -174,7 +174,8 @@ pub fn validate_init(data: &Bytes) -> Result<usize, MergeError> {
     }
     let moov = moov.ok_or_else(|| MergeError::missing(b"moov", b"file"))?;
     let (mut mvhd, mut mvex) = (None, None);
-    let mut track_ids = Vec::new();
+    // (track ID, sample entries) of every track.
+    let mut tracks: Vec<(u32, u32)> = Vec::new();
     for child in children(data, moov.body_start, moov.end, b"moov") {
         let child = child?;
         match &child.fourcc {
@@ -198,32 +199,54 @@ pub fn validate_init(data: &Bytes) -> Result<usize, MergeError> {
                 let tkhd = tkhd.ok_or_else(|| MergeError::missing(b"tkhd", b"trak"))?;
                 let (_, track_id) = parse_tkhd(&data[tkhd.body_start..tkhd.end])?;
                 let mdia = mdia.ok_or_else(|| MergeError::missing(b"mdia", b"trak"))?;
-                parse_mdia(data, &mdia)?;
-                if track_ids.contains(&track_id) {
+                let media = parse_mdia(data, &mdia)?;
+                if tracks.iter().any(|&(id, _)| id == track_id) {
                     return Err(MergeError::malformed(b"tkhd", "track ID is not unique"));
                 }
-                track_ids.push(track_id);
+                tracks.push((track_id, media.sample_entry_count));
             }
             _ => {}
         }
     }
     let mvhd = mvhd.ok_or_else(|| MergeError::missing(b"mvhd", b"moov"))?;
     Mvhd::parse(data.slice(mvhd.body_start..mvhd.end))?;
-    if track_ids.is_empty() {
+    if tracks.is_empty() {
         return Err(MergeError::missing(b"trak", b"moov"));
     }
+    // Exactly one `trex` per track (§8.8.3), whose default sample
+    // description refers to one of that track's sample entries, as
+    // `merge_init` requires of a single-track source.
     let mvex = mvex.ok_or_else(|| MergeError::missing(b"mvex", b"moov"))?;
-    let mut with_trex = Vec::new();
+    let mut with_trex: Vec<u32> = Vec::new();
     for item in children(data, mvex.body_start, mvex.end, b"mvex") {
         let item = item?;
-        if item.fourcc == *b"trex" {
-            with_trex.push(Trex::parse(&data[item.body_start..item.end])?.track_id);
+        if item.fourcc != *b"trex" {
+            continue;
         }
+        let trex = Trex::parse(&data[item.body_start..item.end])?;
+        let Some(&(_, entries)) = tracks.iter().find(|&&(id, _)| id == trex.track_id) else {
+            return Err(MergeError::UnknownTrack {
+                track_id: trex.track_id,
+            });
+        };
+        if with_trex.contains(&trex.track_id) {
+            return Err(MergeError::malformed(
+                b"mvex",
+                "more than one trex for the track",
+            ));
+        }
+        if !(1..=entries).contains(&trex.sample_description_index) {
+            return Err(MergeError::malformed(
+                b"trex",
+                "default sample description index refers to no sample entry",
+            ));
+        }
+        with_trex.push(trex.track_id);
     }
-    if let Some(&track_id) = track_ids.iter().find(|id| !with_trex.contains(id)) {
-        return Err(MergeError::UnknownTrack { track_id });
+    if tracks.iter().any(|(id, _)| !with_trex.contains(id)) {
+        return Err(MergeError::missing(b"trex", b"mvex"));
     }
-    Ok(track_ids.len())
+    Ok(tracks.len())
 }
 
 struct SourceInit {
