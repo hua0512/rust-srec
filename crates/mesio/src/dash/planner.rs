@@ -61,6 +61,7 @@ use crate::dash::manifest::{
 };
 use crate::dash::selection;
 use crate::dash::watcher::MpdSnapshot;
+use crate::error::SharedError;
 use crate::segment_engine::control::{
     EngineNotice, PlanOutcome, PruneWindow, SegmentPlanner, SourceFailure, TerminalCause,
 };
@@ -215,6 +216,8 @@ enum PeriodPlan {
     Blocked,
 }
 
+/// Plans one track. It runs in the track's reactor, whose `dash_track` span
+/// names the track in its logs.
 pub(crate) struct DashPlanner {
     track: MediaTrack,
     selection: Arc<DashSelectionConfig>,
@@ -230,9 +233,6 @@ pub(crate) struct DashPlanner {
     /// Configured tracks this session does not record, reported once each
     /// when a Period offers them.
     absent_tracks: Vec<MediaTrack>,
-    /// The failure reason of the last failed plan and the unsupported
-    /// feature behind it, so it surfaces as a typed error.
-    unsupported: Option<(Arc<str>, UnsupportedFeature)>,
     /// Whether a Period lacking this track was reported.
     reported_absence: bool,
 }
@@ -262,7 +262,6 @@ impl DashPlanner {
             epoch_serial: 0,
             manifest_generation: None,
             absent_tracks: params.absent_tracks,
-            unsupported: None,
             reported_absence: false,
         }
     }
@@ -330,7 +329,7 @@ impl DashPlanner {
                 // Work planned before this Period is delivered first; the
                 // error ends the stream once nothing earlier is outstanding.
                 Err(error) if self.next_ordinal > frontier => {
-                    debug!(track = %self.track, %error, "planning paused before an unusable Period");
+                    debug!(%error, "planning paused before an unusable Period");
                     blocked = true;
                     break;
                 }
@@ -587,7 +586,6 @@ impl DashPlanner {
             epoch.last_end = scope.bounds(&segment).1;
             let Some(key) = media_key(&self.identity, scope, epoch, &segment) else {
                 warn!(
-                    track = %track,
                     number = segment.number,
                     "skipping a DASH segment with an invalid byte range"
                 );
@@ -640,12 +638,8 @@ impl DashPlanner {
         // Its index could not be read (see `OnIndexFailure::Skip`). Failing
         // here, not when listing its segments, lets the caller deliver the
         // work planned before this Period first.
-        if let Some(representation) = selected
-            && representation.pending_segment_index().is_some()
-        {
-            return Err(ManifestError::SegmentIndexPending {
-                representation: representation.id.clone(),
-            });
+        if let Some(error) = selected.and_then(Representation::unread_segment_index_error) {
+            return Err(error);
         }
         if selected.is_none() {
             // A Period that offers this track only in rejected form (DRM,
@@ -658,7 +652,6 @@ impl DashPlanner {
             if !self.reported_absence {
                 self.reported_absence = true;
                 info!(
-                    track = %self.track,
                     period = %key.label(),
                     "a Period does not carry this track; it has a gap there"
                 );
@@ -703,7 +696,6 @@ impl DashPlanner {
         );
         match self.epochs.back() {
             Some(previous) => info!(
-                track = %self.track,
                 from_period = %previous.period.label(),
                 from_representation = %previous.representation_id,
                 to_period = %key.label(),
@@ -711,7 +703,6 @@ impl DashPlanner {
                 "DASH track switches epoch"
             ),
             None => info!(
-                track = %self.track,
                 period = %key.label(),
                 representation = %representation.id,
                 "DASH track starts"
@@ -724,7 +715,6 @@ impl DashPlanner {
             // Size and duration splits do not wait for a random-access
             // point, so files cut inside such a stream may start undecodable.
             info!(
-                track = %self.track,
                 representation = %representation.id,
                 "Representation does not declare segments starting with a stream access point"
             );
@@ -895,37 +885,22 @@ impl SegmentPlanner for DashPlanner {
             terminal: snapshot.terminal.clone(),
             ..PlanOutcome::default()
         };
-        if matches!(
-            snapshot.terminal,
-            Some(TerminalCause::Failed(_) | TerminalCause::HttpFailure { .. })
-        ) {
+        if matches!(snapshot.terminal, Some(TerminalCause::Failed(_))) {
             return outcome;
         }
         if let Err(error) = self.plan_snapshot(snapshot, &mut outcome) {
-            warn!(track = %self.track, %error, "DASH planning failed");
-            let reason: Arc<str> = Arc::from(error.to_string());
-            if let ManifestError::Unsupported(feature) = error {
-                self.unsupported = Some((Arc::clone(&reason), feature));
-            }
+            warn!(%error, "DASH planning failed");
             return PlanOutcome {
                 generation: snapshot.generation,
-                terminal: Some(TerminalCause::Failed(reason)),
+                terminal: Some(TerminalCause::Failed(SharedError::new(error.into()))),
                 ..PlanOutcome::default()
             };
         }
         outcome
     }
 
-    fn failure_error(&self, failure: SourceFailure<'_>) -> DownloadError {
+    fn failure_error(&self, failure: SourceFailure) -> DownloadError {
         let reason = match failure {
-            SourceFailure::Failed(reason) => {
-                if let Some((failed, feature)) = &self.unsupported
-                    && failed.as_ref() == reason
-                {
-                    return ManifestError::Unsupported(feature.clone()).into();
-                }
-                reason.to_owned()
-            }
             SourceFailure::Reset(kind) => format!("{} timeline reset ({kind:?})", self.track),
             SourceFailure::Lost => "MPD watcher stopped without a terminal cause".to_owned(),
         };
@@ -1636,9 +1611,26 @@ mod tests {
         fixture.consume_all();
         let last = fixture.plan(&finished);
         assert!(
-            matches!(&last.terminal, Some(TerminalCause::Failed(reason)) if reason.contains("has not been read")),
+            matches!(&last.terminal, Some(TerminalCause::Failed(error)) if error.to_string().contains("has not been read")),
             "{:?}",
             last.terminal
+        );
+        // When the read failed, the stream ends with that failure.
+        let failed = fixture.plan_edited(&finished, |manifest| {
+            manifest.periods[1].adaptation_sets[0].representations[0].fail_segment_index(
+                SharedError::new(DownloadError::InvalidContent {
+                    protocol: "dash",
+                    reason: "corrupt sidx".to_owned(),
+                }),
+            );
+        });
+        let Some(TerminalCause::Failed(error)) = failed.terminal else {
+            panic!("expected a failure, got {:?}", failed.terminal);
+        };
+        let error = error.to_error();
+        assert!(
+            matches!(&error, DownloadError::InvalidContent { reason, .. } if reason == "corrupt sidx"),
+            "{error:?}"
         );
     }
 
@@ -1703,15 +1695,16 @@ mod tests {
             parent_params: Vec::new().into(),
             fetched_at: fixture.clock.now(),
             clock_offset: crate::dash::manifest::ClockOffset::ZERO,
-            terminal: Some(TerminalCause::Failed(Arc::from("gone"))),
+            terminal: Some(TerminalCause::Failed(SharedError::new(
+                DownloadError::Manifest {
+                    reason: "gone".to_owned(),
+                },
+            ))),
         };
         let planner = fixture.planner.as_mut().unwrap();
         let outcome = planner.plan(&snapshot);
         assert!(outcome.descriptors.is_empty());
-        assert!(matches!(
-            planner.failure_error(SourceFailure::Failed("gone")),
-            DownloadError::Manifest { .. }
-        ));
+        assert_eq!(outcome.terminal, snapshot.terminal);
     }
 
     fn reissued(outcome: &PlanOutcome) -> Vec<(u64, SegmentKey, String)> {
@@ -1896,14 +1889,10 @@ mod tests {
         );
         fixture.consume_all();
         let failed = fixture.plan(mpd);
-        let Some(TerminalCause::Failed(reason)) = failed.terminal else {
+        let Some(TerminalCause::Failed(error)) = failed.terminal else {
             panic!("expected a failure, got {:?}", failed.terminal);
         };
-        let error = fixture
-            .planner
-            .as_ref()
-            .unwrap()
-            .failure_error(SourceFailure::Failed(&reason));
+        let error = error.to_error();
         assert!(
             matches!(
                 error,

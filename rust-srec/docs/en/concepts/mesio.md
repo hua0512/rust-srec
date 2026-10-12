@@ -87,6 +87,8 @@ The download session and media repair are separate layers. When stream processin
 
 The HLS download reactor reports or skips unavailable media according to the configured gap policy. The fix pipeline receives only delivered media and explicit split or terminal markers; it cannot reconstruct bytes that the source never delivered and it does not transcode media payloads.
 
+A download that delivers no media because its segments failed ends with that failure, such as the HTTP status or network error, rather than as an empty recording. Once media is known to need an fMP4 initialization segment that failed, it is no longer downloaded, since it cannot be decoded; a live stream that would start with such media ends at once. MPEG-TS media is still downloaded, because it decodes without its initialization segment.
+
 ## Mesio-exclusive features
 
 Mesio-specific processing options are documented on the [Engines](./engines.md) page:

@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 
 use crate::DownloadError;
+use crate::error::SharedError;
 
 use super::control::EngineNotice;
 use super::identity::SegmentKey;
@@ -27,6 +28,11 @@ pub enum AssemblerInput {
     TerminalFailed {
         key: SegmentKey,
         msn: u64,
+        /// Why, as the stream's error should nothing be delivered.
+        error: SharedError,
+        /// A media segment that was not fetched because the init it needs
+        /// failed; `error` is the init's.
+        init_failed: bool,
     },
     /// Planner-derived notice, forwarded to the sink immediately.
     Notice(EngineNotice),

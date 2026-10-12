@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::error::DownloadError;
+use crate::error::{DownloadError, SharedError};
 
 /// Why an MPD could not be parsed, resolved or evaluated.
 ///
@@ -75,6 +75,15 @@ pub enum ManifestError {
     /// Segment Index was read (see `Representation::apply_segment_index`).
     #[error("the Segment Index of Representation `{representation}` has not been read")]
     SegmentIndexPending { representation: String },
+
+    /// Reading or applying a `SegmentBase` Representation's Segment Index
+    /// failed (see `Representation::fail_segment_index`). Surfaces as
+    /// `cause` itself.
+    #[error("the Segment Index of Representation `{representation}` could not be read: {cause}")]
+    SegmentIndexUnreadable {
+        representation: String,
+        cause: SharedError,
+    },
 
     #[error("unsupported feature: {0}")]
     Unsupported(#[from] UnsupportedFeature),
@@ -219,6 +228,7 @@ impl From<ManifestError> for DownloadError {
                 protocol: "dash",
                 reason: error.to_string(),
             },
+            ManifestError::SegmentIndexUnreadable { cause, .. } => cause.to_error(),
             other => DownloadError::Manifest {
                 reason: other.to_string(),
             },

@@ -99,6 +99,14 @@ pub enum SegmentMeta {
 }
 
 impl SegmentMeta {
+    /// The protocol name errors carry.
+    pub fn protocol(&self) -> &'static str {
+        match self {
+            Self::Hls(_) => "hls",
+            Self::Dash(_) => "dash",
+        }
+    }
+
     /// Nominal media duration in seconds (`0.0` for init segments).
     pub fn duration_secs(&self) -> f32 {
         match self {

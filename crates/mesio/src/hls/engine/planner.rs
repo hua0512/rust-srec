@@ -120,10 +120,7 @@ impl SegmentPlanner for PlannerContext {
         };
         // A failed snapshot ends the stream; planning it would only advance
         // the context.
-        if matches!(
-            snapshot.terminal,
-            Some(TerminalCause::Failed(_) | TerminalCause::HttpFailure { .. })
-        ) {
+        if matches!(snapshot.terminal, Some(TerminalCause::Failed(_))) {
             return outcome;
         }
         let planned = plan(snapshot, self);
@@ -146,9 +143,8 @@ impl SegmentPlanner for PlannerContext {
         outcome
     }
 
-    fn failure_error(&self, failure: SourceFailure<'_>) -> DownloadError {
+    fn failure_error(&self, failure: SourceFailure) -> DownloadError {
         let reason = match failure {
-            SourceFailure::Failed(reason) => format!("playlist refresh failed: {reason}"),
             SourceFailure::Reset(ResetKind::SequenceRegressed) => {
                 "media-sequence reset on the playlist; stream must restart".to_string()
             }

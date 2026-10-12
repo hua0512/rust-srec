@@ -45,6 +45,11 @@ struct OriginState {
     playlist_failures_remaining: u32,
     /// After this many successful playlist serves, refreshes fail with 500.
     playlist_fail_after: Option<u32>,
+    /// After this many successful playlist serves, refreshes never answer.
+    playlist_hang_after: Option<u32>,
+    /// Set when a playlist refresh starts hanging; a held file answers only
+    /// then.
+    refresh_hanging: Option<(String, tokio::sync::watch::Sender<bool>)>,
     files: HashMap<String, FileEntry>,
     hits: HashMap<String, u64>,
     /// Path -> absolute path answered with a 302 before any other routing.
@@ -103,6 +108,14 @@ impl Origin {
         self.0.lock().unwrap().playlist_fail_after = Some(successful_serves);
     }
 
+    /// After `successful_serves`, playlist refreshes never answer; `held`
+    /// answers only once one of them is hanging.
+    fn hang_playlist_after(&self, successful_serves: u32, held: &str) {
+        let mut state = self.0.lock().unwrap();
+        state.playlist_hang_after = Some(successful_serves);
+        state.refresh_hanging = Some((held.to_owned(), tokio::sync::watch::channel(false).0));
+    }
+
     fn fail_playlist_times(&self, failures: u32) {
         self.0.lock().unwrap().playlist_failures_remaining = failures;
     }
@@ -126,6 +139,27 @@ impl Origin {
 
 async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/').to_string();
+    let (hang, held) = {
+        let state = origin.0.lock().unwrap();
+        let hang = path == state.playlist_path.as_deref().unwrap_or("live.m3u8")
+            && state
+                .playlist_hang_after
+                .is_some_and(|after| state.playlist_serves >= after);
+        let gate = state.refresh_hanging.as_ref();
+        if hang && let Some((_, hanging)) = gate {
+            hanging.send_replace(true);
+        }
+        let held = gate
+            .filter(|(held, _)| *held == path)
+            .map(|(_, hanging)| hanging.subscribe());
+        (hang, held)
+    };
+    if hang {
+        std::future::pending::<()>().await;
+    }
+    if let Some(mut hanging) = held {
+        let _ = hanging.wait_for(|hanging| *hanging).await;
+    }
     let mut state = origin.0.lock().unwrap();
     *state.hits.entry(path.clone()).or_default() += 1;
 
@@ -736,7 +770,15 @@ async fn key_client_errors_are_not_retried() {
         "hits: {}",
         origin.hits("key.bin")
     );
-    assert!(ends_with_stream_ended(&events));
+    // Nothing could be decrypted: the stream fails with the key's error.
+    assert!(
+        matches!(
+            events.last(),
+            Some(Err(HlsDownloaderError::HttpStatus { status, url, .. }))
+                if status.as_u16() == 404 && url.ends_with("key.bin")
+        ),
+        "{events:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -883,7 +925,7 @@ async fn extensionless_fmp4_uses_map_semantics_not_url_suffix() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn fmp4_init_terminal_failure_skips_dependent_media() {
+async fn fmp4_init_terminal_failure_before_any_media_fails_the_stream() {
     let origin = Origin::new();
     let body = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:0.5,\nseg0.m4s\n#EXTINF:0.5,\nseg1.m4s\n#EXT-X-ENDLIST\n";
     origin.push_playlist(body);
@@ -898,12 +940,15 @@ async fn fmp4_init_terminal_failure_skips_dependent_media() {
     let base = origin.clone().serve().await;
     let events = run_engine(&base, config).await;
 
-    // No media can be decoded without the init; the stream must end cleanly
-    // (skips, no data) rather than hang.
+    // No media can be decoded without the init; the stream must fail with
+    // the init's error rather than hang or end as if it were empty.
     assert!(data_uris(&events).is_empty(), "no media is decodable");
     assert!(
-        ends_with_stream_ended(&events),
-        "stream must terminate, not stall: {events:?}"
+        matches!(
+            events.last(),
+            Some(Err(HlsDownloaderError::HttpStatus { status, .. })) if status.as_u16() == 404
+        ),
+        "stream must fail with the init's error: {events:?}"
     );
 }
 
@@ -1603,6 +1648,113 @@ async fn hls_download_handle_join_reports_authoritative_end() {
     assert_eq!(
         handle.join().await.expect("join handle").expect("join ok"),
         DownloadTerminal::AuthoritativeEnd
+    );
+}
+
+/// Reads a session's items to their end without dropping the stream, then
+/// joins it: the session must settle on its own.
+async fn read_then_join(base: &str) -> (Option<HlsDownloaderError>, DownloadTerminal) {
+    use futures::StreamExt;
+    use mesio_engine::hls::HlsDownloader;
+
+    let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("download starts");
+    let handle = session.handle.clone();
+    let mut stream = session.items;
+    let mut error = None;
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(5), stream.next())
+        .await
+        .expect("stream item")
+    {
+        if let Err(failure) = item {
+            error = Some(failure);
+        }
+    }
+    let terminal = tokio::time::timeout(Duration::from_secs(5), handle.join())
+        .await
+        .expect("the session settles")
+        .expect("join handle")
+        .expect("join ok");
+    (error, terminal)
+}
+
+fn fmp4_playlist(endlist: bool) -> String {
+    let mut body = "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:0.5,\nseg0.m4s\n#EXTINF:0.5,\nseg1.m4s\n".to_owned();
+    if endlist {
+        body.push_str("#EXT-X-ENDLIST\n");
+    }
+    body
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_live_session_whose_map_fails_settles_with_the_failure() {
+    let origin = Origin::new();
+    origin.push_playlist(fmp4_playlist(false));
+    origin.add_file_failing("init.mp4", b"x".to_vec(), 404, u32::MAX);
+    origin.add_file("seg0.m4s", b"media0".to_vec());
+    origin.add_file("seg1.m4s", b"media1".to_vec());
+    let base = origin.clone().serve().await;
+
+    let (error, terminal) = read_then_join(&base).await;
+
+    assert!(
+        matches!(&error, Some(HlsDownloaderError::HttpStatus { url, .. }) if url.ends_with("/init.mp4")),
+        "{error:?}"
+    );
+    assert!(
+        matches!(terminal, DownloadTerminal::PipelineError(_)),
+        "{terminal:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_live_session_settles_during_a_hanging_playlist_refresh() {
+    let origin = Origin::new();
+    origin.push_playlist(fmp4_playlist(false));
+    // The init fails only once a refresh is in flight.
+    origin.hang_playlist_after(1, "init.mp4");
+    origin.add_file_failing("init.mp4", b"x".to_vec(), 404, u32::MAX);
+    origin.add_file("seg0.m4s", b"media0".to_vec());
+    origin.add_file("seg1.m4s", b"media1".to_vec());
+    let base = origin.clone().serve().await;
+
+    // The playlist request timeout is far above `read_then_join`'s bound.
+    let (error, terminal) = read_then_join(&base).await;
+
+    assert!(
+        matches!(&error, Some(HlsDownloaderError::HttpStatus { url, .. }) if url.ends_with("/init.mp4")),
+        "{error:?}"
+    );
+    assert!(
+        matches!(terminal, DownloadTerminal::PipelineError(_)),
+        "{terminal:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_finished_session_that_delivered_nothing_settles_with_the_failure() {
+    let origin = Origin::new();
+    origin.push_playlist(fmp4_playlist(true));
+    origin.add_file_failing("init.mp4", b"x".to_vec(), 404, u32::MAX);
+    origin.add_file("seg0.m4s", b"media0".to_vec());
+    origin.add_file("seg1.m4s", b"media1".to_vec());
+    let base = origin.clone().serve().await;
+
+    let (error, terminal) = read_then_join(&base).await;
+
+    assert!(
+        matches!(&error, Some(HlsDownloaderError::HttpStatus { url, .. }) if url.ends_with("/init.mp4")),
+        "{error:?}"
+    );
+    assert!(
+        matches!(terminal, DownloadTerminal::PipelineError(_)),
+        "{terminal:?}"
     );
 }
 

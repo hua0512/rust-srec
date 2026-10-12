@@ -206,10 +206,19 @@ async fn fetch_key(
             Ok(key)
         }
         Err(e) => Err(match e.as_ref() {
-            HlsDownloaderError::HttpStatus { status, .. } => Failure::new(
+            HlsDownloaderError::HttpStatus {
+                status,
+                url,
+                operation,
+            } => Failure::new(
                 FailureClass::Http(status.as_u16()),
                 format!("key fetch failed: {e}"),
-            ),
+            )
+            .with_error(HlsDownloaderError::HttpStatus {
+                status: *status,
+                url: url.clone(),
+                operation,
+            }),
             HlsDownloaderError::Network { source } if source.is_timeout() => {
                 Failure::new(FailureClass::Timeout, format!("key fetch timed out: {e}"))
             }

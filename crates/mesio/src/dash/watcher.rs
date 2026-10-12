@@ -40,7 +40,7 @@ use crate::dash::manifest::{
 };
 use crate::dash::segment_index::{self, HttpRangeReader, OnIndexFailure};
 use crate::downloader::ClientPool;
-use crate::error::DownloadError;
+use crate::error::{DownloadError, SharedError};
 use crate::redact::Redacted;
 use crate::segment_engine::control::TerminalCause;
 use crate::segment_engine::descriptor::MediaTrack;
@@ -549,18 +549,7 @@ impl MpdWatcher {
                                 "MPD refresh failed"
                             );
                             if retries > self.config.manifest.max_refresh_retries {
-                                let cause = match error {
-                                    DownloadError::HttpStatus {
-                                        status,
-                                        url,
-                                        operation,
-                                    } => TerminalCause::HttpFailure {
-                                        status,
-                                        url: Arc::from(url),
-                                        operation,
-                                    },
-                                    error => TerminalCause::Failed(Arc::from(error.to_string())),
-                                };
+                                let cause = TerminalCause::Failed(SharedError::new(error));
                                 tx.send_modify(|snapshot| {
                                     snapshot.generation = generation + 1;
                                     snapshot.terminal = Some(cause);

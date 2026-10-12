@@ -20,7 +20,7 @@ use hls::HlsData;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, info, info_span, warn};
 use url::Url;
 
 use crate::CacheManager;
@@ -37,7 +37,7 @@ use crate::dash::selection;
 use crate::dash::watcher::{MpdFetcher, MpdWatcher};
 use crate::downloader::ClientPool;
 use crate::hls::engine::identity_policy;
-use crate::segment_engine::assembler::SequenceAssembler;
+use crate::segment_engine::assembler::{AssemblerExit, SequenceAssembler};
 use crate::segment_engine::budget::ByteBudget;
 use crate::segment_engine::config::{FetchConfig, OutputConfig, SegmentCoreConfig};
 use crate::segment_engine::descriptor::MediaTrack;
@@ -55,7 +55,7 @@ const OUTPUT_CHANNEL_CAPACITY: usize = 32;
 pub(crate) struct TrackHandles {
     pub track: MediaTrack,
     pub reactor: JoinHandle<Terminal>,
-    pub assembler: JoinHandle<()>,
+    pub assembler: JoinHandle<AssemblerExit>,
 }
 
 pub(crate) struct DashEngineHandles {
@@ -197,7 +197,10 @@ pub(crate) async fn start(
         let (assembler_tx, assembler_rx) = mpsc::channel(assembler_capacity);
         let (track_tx, track_rx) = mpsc::channel(TRACK_CHANNEL_CAPACITY);
 
-        let mut assembler = SequenceAssembler::new(
+        // The track's logs carry its name. The download metrics are
+        // shared by both tracks and logged once, by `join`.
+        let span = info_span!("dash_track", %track);
+        let assembler = SequenceAssembler::new(
             Arc::clone(&core_config),
             assembler_rx,
             TrackSink::new(track_tx, frontier),
@@ -205,10 +208,7 @@ pub(crate) async fn start(
             0,
             track_cancel.clone(),
         );
-        if let Some(metrics) = &performance_metrics {
-            assembler = assembler.with_performance_metrics(Arc::clone(metrics));
-        }
-        let assembler_handle = tokio::spawn(assembler.run());
+        let assembler_handle = tokio::spawn(assembler.run().instrument(span.clone()));
 
         let reactor_config = ReactorConfig {
             store: StoreConfig {
@@ -226,19 +226,22 @@ pub(crate) async fn start(
         };
         let reactor_rx = snapshot_rx.clone();
         let reactor_cancel = track_cancel.clone();
-        let reactor_handle = tokio::spawn(async move {
-            let terminal = run_reactor(
-                reactor_rx,
-                assembler_tx,
-                planner,
-                fetch_ctx,
-                reactor_config,
-                reactor_cancel,
-            )
-            .await;
-            debug!(%track, ?terminal, "DASH reactor terminated");
-            terminal
-        });
+        let reactor_handle = tokio::spawn(
+            async move {
+                let terminal = run_reactor(
+                    reactor_rx,
+                    assembler_tx,
+                    planner,
+                    fetch_ctx,
+                    reactor_config,
+                    reactor_cancel,
+                )
+                .await;
+                debug!(?terminal, "DASH reactor terminated");
+                terminal
+            }
+            .instrument(span),
+        );
 
         tracks.push(TrackHandles {
             track,
@@ -418,7 +421,7 @@ pub(crate) async fn join(
         watcher,
         tracks,
         muxer,
-        ..
+        performance_metrics,
     } = handles;
     let mut terminal = match muxer.await {
         Ok(MuxOutcome::Ended) => DownloadTerminal::AuthoritativeEnd,
@@ -445,6 +448,9 @@ pub(crate) async fn join(
         && !matches!(terminal, DownloadTerminal::PipelineError(_))
     {
         terminal = failure;
+    }
+    if let Some(metrics) = performance_metrics {
+        metrics.log_summary("dash");
     }
     debug!(
         terminal = terminal_label(&terminal),

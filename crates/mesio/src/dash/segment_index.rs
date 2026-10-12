@@ -32,11 +32,12 @@ use crate::dash::manifest::limits::{
     MAX_SEGMENT_INDEX_BOXES, MAX_SEGMENT_INDEX_BYTES, MAX_SUBSEGMENTS,
 };
 use crate::dash::manifest::{
-    ByteRange, Manifest, ManifestError, SegmentIndexLocation, Subsegment, SubsegmentIndex,
+    ByteRange, Manifest, ManifestError, Representation, SegmentIndexLocation, Subsegment,
+    SubsegmentIndex,
 };
 use crate::dash::selection;
 use crate::downloader::ClientPool;
-use crate::error::DownloadError;
+use crate::error::{DownloadError, SharedError};
 use crate::segment_engine::descriptor::{MediaTrack, inherit_query_params};
 use crate::segment_engine::fetch::fetch_range;
 use crate::segment_engine::identity::ByteRangeKey;
@@ -116,10 +117,10 @@ pub(crate) enum OnIndexFailure {
     /// Fail: recording is about to start with exactly these
     /// Representations.
     Fail,
-    /// Leave the Representation's index unread, with a warning. A running
-    /// planner keeps the Representation it records while that stays usable,
-    /// so it may not need this one; if it does, it fails on the unread
-    /// index.
+    /// Leave the Representation's index unread, with a warning and the
+    /// failure recorded on it. A running planner keeps the Representation it
+    /// records while that stays usable, so it may not need this one; if it
+    /// does, it fails with the recorded failure.
     Skip,
 }
 
@@ -181,18 +182,18 @@ pub(crate) async fn read_selected(
                 if fails(on_failure, &error) {
                     return Err(error);
                 }
-                for (_, id, track) in &users {
-                    warn_unread(&error, *track, id);
+                let error = SharedError::new(error);
+                for (period, id, track) in users {
+                    warn_unread(error.get(), track, &id);
+                    if let Some(representation) = representation_mut(manifest, period, track, &id) {
+                        representation.fail_segment_index(error.clone());
+                    }
                 }
                 continue;
             }
         };
         for (period, id, track) in users {
-            let Some(representation) = manifest
-                .periods
-                .get_mut(period)
-                .and_then(|period| selection::find_mut(period, track, &id))
-            else {
+            let Some(representation) = representation_mut(manifest, period, track, &id) else {
                 continue;
             };
             match representation.apply_segment_index(&index) {
@@ -205,11 +206,24 @@ pub(crate) async fn read_selected(
                         return Err(error);
                     }
                     warn_unread(&error, track, &id);
+                    representation.fail_segment_index(SharedError::new(error));
                 }
             }
         }
     }
     Ok(())
+}
+
+fn representation_mut<'a>(
+    manifest: &'a mut Manifest,
+    period: usize,
+    track: MediaTrack,
+    id: &str,
+) -> Option<&'a mut Representation> {
+    manifest
+        .periods
+        .get_mut(period)
+        .and_then(|period| selection::find_mut(period, track, id))
 }
 
 /// Whether an index that could not be read or applied ends the read.
@@ -918,6 +932,38 @@ mod tests {
                 .is_some()
         });
         assert_eq!((video, audio), (false, true));
+        // Needing the audio later fails with what the read failed with.
+        let audio = &manifest.periods[0].adaptation_sets[1].representations[0];
+        let error = DownloadError::from(audio.segments(chrono::Utc::now()).unwrap_err());
+        assert!(
+            matches!(error, DownloadError::HttpStatus { status, .. } if status == 410),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_index_skipped_on_refresh_keeps_its_type() {
+        let mpd = r#"<MPD type="static" mediaPresentationDuration="PT2S"><Period>
+<AdaptationSet mimeType="video/mp4"><Representation id="v" bandwidth="1"><BaseURL>v.mp4</BaseURL><SegmentBase indexRange="0-63"/></Representation></AdaptationSet>
+</Period></MPD>"#;
+        let reader = MemoryReader::with(URL, filler(b"moov", 64));
+        let document = Url::parse("https://cdn.example.com/m.mpd").unwrap();
+        let mut manifest = Manifest::parse(mpd.as_bytes(), &document).unwrap();
+        read_selected(
+            &mut manifest,
+            &selection(VideoSelection::Highest),
+            &[MediaTrack::Video],
+            &reader,
+            OnIndexFailure::Skip,
+        )
+        .await
+        .unwrap();
+        let video = &manifest.periods[0].adaptation_sets[0].representations[0];
+        let error = DownloadError::from(video.unread_segment_index_error().unwrap());
+        assert!(
+            matches!(&error, DownloadError::InvalidContent { reason, .. } if reason.contains("holds no Segment Index box")),
+            "{error}"
+        );
     }
 
     #[tokio::test]

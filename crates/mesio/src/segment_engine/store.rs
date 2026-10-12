@@ -8,13 +8,18 @@
 //! is removed while its key still sits in an index.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, BinaryHeap, HashMap};
+use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use reqwest::StatusCode;
 use tracing::{debug, trace, warn};
 
+use crate::DownloadError;
+use crate::error::SharedError;
+
 use super::budget::{ByteBudget, ByteReservation};
+use super::container::ContainerKind;
 use super::descriptor::{SegmentDescriptor, SegmentSource};
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
@@ -40,6 +45,53 @@ pub enum FailureClass {
     Oversize,
 }
 
+impl FailureClass {
+    /// The error a terminal failure of `descriptor` surfaces as, should the
+    /// stream end up delivering nothing because of it, when the failure site
+    /// gave no precise error. An HTTP failure has one: the URL it names is
+    /// the one requested, which a refresh may since have replaced.
+    fn error(self, reason: &str, descriptor: &SegmentDescriptor) -> DownloadError {
+        let protocol = descriptor.meta.protocol();
+        let reason = reason.to_owned();
+        match self {
+            Self::Http(status) => DownloadError::SegmentFetch {
+                reason,
+                retryable: !StatusCode::from_u16(status)
+                    .is_ok_and(crate::error::is_permanent_client_error),
+            },
+            Self::Network | Self::OverBudget => DownloadError::SegmentFetch {
+                reason,
+                retryable: true,
+            },
+            Self::Timeout => DownloadError::Timeout { reason },
+            Self::Decode => DownloadError::Decryption { reason },
+            Self::UnsupportedCrypto => DownloadError::Unsupported {
+                protocol,
+                feature: reason,
+            },
+            Self::InvalidFormat => DownloadError::InvalidContent { protocol, reason },
+            Self::Oversize => DownloadError::SegmentFetch {
+                reason,
+                retryable: false,
+            },
+        }
+    }
+}
+
+/// Tells the assembler that `descriptor` will never arrive, and why.
+fn terminal_input(
+    descriptor: &SegmentDescriptor,
+    error: SharedError,
+    init_failed: bool,
+) -> AssemblerInput {
+    AssemblerInput::TerminalFailed {
+        key: descriptor.key.clone(),
+        msn: descriptor.msn,
+        error,
+        init_failed,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SegmentState {
     /// Ingested and waiting in the ready index.
@@ -62,6 +114,9 @@ pub enum SegmentState {
     TerminalFailed {
         class: FailureClass,
         reason: Arc<str>,
+        /// What the stream reports should it deliver nothing because of
+        /// this; for an init, also what its media fails with.
+        error: SharedError,
     },
 }
 
@@ -94,6 +149,10 @@ pub enum SegmentOutcome {
         msn: u64,
         class: FailureClass,
         reason: Arc<str>,
+        /// The precise error, when the failure site has one: a key fetch's
+        /// names the key, not the segment. Otherwise a terminal failure's
+        /// error is derived from `class`.
+        error: Option<DownloadError>,
     },
 }
 
@@ -188,6 +247,10 @@ struct SegmentRecord {
     /// Exact entry placed in the ready index, so a source upgrade
     /// (prefetch -> playlist) can relocate it under its new priority class.
     ready_entry: Option<ReadyEntry>,
+    /// For an init: media it governs arrived as fMP4, so that media cannot
+    /// be decoded without it. Evidence for manifests that do not declare the
+    /// container (HLS, whose maps may also govern MPEG-TS).
+    governs_fmp4: bool,
 }
 
 /// Ready-index entry. Order: init first, then playlist media, then prefetch;
@@ -362,6 +425,7 @@ impl SegmentStateStore {
                         generation: 0,
                         attempt_generation: 0,
                         ready_entry: None,
+                        governs_fmp4: false,
                     },
                 );
                 self.insert_ready(&key);
@@ -452,6 +516,29 @@ impl SegmentStateStore {
                 continue;
             }
 
+            // fMP4 media whose own init terminally failed cannot be decoded,
+            // so it fails with the init's error instead of being downloaded.
+            if let Some(init_error) = self.failed_init_of(&record.descriptor) {
+                if inputs.len() >= slots {
+                    break;
+                }
+                self.remove_ready_entry(&entry);
+                let record = self.records.get_mut(&key).expect("validated above");
+                record.ready_entry = None;
+                trace!(
+                    msn = record.descriptor.msn,
+                    "skipping media of a failed init"
+                );
+                inputs.push(terminal_input(&record.descriptor, init_error.clone(), true));
+                record.state = SegmentState::TerminalFailed {
+                    class: FailureClass::InvalidFormat,
+                    reason: Arc::from("its init segment failed"),
+                    error: init_error,
+                };
+                self.terminal_failures += 1;
+                continue;
+            }
+
             let estimate = record.descriptor.size_estimate(self.size_estimate);
 
             // Oversize at admission requires a *known* size: only a BYTERANGE
@@ -485,15 +572,15 @@ impl SegmentStateStore {
                 record.ready_entry = None;
                 let msn = record.descriptor.msn;
                 warn!(msn, reason = %crate::redact::redact_diagnostic(&reason), "segment oversize at admission");
+                let error =
+                    SharedError::new(FailureClass::Oversize.error(&reason, &record.descriptor));
+                inputs.push(terminal_input(&record.descriptor, error.clone(), false));
                 record.state = SegmentState::TerminalFailed {
                     class: FailureClass::Oversize,
                     reason,
+                    error,
                 };
                 self.terminal_failures += 1;
-                inputs.push(AssemblerInput::TerminalFailed {
-                    key: key.clone(),
-                    msn,
-                });
                 continue;
             }
 
@@ -545,6 +632,16 @@ impl SegmentStateStore {
     pub fn apply_outcome(&mut self, outcome: SegmentOutcome, now: Instant) -> OutcomeEffects {
         match outcome {
             SegmentOutcome::Completed { key, msn, payload } => {
+                if !payload.is_init()
+                    && payload.is_fmp4()
+                    && let Some(init) = payload
+                        .descriptor()
+                        .init_key
+                        .as_ref()
+                        .and_then(|init_key| self.records.get_mut(init_key))
+                {
+                    init.governs_fmp4 = true;
+                }
                 let payload_len = payload.len() as u64;
                 if let Some(record) = self.records.get_mut(&key) {
                     record.state = SegmentState::Completed { completed_at: now };
@@ -563,6 +660,7 @@ impl SegmentStateStore {
                 msn,
                 class,
                 reason,
+                error,
             } => {
                 let Some(record) = self.records.get_mut(&key) else {
                     return OutcomeEffects::default();
@@ -642,23 +740,46 @@ impl SegmentStateStore {
                         }),
                     }
                 } else {
-                    record.state = SegmentState::TerminalFailed {
-                        class,
-                        reason: Arc::clone(&reason),
-                    };
-                    self.terminal_failures += 1;
                     warn!(msn, ?class, reason = %crate::redact::redact_diagnostic(&reason), "segment terminally failed");
                     // Media and init terminal failures are both surfaced; the
-                    // assembler decides whether the stream can continue (a
-                    // failed init on an fMP4 stream is fatal, a failed media
-                    // MSN is a gap to advance past).
+                    // assembler decides whether the stream can continue (see
+                    // `SequenceAssembler`).
+                    let error = SharedError::new(
+                        error.unwrap_or_else(|| class.error(&reason, &record.descriptor)),
+                    );
+                    let input = terminal_input(&record.descriptor, error.clone(), false);
+                    record.state = SegmentState::TerminalFailed {
+                        class,
+                        reason,
+                        error,
+                    };
+                    self.terminal_failures += 1;
                     OutcomeEffects {
-                        assembler_inputs: vec![AssemblerInput::TerminalFailed { key, msn }],
+                        assembler_inputs: vec![input],
                         retry_notice: None,
                     }
                 }
             }
         }
+    }
+
+    /// The error of `descriptor`'s init when that init terminally failed and
+    /// the media cannot be decoded without it: fMP4 media, declared so by
+    /// the manifest or shown so by other media of the same init. MPEG-TS
+    /// media decodes without its map.
+    fn failed_init_of(&self, descriptor: &SegmentDescriptor) -> Option<SharedError> {
+        if descriptor.key.kind != SegmentKind::Media {
+            return None;
+        }
+        let init = self.records.get(descriptor.init_key.as_ref()?)?;
+        let SegmentState::TerminalFailed { error, .. } = &init.state else {
+            return None;
+        };
+        let fmp4 = match descriptor.meta.container() {
+            Some(container) => container == ContainerKind::Fmp4,
+            None => init.governs_fmp4,
+        };
+        fmp4.then(|| error.clone())
     }
 
     fn update_size_estimate(&mut self, actual: u64) {
@@ -701,13 +822,23 @@ impl SegmentStateStore {
         // make the next refresh re-discover and re-download it, breaking the
         // same prune invariant the media retain above upholds. Unfinished
         // inits are never evicted either: dependent media is gated on them.
+        // Nor is a failed init that unfinished media needs: it keeps that
+        // media from being fetched (see `failed_init_of`).
+        let needed: HashSet<&SegmentKey> = self
+            .records
+            .values()
+            .filter(|r| r.state.is_unfinished())
+            .filter_map(|r| r.descriptor.init_key.as_ref())
+            .collect();
         let mut init_msns: Vec<(u64, SegmentKey)> = self
             .records
             .iter()
-            .filter(|(_, r)| {
+            .filter(|(key, r)| {
                 r.descriptor.key.kind == SegmentKind::Init
                     && !r.state.is_unfinished()
                     && r.descriptor.msn < window_start_msn
+                    && !(matches!(r.state, SegmentState::TerminalFailed { .. })
+                        && needed.contains(key))
             })
             .map(|(k, r)| (r.descriptor.msn, k.clone()))
             .collect();
@@ -952,6 +1083,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Http(404),
                 reason: Arc::from("404"),
+                error: None,
             },
             now,
         );
@@ -994,6 +1126,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Http(425),
                 reason: Arc::from("425"),
+                error: None,
             },
             now,
         );
@@ -1019,6 +1152,7 @@ mod tests {
                     msn: 1,
                     class: FailureClass::Network,
                     reason: Arc::from("reset"),
+                    error: None,
                 },
                 now,
             );
@@ -1066,6 +1200,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Http(403),
                 reason: Arc::from("403"),
+                error: None,
             },
             Instant::now(),
         );
@@ -1089,6 +1224,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Http(403),
                 reason: Arc::from("403"),
+                error: None,
             },
             later,
         );
@@ -1115,6 +1251,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Http(404),
                 reason: Arc::from("404"),
+                error: None,
             },
             now,
         );
@@ -1130,6 +1267,233 @@ mod tests {
             "https://e.com/1.ts?token=v2",
             "retry must use the refreshed URL, never the stale one"
         );
+    }
+
+    fn http_failure(key: &SegmentKey, msn: u64, status: u16, url: &str) -> SegmentOutcome {
+        SegmentOutcome::Failed {
+            key: key.clone(),
+            msn,
+            class: FailureClass::Http(status),
+            reason: Arc::from(format!("HTTP {status}")),
+            error: Some(DownloadError::http_status(
+                StatusCode::from_u16(status).unwrap(),
+                url,
+                "segment download",
+            )),
+        }
+    }
+
+    fn failed_url(input: &AssemblerInput) -> Option<String> {
+        match input {
+            AssemblerInput::TerminalFailed { error, .. } => match error.get() {
+                DownloadError::HttpStatus { url, .. } => Some(url.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_terminal_http_failure_names_the_url_that_was_requested() {
+        let mut s = store();
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let key = take_one(&mut s, &b).unwrap().descriptor.key.clone();
+        // A refresh replaces the URL while the attempt is in flight.
+        let mut refreshed = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+        refreshed.parsed_url = Arc::new(Url::parse("https://cdn2.e.com/1.ts").unwrap());
+        s.ingest(vec![refreshed], Instant::now());
+        let out = s.apply_outcome(
+            http_failure(&key, 1, 410, "https://e.com/1.ts"),
+            Instant::now(),
+        );
+        assert_eq!(
+            out.assembler_inputs
+                .iter()
+                .map(failed_url)
+                .collect::<Vec<_>>(),
+            [Some("https://e.com/1.ts".to_owned())]
+        );
+    }
+
+    /// An init, and three media segments that need it.
+    fn init_with_media(s: &mut SegmentStateStore) -> SegmentKey {
+        let init = descriptor("https://e.com/init.mp4", 1, SegmentKind::Init);
+        let init_key = init.key.clone();
+        let media = (1..=3).map(|msn| {
+            let mut media =
+                descriptor(&format!("https://e.com/{msn}.m4s"), msn, SegmentKind::Media);
+            media.init_key = Some(init_key.clone());
+            media
+        });
+        s.ingest(std::iter::once(init).chain(media).collect(), Instant::now());
+        init_key
+    }
+
+    #[test]
+    fn fmp4_media_of_a_failed_init_fails_with_it_unfetched() {
+        let mut s = store();
+        let b = budget_unlimited();
+        let init_key = init_with_media(&mut s);
+        let (jobs, _) = s.next_ready_jobs(2, Instant::now(), &b);
+        let media = Arc::clone(&jobs[1].descriptor);
+        // The first media shows the stream is fMP4 (HLS does not declare it).
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: media.key.clone(),
+                msn: 1,
+                payload: SegmentPayload::Mp4Media {
+                    data: Bytes::from_static(b"m"),
+                    descriptor: media,
+                },
+            },
+            Instant::now(),
+        );
+        let out = s.apply_outcome(
+            http_failure(&init_key, 1, 400, "https://e.com/init.mp4"),
+            Instant::now(),
+        );
+        assert_eq!(out.assembler_inputs.len(), 1);
+
+        let (jobs, inputs) = s.next_ready_jobs(10, Instant::now(), &b);
+        assert!(jobs.is_empty(), "undecodable media is not fetched");
+        assert!(
+            inputs.iter().all(|input| matches!(
+                input,
+                AssemblerInput::TerminalFailed {
+                    init_failed: true,
+                    ..
+                }
+            )),
+            "{inputs:?}"
+        );
+        assert_eq!(
+            inputs.iter().map(failed_url).collect::<Vec<_>>(),
+            vec![Some("https://e.com/init.mp4".to_owned()); 2]
+        );
+        assert!(!s.has_unfinished_work());
+    }
+
+    #[test]
+    fn fmp4_media_of_another_map_says_nothing_about_a_failed_map() {
+        let mut s = store();
+        let b = budget_unlimited();
+        // Map A's media arrives as fMP4.
+        let map_a = descriptor("https://e.com/a.mp4", 1, SegmentKind::Init);
+        let mut media_a = descriptor("https://e.com/1.m4s", 1, SegmentKind::Media);
+        media_a.init_key = Some(map_a.key.clone());
+        s.ingest(vec![map_a, media_a], Instant::now());
+        let (jobs, _) = s.next_ready_jobs(2, Instant::now(), &b);
+        let media = Arc::clone(&jobs[1].descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: media.key.clone(),
+                msn: 1,
+                payload: SegmentPayload::Mp4Media {
+                    data: Bytes::from_static(b"m"),
+                    descriptor: media,
+                },
+            },
+            Instant::now(),
+        );
+        // Map B fails before any of its media arrived: they are fetched.
+        let map_b = descriptor("https://e.com/b.mp4", 2, SegmentKind::Init);
+        let map_b_key = map_b.key.clone();
+        let mut media_b = descriptor("https://e.com/2.ts", 2, SegmentKind::Media);
+        media_b.init_key = Some(map_b_key.clone());
+        s.ingest(vec![map_b, media_b], Instant::now());
+        take_one(&mut s, &b).unwrap();
+        s.apply_outcome(
+            http_failure(&map_b_key, 2, 400, "https://e.com/b.mp4"),
+            Instant::now(),
+        );
+        let (jobs, inputs) = s.next_ready_jobs(10, Instant::now(), &b);
+        assert!(inputs.is_empty(), "{inputs:?}");
+        assert_eq!(jobs.len(), 1);
+    }
+
+    #[test]
+    fn a_failed_init_is_kept_while_media_needing_it_is_unfinished() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_budget: 2,
+            retry_delay_base: Duration::from_millis(10),
+            max_retained_inits: 0,
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        let init_key = init_with_media(&mut s);
+        let (jobs, _) = s.next_ready_jobs(3, Instant::now(), &b);
+        let first = Arc::clone(&jobs[1].descriptor);
+        let second = Arc::clone(&jobs[2].descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: first.key.clone(),
+                msn: 1,
+                payload: SegmentPayload::Mp4Media {
+                    data: Bytes::from_static(b"m"),
+                    descriptor: first,
+                },
+            },
+            Instant::now(),
+        );
+        // The second media waits on a retry when its init fails.
+        let now = Instant::now();
+        s.apply_outcome(
+            SegmentOutcome::Failed {
+                key: second.key.clone(),
+                msn: 2,
+                class: FailureClass::Network,
+                reason: Arc::from("reset"),
+                error: None,
+            },
+            now,
+        );
+        s.apply_outcome(
+            http_failure(&init_key, 1, 400, "https://e.com/init.mp4"),
+            now,
+        );
+        // The window moves past them all.
+        s.prune_below(10, 1);
+        let (jobs, inputs) = s.next_ready_jobs(10, now + Duration::from_secs(60), &b);
+        assert!(jobs.is_empty(), "undecodable media is not fetched");
+        assert!(
+            inputs.iter().all(|input| matches!(
+                input,
+                AssemblerInput::TerminalFailed {
+                    init_failed: true,
+                    ..
+                }
+            )),
+            "{inputs:?}"
+        );
+        assert!(!inputs.is_empty());
+    }
+
+    #[test]
+    fn ts_media_of_a_failed_map_is_still_fetched() {
+        let mut s = store();
+        let b = budget_unlimited();
+        let init_key = init_with_media(&mut s);
+        let (jobs, _) = s.next_ready_jobs(2, Instant::now(), &b);
+        let media = Arc::clone(&jobs[1].descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: media.key.clone(),
+                msn: 1,
+                payload: payload_for(&media),
+            },
+            Instant::now(),
+        );
+        s.apply_outcome(
+            http_failure(&init_key, 1, 400, "https://e.com/init.mp4"),
+            Instant::now(),
+        );
+        let (jobs, inputs) = s.next_ready_jobs(10, Instant::now(), &b);
+        assert!(inputs.is_empty(), "{inputs:?}");
+        assert_eq!(jobs.len(), 2);
     }
 
     #[test]
@@ -1290,6 +1654,7 @@ mod tests {
                 msn: 1,
                 class: FailureClass::Timeout,
                 reason: Arc::from("t"),
+                error: None,
             },
             now,
         );
@@ -1474,6 +1839,7 @@ mod tests {
                     msn: 1,
                     class,
                     reason: Arc::from("failed"),
+                    error: None,
                 },
                 Instant::now(),
             )
@@ -1618,6 +1984,7 @@ mod tests {
                     msn: 1,
                     class: FailureClass::Http(404),
                     reason: Arc::from("gone"),
+                    error: None,
                 },
                 Instant::now(),
             )

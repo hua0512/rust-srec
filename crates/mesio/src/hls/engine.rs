@@ -43,7 +43,7 @@ use crate::segment_engine::config::{FetchConfig, OutputConfig, SegmentCoreConfig
 use crate::segment_engine::metrics::PerformanceMetrics;
 use crate::session::EventSink;
 
-use assembler::SequenceAssembler;
+use assembler::{AssemblerExit, SequenceAssembler};
 use budget::ByteBudget;
 use crypto::{CryptoBackend, CryptoExecutor, KeyCache};
 use decrypt::HlsDecryptor;
@@ -59,7 +59,7 @@ use watcher::PlaylistWatcher;
 pub struct EngineHandles {
     pub watcher: JoinHandle<()>,
     pub reactor: JoinHandle<Terminal>,
-    pub assembler: JoinHandle<()>,
+    pub assembler: JoinHandle<AssemblerExit>,
     pub performance_metrics: Option<Arc<PerformanceMetrics>>,
 }
 
@@ -219,7 +219,7 @@ pub async fn start_with_events(
         cancel.clone(),
     );
     if let Some(metrics) = &performance_metrics {
-        assembler = assembler.with_performance_metrics(Arc::clone(metrics));
+        assembler = assembler.with_performance_metrics(Arc::clone(metrics), "hls");
     }
     let assembler_handle = tokio::spawn(assembler.run());
 

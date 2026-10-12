@@ -9,6 +9,7 @@
 ## Recording and recovery
 
 - Fixed Mesio refusing to record a stream whose address does not show whether it is HLS or FLV. It now uses the format the platform reports.
+- When every segment of an HLS stream fails to download, Mesio now reports why, such as the HTTP status or a network error, instead of "stream is empty". When an fMP4 stream's initialization segment cannot be downloaded, Mesio stops downloading the media that depends on it, which could only be thrown away, so such an attempt ends sooner.
 
 ## Web interface
 

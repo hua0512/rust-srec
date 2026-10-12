@@ -8,6 +8,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use url::Url;
 
+use crate::error::SharedError;
+
 use super::clock::UtcTiming;
 use super::error::{ManifestError, UnsupportedFeature};
 use super::index::{SegmentIndexLocation, SubsegmentIndex, indexed_addressing};
@@ -254,10 +256,8 @@ impl Representation {
     /// Fails while the Segment Index is unread (see
     /// [`Self::pending_segment_index`]).
     pub fn segments(&self, now: DateTime<Utc>) -> Result<SegmentWindow<'_>, ManifestError> {
-        if self.segment_index.is_some() {
-            return Err(ManifestError::SegmentIndexPending {
-                representation: self.id.clone(),
-            });
+        if let Some(error) = self.unread_segment_index_error() {
+            return Err(error);
         }
         let offset = if self.availability_time_complete {
             self.availability_time_offset
@@ -271,6 +271,29 @@ impl Representation {
     /// has not been applied. Its segments are unknown until then.
     pub fn pending_segment_index(&self) -> Option<&SegmentIndexLocation> {
         self.segment_index.as_ref().map(|pending| &pending.location)
+    }
+
+    /// Why this Representation's segments are unknown while its Segment
+    /// Index is unread: the read's failure, once one was recorded with
+    /// [`Self::fail_segment_index`].
+    pub fn unread_segment_index_error(&self) -> Option<ManifestError> {
+        let pending = self.segment_index.as_ref()?;
+        let representation = self.id.clone();
+        Some(match &pending.unreadable {
+            Some(cause) => ManifestError::SegmentIndexUnreadable {
+                representation,
+                cause: cause.clone(),
+            },
+            None => ManifestError::SegmentIndexPending { representation },
+        })
+    }
+
+    /// Records why the pending Segment Index could not be read or applied;
+    /// the Representation stays without segments.
+    pub fn fail_segment_index(&mut self, cause: SharedError) {
+        if let Some(pending) = &mut self.segment_index {
+            pending.unreadable = Some(cause);
+        }
     }
 
     /// Gives a `SegmentBase` Representation the subsegments read from its
@@ -909,6 +932,7 @@ fn build_indexed(base: &RawSegmentBase, url: &Url) -> Result<BuiltAddressing, Ma
                 range: index_range,
             },
             implicit_initialization: initialization.is_none(),
+            unreadable: None,
         }),
         initialization,
         offset,
@@ -1207,6 +1231,8 @@ struct PendingIndex {
     /// No `Initialization` element: the initialization data is everything
     /// before the index box.
     implicit_initialization: bool,
+    /// Why reading it failed, when it was tried.
+    unreadable: Option<SharedError>,
 }
 
 struct BuiltAddressing {

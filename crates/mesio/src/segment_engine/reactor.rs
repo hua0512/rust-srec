@@ -228,6 +228,16 @@ pub async fn run_reactor<P: SegmentPlanner>(
                 }
             }
 
+            // The assembler stopped on its own (it ended the stream with an
+            // error): nothing more is needed, even with nothing to forward.
+            () = assembler_tx.closed(), if pending.is_empty() => {
+                // On cancellation the assembler may stop first.
+                if cancel.is_cancelled() {
+                    break Terminal::Cancelled;
+                }
+                break Terminal::DownstreamClosed;
+            }
+
             _ = tokio::time::sleep_until(
                 tokio::time::Instant::from_std(
                     retry_deadline.unwrap_or_else(|| Instant::now() + std::time::Duration::from_secs(3600))
@@ -279,20 +289,7 @@ fn process_snapshot<P: SegmentPlanner>(
 ) -> Option<DownloadError> {
     let planned = planner.plan(snapshot);
     match &planned.terminal {
-        Some(TerminalCause::HttpFailure {
-            status,
-            url,
-            operation,
-        }) => {
-            return Some(DownloadError::HttpStatus {
-                status: *status,
-                url: url.to_string(),
-                operation,
-            });
-        }
-        Some(TerminalCause::Failed(reason)) => {
-            return Some(planner.failure_error(SourceFailure::Failed(reason)));
-        }
+        Some(TerminalCause::Failed(error)) => return Some(error.to_error()),
         // An end snapshot still carries the final window: it is planned and
         // ingested *before* `ending` is set, or its segments are lost.
         Some(TerminalCause::End) | None => {}
