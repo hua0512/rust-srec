@@ -520,6 +520,34 @@ async fn transient_404_is_rescheduled_until_success() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_vod_segment_retried_while_many_later_ones_complete_is_still_emitted() {
+    let origin = Origin::new();
+    let names: Vec<String> = (0..120).map(|i| format!("seg{i}.ts")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    origin.push_playlist(playlist(0, &refs, true));
+    for (i, name) in names.iter().enumerate() {
+        let body = format!("payload{i}").into_bytes();
+        if i == 5 {
+            origin.add_file_failing(name, body, 404, 1);
+        } else {
+            origin.add_file(name, body);
+        }
+    }
+    let mut config = fast_config();
+    // Long enough for every later segment to be downloadable before the
+    // retry, far more than the reorder buffer holds.
+    config.fetcher_config.segment_retry_delay_base = Duration::from_secs(2);
+    config.fetcher_config.max_segment_retry_delay = Duration::from_secs(2);
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, config).await;
+
+    let expected: Vec<String> = names.iter().map(|name| format!("{base}/{name}")).collect();
+    assert_eq!(data_uris(&events), expected);
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn terminal_failure_skips_segment_instead_of_stalling() {
     let origin = Origin::new();
     origin.push_playlist(playlist(0, &["seg0.ts", "seg1.ts", "seg2.ts"], true));

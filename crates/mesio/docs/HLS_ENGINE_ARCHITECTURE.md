@@ -471,7 +471,8 @@ skipped MSN is then rejected as stale. This is the defined enforcement action fo
 the keep-draining rule exists to prevent. The same fail-safe applies when the
 cursor media is gated on an unresolved fMP4 init key: below the buffer limit the
 assembler still waits for a slow init, but at the limit it skips that media as a
-visible `GapSkipped` and advances.
+visible `GapSkipped` and advances. For VOD, the reactor's reordering window keeps
+the buffer below its segment limit (see "Reordering window (VOD)").
 
 ### OutputSink
 
@@ -1398,6 +1399,17 @@ accounts for not-yet-arrived payloads.
 Important rule:
 
 The sequence assembler must continue draining completed payloads even when its reorder buffer is near a configured limit. Otherwise, an older segment queued behind newer segments can never arrive at the assembler, which can create a false gap or a deadlock.
+
+**Reordering window (VOD).** A VOD stream waits for every segment, yet the
+forced skip at the reorder buffer's limit would still skip one that is slow or
+awaiting a lifecycle retry while later segments complete. The assembler
+therefore publishes its emit cursor, and for VOD the reactor admits media only
+below that cursor plus `buffer_limits.max_segments`: completed media waiting
+behind a gap stays below the segment limit, so that limit never skips a VOD
+segment. Inits are admitted regardless, and the window re-opens as the cursor
+advances. Live streams have no window; their gap policy decides. The byte
+limit (`max_bytes`) is not covered: segments larger on average than
+`max_bytes / max_segments` can still reach it.
 
 When memory is above budget:
 

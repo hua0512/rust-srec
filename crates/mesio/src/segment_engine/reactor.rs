@@ -59,6 +59,15 @@ pub struct ReactorConfig {
     pub max_concurrency: usize,
     pub max_pending_payload_bytes: u64,
     pub max_pending_items: usize,
+    /// The assembler's emit cursor, for a stream that waits for every
+    /// segment (VOD); `None` for a live stream, whose gap policy skips.
+    ///
+    /// Media is then admitted only below the cursor plus the reorder
+    /// buffer's segment limit (`buffer_limits.max_segments`, when set). The
+    /// assembler skips the segment it waits for once the buffer reaches that
+    /// limit, so without this bound a segment that is slow or retried while
+    /// later ones complete would be skipped although it is still coming.
+    pub emit_cursor: Option<watch::Receiver<u64>>,
 }
 
 pub async fn run_reactor<P: SegmentPlanner>(
@@ -74,6 +83,9 @@ pub async fn run_reactor<P: SegmentPlanner>(
     let mut inflight: JoinSet<SegmentOutcome> = JoinSet::new();
     let budget = Arc::clone(&fetch_ctx.budget);
     let max_concurrency = config.max_concurrency.max(1);
+    let reorder_window = fetch_ctx.config.output.buffer_limits.max_segments;
+    let reorder_window = u64::try_from(reorder_window).unwrap_or(u64::MAX);
+    let mut emit_cursor = config.emit_cursor.filter(|_| reorder_window > 0);
 
     // `ending`: a terminal cause was seen — drain known work, then finish.
     // `end_queued`: AssemblerInput::End enqueued exactly once.
@@ -128,7 +140,11 @@ pub async fn run_reactor<P: SegmentPlanner>(
             && pending.len() < config.max_pending_items
         {
             let slots = max_concurrency - inflight.len();
-            let (jobs, admission_inputs) = store.next_ready_jobs(slots, Instant::now(), &budget);
+            let media_limit = emit_cursor
+                .as_mut()
+                .map(|cursor| cursor.borrow_and_update().saturating_add(reorder_window));
+            let (jobs, admission_inputs) =
+                store.next_ready_jobs_below(slots, Instant::now(), &budget, media_limit);
             for input in admission_inputs {
                 pending.push(input);
             }
@@ -244,6 +260,20 @@ pub async fn run_reactor<P: SegmentPlanner>(
                 )
             ), if retry_deadline.is_some() => {
                 // Wake to promote due retries in the next top-up pass.
+            }
+
+            // Wake to admit the media the advanced cursor lets in.
+            advanced = async {
+                match emit_cursor.as_mut() {
+                    Some(cursor) => cursor.changed().await.is_ok(),
+                    None => std::future::pending().await,
+                }
+            }, if emit_cursor.is_some() => {
+                if !advanced {
+                    // The assembler is gone and the loop ends with it; a
+                    // closed channel must not wake the loop again.
+                    emit_cursor = None;
+                }
             }
         }
     };

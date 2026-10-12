@@ -221,6 +221,7 @@ pub async fn start_with_events(
     if let Some(metrics) = &performance_metrics {
         assembler = assembler.with_performance_metrics(Arc::clone(metrics), "hls");
     }
+    let emit_cursor = (!is_live).then(|| assembler.subscribe_cursor());
     let assembler_handle = tokio::spawn(assembler.run());
 
     // --- Task B: reactor ---
@@ -237,6 +238,7 @@ pub async fn start_with_events(
         max_concurrency: concurrency,
         max_pending_payload_bytes: engine.max_pending_payload_bytes,
         max_pending_items: engine.max_pending_items,
+        emit_cursor,
     };
     let reactor_cancel = cancel.clone();
     let reactor_handle = tokio::spawn(async move {
