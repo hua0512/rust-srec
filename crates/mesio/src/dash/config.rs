@@ -26,6 +26,9 @@ pub struct DashConfig {
     /// Download concurrency, per selected track.
     pub scheduler: HlsSchedulerConfig,
     pub fetcher: HlsFetcherConfig,
+    /// Reordering and gap policy per track. `max_pending_init_segments`
+    /// must be 0 (unlimited) or at least 2: a track's current and next
+    /// epoch inits can both arrive before the next epoch's media.
     pub output: HlsOutputConfig,
     /// Byte budgets shared by the selected tracks according to
     /// `budget_split`; identity policy and state bounds per track.
@@ -83,6 +86,13 @@ impl DashConfig {
         }
         if self.mux.max_buffered_bytes == 0 {
             return invalid("mux.max_buffered_bytes must be positive");
+        }
+        // A track's planner admits the current and the next epoch, and both
+        // inits can arrive before the next epoch's media; retaining only one
+        // evicts the first before its media is written, and the planner then
+        // waits for media that waits for that init.
+        if self.output.max_pending_init_segments == 1 {
+            return invalid("output.max_pending_init_segments must be 0 (unlimited) or at least 2");
         }
         Ok(())
     }
@@ -267,6 +277,10 @@ mod tests {
     fn validation_rejects_unusable_settings() {
         let mut config = DashConfig::default();
         assert!(config.validate().is_ok());
+        config.output.max_pending_init_segments = 0;
+        assert!(config.validate().is_ok(), "0 is unlimited");
+        config.output.max_pending_init_segments = 2;
+        assert!(config.validate().is_ok());
         config.selection.include_video = false;
         config.selection.include_audio = false;
         assert!(config.validate().is_err());
@@ -279,6 +293,7 @@ mod tests {
             |config: &mut DashConfig| config.engine.max_pending_items = 0,
             |config: &mut DashConfig| config.engine.max_pending_payload_bytes = 0,
             |config: &mut DashConfig| config.mux.max_buffered_bytes = 0,
+            |config: &mut DashConfig| config.output.max_pending_init_segments = 1,
         ] {
             let mut config = DashConfig::default();
             zero(&mut config);

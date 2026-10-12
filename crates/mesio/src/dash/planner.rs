@@ -52,8 +52,8 @@ use url::Url;
 use crate::DownloadError;
 use crate::dash::config::{DashSelectionConfig, LiveStartPolicy};
 use crate::dash::manifest::{
-    ByteRange, Clock, Manifest, ManifestError, Period, PresentationType, Representation, Segment,
-    SegmentWindow, UnsupportedFeature,
+    ByteRange, Clock, ContentType, Manifest, ManifestError, Period, PresentationType,
+    Representation, Segment, SegmentWindow, UnsupportedFeature,
 };
 use crate::dash::selection;
 use crate::dash::watcher::MpdSnapshot;
@@ -225,6 +225,8 @@ pub(crate) struct DashPlanner {
     /// The failure reason of the last failed plan and the unsupported
     /// feature behind it, so it surfaces as a typed error.
     unsupported: Option<(Arc<str>, UnsupportedFeature)>,
+    /// Whether a Period lacking this track was reported.
+    reported_absence: bool,
 }
 
 pub(crate) struct PlannerParams {
@@ -253,6 +255,7 @@ impl DashPlanner {
             manifest_generation: None,
             absent_tracks: params.absent_tracks,
             unsupported: None,
+            reported_absence: false,
         }
     }
 
@@ -416,31 +419,18 @@ impl DashPlanner {
                 epoch.first_ordinal,
                 Arc::clone(&epoch.init_meta),
             ));
-            let Some(oldest) = epoch.planned.front() else {
-                continue;
-            };
             let timeline = epoch.fingerprint.timeline;
             let window = representation.segments(now)?;
-            let start = first_index(&window, |segment| {
-                locator(segment, timeline) >= oldest.locator
-            })?;
-            let mut pending = epoch.planned.iter().peekable();
-            for segment in window
-                .iter()
-                .skip(usize::try_from(start).unwrap_or(usize::MAX))
-            {
-                let segment = segment?;
-                let position = locator(&segment, timeline);
-                while pending
-                    .peek()
-                    .is_some_and(|planned| planned.locator < position)
-                {
-                    pending.next();
-                }
-                let Some(planned) = pending.peek() else {
-                    break;
+            // Each pending segment is looked up on its own: the window
+            // between two pending locators can be arbitrarily long.
+            for planned in &epoch.planned {
+                let index = first_index(&window, |segment| {
+                    locator(segment, timeline) >= planned.locator
+                })?;
+                let Some(segment) = window.get(index).transpose()? else {
+                    continue;
                 };
-                if planned.locator != position {
+                if locator(&segment, timeline) != planned.locator {
                     continue;
                 }
                 outcome.descriptors.push(media_descriptor(
@@ -451,7 +441,6 @@ impl DashPlanner {
                     planned.ordinal,
                     planned.key.clone(),
                 ));
-                pending.next();
             }
         }
         Ok(())
@@ -578,7 +567,6 @@ impl DashPlanner {
         period: &'a Period,
         key: &PeriodKey,
     ) -> Result<Option<&'a Representation>, ManifestError> {
-        period.ensure_usable()?;
         if let Some(epoch) = self.epochs.back().filter(|epoch| epoch.period.same(key))
             && let Some(representation) =
                 selection::find(period, self.track, &epoch.representation_id)
@@ -586,14 +574,22 @@ impl DashPlanner {
             return Ok(Some(representation));
         }
         let selected = selection::select(period, self.track, &self.selection);
-        // A recorded track that a later Period only offers in rejected form
-        // (DRM, WebM, ...) must not silently end; the rejection is the
-        // reason it cannot continue.
-        if selected.is_none()
-            && !self.epochs.is_empty()
-            && let Some(rejected) = period.rejected.first()
-        {
-            return Err(rejected.feature.clone().into());
+        if selected.is_none() {
+            // A Period that offers this track only in rejected form (DRM,
+            // WebM, ...) must not silently drop it; the rejection is the
+            // reason it cannot continue. A Period without the track at all
+            // is a gap in that track.
+            if let Some(feature) = rejection_for(period, self.track) {
+                return Err(feature.into());
+            }
+            if !self.reported_absence {
+                self.reported_absence = true;
+                info!(
+                    track = %self.track,
+                    period = %key.label(),
+                    "a Period does not carry this track; it has a gap there"
+                );
+            }
         }
         Ok(selected)
     }
@@ -700,14 +696,12 @@ pub(crate) fn decide_start(
 ) -> Result<Option<StartPosition>, ManifestError> {
     let reference = |period| reference_representation(period, selection_config);
     if manifest.presentation_type == PresentationType::Static {
-        return Ok(manifest
-            .periods
-            .iter()
-            .find(|period| reference(period).is_some())
-            .map(|period| StartPosition {
-                period: PeriodKey::of(period),
-                after_nanos: None,
-            }));
+        // Always the first Period: one that cannot be recorded is an error
+        // (see `rejection_for`), never silently skipped.
+        return Ok(manifest.periods.first().map(|period| StartPosition {
+            period: PeriodKey::of(period),
+            after_nanos: None,
+        }));
     }
     let Some(availability_start) = manifest.availability_start_time else {
         return Err(ManifestError::MissingAttribute {
@@ -772,6 +766,20 @@ pub(crate) fn decide_start(
         period: PeriodKey::of(period),
         after_nanos: None,
     }))
+}
+
+/// The unsupported feature that kept `track` out of `period`, when a
+/// rejected Representation was (or may have been) of that track's type.
+pub(crate) fn rejection_for(period: &Period, track: MediaTrack) -> Option<UnsupportedFeature> {
+    let wanted = match track {
+        MediaTrack::Video => ContentType::Video,
+        MediaTrack::Audio => ContentType::Audio,
+    };
+    period
+        .rejected
+        .iter()
+        .find(|rejected| rejected.content_type.is_none_or(|kind| kind == wanted))
+        .map(|rejected| rejected.feature.clone())
 }
 
 /// The Representation that decides timing for a session: video when
@@ -1650,5 +1658,109 @@ mod tests {
         .unwrap();
         assert_eq!(start.period.id.as_deref(), Some("p0"));
         assert_eq!(start.after_nanos, Some(6 * NANOS_PER_SEC));
+    }
+
+    #[test]
+    fn reissue_looks_pending_segments_up_without_scanning_the_gap() {
+        let timeline = |entries: &str| {
+            format!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT1000001S">
+  <Period id="p0">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Time$.m4s" initialization="v/init.mp4" timescale="1000">
+        <SegmentTimeline>{entries}</SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+            )
+        };
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let first = fixture.plan(&timeline(r#"<S t="0" d="1"/><S t="1000000000" d="1"/>"#));
+        assert_eq!(media(&first).len(), 2);
+        // The update fills the gap with a billion one-tick segments.
+        let started = std::time::Instant::now();
+        let update = fixture.plan(&timeline(r#"<S t="0" d="1" r="1000000000"/>"#));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "refresh work is proportional to the pending segments"
+        );
+        let mut reissued: Vec<(u64, u64)> = media(&update)
+            .iter()
+            .map(|(msn, meta, _)| (*msn, meta.time))
+            .collect();
+        reissued.sort_unstable();
+        assert_eq!(reissued, [(0, 0), (1, 1_000_000_000)]);
+    }
+
+    const CLEAR_VIDEO: &str = r#"<AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>"#;
+    const CLEAR_AUDIO: &str = r#"<AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>"#;
+    const PROTECTED_AUDIO: &str = r#"<AdaptationSet mimeType="audio/mp4">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
+      <SegmentTemplate media="pa/$Number$.m4s" initialization="pa/init.mp4" duration="2" timescale="1"/>
+      <Representation id="pa" bandwidth="2000"/>
+    </AdaptationSet>"#;
+    const PROTECTED_VIDEO: &str = r#"<AdaptationSet mimeType="video/mp4">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
+      <SegmentTemplate media="pv/$Number$.m4s" initialization="pv/init.mp4" duration="2" timescale="1"/>
+      <Representation id="pv" bandwidth="2000"/>
+    </AdaptationSet>"#;
+
+    fn static_periods(periods: &[&str]) -> String {
+        let periods: String = periods
+            .iter()
+            .enumerate()
+            .map(|(index, sets)| {
+                format!(r#"<Period id="p{index}" duration="PT4S">{sets}</Period>"#)
+            })
+            .collect();
+        format!(r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">{periods}</MPD>"#)
+    }
+
+    #[test]
+    fn rejections_count_only_against_their_own_track() {
+        let second = format!("{CLEAR_AUDIO}{PROTECTED_AUDIO}");
+        let first = format!("{CLEAR_VIDEO}{CLEAR_AUDIO}");
+        let mpd = static_periods(&[&first, &second]);
+        let url = Url::parse(MPD_URL).unwrap();
+        let manifest = Manifest::parse(mpd.as_bytes(), &url).unwrap();
+        let later = &manifest.periods[1];
+        assert_eq!(rejection_for(later, MediaTrack::Video), None);
+        assert!(rejection_for(later, MediaTrack::Audio).is_some());
+
+        // The video track is merely absent from the second Period.
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let outcome = fixture.plan(&mpd);
+        assert_eq!(media(&outcome).len(), 2);
+        assert_eq!(outcome.terminal, Some(TerminalCause::End));
+    }
+
+    #[test]
+    fn a_static_presentation_starts_at_its_first_period_even_if_unusable() {
+        let first = format!("{PROTECTED_VIDEO}{CLEAR_AUDIO}");
+        let second = format!("{CLEAR_VIDEO}{CLEAR_AUDIO}");
+        let mpd = static_periods(&[&first, &second]);
+        let url = Url::parse(MPD_URL).unwrap();
+        let manifest = Manifest::parse(mpd.as_bytes(), &url).unwrap();
+        let start = decide_start(
+            &manifest,
+            ast(),
+            LiveStartPolicy::LiveEdge,
+            &DashSelectionConfig::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(start.period.id.as_deref(), Some("p0"));
+        assert!(matches!(
+            rejection_for(&manifest.periods[0], MediaTrack::Video),
+            Some(UnsupportedFeature::ContentProtection)
+        ));
     }
 }

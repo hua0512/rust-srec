@@ -30,6 +30,7 @@ use crate::dash::manifest::{Manifest, PresentationType};
 use crate::dash::mux::{MuxOutcome, MuxTrack, TrackSink, run_muxer};
 use crate::dash::planner::{
     ConsumedFrontier, DashPlanner, PeriodKey, PlannerParams, StartPosition, decide_start,
+    rejection_for,
 };
 use crate::dash::selection;
 use crate::dash::watcher::{MpdFetcher, MpdWatcher};
@@ -289,6 +290,20 @@ fn select_tracks(
     let audio = (selection.include_audio && !multiplexed)
         .then(|| selection::select(period, MediaTrack::Audio, selection))
         .flatten();
+    let mut absent = Vec::new();
+    if selection.include_video && video.is_none() {
+        absent.push(MediaTrack::Video);
+    }
+    if selection.include_audio && !multiplexed && audio.is_none() {
+        absent.push(MediaTrack::Audio);
+    }
+    // A configured track the starting Period offers only in rejected form
+    // cannot be recorded; starting without it would hide why.
+    for &track in &absent {
+        if let Some(feature) = rejection_for(period, track) {
+            return Err(crate::dash::manifest::ManifestError::from(feature).into());
+        }
+    }
     let (Some(start), true) = (start, video.is_some() || audio.is_some()) else {
         return Err(DownloadError::Unsupported {
             protocol: "dash",
@@ -307,13 +322,6 @@ fn select_tracks(
     }
     if multiplexed {
         debug!("video Representation carries audio; no separate audio track is recorded");
-    }
-    let mut absent = Vec::new();
-    if selection.include_video && video.is_none() {
-        absent.push(MediaTrack::Video);
-    }
-    if selection.include_audio && !multiplexed && audio.is_none() {
-        absent.push(MediaTrack::Audio);
     }
     for track in &absent {
         info!(%track, "the starting Period has no such track; it is not recorded");
