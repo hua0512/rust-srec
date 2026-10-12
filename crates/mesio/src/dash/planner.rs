@@ -1,22 +1,48 @@
 //! The per-track DASH planner: MPD snapshots → segment descriptors.
 //!
 //! One planner runs per selected track inside that track's reactor. It
-//! selects the track's Representation, decides where recording starts, and
-//! issues every newly available segment exactly once under consecutive
-//! per-track ordinals (the reactor's `msn`), as the [`SegmentPlanner`]
-//! contract requires: DASH segment numbers restart per Period and are absent
-//! from time-based addressing, so they cannot be used as sequence numbers.
+//! selects the track's Representation and issues available segments under
+//! consecutive per-track ordinals (the reactor's `msn`), as the
+//! [`SegmentPlanner`] contract requires: DASH segment numbers restart per
+//! Period and are absent from time-based addressing, so they cannot be used
+//! as sequence numbers.
 //!
 //! A segment's position within its Representation (its *locator*) is its
 //! media time (`$Time$`) under `SegmentTimeline` addressing, where numbers
 //! shift when an MPD update drops expired `S` entries, and its number under
 //! `@duration` addressing, where the time is derived from the number.
 //!
-//! An *epoch* is one (Period, Representation) pair. Its segments share one
-//! initialization segment and one identity scope, so a URL reused by another
-//! Period or Representation is a distinct resource.
+//! An *epoch* is one run of segments sharing one initialization segment and
+//! timing: a Period and Representation, until the Representation's
+//! initialization URL, byte range, timescale, presentation time offset or
+//! addressing mode changes. Each epoch has its own identity scope, so a URL
+//! reused by another epoch is a distinct resource, and its own init key, so
+//! downstream sees a new initialization segment at every epoch change.
+//!
+//! Work is admitted through bounded windows, because a short MPD can
+//! describe an unbounded number of segments and Periods:
+//!
+//! - at most [`PLANNING_LOOKAHEAD`] ordinals ahead of the *consumed
+//!   frontier* (the next ordinal the track's assembler has not emitted or
+//!   skipped, published through [`ConsumedFrontier`]), and at most that
+//!   many per snapshot;
+//! - at most one epoch beyond the one being consumed, so initialization
+//!   segments (which download first) cannot run ahead of their media and be
+//!   evicted before use.
+//!
+//! When an MPD update arrives, every planned segment not yet consumed is
+//! issued again under its original ordinal and key with the URL from the
+//! new MPD, so queued and retrying work picks up refreshed URLs (and signed
+//! URL renewals reach the store's 401/403 handling).
+//!
+//! Where recording starts is decided once per session ([`decide_start`]) and
+//! shared by every track. A configured track that the starting Period lacks
+//! is not recorded, even if a later Period carries it; the first such Period
+//! is reported with a warning.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -27,7 +53,7 @@ use crate::DownloadError;
 use crate::dash::config::{DashSelectionConfig, LiveStartPolicy};
 use crate::dash::manifest::{
     ByteRange, Clock, Manifest, ManifestError, Period, PresentationType, Representation, Segment,
-    SegmentWindow,
+    SegmentWindow, UnsupportedFeature,
 };
 use crate::dash::selection;
 use crate::dash::watcher::MpdSnapshot;
@@ -43,6 +69,25 @@ use crate::segment_engine::identity::{
 };
 
 const NANOS_PER_SEC: i128 = 1_000_000_000;
+
+/// Ordinals planned ahead of the consumed frontier, and new segments planned
+/// per snapshot, at most.
+pub(crate) const PLANNING_LOOKAHEAD: u64 = 256;
+
+/// The next ordinal a track's assembler has neither emitted nor skipped.
+/// Written by the track's assembler sink, read by its planner.
+#[derive(Debug, Default)]
+pub(crate) struct ConsumedFrontier(AtomicU64);
+
+impl ConsumedFrontier {
+    pub(crate) fn advance_to(&self, next: u64) {
+        self.0.fetch_max(next, Ordering::Relaxed);
+    }
+
+    pub(crate) fn get(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
 
 /// A Period's identity across MPD updates: `@id` when present, else its exact
 /// start (ISO/IEC 23009-1 §5.3.2.1 makes `@id` the update-stable handle).
@@ -72,7 +117,7 @@ impl PeriodKey {
         self.same(other) || self.start > other.start
     }
 
-    fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match &self.id {
             Some(id) => format!("id:{id}"),
             None => format!("start:{}", self.start.as_nanos()),
@@ -80,26 +125,48 @@ impl PeriodKey {
     }
 }
 
-/// Where planning continues in a Period that has no open epoch yet: every
-/// segment ending after `after_nanos` (presentation time on the MPD
-/// timeline), or every available segment when `None`.
+/// Where a session starts recording: in `period`, every segment ending
+/// after `after_nanos` (presentation time on the MPD timeline), or every
+/// available segment when `None`.
 #[derive(Debug, Clone)]
-struct Position {
-    period: PeriodKey,
-    after_nanos: Option<i128>,
+pub(crate) struct StartPosition {
+    pub period: PeriodKey,
+    pub after_nanos: Option<i128>,
 }
 
-/// The open (Period, Representation) pair.
+/// What makes segments decodable with one initialization segment on one
+/// timeline. The URL is compared without its query so rotating access
+/// tokens do not split a recording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Fingerprint {
+    init_location: String,
+    init_range: Option<ByteRangeKey>,
+    timescale: u64,
+    presentation_time_offset: u64,
+    timeline: bool,
+}
+
+/// A planned, not yet consumed segment.
+#[derive(Debug)]
+struct Planned {
+    locator: u64,
+    ordinal: u64,
+    key: SegmentKey,
+}
+
 #[derive(Debug)]
 struct Epoch {
     period: PeriodKey,
     representation_id: Arc<str>,
+    fingerprint: Fingerprint,
     scope: Arc<str>,
-    init: SegmentDescriptor,
-    /// Whether locators are media times (`SegmentTimeline`) or numbers.
-    timeline: bool,
-    /// Locator of the newest planned segment.
+    init_key: SegmentKey,
+    init_meta: Arc<DashSegmentMeta>,
+    first_ordinal: u64,
+    planned: VecDeque<Planned>,
     last_locator: u64,
+    /// Presentation end of the newest planned segment, in nanoseconds.
+    last_end: i128,
 }
 
 /// A segment's stable identity within its Representation (see the module
@@ -132,34 +199,60 @@ impl PeriodScope<'_> {
     }
 }
 
+/// Why planning a Period stopped.
+enum PeriodPlan {
+    /// Every currently available segment is planned.
+    Complete,
+    /// A window bound was reached; more will be planned later.
+    Blocked,
+}
+
 pub(crate) struct DashPlanner {
     track: MediaTrack,
     selection: Arc<DashSelectionConfig>,
-    live_start: LiveStartPolicy,
     clock: Arc<dyn Clock>,
     identity: SegmentIdentityPolicy,
-    position: Option<Position>,
-    epoch: Option<Epoch>,
+    frontier: Arc<ConsumedFrontier>,
+    start: StartPosition,
+    epochs: VecDeque<Epoch>,
     next_ordinal: u64,
+    epoch_serial: u64,
+    /// Manifest generation of the last snapshot planned.
+    manifest_generation: Option<u64>,
+    /// Configured tracks this session does not record, reported once each
+    /// when a Period offers them.
+    absent_tracks: Vec<MediaTrack>,
+    /// The failure reason of the last failed plan and the unsupported
+    /// feature behind it, so it surfaces as a typed error.
+    unsupported: Option<(Arc<str>, UnsupportedFeature)>,
+}
+
+pub(crate) struct PlannerParams {
+    pub track: MediaTrack,
+    pub selection: Arc<DashSelectionConfig>,
+    pub clock: Arc<dyn Clock>,
+    pub identity: SegmentIdentityPolicy,
+    pub frontier: Arc<ConsumedFrontier>,
+    pub start: StartPosition,
+    /// Tracks to report if a later Period offers them (leader only).
+    pub absent_tracks: Vec<MediaTrack>,
 }
 
 impl DashPlanner {
-    pub(crate) fn new(
-        track: MediaTrack,
-        selection: Arc<DashSelectionConfig>,
-        live_start: LiveStartPolicy,
-        clock: Arc<dyn Clock>,
-        identity: SegmentIdentityPolicy,
-    ) -> Self {
+    pub(crate) fn new(params: PlannerParams) -> Self {
         Self {
-            track,
-            selection,
-            live_start,
-            clock,
-            identity,
-            position: None,
-            epoch: None,
+            track: params.track,
+            selection: params.selection,
+            clock: params.clock,
+            identity: params.identity,
+            frontier: params.frontier,
+            start: params.start,
+            epochs: VecDeque::new(),
             next_ordinal: 0,
+            epoch_serial: 0,
+            manifest_generation: None,
+            absent_tracks: params.absent_tracks,
+            unsupported: None,
         }
     }
 
@@ -178,60 +271,59 @@ impl DashPlanner {
             Some(end) if ended => end,
             _ => now,
         };
-        if ended && manifest.presentation_type == PresentationType::Dynamic {
-            outcome.terminal.get_or_insert(TerminalCause::End);
-        }
-        if self.position.is_none() {
-            match self.choose_start(manifest, now)? {
-                Some(position) => {
-                    info!(
-                        track = %self.track,
-                        period = %position.period.label(),
-                        "DASH recording start chosen"
-                    );
-                    self.position = Some(position);
-                }
-                // Nothing is available for this track yet.
-                None => return Ok(()),
-            }
+
+        let frontier = self.frontier.get().min(self.next_ordinal);
+        self.forget_consumed(frontier);
+        if self.manifest_generation != Some(snapshot.manifest_generation) {
+            self.manifest_generation = Some(snapshot.manifest_generation);
+            self.reissue(snapshot, now, outcome)?;
         }
 
         let first_new = self.next_ordinal;
+        let mut budget = (frontier + PLANNING_LOOKAHEAD)
+            .saturating_sub(self.next_ordinal)
+            .min(PLANNING_LOOKAHEAD);
+        let mut blocked = false;
         let mut window_len: u64 = 0;
         let mut target_duration = 0.0_f64;
+        let lower = match self.epochs.back() {
+            Some(epoch) => epoch.period.clone(),
+            None => self.start.period.clone(),
+        };
         for period in &manifest.periods {
             let key = PeriodKey::of(period);
-            let Some(position) = &self.position else {
-                break;
-            };
-            if !key.at_or_after(&position.period) {
+            if !key.at_or_after(&lower) {
                 continue;
             }
-            let Some(representation) = self.representation_for(period, &key) else {
-                continue;
+            let representation = match self.representation_for(period, &key) {
+                Ok(Some(representation)) => representation,
+                Ok(None) => continue,
+                // Work planned before this Period is delivered first; the
+                // error ends the stream once nothing earlier is outstanding.
+                Err(error) if self.next_ordinal > frontier => {
+                    debug!(track = %self.track, %error, "planning paused before an unusable Period");
+                    blocked = true;
+                    break;
+                }
+                Err(error) => return Err(error),
             };
             let window = representation.segments(now)?;
-            window_len = window.len();
+            window_len = window_len.max(window.len());
             let scope = PeriodScope {
                 snapshot,
                 period,
                 key: &key,
                 representation,
             };
-            let planned = self.plan_period(scope, &window, outcome)?;
-            if let Some(duration) = planned {
-                target_duration = duration;
+            match self.plan_period(scope, &window, &mut budget, &mut target_duration, outcome)? {
+                PeriodPlan::Complete => {}
+                PeriodPlan::Blocked => {
+                    blocked = true;
+                    break;
+                }
             }
         }
 
-        if let Some(epoch) = &mut self.epoch {
-            // Re-issuing the open epoch's init with the newest ordinal keeps
-            // the store from trimming it while media still depends on it.
-            let mut init = epoch.init.clone();
-            init.msn = self.next_ordinal;
-            epoch.init.msn = init.msn;
-            outcome.descriptors.push(init);
-        }
         let planned = self.next_ordinal - first_new;
         if planned > 0 {
             outcome.notices.push(EngineNotice::ManifestRefreshed {
@@ -239,189 +331,322 @@ impl DashPlanner {
                 target_duration,
             });
         }
-        if manifest.presentation_type == PresentationType::Dynamic {
-            // Planned segments are never re-issued, so everything finished
-            // below the next ordinal may be forgotten. Unfinished segments
-            // below it are the download backlog, bounded by the availability
-            // window: anything older is gone from the server too.
-            outcome.prune = Some(PruneWindow {
-                start: self.next_ordinal,
-                len: usize::try_from(window_len.max(planned).max(1)).unwrap_or(usize::MAX),
-            });
+        let complete = !blocked;
+        let finished = manifest.presentation_type == PresentationType::Static || ended;
+        if finished && complete {
+            outcome.terminal.get_or_insert(TerminalCause::End);
+        }
+        // Consumed segments are never issued again, so their finished
+        // records may go. Unfinished ones below the frontier (skipped by the
+        // assembler while still retrying) are the backlog: bounded by the
+        // availability window for live streams, kept for static ones.
+        let backlog = match manifest.presentation_type {
+            PresentationType::Static => usize::MAX,
+            PresentationType::Dynamic => usize::try_from(window_len.max(1)).unwrap_or(usize::MAX),
+        };
+        outcome.prune = Some(PruneWindow {
+            start: frontier,
+            len: backlog,
+        });
+        Ok(())
+    }
+
+    /// Drops bookkeeping for consumed segments and for epochs fully behind
+    /// the frontier.
+    fn forget_consumed(&mut self, frontier: u64) {
+        for epoch in &mut self.epochs {
+            while epoch
+                .planned
+                .front()
+                .is_some_and(|planned| planned.ordinal < frontier)
+            {
+                epoch.planned.pop_front();
+            }
+        }
+        while self.epochs.len() > 1
+            && self
+                .epochs
+                .get(1)
+                .is_some_and(|next| next.first_ordinal <= frontier)
+        {
+            self.epochs.pop_front();
+        }
+    }
+
+    /// Issues every unconsumed planned segment, and its epoch's init, again
+    /// with URLs from the new MPD. Ordinals and keys stay the same, so the
+    /// store refreshes the fetch URL of queued and retrying work.
+    fn reissue(
+        &self,
+        snapshot: &MpdSnapshot,
+        now: DateTime<Utc>,
+        outcome: &mut PlanOutcome,
+    ) -> Result<(), ManifestError> {
+        for epoch in &self.epochs {
+            let Some(period) = snapshot
+                .manifest
+                .periods
+                .iter()
+                .find(|period| PeriodKey::of(period).same(&epoch.period))
+            else {
+                continue;
+            };
+            let Some(representation) =
+                selection::find(period, self.track, &epoch.representation_id)
+            else {
+                continue;
+            };
+            let scope = PeriodScope {
+                snapshot,
+                period,
+                key: &epoch.period,
+                representation,
+            };
+            let Ok((fingerprint, init_url)) = fingerprint(scope) else {
+                continue;
+            };
+            if fingerprint != epoch.fingerprint {
+                // The epoch was superseded; its outstanding work keeps the
+                // URLs it was planned with.
+                continue;
+            }
+            outcome.descriptors.push(init_descriptor(
+                epoch.init_key.clone(),
+                init_url,
+                epoch.first_ordinal,
+                Arc::clone(&epoch.init_meta),
+            ));
+            let Some(oldest) = epoch.planned.front() else {
+                continue;
+            };
+            let timeline = epoch.fingerprint.timeline;
+            let window = representation.segments(now)?;
+            let start = first_index(&window, |segment| {
+                locator(segment, timeline) >= oldest.locator
+            })?;
+            let mut pending = epoch.planned.iter().peekable();
+            for segment in window
+                .iter()
+                .skip(usize::try_from(start).unwrap_or(usize::MAX))
+            {
+                let segment = segment?;
+                let position = locator(&segment, timeline);
+                while pending
+                    .peek()
+                    .is_some_and(|planned| planned.locator < position)
+                {
+                    pending.next();
+                }
+                let Some(planned) = pending.peek() else {
+                    break;
+                };
+                if planned.locator != position {
+                    continue;
+                }
+                outcome.descriptors.push(media_descriptor(
+                    self.track,
+                    scope,
+                    epoch,
+                    &segment,
+                    planned.ordinal,
+                    planned.key.clone(),
+                ));
+                pending.next();
+            }
         }
         Ok(())
     }
 
-    /// Plans the newly available segments of one Period. Returns the duration
-    /// of the newest segment planned, if any.
+    /// Plans the newly available segments of one Period, within the budget
+    /// and the epoch window.
     fn plan_period(
         &mut self,
         scope: PeriodScope<'_>,
         window: &SegmentWindow<'_>,
+        budget: &mut u64,
+        target_duration: &mut f64,
         outcome: &mut PlanOutcome,
-    ) -> Result<Option<f64>, ManifestError> {
+    ) -> Result<PeriodPlan, ManifestError> {
         let PeriodScope {
             key,
             representation,
             ..
         } = scope;
-        let timeline = representation.uses_segment_timeline();
-        let continuing = self.epoch.as_ref().filter(|epoch| {
+        let (fingerprint, init_url) = fingerprint(scope)?;
+        let timeline = fingerprint.timeline;
+        let newest = self.epochs.back();
+        let continuing = newest.filter(|epoch| {
             epoch.period.same(key)
                 && *epoch.representation_id == *representation.id
-                && epoch.timeline == timeline
+                && epoch.fingerprint == fingerprint
         });
         let first_index = match continuing {
             Some(epoch) => {
                 let last = epoch.last_locator;
                 first_index(window, |segment| locator(segment, timeline) > last)?
             }
-            None => match self
-                .position
-                .as_ref()
-                .filter(|position| position.period.same(key))
-                .and_then(|position| position.after_nanos)
-            {
-                Some(after) => first_index(window, |segment| scope.bounds(segment).1 > after)?,
-                None => 0,
-            },
+            None => {
+                let after = match newest {
+                    Some(epoch) if epoch.period.same(key) => Some(epoch.last_end),
+                    Some(_) => None,
+                    None if self.start.period.same(key) => self.start.after_nanos,
+                    None => None,
+                };
+                match after {
+                    Some(after) => first_index(window, |segment| scope.bounds(segment).1 > after)?,
+                    None => 0,
+                }
+            }
         };
         if first_index >= window.len() {
-            return Ok(None);
+            return Ok(PeriodPlan::Complete);
         }
-
+        if *budget == 0 {
+            return Ok(PeriodPlan::Blocked);
+        }
         if continuing.is_none() {
-            let init = self.open_epoch(scope, window, first_index)?;
+            // Current epoch plus one: an epoch is opened only once the
+            // frontier has reached the newest one.
+            let frontier = self.frontier.get();
+            if self
+                .epochs
+                .back()
+                .is_some_and(|epoch| epoch.first_ordinal > frontier)
+            {
+                return Ok(PeriodPlan::Blocked);
+            }
+            let first = window
+                .get(first_index)
+                .ok_or(ManifestError::overflow("segment window"))??;
+            let init = self.open_epoch(scope, fingerprint, init_url, &first);
             outcome.descriptors.push(init);
         }
-        let Some(epoch) = self.epoch.as_mut() else {
-            return Ok(None);
+
+        let track = self.track;
+        let Some(epoch) = self.epochs.back_mut() else {
+            return Ok(PeriodPlan::Complete);
         };
-        let mut newest = None;
-        for segment in window
-            .iter()
-            .skip(usize::try_from(first_index).unwrap_or(usize::MAX))
-        {
-            let segment = segment?;
-            let Some(descriptor) = media_descriptor(
-                self.track,
-                &self.identity,
-                scope,
-                epoch,
-                &segment,
-                self.next_ordinal,
-            ) else {
+        let mut index = first_index;
+        while index < window.len() {
+            if *budget == 0 {
+                return Ok(PeriodPlan::Blocked);
+            }
+            let segment = window
+                .get(index)
+                .ok_or(ManifestError::overflow("segment window"))??;
+            index += 1;
+            let position = locator(&segment, timeline);
+            epoch.last_locator = position;
+            epoch.last_end = scope.bounds(&segment).1;
+            let Some(key) = media_key(&self.identity, scope, epoch, &segment) else {
                 warn!(
-                    track = %self.track,
+                    track = %track,
                     number = segment.number,
                     "skipping a DASH segment with an invalid byte range"
                 );
                 continue;
             };
-            outcome.descriptors.push(descriptor);
-            self.next_ordinal = self
-                .next_ordinal
+            let ordinal = self.next_ordinal;
+            outcome.descriptors.push(media_descriptor(
+                track,
+                scope,
+                epoch,
+                &segment,
+                ordinal,
+                key.clone(),
+            ));
+            epoch.planned.push_back(Planned {
+                locator: position,
+                ordinal,
+                key,
+            });
+            self.next_ordinal = ordinal
                 .checked_add(1)
                 .ok_or(ManifestError::overflow("segment ordinal"))?;
-            epoch.last_locator = locator(&segment, timeline);
-            newest = Some(segment);
+            *budget -= 1;
+            *target_duration = segment.duration_secs();
         }
-        let Some(newest) = newest else {
-            return Ok(None);
-        };
-        self.position = Some(Position {
-            period: key.clone(),
-            after_nanos: Some(scope.bounds(&newest).1),
-        });
-        Ok(Some(newest.duration_secs()))
+        Ok(PeriodPlan::Complete)
     }
 
-    /// The Representation this track records in `period`: the open epoch's
-    /// one while it exists, else a fresh selection. A Representation that
-    /// disappears from its Period is replaced, which opens a new epoch and
-    /// so a new initialization segment downstream.
+    /// The Representation this track records in `period`: the newest
+    /// epoch's while it is there, else a fresh selection. Fails with the
+    /// typed reason when the Period offers nothing usable for the track
+    /// because it was rejected (DRM, WebM, ...).
     fn representation_for<'a>(
-        &self,
+        &mut self,
         period: &'a Period,
         key: &PeriodKey,
-    ) -> Option<&'a Representation> {
-        if let Some(epoch) = self.epoch.as_ref().filter(|epoch| epoch.period.same(key)) {
-            if let Some(representation) =
+    ) -> Result<Option<&'a Representation>, ManifestError> {
+        period.ensure_usable()?;
+        if let Some(epoch) = self.epochs.back().filter(|epoch| epoch.period.same(key))
+            && let Some(representation) =
                 selection::find(period, self.track, &epoch.representation_id)
-            {
-                return Some(representation);
-            }
-            let replacement = selection::select(period, self.track, &self.selection);
-            debug!(
-                track = %self.track,
-                representation = %epoch.representation_id,
-                replacement = replacement.map(|r| r.id.as_str()),
-                "selected Representation left the MPD; reselecting"
-            );
-            return replacement;
+        {
+            return Ok(Some(representation));
         }
-        selection::select(period, self.track, &self.selection)
+        let selected = selection::select(period, self.track, &self.selection);
+        // A recorded track that a later Period only offers in rejected form
+        // (DRM, WebM, ...) must not silently end; the rejection is the
+        // reason it cannot continue.
+        if selected.is_none()
+            && !self.epochs.is_empty()
+            && let Some(rejected) = period.rejected.first()
+        {
+            return Err(rejected.feature.clone().into());
+        }
+        Ok(selected)
     }
 
     fn open_epoch(
         &mut self,
         scope: PeriodScope<'_>,
-        window: &SegmentWindow<'_>,
-        first_index: u64,
-    ) -> Result<SegmentDescriptor, ManifestError> {
+        fingerprint: Fingerprint,
+        init_url: Url,
+        first: &Segment,
+    ) -> SegmentDescriptor {
         let PeriodScope {
-            snapshot,
             key,
+            period,
             representation,
             ..
         } = scope;
-        let first = window
-            .get(first_index)
-            .ok_or(ManifestError::overflow("segment window"))??;
-        let key_scope: Arc<str> = Arc::from(format!(
-            "{}\u{1f}{}\u{1f}{}",
+        self.epoch_serial += 1;
+        let epoch_scope: Arc<str> = Arc::from(format!(
+            "{}\u{1f}{}\u{1f}{}\u{1f}{}",
             self.track,
             key.label(),
-            representation.id
+            representation.id,
+            self.epoch_serial
         ));
-        let Some(initialization) = &representation.initialization else {
-            return Err(ManifestError::inconsistent(
-                "selected Representation has no initialization segment",
-            ));
+        let init_key = SegmentKey {
+            kind: SegmentKind::Init,
+            uri: self.identity.canonical_uri(&init_url),
+            byte_range: fingerprint.init_range,
+            scope: Some(Arc::clone(&epoch_scope)),
         };
-        let mut url = initialization.url.clone();
-        inherit_query_params(&mut url, &snapshot.parent_params);
-        let byte_range = match initialization.byte_range {
-            Some(range) => Some(byte_range_key(range).ok_or_else(|| {
-                ManifestError::inconsistent("initialization byte range ends before it starts")
-            })?),
-            None => None,
-        };
-        let meta = segment_meta(self.track, scope, &first, 0);
-        let init = SegmentDescriptor {
-            key: SegmentKey {
-                kind: SegmentKind::Init,
-                uri: self.identity.canonical_uri(&url),
-                byte_range,
-                scope: Some(Arc::clone(&key_scope)),
-            },
-            msn: self.next_ordinal,
-            source: SegmentSource::Playlist,
-            parsed_url: Arc::new(url),
-            discontinuity: false,
-            encryption: None,
-            init_key: None,
-            meta: SegmentMeta::Dash(Arc::new(meta)),
-        };
-        if let Some(previous) = &self.epoch {
-            info!(
+        let init_meta = Arc::new(segment_meta(self.track, scope, first, 0));
+        let init = init_descriptor(
+            init_key.clone(),
+            init_url,
+            self.next_ordinal,
+            Arc::clone(&init_meta),
+        );
+        match self.epochs.back() {
+            Some(previous) => info!(
                 track = %self.track,
                 from_period = %previous.period.label(),
                 from_representation = %previous.representation_id,
                 to_period = %key.label(),
                 to_representation = %representation.id,
                 "DASH track switches epoch"
-            );
+            ),
+            None => info!(
+                track = %self.track,
+                period = %key.label(),
+                representation = %representation.id,
+                "DASH track starts"
+            ),
         }
         if representation
             .start_with_sap
@@ -435,81 +660,136 @@ impl DashPlanner {
                 "Representation does not declare segments starting with a stream access point"
             );
         }
-        self.epoch = Some(Epoch {
+        let selection = Arc::clone(&self.selection);
+        self.absent_tracks.retain(|&absent| {
+            if selection::select(period, absent, &selection).is_none() {
+                return true;
+            }
+            warn!(
+                track = %absent,
+                period = %key.label(),
+                "a Period offers a track this recording did not start with; it is not recorded"
+            );
+            false
+        });
+        self.epochs.push_back(Epoch {
             period: key.clone(),
             representation_id: Arc::from(representation.id.as_str()),
-            scope: key_scope,
-            init: init.clone(),
-            timeline: representation.uses_segment_timeline(),
-            last_locator: locator(&first, representation.uses_segment_timeline()),
+            last_locator: locator(first, fingerprint.timeline),
+            last_end: scope.bounds(first).0,
+            fingerprint,
+            scope: epoch_scope,
+            init_key,
+            init_meta,
+            first_ordinal: self.next_ordinal,
+            planned: VecDeque::new(),
         });
-        Ok(init)
+        init
     }
+}
 
-    /// Where recording starts: the first segment of a static presentation;
-    /// for a dynamic one, the segment at the configured distance behind the
-    /// live edge. `None` while nothing is available for this track.
-    fn choose_start(
-        &self,
-        manifest: &Manifest,
-        now: DateTime<Utc>,
-    ) -> Result<Option<Position>, ManifestError> {
-        if manifest.presentation_type == PresentationType::Static {
-            return Ok(manifest
+/// Decides where a session starts recording, once, for every track: the
+/// first Period of a static presentation; for a dynamic one, the segment at
+/// the configured distance behind the live edge, judged by the reference
+/// track (video when recorded, else audio).
+pub(crate) fn decide_start(
+    manifest: &Manifest,
+    now: DateTime<Utc>,
+    live_start: LiveStartPolicy,
+    selection_config: &DashSelectionConfig,
+) -> Result<Option<StartPosition>, ManifestError> {
+    let reference = |period| reference_representation(period, selection_config);
+    if manifest.presentation_type == PresentationType::Static {
+        return Ok(manifest
+            .periods
+            .iter()
+            .find(|period| reference(period).is_some())
+            .map(|period| StartPosition {
+                period: PeriodKey::of(period),
+                after_nanos: None,
+            }));
+    }
+    let Some(availability_start) = manifest.availability_start_time else {
+        return Err(ManifestError::MissingAttribute {
+            element: "MPD",
+            attribute: "availabilityStartTime",
+        });
+    };
+    let elapsed = (now - availability_start)
+        .num_nanoseconds()
+        .map(i128::from)
+        .ok_or(ManifestError::overflow("live start"))?;
+
+    // The newest Period with an available reference segment that starts at
+    // or before the target time.
+    for (index, period) in manifest.periods.iter().enumerate().rev() {
+        let Some(representation) = reference(period) else {
+            continue;
+        };
+        let window = representation.segments(now)?;
+        let Some(last) = window.last() else {
+            continue;
+        };
+        let last = last?;
+        let (last_start, last_end) = segment_bounds(&last, representation, period);
+        let target = match live_start {
+            LiveStartPolicy::LiveEdge => last_start,
+            LiveStartPolicy::PresentationDelay(delay) => {
+                let delay = match delay.or(manifest.suggested_presentation_delay) {
+                    Some(delay) => i128::try_from(delay.as_nanos()).unwrap_or(i128::MAX),
+                    None => (last_end - last_start).saturating_mul(3),
+                };
+                // Never later than the newest segment, which would plan
+                // nothing until the clock catches up with the delay.
+                elapsed.saturating_sub(delay).min(last_start)
+            }
+        };
+        let period_start = i128::try_from(period.start.as_nanos()).unwrap_or(i128::MAX);
+        if target >= period_start || index == 0 {
+            return Ok(Some(StartPosition {
+                period: PeriodKey::of(period),
+                after_nanos: Some(target),
+            }));
+        }
+    }
+    // Nothing is available yet: start with the newest Period that has begun,
+    // from whatever becomes available first.
+    let started = manifest
+        .periods
+        .iter()
+        .rev()
+        .find(|period| {
+            reference(period).is_some()
+                && i128::try_from(period.start.as_nanos()).is_ok_and(|start| start <= elapsed)
+        })
+        .or_else(|| {
+            manifest
                 .periods
                 .iter()
-                .find(|period| selection::select(period, self.track, &self.selection).is_some())
-                .map(|period| Position {
-                    period: PeriodKey::of(period),
-                    after_nanos: None,
-                }));
-        }
-        let Some(availability_start) = manifest.availability_start_time else {
-            return Err(ManifestError::MissingAttribute {
-                element: "MPD",
-                attribute: "availabilityStartTime",
-            });
-        };
-        let elapsed = (now - availability_start)
-            .num_nanoseconds()
-            .map(i128::from)
-            .ok_or(ManifestError::overflow("live start"))?;
+                .find(|period| reference(period).is_some())
+        });
+    Ok(started.map(|period| StartPosition {
+        period: PeriodKey::of(period),
+        after_nanos: None,
+    }))
+}
 
-        // The newest Period with an available segment for this track that
-        // starts at or before the target time.
-        for (index, period) in manifest.periods.iter().enumerate().rev() {
-            let Some(representation) = selection::select(period, self.track, &self.selection)
-            else {
-                continue;
-            };
-            let window = representation.segments(now)?;
-            let Some(last) = window.last() else {
-                continue;
-            };
-            let last = last?;
-            let (last_start, last_end) = segment_bounds(&last, representation, period);
-            let target = match self.live_start {
-                LiveStartPolicy::LiveEdge => last_start,
-                LiveStartPolicy::PresentationDelay(delay) => {
-                    let delay = match delay.or(manifest.suggested_presentation_delay) {
-                        Some(delay) => i128::try_from(delay.as_nanos()).unwrap_or(i128::MAX),
-                        None => (last_end - last_start).saturating_mul(3),
-                    };
-                    // Never later than the newest segment, which would plan
-                    // nothing until the clock catches up with the delay.
-                    elapsed.saturating_sub(delay).min(last_start)
-                }
-            };
-            let period_start = i128::try_from(period.start.as_nanos()).unwrap_or(i128::MAX);
-            if target >= period_start || index == 0 {
-                return Ok(Some(Position {
-                    period: PeriodKey::of(period),
-                    after_nanos: Some(target),
-                }));
-            }
-        }
-        Ok(None)
-    }
+/// The Representation that decides timing for a session: video when
+/// recorded, else audio.
+fn reference_representation<'a>(
+    period: &'a Period,
+    selection_config: &DashSelectionConfig,
+) -> Option<&'a Representation> {
+    let video = selection_config
+        .include_video
+        .then(|| selection::select(period, MediaTrack::Video, selection_config))
+        .flatten();
+    video.or_else(|| {
+        selection_config
+            .include_audio
+            .then(|| selection::select(period, MediaTrack::Audio, selection_config))
+            .flatten()
+    })
 }
 
 impl SegmentPlanner for DashPlanner {
@@ -529,9 +809,13 @@ impl SegmentPlanner for DashPlanner {
         }
         if let Err(error) = self.plan_snapshot(snapshot, &mut outcome) {
             warn!(track = %self.track, %error, "DASH planning failed");
+            let reason: Arc<str> = Arc::from(error.to_string());
+            if let ManifestError::Unsupported(feature) = error {
+                self.unsupported = Some((Arc::clone(&reason), feature));
+            }
             return PlanOutcome {
                 generation: snapshot.generation,
-                terminal: Some(TerminalCause::Failed(Arc::from(error.to_string()))),
+                terminal: Some(TerminalCause::Failed(reason)),
                 ..PlanOutcome::default()
             };
         }
@@ -540,7 +824,14 @@ impl SegmentPlanner for DashPlanner {
 
     fn failure_error(&self, failure: SourceFailure<'_>) -> DownloadError {
         let reason = match failure {
-            SourceFailure::Failed(reason) => reason.to_owned(),
+            SourceFailure::Failed(reason) => {
+                if let Some((failed, feature)) = &self.unsupported
+                    && failed.as_ref() == reason
+                {
+                    return ManifestError::Unsupported(feature.clone()).into();
+                }
+                reason.to_owned()
+            }
             SourceFailure::Reset(kind) => format!("{} timeline reset ({kind:?})", self.track),
             SourceFailure::Lost => "MPD watcher stopped without a terminal cause".to_owned(),
         };
@@ -594,6 +885,38 @@ fn byte_range_key(range: ByteRange) -> Option<ByteRangeKey> {
     })
 }
 
+/// The Representation's epoch fingerprint and initialization URL (with
+/// the MPD's query parameters inherited).
+fn fingerprint(scope: PeriodScope<'_>) -> Result<(Fingerprint, Url), ManifestError> {
+    let representation = scope.representation;
+    let Some(initialization) = &representation.initialization else {
+        return Err(ManifestError::inconsistent(
+            "selected Representation has no initialization segment",
+        ));
+    };
+    let init_range = match initialization.byte_range {
+        Some(range) => Some(byte_range_key(range).ok_or_else(|| {
+            ManifestError::inconsistent("initialization byte range ends before it starts")
+        })?),
+        None => None,
+    };
+    let mut location = initialization.url.clone();
+    location.set_query(None);
+    location.set_fragment(None);
+    let mut url = initialization.url.clone();
+    inherit_query_params(&mut url, &scope.snapshot.parent_params);
+    Ok((
+        Fingerprint {
+            init_location: location.into(),
+            init_range,
+            timescale: representation.timescale(),
+            presentation_time_offset: representation.presentation_time_offset(),
+            timeline: representation.uses_segment_timeline(),
+        },
+        url,
+    ))
+}
+
 fn segment_meta(
     track: MediaTrack,
     scope: PeriodScope<'_>,
@@ -619,36 +942,69 @@ fn segment_meta(
     }
 }
 
-fn media_descriptor(
-    track: MediaTrack,
-    identity: &SegmentIdentityPolicy,
-    scope: PeriodScope<'_>,
-    epoch: &Epoch,
-    segment: &Segment,
+fn init_descriptor(
+    key: SegmentKey,
+    url: Url,
     ordinal: u64,
-) -> Option<SegmentDescriptor> {
-    let byte_range = match segment.byte_range {
-        Some(range) => Some(byte_range_key(range)?),
-        None => None,
-    };
-    let mut url: Url = segment.url.clone();
-    inherit_query_params(&mut url, &scope.snapshot.parent_params);
-    let meta = segment_meta(track, scope, segment, segment.duration);
-    Some(SegmentDescriptor {
-        key: SegmentKey {
-            kind: SegmentKind::Media,
-            uri: identity.canonical_uri(&url),
-            byte_range,
-            scope: Some(Arc::clone(&epoch.scope)),
-        },
+    meta: Arc<DashSegmentMeta>,
+) -> SegmentDescriptor {
+    SegmentDescriptor {
+        key,
         msn: ordinal,
         source: SegmentSource::Playlist,
         parsed_url: Arc::new(url),
         discontinuity: false,
         encryption: None,
-        init_key: Some(epoch.init.key.clone()),
-        meta: SegmentMeta::Dash(Arc::new(meta)),
+        init_key: None,
+        meta: SegmentMeta::Dash(meta),
+    }
+}
+
+fn segment_url(scope: PeriodScope<'_>, segment: &Segment) -> Url {
+    let mut url: Url = segment.url.clone();
+    inherit_query_params(&mut url, &scope.snapshot.parent_params);
+    url
+}
+
+/// The identity of a newly planned segment; `None` for an invalid byte
+/// range. Reissued segments keep the key they were planned with.
+fn media_key(
+    identity: &SegmentIdentityPolicy,
+    scope: PeriodScope<'_>,
+    epoch: &Epoch,
+    segment: &Segment,
+) -> Option<SegmentKey> {
+    let byte_range = match segment.byte_range {
+        Some(range) => Some(byte_range_key(range)?),
+        None => None,
+    };
+    Some(SegmentKey {
+        kind: SegmentKind::Media,
+        uri: identity.canonical_uri(&segment_url(scope, segment)),
+        byte_range,
+        scope: Some(Arc::clone(&epoch.scope)),
     })
+}
+
+fn media_descriptor(
+    track: MediaTrack,
+    scope: PeriodScope<'_>,
+    epoch: &Epoch,
+    segment: &Segment,
+    ordinal: u64,
+    key: SegmentKey,
+) -> SegmentDescriptor {
+    let meta = segment_meta(track, scope, segment, segment.duration);
+    SegmentDescriptor {
+        key,
+        msn: ordinal,
+        source: SegmentSource::Playlist,
+        parsed_url: Arc::new(segment_url(scope, segment)),
+        discontinuity: false,
+        encryption: None,
+        init_key: Some(epoch.init_key.clone()),
+        meta: SegmentMeta::Dash(Arc::new(meta)),
+    }
 }
 
 #[cfg(test)]
@@ -664,48 +1020,85 @@ mod tests {
         Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
     }
 
+    /// A planner driven like the engine drives it: the start is decided
+    /// from the first MPD, the manifest generation advances only when the
+    /// MPD changes, and consumption is simulated through the frontier.
     struct Fixture {
+        track: MediaTrack,
+        live_start: LiveStartPolicy,
         clock: Arc<ManualClock>,
-        planner: DashPlanner,
+        frontier: Arc<ConsumedFrontier>,
+        planner: Option<DashPlanner>,
         generation: u64,
+        manifest_generation: u64,
+        last_mpd: Option<String>,
     }
 
     impl Fixture {
         fn new(track: MediaTrack, live_start: LiveStartPolicy, elapsed_secs: i64) -> Self {
-            let clock = Arc::new(ManualClock::new(
-                ast() + chrono::TimeDelta::seconds(elapsed_secs),
-            ));
-            let planner = DashPlanner::new(
-                track,
-                Arc::new(DashSelectionConfig::default()),
-                live_start,
-                Arc::clone(&clock) as Arc<dyn Clock>,
-                SegmentIdentityPolicy::default(),
-            );
             Self {
-                clock,
-                planner,
+                track,
+                live_start,
+                clock: Arc::new(ManualClock::new(
+                    ast() + chrono::TimeDelta::seconds(elapsed_secs),
+                )),
+                frontier: Arc::new(ConsumedFrontier::default()),
+                planner: None,
                 generation: 0,
+                manifest_generation: 0,
+                last_mpd: None,
             }
         }
 
-        fn plan(&mut self, mpd: &str) -> PlanOutcome {
+        fn snapshot(&mut self, mpd: &str) -> MpdSnapshot {
             let url = Url::parse(MPD_URL).unwrap();
             let manifest = Manifest::parse(mpd.as_bytes(), &url).expect("valid MPD");
-            let terminal = (manifest.presentation_type == PresentationType::Static)
-                .then_some(TerminalCause::End);
             self.generation += 1;
-            let snapshot = MpdSnapshot {
+            if self.last_mpd.as_deref() != Some(mpd) {
+                self.manifest_generation += 1;
+                self.last_mpd = Some(mpd.to_owned());
+            }
+            MpdSnapshot {
                 generation: self.generation,
-                manifest_generation: self.generation,
+                manifest_generation: self.manifest_generation,
                 manifest: Arc::new(manifest),
                 document_url: Arc::new(url.clone()),
                 parent_params: crate::segment_engine::descriptor::query_params(url.query()).into(),
                 fetched_at: self.clock.now(),
                 clock_offset: crate::dash::manifest::ClockOffset::ZERO,
-                terminal,
-            };
-            self.planner.plan(&snapshot)
+                terminal: None,
+            }
+        }
+
+        fn plan(&mut self, mpd: &str) -> PlanOutcome {
+            let snapshot = self.snapshot(mpd);
+            let planner = self.planner.get_or_insert_with(|| {
+                let start = decide_start(
+                    &snapshot.manifest,
+                    self.clock.now(),
+                    self.live_start,
+                    &DashSelectionConfig::default(),
+                )
+                .expect("start decision")
+                .expect("a starting Period");
+                DashPlanner::new(PlannerParams {
+                    track: self.track,
+                    selection: Arc::new(DashSelectionConfig::default()),
+                    clock: Arc::clone(&self.clock) as Arc<dyn Clock>,
+                    identity: SegmentIdentityPolicy::default(),
+                    frontier: Arc::clone(&self.frontier),
+                    start,
+                    absent_tracks: Vec::new(),
+                })
+            });
+            planner.plan(&snapshot)
+        }
+
+        /// The assembler emitted everything planned so far.
+        fn consume_all(&self) {
+            if let Some(planner) = &self.planner {
+                self.frontier.advance_to(planner.next_ordinal);
+            }
         }
 
         fn advance(&self, secs: u64) {
@@ -774,7 +1167,7 @@ mod tests {
                 .unwrap()
         );
         assert!(first.terminal.is_none());
-        assert_eq!(first.prune.map(|prune| prune.start), Some(3));
+        assert_eq!(first.prune.map(|prune| prune.start), Some(0));
         assert!(matches!(
             first.notices.as_slice(),
             [EngineNotice::ManifestRefreshed {
@@ -787,6 +1180,7 @@ mod tests {
         assert!(media(&again).is_empty(), "nothing is planned twice");
         assert!(again.notices.is_empty());
 
+        fixture.consume_all();
         fixture.advance(4);
         let next = fixture.plan(&mpd);
         let numbers: Vec<(u64, u64)> = media(&next)
@@ -851,6 +1245,7 @@ mod tests {
             .collect();
         assert_eq!(times, [(0, 8000)]);
 
+        fixture.consume_all();
         fixture.advance(4);
         // The first three entries expired; numbers shift, times do not.
         let next = fixture.plan(&timeline(r#"<S t="6000" d="2000" r="3"/>"#));
@@ -894,6 +1289,7 @@ mod tests {
             [0, 1]
         );
 
+        fixture.consume_all();
         fixture.advance(6);
         let next = fixture.plan(two_periods);
         let planned: Vec<(u64, Option<&str>)> = media(&next)
@@ -935,6 +1331,7 @@ mod tests {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 10);
         let first = fixture.plan(&with("hd"));
         assert_eq!(media(&first)[0].1.number, 5);
+        fixture.consume_all();
         fixture.advance(2);
         let next = fixture.plan(&with("sd"));
         let planned = media(&next);
@@ -964,10 +1361,14 @@ mod tests {
             [0, 1, 2]
         );
         assert_eq!(outcome.terminal, Some(TerminalCause::End));
-        assert!(outcome.prune.is_none());
-
-        let video = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0).plan(mpd);
-        assert!(media(&video).is_empty(), "no video Representation to plan");
+        assert_eq!(
+            outcome.prune,
+            Some(PruneWindow {
+                start: 0,
+                len: usize::MAX
+            }),
+            "static backlog is never dropped"
+        );
     }
 
     #[test]
@@ -977,6 +1378,7 @@ mod tests {
         let first = fixture.plan(&mpd);
         assert_eq!(media(&first)[0].1.number, 4);
         assert!(first.terminal.is_none());
+        fixture.consume_all();
         fixture.advance(30);
         let last = fixture.plan(&mpd);
         let numbers: Vec<u64> = media(&last)
@@ -990,6 +1392,7 @@ mod tests {
     #[test]
     fn failed_snapshots_are_not_planned() {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 20);
+        fixture.plan(&number_mpd(""));
         let url = Url::parse(MPD_URL).unwrap();
         let snapshot = MpdSnapshot {
             generation: 7,
@@ -1001,11 +1404,251 @@ mod tests {
             clock_offset: crate::dash::manifest::ClockOffset::ZERO,
             terminal: Some(TerminalCause::Failed(Arc::from("gone"))),
         };
-        let outcome = fixture.planner.plan(&snapshot);
+        let planner = fixture.planner.as_mut().unwrap();
+        let outcome = planner.plan(&snapshot);
         assert!(outcome.descriptors.is_empty());
         assert!(matches!(
-            fixture.planner.failure_error(SourceFailure::Failed("gone")),
+            planner.failure_error(SourceFailure::Failed("gone")),
             DownloadError::Manifest { .. }
         ));
+    }
+
+    fn reissued(outcome: &PlanOutcome) -> Vec<(u64, SegmentKey, String)> {
+        outcome
+            .descriptors
+            .iter()
+            .filter(|descriptor| descriptor.key.kind == SegmentKind::Media)
+            .map(|descriptor| {
+                (
+                    descriptor.msn,
+                    descriptor.key.clone(),
+                    descriptor.parsed_url.to_string(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_mpd_update_reissues_unconsumed_work_with_fresh_urls() {
+        let with_media = |media: &str| {
+            number_mpd("").replace(r#"media="v/$Number$.m4s""#, &format!(r#"media="{media}""#))
+        };
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::default(), 20);
+        let first = reissued(&fixture.plan(&with_media("v/$Number$.m4s")));
+        assert_eq!(first.len(), 3);
+        // The assembler emitted the first segment; two are still queued.
+        fixture.frontier.advance_to(1);
+
+        let update = fixture.plan(&with_media("edge2/v/$Number$.m4s"));
+        let again = reissued(&update);
+        assert_eq!(
+            again.iter().map(|(msn, ..)| *msn).collect::<Vec<_>>(),
+            [1, 2],
+            "unconsumed work keeps its ordinals; nothing new is available"
+        );
+        for ((_, key, _), (_, old_key, _)) in again.iter().zip(&first[1..]) {
+            assert_eq!(key, old_key, "the store refreshes the record in place");
+        }
+        assert!(again.iter().all(|(_, _, url)| url.contains("/edge2/v/")));
+        let init = init(&update);
+        assert!(init.parsed_url.as_str().contains("/v/init.mp4"));
+
+        // Republishing the same MPD issues nothing again.
+        assert!(reissued(&fixture.plan(&with_media("edge2/v/$Number$.m4s"))).is_empty());
+    }
+
+    #[test]
+    fn an_init_change_under_the_same_ids_opens_a_new_epoch() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 20);
+        let first = fixture.plan(&number_mpd(""));
+        let first_init = init(&first).key.clone();
+        fixture.consume_all();
+        fixture.advance(2);
+        let changed = number_mpd("").replace(
+            r#"initialization="v/init.mp4""#,
+            r#"initialization="v/init-2.mp4""#,
+        );
+        let next = fixture.plan(&changed);
+        let planned = media(&next);
+        assert_eq!(
+            planned.iter().map(|(msn, ..)| *msn).collect::<Vec<_>>(),
+            [1]
+        );
+        assert_eq!(planned[0].1.number, 11, "continues after the last segment");
+        let media_init = next
+            .descriptors
+            .iter()
+            .find(|descriptor| descriptor.msn == 1 && descriptor.key.kind == SegmentKind::Media)
+            .and_then(|descriptor| descriptor.init_key.clone())
+            .unwrap();
+        assert_ne!(media_init, first_init);
+        assert!(media_init.uri.contains("init-2.mp4"));
+
+        // A new presentation time offset is a new epoch too, even with an
+        // unchanged init URL: downstream must see a new init to re-time.
+        fixture.consume_all();
+        fixture.advance(2);
+        let shifted = changed.replace(
+            r#"duration="2000" timescale="1000" startNumber="1"/>
+      <Representation id="v1""#,
+            r#"duration="2000" timescale="1000" startNumber="1" presentationTimeOffset="5000"/>
+      <Representation id="v1""#,
+        );
+        assert_ne!(shifted, changed);
+        let third = fixture.plan(&shifted);
+        let third_init = third
+            .descriptors
+            .iter()
+            .find(|descriptor| descriptor.key.kind == SegmentKind::Init)
+            .unwrap();
+        assert_eq!(third_init.key.uri, media_init.uri);
+        assert_ne!(third_init.key, media_init, "same URL, new epoch scope");
+    }
+
+    fn many_periods(count: usize) -> String {
+        let periods: String = (0..count)
+            .map(|index| {
+                format!(
+                    r#"<Period id="p{index}" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p{index}/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#
+                )
+            })
+            .collect();
+        format!(r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">{periods}</MPD>"#)
+    }
+
+    #[test]
+    fn epochs_are_admitted_one_ahead_of_consumption() {
+        let mpd = many_periods(10);
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let mut inits = 0;
+        let mut planned = Vec::new();
+        for _ in 0..20 {
+            let outcome = fixture.plan(&mpd);
+            let opened = outcome
+                .descriptors
+                .iter()
+                .filter(|descriptor| descriptor.key.kind == SegmentKind::Init)
+                .count();
+            assert!(opened <= 2, "at most the current and the next epoch");
+            inits += opened;
+            planned.extend(media(&outcome).iter().map(|(msn, ..)| *msn));
+            if outcome.terminal == Some(TerminalCause::End) {
+                break;
+            }
+            fixture.consume_all();
+        }
+        assert_eq!(inits, 10);
+        assert_eq!(planned, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn huge_windows_are_planned_in_pages() {
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="P365D">
+  <Period>
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let first = fixture.plan(mpd);
+        assert_eq!(media(&first).len(), PLANNING_LOOKAHEAD as usize);
+        assert!(first.terminal.is_none());
+        assert!(media(&fixture.plan(mpd)).is_empty(), "the window is full");
+        fixture.frontier.advance_to(10);
+        let next = media(&fixture.plan(mpd))
+            .iter()
+            .map(|(msn, ..)| *msn)
+            .collect::<Vec<_>>();
+        assert_eq!(next, (256..266).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_later_unusable_period_fails_typed_after_the_earlier_work() {
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="clear" duration="PT4S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="c/$Number$.m4s" initialization="c/init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="drm" duration="PT4S">
+    <AdaptationSet mimeType="video/mp4">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
+      <SegmentTemplate media="d/$Number$.m4s" initialization="d/init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let first = fixture.plan(mpd);
+        assert_eq!(media(&first).len(), 2);
+        assert!(
+            first.terminal.is_none(),
+            "the clear Period is delivered first"
+        );
+        fixture.consume_all();
+        let failed = fixture.plan(mpd);
+        let Some(TerminalCause::Failed(reason)) = failed.terminal else {
+            panic!("expected a failure, got {:?}", failed.terminal);
+        };
+        let error = fixture
+            .planner
+            .as_ref()
+            .unwrap()
+            .failure_error(SourceFailure::Failed(&reason));
+        assert!(
+            matches!(
+                error,
+                DownloadError::Unsupported {
+                    protocol: "dash",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn the_start_is_decided_once_for_every_track() {
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p0/$Number$.m4s" initialization="v.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p0/a$Number$.m4s" initialization="a.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="p1" start="PT10S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p1/$Number$.m4s" initialization="v.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let url = Url::parse(MPD_URL).unwrap();
+        let manifest = Manifest::parse(mpd.as_bytes(), &url).unwrap();
+        // 12 s in, 6 s behind: the start lies in p0, which has audio, even
+        // though the newest Period that has begun (p1) has none.
+        let start = decide_start(
+            &manifest,
+            ast() + chrono::TimeDelta::seconds(12),
+            LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(6))),
+            &DashSelectionConfig::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(start.period.id.as_deref(), Some("p0"));
+        assert_eq!(start.after_nanos, Some(6 * NANOS_PER_SEC));
     }
 }

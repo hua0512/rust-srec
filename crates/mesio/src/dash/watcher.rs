@@ -8,11 +8,18 @@
 //! alone, without any MPD change, and planners only run when a snapshot is
 //! published.
 //!
-//! As with HLS, the terminal cause travels on the snapshot. A static MPD
-//! (from the start, or after a dynamic MPD turned static) is published with
-//! `TerminalCause::End` and nothing is fetched afterwards; refresh failures
-//! beyond the retry budget are published as a failure cause.
+//! A refresh (MPD fetch plus clock synchronization) runs alongside the
+//! republish timer, so a slow origin or dead time server never stops
+//! planning: the last usable snapshot keeps being republished meanwhile.
+//!
+//! A static MPD (from the start, or after a dynamic MPD turned static) is
+//! not fetched again; it keeps being republished so the planners can page
+//! through it, and they end the stream once everything is planned. Refresh
+//! failures beyond the retry budget are published as a failure cause on the
+//! snapshot, as with HLS.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,6 +54,17 @@ const UTC_TIMING_RESYNC: Duration = Duration::from_secs(10 * 60);
 const MIN_REPUBLISH_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_REPUBLISH_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_REPUBLISH_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Republish interval of a static MPD: planners page through it as output
+/// is consumed.
+const STATIC_REPUBLISH_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Total time one clock synchronization may spend on `UTCTiming` sources
+/// before falling back to the MPD's `Date` header.
+const CLOCK_SYNC_BUDGET: Duration = Duration::from_secs(3);
+
+/// Largest `UTCTiming` response body read; a timestamp is a few dozen bytes.
+const MAX_TIMING_BODY_BYTES: usize = 1024;
 
 /// Cap on any single wait, so delays taken from the MPD or the
 /// configuration cannot overflow a deadline.
@@ -154,8 +172,16 @@ impl MpdFetcher {
         let document_url = Arc::new(response.url().clone());
         let body = tokio::select! {
             _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
-            body = read_capped(response) => body,
-        }?;
+            body = read_capped(response, MAX_MPD_BYTES) => body,
+        }
+        .map_err(|error| match error {
+            CappedRead::TooLarge(size) => ManifestError::TooLarge {
+                size,
+                limit: MAX_MPD_BYTES,
+            }
+            .into(),
+            CappedRead::Network(error) => error,
+        })?;
         let received = self.config.clock.now();
         self.emit(DownloadEvent::ResourceFinished {
             resource,
@@ -213,16 +239,23 @@ impl MpdFetcher {
             if !utc_timing_due && let Some(previous) = previous.filter(|p| p.utc_synced) {
                 return (previous.clock_offset, true);
             }
-            for timing in &manifest.utc_timings {
-                if let Some(offset) = self.query_timing(timing, sent, received).await {
-                    debug!(
-                        offset_ms = offset.as_time_delta().num_milliseconds(),
-                        "clock synchronized from UTCTiming"
-                    );
-                    return (offset, true);
+            let synced = tokio::time::timeout(CLOCK_SYNC_BUDGET, async {
+                for timing in &manifest.utc_timings {
+                    if let Some(offset) = self.query_timing(timing, sent, received).await {
+                        return Some(offset);
+                    }
                 }
+                None
+            })
+            .await;
+            if let Ok(Some(offset)) = synced {
+                debug!(
+                    offset_ms = offset.as_time_delta().num_milliseconds(),
+                    "clock synchronized from UTCTiming"
+                );
+                return (offset, true);
             }
-            warn!("no UTCTiming source answered; falling back to the MPD Date header");
+            warn!("no UTCTiming source answered in time; falling back to the MPD Date header");
         }
         match date {
             Some(date) => (ClockOffset::from_exchange(date, sent, received), false),
@@ -252,7 +285,7 @@ impl MpdFetcher {
             } else {
                 client.get(url.clone())
             }
-            .timeout(self.config.manifest.fetch_timeout);
+            .timeout(self.config.manifest.fetch_timeout.min(CLOCK_SYNC_BUDGET));
             let sent = self.config.clock.now();
             let response = tokio::select! {
                 _ = self.cancel.cancelled() => return None,
@@ -278,7 +311,7 @@ impl MpdFetcher {
             } else {
                 let body = tokio::select! {
                     _ = self.cancel.cancelled() => return None,
-                    body = response.bytes() => body.ok(),
+                    body = read_capped(response, MAX_TIMING_BODY_BYTES) => body.ok(),
                 };
                 body.and_then(|body| UtcTiming::parse_body(&body).ok())
             };
@@ -298,28 +331,28 @@ impl MpdFetcher {
     }
 }
 
-/// Reads a response body, failing once it exceeds [`MAX_MPD_BYTES`]
-/// instead of buffering an unbounded document.
-async fn read_capped(response: reqwest::Response) -> Result<Bytes, DownloadError> {
-    let too_large = |size: usize| -> DownloadError {
-        ManifestError::TooLarge {
-            size,
-            limit: MAX_MPD_BYTES,
-        }
-        .into()
-    };
+enum CappedRead {
+    TooLarge(usize),
+    Network(DownloadError),
+}
+
+/// Reads a response body, failing once it exceeds `limit` bytes instead of
+/// buffering an unbounded one.
+async fn read_capped(response: reqwest::Response, limit: usize) -> Result<Bytes, CappedRead> {
     if let Some(length) = response.content_length()
-        && length > MAX_MPD_BYTES as u64
+        && length > limit as u64
     {
-        return Err(too_large(usize::try_from(length).unwrap_or(usize::MAX)));
+        return Err(CappedRead::TooLarge(
+            usize::try_from(length).unwrap_or(usize::MAX),
+        ));
     }
     let mut body = BytesMut::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(DownloadError::from)?;
+        let chunk = chunk.map_err(|error| CappedRead::Network(DownloadError::from(error)))?;
         let size = body.len().saturating_add(chunk.len());
-        if size > MAX_MPD_BYTES {
-            return Err(too_large(size));
+        if size > limit {
+            return Err(CappedRead::TooLarge(size));
         }
         body.extend_from_slice(&chunk);
     }
@@ -333,8 +366,6 @@ pub(crate) fn snapshot(
     fetched: &FetchedMpd,
     parent_params: &Arc<[(String, String)]>,
 ) -> MpdSnapshot {
-    let terminal = (fetched.manifest.presentation_type == PresentationType::Static)
-        .then_some(TerminalCause::End);
     MpdSnapshot {
         generation,
         manifest_generation,
@@ -343,12 +374,22 @@ pub(crate) fn snapshot(
         parent_params: Arc::clone(parent_params),
         fetched_at: fetched.fetched_at,
         clock_offset: fetched.clock_offset,
-        terminal,
+        terminal: None,
+    }
+}
+
+type Refresh = Pin<Box<dyn Future<Output = (Result<FetchedMpd, DownloadError>, bool)> + Send>>;
+
+/// The in-flight refresh, or never when there is none.
+async fn refresh_done(refresh: &mut Option<Refresh>) -> (Result<FetchedMpd, DownloadError>, bool) {
+    match refresh {
+        Some(refresh) => refresh.await,
+        None => std::future::pending().await,
     }
 }
 
 pub(crate) struct MpdWatcher {
-    fetcher: MpdFetcher,
+    fetcher: Arc<MpdFetcher>,
     config: Arc<DashConfig>,
     /// The URL refreshes are requested from (the MPD URL, or its `Location`).
     url: Url,
@@ -357,7 +398,7 @@ pub(crate) struct MpdWatcher {
 
 impl MpdWatcher {
     pub(crate) fn new(
-        fetcher: MpdFetcher,
+        fetcher: Arc<MpdFetcher>,
         config: Arc<DashConfig>,
         url: Url,
         cancel: CancellationToken,
@@ -370,31 +411,23 @@ impl MpdWatcher {
         }
     }
 
-    /// Spawn the watcher. `initial` (fetched during setup) becomes generation
-    /// 0; a static presentation publishes it as final and fetches nothing
-    /// more.
+    /// Spawn the watcher. `initial` (fetched during setup) becomes
+    /// generation 0.
     pub(crate) fn spawn(
         self,
         initial: FetchedMpd,
     ) -> (watch::Receiver<MpdSnapshot>, tokio::task::JoinHandle<()>) {
         let parent_params: Arc<[(String, String)]> =
             crate::segment_engine::descriptor::query_params(self.url.query()).into();
-        let first = snapshot(0, 0, &initial, &parent_params);
-        let ended = first.terminal.is_some();
-        let (tx, rx) = watch::channel(first);
-        let handle = tokio::spawn(async move {
-            if ended {
-                return;
-            }
-            self.run(tx, initial, parent_params).await;
-        });
+        let (tx, rx) = watch::channel(snapshot(0, 0, &initial, &parent_params));
+        let handle = tokio::spawn(self.run(tx, Arc::new(initial), parent_params));
         (rx, handle)
     }
 
     async fn run(
         mut self,
         tx: watch::Sender<MpdSnapshot>,
-        initial: FetchedMpd,
+        initial: Arc<FetchedMpd>,
         parent_params: Arc<[(String, String)]>,
     ) {
         let mut current = initial;
@@ -407,8 +440,19 @@ impl MpdWatcher {
         }
         let mut next_fetch = self.refresh_interval(&current.manifest).map(deadline);
         let mut next_republish = deadline(republish_interval(&current, &self.config));
+        let mut refresh: Option<Refresh> = None;
 
         loop {
+            if refresh.is_none() && next_fetch.is_some_and(|at| at <= Instant::now()) {
+                next_fetch = None;
+                let fetcher = Arc::clone(&self.fetcher);
+                let url = self.url.clone();
+                let previous = Arc::clone(&current);
+                let utc_due = last_utc_sync.elapsed() >= UTC_TIMING_RESYNC;
+                refresh = Some(Box::pin(async move {
+                    (fetcher.fetch(&url, Some(&previous), utc_due).await, utc_due)
+                }));
+            }
             let wake = next_fetch.map_or(next_republish, |fetch| fetch.min(next_republish));
             tokio::select! {
                 biased;
@@ -420,74 +464,69 @@ impl MpdWatcher {
                     debug!("MPD snapshot receivers dropped; watcher exiting");
                     return;
                 }
-                _ = tokio::time::sleep_until(wake) => {}
-            }
-            let now = Instant::now();
-
-            if next_fetch.is_some_and(|at| at <= now) {
-                let utc_due = last_utc_sync.elapsed() >= UTC_TIMING_RESYNC;
-                match self.fetcher.fetch(&self.url, Some(&current), utc_due).await {
-                    Ok(fetched) => {
-                        retries = 0;
-                        if fetched.utc_synced && utc_due {
-                            last_utc_sync = Instant::now();
+                (result, utc_due) = refresh_done(&mut refresh) => {
+                    refresh = None;
+                    match result {
+                        Ok(fetched) => {
+                            retries = 0;
+                            if fetched.utc_synced && utc_due {
+                                last_utc_sync = Instant::now();
+                            }
+                            if !Arc::ptr_eq(&fetched.manifest, &current.manifest) {
+                                manifest_generation += 1;
+                            }
+                            if let Some(location) = &fetched.manifest.location {
+                                self.url = location.clone();
+                            }
+                            current = Arc::new(fetched);
+                            generation += 1;
+                            let published =
+                                snapshot(generation, manifest_generation, &current, &parent_params);
+                            if tx.send(published).is_err() {
+                                return;
+                            }
+                            if current.manifest.presentation_type == PresentationType::Static {
+                                info!(url = %Redacted(&self.url), "MPD became static; no further refreshes");
+                            }
+                            next_fetch = self.refresh_interval(&current.manifest).map(deadline);
+                            next_republish = deadline(republish_interval(&current, &self.config));
                         }
-                        let changed = !Arc::ptr_eq(&fetched.manifest, &current.manifest);
-                        if changed {
-                            manifest_generation += 1;
+                        Err(DownloadError::Cancelled) => return,
+                        Err(error) => {
+                            retries += 1;
+                            warn!(
+                                url = %Redacted(&self.url),
+                                retries,
+                                error = %crate::redact::redact_diagnostic(&error),
+                                "MPD refresh failed"
+                            );
+                            if retries > self.config.manifest.max_refresh_retries {
+                                let cause = match error {
+                                    DownloadError::HttpStatus {
+                                        status,
+                                        url,
+                                        operation,
+                                    } => TerminalCause::HttpFailure {
+                                        status,
+                                        url: Arc::from(url),
+                                        operation,
+                                    },
+                                    error => TerminalCause::Failed(Arc::from(error.to_string())),
+                                };
+                                tx.send_modify(|snapshot| {
+                                    snapshot.generation = generation + 1;
+                                    snapshot.terminal = Some(cause);
+                                });
+                                return;
+                            }
+                            next_fetch = Some(deadline(
+                                self.config.manifest.retry_delay.saturating_mul(retries),
+                            ));
                         }
-                        if let Some(location) = &fetched.manifest.location {
-                            self.url = location.clone();
-                        }
-                        current = fetched;
-                        generation += 1;
-                        let published =
-                            snapshot(generation, manifest_generation, &current, &parent_params);
-                        let ended = published.terminal.is_some();
-                        if tx.send(published).is_err() {
-                            return;
-                        }
-                        if ended {
-                            info!(url = %Redacted(&self.url), "MPD became static; watcher finished");
-                            return;
-                        }
-                        next_fetch = self.refresh_interval(&current.manifest).map(deadline);
-                        next_republish = deadline(republish_interval(&current, &self.config));
-                        continue;
                     }
-                    Err(DownloadError::Cancelled) => return,
-                    Err(error) => {
-                        retries += 1;
-                        warn!(
-                            url = %Redacted(&self.url),
-                            retries,
-                            error = %crate::redact::redact_diagnostic(&error),
-                            "MPD refresh failed"
-                        );
-                        if retries > self.config.manifest.max_refresh_retries {
-                            let cause = match error {
-                                DownloadError::HttpStatus {
-                                    status,
-                                    url,
-                                    operation,
-                                } => TerminalCause::HttpFailure {
-                                    status,
-                                    url: Arc::from(url),
-                                    operation,
-                                },
-                                error => TerminalCause::Failed(Arc::from(error.to_string())),
-                            };
-                            tx.send_modify(|snapshot| {
-                                snapshot.generation = generation + 1;
-                                snapshot.terminal = Some(cause);
-                            });
-                            return;
-                        }
-                        next_fetch = Some(deadline(
-                            self.config.manifest.retry_delay.saturating_mul(retries),
-                        ));
-                    }
+                    continue;
                 }
+                _ = tokio::time::sleep_until(wake) => {}
             }
 
             if next_republish <= Instant::now() {
@@ -504,7 +543,11 @@ impl MpdWatcher {
     /// `max(minimumUpdatePeriod, min_refresh_interval)`; `None` when a
     /// dynamic MPD declares no update period, meaning it does not change
     /// (ISO/IEC 23009-1 §5.4.1).
+    /// A static MPD is not fetched again.
     fn refresh_interval(&self, manifest: &Manifest) -> Option<Duration> {
+        if manifest.presentation_type == PresentationType::Static {
+            return None;
+        }
         manifest
             .minimum_update_period
             .map(|period| period.max(self.config.manifest.min_refresh_interval))
@@ -515,6 +558,9 @@ impl MpdWatcher {
 /// Representation, so a newly available segment is planned within half a
 /// segment of its availability.
 fn republish_interval(fetched: &FetchedMpd, config: &DashConfig) -> Duration {
+    if fetched.manifest.presentation_type == PresentationType::Static {
+        return STATIC_REPUBLISH_INTERVAL;
+    }
     let now = fetched.clock_offset.apply(config.clock.now());
     let shortest = fetched
         .manifest

@@ -20,12 +20,18 @@
 //! timeline values are never used for output timing: packagers may describe
 //! segments with the encoder-priming offset removed, or with durations that
 //! are not frame-aligned, so they disagree with the media's decode times.
+//! Slicing works on signed times, since a segment overlapping the Period
+//! start lies partly before it; the output adds one session-wide origin to
+//! every track, chosen with the first item so no written decode time is
+//! negative, which keeps the tracks' relative offsets.
 //!
 //! Inits are merged only within an *epoch*: one Period with one leader
 //! Representation and at most one follower Representation. When either
 //! track moves to a new epoch the output gets an end marker
 //! (`StreamStructureChange`) and a new merged init; fragments of different
-//! epochs never share an init.
+//! epochs never share an init. Audio of the old epoch that is still queued
+//! when the video moves to a new Period is written first, under the old
+//! init.
 //!
 //! Audio never fails a recording. A video segment waits for the audio it
 //! overlaps at most `max_audio_lag` after it arrived here (less under buffer
@@ -42,7 +48,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use chrono::{DateTime, TimeDelta, Utc};
 use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, SplitReason};
-use mp4::merge::{FragmentWriter, MergeError, MergedInit, merge_init};
+use mp4::merge::{FragmentWriter, MergeError, MergedInit, merge_init, validate_init};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -50,7 +56,7 @@ use tracing::{debug, info, warn};
 
 use crate::DownloadError;
 use crate::dash::config::DashMuxConfig;
-use crate::dash::planner::PeriodKey;
+use crate::dash::planner::{ConsumedFrontier, PeriodKey};
 use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
 use crate::segment_engine::control::EngineNotice;
@@ -67,19 +73,30 @@ const MAX_CONSECUTIVE_LEADER_REJECTIONS: u32 = 3;
 
 pub(crate) type TrackItem = Result<AssembledItem, DownloadError>;
 
-/// Assembler sink of one DASH track: forwards ordered items to the muxer.
+/// Assembler sink of one DASH track: forwards ordered items to the muxer
+/// and publishes the track's consumed frontier to its planner.
 pub(crate) struct TrackSink {
     tx: mpsc::Sender<TrackItem>,
+    frontier: Arc<ConsumedFrontier>,
 }
 
 impl TrackSink {
-    pub(crate) fn new(tx: mpsc::Sender<TrackItem>) -> Self {
-        Self { tx }
+    pub(crate) fn new(tx: mpsc::Sender<TrackItem>, frontier: Arc<ConsumedFrontier>) -> Self {
+        Self { tx, frontier }
     }
 }
 
 impl AssemblerSink for TrackSink {
     async fn send(&mut self, item: TrackItem) -> Result<(), SinkClosed> {
+        match &item {
+            Ok(AssembledItem::Payload(payload)) if !payload.is_init() => {
+                self.frontier.advance_to(payload.msn().saturating_add(1));
+            }
+            Ok(AssembledItem::GapSkipped { to_sequence, .. }) => {
+                self.frontier.advance_to(*to_sequence);
+            }
+            _ => {}
+        }
         self.tx.send(item).await.map_err(|_| SinkClosed)
     }
 }
@@ -153,8 +170,9 @@ struct QueuedMedia {
     data: Bytes,
     descriptor: Arc<SegmentDescriptor>,
     /// `(start, end)` of each fragment in the track timescale, on the
-    /// presentation timeline. Empty for a passthrough leader.
-    fragments: Vec<(u64, u64)>,
+    /// presentation timeline (signed: a segment overlapping the Period start
+    /// begins before it). Empty for a passthrough leader.
+    fragments: Vec<(i128, i128)>,
     /// Fragments at the front already written or dropped.
     consumed: usize,
     /// When the muxer received it; a leader segment waits for its follower
@@ -163,7 +181,7 @@ struct QueuedMedia {
 }
 
 impl QueuedMedia {
-    fn span(&self) -> Option<(u64, u64)> {
+    fn span(&self) -> Option<(i128, i128)> {
         let start = self.fragments.iter().map(|&(start, _)| start).min()?;
         let end = self.fragments.iter().map(|&(_, end)| end).max()?;
         Some((start, end))
@@ -237,6 +255,8 @@ struct FollowerPart {
     data: Bytes,
     first: usize,
     count: usize,
+    /// Presentation start of the first fragment, in the follower timescale.
+    start: i128,
 }
 
 enum Collect {
@@ -270,7 +290,13 @@ struct MuxState {
     leader_ended_at: Option<Instant>,
     /// End of the newest leader slice written, with its timescale; follower
     /// fragments ending by then arrived too late for any slice.
-    leader_end: Option<(u64, u32)>,
+    leader_end: Option<(i128, u32)>,
+    /// Added to every presentation time written, in nanoseconds; chosen with
+    /// the first item.
+    origin_nanos: Option<i128>,
+    /// Whether the follower's tail of the current output epoch was written
+    /// ahead of a Period change.
+    tail_flushed: bool,
     leader_rejections: u32,
     finished: bool,
     stats: MuxStats,
@@ -307,6 +333,8 @@ pub(crate) async fn run_muxer(
         follower_stalled: false,
         leader_ended_at: None,
         leader_end: None,
+        origin_nanos: None,
+        tail_flushed: false,
         leader_rejections: 0,
         finished: false,
         stats: MuxStats::default(),
@@ -314,28 +342,18 @@ pub(crate) async fn run_muxer(
 
     let outcome = loop {
         if let Err(Fatal(error)) = state.pump() {
-            let reason: Arc<str> = Arc::from(error.to_string());
             state.out.clear();
-            if out.send(Err(error)).await.is_err() {
-                debug!("DASH consumer closed before the stream error was delivered");
-            }
-            break MuxOutcome::Failed(reason);
+            break fail(&out, error, &cancel).await;
         }
-        let mut closed = false;
+        let mut stopped = None;
         for item in state.out.drain(..) {
-            if out.send(Ok(item)).await.is_err() {
-                closed = true;
+            if let Err(stop) = send(&out, Ok(item), &cancel).await {
+                stopped = Some(stop);
                 break;
             }
         }
-        if closed {
-            // Dropping the item stream cancels the session first, so a
-            // closed output under a cancelled token is a cancellation.
-            break if cancel.is_cancelled() {
-                MuxOutcome::Cancelled
-            } else {
-                MuxOutcome::DownstreamClosed
-            };
+        if let Some(stop) = stopped {
+            break stop;
         }
         if state.finished {
             break match state.leader.status {
@@ -363,15 +381,13 @@ pub(crate) async fn run_muxer(
             biased;
             _ = cancel.cancelled() => break MuxOutcome::Cancelled,
             item = recv(&mut leader_rx), if leader_open => {
-                if let Err(Fatal(error)) = state.accept_leader(item) {
-                    let reason: Arc<str> = Arc::from(error.to_string());
-                    if out.send(Err(error)).await.is_err() {
-                        debug!("DASH consumer closed before the stream error was delivered");
-                    }
-                    break MuxOutcome::Failed(reason);
+                if let Err(Fatal(error)) = state.accept_leader(item, cancel.is_cancelled()) {
+                    break fail(&out, error, &cancel).await;
                 }
             }
-            item = recv(&mut follower_rx), if follower_open => state.accept_follower(item),
+            item = recv(&mut follower_rx), if follower_open => {
+                state.accept_follower(item, cancel.is_cancelled());
+            }
             // Wakes the next pump, which stops waiting past the deadline.
             _ = sleep_until(deadline), if deadline.is_some() => {}
         }
@@ -392,6 +408,41 @@ pub(crate) async fn run_muxer(
         "DASH muxer finished"
     );
     outcome
+}
+
+/// Delivers `item` unless the session is cancelled first: a consumer that
+/// stopped reading must not keep a cancelled session alive.
+async fn send(
+    out: &mpsc::Sender<Result<HlsData, DownloadError>>,
+    item: Result<HlsData, DownloadError>,
+    cancel: &CancellationToken,
+) -> Result<(), MuxOutcome> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(MuxOutcome::Cancelled),
+        sent = out.send(item) => sent.map_err(|_| {
+            // Dropping the item stream cancels the session first, so a
+            // closed output under a cancelled token is a cancellation.
+            if cancel.is_cancelled() {
+                MuxOutcome::Cancelled
+            } else {
+                MuxOutcome::DownstreamClosed
+            }
+        }),
+    }
+}
+
+/// Delivers the stream's terminal error and reports the failure.
+async fn fail(
+    out: &mpsc::Sender<Result<HlsData, DownloadError>>,
+    error: DownloadError,
+    cancel: &CancellationToken,
+) -> MuxOutcome {
+    let reason: Arc<str> = Arc::from(error.to_string());
+    match send(out, Err(error), cancel).await {
+        Ok(()) | Err(MuxOutcome::DownstreamClosed) => MuxOutcome::Failed(reason),
+        Err(stop) => stop,
+    }
 }
 
 async fn recv(rx: &mut Option<mpsc::Receiver<TrackItem>>) -> Option<TrackItem> {
@@ -417,11 +468,20 @@ impl MuxState {
 
     // --- Input ---
 
-    fn accept_leader(&mut self, item: Option<TrackItem>) -> Result<(), Fatal> {
+    /// `cancelled`: whether the session was cancelled, which explains a
+    /// channel closing without an end or an error.
+    fn accept_leader(&mut self, item: Option<TrackItem>, cancelled: bool) -> Result<(), Fatal> {
         let item = match item {
             None => {
                 if self.leader.status == Status::Active {
-                    debug!(track = %self.leader.track, "leader closed without an end");
+                    if !cancelled {
+                        return Err(Fatal(DownloadError::Internal {
+                            reason: format!(
+                                "{} pipeline stopped without an end or an error",
+                                self.leader.track
+                            ),
+                        }));
+                    }
                     self.leader.status = Status::Closed;
                 }
                 return Ok(());
@@ -501,7 +561,7 @@ impl MuxState {
         Ok(())
     }
 
-    fn accept_follower(&mut self, item: Option<TrackItem>) {
+    fn accept_follower(&mut self, item: Option<TrackItem>, cancelled: bool) {
         self.follower_stalled = false;
         let Some(follower) = self.follower.as_mut() else {
             return;
@@ -509,12 +569,16 @@ impl MuxState {
         let item = match item {
             None => {
                 if follower.status == Status::Active {
-                    follower.status = Status::Closed;
+                    if cancelled {
+                        follower.status = Status::Closed;
+                    } else {
+                        self.drop_follower("pipeline stopped without an end", "");
+                    }
                 }
                 return;
             }
             Some(Err(error)) => {
-                self.drop_follower(format!("pipeline failed: {error}"));
+                self.drop_follower("pipeline failed", &error);
                 return;
             }
             Some(Ok(item)) => item,
@@ -527,9 +591,7 @@ impl MuxState {
                         follower.latest_init = Some(Arc::clone(&init));
                         follower.queue.push_back(Queued::Init(init));
                     }
-                    Err(error) => {
-                        self.drop_follower(format!("initialization segment rejected: {error}"))
-                    }
+                    Err(error) => self.drop_follower("initialization segment rejected", &error),
                 }
             }
             AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor }) => {
@@ -549,11 +611,11 @@ impl MuxState {
                             arrived: Instant::now(),
                         }));
                     }
-                    Err(error) => self.drop_follower(format!("media segment rejected: {error}")),
+                    Err(error) => self.drop_follower("media segment rejected", &error),
                 }
             }
             AssembledItem::Payload(_) => {
-                self.drop_follower("segment is not fragmented MP4".to_owned());
+                self.drop_follower("segment is not fragmented MP4", "");
             }
             AssembledItem::StreamEnded => follower.status = Status::Ended,
             other => self.forward_engine_event(other),
@@ -603,15 +665,22 @@ impl MuxState {
         Ok(())
     }
 
-    /// Stops recording the follower; output continues with the leader.
-    fn drop_follower(&mut self, reason: String) {
+    /// Stops recording the follower; output continues with the leader. The
+    /// event carries `reason` only; `detail` may quote server responses and
+    /// is not logged.
+    fn drop_follower(&mut self, reason: &'static str, detail: impl std::fmt::Display) {
         let Some(follower) = self.follower.as_mut() else {
             return;
         };
         if follower.dropped {
             return;
         }
-        warn!(track = %follower.track, %reason, "dropping track; recording continues without it");
+        warn!(
+            track = %follower.track,
+            reason,
+            detail = %crate::redact::redact_diagnostic(detail),
+            "dropping track; recording continues without it"
+        );
         follower.dropped = true;
         follower.status = Status::Closed;
         follower.queue.clear();
@@ -622,6 +691,43 @@ impl MuxState {
             track,
             reason: Arc::from(reason),
         });
+    }
+
+    /// Time added to `init`'s decode times on output: its shift onto the
+    /// presentation timeline plus the session origin.
+    fn output_shift(&self, init: &TrackInit) -> Result<i64, MergeError> {
+        let origin = self.origin_nanos.unwrap_or(0);
+        let timescale = i128::from(init.timescale);
+        // Rounded up, so a time the origin was chosen to lift to zero is not
+        // left one tick below it.
+        let origin_ticks = (origin * timescale + NANOS_PER_SEC - 1) / NANOS_PER_SEC;
+        i64::try_from(i128::from(init.time_shift) + origin_ticks)
+            .map_err(|_| MergeError::Overflow("time shift"))
+    }
+
+    /// Chooses the session origin with the first item: the lift that makes
+    /// its earliest presentation time zero, or none when nothing is negative.
+    fn choose_origin(&mut self, starts: impl Iterator<Item = (i128, u32)>) {
+        if self.origin_nanos.is_some() {
+            return;
+        }
+        let earliest = starts
+            .filter(|&(_, timescale)| timescale > 0)
+            .map(|(ticks, timescale)| {
+                ticks
+                    .saturating_mul(NANOS_PER_SEC)
+                    .div_euclid(i128::from(timescale))
+            })
+            .min()
+            .unwrap_or(0);
+        let origin = (-earliest).max(0);
+        if origin > 0 {
+            info!(
+                origin_ms = (origin / 1_000_000) as i64,
+                "DASH output starts before the Period; shifting the session timeline"
+            );
+        }
+        self.origin_nanos = Some(origin);
     }
 
     /// Output gives up waiting for the follower; reported once per episode.
@@ -701,6 +807,17 @@ impl MuxState {
         let deadline = self.deadline(head.arrived);
         let in_time = now < deadline;
         let may_wait = in_time && self.under_buffer_limit();
+        let period_change = self
+            .output
+            .as_ref()
+            .is_some_and(|output| !output.leader.period.same(&period));
+        if period_change && !self.tail_flushed {
+            if self.follower_tail_pending(may_wait) {
+                return Ok(Step::Wait(Some(deadline)));
+            }
+            self.flush_follower(true);
+            self.tail_flushed = true;
+        }
         let picks = match self.collect(&period, start, end, timescale, may_wait) {
             Collect::Wait => return Ok(Step::Wait(Some(deadline))),
             Collect::Ready(picks) => picks,
@@ -736,12 +853,29 @@ impl MuxState {
                 if self.follower_active() {
                     debug!("follower did not end in time; finishing without its tail");
                 }
-                self.flush_follower();
+                self.flush_follower(false);
                 self.out
                     .push(HlsData::end_marker_with_reason(SplitReason::EndOfStream));
                 Step::Finished
             }
         }
+    }
+
+    /// Whether the follower may still deliver fragments of the output's
+    /// epoch: everything queued belongs to it and the track is active.
+    fn follower_tail_pending(&self, may_wait: bool) -> bool {
+        let (Some(follower), Some(output)) = (&self.follower, &self.output) else {
+            return false;
+        };
+        let Some(epoch) = &output.follower else {
+            return false;
+        };
+        may_wait
+            && follower.status == Status::Active
+            && follower
+                .queue
+                .iter()
+                .all(|item| matches!(item, Queued::Media(media) if media.init.same_epoch(epoch)))
     }
 
     /// Decides which follower fragments belong to the leader slice
@@ -750,8 +884,8 @@ impl MuxState {
     fn collect(
         &mut self,
         period: &PeriodKey,
-        start: u64,
-        end: u64,
+        start: i128,
+        end: i128,
         timescale: u32,
         may_wait: bool,
     ) -> Collect {
@@ -852,6 +986,7 @@ impl MuxState {
                 data: media.data.clone(),
                 first: media.consumed,
                 count,
+                start: media.fragments[media.consumed].0,
             });
             media.consumed += count;
             picks -= count;
@@ -901,20 +1036,19 @@ impl MuxState {
                 SplitReason::StreamStructureChange { description },
             ));
         }
+        self.tail_flushed = false;
         let (init, follower) = match (&leader.probe, follower) {
             (Some(_), Some(follower)) => {
                 match merge_init(&[leader.data.clone(), follower.data.clone()]) {
                     Ok(merged) => (Some(merged), Some(follower)),
                     Err(error) => {
-                        self.drop_follower(format!(
-                            "initialization segments cannot be merged: {error}"
-                        ));
+                        self.drop_follower("initialization segments cannot be merged", &error);
                         (leader.probe.clone(), None)
                     }
                 }
             }
             (None, Some(_)) => {
-                self.drop_follower("the leading track is passed through unmerged".to_owned());
+                self.drop_follower("the leading track is passed through unmerged", "");
                 (None, None)
             }
             (probe, None) => (probe.clone(), None),
@@ -938,27 +1072,43 @@ impl MuxState {
         &mut self,
         media: QueuedMedia,
         parts: Vec<FollowerPart>,
-        start: u64,
-        end: u64,
+        start: i128,
+        end: i128,
     ) -> Result<(), Fatal> {
         let follower = match parts.first() {
             Some(part) => Some(Arc::clone(&part.init)),
             None => self.idle_follower_init(&media.init),
         };
         self.ensure_output(&media.init, follower);
+        if self
+            .output
+            .as_ref()
+            .is_some_and(|output| output.init.is_none())
+        {
+            self.write_passthrough(media);
+            return Ok(());
+        }
+        self.choose_origin(
+            std::iter::once((start, media.init.timescale))
+                .chain(parts.iter().map(|part| (part.start, part.init.timescale))),
+        );
+        let leader_shift = self.output_shift(&media.init);
+        let part_shifts: Vec<Result<i64, MergeError>> = parts
+            .iter()
+            .map(|part| self.output_shift(&part.init))
+            .collect();
         let Some(output) = &self.output else {
             return Ok(());
         };
         let Some(init) = &output.init else {
-            self.write_passthrough(media);
             return Ok(());
         };
 
         let mut data = Vec::with_capacity(
             media.data.len() + parts.iter().map(|part| part.data.len()).sum::<usize>(),
         );
-        let leader_written = init
-            .parse_media_segment(0, &media.data, media.init.time_shift)
+        let leader_written = leader_shift
+            .and_then(|shift| init.parse_media_segment(0, &media.data, shift))
             .and_then(|fragments| {
                 fragments
                     .into_iter()
@@ -970,8 +1120,9 @@ impl MuxState {
         self.leader_rejections = 0;
 
         let follower_written = match &output.follower {
-            Some(_) => parts.iter().try_for_each(|part| {
-                init.parse_media_segment(1, &part.data, part.init.time_shift)
+            Some(_) => parts.iter().zip(part_shifts).try_for_each(|(part, shift)| {
+                shift
+                    .and_then(|shift| init.parse_media_segment(1, &part.data, shift))
                     .and_then(|fragments| {
                         fragments
                             .into_iter()
@@ -985,7 +1136,7 @@ impl MuxState {
         if let Err(error) = follower_written {
             // The leader's fragments are complete; what follower data was
             // written before the error stays, nothing after it.
-            self.drop_follower(format!("media segment rejected: {error}"));
+            self.drop_follower("media segment rejected", &error);
         }
 
         let timescale = media.init.timescale;
@@ -1019,9 +1170,18 @@ impl MuxState {
         self.stats.items += 1;
     }
 
-    /// Writes the follower fragments left after the leader ended, when they
-    /// belong to the output's epoch.
-    fn flush_follower(&mut self) {
+    /// Writes queued follower fragments of the output's epoch as one item.
+    /// `prefix_only`: stop at the first item of another epoch (ahead of a
+    /// Period change) instead of draining the queue (at the end of the
+    /// stream).
+    fn flush_follower(&mut self, prefix_only: bool) {
+        let shift = match (&self.output, &self.follower) {
+            (Some(output), Some(_)) => match &output.follower {
+                Some(epoch) => self.output_shift(epoch),
+                None => return,
+            },
+            _ => return,
+        };
         let Some(output) = &self.output else {
             return;
         };
@@ -1031,18 +1191,32 @@ impl MuxState {
         let Some(follower) = self.follower.as_mut() else {
             return;
         };
+        let Ok(shift) = shift else {
+            warn!("trailing audio cannot be placed on the output timeline; dropped");
+            return;
+        };
         let mut data = Vec::new();
         let mut last: Option<Arc<SegmentDescriptor>> = None;
-        while let Some(item) = follower.pop_front() {
+        loop {
+            let in_epoch = matches!(
+                follower.queue.front(),
+                Some(Queued::Media(media)) if media.init.same_epoch(output_follower)
+            );
+            if prefix_only && !in_epoch {
+                break;
+            }
+            let Some(item) = follower.pop_front() else {
+                break;
+            };
             let Queued::Media(media) = item else {
                 continue;
             };
-            if !media.init.same_epoch(output_follower) {
+            if !in_epoch {
                 self.stats.stale_fragments += (media.fragments.len() - media.consumed) as u64;
                 continue;
             }
             let follower_timescale = media.init.timescale;
-            let late = |&(_, fragment_end): &(u64, u64)| {
+            let late = |&(_, fragment_end): &(i128, i128)| {
                 self.leader_end.is_some_and(|(end, timescale)| {
                     ends_by(fragment_end, follower_timescale, end, timescale)
                 })
@@ -1051,7 +1225,7 @@ impl MuxState {
             self.stats.late_fragments +=
                 keep[media.consumed..].iter().filter(|keep| !**keep).count() as u64;
             let written = init
-                .parse_media_segment(1, &media.data, media.init.time_shift)
+                .parse_media_segment(1, &media.data, shift)
                 .and_then(|fragments| {
                     fragments
                         .into_iter()
@@ -1089,14 +1263,17 @@ fn is_after(a: &PeriodKey, b: &PeriodKey) -> bool {
     !a.same(b) && a.start > b.start
 }
 
-/// `a / a_scale ≤ b / b_scale`, exactly.
-fn ends_by(a: u64, a_scale: u32, b: u64, b_scale: u32) -> bool {
-    u128::from(a) * u128::from(b_scale) <= u128::from(b) * u128::from(a_scale)
+const NANOS_PER_SEC: i128 = 1_000_000_000;
+
+/// `a / a_scale ≤ b / b_scale`, exactly. Times are 64-bit decode times plus
+/// a 64-bit shift and timescales 32-bit, so the products fit in `i128`.
+fn ends_by(a: i128, a_scale: u32, b: i128, b_scale: u32) -> bool {
+    a.saturating_mul(i128::from(b_scale)) <= b.saturating_mul(i128::from(a_scale))
 }
 
 /// `a / a_scale < b / b_scale`, exactly.
-fn starts_before(a: u64, a_scale: u32, b: u64, b_scale: u32) -> bool {
-    u128::from(a) * u128::from(b_scale) < u128::from(b) * u128::from(a_scale)
+fn starts_before(a: i128, a_scale: u32, b: i128, b_scale: u32) -> bool {
+    a.saturating_mul(i128::from(b_scale)) < b.saturating_mul(i128::from(a_scale))
 }
 
 fn dash_meta(descriptor: &SegmentDescriptor) -> Option<&DashSegmentMeta> {
@@ -1106,9 +1283,10 @@ fn dash_meta(descriptor: &SegmentDescriptor) -> Option<&DashSegmentMeta> {
     }
 }
 
-/// Builds a track init from its payload. `Err` only for protected content
-/// (both roles) or, for the follower, any rejection; a rejected leader init
-/// yields a passthrough init (`probe: None`).
+/// Builds a track init from its payload. A leader init that already
+/// carries several tracks (a multiplexed Representation) is passed through
+/// unmerged (`probe: None`) once [`validate_init`] accepts every track;
+/// anything else the merger rejects is an error.
 fn build_init(
     data: Bytes,
     descriptor: Arc<SegmentDescriptor>,
@@ -1138,12 +1316,15 @@ fn build_init(
     };
     let probe = match merge_init(std::slice::from_ref(&data)) {
         Ok(probe) => Some(probe),
-        Err(error @ MergeError::Protected { .. }) => return Err(error),
-        Err(error) if !leader => return Err(error),
-        Err(error) => {
-            debug!(%error, "leader initialization segment rejected by the merger");
+        Err(MergeError::MultipleTracks { count }) if leader => {
+            validate_init(&data)?;
+            debug!(
+                tracks = count,
+                "multiplexed initialization segment passed through"
+            );
             None
         }
+        Err(error) => return Err(error),
     };
     let timescale = probe
         .as_ref()
@@ -1176,28 +1357,27 @@ fn time_shift(period_start: Duration, pto: u64, mpd_timescale: u64, timescale: u
     i64::try_from(start - pto).ok()
 }
 
-/// Fragment spans of a segment, from the track's own init.
-fn probe_fragments(init: &TrackInit, data: &Bytes) -> Result<Vec<(u64, u64)>, MergeError> {
+/// Fragment spans of a segment on the presentation timeline, from the
+/// track's own init. Parsed unshifted, since a shifted decode time may be
+/// negative.
+fn probe_fragments(init: &TrackInit, data: &Bytes) -> Result<Vec<(i128, i128)>, MergeError> {
     let Some(probe) = &init.probe else {
         return Ok(Vec::new());
     };
-    let fragments = probe.parse_media_segment(0, data, init.time_shift)?;
+    let fragments = probe.parse_media_segment(0, data, 0)?;
     if fragments.is_empty() {
         return Err(MergeError::MissingBox {
             fourcc: mp4::FourCc(*b"moof"),
             parent: mp4::FourCc(*b"file"),
         });
     }
-    fragments
+    Ok(fragments
         .iter()
         .map(|fragment| {
-            let start = fragment.decode_time();
-            start
-                .checked_add(fragment.duration())
-                .map(|end| (start, end))
-                .ok_or(MergeError::Overflow("fragment end time"))
+            let start = i128::from(fragment.decode_time()) + i128::from(init.time_shift);
+            (start, start + i128::from(fragment.duration()))
         })
-        .collect()
+        .collect())
 }
 
 fn epoch_change(output: &Output, leader: &TrackInit, follower: Option<&TrackInit>) -> String {
@@ -1233,14 +1413,14 @@ fn init_media_segment(descriptor: &SegmentDescriptor) -> m3u8_rs::MediaSegment {
 /// start.
 fn media_segment(
     descriptor: &SegmentDescriptor,
-    start: u64,
-    end: u64,
+    start: i128,
+    end: i128,
     timescale: u32,
 ) -> m3u8_rs::MediaSegment {
     let duration = if timescale == 0 {
         0.0
     } else {
-        (end.saturating_sub(start) as f64 / f64::from(timescale)) as f32
+        ((end - start).max(0) as f64 / f64::from(timescale)) as f32
     };
     let program_date_time = dash_meta(descriptor)
         .and_then(|meta| meta.availability_start_time)
@@ -1256,13 +1436,13 @@ fn media_segment(
 
 fn presentation_instant(
     anchor: DateTime<Utc>,
-    ticks: u64,
+    ticks: i128,
     timescale: u32,
 ) -> Option<DateTime<Utc>> {
     if timescale == 0 {
         return None;
     }
-    let nanos = u128::from(ticks) * 1_000_000_000 / u128::from(timescale);
+    let nanos = ticks.checked_mul(NANOS_PER_SEC)? / i128::from(timescale);
     let delta = TimeDelta::nanoseconds(i64::try_from(nanos).ok()?);
     anchor.checked_add_signed(delta)
 }
@@ -1296,6 +1476,19 @@ mod tests {
         period_start_secs: u64,
         number: u64,
     ) -> Arc<SegmentDescriptor> {
+        descriptor_with_pto(track, kind, period, period_start_secs, number, 0)
+    }
+
+    /// A descriptor whose Representation has a presentation time offset
+    /// (in milliseconds: the test MPD timescale is 1000).
+    fn descriptor_with_pto(
+        track: MediaTrack,
+        kind: SegmentKind,
+        period: Option<&str>,
+        period_start_secs: u64,
+        number: u64,
+        pto_ms: u64,
+    ) -> Arc<SegmentDescriptor> {
         let url = Url::parse(&format!(
             "https://cdn.example.com/{track}/{number}.m4s?token=secret"
         ))
@@ -1322,7 +1515,7 @@ mod tests {
                 time: 0,
                 duration: 0,
                 timescale: 1000,
-                presentation_time_offset: 0,
+                presentation_time_offset: pto_ms,
                 availability_start_time: None,
             })),
         })
@@ -1724,30 +1917,266 @@ mod tests {
         assert_eq!(audio, 3);
     }
 
-    #[tokio::test]
-    async fn a_multiplexed_representation_is_passed_through_unchanged() {
-        // One init carrying both tracks, as a muxed Representation serves it.
-        let muxed = merge_init(&[
+    /// One init and one media segment carrying both fixture tracks, as a
+    /// multiplexed Representation serves them.
+    fn multiplexed() -> (Bytes, Bytes) {
+        let init = merge_init(&[
             Bytes::from_static(VIDEO_INIT),
             Bytes::from_static(AUDIO_INIT),
         ])
         .unwrap();
+        let mut segment = Vec::new();
+        let mut writer = FragmentWriter::new();
+        for (track, data) in [(0, VIDEO_1), (1, AUDIO_1)] {
+            for fragment in init
+                .parse_media_segment(track, &Bytes::from_static(data), 0)
+                .unwrap()
+            {
+                writer.write(fragment, &mut segment).unwrap();
+            }
+        }
+        (init.data().clone(), Bytes::from(segment))
+    }
+
+    #[tokio::test]
+    async fn a_multiplexed_representation_is_passed_through_unchanged() {
+        let (muxed_init, muxed_media) = multiplexed();
         let h = start(MediaTrack::Video, false, lag(WAIT));
         let v = MediaTrack::Video;
-        h.video(init(v, None, 0, muxed.data())).await;
-        h.video(media(v, None, 0, 1, Bytes::from_static(VIDEO_1)))
-            .await;
+        h.video(init(v, None, 0, &muxed_init)).await;
+        h.video(media(v, None, 0, 1, muxed_media.clone())).await;
         h.video(Ok(AssembledItem::StreamEnded)).await;
 
         let (items, outcome, _) = h.finish().await;
         assert_eq!(outcome, MuxOutcome::Ended);
-        assert_eq!(init_data(&items), [muxed.data()]);
-        assert_eq!(media_data(&items), [&Bytes::from_static(VIDEO_1)]);
-        let duration = match &items[1] {
-            HlsData::M4sData(M4sData::Segment(segment)) => segment.segment.duration,
-            other => panic!("expected media, got {other:?}"),
+        assert_eq!(init_data(&items), [&muxed_init]);
+        assert_eq!(media_data(&items), [&muxed_media]);
+        let tracks: Vec<u32> = fragments(&muxed_media).iter().map(|(_, id)| *id).collect();
+        assert_eq!(tracks, [1, 2], "genuine two-track media");
+        let check = IndependentFragmentCheck::from_init(&muxed_init).unwrap();
+        assert!(check.is_independent(&muxed_media));
+    }
+
+    #[tokio::test]
+    async fn protected_or_malformed_multiplexed_inits_are_not_passed_through() {
+        let (muxed_init, _) = multiplexed();
+        let mut protected = muxed_init.to_vec();
+        let at = protected
+            .windows(4)
+            .position(|window| window == b"mp4a")
+            .unwrap();
+        protected[at..at + 4].copy_from_slice(b"enca");
+        let malformed = {
+            // Drop the audio track's `trex`: its fragments could not be read.
+            let mut data = muxed_init.to_vec();
+            let at = data
+                .windows(4)
+                .rposition(|window| window == b"trex")
+                .unwrap()
+                - 4;
+            data.drain(at..at + 32);
+            let mvex = data
+                .windows(4)
+                .position(|window| window == b"mvex")
+                .unwrap()
+                - 4;
+            let size = u32::from_be_bytes(data[mvex..mvex + 4].try_into().unwrap()) - 32;
+            data[mvex..mvex + 4].copy_from_slice(&size.to_be_bytes());
+            let moov = data
+                .windows(4)
+                .position(|window| window == b"moov")
+                .unwrap()
+                - 4;
+            let size = u32::from_be_bytes(data[moov..moov + 4].try_into().unwrap()) - 32;
+            data[moov..moov + 4].copy_from_slice(&size.to_be_bytes());
+            data
         };
-        assert_eq!(duration, 0.0, "the MPD duration of the test descriptor");
+        for (data, protected) in [(protected, true), (malformed, false)] {
+            let mut h = start(MediaTrack::Video, false, lag(WAIT));
+            h.video(init(MediaTrack::Video, None, 0, &data)).await;
+            let item = tokio::time::timeout(WAIT, h.out.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            match item {
+                Err(DownloadError::Unsupported { .. }) => assert!(protected),
+                Err(DownloadError::InvalidContent { .. }) => assert!(!protected),
+                other => panic!("expected a typed rejection, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn audio_left_at_a_period_change_is_written_under_its_own_init() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.audio(init(a, Some("p0"), 0, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p0"), 0, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        // Starts at 1 s, after the only video segment of p0 ends.
+        h.audio(media(a, Some("p0"), 0, 2, with_tfdt(AUDIO_1, 48_000)))
+            .await;
+        h.video(init(v, Some("p1"), 2, VIDEO_INIT)).await;
+        h.video(media(v, Some("p1"), 2, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(init(a, Some("p1"), 2, AUDIO_INIT)).await;
+        h.audio(media(a, Some("p1"), 2, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let kinds: Vec<String> = items
+            .iter()
+            .map(|item| match item {
+                HlsData::M4sData(M4sData::InitSegment(_)) => "init".to_owned(),
+                HlsData::M4sData(M4sData::Segment(segment)) => {
+                    let tracks: Vec<String> = fragments(&segment.data)
+                        .iter()
+                        .map(|(_, track)| track.to_string())
+                        .collect();
+                    format!("media[{}]", tracks.join(","))
+                }
+                HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. })) => {
+                    "epoch".to_owned()
+                }
+                HlsData::EndMarker(Some(SplitReason::EndOfStream)) => "end".to_owned(),
+                _ => "other".to_owned(),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "init",
+                "media[1,2]",
+                "media[2]",
+                "epoch",
+                "init",
+                "media[1,2]",
+                "end"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fragments_straddling_the_period_start_get_a_common_origin() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        // PTO 0.5 s: both tracks' first fragments start half a second before
+        // the Period.
+        let item = |track, kind, number, data: Bytes| -> TrackItem {
+            let descriptor = descriptor_with_pto(track, kind, None, 0, number, 500);
+            Ok(AssembledItem::Payload(match kind {
+                SegmentKind::Init => SegmentPayload::Mp4Init { data, descriptor },
+                SegmentKind::Media => SegmentPayload::Mp4Media { data, descriptor },
+            }))
+        };
+        h.video(item(
+            v,
+            SegmentKind::Init,
+            0,
+            Bytes::from_static(VIDEO_INIT),
+        ))
+        .await;
+        h.video(item(v, SegmentKind::Media, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(item(
+            a,
+            SegmentKind::Init,
+            0,
+            Bytes::from_static(AUDIO_INIT),
+        ))
+        .await;
+        h.audio(item(a, SegmentKind::Media, 1, Bytes::from_static(AUDIO_1)))
+            .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let segments = media_data(&items);
+        assert_eq!(segments.len(), 1, "nothing was rejected");
+        let decode_times: Vec<(u32, u64)> = boxes(segments[0])
+            .into_iter()
+            .filter(|(fourcc, _)| fourcc == b"moof")
+            .map(|(_, moof)| {
+                let traf = boxes(moof)
+                    .into_iter()
+                    .find(|(f, _)| f == b"traf")
+                    .unwrap()
+                    .1;
+                let children = boxes(traf);
+                let tfhd = children.iter().find(|(f, _)| f == b"tfhd").unwrap().1;
+                let tfdt = children.iter().find(|(f, _)| f == b"tfdt").unwrap().1;
+                (
+                    u32::from_be_bytes(tfhd[4..8].try_into().unwrap()),
+                    u64::from_be_bytes(tfdt[4..12].try_into().unwrap()),
+                )
+            })
+            .collect();
+        // Lifted by the same 0.5 s: both start at zero, keeping their offset.
+        assert_eq!(decode_times, [(1, 0), (2, 0)]);
+    }
+
+    #[tokio::test]
+    async fn an_unexplained_leader_closure_is_a_pipeline_error() {
+        let mut h = start(MediaTrack::Video, false, lag(WAIT));
+        h.video(init(MediaTrack::Video, None, 0, VIDEO_INIT)).await;
+        drop(h.video);
+        let item = tokio::time::timeout(WAIT, h.out.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(item, Err(DownloadError::Internal { .. })));
+        let outcome = tokio::time::timeout(WAIT, h.muxer).await.unwrap().unwrap();
+        assert!(matches!(outcome, MuxOutcome::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn cancellation_is_not_blocked_by_a_consumer_that_stopped_reading() {
+        let (video, video_rx) = mpsc::channel(64);
+        // Never read: the muxer blocks on its first delivery.
+        let (out_tx, _held) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let muxer = tokio::spawn(run_muxer(
+            MuxTrack {
+                track: MediaTrack::Video,
+                rx: video_rx,
+                cancel: CancellationToken::new(),
+            },
+            None,
+            out_tx,
+            None,
+            lag(WAIT),
+            cancel.clone(),
+        ));
+        video
+            .send(init(MediaTrack::Video, None, 0, VIDEO_INIT))
+            .await
+            .unwrap();
+        for number in 1..=4 {
+            video
+                .send(media(
+                    MediaTrack::Video,
+                    None,
+                    0,
+                    number,
+                    with_tfdt(VIDEO_1, (number - 1) * 12_288),
+                ))
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        cancel.cancel();
+        let outcome = tokio::time::timeout(WAIT, muxer)
+            .await
+            .expect("cancellation finishes the muxer")
+            .unwrap();
+        assert_eq!(outcome, MuxOutcome::Cancelled);
     }
 
     #[tokio::test]

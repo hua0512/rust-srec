@@ -9,6 +9,10 @@
 //! The tracks share the HTTP clients, cache, metrics and event sink, but each
 //! has its own byte budget: a budget shared by two independent reactors can
 //! be held entirely by one of them and starve the other.
+//!
+//! The track set is fixed at start, from the Period recording starts in
+//! (v1 limitation): a configured track that only a later Period carries is
+//! reported with a warning, not recorded.
 
 use std::sync::Arc;
 
@@ -22,9 +26,11 @@ use url::Url;
 use crate::CacheManager;
 use crate::DownloadError;
 use crate::dash::config::DashConfig;
-use crate::dash::manifest::{Manifest, Period, PresentationType};
+use crate::dash::manifest::{Manifest, PresentationType};
 use crate::dash::mux::{MuxOutcome, MuxTrack, TrackSink, run_muxer};
-use crate::dash::planner::DashPlanner;
+use crate::dash::planner::{
+    ConsumedFrontier, DashPlanner, PeriodKey, PlannerParams, StartPosition, decide_start,
+};
 use crate::dash::selection;
 use crate::dash::watcher::{MpdFetcher, MpdWatcher};
 use crate::downloader::ClientPool;
@@ -61,6 +67,8 @@ pub(crate) struct DashEngineHandles {
 struct Selected {
     video: bool,
     audio: bool,
+    /// Configured tracks the starting Period lacks.
+    absent: Vec<MediaTrack>,
 }
 
 pub(crate) async fn start(
@@ -86,7 +94,9 @@ pub(crate) async fn start(
     );
     let initial = fetcher.fetch(&url, None, true).await?;
     let manifest = Arc::clone(&initial.manifest);
-    let selected = select_tracks(&manifest, &config, &initial)?;
+    let now = initial.clock_offset.apply(config.clock.now());
+    let start = decide_start(&manifest, now, config.live_start, &config.selection)?;
+    let (start, selected) = select_tracks(&manifest, &config, start)?;
     let live = manifest.presentation_type == PresentationType::Dynamic;
     info!(
         live,
@@ -103,7 +113,7 @@ pub(crate) async fn start(
         .then(|| Arc::new(PerformanceMetrics::new()));
     let core_config = Arc::new(core_config(&config));
 
-    let watcher = MpdWatcher::new(fetcher, Arc::clone(&config), url, cancel.clone());
+    let watcher = MpdWatcher::new(Arc::new(fetcher), Arc::clone(&config), url, cancel.clone());
     let (snapshot_rx, watcher_handle) = watcher.spawn(initial);
 
     let both = selected.video && selected.audio;
@@ -134,13 +144,21 @@ pub(crate) async fn start(
             cancel: track_cancel.clone(),
             events: events.clone(),
         });
-        let planner = DashPlanner::new(
+        let frontier = Arc::new(ConsumedFrontier::default());
+        let leader = tracks.is_empty();
+        let planner = DashPlanner::new(PlannerParams {
             track,
-            Arc::new(config.selection.clone()),
-            config.live_start,
-            Arc::clone(&config.clock),
-            identity_policy(&engine.identity_policy),
-        );
+            selection: Arc::new(config.selection.clone()),
+            clock: Arc::clone(&config.clock),
+            identity: identity_policy(&engine.identity_policy),
+            frontier: Arc::clone(&frontier),
+            start: start.clone(),
+            absent_tracks: if leader {
+                selected.absent.clone()
+            } else {
+                Vec::new()
+            },
+        });
 
         let concurrency = config.scheduler.download_concurrency.max(1);
         let assembler_capacity =
@@ -151,7 +169,7 @@ pub(crate) async fn start(
         let mut assembler = SequenceAssembler::new(
             Arc::clone(&core_config),
             assembler_rx,
-            TrackSink::new(track_tx),
+            TrackSink::new(track_tx, frontier),
             live,
             0,
             track_cancel.clone(),
@@ -239,10 +257,16 @@ pub(crate) async fn start(
 fn select_tracks(
     manifest: &Manifest,
     config: &DashConfig,
-    initial: &crate::dash::watcher::FetchedMpd,
-) -> Result<Selected, DownloadError> {
-    let now = initial.clock_offset.apply(config.clock.now());
-    let Some(period) = starting_period(manifest, now) else {
+    start: Option<StartPosition>,
+) -> Result<(StartPosition, Selected), DownloadError> {
+    let period = match &start {
+        Some(start) => manifest
+            .periods
+            .iter()
+            .find(|period| PeriodKey::of(period).same(&start.period)),
+        None => manifest.periods.first(),
+    };
+    let Some(period) = period else {
         return Err(DownloadError::Manifest {
             reason: "MPD has no Period".to_owned(),
         });
@@ -265,12 +289,12 @@ fn select_tracks(
     let audio = (selection.include_audio && !multiplexed)
         .then(|| selection::select(period, MediaTrack::Audio, selection))
         .flatten();
-    if video.is_none() && audio.is_none() {
+    let (Some(start), true) = (start, video.is_some() || audio.is_some()) else {
         return Err(DownloadError::Unsupported {
             protocol: "dash",
             feature: "no Representation matches the track selection".to_owned(),
         });
-    }
+    };
     if [video, audio]
         .into_iter()
         .flatten()
@@ -284,28 +308,24 @@ fn select_tracks(
     if multiplexed {
         debug!("video Representation carries audio; no separate audio track is recorded");
     }
-    Ok(Selected {
-        video: video.is_some(),
-        audio: audio.is_some(),
-    })
-}
-
-/// The Period a recording starts in: the first of a static presentation,
-/// else the newest one that has started.
-fn starting_period(manifest: &Manifest, now: chrono::DateTime<chrono::Utc>) -> Option<&Period> {
-    if manifest.presentation_type == PresentationType::Static {
-        return manifest.periods.first();
+    let mut absent = Vec::new();
+    if selection.include_video && video.is_none() {
+        absent.push(MediaTrack::Video);
     }
-    let elapsed = manifest
-        .availability_start_time
-        .and_then(|start| (now - start).to_std().ok())
-        .unwrap_or_default();
-    manifest
-        .periods
-        .iter()
-        .rev()
-        .find(|period| period.start <= elapsed)
-        .or_else(|| manifest.periods.first())
+    if selection.include_audio && !multiplexed && audio.is_none() {
+        absent.push(MediaTrack::Audio);
+    }
+    for track in &absent {
+        info!(%track, "the starting Period has no such track; it is not recorded");
+    }
+    Ok((
+        start,
+        Selected {
+            video: video.is_some(),
+            audio: audio.is_some(),
+            absent,
+        },
+    ))
 }
 
 fn core_config(config: &DashConfig) -> SegmentCoreConfig {
@@ -337,7 +357,9 @@ fn core_config(config: &DashConfig) -> SegmentCoreConfig {
 }
 
 /// Waits for every engine task and reports how the session ended. The
-/// muxer's outcome decides: it is the only task that sees every track.
+/// muxer's outcome decides, since it is the only task that sees every
+/// track, unless another task panicked: a panic is a pipeline error even
+/// when the muxer saw only a closed channel.
 pub(crate) async fn join(
     handles: DashEngineHandles,
     cancel: CancellationToken,
@@ -349,29 +371,60 @@ pub(crate) async fn join(
         muxer,
         ..
     } = handles;
-    let terminal = match muxer.await {
+    let mut terminal = match muxer.await {
         Ok(MuxOutcome::Ended) => DownloadTerminal::AuthoritativeEnd,
         Ok(MuxOutcome::Cancelled) => DownloadTerminal::Cancelled,
         Ok(MuxOutcome::DownstreamClosed) => DownloadTerminal::DownstreamClosed,
         Ok(MuxOutcome::Failed(reason)) => DownloadTerminal::PipelineError(reason),
-        Err(error) => {
-            warn!(error = %crate::redact::redact_diagnostic(&error), "DASH muxer task failed");
-            DownloadTerminal::PipelineError(Arc::from(format!("muxer task failed: {error}")))
-        }
+        Err(error) => task_failure("muxer", None, &error),
     };
     // Whatever the outcome, nothing downstream consumes the tracks anymore.
     cancel.cancel();
+    let mut panicked = None;
     for handles in tracks {
         if let Err(error) = handles.reactor.await {
-            warn!(track = %handles.track, error = %crate::redact::redact_diagnostic(&error), "DASH reactor task failed");
+            panicked.get_or_insert(task_failure("reactor", Some(handles.track), &error));
         }
         if let Err(error) = handles.assembler.await {
-            warn!(track = %handles.track, error = %crate::redact::redact_diagnostic(&error), "DASH assembler task failed");
+            panicked.get_or_insert(task_failure("assembler", Some(handles.track), &error));
         }
     }
     if let Err(error) = watcher.await {
-        warn!(error = %crate::redact::redact_diagnostic(&error), "MPD watcher task failed");
+        panicked.get_or_insert(task_failure("MPD watcher", None, &error));
     }
-    debug!(?terminal, "DASH pipeline tasks finished");
+    if let Some(failure) = panicked
+        && !matches!(terminal, DownloadTerminal::PipelineError(_))
+    {
+        terminal = failure;
+    }
+    debug!(
+        terminal = terminal_label(&terminal),
+        "DASH pipeline tasks finished"
+    );
     terminal
+}
+
+fn task_failure(
+    task: &'static str,
+    track: Option<MediaTrack>,
+    error: &tokio::task::JoinError,
+) -> crate::DownloadTerminal {
+    let track = track.map(MediaTrack::as_str);
+    if error.is_cancelled() {
+        warn!(task, track, "DASH task was aborted");
+    } else {
+        warn!(task, track, error = %crate::redact::redact_diagnostic(error), "DASH task panicked");
+    }
+    crate::DownloadTerminal::PipelineError(Arc::from(format!("DASH {task} task failed")))
+}
+
+/// A log form of a terminal that leaves out failure details, which can
+/// quote server responses.
+fn terminal_label(terminal: &crate::DownloadTerminal) -> &'static str {
+    match terminal {
+        crate::DownloadTerminal::AuthoritativeEnd => "AuthoritativeEnd",
+        crate::DownloadTerminal::Cancelled => "Cancelled",
+        crate::DownloadTerminal::DownstreamClosed => "DownstreamClosed",
+        crate::DownloadTerminal::PipelineError(_) => "PipelineError([redacted])",
+    }
 }

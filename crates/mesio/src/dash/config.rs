@@ -73,6 +73,17 @@ impl DashConfig {
         if self.manifest.fetch_timeout.is_zero() {
             return invalid("manifest.fetch_timeout must be positive");
         }
+        // Zero would stop the reactor from ever forwarding work, or the
+        // muxer from ever reading audio, rather than mean "unlimited".
+        if self.engine.max_pending_items == 0 {
+            return invalid("engine.max_pending_items must be positive");
+        }
+        if self.engine.max_pending_payload_bytes == 0 {
+            return invalid("engine.max_pending_payload_bytes must be positive");
+        }
+        if self.mux.max_buffered_bytes == 0 {
+            return invalid("mux.max_buffered_bytes must be positive");
+        }
         Ok(())
     }
 }
@@ -263,5 +274,18 @@ mod tests {
         let mut config = DashConfig::default();
         config.budget_split.video_percent = 100;
         assert!(config.validate().is_err());
+
+        for zero in [
+            |config: &mut DashConfig| config.engine.max_pending_items = 0,
+            |config: &mut DashConfig| config.engine.max_pending_payload_bytes = 0,
+            |config: &mut DashConfig| config.mux.max_buffered_bytes = 0,
+        ] {
+            let mut config = DashConfig::default();
+            zero(&mut config);
+            assert!(matches!(
+                config.validate(),
+                Err(DownloadError::Configuration { .. })
+            ));
+        }
     }
 }
