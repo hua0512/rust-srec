@@ -1,33 +1,34 @@
-use crate::cut::{Boundary, CutSession, CutTarget};
+use crate::cut::{Boundary, CutSession};
 use crate::output::pipe_hls_strategy::{PipeHlsStrategy, SegmentedProtocol};
 use crate::output::provider::PipeStream;
 use crate::processor::generic::process_pipe_stream;
+use crate::processor::{Recording, SessionCleanup};
 use crate::utils::spans;
-use crate::{config::ProgramConfig, error::AppError, utils::expand_name_url};
+use crate::{error::AppError, utils::expand_name_url};
 use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio_engine::{DownloadError, DownloadSession};
-use pipeline_common::CancellationToken;
 use pipeline_common::PipelineError;
-use std::path::Path;
 use std::time::Instant;
-use tracing::{Level, debug, info, span, warn};
+use tracing::{Level, debug, info, span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Process an HLS stream, or a DASH stream (also delivered as `HlsData`)
 /// with `protocol` naming it in spans and logs.
-#[allow(clippy::too_many_arguments)]
 pub async fn process_hls_stream(
     protocol: SegmentedProtocol,
-    url_str: &str,
-    output_dir: &Path,
-    config: &ProgramConfig,
-    name_template: &str,
+    recording: Recording<'_>,
     session: DownloadSession<HlsData>,
-    token: &CancellationToken,
-    cut_target: &CutTarget,
 ) -> Result<u64, AppError> {
+    let Recording {
+        url: url_str,
+        output_dir,
+        config,
+        name_template,
+        token,
+        cut_target,
+    } = recording;
     // Check if we're in pipe output mode
     let pipe_stream = PipeStream::of(config.output_format);
     let is_pipe_mode = pipe_stream.is_some();
@@ -78,17 +79,7 @@ pub async fn process_hls_stream(
             download_span.clone(),
         )))
     };
-    let cleanup_session = |progress_task: Option<tokio::task::JoinHandle<()>>| {
-        let handle = handle.clone();
-        async move {
-            handle.cancel();
-            if let Some(task) = progress_task
-                && let Err(error) = task.await
-            {
-                warn!(%error, "download progress task failed");
-            }
-        }
-    };
+    let cleanup = SessionCleanup::new(handle, progress_task, download_span.clone());
 
     // Peek at the first segment to determine the file extension. An end
     // marker before any data (a DASH stream that ended at once) carries no
@@ -102,13 +93,13 @@ pub async fn process_hls_stream(
             // is dropped before waiting for the event stream to end.
             Some(Err(e)) => {
                 drop(stream);
-                cleanup_session(progress_task).await;
+                cleanup.finish().await;
                 return Err(AppError::Download(e));
             }
             None => {
                 info!("{label} stream is empty.");
                 drop(stream);
-                cleanup_session(progress_task).await;
+                cleanup.finish().await;
                 return Err(AppError::Download(DownloadError::source_exhausted(
                     format!("{label} stream is empty"),
                 )));
@@ -154,8 +145,7 @@ pub async fn process_hls_stream(
             "{label} pipe output complete"
         );
 
-        handle.cancel();
-        spans::summarize_dropped_events(&handle, &download_span);
+        cleanup.finish().await;
         return Ok(pipe_stats.items_written as u64);
     } else {
         let max_file_size = if config.pipeline_config.max_file_size > 0 {
@@ -191,13 +181,7 @@ pub async fn process_hls_stream(
     if !is_pipe_mode {
         download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
     }
-    handle.cancel();
-    if let Some(task) = progress_task
-        && let Err(error) = task.await
-    {
-        warn!(%error, "download progress task failed");
-    }
-    spans::summarize_dropped_events(&handle, &download_span);
+    cleanup.finish().await;
     drop(download_span);
 
     let elapsed = start_time.elapsed();
@@ -224,8 +208,9 @@ mod tests {
     use pipeline_common::{ManualSplitStatus, config::PipelineConfig};
 
     use super::*;
-    use crate::cut::{CutOutcome, CutSource};
+    use crate::cut::{CutOutcome, CutSource, CutTarget};
     use crate::processor::fixtures::{files, item_stream};
+    use pipeline_common::CancellationToken;
 
     const SYNC: u32 = 0x0200_0000;
     const NON_SYNC: u32 = 0x0101_0000;

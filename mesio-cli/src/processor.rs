@@ -7,11 +7,76 @@ mod hls;
 use crate::cut::{CutTarget, Unavailable};
 use crate::output::pipe_hls_strategy::SegmentedProtocol;
 use crate::output::provider::PipeStream;
+use crate::utils::spans;
 use crate::{config::ProgramConfig, error::AppError};
-use mesio_engine::{DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader};
+use mesio_engine::{
+    DownloadHandle, DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader,
+};
 use pipeline_common::CancellationToken;
 use std::path::{Path, PathBuf};
-use tracing::{Instrument, Level, error, info, span};
+use tokio::task::JoinHandle;
+use tracing::{Instrument, Level, Span, error, info, span, warn};
+
+/// What a URL recording needs besides its download session.
+#[derive(Clone, Copy)]
+pub(crate) struct Recording<'a> {
+    pub(crate) url: &'a str,
+    pub(crate) output_dir: &'a Path,
+    pub(crate) config: &'a ProgramConfig,
+    pub(crate) name_template: &'a str,
+    pub(crate) token: &'a CancellationToken,
+    pub(crate) cut_target: &'a CutTarget,
+}
+
+/// Ends a download session on every exit path: cancels it and reports the
+/// events it dropped.
+pub(crate) struct SessionCleanup {
+    handle: DownloadHandle,
+    progress: Option<JoinHandle<()>>,
+    span: Span,
+    finished: bool,
+}
+
+impl SessionCleanup {
+    /// `progress` renders the session's events into `span`.
+    pub(crate) fn new(
+        handle: DownloadHandle,
+        progress: Option<JoinHandle<()>>,
+        span: Span,
+    ) -> Self {
+        Self {
+            handle,
+            progress,
+            span,
+            finished: false,
+        }
+    }
+
+    /// Also waits for the progress task to render the last events. Drop the
+    /// session's item stream first: it can hold the event sender that task
+    /// waits on.
+    pub(crate) async fn finish(mut self) {
+        self.finished = true;
+        self.handle.cancel();
+        if let Some(task) = self.progress.take()
+            && let Err(error) = task.await
+        {
+            warn!(%error, "download progress task failed");
+        }
+        spans::summarize_dropped_events(&self.handle, &self.span);
+    }
+}
+
+impl Drop for SessionCleanup {
+    fn drop(&mut self) {
+        // An early return: the progress task is left to end with the event
+        // stream.
+        if !self.finished {
+            self.handle.cancel();
+            spans::summarize_dropped_events(&self.handle, &self.span);
+        }
+    }
+}
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
@@ -68,50 +133,32 @@ pub async fn process_inputs(
                 .with_protocol(config.protocol.clone())
                 .with_cancel(token.clone());
             let session = downloader.start(request).await?;
+            let recording = Recording {
+                url: input,
+                output_dir,
+                config,
+                name_template,
+                token,
+                cut_target,
+            };
 
             match session {
                 DownloaderSession::Flv(session) => {
-                    flv::process_flv_stream(
-                        input,
-                        output_dir,
-                        config,
-                        name_template,
-                        session,
-                        token,
-                        cut_target,
-                    )
-                    .instrument(input_span.clone())
-                    .await?;
+                    flv::process_flv_stream(recording, session)
+                        .instrument(input_span.clone())
+                        .await?;
                 }
                 DownloaderSession::Hls(session) => {
-                    hls::process_hls_stream(
-                        SegmentedProtocol::Hls,
-                        input,
-                        output_dir,
-                        config,
-                        name_template,
-                        session,
-                        token,
-                        cut_target,
-                    )
-                    .instrument(input_span.clone())
-                    .await?;
+                    hls::process_hls_stream(SegmentedProtocol::Hls, recording, session)
+                        .instrument(input_span.clone())
+                        .await?;
                 }
                 // DASH output is fMP4 `HlsData`, processed and written like
                 // HLS.
                 DownloaderSession::Dash(session) => {
-                    hls::process_hls_stream(
-                        SegmentedProtocol::Dash,
-                        input,
-                        output_dir,
-                        config,
-                        name_template,
-                        session,
-                        token,
-                        cut_target,
-                    )
-                    .instrument(input_span.clone())
-                    .await?;
+                    hls::process_hls_stream(SegmentedProtocol::Dash, recording, session)
+                        .instrument(input_span.clone())
+                        .await?;
                 }
             }
         } else {
