@@ -196,7 +196,7 @@ impl FailedInits {
 /// if the stream switches back to it — whenever media at the cursor needs it.
 /// The store never re-downloads a completed init, so this is the only copy.
 /// Bounded least-recently-used; an evicted key is unresolved again, with the
-/// same fail-safes as [`BoundedKeySet`].
+/// same fail-safes as [`FailedInits`].
 #[derive(Debug)]
 struct RetainedInits {
     /// `0` disables the limit.
