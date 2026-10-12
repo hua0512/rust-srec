@@ -32,6 +32,24 @@ const optionalInt = (min: number) =>
     )
     .optional();
 
+/**
+ * `schema`, refusing an emptied input. Numeric fields read `''` as 0 or as unset, so a cleared
+ * input would otherwise save a value the form does not show.
+ */
+function rejectBlank<T extends z.ZodType>(
+  schema: T,
+  message = 'Enter a value',
+): T {
+  // Typed as `schema`: the check accepts nothing `schema` would not, so its input and output
+  // types are `schema`'s.
+  return z
+    .unknown()
+    .refine((value) => typeof value !== 'string' || value.trim() !== '', {
+      message,
+    })
+    .pipe(schema) as unknown as T;
+}
+
 export const FfmpegConfigSchema = z.object({
   enable_lossless_cutting: z.boolean().default(false),
   binary_path: z.string().default('ffmpeg'),
@@ -68,13 +86,18 @@ export const StreamlinkConfigSchema = z.object({
 });
 export type StreamlinkConfig = z.infer<typeof StreamlinkConfigSchema>;
 
+// The HLS settings keep keys the form does not show: the backend accepts more than the form
+// edits, and dropping one when an engine or template is saved would change its behaviour.
+const hlsGroup = <T extends z.ZodRawShape>(shape: T) =>
+  z.object(shape).catchall(z.json());
+
 export const MesioHttpVersionPreferenceSchema = z.enum([
   'auto',
   'http2_only',
   'http1_only',
 ]);
 
-export const MesioDownloaderBaseOverrideSchema = z.object({
+export const MesioDownloaderBaseOverrideSchema = hlsGroup({
   timeout_ms: optionalInt(0),
   connect_timeout_ms: optionalInt(0),
   read_timeout_ms: optionalInt(0),
@@ -98,20 +121,20 @@ export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
     z.object({ type: z.literal('lowest_bitrate') }),
     z.object({
       type: z.literal('closest_to_bitrate'),
-      target_bitrate: z.coerce.number().int().min(0),
+      target_bitrate: rejectBlank(z.coerce.number().int().min(0)),
     }),
     z.object({ type: z.literal('audio_only') }),
     z.object({ type: z.literal('video_only') }),
     z.object({
       type: z.literal('matching_resolution'),
-      width: z.coerce.number().int(),
-      height: z.coerce.number().int(),
+      width: rejectBlank(z.coerce.number().int()),
+      height: rejectBlank(z.coerce.number().int()),
     }),
     z.object({ type: z.literal('custom'), value: z.string() }),
   ],
 );
 
-export const MesioHlsPlaylistConfigOverrideSchema = z.object({
+export const MesioHlsPlaylistConfigOverrideSchema = hlsGroup({
   initial_playlist_fetch_timeout_ms: optionalInt(0),
   live_refresh_interval_ms: optionalInt(0),
   live_max_refresh_retries: optionalInt(0),
@@ -122,12 +145,12 @@ export const MesioHlsPlaylistConfigOverrideSchema = z.object({
   adaptive_refresh_max_interval_ms: optionalInt(0),
 });
 
-export const MesioHlsSchedulerConfigOverrideSchema = z.object({
+export const MesioHlsSchedulerConfigOverrideSchema = hlsGroup({
   download_concurrency: optionalInt(1),
   processed_segment_buffer_multiplier: optionalInt(0),
 });
 
-export const MesioHlsFetcherConfigOverrideSchema = z.object({
+export const MesioHlsFetcherConfigOverrideSchema = hlsGroup({
   segment_download_timeout_ms: optionalInt(0),
   max_segment_retries: optionalInt(0),
   segment_retry_delay_base_ms: optionalInt(0),
@@ -138,22 +161,22 @@ export const MesioHlsFetcherConfigOverrideSchema = z.object({
   max_key_retry_delay_ms: optionalInt(0),
 });
 
-export const MesioHlsProcessorConfigOverrideSchema = z.object({
+export const MesioHlsProcessorConfigOverrideSchema = hlsGroup({
   processed_segment_ttl_ms: optionalInt(0),
 });
 
-export const MesioHlsDecryptionConfigOverrideSchema = z.object({
+export const MesioHlsDecryptionConfigOverrideSchema = hlsGroup({
   key_cache_ttl_ms: optionalInt(0),
   offload_decryption_to_cpu_pool: z.boolean().optional(),
 });
 
-export const MesioHlsCacheConfigOverrideSchema = z.object({
+export const MesioHlsCacheConfigOverrideSchema = hlsGroup({
   playlist_ttl_ms: optionalInt(0),
   segment_ttl_ms: optionalInt(0),
   decryption_key_ttl_ms: optionalInt(0),
 });
 
-export const MesioBufferLimitsOverrideSchema = z.object({
+export const MesioBufferLimitsOverrideSchema = hlsGroup({
   max_segments: optionalInt(0),
   max_bytes: optionalInt(0),
 });
@@ -162,16 +185,16 @@ export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('wait_indefinitely') }),
   z.object({
     type: z.literal('skip_after_count'),
-    count: z.coerce.number().int().min(0),
+    count: rejectBlank(z.coerce.number().int().min(0)),
   }),
   z.object({
     type: z.literal('skip_after_duration'),
-    duration_ms: z.coerce.number().int().min(0),
+    duration_ms: rejectBlank(z.coerce.number().int().min(0)),
   }),
   z.object({
     type: z.literal('skip_after_both'),
-    count: z.coerce.number().int().min(0),
-    duration_ms: z.coerce.number().int().min(0),
+    count: rejectBlank(z.coerce.number().int().min(0)),
+    duration_ms: rejectBlank(z.coerce.number().int().min(0)),
   }),
 ]);
 
@@ -195,7 +218,7 @@ export const NullableIntSchema = z
     { message: 'Must be an integer, null, or empty' },
   );
 
-export const MesioHlsOutputConfigOverrideSchema = z.object({
+export const MesioHlsOutputConfigOverrideSchema = hlsGroup({
   live_reorder_buffer_duration_ms: optionalInt(0),
   live_reorder_buffer_max_segments: optionalInt(0),
   gap_evaluation_interval_ms: optionalInt(0),
@@ -208,7 +231,7 @@ export const MesioHlsOutputConfigOverrideSchema = z.object({
   metrics_enabled: z.boolean().optional(),
 });
 
-export const MesioHlsConfigSchema = z.object({
+export const MesioHlsConfigSchema = hlsGroup({
   base: MesioDownloaderBaseOverrideSchema.optional(),
   playlist_config: MesioHlsPlaylistConfigOverrideSchema.optional(),
   scheduler_config: MesioHlsSchedulerConfigOverrideSchema.optional(),
@@ -222,17 +245,13 @@ export const MesioHlsConfigSchema = z.object({
 /**
  * An override field set to a custom value must hold one: an emptied input would otherwise save
  * as an absent field, which inherits the engine's value while the form still shows "Custom".
+ * Every override field may be absent.
  */
 function requireValue<T extends z.ZodType>(field: T): T {
-  // Every override field may be absent. Typed as the field: the check accepts nothing the field
-  // would not, so its input and output types are the field's.
-  return z
-    .unknown()
-    .refine((value) => typeof value !== 'string' || value.trim() !== '', {
-      message: 'Enter a value, or choose another option',
-    })
-    .pipe(field)
-    .optional() as unknown as T;
+  return rejectBlank(
+    field,
+    'Enter a value, or choose another option',
+  ).optional() as unknown as T;
 }
 
 /**
@@ -256,7 +275,7 @@ function allowResets(schema: z.ZodObject): z.ZodObject {
       ];
     }),
   );
-  return z.looseObject(shape);
+  return z.object(shape).catchall(z.json());
 }
 
 const MesioHlsConfigOverrideSchema = allowResets(MesioHlsConfigSchema);
@@ -284,36 +303,45 @@ export const MESIO_DASH_DEFAULTS = {
   live_start: { type: 'auto' },
 } as const;
 
+/** A DASH field: in an override, one chosen as custom must hold a value (see `requireValue`). */
+const overrideValue = <T extends z.ZodType>(keepNull: boolean, field: T): T =>
+  keepNull ? requireValue(field) : field;
+
 const dashInt = (
   keepNull: boolean,
   min: number,
   max: number = Number.MAX_SAFE_INTEGER,
 ) =>
-  z
-    .union([z.number(), z.string(), z.null()])
-    .transform((val) => {
-      if (val === null) return keepNull ? null : undefined;
-      if (val === '') return undefined;
-      return typeof val === 'number' ? val : Number(val);
-    })
-    .refine(
-      (val) =>
-        val == null || (Number.isInteger(val) && val >= min && val <= max),
-      {
-        message:
-          min > 0
-            ? 'Must be a positive whole number'
-            : 'Must be a whole number of 0 or more',
-      },
-    )
-    .optional();
+  overrideValue(
+    keepNull,
+    z
+      .union([z.number(), z.string(), z.null()])
+      .transform((val) => {
+        if (val === null) return keepNull ? null : undefined;
+        if (val === '') return undefined;
+        return typeof val === 'number' ? val : Number(val);
+      })
+      .refine(
+        (val) =>
+          val == null || (Number.isInteger(val) && val >= min && val <= max),
+        {
+          message:
+            min > 0
+              ? 'Must be a positive whole number'
+              : 'Must be a whole number of 0 or more',
+        },
+      )
+      .optional(),
+  );
 
 const dashRequiredInt = (max: number) =>
-  z.coerce
-    .number()
-    .int('Must be a positive whole number')
-    .min(1, 'Must be a positive whole number')
-    .max(max, 'Must be a positive whole number');
+  rejectBlank(
+    z.coerce
+      .number()
+      .int('Must be a positive whole number')
+      .min(1, 'Must be a positive whole number')
+      .max(max, 'Must be a positive whole number'),
+  );
 
 const dashBoolean = (keepNull: boolean) =>
   z
@@ -351,11 +379,13 @@ export const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('live_edge') }),
   z.object({
     type: z.literal('delay'),
-    delay_ms: z.coerce
-      .number()
-      .int('Must be a whole number of 0 or more')
-      .min(0, 'Must be a whole number of 0 or more')
-      .max(Number.MAX_SAFE_INTEGER, 'Must be a whole number of 0 or more'),
+    delay_ms: rejectBlank(
+      z.coerce
+        .number()
+        .int('Must be a whole number of 0 or more')
+        .min(0, 'Must be a whole number of 0 or more')
+        .max(Number.MAX_SAFE_INTEGER, 'Must be a whole number of 0 or more'),
+    ),
   }),
 ]);
 export type MesioDashLiveStart = z.infer<typeof MesioDashLiveStartSchema>;
@@ -367,18 +397,21 @@ const dashPolicy = <T extends z.ZodType>(schema: T, keepNull: boolean) =>
     .transform((val) => (val === null && keepNull ? null : (val ?? undefined)));
 
 const dashLanguage = (keepNull: boolean) =>
-  z
-    .string()
-    .nullable()
-    .optional()
-    .transform((val) => {
-      if (val === null) return keepNull ? null : undefined;
-      const trimmed = val?.trim();
-      return trimmed ? trimmed : undefined;
-    })
-    .refine((val) => val == null || LANGUAGE_TAG.test(val), {
-      message: "Use a language tag such as 'en' or 'pt-BR'",
-    });
+  overrideValue(
+    keepNull,
+    z
+      .string()
+      .nullable()
+      .optional()
+      .transform((val) => {
+        if (val === null) return keepNull ? null : undefined;
+        const trimmed = val?.trim();
+        return trimmed ? trimmed : undefined;
+      })
+      .refine((val) => val == null || LANGUAGE_TAG.test(val), {
+        message: "Use a language tag such as 'en' or 'pt-BR'",
+      }),
+  );
 
 const mesioDashShape = (keepNull: boolean) => ({
   video_quality: dashPolicy(MesioDashVideoQualitySchema, keepNull),

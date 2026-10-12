@@ -29,8 +29,8 @@ function mountOverride(
   engineConfig: Record<string, unknown> = {},
 ) {
   let form!: UseFormReturn<Values>;
-  // As the engines API returns it, including settings the form does not show.
-  const engine = engineConfig;
+  // Parsed as the engine list parses it.
+  const engine = MesioConfigSchema.parse(engineConfig);
   function Harness() {
     form = useForm<Values>({
       resolver: zodResolver(

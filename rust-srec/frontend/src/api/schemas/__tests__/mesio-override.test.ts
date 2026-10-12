@@ -61,11 +61,56 @@ describe('Mesio override resets', () => {
     }
   });
 
+  it('refuses an emptied DASH value or policy number', () => {
+    for (const override of [
+      { dash: { max_segment_retries: '' } },
+      { dash: { audio_language: '  ' } },
+      { dash: { live_start: { type: 'delay', delay_ms: '' } } },
+      {
+        hls: {
+          output_config: {
+            live_gap_strategy: { type: 'skip_after_count', count: '' },
+          },
+        },
+      },
+      {
+        hls: {
+          playlist_config: {
+            variant_selection_policy: {
+              type: 'matching_resolution',
+              width: '',
+              height: 720,
+            },
+          },
+        },
+      },
+    ]) {
+      expect(MesioConfigOverrideSchema.safeParse(override).success).toBe(false);
+    }
+    // An engine leaves an emptied field unset, which is the default.
+    expect(
+      MesioConfigSchema.parse({ dash: { max_segment_retries: '' } }).dash,
+    ).toBeUndefined();
+    expect(
+      MesioConfigSchema.safeParse({
+        dash: { live_start: { type: 'delay', delay_ms: '' } },
+      }).success,
+    ).toBe(false);
+  });
+
   it('keeps settings the form does not show', () => {
     const override = {
       hls: { fetcher_config: { progress_emit_min_bytes: null } },
     };
     expect(MesioConfigOverrideSchema.parse(override)).toEqual(override);
+  });
+
+  it('keeps engine settings the form does not show', () => {
+    expect(
+      MesioConfigSchema.parse({
+        hls: { fetcher_config: { progress_emit_min_bytes: 1 } },
+      }).hls,
+    ).toEqual({ fetcher_config: { progress_emit_min_bytes: 1 } });
   });
 
   it('leaves the engine settings as they were', () => {
