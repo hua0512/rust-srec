@@ -86,6 +86,7 @@ fn handle_terminal_input(token: CancellationToken) {
         return;
     }
 
+    let mut requested = false;
     loop {
         // Check for cancellation signal first.
         if token.is_cancelled() {
@@ -113,14 +114,21 @@ fn handle_terminal_input(token: CancellationToken) {
             };
 
             if should_cancel {
-                info!("Cancellation requested. Shutting down gracefully...");
                 token.cancel();
+                requested = true;
                 break;
             }
         }
     }
 
-    if let Err(error) = restore_terminal() {
+    // Logging comes last: if it blocks on a stalled pipe, the stop is
+    // already under way, and with the terminal no longer raw a second Ctrl+C
+    // is a signal that forces the exit.
+    let restored = restore_terminal();
+    if requested {
+        info!("Cancellation requested. Shutting down gracefully...");
+    }
+    if let Err(error) = restored {
         info!(%error, "Failed to disable raw mode.");
     }
 }
@@ -156,8 +164,8 @@ fn handle_stdin_input(token: CancellationToken) {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(line) => {
                 if line.trim() == "q" {
-                    info!("Cancellation requested. Shutting down gracefully...");
                     token.cancel();
+                    info!("Cancellation requested. Shutting down gracefully...");
                     break;
                 }
             }
