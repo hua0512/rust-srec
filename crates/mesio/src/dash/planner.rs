@@ -1952,4 +1952,37 @@ mod tests {
             .collect();
         assert_eq!(absent, [9], "p1 is announced after p0's nine segments");
     }
+
+    #[test]
+    fn segment_bounds_floor_negative_offsets_exactly() {
+        // PTO 2 ticks at 3 ticks/s: the first segment starts 2/3 s before
+        // the Period (at 10 s) and ends 2/3 s after it.
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT20S">
+  <Period id="p0" start="PT10S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Time$.m4s" initialization="v/init.mp4" timescale="3" presentationTimeOffset="2">
+        <SegmentTimeline><S t="0" d="4"/><S d="4"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let url = Url::parse(MPD_URL).unwrap();
+        let manifest = Manifest::parse(mpd.as_bytes(), &url).unwrap();
+        let period = &manifest.periods[0];
+        let representation = &period.adaptation_sets[0].representations[0];
+        let window = representation.segments(ast()).unwrap();
+        let bounds: Vec<(i128, i128)> = window
+            .iter()
+            .map(|segment| segment_bounds(&segment.unwrap(), representation, period))
+            .collect();
+        assert_eq!(
+            bounds,
+            [
+                // 10 s − 666 666 666.67 ns floors to −…667; +666 666 666.67 to …666.
+                (9_333_333_333, 10_666_666_666),
+                (10_666_666_666, 12_000_000_000),
+            ]
+        );
+    }
 }

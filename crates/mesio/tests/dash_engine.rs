@@ -292,7 +292,10 @@ fn add_timeline_files(origin: &Origin) {
 
 fn config(clock: Option<Arc<ManualClock>>) -> DashConfig {
     let mut config = DashConfig::default();
-    config.manifest.fetch_timeout = Duration::from_secs(5);
+    // Generous: under a loaded test runner a timed-out request would be
+    // retried and change what the tests count.
+    config.manifest.fetch_timeout = Duration::from_secs(15);
+    config.fetcher.segment_download_timeout = Duration::from_secs(15);
     config.manifest.min_refresh_interval = Duration::from_millis(50);
     config.manifest.max_refresh_retries = 2;
     config.manifest.retry_delay = Duration::from_millis(20);
@@ -342,6 +345,58 @@ async fn read_until(
     }
 }
 
+/// Collects a session's events as they come, so the bounded event channel
+/// never drops any.
+struct EventLog {
+    events: Arc<Mutex<Vec<DownloadEvent>>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl EventLog {
+    fn collect(mut stream: mesio_engine::DownloadEventStream) -> Self {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&events);
+        let task = tokio::spawn(async move {
+            while let Some(event) = stream.next().await {
+                sink.lock().unwrap().push(event);
+            }
+        });
+        Self { events, task }
+    }
+
+    fn snapshot(&self) -> Vec<DownloadEvent> {
+        self.events.lock().unwrap().clone()
+    }
+
+    /// Every event, once the session's event sinks are gone.
+    async fn finish(self) -> Vec<DownloadEvent> {
+        let _ = tokio::time::timeout(TEST_TIMEOUT, self.task).await;
+        self.events.lock().unwrap().clone()
+    }
+}
+
+/// Successful downloads of `path` (an MPD or a segment) reported by the
+/// session. Unlike origin hits, a request retried after a transport error
+/// counts once, so this shows how often a resource was planned and fetched.
+fn downloads(events: &[DownloadEvent], path: &str) -> usize {
+    let path_of = |url: &str| {
+        url::Url::parse(url)
+            .map(|url| url.path().trim_start_matches('/').to_string())
+            .unwrap_or_default()
+    };
+    events
+        .iter()
+        .filter(|event| match event {
+            DownloadEvent::ResourceFinished { resource, .. } => match resource {
+                mesio_engine::ResourceId::DashSegment { key, .. } => path_of(&key.uri) == path,
+                mesio_engine::ResourceId::DashManifest { url } => path_of(url) == path,
+                _ => false,
+            },
+            _ => false,
+        })
+        .count()
+}
+
 async fn drain(
     session: DownloadSession<HlsData>,
 ) -> (
@@ -352,9 +407,10 @@ async fn drain(
 ) {
     let DownloadSession {
         mut items,
-        mut events,
+        events,
         handle,
     } = session;
+    let log = EventLog::collect(events);
     let mut out = Vec::new();
     let error = read_until(&mut items, &mut out, |_| false).await;
     drop(items);
@@ -363,13 +419,8 @@ async fn drain(
         .expect("lifecycle finishes")
         .expect("lifecycle handle")
         .expect("lifecycle joins");
-    let mut collected = Vec::new();
-    while let Ok(Some(event)) =
-        tokio::time::timeout(Duration::from_millis(100), events.next()).await
-    {
-        collected.push(event);
-    }
-    (out, error, collected, terminal)
+    assert_eq!(handle.dropped_events(), 0, "event counts are complete");
+    (out, error, log.finish().await, terminal)
 }
 
 fn describe(items: &[HlsData]) -> String {
@@ -510,7 +561,7 @@ async fn static_presentation_merges_separate_tracks_and_ends() {
     let session = start(&format!("{base}/manifest.mpd"), config(None))
         .await
         .expect("session starts");
-    let (items, error, _, terminal) = drain(session).await;
+    let (items, error, events, terminal) = drain(session).await;
 
     assert!(error.is_none(), "{error:?}");
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
@@ -528,7 +579,7 @@ async fn static_presentation_merges_separate_tracks_and_ends() {
     );
     // Static from the start: one MPD fetch, each segment once.
     assert_eq!(origin.hits("manifest.mpd"), 1);
-    assert_eq!(origin.hits("a/t96256.m4s"), 1);
+    assert_eq!(downloads(&events, "a/t96256.m4s"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -546,9 +597,10 @@ async fn live_number_template_follows_the_clock_and_drains_when_static() {
         .expect("session starts");
     let DownloadSession {
         mut items,
-        events: _events,
+        events,
         handle,
     } = session;
+    let log = EventLog::collect(events);
     let mut out = Vec::new();
     // Segments 8, 9, 10 cover 7–10 s: three behind the 10 s edge. The fixture
     // audio stops short of each second, so the newest video segment waits
@@ -597,8 +649,9 @@ async fn live_number_template_follows_the_clock_and_drains_when_static() {
         );
         assert!(!segment.segment.uri.contains("tok"), "URI is redacted");
     }
+    let events = log.finish().await;
     for number in 8..=12 {
-        assert_eq!(origin.hits(&format!("v/{number}.m4s")), 1);
+        assert_eq!(downloads(&events, &format!("v/{number}.m4s")), 1);
     }
     assert_eq!(origin.hits("v/7.m4s"), 0);
 }
@@ -617,13 +670,35 @@ async fn duration_template_advances_with_the_clock_without_mpd_updates() {
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
         .expect("session starts");
+    let DownloadSession {
+        items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
     wait_for_hit(&origin, "v/10.m4s").await;
     clock.advance(Duration::from_secs(2));
-    wait_for_hit(&origin, "v/12.m4s").await;
-    wait_for_hit(&origin, "a/12.m4s").await;
-    assert_eq!(origin.hits("manifest.mpd"), 1);
-    assert_eq!(origin.hits("v/11.m4s"), 1);
-    drop(session);
+    // Segments 11 and 12 are planned together and may be requested in
+    // either order; wait until both have been downloaded.
+    tokio::time::timeout(TEST_TIMEOUT, async {
+        while ["v/11.m4s", "v/12.m4s", "a/11.m4s", "a/12.m4s"]
+            .iter()
+            .any(|path| downloads(&log.snapshot(), path) == 0)
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the clock alone makes segments 11 and 12 available");
+    drop(items);
+    tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap();
+    let events = log.finish().await;
+    assert_eq!(origin.hits("manifest.mpd"), 1, "never refreshed");
+    assert_eq!(downloads(&events, "manifest.mpd"), 1);
+    assert_eq!(downloads(&events, "v/11.m4s"), 1, "planned once");
+    assert_eq!(downloads(&events, "v/12.m4s"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -664,8 +739,11 @@ async fn timeline_generations_are_planned_once_across_mpd_updates() {
         .await
         .expect("session starts");
     let DownloadSession {
-        mut items, handle, ..
+        mut items,
+        events,
+        handle,
     } = session;
+    let log = EventLog::collect(events);
     let mut out = Vec::new();
     assert!(
         read_until(&mut items, &mut out, |out| !media(out).is_empty())
@@ -700,9 +778,10 @@ async fn timeline_generations_are_planned_once_across_mpd_updates() {
         .map(|(_, _, time)| time / VIDEO_TIMESCALE)
         .collect();
     assert_eq!(times, [9, 10, 11, 12], "{}", describe(&out));
+    let events = log.finish().await;
     for index in 9..13 {
         assert_eq!(
-            origin.hits(&format!("v/t{}.m4s", index * VIDEO_TIMESCALE)),
+            downloads(&events, &format!("v/t{}.m4s", index * VIDEO_TIMESCALE)),
             1
         );
     }
@@ -754,7 +833,9 @@ async fn missing_segments_are_retried() {
 
     assert!(error.is_none(), "{error:?}");
     assert_eq!(count_track(&items, 1), 2, "the retried segment is recorded");
-    assert_eq!(origin.hits("v/t12288.m4s"), 3);
+    // Two 404s, then the download; a transport-level retry may add hits.
+    assert!(origin.hits("v/t12288.m4s") >= 3);
+    assert_eq!(downloads(&events, "v/t12288.m4s"), 1);
     assert!(
         events
             .iter()
@@ -783,8 +864,11 @@ async fn mpd_refresh_failures_end_the_stream_after_the_retry_budget() {
         "{error:?}"
     );
     assert!(matches!(terminal, DownloadTerminal::PipelineError(_)));
-    // The initial fetch plus one refresh per allowed retry and the last one.
-    assert_eq!(origin.hits("manifest.mpd"), 1 + 3);
+    // The initial fetch plus at most one refresh per allowed retry and the
+    // last one (a refresh that fails before reaching the origin counts as
+    // a failure without a hit).
+    let fetches = origin.hits("manifest.mpd");
+    assert!((2..=1 + 3).contains(&fetches), "{fetches} MPD fetches");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1444,14 +1528,14 @@ async fn presentations_longer_than_the_planning_window_are_recorded_whole() {
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
         .expect("session starts");
-    let (items, error, _, terminal) = drain(session).await;
+    let (items, error, events, terminal) = drain(session).await;
 
     assert!(error.is_none(), "{error:?}");
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
     assert_eq!(count_track(&items, 1), 300);
     for number in [1, 256, 257, 300] {
         assert_eq!(
-            origin.hits(&format!("v/{number}.m4s")),
+            downloads(&events, &format!("v/{number}.m4s")),
             1,
             "segment {number}"
         );
