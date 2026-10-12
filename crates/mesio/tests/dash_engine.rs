@@ -71,8 +71,10 @@ struct OriginState {
     mpd_status: Option<u16>,
     files: HashMap<String, FileEntry>,
     numbered: HashMap<String, Numbered>,
-    /// Paths answered only after this delay.
-    slow: HashMap<String, Duration>,
+    /// Path prefixes answered only once their gate opens.
+    gates: HashMap<String, tokio::sync::watch::Receiver<bool>>,
+    /// Serves of the MPD body set last.
+    current_mpd_serves: u32,
     hits: HashMap<String, u64>,
 }
 
@@ -81,7 +83,20 @@ struct Origin(Arc<Mutex<OriginState>>);
 
 impl Origin {
     fn set_mpd(&self, body: impl Into<String>) {
-        self.0.lock().unwrap().mpd = body.into();
+        let mut state = self.0.lock().unwrap();
+        state.mpd = body.into();
+        state.current_mpd_serves = 0;
+    }
+
+    /// Waits until the MPD set last was served.
+    async fn wait_for_mpd(&self) {
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            while self.0.lock().unwrap().current_mpd_serves == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the new MPD is fetched");
     }
 
     fn add_file(&self, path: &str, body: impl Into<Vec<u8>>) {
@@ -114,12 +129,15 @@ impl Origin {
         self.add_numbered("a", AUDIO_1, AUDIO_TIMESCALE);
     }
 
-    fn slow(&self, prefix: &str, delay: Duration) {
+    /// Holds requests under `prefix` until the returned gate is opened.
+    fn gate(&self, prefix: &str) -> tokio::sync::watch::Sender<bool> {
+        let (open, gate) = tokio::sync::watch::channel(false);
         self.0
             .lock()
             .unwrap()
-            .slow
-            .insert(prefix.to_string(), delay);
+            .gates
+            .insert(prefix.to_string(), gate);
+        open
     }
 
     fn fail_mpd_after(&self, serves: u32) {
@@ -156,16 +174,16 @@ fn respond(status: StatusCode, body: Vec<u8>) -> Response {
 
 async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/').to_string();
-    let delay = {
+    let gate = {
         let state = origin.0.lock().unwrap();
         state
-            .slow
+            .gates
             .iter()
             .find(|(prefix, _)| path.starts_with(prefix.as_str()))
-            .map(|(_, delay)| *delay)
+            .map(|(_, gate)| gate.clone())
     };
-    if let Some(delay) = delay {
-        tokio::time::sleep(delay).await;
+    if let Some(mut gate) = gate {
+        let _ = gate.wait_for(|open| *open).await;
     }
     let mut state = origin.0.lock().unwrap();
     *state.hits.entry(path.clone()).or_default() += 1;
@@ -181,6 +199,7 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
             return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
         }
         state.mpd_serves += 1;
+        state.current_mpd_serves += 1;
         return respond(StatusCode::OK, state.mpd.clone().into_bytes());
     }
     if let Some(entry) = state.files.get_mut(&path) {
@@ -877,11 +896,16 @@ async fn representation_switch_is_an_epoch_change() {
         mut items, handle, ..
     } = session;
     let mut out = Vec::new();
-    // The live edge (segment 10) is downloaded; its video is written once
-    // the next audio segment shows that its audio is complete.
+    // Each step is gated on the previous one being observed, so the clock
+    // and the MPD generations reach the planners in a known order.
+    wait_for_hit(&origin, "v/10.m4s").await;
     wait_for_hit(&origin, "a/10.m4s").await;
-    clock.advance(Duration::from_secs(1));
     origin.set_mpd(number_mpd(true, 0, "v-sd"));
+    origin.wait_for_mpd().await;
+    clock.advance(Duration::from_secs(1));
+    // Segment 11 of the replacement Representation, and the audio that
+    // completes segment 10's slice.
+    wait_for_hit(&origin, "v/11.m4s").await;
     assert!(
         read_until(&mut items, &mut out, |out| !media(out).is_empty())
             .await
@@ -905,6 +929,13 @@ async fn representation_switch_is_an_epoch_change() {
         describe(&out)
     );
     assert_eq!(inits(&out).len(), 2);
+    let video: Vec<u64> = media(&out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .filter(|(_, track, _)| *track == 1)
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE)
+        .collect();
+    assert_eq!(video, [9, 10], "segments 10 and 11, one per Representation");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -912,7 +943,8 @@ async fn stalled_audio_does_not_hold_back_video() {
     let origin = Origin::default();
     origin.set_mpd(static_timeline_mpd());
     add_timeline_files(&origin);
-    origin.slow("a/t", Duration::from_millis(1500));
+    // Audio media is held until the video has been written.
+    let audio = origin.gate("a/t");
     let base = origin.clone().serve().await;
     let mut config = config(None);
     config.mux.max_audio_lag = Duration::from_millis(200);
@@ -926,16 +958,14 @@ async fn stalled_audio_does_not_hold_back_video() {
         handle,
     } = session;
     let mut out = Vec::new();
-    let started = tokio::time::Instant::now();
     assert!(
         read_until(&mut items, &mut out, |out| count_track(out, 1) >= 2)
             .await
-            .is_none()
+            .is_none(),
+        "video is written while no audio can arrive"
     );
-    assert!(
-        started.elapsed() < Duration::from_millis(1400),
-        "video was written while audio was still downloading"
-    );
+    assert_eq!(count_track(&out, 2), 0);
+    audio.send_replace(true);
     assert!(read_until(&mut items, &mut out, |_| false).await.is_none());
     let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
         .await
@@ -1104,5 +1134,232 @@ async fn request_options_override_the_track_selection() {
     let requested: HashSet<&str> = ["a/init.mp4", "a/t0.m4s"].into();
     for path in requested {
         assert_eq!(origin.hits(path), 0, "{path}");
+    }
+}
+
+/// A static A/V presentation of `count` one-second `$Number$` segments.
+fn long_static(origin: &Origin, count: u64) -> String {
+    origin.add_av();
+    number_mpd(false, count, "v")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_session_whose_consumer_stopped_reading_finishes() {
+    let origin = Origin::default();
+    let mpd = long_static(&origin, 200);
+    origin.set_mpd(mpd);
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    // Hold the item stream without reading it until output is saturated.
+    let DownloadSession {
+        items: _held,
+        handle,
+        ..
+    } = session;
+    wait_for_hit(&origin, "v/60.m4s").await;
+    handle.cancel();
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .expect("a saturated session still finishes on cancel")
+        .unwrap()
+        .unwrap();
+    assert_eq!(terminal, DownloadTerminal::Cancelled);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_failover_session_whose_consumer_stopped_reading_finishes() {
+    let origin = Origin::default();
+    let mpd = long_static(&origin, 200);
+    origin.set_mpd(mpd);
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        dash: config(None),
+        ..Default::default()
+    });
+    let url = format!("{base}/manifest.mpd");
+    let request = DownloadRequest::from_url(&url)
+        .unwrap()
+        .add_source(ContentSource::new(url.clone(), 0));
+    let session = downloader
+        .start_dash(request)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        items: _held,
+        handle,
+        ..
+    } = session;
+    wait_for_hit(&origin, "v/60.m4s").await;
+    handle.cancel();
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .expect("the failover task finishes on cancel")
+        .unwrap()
+        .unwrap();
+    assert_eq!(terminal, DownloadTerminal::Cancelled);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn many_short_periods_keep_every_init_until_its_media_is_written() {
+    let origin = Origin::default();
+    origin.add_file("v/init.mp4", VIDEO_INIT);
+    origin.add_file("a/init.mp4", AUDIO_INIT);
+    let periods: String = (0..10)
+        .map(|index| {
+            origin.add_numbered(&format!("p{index}/v"), VIDEO_1, VIDEO_TIMESCALE);
+            origin.add_numbered(&format!("p{index}/a"), AUDIO_1, AUDIO_TIMESCALE);
+            format!(
+                r#"<Period id="p{index}" duration="PT1S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p{index}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p{index}/a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="24000"/>
+    </AdaptationSet>
+  </Period>"#
+            )
+        })
+        .collect();
+    origin.set_mpd(format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">{periods}</MPD>"#
+    ));
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, _, terminal) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_eq!(inits(&items).len(), 10, "{}", describe(&items));
+    assert_eq!(count_track(&items, 1), 10, "no media lost its init");
+    assert_eq!(count_track(&items, 2), 10);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_later_protected_period_ends_the_recording_with_a_typed_error() {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.set_mpd(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="clear" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="drm" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
+      <SegmentTemplate media="d/$Number$.m4s" initialization="d/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#,
+    );
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, _, terminal) = drain(session).await;
+
+    assert_eq!(count_track(&items, 1), 2, "the clear Period is recorded");
+    assert!(
+        matches!(
+            error,
+            Some(DownloadError::Unsupported {
+                protocol: "dash",
+                ..
+            })
+        ),
+        "{error:?}"
+    );
+    assert!(matches!(terminal, DownloadTerminal::PipelineError(_)));
+    assert_eq!(origin.hits("d/init.mp4"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn engine_output_splits_through_the_hls_pipeline_at_independent_items() {
+    use hls_fix::{HlsPipeline, HlsPipelineConfig};
+    use pipeline_common::config::PipelineConfig;
+    use pipeline_common::{ManualSplitControl, PipelineError, PipelineProvider, StreamerContext};
+
+    let origin = Origin::default();
+    let mpd = long_static(&origin, 6);
+    origin.set_mpd(mpd);
+    let base = origin.clone().serve().await;
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, _, _) = drain(session).await;
+    assert!(error.is_none(), "{error:?}");
+
+    let control = Arc::new(ManualSplitControl::default());
+    control.enable();
+    control
+        .request(Duration::from_secs(30))
+        .expect("manual cut requested");
+    let context = Arc::new(
+        StreamerContext::new(tokio_util::sync::CancellationToken::new())
+            .with_manual_split(Arc::clone(&control)),
+    );
+    let common = PipelineConfig {
+        max_duration: Some(Duration::from_millis(2500)),
+        ..PipelineConfig::default()
+    };
+    let pipeline =
+        HlsPipeline::with_config(context, &common, HlsPipelineConfig::default()).build_pipeline();
+    let mut output = Vec::new();
+    pipeline
+        .run(
+            items.into_iter().map(Ok::<_, PipelineError>),
+            &mut |item: Result<HlsData, PipelineError>| output.push(item.expect("processed")),
+        )
+        .expect("pipeline runs");
+
+    let mut files: Vec<Vec<&HlsData>> = vec![Vec::new()];
+    let mut reasons = Vec::new();
+    for item in &output {
+        match item {
+            HlsData::EndMarker(reason) => {
+                reasons.push(reason.clone());
+                files.push(Vec::new());
+            }
+            item => files.last_mut().unwrap().push(item),
+        }
+    }
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| matches!(reason, Some(SplitReason::Manual { .. }))),
+        "{reasons:?}"
+    );
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| matches!(reason, Some(SplitReason::DurationLimit))),
+        "{reasons:?}"
+    );
+    let files: Vec<_> = files.into_iter().filter(|file| !file.is_empty()).collect();
+    assert!(files.len() >= 3, "{} files", files.len());
+    for file in files {
+        // Every file starts with the two-track init, then an item that
+        // starts both tracks independently.
+        let Some(HlsData::M4sData(M4sData::InitSegment(init))) = file.first() else {
+            panic!("a file without its init");
+        };
+        let check = IndependentFragmentCheck::from_init(&init.data).expect("two-track init");
+        let Some(HlsData::M4sData(M4sData::Segment(first))) = file.get(1) else {
+            panic!("a file without media");
+        };
+        assert!(check.is_independent(&first.data));
     }
 }
