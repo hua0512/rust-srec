@@ -1,5 +1,6 @@
 use crate::cut::{Boundary, CutSession, CutTarget};
 use crate::output::pipe_hls_strategy::{PipeHlsStrategy, SegmentedProtocol};
+use crate::output::provider::PipeStream;
 use crate::processor::generic::process_pipe_stream;
 use crate::utils::spans;
 use crate::{config::ProgramConfig, error::AppError, utils::expand_name_url};
@@ -28,7 +29,8 @@ pub async fn process_hls_stream(
     cut_target: &CutTarget,
 ) -> Result<u64, AppError> {
     // Check if we're in pipe output mode
-    let is_pipe_mode = config.output_format.is_pipe();
+    let pipe_stream = PipeStream::of(config.output_format);
+    let is_pipe_mode = pipe_stream.is_some();
 
     // Only create output directory for file mode
     if !is_pipe_mode {
@@ -130,12 +132,12 @@ pub async fn process_hls_stream(
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let stats = if is_pipe_mode {
+    let stats = if let Some(pipe_stream) = pipe_stream {
         // Pipe mode: write directly to stdout using PipeHlsStrategy
         let pipe_stats = process_pipe_stream(
             Box::pin(stream),
             &config.pipeline_config,
-            PipeHlsStrategy::for_protocol(protocol),
+            PipeHlsStrategy::for_protocol(protocol).with_stream(pipe_stream),
             extension,
         )
         .await?;

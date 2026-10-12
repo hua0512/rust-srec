@@ -9,7 +9,7 @@ use flv_fix::ScriptFillerConfig;
 use hls_fix::HlsPipelineConfig;
 use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
-use output::provider::OutputFormat;
+use output::provider::PipeStream;
 use pipeline_common::{CancellationToken, config::PipelineConfig};
 use tracing::{Level, error, info, warn};
 use tracing_indicatif::IndicatifLayer;
@@ -100,15 +100,12 @@ async fn bootstrap() -> Result<(), AppError> {
     let stdout_supports_ansi = io::stdout().is_terminal();
     let stderr_supports_ansi = io::stderr().is_terminal();
 
-    // Check if we're in pipe mode (stdout output)
-    // In pipe mode, we must:
-    // 1. Disable progress bars to avoid corrupting the output stream
-    // 2. Redirect all logging to stderr
-    let is_pipe_mode = matches!(args.output_format, OutputFormat::Stdout);
+    // Pipe output writes media to stdout or stderr. Progress bars and logs
+    // must stay off that stream: progress bars are disabled, and logs go to
+    // the other stream.
+    let pipe_stream = PipeStream::of(args.output_format);
 
-    // Conditionally setup progress bars based on --progress flag
-    // Progress bars are always disabled in pipe mode to avoid corrupting stdout
-    if args.show_progress && !is_pipe_mode {
+    if args.show_progress && pipe_stream.is_none() {
         // Create IndicatifLayer for progress bars and console output
         let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None);
 
@@ -127,8 +124,8 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(console_layer)
             .with(indicatif_layer)
             .init();
-    } else if is_pipe_mode {
-        // Pipe mode: all logging goes to stderr, no progress bars
+    } else if pipe_stream == Some(PipeStream::Stdout) {
+        // Stdout pipe mode: all logging goes to stderr, no progress bars
         // This ensures stdout is reserved exclusively for binary data output
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(io::stderr)
@@ -143,7 +140,8 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(console_layer)
             .init();
     } else {
-        // Simple console output without progress bars
+        // Simple console output on stdout, without progress bars; this is
+        // also stderr pipe mode, where stdout is free of media.
         // Use compact format to reduce verbosity
         let console_layer = tracing_subscriber::fmt::layer()
             .with_ansi(stdout_supports_ansi)
@@ -205,7 +203,7 @@ async fn bootstrap() -> Result<(), AppError> {
     );
 
     // Check if we're in pipe mode (stdout/stderr output)
-    let is_pipe_mode = args.output_format.is_pipe();
+    let is_pipe_mode = pipe_stream.is_some();
 
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()

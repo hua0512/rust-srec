@@ -1,5 +1,6 @@
 use crate::cut::{Boundary, CutSession, CutTarget};
 use crate::output::pipe_flv_strategy::PipeFlvStrategy;
+use crate::output::provider::PipeStream;
 use crate::processor::generic::{
     process_pipe_stream, process_pipe_stream_with_processing, process_stream,
     process_stream_with_span,
@@ -91,7 +92,8 @@ pub async fn process_file(
     token: &CancellationToken,
 ) -> Result<(), AppError> {
     // Check if we're in pipe output mode
-    let is_pipe_mode = config.output_format.is_pipe();
+    let pipe_stream = PipeStream::of(config.output_format);
+    let is_pipe_mode = pipe_stream.is_some();
 
     // Only create output directory for file mode
     if !is_pipe_mode {
@@ -123,7 +125,7 @@ pub async fn process_file(
         .map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let stats = if is_pipe_mode {
+    let stats = if let Some(pipe_stream) = pipe_stream {
         // Pipe mode: write to stdout using PipeFlvStrategy
         let pipe_stats = if config.enable_processing {
             // Processing enabled: run through FlvPipeline before writing to stdout
@@ -137,7 +139,7 @@ pub async fn process_file(
                 Box::pin(decoder_stream),
                 &config.pipeline_config,
                 config.flv_pipeline_config.clone(),
-                PipeFlvStrategy::new(),
+                PipeFlvStrategy::new().with_stream(pipe_stream),
                 "flv",
             )
             .await?
@@ -146,7 +148,7 @@ pub async fn process_file(
             process_pipe_stream(
                 Box::pin(decoder_stream),
                 &config.pipeline_config,
-                PipeFlvStrategy::new(),
+                PipeFlvStrategy::new().with_stream(pipe_stream),
                 "flv",
             )
             .await?
@@ -230,7 +232,8 @@ pub async fn process_flv_stream(
     cut_target: &CutTarget,
 ) -> Result<u64, AppError> {
     // Check if we're in pipe output mode
-    let is_pipe_mode = config.output_format.is_pipe();
+    let pipe_stream = PipeStream::of(config.output_format);
+    let is_pipe_mode = pipe_stream.is_some();
 
     // Only create output directory for file mode
     if !is_pipe_mode {
@@ -266,7 +269,7 @@ pub async fn process_flv_stream(
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let stats = if is_pipe_mode {
+    let stats = if let Some(pipe_stream) = pipe_stream {
         // Pipe mode: write to stdout using PipeFlvStrategy
         // Check if processing is enabled to determine whether to use FlvPipeline
         let pipe_stats = if config.enable_processing {
@@ -281,7 +284,7 @@ pub async fn process_flv_stream(
                 Box::pin(stream),
                 &config.pipeline_config,
                 config.flv_pipeline_config.clone(),
-                PipeFlvStrategy::new(),
+                PipeFlvStrategy::new().with_stream(pipe_stream),
                 "flv",
             )
             .await?
@@ -290,7 +293,7 @@ pub async fn process_flv_stream(
             process_pipe_stream(
                 Box::pin(stream),
                 &config.pipeline_config,
-                PipeFlvStrategy::new(),
+                PipeFlvStrategy::new().with_stream(pipe_stream),
                 "flv",
             )
             .await?
