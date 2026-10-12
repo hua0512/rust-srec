@@ -237,7 +237,13 @@ impl DownloadManager {
                     } else if let Some(existing) = target_map.get_mut(key) {
                         Self::json_merge(existing, value);
                     } else {
-                        target_map.insert(key.clone(), value.clone());
+                        // Merge a key the base lacks into an empty value rather
+                        // than copying it, so nested nulls ("reset to default")
+                        // are removed exactly as they would be under an
+                        // existing object instead of reaching deserialization.
+                        let mut introduced = serde_json::Value::Null;
+                        Self::json_merge(&mut introduced, value);
+                        target_map.insert(key.clone(), introduced);
                     }
                 }
             }
@@ -508,5 +514,38 @@ mod tests {
         let cleared =
             DownloadManager::apply_override(base, &serde_json::json!({"dash": null})).unwrap();
         assert!(cleared.dash.is_none());
+    }
+
+    #[test]
+    fn nested_resets_apply_when_the_base_has_no_such_object() {
+        use crate::database::models::engine::MesioDashConfig;
+
+        // A default engine stores no `dash` object; per-field resets in the
+        // override must still mean "default", not reach deserialization.
+        let merged = DownloadManager::apply_override(
+            MesioEngineConfig::default(),
+            &serde_json::json!({"dash": {
+                "include_video": null,
+                "include_audio": false,
+                "video_quality": null,
+                "live_start": {"type": "delay", "delay_ms": 4000, "unknown": null}
+            }}),
+        )
+        .unwrap();
+        let dash = merged.dash.unwrap();
+        assert_eq!(dash.include_video, MesioDashConfig::default().include_video);
+        assert!(!dash.include_audio);
+        assert_eq!(dash.video_quality, MesioDashConfig::default().video_quality);
+
+        // Non-object values introduced by an override are copied unchanged.
+        let mut target = serde_json::json!({"a": 1});
+        DownloadManager::json_merge(
+            &mut target,
+            &serde_json::json!({"b": [1, null], "c": "x", "d": {"e": null, "f": 2}}),
+        );
+        assert_eq!(
+            target,
+            serde_json::json!({"a": 1, "b": [1, null], "c": "x", "d": {"f": 2}})
+        );
     }
 }
