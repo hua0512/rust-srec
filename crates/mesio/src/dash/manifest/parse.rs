@@ -68,7 +68,7 @@ pub(crate) struct RawBaseUrl {
 pub(crate) struct RawSegmentInfo {
     pub template: Option<RawSegmentTemplate>,
     pub list: Option<RawSegmentList>,
-    pub has_base: bool,
+    pub base: Option<RawSegmentBase>,
 }
 
 impl RawSegmentInfo {
@@ -77,7 +77,7 @@ impl RawSegmentInfo {
     fn validate(&self, element: &'static str) -> Result<(), ManifestError> {
         let schemes = usize::from(self.template.is_some())
             + usize::from(self.list.is_some())
-            + usize::from(self.has_base);
+            + usize::from(self.base.is_some());
         if schemes > 1 {
             return Err(ManifestError::inconsistent(format!(
                 "`{element}` has more than one of SegmentBase, SegmentList and SegmentTemplate"
@@ -148,6 +148,22 @@ pub(crate) struct RawMultipleSegmentBase {
     pub availability_time_complete: Option<bool>,
     pub timeline: Option<Arc<[RawS]>>,
     pub initialization: Option<RawUrl>,
+}
+
+/// A `SegmentBase` element (`SegmentBaseType`, ISO/IEC 23009-1 §5.3.9.2),
+/// as written at one level.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct RawSegmentBase {
+    pub timescale: Option<u64>,
+    pub presentation_time_offset: Option<u64>,
+    pub ept_delta: Option<i64>,
+    /// Where the Segment Index (`sidx`) is in the resource.
+    pub index_range: Option<ByteRange>,
+    pub availability_time_offset: Option<RawOffset>,
+    pub availability_time_complete: Option<bool>,
+    pub initialization: Option<RawUrl>,
+    /// A `RepresentationIndex` child: the index is in a separate resource.
+    pub has_representation_index: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -445,14 +461,7 @@ fn parse_segment_info(info: &mut RawSegmentInfo, node: Node<'_, '_>) -> Result<(
             parse_segment_template,
         ),
         "SegmentList" => first_only(&mut info.list, node, "SegmentList", parse_segment_list),
-        "SegmentBase" => {
-            if std::mem::replace(&mut info.has_base, true) {
-                return Err(ManifestError::DuplicateElement {
-                    element: "SegmentBase",
-                });
-            }
-            Ok(())
-        }
+        "SegmentBase" => first_only(&mut info.base, node, "SegmentBase", parse_segment_base),
         _ => Ok(()),
     }
 }
@@ -462,12 +471,7 @@ fn parse_multiple_segment_base(
     element: &'static str,
 ) -> Result<RawMultipleSegmentBase, ManifestError> {
     let mut base = RawMultipleSegmentBase {
-        timescale: attr(node, element, "timescale", |value| {
-            xs::parse_u64(value)
-                .ok()
-                .filter(|&timescale| timescale > 0)
-                .ok_or("expected a positive integer")
-        })?,
+        timescale: attr(node, element, "timescale", parse_timescale)?,
         presentation_time_offset: attr(node, element, "presentationTimeOffset", xs::parse_u64)?,
         duration: attr(node, element, "duration", |value| {
             xs::parse_u64(value)
@@ -504,6 +508,42 @@ fn parse_multiple_segment_base(
             "Initialization" => {
                 first_only(&mut base.initialization, child, "Initialization", parse_url)?
             }
+            _ => {}
+        }
+    }
+    Ok(base)
+}
+
+fn parse_timescale(value: &str) -> Result<u64, &'static str> {
+    xs::parse_u64(value)
+        .ok()
+        .filter(|&timescale| timescale > 0)
+        .ok_or("expected a positive integer")
+}
+
+fn parse_segment_base(node: Node<'_, '_>) -> Result<RawSegmentBase, ManifestError> {
+    const E: &str = "SegmentBase";
+    let mut base = RawSegmentBase {
+        timescale: attr(node, E, "timescale", parse_timescale)?,
+        presentation_time_offset: attr(node, E, "presentationTimeOffset", xs::parse_u64)?,
+        ept_delta: attr(node, E, "eptDelta", xs::parse_i64)?,
+        index_range: attr(node, E, "indexRange", parse_byte_range)?,
+        availability_time_offset: attr(
+            node,
+            E,
+            "availabilityTimeOffset",
+            xs::parse_availability_time_offset,
+        )?,
+        availability_time_complete: attr(node, E, "availabilityTimeComplete", xs::parse_bool)?,
+        initialization: None,
+        has_representation_index: false,
+    };
+    for child in dash_children(node) {
+        match child.tag_name().name() {
+            "Initialization" => {
+                first_only(&mut base.initialization, child, "Initialization", parse_url)?
+            }
+            "RepresentationIndex" => base.has_representation_index = true,
             _ => {}
         }
     }
@@ -620,7 +660,8 @@ fn parse_u32(value: &str) -> Result<u32, &'static str> {
 }
 
 /// Parses a single `first-last` byte range (RFC 9110 §14.1.1 without the
-/// `bytes=` prefix), as `@mediaRange` and `@range` use it.
+/// `bytes=` prefix), as `@mediaRange`, `@range`
+/// and `@indexRange` use it.
 fn parse_byte_range(value: &str) -> Result<ByteRange, &'static str> {
     const INVALID: &str = "expected a byte range `first-last` with first <= last";
     let (first, last) = value.trim().split_once('-').ok_or(INVALID)?;

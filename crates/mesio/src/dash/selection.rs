@@ -40,6 +40,21 @@ pub(crate) fn find<'a>(
         })
 }
 
+/// [`find`] for changing the Representation.
+pub(crate) fn find_mut<'a>(
+    period: &'a mut Period,
+    track: MediaTrack,
+    id: &str,
+) -> Option<&'a mut Representation> {
+    period
+        .adaptation_sets
+        .iter_mut()
+        .flat_map(|set| &mut set.representations)
+        .find(|representation| {
+            representation.id == id && content_type(track) == representation.content_type
+        })
+}
+
 /// Whether a Representation's codecs list audio next to video: one
 /// Representation then carries both tracks in one initialization segment.
 pub(crate) fn is_multiplexed(representation: &Representation) -> bool {

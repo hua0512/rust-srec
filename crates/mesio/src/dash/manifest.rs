@@ -10,7 +10,10 @@
 //!
 //! Scope: `SegmentTemplate` (`$Number$`, `$Time$`, `SegmentTimeline`) and
 //! `SegmentList` addressing of unencrypted ISO BMFF content, for static and
-//! dynamic MPDs. Content outside that scope is reported per AdaptationSet or
+//! dynamic MPDs, and `SegmentBase` addressing for static MPDs. A
+//! `SegmentBase` Representation's segments come from its Segment Index,
+//! which the caller reads ([`Representation::pending_segment_index`]) and
+//! applies ([`Representation::apply_segment_index`]). Content outside that scope is reported per AdaptationSet or
 //! Representation in [`Period::rejected`], or as
 //! [`ManifestError::Unsupported`] when it affects the whole MPD; it is never
 //! approximated.
@@ -20,6 +23,7 @@
 
 mod clock;
 mod error;
+mod index;
 pub mod limits;
 mod parse;
 mod resolve;
@@ -29,6 +33,7 @@ mod xs;
 
 pub use clock::{Clock, ClockOffset, ManualClock, SystemClock, UtcTiming, parse_http_date};
 pub use error::{ManifestError, UnsupportedFeature};
+pub use index::{SegmentIndexLocation, Subsegment, SubsegmentIndex};
 pub use limits::MAX_MPD_BYTES;
 pub use resolve::{
     AdaptationSet, ContentType, Manifest, Period, PresentationType, Rejected, RejectedContent,

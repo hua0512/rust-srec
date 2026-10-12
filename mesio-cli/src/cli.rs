@@ -338,7 +338,7 @@ pub struct CliArgs {
         long,
         default_value = "15",
         value_parser = clap::value_parser!(u64).range(1..),
-        help = "Timeout for each DASH manifest (MPD) request in seconds"
+        help = "Timeout for each DASH manifest (MPD) or segment index request in seconds"
     )]
     pub dash_manifest_timeout: u64,
 
@@ -355,7 +355,7 @@ pub struct CliArgs {
     #[arg(
         long,
         default_value = "5",
-        help = "Number of consecutive failed DASH manifest refreshes tolerated before the stream fails"
+        help = "Number of consecutive failed DASH manifest refreshes tolerated before the stream fails; also the retries of a failed segment index request"
     )]
     pub dash_manifest_retries: u32,
 

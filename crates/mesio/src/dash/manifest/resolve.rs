@@ -10,14 +10,16 @@ use url::Url;
 
 use super::clock::UtcTiming;
 use super::error::{ManifestError, UnsupportedFeature};
+use super::index::{SegmentIndexLocation, SubsegmentIndex, indexed_addressing};
 use super::limits::{MAX_RESOLVED_BYTES, MAX_URL_BYTES};
 use super::parse::{
     self, RawAdaptationSet, RawBaseUrl, RawCommon, RawMpd, RawMultipleSegmentBase, RawPeriod,
-    RawProperty, RawRepresentation, RawS, RawSegmentInfo, RawSegmentList, RawSegmentTemplate,
+    RawProperty, RawRepresentation, RawS, RawSegmentBase, RawSegmentInfo, RawSegmentList,
+    RawSegmentTemplate,
 };
 use super::template::{Template, TemplateKind};
 use super::timeline::{
-    Addressing, AddressingKind, AvailabilityTimeOffset, InitSegment, PeriodTiming, Run,
+    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, PeriodTiming, Run,
     SegmentUrls, SegmentWindow,
 };
 use super::xs::{self, RawOffset};
@@ -215,6 +217,8 @@ pub struct Representation {
     pub availability_time_complete: bool,
     pub initialization: Option<InitSegment>,
     addressing: Addressing,
+    /// Set while a `SegmentBase` Representation's Segment Index is unread.
+    segment_index: Option<PendingIndex>,
     timing: PeriodTiming,
 }
 
@@ -246,13 +250,52 @@ impl Representation {
     /// When `availability_time_complete` is false, a segment is only complete
     /// at its unadjusted availability time, so the availability time offset
     /// is not applied: this engine downloads whole segments.
+    ///
+    /// Fails while the Segment Index is unread (see
+    /// [`Self::pending_segment_index`]).
     pub fn segments(&self, now: DateTime<Utc>) -> Result<SegmentWindow<'_>, ManifestError> {
+        if self.segment_index.is_some() {
+            return Err(ManifestError::SegmentIndexPending {
+                representation: self.id.clone(),
+            });
+        }
         let offset = if self.availability_time_complete {
             self.availability_time_offset
         } else {
             AvailabilityTimeOffset::ZERO
         };
         self.addressing.segments(&self.timing, offset, now)
+    }
+
+    /// Where this `SegmentBase` Representation's Segment Index is, while it
+    /// has not been applied. Its segments are unknown until then.
+    pub fn pending_segment_index(&self) -> Option<&SegmentIndexLocation> {
+        self.segment_index.as_ref().map(|pending| &pending.location)
+    }
+
+    /// Gives a `SegmentBase` Representation the subsegments read from its
+    /// Segment Index; each becomes one segment. Segment times are then in the
+    /// index's timescale ([`Self::timescale`]).
+    ///
+    /// Without an `Initialization` element the resource is self-initializing
+    /// and its initialization data is everything before the index box, which
+    /// is only known now: `@indexRange` may begin before the box.
+    pub fn apply_segment_index(&mut self, index: &SubsegmentIndex) -> Result<(), ManifestError> {
+        let Some(pending) = &self.segment_index else {
+            return Err(ManifestError::inconsistent(
+                "Representation is not waiting for a Segment Index",
+            ));
+        };
+        let url = pending.location.url.clone();
+        self.addressing = indexed_addressing(index, &self.addressing, url.clone())?;
+        if pending.implicit_initialization {
+            self.initialization = index.index_offset().checked_sub(1).map(|last| InitSegment {
+                url,
+                byte_range: Some(ByteRange { first: 0, last }),
+            });
+        }
+        self.segment_index = None;
+        Ok(())
     }
 }
 
@@ -582,12 +625,20 @@ impl Resolver {
             &set.segment_info,
             &representation.segment_info,
         ])?;
-        let built = self.build_addressing(
-            &info,
-            &representation.id,
-            representation.bandwidth,
-            &base.url,
-        )?;
+        let built = match &info {
+            SegmentInfo::Base(segment_base) => {
+                if context.timing.presentation_type == PresentationType::Dynamic {
+                    return Err(UnsupportedFeature::LiveSegmentBase.into());
+                }
+                build_indexed(segment_base, &base.url)?
+            }
+            SegmentInfo::Multiple(info) => self.build_addressing(
+                info,
+                &representation.id,
+                representation.bandwidth,
+                &base.url,
+            )?,
+        };
         let availability_time_offset = base
             .offset
             .checked_add(built.offset)
@@ -613,20 +664,21 @@ impl Resolver {
             availability_time_complete: base.complete && built.complete,
             initialization: built.initialization,
             addressing: built.addressing,
+            segment_index: built.segment_index,
             timing: context.timing,
         })
     }
 
     fn build_addressing(
         &mut self,
-        info: &SegmentInfo,
+        info: &MultipleSegmentInfo,
         representation_id: &str,
         bandwidth: u64,
         base: &Url,
     ) -> Result<BuiltAddressing, ManifestError> {
         let (common, list) = match info {
-            SegmentInfo::Template(template) => (&template.base, None),
-            SegmentInfo::List(list) => (&list.base, Some(list)),
+            MultipleSegmentInfo::Template(template) => (&template.base, None),
+            MultipleSegmentInfo::List(list) => (&list.base, Some(list)),
         };
         if common.ept_delta.is_some_and(|delta| delta != 0) {
             return Err(UnsupportedFeature::EptDelta.into());
@@ -710,7 +762,7 @@ impl Resolver {
 
         let mut charged_bytes = 0;
         let (urls, initialization) = match info {
-            SegmentInfo::Template(template) => {
+            MultipleSegmentInfo::Template(template) => {
                 let media = template
                     .media
                     .as_deref()
@@ -747,7 +799,7 @@ impl Resolver {
                     initialization,
                 )
             }
-            SegmentInfo::List(list) => {
+            MultipleSegmentInfo::List(list) => {
                 // Entries are shared and resolved per segment; resolving the
                 // first one rejects an unusable base early.
                 if let Some(first) = list.segment_urls.first()
@@ -780,11 +832,89 @@ impl Resolver {
                 urls,
             },
             initialization,
+            segment_index: None,
             offset,
             complete: common.availability_time_complete.unwrap_or(true),
             charged_bytes,
         })
     }
+}
+
+/// Addressing of a `SegmentBase` Representation, whose resource is `url`,
+/// pending its Segment Index.
+fn build_indexed(base: &RawSegmentBase, url: &Url) -> Result<BuiltAddressing, ManifestError> {
+    if base.ept_delta.is_some_and(|delta| delta != 0) {
+        return Err(UnsupportedFeature::EptDelta.into());
+    }
+    let offset = match base.availability_time_offset {
+        None => AvailabilityTimeOffset::ZERO,
+        Some(RawOffset::Offset(offset)) => offset,
+        Some(RawOffset::Negative) => {
+            return Err(UnsupportedFeature::NegativeAvailabilityTimeOffset.into());
+        }
+    };
+    // Where both are given, which index applies is not defined; the
+    // resource may not carry one at all.
+    if base.has_representation_index {
+        return Err(UnsupportedFeature::RepresentationIndex.into());
+    }
+    let Some(index_range) = base.index_range else {
+        return Err(UnsupportedFeature::UnindexedResource.into());
+    };
+    // Without `Initialization` the resource is self-initializing: its
+    // initialization data (`ftyp`, `moov`) precedes the Segment Index, as in
+    // the indexed layout of the on-demand profile. Where the index box
+    // starts is known once it is read.
+    let initialization = base
+        .initialization
+        .as_ref()
+        .map(|init| {
+            Ok::<_, ManifestError>(InitSegment {
+                url: match &init.source_url {
+                    Some(source) => {
+                        url.join(source)
+                            .map_err(|source| ManifestError::InvalidUrl {
+                                element: "Initialization@sourceURL",
+                                source,
+                            })?
+                    }
+                    None => url.clone(),
+                },
+                byte_range: init.range,
+            })
+        })
+        .transpose()?;
+    let charged_bytes = url.as_str().len()
+        + initialization
+            .as_ref()
+            .map_or(0, |init| init.url.as_str().len());
+    Ok(BuiltAddressing {
+        // Placeholder timing in the MPD's timescale until the index is
+        // applied (`indexed_addressing`).
+        addressing: Addressing {
+            timescale: base.timescale.unwrap_or(1),
+            presentation_time_offset: base.presentation_time_offset.unwrap_or(0),
+            start_number: 1,
+            end_number: None,
+            has_timeline: true,
+            runs: Arc::from([]),
+            urls: SegmentUrls::Indexed {
+                url: url.clone(),
+                ranges: Arc::from([]),
+            },
+        },
+        segment_index: Some(PendingIndex {
+            location: SegmentIndexLocation {
+                url: url.clone(),
+                range: index_range,
+            },
+            implicit_initialization: initialization.is_none(),
+        }),
+        initialization,
+        offset,
+        complete: base.availability_time_complete.unwrap_or(true),
+        charged_bytes,
+    })
 }
 
 /// Rejects MPD chaining and `EssentialProperty` schemes this engine does not
@@ -939,29 +1069,41 @@ fn has_scheme(reference: &str) -> bool {
 
 /// Segment information after inheritance.
 enum SegmentInfo {
+    Multiple(MultipleSegmentInfo),
+    Base(RawSegmentBase),
+}
+
+/// Segment information listing several segments (`MultipleSegmentBaseType`).
+enum MultipleSegmentInfo {
     Template(RawSegmentTemplate),
     List(RawSegmentList),
 }
 
-/// Merges `SegmentTemplate` or `SegmentList` from Period → AdaptationSet →
-/// Representation: each attribute and child of a lower level overrides the
-/// same one above it (ISO/IEC 23009-1 §5.3.9.1). Child lists are shared, not
-/// copied.
+/// Merges `SegmentTemplate`, `SegmentList` or `SegmentBase` from Period →
+/// AdaptationSet → Representation: each attribute and child of a lower level
+/// overrides the same one above it (ISO/IEC 23009-1 §5.3.9.1). Child lists
+/// are shared, not copied.
 ///
 /// Each level carries at most one addressing element (checked while
-/// parsing). The innermost level carrying one decides the addressing type. If
-/// that is a `SegmentBase` (or there is none at all, making the
-/// Representation a single resource), the Representation uses indexed
-/// addressing, which is out of scope. `SegmentTemplate` and `SegmentList` in
-/// one chain are contradictory.
+/// parsing). The innermost level carrying one decides the addressing type,
+/// and only elements of that type are merged. Without any, the
+/// Representation is a single resource with no index, which is out of scope.
+/// `SegmentTemplate` and `SegmentList` in one chain are contradictory.
 fn merge_segment_info(levels: [&RawSegmentInfo; 3]) -> Result<SegmentInfo, ManifestError> {
     let innermost = levels
         .iter()
         .rev()
-        .find(|level| level.template.is_some() || level.list.is_some() || level.has_base);
+        .find(|level| level.template.is_some() || level.list.is_some() || level.base.is_some());
     let Some(innermost) = innermost else {
-        return Err(UnsupportedFeature::SegmentBase.into());
+        return Err(UnsupportedFeature::UnindexedResource.into());
     };
+    if innermost.base.is_some() {
+        let mut merged = RawSegmentBase::default();
+        for base in levels.iter().filter_map(|level| level.base.as_ref()) {
+            merged.override_with(base);
+        }
+        return Ok(SegmentInfo::Base(merged));
+    }
     let templates: Vec<&RawSegmentTemplate> = levels
         .iter()
         .filter_map(|level| level.template.as_ref())
@@ -986,8 +1128,8 @@ fn merge_segment_info(levels: [&RawSegmentInfo; 3]) -> Result<SegmentInfo, Manif
                 merged.initialization.clone_from(&template.initialization);
             }
         }
-        Ok(SegmentInfo::Template(merged))
-    } else if innermost.list.is_some() {
+        Ok(SegmentInfo::Multiple(MultipleSegmentInfo::Template(merged)))
+    } else {
         let mut merged = RawSegmentList::default();
         for list in lists {
             if list.has_xlink {
@@ -1001,19 +1143,41 @@ fn merge_segment_info(levels: [&RawSegmentInfo; 3]) -> Result<SegmentInfo, Manif
                 merged.segment_urls = Arc::clone(&list.segment_urls);
             }
         }
-        Ok(SegmentInfo::List(merged))
-    } else {
-        Err(UnsupportedFeature::SegmentBase.into())
+        Ok(SegmentInfo::Multiple(MultipleSegmentInfo::List(merged)))
+    }
+}
+
+/// Overrides one attribute or child with an inner level's.
+fn take<T: Clone>(outer: &mut Option<T>, inner: &Option<T>) {
+    if inner.is_some() {
+        outer.clone_from(inner);
+    }
+}
+
+impl RawSegmentBase {
+    fn override_with(&mut self, inner: &Self) {
+        take(&mut self.timescale, &inner.timescale);
+        take(
+            &mut self.presentation_time_offset,
+            &inner.presentation_time_offset,
+        );
+        take(&mut self.ept_delta, &inner.ept_delta);
+        take(&mut self.index_range, &inner.index_range);
+        take(
+            &mut self.availability_time_offset,
+            &inner.availability_time_offset,
+        );
+        take(
+            &mut self.availability_time_complete,
+            &inner.availability_time_complete,
+        );
+        take(&mut self.initialization, &inner.initialization);
+        self.has_representation_index |= inner.has_representation_index;
     }
 }
 
 impl RawMultipleSegmentBase {
     fn override_with(&mut self, inner: &Self) {
-        fn take<T: Clone>(outer: &mut Option<T>, inner: &Option<T>) {
-            if inner.is_some() {
-                outer.clone_from(inner);
-            }
-        }
         take(&mut self.timescale, &inner.timescale);
         take(
             &mut self.presentation_time_offset,
@@ -1036,9 +1200,19 @@ impl RawMultipleSegmentBase {
     }
 }
 
+/// A `SegmentBase` Representation's unread Segment Index.
+#[derive(Debug, Clone)]
+struct PendingIndex {
+    location: SegmentIndexLocation,
+    /// No `Initialization` element: the initialization data is everything
+    /// before the index box.
+    implicit_initialization: bool,
+}
+
 struct BuiltAddressing {
     addressing: Addressing,
     initialization: Option<InitSegment>,
+    segment_index: Option<PendingIndex>,
     offset: AvailabilityTimeOffset,
     complete: bool,
     /// Bytes of URLs and templates created for the Representation.
@@ -1262,8 +1436,8 @@ mod tests {
       <Representation id="webm" bandwidth="1"/>
     </AdaptationSet>
     <AdaptationSet id="3" mimeType="video/mp4">
-      <Representation id="indexed" bandwidth="1">
-        <SegmentBase indexRange="0-100"/>
+      <Representation id="unindexed" bandwidth="1">
+        <SegmentBase/>
       </Representation>
       <Representation id="clear" bandwidth="1"/>
       <Representation id="rep-drm" bandwidth="1">
@@ -1309,7 +1483,11 @@ mod tests {
                     Some("webm"),
                     UnsupportedFeature::MimeType("video/webm".into())
                 ),
-                (Some("3"), Some("indexed"), UnsupportedFeature::SegmentBase),
+                (
+                    Some("3"),
+                    Some("unindexed"),
+                    UnsupportedFeature::UnindexedResource
+                ),
                 (
                     Some("3"),
                     Some("rep-drm"),
@@ -1438,7 +1616,19 @@ mod tests {
                 r#"<BaseURL byteRange="$base$?r=$first$">a/</BaseURL><SegmentTemplate duration="2" media="$Number$"/>"#,
                 UnsupportedFeature::BaseUrlByteRange,
             ),
-            ("", UnsupportedFeature::SegmentBase),
+            ("", UnsupportedFeature::UnindexedResource),
+            (
+                r#"<SegmentBase><RepresentationIndex sourceURL="index.sidx"/></SegmentBase>"#,
+                UnsupportedFeature::RepresentationIndex,
+            ),
+            (
+                r#"<SegmentBase indexRange="10-20"><RepresentationIndex sourceURL="index.sidx"/></SegmentBase>"#,
+                UnsupportedFeature::RepresentationIndex,
+            ),
+            (
+                r#"<SegmentBase indexRange="10-20" eptDelta="3"/>"#,
+                UnsupportedFeature::EptDelta,
+            ),
         ];
         for (inner, expected) in cases {
             let manifest = manifest(&wrap(inner));
@@ -1684,7 +1874,177 @@ mod tests {
         let manifest = Manifest::parse(xml.as_bytes(), &url()).unwrap();
         assert_eq!(
             manifest.periods[0].rejected[0].feature,
-            UnsupportedFeature::SegmentBase
+            UnsupportedFeature::UnindexedResource
+        );
+    }
+
+    fn subsegments(subsegments: &[(u64, u64, u64)]) -> Vec<super::super::Subsegment> {
+        subsegments
+            .iter()
+            .map(|&(first, last, duration)| super::super::Subsegment {
+                range: ByteRange { first, last },
+                duration,
+            })
+            .collect()
+    }
+
+    fn indexed(entries: &[(u64, u64, u64)]) -> SubsegmentIndex {
+        SubsegmentIndex::new(1000, 500, 900, &subsegments(entries)).unwrap()
+    }
+
+    #[test]
+    fn segment_base_waits_for_its_index() {
+        let mut parsed = manifest(&wrap_set(
+            r#"<Representation id="v" bandwidth="1"><BaseURL>v.mp4</BaseURL><SegmentBase indexRange="900-1099"/></Representation>"#,
+        ));
+        let representation = &mut parsed.periods[0].adaptation_sets[0].representations[0];
+        assert_eq!(representation.addressing_kind(), AddressingKind::Indexed);
+        let resource = Url::parse("https://origin.example.com/live/v.mp4").unwrap();
+        assert_eq!(
+            representation.pending_segment_index(),
+            Some(&SegmentIndexLocation {
+                url: resource.clone(),
+                range: ByteRange {
+                    first: 900,
+                    last: 1099
+                },
+            })
+        );
+        // The initialization data precedes the index box, which may start
+        // after `@indexRange` does; it is known once the index is read.
+        assert_eq!(representation.initialization, None);
+        assert!(matches!(
+            representation.segments(at(0)),
+            Err(ManifestError::SegmentIndexPending { .. })
+        ));
+
+        representation
+            .apply_segment_index(&indexed(&[
+                (1100, 1999, 2000),
+                (2000, 2999, 2000),
+                (3000, 3499, 1000),
+            ]))
+            .unwrap();
+        assert_eq!(representation.pending_segment_index(), None);
+        assert_eq!(
+            representation.initialization,
+            Some(InitSegment {
+                url: resource.clone(),
+                byte_range: Some(ByteRange {
+                    first: 0,
+                    last: 899
+                }),
+            })
+        );
+        assert!(representation.uses_segment_timeline());
+        let segments: Vec<_> = representation
+            .segments(at(0))
+            .unwrap()
+            .iter()
+            .map(|segment| {
+                let segment = segment.unwrap();
+                assert_eq!(segment.url, resource);
+                (
+                    segment.number,
+                    segment.time,
+                    segment.duration,
+                    segment.byte_range.map(|range| (range.first, range.last)),
+                )
+            })
+            .collect();
+        assert_eq!(
+            segments,
+            [
+                (1, 500, 2000, Some((1100, 1999))),
+                (2, 2500, 2000, Some((2000, 2999))),
+                (3, 4500, 1000, Some((3000, 3499))),
+            ]
+        );
+        assert!(
+            representation
+                .apply_segment_index(&indexed(&[(1, 2, 3)]))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn segment_base_inherits_and_takes_explicit_initialization() {
+        let mut parsed = manifest(&wrap_set(
+            r#"<SegmentBase timescale="90000" presentationTimeOffset="45000" indexRange="1-2"><Initialization sourceURL="init.mp4"/></SegmentBase>
+<Representation id="v" bandwidth="1"><SegmentBase indexRange="600-700"><Initialization range="0-599"/></SegmentBase></Representation>
+<Representation id="w" bandwidth="2"/>"#,
+        ));
+        let set = &mut parsed.periods[0].adaptation_sets[0];
+        let document = url();
+        let v = &set.representations[0];
+        assert_eq!(v.pending_segment_index().unwrap().range.first, 600);
+        // The Representation's `Initialization` replaces the inherited one.
+        assert_eq!(
+            v.initialization,
+            Some(InitSegment {
+                url: document.clone(),
+                byte_range: Some(ByteRange {
+                    first: 0,
+                    last: 599
+                }),
+            })
+        );
+        assert_eq!(v.timescale(), 90_000);
+        let w = &mut set.representations[1];
+        assert_eq!(
+            w.initialization.as_ref().map(|init| init.url.as_str()),
+            Some("https://origin.example.com/live/init.mp4")
+        );
+
+        // 45000 / 90000 s is 500 ticks of the index's 1000 Hz.
+        w.apply_segment_index(&indexed(&[(3, 9, 1000)])).unwrap();
+        assert_eq!((w.timescale(), w.presentation_time_offset()), (1000, 500));
+        let first = w.segments(at(0)).unwrap().first().unwrap().unwrap();
+        assert_eq!((first.time, first.start_secs), (500, 0.0));
+    }
+
+    #[test]
+    fn an_unusable_segment_index_is_refused() {
+        let xml = wrap_set(
+            r#"<Representation id="v" bandwidth="1"><SegmentBase timescale="3" presentationTimeOffset="1" indexRange="0-9"/></Representation>"#,
+        );
+        for entries in [
+            &[][..],
+            &[(10, 20, 0)],
+            &[(20, 10, 5)],
+            &[(10, 20, 5), (20, 30, 5)],
+            &[(10, 20, 5), (5, 8, 5)],
+        ] {
+            assert!(
+                matches!(
+                    SubsegmentIndex::new(1000, 0, 0, &subsegments(entries)),
+                    Err(ManifestError::InvalidSegmentIndex { .. })
+                ),
+                "{entries:?}"
+            );
+        }
+        // 1/3 s is not a whole number of milliseconds.
+        let mut parsed = manifest(&xml);
+        let representation = &mut parsed.periods[0].adaptation_sets[0].representations[0];
+        assert!(matches!(
+            representation.apply_segment_index(&indexed(&[(10, 20, 5)])),
+            Err(ManifestError::Unsupported(
+                UnsupportedFeature::FractionalPresentationTimeOffset
+            ))
+        ));
+        assert!(representation.pending_segment_index().is_some());
+    }
+
+    #[test]
+    fn segment_base_is_refused_in_dynamic_mpds() {
+        let manifest = manifest(
+            r#"<MPD type="dynamic" availabilityStartTime="2020-01-01T00:00:00Z"><Period start="PT0S">
+<AdaptationSet mimeType="video/mp4"><Representation id="v" bandwidth="1"><SegmentBase indexRange="10-20"/></Representation></AdaptationSet>
+</Period></MPD>"#,
+        );
+        assert_eq!(
+            manifest.periods[0].rejected[0].feature,
+            UnsupportedFeature::LiveSegmentBase
         );
     }
 

@@ -16,6 +16,7 @@ mod engine;
 pub mod manifest;
 mod mux;
 mod planner;
+mod segment_index;
 mod selection;
 pub mod watcher;
 

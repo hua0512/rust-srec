@@ -26,12 +26,13 @@ use url::Url;
 use crate::CacheManager;
 use crate::DownloadError;
 use crate::dash::config::DashConfig;
-use crate::dash::manifest::{Manifest, PresentationType};
+use crate::dash::manifest::{Manifest, PresentationType, Representation};
 use crate::dash::mux::{MuxOutcome, MuxTrack, TrackSink, run_muxer};
 use crate::dash::planner::{
     ConsumedFrontier, DashPlanner, PeriodKey, PlannerParams, StartPosition, decide_start,
     rejection_for,
 };
+use crate::dash::segment_index::OnIndexFailure;
 use crate::dash::selection;
 use crate::dash::watcher::{MpdFetcher, MpdWatcher};
 use crate::downloader::ClientPool;
@@ -93,20 +94,49 @@ pub(crate) async fn start(
         events.clone(),
         cancel.clone(),
     );
-    let initial = fetcher.fetch(&url, None, true).await?;
-    let manifest = Arc::clone(&initial.manifest);
+    let mut initial = fetcher.fetch(&url, None, true).await?;
     let now = initial.clock_offset.apply(config.clock.now());
-    let start = decide_start(&manifest, now, config.live_start, &config.selection)?;
-    let (start, selected) = select_tracks(&manifest, &config, start)?;
-    let live = manifest.presentation_type == PresentationType::Dynamic;
+    let start = decide_start(&initial.manifest, now, config.live_start, &config.selection)?;
+    let (start, selected) = select_tracks(&initial.manifest, &config, start)?;
+    let live = initial.manifest.presentation_type == PresentationType::Dynamic;
     info!(
         live,
         video = selected.video,
         audio = selected.audio,
-        periods = manifest.periods.len(),
+        periods = initial.manifest.periods.len(),
         url = %crate::redact::Redacted(&url),
         "starting DASH engine"
     );
+    // Only now are the recorded tracks known, and with them the Segment
+    // Indexes the planners need; an unused Representation's index is never
+    // read, so it cannot fail the session.
+    let recorded: Vec<MediaTrack> = [
+        (MediaTrack::Video, selected.video),
+        (MediaTrack::Audio, selected.audio),
+    ]
+    .into_iter()
+    .filter_map(|(track, recorded)| recorded.then_some(track))
+    .collect();
+    fetcher.record_tracks(recorded.clone());
+    fetcher
+        .read_segment_indexes(
+            Arc::make_mut(&mut initial.manifest),
+            &url,
+            OnIndexFailure::Fail,
+        )
+        .await?;
+    if let Some(period) = initial
+        .manifest
+        .periods
+        .iter()
+        .find(|period| PeriodKey::of(period).same(&start.period))
+    {
+        ensure_initialization(
+            recorded
+                .iter()
+                .filter_map(|&track| selection::select(period, track, &config.selection)),
+        )?;
+    }
 
     let performance_metrics = config
         .output
@@ -312,16 +342,7 @@ fn select_tracks(
             feature: "no Representation matches the track selection".to_owned(),
         });
     };
-    if [video, audio]
-        .into_iter()
-        .flatten()
-        .any(|representation| representation.initialization.is_none())
-    {
-        return Err(DownloadError::Unsupported {
-            protocol: "dash",
-            feature: "Representation without an initialization segment".to_owned(),
-        });
-    }
+    ensure_initialization([video, audio].into_iter().flatten())?;
     if multiplexed {
         debug!("video Representation carries audio; no separate audio track is recorded");
     }
@@ -336,6 +357,24 @@ fn select_tracks(
             absent,
         },
     ))
+}
+
+/// A recorded Representation needs an initialization segment. A
+/// `SegmentBase` one whose index is unread may still find it there (see
+/// `Representation::apply_segment_index`), so it is checked again once the
+/// index is read.
+fn ensure_initialization<'a>(
+    representations: impl IntoIterator<Item = &'a Representation>,
+) -> Result<(), DownloadError> {
+    if representations.into_iter().any(|representation| {
+        representation.initialization.is_none() && representation.pending_segment_index().is_none()
+    }) {
+        return Err(DownloadError::Unsupported {
+            protocol: "dash",
+            feature: "Representation without an initialization segment".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn core_config(config: &DashConfig) -> SegmentCoreConfig {

@@ -87,7 +87,7 @@ The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate mi
 
 ## 5. MPEG-DASH Recording (Mesio Exclusive) {#mpeg-dash}
 
-Mesio records MPEG-DASH (`.mpd`) streams, live or finished. When video and audio are delivered separately, as is usual for DASH, they are merged into one fragmented MP4 file. DRM-protected streams, WebM media and `SegmentBase` manifests are not supported, and subtitles are not recorded. See [how the DASH engine works](./mesio.md#mpeg-dash-engine).
+Mesio records MPEG-DASH (`.mpd`) streams, live or finished. When video and audio are delivered separately, as is usual for DASH, they are merged into one fragmented MP4 file. DRM-protected streams, WebM media and live manifests using `SegmentBase` are not supported, and subtitles are not recorded. See [how the DASH engine works](./mesio.md#mpeg-dash-engine).
 
 **Fix DASH Streams** (`fix_dash`, default on) applies the same consistency fix as HLS to the merged output: it starts a new file on incompatible stream changes and enforces file-size and duration limits.
 
@@ -104,9 +104,9 @@ The other settings are on the **DASH Tuning** tab of a Mesio engine and are stor
 | Download Concurrency | `dash.download_concurrency` | `5` | Segments downloaded at once, per track. |
 | Segment Timeout (ms) | `dash.segment_timeout_ms` | `10000` | Time limit for one segment download. |
 | Segment Retries | `dash.max_segment_retries` | `3` | Retries of a failed segment download. |
-| Manifest Timeout (ms) | `dash.manifest_timeout_ms` | `15000` | Time limit for one manifest request. |
+| Manifest Timeout (ms) | `dash.manifest_timeout_ms` | `15000` | Time limit for one manifest request, or for one read of a stream's index (see `SegmentBase` under [how the DASH engine works](./mesio.md#mpeg-dash-engine)). |
 | Minimum Refresh Interval (ms) | `dash.min_refresh_interval_ms` | `1000` | Shortest time between live manifest refreshes; the manifest's own update period applies when longer. |
-| Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. |
+| Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. Also how many times a failed read of a stream's index is retried. |
 
 Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. In a template's [engine override](../reference/configuration-overrides.md#engines-override-template-only), each DASH setting can use the engine's setting (the field is left out), the default (`null`), or a custom value, and **Reset all DASH settings to defaults** stores `"dash": null`. A template cannot be saved if, together with the engine's settings, it would record neither video nor audio.
 

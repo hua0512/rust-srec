@@ -60,7 +60,7 @@ impl AvailabilityTimeOffset {
 }
 
 /// An inclusive byte range (`first-last`) within a resource.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ByteRange {
     pub first: u64,
     pub last: u64,
@@ -86,6 +86,9 @@ pub enum AddressingKind {
     Time,
     /// `SegmentList`.
     List,
+    /// `SegmentBase`: subsegments of one resource, located by its Segment
+    /// Index.
+    Indexed,
 }
 
 /// A media segment.
@@ -149,6 +152,12 @@ pub(crate) enum SegmentUrls {
     List {
         urls: Arc<[RawSegmentUrl]>,
         base: Url,
+    },
+    /// Byte ranges of the subsegments of `url`, one per segment, from its
+    /// Segment Index.
+    Indexed {
+        url: Url,
+        ranges: Arc<[ByteRange]>,
     },
 }
 
@@ -281,13 +290,19 @@ impl Addressing {
             ));
         }
         // Positions available at all: up to `@endNumber`, and one per
-        // `SegmentURL`. `@endNumber` is the number of the last segment
-        // (inclusive); `u64::MAX − 0 + 1` overflows only when nothing is capped.
+        // `SegmentURL` or indexed subsegment. `@endNumber` is the number of
+        // the last segment (inclusive); `u64::MAX − 0 + 1` overflows only
+        // when nothing is capped.
         let mut cap = self
             .end_number
             .and_then(|end_number| (end_number - self.start_number).checked_add(1));
-        if let SegmentUrls::List { urls, .. } = &self.urls {
-            let len = u64::try_from(urls.len()).map_err(|_| overflow())?;
+        let listed = match &self.urls {
+            SegmentUrls::Template { .. } => None,
+            SegmentUrls::List { urls, .. } => Some(urls.len()),
+            SegmentUrls::Indexed { ranges, .. } => Some(ranges.len()),
+        };
+        if let Some(listed) = listed {
+            let len = u64::try_from(listed).map_err(|_| overflow())?;
             cap = Some(cap.map_or(len, |cap| cap.min(len)));
         }
 
@@ -412,6 +427,7 @@ impl Addressing {
             SegmentUrls::Template { media, .. } if media.uses_time() => AddressingKind::Time,
             SegmentUrls::Template { .. } => AddressingKind::Number,
             SegmentUrls::List { .. } => AddressingKind::List,
+            SegmentUrls::Indexed { .. } => AddressingKind::Indexed,
         }
     }
 
@@ -460,6 +476,13 @@ impl Addressing {
                     None => base.clone(),
                 };
                 (url, entry.media_range)
+            }
+            SegmentUrls::Indexed { url, ranges } => {
+                let range = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| ranges.get(index))
+                    .ok_or_else(overflow)?;
+                (url.clone(), Some(*range))
             }
         };
         let offset_ticks = i128::from(time) - i128::from(self.presentation_time_offset);

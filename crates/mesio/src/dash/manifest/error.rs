@@ -66,6 +66,16 @@ pub enum ManifestError {
     #[error("invalid {context} time value")]
     InvalidTime { context: &'static str },
 
+    /// A Segment Index (`sidx`) that cannot describe the Representation's
+    /// subsegments: malformed, or inconsistent with the MPD.
+    #[error("invalid Segment Index: {reason}")]
+    InvalidSegmentIndex { reason: String },
+
+    /// Segments of a `SegmentBase` Representation were requested before its
+    /// Segment Index was read (see `Representation::apply_segment_index`).
+    #[error("the Segment Index of Representation `{representation}` has not been read")]
+    SegmentIndexPending { representation: String },
+
     #[error("unsupported feature: {0}")]
     Unsupported(#[from] UnsupportedFeature),
 }
@@ -100,6 +110,12 @@ impl ManifestError {
         }
     }
 
+    pub(crate) fn segment_index(reason: impl Into<String>) -> Self {
+        Self::InvalidSegmentIndex {
+            reason: reason.into(),
+        }
+    }
+
     pub(crate) fn inconsistent(reason: impl Into<String>) -> Self {
         Self::Inconsistent {
             reason: reason.into(),
@@ -110,17 +126,27 @@ impl ManifestError {
 /// A valid DASH feature outside this engine's scope.
 ///
 /// The engine records unencrypted ISO BMFF content addressed through
-/// `SegmentTemplate` or `SegmentList`; everything listed here is reported
-/// instead of being approximated.
+/// `SegmentTemplate`, `SegmentList` or, in static MPDs, `SegmentBase`;
+/// everything listed here is reported instead of being approximated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnsupportedFeature {
     /// `ContentProtection` (DRM or common encryption).
     ContentProtection,
     /// A container other than ISO BMFF (`video/mp4`, `audio/mp4`), e.g. WebM.
     MimeType(String),
-    /// Indexed addressing (`SegmentBase`, `sidx`) or a Representation that is
-    /// a single resource without segment information.
-    SegmentBase,
+    /// A Representation that is a single resource without a Segment Index:
+    /// no segment information, or a `SegmentBase` without `@indexRange`.
+    UnindexedResource,
+    /// A `SegmentBase` whose Segment Index is a separate resource
+    /// (`RepresentationIndex`).
+    RepresentationIndex,
+    /// `SegmentBase` in a dynamic MPD, where the indexed resource may still
+    /// grow.
+    LiveSegmentBase,
+    /// A `SegmentBase@presentationTimeOffset` that is not a whole number of
+    /// ticks of the Segment Index's timescale, so subsegment times cannot be
+    /// placed on the Period timeline exactly.
+    FractionalPresentationTimeOffset,
     /// Remote elements (`xlink:href`, ISO/IEC 23009-1 §5.5).
     XLink { element: &'static str },
     /// An `EssentialProperty` whose scheme must be understood to use the
@@ -155,7 +181,14 @@ impl fmt::Display for UnsupportedFeature {
         match self {
             Self::ContentProtection => f.write_str("content protection (DRM)"),
             Self::MimeType(mime) => write!(f, "container `{mime}` (only ISO BMFF is supported)"),
-            Self::SegmentBase => f.write_str("SegmentBase / single-resource addressing"),
+            Self::UnindexedResource => {
+                f.write_str("single-resource Representation without a Segment Index")
+            }
+            Self::RepresentationIndex => f.write_str("SegmentBase with a RepresentationIndex"),
+            Self::LiveSegmentBase => f.write_str("SegmentBase in a dynamic MPD"),
+            Self::FractionalPresentationTimeOffset => f.write_str(
+                "SegmentBase@presentationTimeOffset finer than the Segment Index timescale",
+            ),
             Self::XLink { element } => write!(f, "xlink on `{element}`"),
             Self::EssentialProperty(scheme) => write!(f, "EssentialProperty `{scheme}`"),
             Self::BaseUrlByteRange => f.write_str("BaseURL@byteRange"),
@@ -180,6 +213,11 @@ impl From<ManifestError> for DownloadError {
             ManifestError::Unsupported(feature) => DownloadError::Unsupported {
                 protocol: "dash",
                 feature: feature.to_string(),
+            },
+            // The resource itself is wrong; fetching it again cannot help.
+            error @ ManifestError::InvalidSegmentIndex { .. } => DownloadError::InvalidContent {
+                protocol: "dash",
+                reason: error.to_string(),
             },
             other => DownloadError::Manifest {
                 reason: other.to_string(),

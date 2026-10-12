@@ -56,8 +56,8 @@ use url::Url;
 use crate::DownloadError;
 use crate::dash::config::{DashSelectionConfig, LiveStartPolicy};
 use crate::dash::manifest::{
-    ByteRange, Clock, Manifest, ManifestError, Period, PresentationType, RejectedContent,
-    Representation, Segment, SegmentWindow, UnsupportedFeature,
+    AddressingKind, ByteRange, Clock, Manifest, ManifestError, Period, PresentationType,
+    RejectedContent, Representation, Segment, SegmentWindow, UnsupportedFeature,
 };
 use crate::dash::selection;
 use crate::dash::watcher::MpdSnapshot;
@@ -148,6 +148,10 @@ struct Fingerprint {
     timescale: u64,
     presentation_time_offset: u64,
     timeline: bool,
+    /// A segment's key depends on it: indexed segments are byte ranges of
+    /// one resource, so work planned under another addressing cannot be
+    /// reissued with the new URLs.
+    addressing: AddressingKind,
 }
 
 /// A planned, not yet consumed segment.
@@ -444,8 +448,12 @@ impl DashPlanner {
             else {
                 continue;
             };
+            // Without its index (only the selected Representation's is
+            // read) the epoch's segments cannot be found again; like a
+            // vanished Representation, its work keeps its URLs.
             let Some(representation) =
                 selection::find(period, self.track, &epoch.representation_id)
+                    .filter(|representation| representation.pending_segment_index().is_none())
             else {
                 continue;
             };
@@ -612,6 +620,10 @@ impl DashPlanner {
     /// epoch's while it is there, else a fresh selection. Fails with the
     /// typed reason when the Period offers nothing usable for the track
     /// because it was rejected (DRM, WebM, ...).
+    ///
+    /// Only the selected Representation's Segment Index is read, so an
+    /// epoch's Representation that became `SegmentBase` in a new MPD is
+    /// replaced by the selection, as if it had vanished.
     fn representation_for<'a>(
         &mut self,
         period: &'a Period,
@@ -620,10 +632,21 @@ impl DashPlanner {
         if let Some(epoch) = self.epochs.back().filter(|epoch| epoch.period.same(key))
             && let Some(representation) =
                 selection::find(period, self.track, &epoch.representation_id)
+            && representation.pending_segment_index().is_none()
         {
             return Ok(Some(representation));
         }
         let selected = selection::select(period, self.track, &self.selection);
+        // Its index could not be read (see `OnIndexFailure::Skip`). Failing
+        // here, not when listing its segments, lets the caller deliver the
+        // work planned before this Period first.
+        if let Some(representation) = selected
+            && representation.pending_segment_index().is_some()
+        {
+            return Err(ManifestError::SegmentIndexPending {
+                representation: representation.id.clone(),
+            });
+        }
         if selected.is_none() {
             // A Period that offers this track only in rejected form (DRM,
             // WebM, ...) must not silently drop it; the rejection is the
@@ -987,6 +1010,7 @@ fn fingerprint(scope: PeriodScope<'_>) -> Result<(Fingerprint, Url), ManifestErr
             timescale: representation.timescale(),
             presentation_time_offset: representation.presentation_time_offset(),
             timeline: representation.uses_segment_timeline(),
+            addressing: representation.addressing_kind(),
         },
         url,
     ))
@@ -1125,9 +1149,10 @@ mod tests {
             }
         }
 
-        fn snapshot(&mut self, mpd: &str) -> MpdSnapshot {
+        fn snapshot(&mut self, mpd: &str, edit: impl FnOnce(&mut Manifest)) -> MpdSnapshot {
             let url = Url::parse(MPD_URL).unwrap();
-            let manifest = Manifest::parse(mpd.as_bytes(), &url).expect("valid MPD");
+            let mut manifest = Manifest::parse(mpd.as_bytes(), &url).expect("valid MPD");
+            edit(&mut manifest);
             self.generation += 1;
             if self.last_mpd.as_deref() != Some(mpd) {
                 self.manifest_generation += 1;
@@ -1146,7 +1171,13 @@ mod tests {
         }
 
         fn plan(&mut self, mpd: &str) -> PlanOutcome {
-            let snapshot = self.snapshot(mpd);
+            self.plan_edited(mpd, |_| {})
+        }
+
+        /// Plans `mpd` after `edit` changed its resolved form, as the
+        /// watcher does when it applies Segment Indexes.
+        fn plan_edited(&mut self, mpd: &str, edit: impl FnOnce(&mut Manifest)) -> PlanOutcome {
+            let snapshot = self.snapshot(mpd, edit);
             let planner = self.planner.get_or_insert_with(|| {
                 let start = decide_start(
                     &snapshot.manifest,
@@ -1414,6 +1445,201 @@ mod tests {
         assert_eq!((planned[0].0, planned[0].1.number), (1, 6));
         assert_eq!(&*planned[0].1.representation_id, "sd");
         assert_ne!(init(&next).key, init(&first).key);
+    }
+
+    #[test]
+    fn a_representation_whose_index_was_not_read_is_replaced() {
+        let live = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <Representation id="low" bandwidth="100">
+        <SegmentTemplate media="low/$Time$.m4s" initialization="low.mp4" timescale="1">
+          <SegmentTimeline><S t="0" d="2" r="4"/></SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        // The final MPD moves both Representations to `SegmentBase`; only
+        // the selected one's index is read. `low` keeps its initialization,
+        // timescale and timeline, so its epoch's fingerprint is unchanged.
+        let finished = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT14S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <Representation id="low" bandwidth="100"><BaseURL>low.mp4</BaseURL><SegmentBase indexRange="100-199"><Initialization/></SegmentBase></Representation>
+      <Representation id="high" bandwidth="900"><BaseURL>high.mp4</BaseURL><SegmentBase indexRange="100-199"/></Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 10);
+        assert!(!media(&fixture.plan(live)).is_empty());
+        let next = fixture.plan_edited(finished, |manifest| {
+            let subsegments: Vec<_> = (0..7)
+                .map(|n| crate::dash::manifest::Subsegment {
+                    range: ByteRange {
+                        first: 200 + n * 10,
+                        last: 209 + n * 10,
+                    },
+                    duration: 2,
+                })
+                .collect();
+            let index =
+                crate::dash::manifest::SubsegmentIndex::new(1, 0, 100, &subsegments).unwrap();
+            let high = &mut manifest.periods[0].adaptation_sets[0].representations[1];
+            high.apply_segment_index(&index).unwrap();
+        });
+        // Everything is planned, so the static presentation ends; it does
+        // not fail on the unread `low`.
+        assert!(
+            matches!(next.terminal, Some(TerminalCause::End)),
+            "{:?}",
+            next.terminal
+        );
+        let planned = media(&next);
+        assert!(!planned.is_empty());
+        assert!(
+            planned
+                .iter()
+                .all(|(_, meta, _)| &*meta.representation_id == "high")
+        );
+    }
+
+    #[test]
+    fn an_unread_index_the_planner_does_not_need_is_ignored() {
+        let template = r#"<SegmentTemplate media="low/$Number$.m4s" initialization="low/init.mp4" duration="2" timescale="1"/>"#;
+        let live = format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100">{template}</Representation>
+  </AdaptationSet></Period>
+</MPD>"#
+        );
+        // The final MPD adds `high`, whose index could not be read; the
+        // recording keeps `low` to its end.
+        let finished = format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT14S">
+  <Period id="p0" start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100">{template}</Representation>
+    <Representation id="high" bandwidth="900"><BaseURL>high.mp4</BaseURL><SegmentBase indexRange="100-199"/></Representation>
+  </AdaptationSet></Period>
+</MPD>"#
+        );
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 10);
+        assert!(!media(&fixture.plan(&live)).is_empty());
+        fixture.consume_all();
+        let next = fixture.plan(&finished);
+        assert!(
+            matches!(next.terminal, Some(TerminalCause::End)),
+            "{:?}",
+            next.terminal
+        );
+        let planned = media(&next);
+        assert_eq!(
+            planned
+                .iter()
+                .map(|(_, meta, _)| (&*meta.representation_id, meta.number))
+                .collect::<Vec<_>>(),
+            [("low", 6), ("low", 7)]
+        );
+    }
+
+    #[test]
+    fn work_planned_before_a_switch_to_indexed_addressing_keeps_its_urls() {
+        let live = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100">
+      <SegmentTemplate media="low/$Time$.m4s" initialization="low.mp4" timescale="1">
+        <SegmentTimeline><S t="0" d="2" r="4"/></SegmentTimeline>
+      </SegmentTemplate>
+    </Representation>
+  </AdaptationSet></Period>
+</MPD>"#;
+        // Same Representation, initialization, timescale and timeline, but
+        // now byte ranges of `low.mp4`.
+        let finished = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT14S">
+  <Period id="p0" start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100"><BaseURL>low.mp4</BaseURL><SegmentBase indexRange="100-199"><Initialization/></SegmentBase></Representation>
+  </AdaptationSet></Period>
+</MPD>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 10);
+        // Planned, not yet downloaded: reissued on the next MPD.
+        assert!(!media(&fixture.plan(live)).is_empty());
+        let next = fixture.plan_edited(finished, |manifest| {
+            let subsegments: Vec<_> = (0..7)
+                .map(|n| crate::dash::manifest::Subsegment {
+                    range: ByteRange {
+                        first: 200 + n * 10,
+                        last: 209 + n * 10,
+                    },
+                    duration: 2,
+                })
+                .collect();
+            let index =
+                crate::dash::manifest::SubsegmentIndex::new(1, 0, 100, &subsegments).unwrap();
+            let low = &mut manifest.periods[0].adaptation_sets[0].representations[0];
+            low.apply_segment_index(&index).unwrap();
+        });
+        let indexed: Vec<_> = next
+            .descriptors
+            .iter()
+            .filter(|descriptor| {
+                descriptor.key.kind == SegmentKind::Media
+                    && descriptor.parsed_url.path().ends_with("/low.mp4")
+            })
+            .collect();
+        assert!(!indexed.is_empty());
+        // Never the whole resource under a key planned for a template URL.
+        assert!(
+            indexed
+                .iter()
+                .all(|descriptor| descriptor.key.byte_range.is_some())
+        );
+    }
+
+    #[test]
+    fn an_unread_index_in_a_later_period_waits_for_earlier_work() {
+        let template = r#"<SegmentTemplate media="low/$Number$.m4s" initialization="low/init.mp4" duration="2" timescale="1"/>"#;
+        let live = format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100">{template}</Representation>
+  </AdaptationSet></Period>
+</MPD>"#
+        );
+        // `p1`'s only Representation has an unread index.
+        let finished = format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT20S">
+  <Period id="p0" start="PT0S" duration="PT10S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="low" bandwidth="100">{template}</Representation>
+  </AdaptationSet></Period>
+  <Period id="p1" start="PT10S"><AdaptationSet mimeType="video/mp4">
+    <Representation id="v" bandwidth="100"><BaseURL>v.mp4</BaseURL><SegmentBase indexRange="100-199"/></Representation>
+  </AdaptationSet></Period>
+</MPD>"#
+        );
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 6);
+        assert!(!media(&fixture.plan(&live)).is_empty());
+        fixture.consume_all();
+        let next = fixture.plan(&finished);
+        assert_eq!(next.terminal, None);
+        assert_eq!(
+            media(&next)
+                .iter()
+                .map(|(_, meta, _)| meta.number)
+                .collect::<Vec<_>>(),
+            [4, 5]
+        );
+        fixture.consume_all();
+        let last = fixture.plan(&finished);
+        assert!(
+            matches!(&last.terminal, Some(TerminalCause::Failed(reason)) if reason.contains("has not been read")),
+            "{:?}",
+            last.terminal
+        );
     }
 
     #[test]
