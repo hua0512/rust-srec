@@ -5,11 +5,14 @@
 
 use bytes::Bytes;
 
-/// Bytes to skip in a visual sample entry body before child boxes begin.
-const VISUAL_SAMPLE_ENTRY_HEADER: usize = 70;
+/// Bytes of a visual sample entry body before child boxes begin: the 8-byte
+/// SampleEntry fields plus 70 bytes of VisualSampleEntry fields
+/// (ISO/IEC 14496-12 §8.5.2.2, §12.1.3).
+const VISUAL_SAMPLE_ENTRY_HEADER: usize = 78;
 
-/// Bytes to skip in an audio sample entry body before child boxes begin.
-const AUDIO_SAMPLE_ENTRY_HEADER: usize = 20;
+/// Bytes of an audio sample entry body before child boxes begin: the 8-byte
+/// SampleEntry fields plus 20 bytes of AudioSampleEntry fields (§12.2.3).
+const AUDIO_SAMPLE_ENTRY_HEADER: usize = 28;
 
 pub fn make_box(fourcc: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let size = (8 + body.len()) as u32;

@@ -16,14 +16,13 @@ use crate::box_utils::read_box_header;
 /// Well-known ISOBMFF container box FourCCs that we descend into.
 const CONTAINER_BOXES: &[[u8; 4]] = &[*b"moov", *b"trak", *b"mdia", *b"minf", *b"stbl"];
 
-/// Bytes to skip in a visual sample entry body before child boxes begin.
-///
-/// Layout (ISO 14496-12 VisualSampleEntry):
-///   6 reserved + 2 data_ref_idx + 16 pre-defined/reserved +
+/// Bytes of a visual sample entry body before its child boxes begin
+/// (ISO/IEC 14496-12 §8.5.2.2 SampleEntry and §12.1.3 VisualSampleEntry):
+///   6 reserved + 2 data_reference_index + 16 pre-defined/reserved +
 ///   2 width + 2 height + 4 horiz_res + 4 vert_res + 4 reserved +
-///   2 frame_count + 32 compressor_name + 2 depth + 2 pre-defined = 78 bytes
-///   minus 8-byte box header already consumed by `read_box_header` = 70
-const VISUAL_SAMPLE_ENTRY_HEADER: usize = 70;
+///   2 frame_count + 32 compressor_name + 2 depth + 2 pre-defined = 78 bytes,
+/// counted from the end of the box header.
+const VISUAL_SAMPLE_ENTRY_HEADER: usize = 78;
 
 /// Options for parsing and profiling fMP4 init segments.
 #[derive(Debug, Clone, Copy, Default)]
@@ -224,6 +223,40 @@ mod tests {
     use crate::test_support::{
         make_audio_sample_entry, make_box, make_fullbox_body, make_visual_sample_entry,
     };
+
+    macro_rules! fixture {
+        ($path:literal) => {
+            Bytes::from_static(include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/",
+                $path
+            )))
+        };
+    }
+
+    /// Encoder-produced initialization segments: the codec configuration box
+    /// follows the full 78-byte visual sample entry fields, and the
+    /// resolution comes from the parameter sets inside it.
+    #[test]
+    fn real_init_segments_yield_codec_configuration_and_resolution() {
+        let options = ParseOptions {
+            include_resolution: true,
+        };
+        let h264 = parse_init_segment_with_options(&fixture!("init/h264-112x64.mp4"), options);
+        assert!(h264.has_h264 && h264.avcc_data.is_some());
+        assert_eq!(h264.video_resolution, Some(Resolution::new(112, 64)));
+
+        let h265 = parse_init_segment_with_options(&fixture!("init/hevc-96x48.mp4"), options);
+        assert!(h265.has_h265 && h265.hvcc_data.is_some());
+        assert_eq!(h265.video_resolution, Some(Resolution::new(96, 48)));
+
+        let av1 = parse_init_segment_with_options(&fixture!("init/av1-80x64.mp4"), options);
+        assert!(av1.has_av1 && av1.av1c_data.is_some());
+        assert_eq!(av1.video_resolution, Some(Resolution::new(80, 64)));
+
+        let aac = parse_init_segment(&fixture!("init/aac-mono.mp4"));
+        assert!(aac.has_aac && !aac.has_h264);
+    }
 
     #[test]
     fn test_read_box_header_basic() {
