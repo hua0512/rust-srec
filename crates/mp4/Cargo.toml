@@ -3,7 +3,7 @@ name = "mp4"
 version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
-description = "Minimal MP4/fMP4 helpers (ISOBMFF init parsing)"
+description = "Minimal MP4/fMP4 helpers: ISOBMFF init parsing, fragment validation, track merging"
 license.workspace = true
 
 [lints]
@@ -14,6 +14,7 @@ test-utils = []
 
 [dependencies]
 bytes = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 media-types = { path = "../media-types" }
 
