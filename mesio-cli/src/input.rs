@@ -23,29 +23,37 @@ enum RawMode {
 
 /// Puts the terminal in raw mode unless it has already been restored.
 fn enable_raw_mode() -> bool {
-    let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
-    if *mode != RawMode::Off {
+    let enabled = {
+        let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
+        if *mode != RawMode::Off {
+            return false;
+        }
+        let enabled = terminal::enable_raw_mode();
+        if enabled.is_ok() {
+            *mode = RawMode::On;
+        }
+        enabled
+    };
+    if let Err(error) = enabled {
+        info!(%error, "Failed to enable raw mode. Input handling will be disabled.");
         return false;
     }
-    if terminal::enable_raw_mode().is_err() {
-        info!("Failed to enable raw mode. Input handling will be disabled.");
-        return false;
-    }
-    *mode = RawMode::On;
     true
 }
 
 /// Takes the terminal out of raw mode if this process put it there, and
 /// keeps it from being enabled again. Callable from any thread, including
-/// while the input handler is blocked reading the terminal.
-pub fn restore_terminal() {
+/// while the input handler is blocked reading the terminal. On failure the
+/// terminal stays marked raw, so a later call retries.
+///
+/// It does not log, so a forced exit can call it with stderr stalled.
+pub fn restore_terminal() -> io::Result<()> {
     let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
-    if *mode == RawMode::On && terminal::disable_raw_mode().is_err() {
-        // Still `On`, so a later call retries; raw mode is not re-enabled.
-        info!("Failed to disable raw mode.");
-        return;
+    if *mode == RawMode::On {
+        terminal::disable_raw_mode()?;
     }
     *mode = RawMode::Restored;
+    Ok(())
 }
 
 /// Listens for user input that requests a stop, and cancels `token` on it.
@@ -112,7 +120,9 @@ fn handle_terminal_input(token: CancellationToken) {
         }
     }
 
-    restore_terminal();
+    if let Err(error) = restore_terminal() {
+        info!(%error, "Failed to disable raw mode.");
+    }
 }
 
 /// Handle input from stdin (piped input)

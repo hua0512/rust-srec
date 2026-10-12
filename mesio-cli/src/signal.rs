@@ -1,6 +1,7 @@
 //! Turns termination signals into the same graceful stop as pressing `q`.
 
 use std::io;
+use std::thread;
 
 use pipeline_common::CancellationToken;
 use tracing::info;
@@ -19,20 +20,25 @@ pub fn install() -> io::Result<Signals> {
 /// finished. A signal that arrives once a stop is under way (after a signal,
 /// `q`, or a closed output pipe) exits immediately.
 ///
-/// Logging comes after acting on a signal, and the forced exit neither logs
-/// nor flushes stdout: either may write to a pipe that has stopped draining,
-/// which is when a forced exit is most needed.
+/// Nothing here writes to stderr or flushes stdout, either of which may be a
+/// pipe that has stopped draining, which is when a forced exit is most needed.
 pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
     while let Some(signal) = signals.recv().await {
         if token.is_cancelled() {
-            crate::input::restore_terminal();
+            // Exiting matters more than reporting a failure to restore.
+            let _ = crate::input::restore_terminal();
             exit_now(FORCED_EXIT_CODE);
         }
         token.cancel();
-        info!(
-            signal,
-            "Finishing the current file before exiting; send the signal again to stop immediately"
-        );
+        // The notice is optional, so it is dropped if no thread can log it.
+        let _ = thread::Builder::new()
+            .name("mesio-signal-log".to_owned())
+            .spawn(move || {
+                info!(
+                    signal,
+                    "Finishing the current file before exiting; send the signal again to stop immediately"
+                );
+            });
     }
 }
 
@@ -55,9 +61,11 @@ fn exit_now(code: i32) -> ! {
     unsafe { libc::_exit(code) }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn exit_now(code: i32) -> ! {
-    std::process::exit(code)
+    // SAFETY: `ExitProcess` only terminates the process; it bypasses Rust's
+    // stdout flush, which is the point.
+    unsafe { windows_sys::Win32::System::Threading::ExitProcess(code.unsigned_abs()) }
 }
 
 #[cfg(unix)]
