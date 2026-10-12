@@ -2,9 +2,8 @@
 
 use std::io;
 
-use crossterm::terminal;
 use pipeline_common::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Exit status after a forced stop: what a shell reports for a process
 /// killed by SIGINT (128 + 2).
@@ -26,11 +25,7 @@ pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
                 signal,
                 "Stopping immediately; the current file may be incomplete"
             );
-            // The terminal input handler restores the terminal only when it
-            // gets to run again, which an immediate exit does not allow.
-            if let Err(error) = terminal::disable_raw_mode() {
-                debug!(%error, "Failed to restore the terminal mode");
-            }
+            crate::input::restore_terminal();
             std::process::exit(FORCED_EXIT_CODE);
         }
         info!(

@@ -33,7 +33,10 @@ use utils::{parse_headers, parse_params, parse_size, parse_time};
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
-    if let Err(e) = bootstrap() {
+    let result = bootstrap();
+    // The input thread may still hold the terminal in raw mode.
+    input::restore_terminal();
+    if let Err(e) = result {
         // Check if it's a broken pipe error - this is expected behavior
         // when the consumer closes the pipe (e.g., `mesio ... | head -c 1000`)
         if matches!(e, AppError::BrokenPipe) {
@@ -58,15 +61,14 @@ async fn bootstrap() -> Result<(), AppError> {
     // Create a cancellation token
     let token = CancellationToken::new();
 
-    // Ends the input handler however bootstrap returns: the runtime waits for
-    // blocking tasks before the process can exit. A child token, so that the
-    // signal handler still tells a requested stop from this one.
-    let input_done = token.child_token();
-    let _end_input = input_done.clone().drop_guard();
-    tokio::task::spawn_blocking({
-        let token = token.clone();
-        move || input_handler(token, input_done)
-    });
+    // A thread of its own rather than a runtime task: it blocks, and runtime
+    // shutdown would wait for it. The process exits without joining it.
+    let input_thread = std::thread::Builder::new()
+        .name("mesio-input".to_owned())
+        .spawn({
+            let token = token.clone();
+            move || input_handler(token)
+        });
 
     // Setup logging with tracing-indicatif
     let log_level = if args.verbose {
@@ -148,6 +150,10 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(file_layer)
             .with(console_layer)
             .init();
+    }
+
+    if let Err(error) = input_thread {
+        warn!(%error, "Failed to start the input handler; `q` will not stop mesio");
     }
 
     match signal::install() {
