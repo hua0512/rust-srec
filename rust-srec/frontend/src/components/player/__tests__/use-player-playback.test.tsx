@@ -462,6 +462,25 @@ describe('playback feedback and recovery', () => {
     );
   });
 
+  it.each([
+    ['dash', 'https://media.example/live/manifest?id=1'],
+    [undefined, 'https://media.example/live/manifest.mpd'],
+  ])(
+    'reports DASH (%s, %s) as unsupported instead of trying native playback',
+    async (mediaType, url) => {
+      const view = render(
+        <PlaybackHarness {...defaultOptions} url={url} mediaType={mediaType} />,
+      );
+      await waitFor(() =>
+        expect(view.container.firstElementChild).toHaveAttribute(
+          'data-error',
+          'unsupported',
+        ),
+      );
+      expect(artplayerMock.instances).toHaveLength(0);
+    },
+  );
+
   it('rebuilds when switching from direct to server proxy', async () => {
     const view = render(<PlaybackHarness {...defaultOptions} />);
     await waitFor(() => expect(artplayerMock.instances).toHaveLength(1));

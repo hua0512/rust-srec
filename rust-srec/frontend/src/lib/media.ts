@@ -1,5 +1,6 @@
 export type PlayerMediaType =
   | 'hls'
+  | 'dash'
   | 'flv'
   | 'mpegts'
   | 'mp4'
@@ -23,6 +24,10 @@ const PLAYABLE_EXTENSIONS = new Set([
 const MEDIA_TYPE_ALIASES: Readonly<Record<string, PlayerMediaType>> = {
   hls: 'hls',
   m3u8: 'hls',
+  // No in-browser DASH player: these go to the unsupported-format message,
+  // not to native playback.
+  dash: 'dash',
+  mpd: 'dash',
   flv: 'flv',
   'http-flv': 'flv',
   ts: 'mpegts',

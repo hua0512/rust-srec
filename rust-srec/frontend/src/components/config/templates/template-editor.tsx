@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useMemo, useRef } from 'react';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,7 @@ import { SharedConfigEditor } from '../shared-config-editor';
 import type { ProxyRouteInherit } from '../shared/proxy-route-picker';
 import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import { enginesQueryOptions } from '@/api/engines';
+import { withEngineOverrideChecks } from './engine-override-checks';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
@@ -95,10 +98,28 @@ export function TemplateEditor({
   isSubmitting,
   mode,
 }: TemplateEditorProps) {
+  const { i18n } = useLingui();
   const { data: engines = [] } = useQuery(enginesQueryOptions);
+  // The resolver is created once; it reads the engines current at validation time.
+  const enginesRef = useRef(engines);
+  enginesRef.current = engines;
+  const resolver = useMemo(
+    () =>
+      withEngineOverrideChecks(
+        zodResolver(
+          UpdateTemplateRequestSchema,
+        ) as Resolver<TemplateFormValues>,
+        () => enginesRef.current,
+        () =>
+          i18n._(
+            msg`With the engine's settings, this records neither video nor audio`,
+          ),
+      ),
+    [i18n],
+  );
 
   const form = useForm<TemplateFormValues>({
-    resolver: zodResolver(UpdateTemplateRequestSchema),
+    resolver,
     defaultValues: toTemplateFormValues(template),
   });
   const { reset } = form;

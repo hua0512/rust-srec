@@ -39,6 +39,17 @@ describe('player media type resolution', () => {
     ).toBe('mp4');
   });
 
+  it('recognises DASH so it is never handed to native playback', () => {
+    expect(normalizePlayerMediaType('DASH')).toBe('dash');
+    expect(normalizePlayerMediaType('.mpd')).toBe('dash');
+    expect(
+      resolvePlayerMediaType(
+        undefined,
+        'https://cdn.example/live/manifest.mpd?t=1',
+      ),
+    ).toBe('dash');
+  });
+
   it('returns auto when no supported type is known', () => {
     expect(resolvePlayerMediaType('unknown', '/api/media/id/content')).toBe(
       'auto',

@@ -100,6 +100,8 @@ function getArtplayerType(mediaType: PlayerMediaType): ArtplayerMediaType {
     case 'native':
     case 'auto':
       return 'auto';
+    case 'dash':
+      throw new PlaybackConfigurationError('unsupported');
   }
 }
 
@@ -393,6 +395,8 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
       setSupportsLivePresets(false);
 
       try {
+        // Throws for formats the browser player cannot play.
+        const artplayerType = getArtplayerType(resolvedMediaType);
         const { default: Artplayer } = await import('artplayer');
         if (disposed) return;
 
@@ -400,7 +404,6 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
         // default, which can leave Chromium's MediaSource video surface black.
         Artplayer.FULLSCREEN_WEB_IN_BODY = false;
 
-        const artplayerType = getArtplayerType(resolvedMediaType);
         const options: ArtplayerOptions = {
           container,
           url: playUrl,
