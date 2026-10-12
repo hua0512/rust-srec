@@ -3,7 +3,7 @@
 use std::io;
 
 use pipeline_common::CancellationToken;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Exit status after a forced stop: what a shell reports for a process
 /// killed by SIGINT (128 + 2).
@@ -18,22 +18,46 @@ pub fn install() -> io::Result<Signals> {
 /// Cancels `token` on the first termination signal, so the current file is
 /// finished. A signal that arrives once a stop is under way (after a signal,
 /// `q`, or a closed output pipe) exits immediately.
+///
+/// Logging comes after acting on a signal, and the forced exit neither logs
+/// nor flushes stdout: either may write to a pipe that has stopped draining,
+/// which is when a forced exit is most needed.
 pub async fn stop_on_signal(mut signals: Signals, token: CancellationToken) {
     while let Some(signal) = signals.recv().await {
         if token.is_cancelled() {
-            warn!(
-                signal,
-                "Stopping immediately; the current file may be incomplete"
-            );
             crate::input::restore_terminal();
-            std::process::exit(FORCED_EXIT_CODE);
+            exit_now(FORCED_EXIT_CODE);
         }
+        token.cancel();
         info!(
             signal,
             "Finishing the current file before exiting; send the signal again to stop immediately"
         );
-        token.cancel();
     }
+}
+
+/// Gives SIGINT and SIGTERM back their default action of ending the process,
+/// for when the runtime that handled them has shut down.
+pub fn restore_default_actions() {
+    #[cfg(unix)]
+    for signal in [libc::SIGINT, libc::SIGTERM] {
+        // SAFETY: `SIG_DFL` is a valid disposition for both signals, and
+        // nothing handles them once the runtime has shut down.
+        unsafe { libc::signal(signal, libc::SIG_DFL) };
+    }
+}
+
+/// Ends the process without flushing stdio or running exit handlers.
+#[cfg(unix)]
+fn exit_now(code: i32) -> ! {
+    // SAFETY: `_exit` only terminates the process; skipping the stdio flush
+    // and exit handlers is the point.
+    unsafe { libc::_exit(code) }
+}
+
+#[cfg(not(unix))]
+fn exit_now(code: i32) -> ! {
+    std::process::exit(code)
 }
 
 #[cfg(unix)]

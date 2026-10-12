@@ -36,6 +36,7 @@ fn main() {
     let result = bootstrap();
     // The input thread may still hold the terminal in raw mode.
     input::restore_terminal();
+    signal::restore_default_actions();
     if let Err(e) = result {
         // Check if it's a broken pipe error - this is expected behavior
         // when the consumer closes the pipe (e.g., `mesio ... | head -c 1000`)

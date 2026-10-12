@@ -41,7 +41,9 @@ fn enable_raw_mode() -> bool {
 pub fn restore_terminal() {
     let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
     if *mode == RawMode::On && terminal::disable_raw_mode().is_err() {
+        // Still `On`, so a later call retries; raw mode is not re-enabled.
         info!("Failed to disable raw mode.");
+        return;
     }
     *mode = RawMode::Restored;
 }
