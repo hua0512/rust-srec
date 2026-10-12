@@ -79,6 +79,9 @@ jobs:
     needs: check-changes
     if: needs.check-changes.outputs.rust == 'true'
     strategy:
+      # Each platform reports its own result: a failure on one must not
+      # cancel the others, some of which are required to merge.
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
