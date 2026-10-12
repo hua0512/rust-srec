@@ -7,8 +7,6 @@
 use bytes::Bytes;
 use std::sync::Arc;
 
-use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData};
-
 use super::descriptor::SegmentDescriptor;
 
 #[derive(Debug, Clone)]
@@ -69,28 +67,5 @@ impl SegmentPayload {
 
     pub fn discontinuity(&self) -> bool {
         self.descriptor().discontinuity
-    }
-
-    /// Convert into the consumer-facing `HlsData`. The `MediaSegment` clone is
-    /// metadata-only; the media `Bytes` moves as a handle.
-    pub fn into_hls_data(self) -> HlsData {
-        match self {
-            // A TS init section is TS packets; consumers take it as TS data.
-            Self::Ts { data, descriptor } | Self::TsInit { data, descriptor } => {
-                HlsData::ts(descriptor.media_segment.as_ref().clone(), data)
-            }
-            Self::Mp4Init { data, descriptor } => {
-                HlsData::M4sData(M4sData::InitSegment(M4sInitSegmentData {
-                    segment: descriptor.media_segment.as_ref().clone(),
-                    data,
-                }))
-            }
-            Self::Mp4Media { data, descriptor } => {
-                HlsData::M4sData(M4sData::Segment(M4sSegmentData {
-                    segment: descriptor.media_segment.as_ref().clone(),
-                    data,
-                }))
-            }
-        }
     }
 }

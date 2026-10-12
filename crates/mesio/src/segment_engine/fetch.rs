@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
+use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_RANGE, HeaderMap, HeaderValue, RANGE};
 use tokio_util::sync::CancellationToken;
@@ -19,42 +20,63 @@ use url::Url;
 use crate::CacheManager;
 use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::downloader::ClientPool;
-use crate::hls::HlsDownloaderError;
-use crate::hls::config::HlsConfig;
-use crate::hls::metrics::PerformanceMetrics;
-use crate::hls::segment_utils::is_m4s_segment;
 use crate::redact::Redacted;
-use crate::session::{DownloadEvent, EventSink, ResourceId};
+use crate::session::{DownloadEvent, EventSink};
 
 use super::budget::{ByteBudget, ByteReservation};
-use super::crypto::{CryptoExecutor, KeyCache, validate_key_bytes};
+use super::config::SegmentCoreConfig;
+use super::container::{ContainerKind, is_m4s_segment};
 use super::descriptor::{
-    EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentSource,
+    EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor, SegmentSource,
 };
-use super::identity::{ByteRangeKey, SegmentKind};
+use super::identity::{ByteRangeKey, SegmentKey, SegmentKind};
+use super::metrics::PerformanceMetrics;
 use super::payload::SegmentPayload;
 use super::store::{FailureClass, ReadyJob, SegmentOutcome};
 
 /// Everything a fetch-and-process task needs, shared across all tasks.
 pub struct FetchContext {
     pub clients: Arc<ClientPool>,
-    pub config: Arc<HlsConfig>,
+    pub config: Arc<SegmentCoreConfig>,
     pub budget: Arc<ByteBudget>,
-    pub crypto: CryptoExecutor,
-    pub key_cache: KeyCache,
+    /// Decrypts segments whose descriptor carries `encryption`. Protocols
+    /// whose descriptors never carry it pass `None`; an encrypted segment then
+    /// fails terminally as unsupported crypto.
+    pub decryptor: Option<Arc<dyn SegmentDecryptor>>,
     pub cache_manager: Option<Arc<CacheManager>>,
     pub metrics: Option<Arc<PerformanceMetrics>>,
     pub cancel: CancellationToken,
     pub events: Option<EventSink>,
 }
 
-struct Failure {
-    class: FailureClass,
-    reason: String,
+/// Whole-segment decryption for descriptors carrying an
+/// [`EncryptionDescriptor`] with a supported method.
+pub trait SegmentDecryptor: Send + Sync {
+    /// Decrypt `encrypted`, returning the plaintext together with the
+    /// processing reservation that keeps it charged. `download_reservation`
+    /// keeps the encrypted input charged until the decrypt has consumed it;
+    /// the caller releases it once this returns and holds the returned
+    /// reservation until the payload is wrapped.
+    fn decrypt<'a>(
+        &'a self,
+        ctx: &'a FetchContext,
+        encryption: &'a EncryptionDescriptor,
+        msn: u64,
+        encrypted: Bytes,
+        download_reservation: &'a mut ByteReservation,
+    ) -> BoxFuture<'a, Result<(Bytes, ByteReservation), Failure>>;
+}
+
+const NO_DECRYPTOR: &str = "no decryptor is configured for encrypted segments";
+
+/// A failed fetch or decrypt, classified for the store's retry policy.
+pub struct Failure {
+    pub class: FailureClass,
+    pub reason: String,
 }
 
 impl Failure {
-    fn new(class: FailureClass, reason: impl Into<String>) -> Self {
+    pub fn new(class: FailureClass, reason: impl Into<String>) -> Self {
         Self {
             class,
             reason: reason.into(),
@@ -86,6 +108,14 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
                 reason: Arc::from(format!("unsupported key format: {format}")),
             };
         }
+        if ctx.decryptor.is_none() {
+            return SegmentOutcome::Failed {
+                key,
+                msn,
+                class: FailureClass::UnsupportedCrypto,
+                reason: Arc::from(NO_DECRYPTOR),
+            };
+        }
     }
 
     // Cache lookup keys on the normalized identity URI (not the volatile
@@ -102,9 +132,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         emit_event(
             &ctx,
             DownloadEvent::ResourceFinished {
-                resource: ResourceId::HlsSegment {
-                    key: descriptor.key.clone(),
-                },
+                resource: descriptor.resource_id(),
                 bytes: bytes.len() as u64,
                 from_cache: true,
             },
@@ -126,14 +154,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     }
 
     // --- Download (attempt-level retry, deliberately tight) ---
-    let raw = match download_body(
-        &ctx,
-        &descriptor.parsed_url,
-        &descriptor.key,
-        &mut reservation,
-    )
-    .await
-    {
+    let raw = match download_body(&ctx, &descriptor, &mut reservation).await {
         Ok(bytes) => bytes,
         Err(failure) => {
             if let Some(metrics) = &ctx.metrics {
@@ -158,7 +179,15 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     // for its drop.
     let (final_bytes, output_reservation): (Bytes, ByteReservation) = match &descriptor.encryption {
         Some(enc) if enc.method == EncryptionMethod::Aes128Cbc => {
-            match decrypt_segment(&ctx, enc, msn, raw, &mut reservation).await {
+            let decrypted = match &ctx.decryptor {
+                Some(decryptor) => {
+                    decryptor
+                        .decrypt(&ctx, enc, msn, raw, &mut reservation)
+                        .await
+                }
+                None => Err(Failure::new(FailureClass::UnsupportedCrypto, NO_DECRYPTOR)),
+            };
+            match decrypted {
                 Ok((bytes, processing)) => {
                     // The encrypted input was consumed by decrypt; its download
                     // reservation is released here and the output is now held by
@@ -183,7 +212,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
 
     if let Some(cache) = &ctx.cache_manager {
         let metadata = CacheMetadata::new(final_bytes.len() as u64)
-            .with_expiration(ctx.config.processor_config.processed_segment_ttl);
+            .with_expiration(ctx.config.fetch.processed_segment_ttl);
         if let Err(e) = cache.put(cache_key, final_bytes.clone(), metadata).await {
             warn!(msn, error = %crate::redact::redact_diagnostic(&e), "failed to cache segment");
         }
@@ -201,7 +230,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
 
 /// Keyed like `SegmentKey`: an init and a media segment at the same URI and
 /// range are distinct identities, so they must not share a cache entry.
-fn segment_cache_key(key: &super::identity::SegmentKey) -> CacheKey {
+fn segment_cache_key(key: &SegmentKey) -> CacheKey {
     let kind = match key.kind {
         SegmentKind::Init => "init",
         SegmentKind::Media => "media",
@@ -217,24 +246,34 @@ fn segment_cache_key(key: &super::identity::SegmentKey) -> CacheKey {
     )
 }
 
-fn wrap_payload(
-    data: Bytes,
-    descriptor: &Arc<super::descriptor::SegmentDescriptor>,
-) -> SegmentPayload {
+fn wrap_payload(data: Bytes, descriptor: &Arc<SegmentDescriptor>) -> SegmentPayload {
     let descriptor = Arc::clone(descriptor);
-    // RFC 8216 allows EXT-X-MAP for MPEG-TS too, so a map says nothing about
-    // the container; the bytes do.
-    let is_ts = is_mpeg_ts(&data);
-    if descriptor.key.kind == SegmentKind::Init {
-        if is_ts {
-            SegmentPayload::TsInit { data, descriptor }
-        } else {
-            SegmentPayload::Mp4Init { data, descriptor }
-        }
-    } else if !is_ts && (descriptor.init_key.is_some() || is_m4s_segment(&descriptor.parsed_url)) {
-        SegmentPayload::Mp4Media { data, descriptor }
+    let container = descriptor
+        .meta
+        .container()
+        .unwrap_or_else(|| detect_container(&data, &descriptor));
+    match (descriptor.key.kind, container) {
+        (SegmentKind::Init, ContainerKind::Ts) => SegmentPayload::TsInit { data, descriptor },
+        (SegmentKind::Init, ContainerKind::Fmp4) => SegmentPayload::Mp4Init { data, descriptor },
+        (SegmentKind::Media, ContainerKind::Ts) => SegmentPayload::Ts { data, descriptor },
+        (SegmentKind::Media, ContainerKind::Fmp4) => SegmentPayload::Mp4Media { data, descriptor },
+    }
+}
+
+/// Container of a body whose manifest does not declare one. An init map says
+/// nothing about the container (RFC 8216 allows `EXT-X-MAP` for MPEG-TS too);
+/// the bytes do. Media that is not TS is fMP4 when it has an init or its URL
+/// looks like a fragment.
+fn detect_container(data: &[u8], descriptor: &SegmentDescriptor) -> ContainerKind {
+    if is_mpeg_ts(data) {
+        ContainerKind::Ts
+    } else if descriptor.key.kind == SegmentKind::Init
+        || descriptor.init_key.is_some()
+        || is_m4s_segment(&descriptor.parsed_url)
+    {
+        ContainerKind::Fmp4
     } else {
-        SegmentPayload::Ts { data, descriptor }
+        ContainerKind::Ts
     }
 }
 
@@ -258,19 +297,18 @@ fn is_mpeg_ts(data: &[u8]) -> bool {
 /// frees the slot and re-engages the refreshed-URL path) handle it.
 async fn download_body(
     ctx: &FetchContext,
-    url: &Url,
-    key: &super::identity::SegmentKey,
+    descriptor: &SegmentDescriptor,
     reservation: &mut ByteReservation,
 ) -> Result<Bytes, Failure> {
     const MAX_ATTEMPT_RETRIES: u32 = 2;
     let attempt_retries = ctx
         .config
-        .fetcher_config
+        .fetch
         .max_segment_retries
         .min(MAX_ATTEMPT_RETRIES);
     let retry_delay = ctx
         .config
-        .fetcher_config
+        .fetch
         .segment_retry_delay_base
         .min(Duration::from_secs(1));
 
@@ -284,7 +322,7 @@ async fn download_body(
                 _ = tokio::time::sleep(retry_delay) => {}
             }
         }
-        match download_once(ctx, url, key, reservation).await {
+        match download_once(ctx, descriptor, reservation).await {
             Ok(bytes) => return Ok(bytes),
             Err((failure, retryable)) => {
                 if !retryable {
@@ -308,16 +346,18 @@ async fn download_body(
 /// (network hiccups and 5xx); everything else goes straight back to the store.
 async fn download_once(
     ctx: &FetchContext,
-    url: &Url,
-    key: &super::identity::SegmentKey,
+    descriptor: &SegmentDescriptor,
     reservation: &mut ByteReservation,
 ) -> Result<Bytes, (Failure, bool)> {
+    let url: &Url = &descriptor.parsed_url;
+    let byte_range = descriptor.key.byte_range;
+    let resource = descriptor.resource_id();
     let client = ctx.clients.client_for_url(url);
     let mut request = client
         .get(url.clone())
-        .query(&ctx.config.base.params)
-        .timeout(ctx.config.fetcher_config.segment_download_timeout);
-    if let Some(range) = key.byte_range {
+        .query(&ctx.config.fetch.params)
+        .timeout(ctx.config.fetch.segment_download_timeout);
+    if let Some(range) = byte_range {
         let Some(end) = range_end(range) else {
             return Err((
                 Failure::new(
@@ -358,20 +398,20 @@ async fn download_once(
         // store (it owns 404/429 pacing and the 401/403 freshness rule).
         return Err((failure, status.is_server_error()));
     }
-    let range_mode = validate_range_response(status, response.headers(), key.byte_range)
-        .map_err(|e| (e, false))?;
+    let range_mode =
+        validate_range_response(status, response.headers(), byte_range).map_err(|e| (e, false))?;
     let http_version = response.version();
     let content_length = response.content_length();
     emit_event(
         ctx,
         DownloadEvent::ResourceStarted {
-            resource: ResourceId::HlsSegment { key: key.clone() },
+            resource: resource.clone(),
             display_url: Arc::from(Redacted(url).to_string()),
             content_length,
         },
     );
 
-    let max_segment_size = ctx.config.engine_config.max_segment_size_bytes;
+    let max_segment_size = ctx.config.fetch.max_segment_size_bytes;
 
     // A size that can never fit the whole budget is terminal — retrying it
     // through the lifecycle budget would just burn reschedules.
@@ -448,8 +488,8 @@ async fn download_once(
         let new_len = buffer.len() as u64 + chunk.len() as u64;
         progress_since_last += chunk.len() as u64;
         let elapsed = last_progress_emit.elapsed();
-        let progress_min_bytes = ctx.config.fetcher_config.progress_emit_min_bytes;
-        let progress_min_interval = ctx.config.fetcher_config.progress_emit_min_interval;
+        let progress_min_bytes = ctx.config.fetch.progress_emit_min_bytes;
+        let progress_min_interval = ctx.config.fetch.progress_emit_min_interval;
         if progress_min_bytes == 0
             || progress_min_interval.is_zero()
             || progress_since_last >= progress_min_bytes
@@ -458,7 +498,7 @@ async fn download_once(
             emit_event(
                 ctx,
                 DownloadEvent::Progress {
-                    resource: ResourceId::HlsSegment { key: key.clone() },
+                    resource: resource.clone(),
                     bytes_delta: progress_since_last,
                     bytes_total: new_len,
                 },
@@ -504,7 +544,7 @@ async fn download_once(
         emit_event(
             ctx,
             DownloadEvent::Progress {
-                resource: ResourceId::HlsSegment { key: key.clone() },
+                resource: resource.clone(),
                 bytes_delta: progress_since_last,
                 bytes_total: bytes.len() as u64,
             },
@@ -523,7 +563,7 @@ async fn download_once(
     emit_event(
         ctx,
         DownloadEvent::ResourceFinished {
-            resource: ResourceId::HlsSegment { key: key.clone() },
+            resource,
             bytes: bytes.len() as u64,
             from_cache: false,
         },
@@ -687,189 +727,6 @@ fn range_end(range: ByteRangeKey) -> Option<u64> {
         .and_then(|last| range.offset.checked_add(last))
 }
 
-/// Decrypt the encrypted body, returning the plaintext together with the
-/// processing reservation that keeps it charged. The caller drops the
-/// download reservation once this returns (the input has been consumed) and
-/// holds the returned processing reservation until the payload is wrapped.
-async fn decrypt_segment(
-    ctx: &FetchContext,
-    enc: &EncryptionDescriptor,
-    msn: u64,
-    encrypted: Bytes,
-    download_reservation: &mut ByteReservation,
-) -> Result<(Bytes, ByteReservation), Failure> {
-    let key_bytes = fetch_key(ctx, enc).await?;
-
-    let iv = match enc.iv {
-        EffectiveIv::Explicit(iv) => iv,
-        EffectiveIv::MediaSequenceDerived(_) => {
-            // Per RFC 8216: big-endian MSN of *this* segment in a 16-octet IV.
-            let mut iv = [0u8; 16];
-            iv[8..].copy_from_slice(&msn.to_be_bytes());
-            iv
-        }
-    };
-
-    // Reserve the decrypted-output upper bound (AES-CBC output is never
-    // larger than its input) BEFORE dispatching crypto. The wait is FIFO; a
-    // task parked here still holds its download reservation, so a decrypt
-    // backlog throttles admission instead of piling up uncounted bytes.
-    let encrypted_len = encrypted.len() as u64;
-    let mut processing = match ctx.budget.processing.reserve(encrypted_len).await {
-        Ok(reservation) => reservation,
-        Err(_) => {
-            return Err(Failure::new(
-                FailureClass::Oversize,
-                format!(
-                    "encrypted input of {encrypted_len} bytes can never fit max_processing_bytes"
-                ),
-            ));
-        }
-    };
-
-    let started = std::time::Instant::now();
-    let decrypted = ctx
-        .crypto
-        .decrypt_aes128_cbc(encrypted, key_bytes, iv)
-        .await
-        .map_err(|e| Failure::new(FailureClass::Decode, e.to_string()))?;
-    // The encrypted input has been consumed by the decrypt copy. The caller
-    // drops the download reservation on success; reconcile it to 0 here too so
-    // an error return (which the caller does not drain) cannot leave the input
-    // charged. There is no release-then-recharge hole while waiting for the
-    // crypto gate: the input stayed charged until decrypt consumed it.
-    download_reservation.reconcile(0);
-    processing.reconcile(decrypted.len() as u64);
-
-    if let Some(metrics) = &ctx.metrics {
-        metrics.record_decryption(decrypted.len() as u64, started.elapsed().as_millis() as u64);
-    }
-
-    // The processing reservation is returned to the caller, which holds it
-    // across cache.put and releases it only after the payload is wrapped.
-    Ok((decrypted, processing))
-}
-
-/// Fetch (or hit) the decryption key. Single-flight per identity URI via the
-/// key cache; the load future uses the *latest* fetch URL.
-async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8; 16], Failure> {
-    let identity = Arc::clone(&enc.key_identity_uri);
-    let fetch_url = Arc::clone(&enc.key_fetch_url);
-    // Key resource events describe the one real fetch, not every segment
-    // that reads the cached key.
-    let result = ctx
-        .key_cache
-        .get_with(Arc::clone(&identity), {
-            let events = ctx.events.clone();
-            let ctx_clients = Arc::clone(&ctx.clients);
-            let fetcher = ctx.config.fetcher_config.clone();
-            let params = ctx.config.base.params.clone();
-            let cancel = ctx.cancel.clone();
-            let identity = Arc::clone(&identity);
-            async move {
-                if let Some(events) = &events {
-                    events.emit(DownloadEvent::ResourceStarted {
-                        resource: ResourceId::HlsKey {
-                            uri: Arc::clone(&identity),
-                        },
-                        display_url: Arc::from(Redacted(&fetch_url).to_string()),
-                        content_length: None,
-                    });
-                }
-                let client = ctx_clients.client_for_url(&fetch_url);
-                let mut retries = 0;
-                loop {
-                    let attempt = async {
-                        let response = client
-                            .get(fetch_url.as_ref().clone())
-                            .query(&params)
-                            .timeout(fetcher.key_download_timeout)
-                            .send()
-                            .await
-                            .map_err(HlsDownloaderError::from)?;
-                        let status = response.status();
-                        if !status.is_success() {
-                            return Err(HlsDownloaderError::http_status(
-                                status,
-                                fetch_url.as_str(),
-                                "hls key fetch",
-                            ));
-                        }
-                        let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
-                        validate_key_bytes(&bytes, &identity)
-                    };
-                    let error = match attempt.await {
-                        Ok(key) => return Ok(key),
-                        Err(error) => error,
-                    };
-                    if retries >= fetcher.max_key_retries || !is_retryable_key_error(&error) {
-                        return Err(error);
-                    }
-                    let delay = fetcher
-                        .key_retry_delay_base
-                        .checked_mul(1u32 << retries.min(16))
-                        .unwrap_or(fetcher.max_key_retry_delay)
-                        .min(fetcher.max_key_retry_delay);
-                    retries += 1;
-                    trace!(retries, ?delay, "key fetch failed; retrying");
-                    tokio::select! {
-                        _ = cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
-                        _ = tokio::time::sleep(delay) => {}
-                    }
-                }
-            }
-        })
-        .await;
-
-    match result {
-        Ok((key, fetched)) => {
-            if fetched {
-                emit_event(
-                    ctx,
-                    DownloadEvent::ResourceFinished {
-                        resource: ResourceId::HlsKey { uri: identity },
-                        bytes: key.len() as u64,
-                        from_cache: false,
-                    },
-                );
-            }
-            Ok(key)
-        }
-        Err(e) => Err(match e.as_ref() {
-            HlsDownloaderError::HttpStatus { status, .. } => Failure::new(
-                FailureClass::Http(status.as_u16()),
-                format!("key fetch failed: {e}"),
-            ),
-            HlsDownloaderError::Network { source } if source.is_timeout() => {
-                Failure::new(FailureClass::Timeout, format!("key fetch timed out: {e}"))
-            }
-            HlsDownloaderError::Network { .. } => {
-                Failure::new(FailureClass::Network, format!("key fetch failed: {e}"))
-            }
-            HlsDownloaderError::Decryption { .. } => Failure::new(
-                FailureClass::InvalidFormat,
-                format!("key validation failed: {e}"),
-            ),
-            other => Failure::new(FailureClass::Network, format!("key fetch failed: {other}")),
-        }),
-    }
-}
-
-/// Key fetch failures worth retrying: transport errors, timeouts, and
-/// server-side or rate-limit statuses. A 4xx or an invalid key would fail the
-/// same way again.
-fn is_retryable_key_error(error: &HlsDownloaderError) -> bool {
-    match error {
-        HlsDownloaderError::Network { .. } => true,
-        HlsDownloaderError::HttpStatus { status, .. } => {
-            status.is_server_error()
-                || *status == reqwest::StatusCode::REQUEST_TIMEOUT
-                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
-        }
-        _ => false,
-    }
-}
-
 fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
     if e.is_timeout() {
         FailureClass::Timeout
@@ -881,8 +738,7 @@ fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hls::engine::descriptor::SegmentDescriptor;
-    use crate::hls::engine::identity::SegmentKey;
+    use crate::segment_engine::descriptor::{SegmentDescriptor, SegmentMeta};
 
     fn descriptor(
         uri: &str,
@@ -901,10 +757,10 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key,
-            media_segment: Arc::new(m3u8_rs::MediaSegment {
+            meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 ..Default::default()
-            }),
+            })),
         })
     }
 

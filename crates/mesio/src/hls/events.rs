@@ -1,24 +1,7 @@
 use hls::HlsData;
 use std::time::Duration;
 
-/// Reason why a gap was skipped in the reorder buffer
-#[derive(Debug, Clone)]
-pub enum GapSkipReason {
-    /// Gap skipped because count threshold was exceeded
-    CountThreshold(u64),
-    /// Gap skipped because duration threshold was exceeded
-    DurationThreshold(Duration),
-    /// Gap skipped because both count and duration thresholds were exceeded
-    BothThresholds { count: u64, duration: Duration },
-    /// Upstream declared these MSNs will never arrive (window slide, ad
-    /// filtering, or terminal segment failure) — the assembler advances
-    /// without waiting on any threshold.
-    Upstream,
-    /// The reorder buffer reached its byte/segment cap while blocked on this
-    /// gap; the skip decision is forced immediately instead of waiting at the
-    /// cap (which would deadlock output behind an out-of-order result).
-    BufferPressure,
-}
+pub use crate::segment_engine::assembler::GapSkipReason;
 
 #[derive(Debug, Clone)]
 pub enum HlsStreamEvent {

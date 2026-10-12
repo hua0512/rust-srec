@@ -13,7 +13,7 @@ use aes::Aes128;
 use bytes::Bytes;
 use cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
 
-use crate::hls::HlsDownloaderError;
+use crate::DownloadError;
 
 type Aes128CbcDec = cbc::Decryptor<Aes128>;
 
@@ -51,13 +51,13 @@ impl CryptoExecutor {
         data: Bytes,
         key: [u8; 16],
         iv: [u8; 16],
-    ) -> Result<Bytes, HlsDownloaderError> {
+    ) -> Result<Bytes, DownloadError> {
         match self.backend {
             CryptoBackend::Inline => decrypt_aes128_cbc_sync(data, &key, &iv),
             CryptoBackend::TokioBlocking => {
                 tokio::task::spawn_blocking(move || decrypt_aes128_cbc_sync(data, &key, &iv))
                     .await
-                    .map_err(|e| HlsDownloaderError::Decryption {
+                    .map_err(|e| DownloadError::Decryption {
                         reason: format!("decryption offload task failed: {e}"),
                     })?
             }
@@ -69,17 +69,16 @@ pub fn decrypt_aes128_cbc_sync(
     data: Bytes,
     key: &[u8; 16],
     iv: &[u8; 16],
-) -> Result<Bytes, HlsDownloaderError> {
+) -> Result<Bytes, DownloadError> {
     let mut buffer = data.to_vec();
 
-    let cipher =
-        Aes128CbcDec::new_from_slices(key, iv).map_err(|e| HlsDownloaderError::Decryption {
-            reason: format!("failed to initialize AES decryptor: {e}"),
-        })?;
+    let cipher = Aes128CbcDec::new_from_slices(key, iv).map_err(|e| DownloadError::Decryption {
+        reason: format!("failed to initialize AES decryptor: {e}"),
+    })?;
 
     let decrypted_len = cipher
         .decrypt_padded::<Pkcs7>(&mut buffer)
-        .map_err(|e| HlsDownloaderError::Decryption {
+        .map_err(|e| DownloadError::Decryption {
             reason: format!("decryption failed: {e}"),
         })?
         .len();
@@ -121,9 +120,9 @@ impl KeyCache {
         &self,
         identity: Arc<str>,
         load: F,
-    ) -> Result<([u8; 16], bool), Arc<HlsDownloaderError>>
+    ) -> Result<([u8; 16], bool), Arc<DownloadError>>
     where
-        F: Future<Output = Result<[u8; 16], HlsDownloaderError>>,
+        F: Future<Output = Result<[u8; 16], DownloadError>>,
     {
         let entry = self.cache.entry(identity).or_try_insert_with(load).await?;
         let loaded = entry.is_fresh();
@@ -132,8 +131,8 @@ impl KeyCache {
 }
 
 /// Validate fetched key material: AES-128 keys are exactly 16 bytes.
-pub fn validate_key_bytes(raw: &[u8], identity: &str) -> Result<[u8; 16], HlsDownloaderError> {
-    <[u8; 16]>::try_from(raw).map_err(|_| HlsDownloaderError::Decryption {
+pub fn validate_key_bytes(raw: &[u8], identity: &str) -> Result<[u8; 16], DownloadError> {
+    <[u8; 16]>::try_from(raw).map_err(|_| DownloadError::Decryption {
         reason: format!(
             "decryption key for {identity} has invalid length {} (expected 16)",
             raw.len()
@@ -219,7 +218,7 @@ mod tests {
 
         let err = cache
             .get_with(Arc::clone(&identity), async {
-                Err(HlsDownloaderError::Decryption {
+                Err(DownloadError::Decryption {
                     reason: "boom".into(),
                 })
             })

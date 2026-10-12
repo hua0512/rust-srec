@@ -27,23 +27,10 @@ use crate::hls::config::HlsConfig;
 use crate::hls::playlist::document_base_url;
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
 use crate::redact::Redacted;
+use crate::segment_engine::refresh::AdaptiveRefreshTracker;
 use crate::session::{DownloadEvent, EventSink, ResourceId};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TerminalCause {
-    /// `EXT-X-ENDLIST` observed: authoritative end. The snapshot carrying this
-    /// still contains the final window and must be planned before draining.
-    Endlist,
-    /// The watcher could not keep refreshing (fetch/parse failure after
-    /// retries). A pipeline error, never a clean end.
-    Failed(Arc<str>),
-    /// Preserve HTTP evidence across the watch channel after retries finish.
-    HttpFailure {
-        status: reqwest::StatusCode,
-        url: Arc<str>,
-        operation: &'static str,
-    },
-}
+pub use crate::segment_engine::control::TerminalCause;
 
 /// One observed playlist generation. Cheap to clone — the reactor clones the
 /// borrowed value on every read, so the parsed playlist sits behind an `Arc`.
@@ -56,6 +43,8 @@ pub struct PlaylistSnapshot {
     /// Query string of the media-playlist URL; segment URLs missing these
     /// params inherit them (query-param inheritance, see the planner).
     pub parent_query: Option<Arc<str>>,
+    /// `End` once `EXT-X-ENDLIST` is seen; a failure cause once refresh
+    /// retries are exhausted.
     pub terminal: Option<TerminalCause>,
 }
 
@@ -113,7 +102,7 @@ impl PlaylistWatcher {
         tokio::task::JoinHandle<()>,
     ) {
         let parent_query: Option<Arc<str>> = self.playlist_url.query().map(Arc::from);
-        let initial_terminal = initial_playlist.end_list.then_some(TerminalCause::Endlist);
+        let initial_terminal = initial_playlist.end_list.then_some(TerminalCause::End);
         let initial = PlaylistSnapshot {
             generation: 0,
             playlist: Arc::new(initial_playlist),
@@ -192,7 +181,7 @@ impl PlaylistWatcher {
                     last_window_end = Some(window_end);
                     tracker.record_refresh(new_segments);
 
-                    let terminal = playlist.end_list.then_some(TerminalCause::Endlist);
+                    let terminal = playlist.end_list.then_some(TerminalCause::End);
                     let ended = terminal.is_some();
                     let snapshot = PlaylistSnapshot {
                         generation,
@@ -379,79 +368,6 @@ fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
     }
 }
 
-/// Tracks segment arrival patterns to adaptively adjust playlist refresh
-/// intervals: aggressive when behind the live edge, backed off when refreshes
-/// keep coming back empty.
-struct AdaptiveRefreshTracker {
-    enabled: bool,
-    min_interval: Duration,
-    max_interval: Duration,
-    /// Recent refresh results: true = got new segments.
-    recent_results: std::collections::VecDeque<bool>,
-    consecutive_empty: u32,
-    /// New segments discovered on the most recent refresh; >1 usually means
-    /// we are behind and should poll harder.
-    last_new_segments_count: usize,
-}
-
-impl AdaptiveRefreshTracker {
-    fn new(enabled: bool, min_interval: Duration, max_interval: Duration) -> Self {
-        Self {
-            enabled,
-            min_interval,
-            max_interval,
-            recent_results: std::collections::VecDeque::with_capacity(10),
-            consecutive_empty: 0,
-            last_new_segments_count: 0,
-        }
-    }
-
-    fn record_refresh(&mut self, new_segments_count: usize) {
-        self.last_new_segments_count = new_segments_count;
-        let got_segments = new_segments_count > 0;
-
-        if self.recent_results.len() >= 10 {
-            self.recent_results.pop_front();
-        }
-        self.recent_results.push_back(got_segments);
-
-        if got_segments {
-            self.consecutive_empty = 0;
-        } else {
-            self.consecutive_empty += 1;
-        }
-    }
-
-    fn clamp_interval(&self, interval: Duration) -> Duration {
-        interval.max(self.min_interval).min(self.max_interval)
-    }
-
-    fn get_refresh_interval(&self, default_interval: Duration) -> Duration {
-        if !self.enabled {
-            return default_interval;
-        }
-
-        let mut interval = default_interval;
-
-        if self.last_new_segments_count >= 2 {
-            // Multiple unseen segments: we are behind, catch up.
-            interval = self.min_interval;
-        } else if self.consecutive_empty >= 3 {
-            // Exponential backoff after several empty refreshes.
-            let backoff_factor = 1.5_f64.powi(self.consecutive_empty.min(5) as i32);
-            interval = Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
-        } else {
-            let recent_success_rate = self.recent_results.iter().filter(|&&got| got).count() as f64
-                / self.recent_results.len().max(1) as f64;
-            if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
-                interval = Duration::from_secs_f64(default_interval.as_secs_f64() * 0.8);
-            }
-        }
-
-        self.clamp_interval(interval)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,32 +376,6 @@ mod tests {
     use axum::extract::State;
     use axum::http::{StatusCode, Uri};
     use axum::response::Response;
-
-    #[test]
-    fn adaptive_refresh_backoff_respects_min_interval() {
-        let mut tracker =
-            AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(3));
-        for _ in 0..3 {
-            tracker.record_refresh(0);
-        }
-        let interval = tracker.get_refresh_interval(Duration::from_millis(100));
-        assert!(interval >= Duration::from_millis(500));
-
-        for _ in 0..7 {
-            tracker.record_refresh(0);
-        }
-        let interval = tracker.get_refresh_interval(Duration::from_secs(10));
-        assert!(interval <= Duration::from_secs(3));
-    }
-
-    #[test]
-    fn adaptive_refresh_catches_up_when_behind() {
-        let mut tracker =
-            AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(3));
-        tracker.record_refresh(3);
-        let interval = tracker.get_refresh_interval(Duration::from_secs(1));
-        assert_eq!(interval, Duration::from_millis(500));
-    }
 
     fn media_playlist(input: &str) -> MediaPlaylist {
         match m3u8_rs::parse_playlist_res(input.as_bytes()).expect("playlist parses") {
@@ -541,13 +431,13 @@ mod tests {
 
         let snapshot = rx.borrow_and_update().clone();
         assert_eq!(snapshot.generation, 0);
-        assert_eq!(snapshot.terminal, Some(TerminalCause::Endlist));
+        assert_eq!(snapshot.terminal, Some(TerminalCause::End));
 
         handle.await.unwrap();
         // Sender dropped after the terminal value: changed() errors, and the
         // retained value still carries the cause.
         assert!(rx.changed().await.is_err());
-        assert_eq!(rx.borrow().terminal, Some(TerminalCause::Endlist));
+        assert_eq!(rx.borrow().terminal, Some(TerminalCause::End));
     }
 
     #[tokio::test]

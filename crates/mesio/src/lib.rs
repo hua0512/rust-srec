@@ -26,6 +26,7 @@ pub mod hls;
 pub mod protocol_builder;
 pub mod proxy;
 pub mod redact;
+pub mod segment_engine;
 pub mod session;
 pub mod source;
 

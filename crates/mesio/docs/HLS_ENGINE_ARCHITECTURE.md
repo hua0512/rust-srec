@@ -52,6 +52,28 @@ Task C  SequenceAssembler /     reorder by MSN, gap policy, init-before-media,
         CryptoExecutor pool    CPU-bound AES, off the reactor thread
 ```
 
+### Module layout
+
+The protocol-neutral core lives in `crates/mesio/src/segment_engine/` (identity,
+descriptors, store, budget, fetch-and-process, reactor, assembler, crypto
+executor). The HLS engine (`crates/mesio/src/hls/engine/`) supplies the
+protocol side: the playlist watcher, the planner, AES-128 key fetching
+(`HlsDecryptor`), and the output sink that turns assembled items into
+`HlsStreamEvent`s. The two sides meet at three seams:
+
+- `SegmentPlanner` (`segment_engine/control.rs`): the reactor is generic over it.
+  Each manifest snapshot becomes a `PlanOutcome` — descriptors, missing and
+  skipped ranges, the prune window, a reset kind, `EngineNotice`s, and the
+  snapshot's `TerminalCause`. The planner also words source failures as
+  `DownloadError`s.
+- `SegmentMeta` on each descriptor: the protocol metadata the core needs only
+  through accessors (duration, declared container, `ResourceId`).
+- `AssemblerSink`: the assembler hands ordered `AssembledItem`s to it inline, in
+  the assembler task. The HLS sink converts them to `HlsStreamEvent`.
+
+Fetch and the assembler read `SegmentCoreConfig`, built from `HlsConfig` once at
+engine start; decryption is reached through an optional `SegmentDecryptor`.
+
 Control-plane state lives in exactly one place — the reactor (Task B). It owns the
 `SegmentStateStore`, so identity, dedup, retry budget, and scheduling priority are
 all decided in one loop with no shared lock and no cross-task work-handoff
@@ -163,15 +185,15 @@ snapshot is a superset:
   dies on a fetch/parse error. So the snapshot carries the cause explicitly:
 
   ```rust
-  pub enum TerminalCause { Endlist, Failed(Arc<str>) }
+  pub enum TerminalCause { End, Failed(Arc<str>), HttpFailure { .. } }
   // PlaylistSnapshot { ..., terminal: Option<TerminalCause> }
   ```
 
   On `EXT-X-ENDLIST` the watcher publishes a snapshot with
-  `terminal = Some(Endlist)` (retained as the latest value), then drops the sender.
+  `terminal = Some(End)` (retained as the latest value), then drops the sender.
   On a fetch/parse failure it publishes `terminal = Some(Failed(reason))` if it can,
   then drops. The reactor reads the retained value before the close, so:
-  - `Some(Endlist)` → begin the authoritative-end drain (→ `StreamEnded`).
+  - `Some(End)` → begin the authoritative-end drain (→ `StreamEnded`).
   - `Some(Failed(_))` → pipeline error (→ `Err`).
   - `changed()` → `Err` with no terminal value seen → the watcher died before
     signalling: pipeline error (`Terminal::WatcherFailed`), **not** a clean end.
@@ -351,18 +373,17 @@ pub enum AssemblerInput {
     Skipped { from_msn: u64, to_msn: u64 },
     /// A specific segment will never arrive (terminal failure).
     TerminalFailed { key: SegmentKey, msn: u64 },
-    /// Playlist-level notice derived by the reactor from a planned snapshot.
+    /// Notice the planner derived from a snapshot.
     /// Forwarded to the sink immediately on drain, never reordered; counts
     /// toward max_pending_items, never toward payload bytes.
-    Notice(PlaylistNotice),
+    Notice(EngineNotice),
     /// Authoritative end: drain the reorder buffer in order, then emit StreamEnded.
     End,
 }
 
-pub enum PlaylistNotice {
-    PlaylistRefreshed { media_sequence_base: u64, target_duration: f32 },
-    EndlistEncountered,
-    // extend as the external HlsStreamEvent contract requires
+pub enum EngineNotice {
+    ManifestRefreshed { sequence_base: u64, target_duration: f64 },
+    End,
 }
 ```
 
@@ -376,7 +397,8 @@ playlist engine sends `EndlistEncountered`/`PlaylistRefreshed` straight to the
 client channel while the output task sends data events, so playlist events can race
 ahead of in-flight segments. Here the watcher never touches the client channel: the
 reactor derives notices from the snapshot it just planned (`PlaylistRefreshed` from
-a new generation, `EndlistEncountered` from `TerminalCause::Endlist`) and pushes
+a new generation, `EndlistEncountered` from `TerminalCause::End`, both as
+`EngineNotice`s in the planner's `PlanOutcome`) and pushes
 them through `pending` like any other item. The assembler forwards a `Notice`
 immediately on drain — notices carry no MSN and are never reordered — preserving
 today's at-refresh-time semantics with a single ordered producer. `SegmentTimeout`
@@ -432,12 +454,13 @@ visible `GapSkipped` and advances.
 
 ### OutputSink
 
-Owns the final consumer-facing stream boundary.
+Owns the final consumer-facing stream boundary. It is an `AssemblerSink` the
+assembler calls inline (no extra channel hop); for HLS, `HlsEventSink`.
 
 Responsibilities:
 
 - Convert assembled payloads into `HlsStreamEvent`.
-- Convert `PlaylistNotice` items into their `HlsStreamEvent` counterparts
+- Convert `EngineNotice` items into their `HlsStreamEvent` counterparts
   (`PlaylistRefreshed`, `EndlistEncountered`).
 - Propagate terminal stream events.
 - Keep downstream send errors visible.
@@ -542,7 +565,8 @@ pub struct SegmentDescriptor {
     /// assembler gates this media's emission on the init's arrival, so a
     /// rotated init cannot lose the race against the first media it covers.
     pub init_key: Option<SegmentKey>,
-    pub media_segment: Arc<m3u8_rs::MediaSegment>,
+    /// Protocol metadata, e.g. `SegmentMeta::Hls(Arc<m3u8_rs::MediaSegment>)`.
+    pub meta: SegmentMeta,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -552,7 +576,7 @@ pub enum SegmentSource {
 }
 ```
 
-The descriptor is allowed to carry parser-native structures for compatibility, but identity and scheduling should use typed fields.
+The descriptor carries parser-native structures in `meta` for output construction, but identity and scheduling use the typed fields. The core reads `meta` only through its accessors (duration for reorder-buffer pruning, a declared container for payload classification, and the `ResourceId` for events); HLS declares no container, so fetch detects it from the body.
 
 `source` carries prefetch-ness for scheduling priority only; it is deliberately
 absent from `SegmentKey` (see `SegmentKind`). When a prefetch URI later appears
@@ -950,7 +974,7 @@ loop {
                             // EndlistEncountered) cross the same ordered boundary
                             // as payloads — see AssemblerInput::Notice.
                             push_notices(&mut pending, &snapshot);
-                            if matches!(terminal, Some(TerminalCause::Endlist)) {
+                            if matches!(terminal, Some(TerminalCause::End)) {
                                 ending = true;
                             }
                             None
@@ -1059,7 +1083,7 @@ Why this shape:
   segment the store has already marked `TerminalFailed` or `Skipped` (see
   SequenceAssembler).
 - **Explicit terminal cause, not inferred from a sender drop.** The snapshot carries
-  `terminal: Option<TerminalCause>` (`Endlist` or `Failed`). Only `Endlist` begins the
+  `terminal: Option<TerminalCause>` (`End` or a failure). Only `End` begins the
   authoritative-end drain; `Failed`, and a bare `changed()` → `Err` (the watcher task
   died before signalling anything), both become a pipeline-error terminal. A watcher
   fetch/parse failure can never masquerade as a clean ENDLIST.
@@ -1363,7 +1387,7 @@ When memory is above budget:
 
 Bounded memory and production-grade behavior require a defined teardown, not just
 a defined steady state. Shutdown is reached on an authoritative end
-(`TerminalCause::Endlist`), on cancellation, or on a terminal pipeline error — where
+(`TerminalCause::End`), on cancellation, or on a terminal pipeline error — where
 a pipeline error includes a watcher failure (`TerminalCause::Failed` or a watch
 sender dropped before any terminal value was seen).
 
@@ -1375,7 +1399,7 @@ and "always emit `StreamEnded`" is wrong for two of them:
 
 | Cause | In-flight tasks | Reorder buffer | Terminal event |
 | --- | --- | --- | --- |
-| Authoritative end (`TerminalCause::Endlist`) | awaited to completion; payloads still flow | drained in MSN order after `AssemblerInput::End`, then closed | `EndlistEncountered` (forwarded as an `AssemblerInput::Notice` when the ENDLIST snapshot was planned) then `StreamEnded` |
+| Authoritative end (`TerminalCause::End`) | awaited to completion; payloads still flow | drained in MSN order after `AssemblerInput::End`, then closed | `EndlistEncountered` (forwarded as an `AssemblerInput::Notice` when the ENDLIST snapshot was planned) then `StreamEnded` |
 | Cancellation (caller drop / cancel token) | aborted via `JoinSet` drop/`abort_all` | dropped without emission | none — the caller initiated the stop; the stream just ends |
 | Pipeline error (downstream closed, task panic, terminal-failure policy, **watcher failure**) | aborted | dropped | the error is propagated to the consumer as the stream's terminal `Err`; no `StreamEnded` |
 
@@ -1497,7 +1521,7 @@ and pulling snapshot production out of it is real work in its own right.
   textual preprocessing (Twitch prefetch rewrite), parse, publish
   `PlaylistSnapshot` over the coalescing watch channel — nothing else.
 - Add `PlaylistSnapshot::terminal` and have the watcher set it before dropping
-  the sender, on both the `Endlist` and `Failed` paths.
+  the sender, on both the `End` and failure paths.
 - Remove the watcher's direct client-event sends (`EndlistEncountered`,
   `PlaylistRefreshed`); these become reactor-derived `AssemblerInput::Notice`
   items in 2c, leaving the client channel with a single producer.
@@ -1526,7 +1550,7 @@ and pulling snapshot production out of it is real work in its own right.
 #### Phase 2c: The Reactor Loop and Byte Budgets
 
 - Build the `select!` loop: ingest snapshots from the coalescing watch channel,
-  reading `snapshot.terminal` for the cause (`Endlist` vs `Failed`) and treating a
+  reading `snapshot.terminal` for the cause (`End` vs a failure) and treating a
   bare sender-drop as `WatcherFailed`; plan/ingest the ENDLIST snapshot before setting
   `ending` so its final window is not dropped; guard the discovery arm with
   `if !ending && pending.len() < max_pending_items` so a closed watch cannot hot-loop
@@ -1651,7 +1675,7 @@ The harness is therefore a deliverable, not an afterthought:
 - A segment that terminally fails or is skipped never leaves the assembler waiting on it: the assembler is told via `AssemblerInput::TerminalFailed`/`Skipped` and advances.
 - A segment that rolls out of the live window before it is planned (window-slide, including across coalesced snapshots) surfaces as an explicit `AssemblerInput::Skipped` range, never a silent stall.
 - An `Http(403)` against a signed URL that has since been refreshed is retried against the fresh URL; a `403` against the freshest URL terminalizes within the lifecycle budget.
-- `TerminalCause::Endlist` drives a drain → `AssemblerInput::End` → `StreamEnded` finish, with the final window's segments downloaded first.
+- `TerminalCause::End` drives a drain → `AssemblerInput::End` → `StreamEnded` finish, with the final window's segments downloaded first.
 - `AssemblerInput::End` is not enqueued while any segment is still `Discovered`, `Queued`, `InFlight`, or `RetryAt` (including a not-yet-due retry deadline).
 - A watcher failure — `TerminalCause::Failed`, or a watch sender dropped before any terminal value — terminates with an error, never a clean `StreamEnded`.
 - A closed watch never hot-loops the reactor after `ending` begins.

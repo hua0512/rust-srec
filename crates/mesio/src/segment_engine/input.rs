@@ -1,33 +1,22 @@
 //! The single typed boundary between the reactor and the assembler.
 //!
-//! Payloads, skips, terminal failures, playlist notices, fatal errors, and
+//! Payloads, skips, terminal failures, engine notices, fatal errors, and
 //! end-of-stream all cross the same ordered channel. Without the control
 //! items, a segment the store has marked terminal would leave the assembler
 //! blocked on an MSN that can never complete.
 
 use std::collections::VecDeque;
 
-use crate::hls::HlsDownloaderError;
+use crate::DownloadError;
 
+use super::control::EngineNotice;
 use super::identity::SegmentKey;
 use super::payload::SegmentPayload;
-
-/// Playlist-level notice derived by the reactor from a planned snapshot. The
-/// assembler forwards these to the sink immediately, never reordered, so the
-/// consumer-facing channel keeps exactly one producer.
-#[derive(Debug, Clone)]
-pub enum PlaylistNotice {
-    PlaylistRefreshed {
-        media_sequence_base: u64,
-        target_duration: f64,
-    },
-    EndlistEncountered,
-}
 
 #[derive(Debug)]
 pub enum AssemblerInput {
     Payload(SegmentPayload),
-    /// The store/planner gave up on these MSNs (window slide, ad filtering, a
+    /// The store/planner gave up on these MSNs (window slide, filtering, a
     /// gap-skip decision, or terminal failure of a segment the assembler is
     /// waiting on). The assembler must stop waiting and advance past them.
     Skipped {
@@ -39,12 +28,13 @@ pub enum AssemblerInput {
         key: SegmentKey,
         msn: u64,
     },
-    Notice(PlaylistNotice),
+    /// Planner-derived notice, forwarded to the sink immediately.
+    Notice(EngineNotice),
     /// Pipeline error: drop the reorder buffer and surface this as the
     /// stream's terminal `Err`. Never followed by `End`.
-    Fatal(HlsDownloaderError),
+    Fatal(DownloadError),
     /// Authoritative end: drain the reorder buffer in order, then emit
-    /// `StreamEnded`. Arrives only on the ENDLIST path, so a channel close
+    /// `StreamEnded`. Arrives only on the authoritative-end path, so a channel close
     /// *without* a preceding `End` is a cancel/error and the buffer is
     /// dropped, not drained.
     End,
@@ -166,7 +156,7 @@ mod tests {
     fn skipped_does_not_coalesce_across_other_items() {
         let mut q = PendingQueue::new();
         q.push(skipped(1, 2));
-        q.push(AssemblerInput::Notice(PlaylistNotice::EndlistEncountered));
+        q.push(AssemblerInput::Notice(EngineNotice::End));
         q.push(skipped(3, 4));
         assert_eq!(q.len(), 3);
     }

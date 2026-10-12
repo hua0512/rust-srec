@@ -1,11 +1,11 @@
 //! The scheduler reactor: the single task that owns the control plane.
 //!
 //! Owns the `SegmentStateStore` (never shared, never locked), runs the
-//! planner on each snapshot, drives bounded fetch-and-process tasks through a
-//! `JoinSet`, applies their outcomes, and forwards `AssemblerInput` items
-//! downstream via permit-reserve. The loop never blocks: network I/O lives in
-//! the spawned tasks, AES in the crypto executor, and every `select!` arm
-//! stays live under backpressure.
+//! protocol's [`SegmentPlanner`] on each manifest snapshot, drives bounded
+//! fetch-and-process tasks through a `JoinSet`, applies their outcomes, and
+//! forwards `AssemblerInput` items downstream via permit-reserve. The loop
+//! never blocks: network I/O lives in the spawned tasks, AES in the crypto
+//! executor, and every `select!` arm stays live under backpressure.
 //!
 //! Concurrency is bounded by the dispatch gate's
 //! `inflight.len() < max_concurrency` check — the reactor is the sole
@@ -19,21 +19,20 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::hls::HlsDownloaderError;
-use crate::session::{DownloadEvent, ResourceId};
+use crate::DownloadError;
+use crate::session::DownloadEvent;
 
+use super::control::{SegmentPlanner, SourceFailure, TerminalCause};
 use super::fetch::{FetchContext, fetch_and_process};
-use super::input::{AssemblerInput, PendingQueue, PlaylistNotice};
-use super::planner::{PlannerContext, plan};
+use super::input::{AssemblerInput, PendingQueue};
 use super::store::{SegmentOutcome, SegmentStateStore, StoreConfig};
-use super::watcher::{PlaylistSnapshot, TerminalCause};
 
 /// Why the reactor stopped. Reported to the runtime for logging; the
 /// consumer-visible effect (StreamEnded / nothing / `Err`) is delivered
 /// through the assembler channel before this returns.
 pub enum Terminal {
-    /// ENDLIST drained: every known segment completed, terminalized, or was
-    /// skipped, and `AssemblerInput::End` was forwarded.
+    /// Authoritative end drained: every known segment completed,
+    /// terminalized, or was skipped, and `AssemblerInput::End` was forwarded.
     AuthoritativeEnd,
     /// Caller-initiated stop. In-flight work aborted, nothing emitted.
     Cancelled,
@@ -62,10 +61,10 @@ pub struct ReactorConfig {
     pub max_pending_items: usize,
 }
 
-pub async fn run_reactor(
-    mut playlist_rx: watch::Receiver<PlaylistSnapshot>,
+pub async fn run_reactor<P: SegmentPlanner>(
+    mut snapshot_rx: watch::Receiver<P::Snapshot>,
     assembler_tx: mpsc::Sender<AssemblerInput>,
-    mut planner_ctx: PlannerContext,
+    mut planner: P,
     fetch_ctx: Arc<FetchContext>,
     config: ReactorConfig,
     cancel: CancellationToken,
@@ -83,22 +82,22 @@ pub async fn run_reactor(
 
     // Pipeline-error exits forward the error as Fatal so the consumer sees a
     // terminal Err, not a silent close.
-    let mut fatal: Option<HlsDownloaderError> = None;
+    let mut fatal: Option<DownloadError> = None;
 
-    // The generation-0 snapshot (which for VOD already carries ENDLIST) is
+    // The generation-0 snapshot (which for VOD already carries the end) is
     // retained in the channel; process it before entering the loop.
     {
-        let snapshot = playlist_rx.borrow_and_update().clone();
+        let snapshot = snapshot_rx.borrow_and_update().clone();
         if let Some(err) = process_snapshot(
             &snapshot,
+            &mut planner,
             &mut store,
-            &mut planner_ctx,
             &mut pending,
             &mut ending,
         ) {
             let reason: Arc<str> = Arc::from(err.to_string());
             if assembler_tx.send(AssemblerInput::Fatal(err)).await.is_err() {
-                debug!("Assembler closed before initial playlist error was delivered");
+                debug!("Assembler closed before initial manifest error was delivered");
             }
             return Terminal::PipelineError(reason);
         }
@@ -121,8 +120,8 @@ pub async fn run_reactor(
 
         // Top-up gate: slots ∧ pending-bytes ∧ pending-items. Download bytes
         // gate via the admission reservation inside `next_ready_jobs`, not a
-        // separate read. This runs while `ending` too — the final ENDLIST
-        // window is ready work that must download before the drain above can
+        // separate read. This runs while `ending` too — the final window is
+        // ready work that must download before the drain above can
         // be satisfied.
         if inflight.len() < max_concurrency
             && pending.payload_bytes() < config.max_pending_payload_bytes
@@ -158,21 +157,21 @@ pub async fn run_reactor(
             // Also gated on pending capacity so snapshot-derived pushes
             // cannot grow `pending` unbounded — the watch retains the latest
             // value, nothing is lost while suspended.
-            changed = playlist_rx.changed(),
+            changed = snapshot_rx.changed(),
                 if !ending && pending.len() < config.max_pending_items =>
             {
                 match changed {
                     Ok(()) => {
-                        let snapshot = playlist_rx.borrow_and_update().clone();
+                        let snapshot = snapshot_rx.borrow_and_update().clone();
                         if let Some(err) = process_snapshot(
                             &snapshot,
+                            &mut planner,
                             &mut store,
-                            &mut planner_ctx,
                             &mut pending,
                             &mut ending,
                         ) {
                             fatal = Some(err);
-                            break Terminal::PipelineError(Arc::from("playlist failure"));
+                            break Terminal::PipelineError(Arc::from("manifest failure"));
                         }
                     }
                     // Sender dropped WITHOUT a terminal snapshot first: the
@@ -182,10 +181,7 @@ pub async fn run_reactor(
                         if cancel.is_cancelled() {
                             break Terminal::Cancelled;
                         }
-                        fatal = Some(HlsDownloaderError::Playlist {
-                            reason: "playlist watcher stopped without signalling a cause"
-                                .to_string(),
-                        });
+                        fatal = Some(planner.failure_error(SourceFailure::Lost));
                         break Terminal::PipelineError(Arc::from("watcher failed"));
                     }
                 }
@@ -202,7 +198,7 @@ pub async fn run_reactor(
                             && let Some(events) = &fetch_ctx.events
                         {
                             events.emit(DownloadEvent::RetryScheduled {
-                                resource: Some(ResourceId::HlsSegment { key: notice.key }),
+                                resource: Some(notice.descriptor.resource_id()),
                                 attempt: notice.attempt,
                                 delay: notice.delay,
                                 reason: notice.reason,
@@ -214,7 +210,7 @@ pub async fn run_reactor(
                     }
                     Err(e) if e.is_cancelled() => {}
                     Err(e) => {
-                        fatal = Some(HlsDownloaderError::Internal {
+                        fatal = Some(DownloadError::Internal {
                             reason: format!("segment task panicked: {e}"),
                         });
                         break Terminal::PipelineError(Arc::from("segment task panicked"));
@@ -244,7 +240,7 @@ pub async fn run_reactor(
 
     match &terminal {
         Terminal::AuthoritativeEnd => {
-            info!("reactor finished: authoritative end (ENDLIST drained)");
+            info!("reactor finished: authoritative end drained");
         }
         Terminal::Cancelled => {
             debug!("reactor cancelled; aborting in-flight segment tasks");
@@ -273,75 +269,71 @@ pub async fn run_reactor(
 }
 
 /// Plan and ingest one snapshot. Returns the pipeline error when the snapshot
-/// carries `TerminalCause::Failed`.
-fn process_snapshot(
-    snapshot: &PlaylistSnapshot,
+/// carries a failure cause or the planner reports a reset.
+fn process_snapshot<P: SegmentPlanner>(
+    snapshot: &P::Snapshot,
+    planner: &mut P,
     store: &mut SegmentStateStore,
-    planner_ctx: &mut PlannerContext,
     pending: &mut PendingQueue,
     ending: &mut bool,
-) -> Option<HlsDownloaderError> {
-    match &snapshot.terminal {
+) -> Option<DownloadError> {
+    let planned = planner.plan(snapshot);
+    match &planned.terminal {
         Some(TerminalCause::HttpFailure {
             status,
             url,
             operation,
-        }) => Some(HlsDownloaderError::HttpStatus {
-            status: *status,
-            url: url.to_string(),
-            operation,
-        }),
-        Some(TerminalCause::Failed(reason)) => Some(HlsDownloaderError::Playlist {
-            reason: format!("playlist refresh failed: {reason}"),
-        }),
-        terminal => {
-            // An ENDLIST snapshot still carries the final window: plan and
-            // ingest it *before* setting `ending`, or its segments are lost.
-            let planned = plan(snapshot, planner_ctx);
-            if planned.reset {
-                // A media-sequence reset: output continuity cannot be
-                // preserved (the assembler's emit cursor never regresses), so
-                // surface it as a terminal pipeline error rather than silently
-                // downloading-and-discarding the re-based window forever.
-                return Some(HlsDownloaderError::Playlist {
-                    reason: "media-sequence reset on the playlist; stream must restart".to_string(),
-                });
-            }
-            let stats = store.ingest(planned.descriptors, Instant::now());
-            debug!(
-                generation = snapshot.generation,
-                discovered = stats.discovered,
-                refreshed = stats.refreshed,
-                deduplicated = stats.deduplicated,
-                missing = planned.missing.len(),
-                skipped = planned.skipped.len(),
-                "snapshot planned"
-            );
-            for (from_msn, to_msn) in planned.missing {
-                pending.push(AssemblerInput::Skipped { from_msn, to_msn });
-            }
-            for (from_msn, to_msn) in planned.skipped {
-                pending.push(AssemblerInput::Skipped { from_msn, to_msn });
-            }
-            // Snapshot-derived notices cross the same ordered boundary as
-            // payloads, keeping the client channel single-producer.
-            pending.push(AssemblerInput::Notice(PlaylistNotice::PlaylistRefreshed {
-                media_sequence_base: snapshot.playlist.media_sequence,
-                target_duration: snapshot.playlist.target_duration as f64,
-            }));
-            if matches!(terminal, Some(TerminalCause::Endlist)) {
-                pending.push(AssemblerInput::Notice(PlaylistNotice::EndlistEncountered));
-                *ending = true;
-            }
-            // Prune under the window invariant: only entries below the new
-            // window start are eligible (see SegmentStateStore::prune_below).
-            for dropped in store.prune_below(
-                snapshot.playlist.media_sequence,
-                snapshot.playlist.segments.len(),
-            ) {
-                pending.push(dropped);
-            }
-            None
+        }) => {
+            return Some(DownloadError::HttpStatus {
+                status: *status,
+                url: url.to_string(),
+                operation,
+            });
+        }
+        Some(TerminalCause::Failed(reason)) => {
+            return Some(planner.failure_error(SourceFailure::Failed(reason)));
+        }
+        // An end snapshot still carries the final window: it is planned and
+        // ingested *before* `ending` is set, or its segments are lost.
+        Some(TerminalCause::End) | None => {}
+    }
+    if let Some(kind) = planned.reset {
+        // Output continuity cannot be preserved across a reset (the
+        // assembler's emit cursor never regresses), so surface it as a
+        // terminal pipeline error rather than silently downloading-and-
+        // discarding the re-based window forever.
+        return Some(planner.failure_error(SourceFailure::Reset(kind)));
+    }
+    let stats = store.ingest(planned.descriptors, Instant::now());
+    debug!(
+        generation = planned.generation,
+        discovered = stats.discovered,
+        refreshed = stats.refreshed,
+        deduplicated = stats.deduplicated,
+        missing = planned.missing.len(),
+        skipped = planned.skipped.len(),
+        "snapshot planned"
+    );
+    for (from_msn, to_msn) in planned.missing {
+        pending.push(AssemblerInput::Skipped { from_msn, to_msn });
+    }
+    for (from_msn, to_msn) in planned.skipped {
+        pending.push(AssemblerInput::Skipped { from_msn, to_msn });
+    }
+    // Snapshot-derived notices cross the same ordered boundary as payloads,
+    // keeping the client channel single-producer.
+    for notice in planned.notices {
+        pending.push(AssemblerInput::Notice(notice));
+    }
+    if matches!(planned.terminal, Some(TerminalCause::End)) {
+        *ending = true;
+    }
+    // Prune under the window invariant: only entries below the new window
+    // start are eligible (see SegmentStateStore::prune_below).
+    if let Some(window) = planned.prune {
+        for dropped in store.prune_below(window.start, window.len) {
+            pending.push(dropped);
         }
     }
+    None
 }

@@ -1,11 +1,16 @@
 //! Normalized segment descriptors — the input to lifecycle scheduling.
 //!
-//! The manifest planner owns all playlist-specific normalization; later stages
-//! never inspect raw `MediaSegment` fields to decide identity or fetch policy.
+//! The manifest planner owns all manifest-specific normalization; later stages
+//! never inspect protocol metadata to decide identity or fetch policy. What
+//! they do need from it (duration, container, resource identity) goes through
+//! the accessors on [`SegmentMeta`] and [`SegmentDescriptor`].
 
 use std::sync::Arc;
 use url::Url;
 
+use crate::session::ResourceId;
+
+use super::container::ContainerKind;
 use super::identity::SegmentKey;
 
 /// Where a descriptor came from. Carries prefetch-ness for scheduling priority
@@ -75,12 +80,49 @@ pub struct SegmentDescriptor {
     /// having arrived (or terminally failed), so a rotated init cannot lose
     /// the race against the first media segment it covers.
     pub init_key: Option<SegmentKey>,
-    /// Parser-native segment carried for output compatibility (`HlsData`
-    /// construction). Identity and scheduling use the typed fields above.
-    pub media_segment: Arc<m3u8_rs::MediaSegment>,
+    /// Protocol metadata carried for output construction. Identity and
+    /// scheduling use the typed fields above.
+    pub meta: SegmentMeta,
+}
+
+/// Protocol-specific segment metadata. Each variant answers the accessors the
+/// engine core needs, so the core never matches on a protocol itself.
+#[derive(Debug, Clone)]
+pub enum SegmentMeta {
+    /// The parser-native HLS segment, used to build `HlsData` on output.
+    Hls(Arc<m3u8_rs::MediaSegment>),
+}
+
+impl SegmentMeta {
+    /// Nominal media duration in seconds (`0.0` for init segments).
+    pub fn duration_secs(&self) -> f32 {
+        match self {
+            Self::Hls(segment) => segment.duration,
+        }
+    }
+
+    /// The container the manifest declares, or `None` when it must be
+    /// detected from the downloaded body. HLS playlists do not declare it
+    /// reliably (`EXT-X-MAP` is allowed for MPEG-TS too), so HLS always
+    /// detects.
+    pub fn container(&self) -> Option<ContainerKind> {
+        match self {
+            Self::Hls(_) => None,
+        }
+    }
 }
 
 impl SegmentDescriptor {
+    /// Resource identity for session events (progress, retries) about this
+    /// segment.
+    pub fn resource_id(&self) -> ResourceId {
+        match self.meta {
+            SegmentMeta::Hls(_) => ResourceId::HlsSegment {
+                key: self.key.clone(),
+            },
+        }
+    }
+
     /// Admission-time size estimate. A BYTERANGE length is the one size the
     /// playlist states exactly; everything else falls back to the caller's
     /// running estimate (`next_ready_jobs` passes the configured/EMA value).
