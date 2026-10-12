@@ -1,13 +1,14 @@
 use std::{
     fs::OpenOptions,
     io::{BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use hls::{HlsData, M4sData};
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, ProgressConfig, ProtocolWriter, SplitReason, WriterConfig,
-    WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
+    FormatStrategy, PostWriteAction, ProgressConfig, ProtocolWriter, SplitReason, WriterCallbacks,
+    WriterConfig, WriterError, WriterProgress, WriterState, WriterStats, WriterTask,
+    expand_filename_template,
 };
 
 #[cfg(feature = "progress")]
@@ -261,30 +262,6 @@ impl HlsWriter {
         Self { writer_task }
     }
 
-    /// Set a callback to be invoked when a new segment starts recording.
-    pub fn set_on_segment_start_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&std::path::Path, u32) + Send + Sync + 'static,
-    {
-        self.writer_task.set_on_file_open_callback(callback);
-    }
-
-    /// Set a callback to be invoked when a segment is completed.
-    pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(&std::path::Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
-    {
-        self.writer_task.set_on_file_close_callback(callback);
-    }
-
-    /// Set a progress callback with default intervals (1MB bytes, 1000ms time).
-    pub fn set_progress_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(WriterProgress) + Send + Sync + 'static,
-    {
-        self.writer_task.set_progress_callback(callback);
-    }
-
     /// Set a progress callback with custom intervals.
     pub fn set_progress_callback_with_config<F>(&mut self, callback: F, config: ProgressConfig)
     where
@@ -297,6 +274,29 @@ impl HlsWriter {
     /// Get the total media duration in seconds across all files.
     pub fn media_duration_secs(&self) -> f64 {
         self.writer_task.get_state().media_duration_secs_total
+    }
+}
+
+impl WriterCallbacks for HlsWriter {
+    fn set_on_segment_start_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Path, u32) + Send + Sync + 'static,
+    {
+        self.writer_task.set_on_file_open_callback(callback);
+    }
+
+    fn set_on_segment_complete_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
+    {
+        self.writer_task.set_on_file_close_callback(callback);
+    }
+
+    fn set_progress_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(WriterProgress) + Send + Sync + 'static,
+    {
+        self.writer_task.set_progress_callback(callback);
     }
 }
 

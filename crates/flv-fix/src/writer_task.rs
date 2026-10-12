@@ -433,7 +433,7 @@ mod tests {
         script::ScriptData,
         video::{VideoCodecId, VideoFourCC},
     };
-    use pipeline_common::{PipelineError, ProtocolWriter};
+    use pipeline_common::{PipelineError, ProtocolWriter, WriterCallbacks};
 
     use super::*;
     use crate::writer::FlvWriter as RecordingWriter;

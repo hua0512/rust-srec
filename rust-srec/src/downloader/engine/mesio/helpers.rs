@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use pipeline_common::{
-    PipelineError, PipelineSender, SplitReason, WriterError, WriterProgress, WriterStats,
+    PipelineError, PipelineSender, SplitReason, WriterCallbacks, WriterError, WriterStats,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -38,72 +38,6 @@ pub struct DownloadStats {
 }
 
 // ---------------------------------------------------------------------------
-// WriterWithCallbacks trait + forwarding impls
-// ---------------------------------------------------------------------------
-
-/// Trait that bridges the concrete callback-setter methods on `FlvWriter` and
-/// `HlsWriter` so that `setup_writer_callbacks` can operate generically.
-pub(super) trait WriterWithCallbacks {
-    fn set_on_segment_start_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32) + Send + Sync + 'static;
-
-    fn set_on_segment_complete_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static;
-
-    fn set_progress_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(WriterProgress) + Send + Sync + 'static;
-}
-
-impl WriterWithCallbacks for flv_fix::FlvWriter {
-    fn set_on_segment_start_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32) + Send + Sync + 'static,
-    {
-        flv_fix::FlvWriter::set_on_segment_start_callback(self, cb);
-    }
-
-    fn set_on_segment_complete_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
-    {
-        flv_fix::FlvWriter::set_on_segment_complete_callback(self, cb);
-    }
-
-    fn set_progress_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(WriterProgress) + Send + Sync + 'static,
-    {
-        flv_fix::FlvWriter::set_progress_callback(self, cb);
-    }
-}
-
-impl WriterWithCallbacks for hls_fix::HlsWriter {
-    fn set_on_segment_start_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32) + Send + Sync + 'static,
-    {
-        hls_fix::HlsWriter::set_on_segment_start_callback(self, cb);
-    }
-
-    fn set_on_segment_complete_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
-    {
-        hls_fix::HlsWriter::set_on_segment_complete_callback(self, cb);
-    }
-
-    fn set_progress_callback<F>(&mut self, cb: F)
-    where
-        F: Fn(WriterProgress) + Send + Sync + 'static,
-    {
-        hls_fix::HlsWriter::set_progress_callback(self, cb);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // setup_writer_callbacks
 // ---------------------------------------------------------------------------
 
@@ -113,7 +47,7 @@ impl WriterWithCallbacks for hls_fix::HlsWriter {
 /// Callbacks run on a blocking thread; `blocking_send` applies backpressure
 /// rather than unbounded buffering.
 pub(super) fn setup_writer_callbacks(
-    writer: &mut impl WriterWithCallbacks,
+    writer: &mut impl WriterCallbacks,
     event_tx: &mpsc::Sender<SegmentEvent>,
 ) {
     let event_tx_start = event_tx.clone();

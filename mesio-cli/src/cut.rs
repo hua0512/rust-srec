@@ -7,17 +7,15 @@
 
 use std::fmt;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use flv_fix::FlvWriter;
-use hls_fix::HlsWriter;
 use pipeline_common::{
     CancellationToken, ManualSplitControl, ManualSplitError, ManualSplitExpiryReason,
-    ManualSplitStatus, SplitReason,
+    ManualSplitStatus, SplitReason, WriterCallbacks,
 };
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
@@ -231,41 +229,6 @@ fn log_notices(notices: Receiver<Notice>) {
     }
 }
 
-/// Writers whose file rotations complete a cut.
-pub trait CutWriter {
-    fn on_file_opened(&mut self, callback: impl Fn(&Path) + Send + Sync + 'static);
-    fn on_file_closed(
-        &mut self,
-        callback: impl Fn(&Path, Option<&SplitReason>) + Send + Sync + 'static,
-    );
-}
-
-impl CutWriter for FlvWriter {
-    fn on_file_opened(&mut self, callback: impl Fn(&Path) + Send + Sync + 'static) {
-        self.set_on_segment_start_callback(move |path, _| callback(path));
-    }
-
-    fn on_file_closed(
-        &mut self,
-        callback: impl Fn(&Path, Option<&SplitReason>) + Send + Sync + 'static,
-    ) {
-        self.set_on_segment_complete_callback(move |path, _, _, _, reason| callback(path, reason));
-    }
-}
-
-impl CutWriter for HlsWriter {
-    fn on_file_opened(&mut self, callback: impl Fn(&Path) + Send + Sync + 'static) {
-        self.set_on_segment_start_callback(move |path, _| callback(path));
-    }
-
-    fn on_file_closed(
-        &mut self,
-        callback: impl Fn(&Path, Option<&SplitReason>) + Send + Sync + 'static,
-    ) {
-        self.set_on_segment_complete_callback(move |path, _, _, _, reason| callback(path, reason));
-    }
-}
-
 /// A file closed by a cut whose successor has not been opened yet.
 struct ManualClose {
     request_id: u64,
@@ -332,9 +295,9 @@ impl CutSession {
 
     /// Completes each cut once `writer` has opened the file after it, as the
     /// writer may fail to open one, or the recording may end first.
-    pub fn attach(&self, writer: &mut impl CutWriter) {
+    pub fn attach(&self, writer: &mut impl WriterCallbacks) {
         let manual_close = Arc::clone(&self.manual_close);
-        writer.on_file_closed(move |path, reason| {
+        writer.set_on_segment_complete_callback(move |path, _, _, _, reason| {
             if let Some(SplitReason::Manual { request_id }) = reason {
                 *lock(&manual_close) = Some(ManualClose {
                     request_id: *request_id,
@@ -344,7 +307,7 @@ impl CutSession {
         });
         let manual_close = Arc::clone(&self.manual_close);
         let control = Arc::clone(&self.control);
-        writer.on_file_opened(move |path| {
+        writer.set_on_segment_start_callback(move |path, _| {
             let Some(close) = lock(&manual_close).take() else {
                 return;
             };
@@ -460,6 +423,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn target() -> (CutTarget, Receiver<Notice>) {
@@ -588,8 +553,8 @@ mod tests {
         }
     }
 
-    type OpenedCallback = Box<dyn Fn(&Path) + Send + Sync>;
-    type ClosedCallback = Box<dyn Fn(&Path, Option<&SplitReason>) + Send + Sync>;
+    type OpenedCallback = Box<dyn Fn(&Path, u32) + Send + Sync>;
+    type ClosedCallback = Box<dyn Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync>;
 
     #[derive(Default)]
     struct FakeWriter {
@@ -597,26 +562,35 @@ mod tests {
         closed: Option<ClosedCallback>,
     }
 
-    impl CutWriter for FakeWriter {
-        fn on_file_opened(&mut self, callback: impl Fn(&Path) + Send + Sync + 'static) {
+    impl WriterCallbacks for FakeWriter {
+        fn set_on_segment_start_callback<F>(&mut self, callback: F)
+        where
+            F: Fn(&Path, u32) + Send + Sync + 'static,
+        {
             self.opened = Some(Box::new(callback));
         }
 
-        fn on_file_closed(
-            &mut self,
-            callback: impl Fn(&Path, Option<&SplitReason>) + Send + Sync + 'static,
-        ) {
+        fn set_on_segment_complete_callback<F>(&mut self, callback: F)
+        where
+            F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
+        {
             self.closed = Some(Box::new(callback));
+        }
+
+        fn set_progress_callback<F>(&mut self, _: F)
+        where
+            F: Fn(pipeline_common::WriterProgress) + Send + Sync + 'static,
+        {
         }
     }
 
     impl FakeWriter {
         fn open(&self, path: &str) {
-            (self.opened.as_ref().unwrap())(Path::new(path));
+            (self.opened.as_ref().unwrap())(Path::new(path), 0);
         }
 
         fn close(&self, path: &str, reason: Option<&SplitReason>) {
-            (self.closed.as_ref().unwrap())(Path::new(path), reason);
+            (self.closed.as_ref().unwrap())(Path::new(path), 0, 0.0, 0, reason);
         }
     }
 
