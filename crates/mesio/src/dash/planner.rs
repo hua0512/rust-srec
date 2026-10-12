@@ -942,9 +942,13 @@ fn segment_bounds(
     let timescale = i128::from(representation.timescale().max(1));
     let period_start = i128::try_from(period.start.as_nanos()).unwrap_or(i128::MAX);
     let offset = i128::from(segment.time) - i128::from(representation.presentation_time_offset());
-    let start = period_start.saturating_add(offset.saturating_mul(NANOS_PER_SEC) / timescale);
-    let end = start
-        .saturating_add(i128::from(segment.duration).saturating_mul(NANOS_PER_SEC) / timescale);
+    let end_offset = offset.saturating_add(i128::from(segment.duration));
+    // Each bound is floored from its exact tick position, never derived from
+    // another rounded value: a Period end is a whole nanosecond, so a floored
+    // end reaches it exactly when the true end does.
+    let to_nanos = |ticks: i128| ticks.saturating_mul(NANOS_PER_SEC).div_euclid(timescale);
+    let start = period_start.saturating_add(to_nanos(offset));
+    let end = period_start.saturating_add(to_nanos(end_offset));
     (start, end)
 }
 
@@ -1915,5 +1919,37 @@ mod tests {
             [(2, 3)]
         );
         assert_eq!(absent(&complete), [3], "after every p0 video segment");
+    }
+
+    #[test]
+    fn a_period_covered_exactly_by_fractional_segments_is_complete() {
+        // Nine 100100/30000 s segments end exactly at 30.03 s, where summing
+        // separately truncated nanoseconds would fall 1 ns short.
+        let mpd = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="p0" duration="PT30.03S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="100100" timescale="30000"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="p1" duration="PT2S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        let outcome = fixture.plan(mpd);
+        assert_eq!(media(&outcome).len(), 9);
+        let absent: Vec<u64> = outcome
+            .notices
+            .iter()
+            .filter_map(|notice| match notice {
+                EngineNotice::TrackAbsent { after_sequence, .. } => Some(*after_sequence),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(absent, [9], "p1 is announced after p0's nine segments");
     }
 }

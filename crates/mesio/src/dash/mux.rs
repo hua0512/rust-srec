@@ -393,6 +393,8 @@ pub(crate) async fn run_muxer(
                 stopped = Some(stop);
                 break;
             }
+            // Time blocked on a slow consumer is not a media stall.
+            state.last_media_at = Instant::now();
         }
         if let Some(stop) = stopped {
             break stop;
@@ -2799,6 +2801,60 @@ mod tests {
         let outcome = tokio::time::timeout(WAIT, muxer).await.unwrap().unwrap();
         assert!(matches!(outcome, MuxOutcome::Failed(_)));
         notices.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn time_blocked_on_a_slow_consumer_is_not_a_media_stall() {
+        let (video, video_rx) = mpsc::channel(64);
+        // Room for the first group only; the next delivery blocks.
+        let (out_tx, mut out) = mpsc::channel(2);
+        let stall = Duration::from_secs(60);
+        let muxer = tokio::spawn(run_muxer(
+            MuxTrack {
+                track: MediaTrack::Video,
+                rx: video_rx,
+                cancel: CancellationToken::new(),
+            },
+            None,
+            out_tx,
+            None,
+            lag(WAIT),
+            Some(stall),
+            CancellationToken::new(),
+        ));
+        let v = MediaTrack::Video;
+        video
+            .send(init(v, Some("p0"), 0, VIDEO_INIT))
+            .await
+            .unwrap();
+        for number in 1..=2 {
+            video
+                .send(media(
+                    v,
+                    Some("p0"),
+                    0,
+                    number,
+                    with_tfdt(VIDEO_1, (number - 1) * 12_288),
+                ))
+                .await
+                .unwrap();
+        }
+        // The consumer reads nothing for longer than the stall setting.
+        tokio::time::sleep(stall + Duration::from_secs(30)).await;
+        for expected in ["init", "media", "media"] {
+            let item = out.recv().await.unwrap().unwrap();
+            assert_eq!(kind(&item), expected);
+        }
+        // A quiet stretch shorter than the stall setting follows.
+        for _ in 0..5 {
+            video.send(absent("p1", 1, 3)).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        assert!(out.try_recv().is_err(), "no timeout error");
+        assert!(!muxer.is_finished());
+        video.send(Ok(AssembledItem::StreamEnded)).await.unwrap();
+        assert_eq!(kind(&out.recv().await.unwrap().unwrap()), "end");
+        assert_eq!(muxer.await.unwrap(), MuxOutcome::Ended);
     }
 
     #[tokio::test]

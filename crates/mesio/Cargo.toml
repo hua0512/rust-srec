@@ -52,7 +52,7 @@ hls = { path = "../hls" }
 mp4 = { path = "../mp4" }
 
 [dev-dependencies]
-tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "time", "test-util"] }
 axum = { workspace = true }
 tempfile = { workspace = true }
 hls-fix = { path = "../hls-fix", default-features = false }
