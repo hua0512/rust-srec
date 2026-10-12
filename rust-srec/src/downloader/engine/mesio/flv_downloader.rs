@@ -84,6 +84,7 @@ impl FlvDownloader {
         MesioDownloader::new(MesioConfig {
             hls: mesio::hls::HlsConfig::default(),
             flv: flv_config,
+            dash: Default::default(),
             token,
         })
     }

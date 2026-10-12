@@ -39,6 +39,11 @@ pub enum MergeError {
     #[error("at least one initialization segment is required")]
     NoSources,
 
+    /// A source initialization segment declares more than one track; only
+    /// single-track sources can be merged.
+    #[error("initialization segment has {count} tracks; a merge source must have one")]
+    MultipleTracks { count: usize },
+
     #[error("{0} overflows its field")]
     Overflow(&'static str),
 

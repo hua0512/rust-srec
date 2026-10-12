@@ -235,10 +235,14 @@ fn segment_cache_key(key: &SegmentKey) -> CacheKey {
         SegmentKind::Init => "init",
         SegmentKind::Media => "media",
     };
-    let identifier = match key.byte_range {
+    let mut identifier = match key.byte_range {
         Some(range) => format!("{kind}:br={}@{}", range.length, range.offset),
         None => kind.to_string(),
     };
+    if let Some(scope) = &key.scope {
+        identifier.push_str(":scope=");
+        identifier.push_str(scope);
+    }
     CacheKey::new(
         CacheResourceType::Segment,
         key.uri.to_string(),
@@ -750,6 +754,7 @@ mod tests {
                 kind,
                 uri: Arc::from(uri),
                 byte_range: None,
+                scope: None,
             },
             msn: 1,
             source: SegmentSource::Playlist,
@@ -826,5 +831,20 @@ mod tests {
         let init = descriptor("https://e.com/same.mp4", SegmentKind::Init, None);
 
         assert_ne!(segment_cache_key(&media.key), segment_cache_key(&init.key));
+    }
+
+    #[test]
+    fn scoped_resources_at_the_same_uri_use_distinct_cache_entries() {
+        let key = |scope: &str| SegmentKey {
+            kind: SegmentKind::Media,
+            uri: Arc::from("https://e.com/seg-1.m4s"),
+            byte_range: None,
+            scope: Some(Arc::from(scope)),
+        };
+
+        assert_ne!(
+            segment_cache_key(&key("p0/video")),
+            segment_cache_key(&key("p1/video"))
+        );
     }
 }

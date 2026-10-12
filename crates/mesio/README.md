@@ -1,6 +1,6 @@
 # Mesio Engine
 
-A media downloader engine for Rust with HLS and FLV support.
+A media downloader engine for Rust with HLS, MPEG-DASH and FLV support.
 
 ## Core API
 
@@ -12,8 +12,9 @@ per-download `DownloadSession<T>`:
   and HLS playlist notices.
 - `handle`: cancellation, dropped-event count, and optional metrics.
 
-Use `start_hls` or `start_flv` when the protocol is known. Use `start` with
-`ProtocolSelection::Auto` when the URL should be detected at runtime.
+Use `start_hls`, `start_dash` or `start_flv` when the protocol is known. Use
+`start` with `ProtocolSelection::Auto` when the URL should be detected at
+runtime; a path ending in `.mpd` is detected as DASH.
 
 ## Basic Usage
 
@@ -31,10 +32,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session = downloader.start(request).await?;
 
     match session {
-        mesio_engine::DownloaderSession::Hls(mut session) => {
+        mesio_engine::DownloaderSession::Hls(mut session)
+        | mesio_engine::DownloaderSession::Dash(mut session) => {
             while let Some(item) = session.items.next().await {
                 let item = item?;
-                println!("HLS item: {item:?}");
+                println!("fMP4/TS item: {item:?}");
             }
         }
         mesio_engine::DownloaderSession::Flv(mut session) => {
@@ -124,7 +126,16 @@ HLS uses a reactor-based lifecycle internally:
 - `SequenceAssembler` emits ordered media items and authoritative terminal
   markers.
 
-FLV uses a streaming byte forwarder into the FLV decoder. Both protocols expose
+MPEG-DASH reuses that segment engine with one reactor and assembler per
+selected track (video, audio), each with its own byte budget, fed by a single
+MPD watcher. A muxer combines the tracks into one fragmented MP4 stream (one
+item per video segment with the audio that overlaps it) and emits it as
+`HlsData`, so DASH recordings are processed and written like HLS fMP4. Static
+and dynamic MPDs with `SegmentTemplate` or `SegmentList` addressing of
+unencrypted ISO BMFF content are supported; DRM, WebM and `SegmentBase` are
+rejected with `DownloadError::Unsupported`.
+
+FLV uses a streaming byte forwarder into the FLV decoder. All protocols expose
 the same session and event contract.
 
 HTTP failures while loading an initial or selected HLS playlist, or after live

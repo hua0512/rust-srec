@@ -31,7 +31,8 @@ pub use clock::{Clock, ClockOffset, ManualClock, SystemClock, UtcTiming, parse_h
 pub use error::{ManifestError, UnsupportedFeature};
 pub use limits::MAX_MPD_BYTES;
 pub use resolve::{
-    AdaptationSet, ContentType, Manifest, Period, PresentationType, Rejected, Representation,
+    AdaptationSet, ContentType, Manifest, Period, PresentationType, Rejected, RejectedContent,
+    Representation,
 };
 pub use timeline::{
     AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, Segment, SegmentIter,

@@ -36,6 +36,12 @@ pub struct SegmentKey {
     /// `SegmentDescriptor::parsed_url`).
     pub uri: Arc<str>,
     pub byte_range: Option<ByteRangeKey>,
+    /// Manifest context the resource belongs to, for protocols that reuse a
+    /// URL across contexts whose bodies differ: a DASH template without
+    /// $RepresentationID$ can name the same URL in two Periods or
+    /// Representations. `None` for HLS, where the URL alone identifies the
+    /// resource.
+    pub scope: Option<Arc<str>>,
 }
 
 /// Produces the canonical identity URI for a resolved segment (or key) URL.
@@ -152,11 +158,13 @@ mod tests {
             kind: SegmentKind::Init,
             uri: Arc::clone(&uri),
             byte_range: None,
+            scope: None,
         };
         let media = SegmentKey {
             kind: SegmentKind::Media,
             uri,
             byte_range: None,
+            scope: None,
         };
         assert_ne!(init, media);
     }
@@ -171,6 +179,7 @@ mod tests {
                 length: 10,
                 offset: 0,
             }),
+            scope: None,
         };
         let b = SegmentKey {
             kind: SegmentKind::Media,
@@ -179,8 +188,22 @@ mod tests {
                 length: 10,
                 offset: 10,
             }),
+            scope: None,
         };
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn scopes_at_same_uri_are_distinct_keys() {
+        let key = |scope: Option<&str>| SegmentKey {
+            kind: SegmentKind::Media,
+            uri: Arc::from("https://example.com/seg-1.m4s"),
+            byte_range: None,
+            scope: scope.map(Arc::from),
+        };
+        assert_ne!(key(Some("p0/v1")), key(Some("p1/v1")));
+        assert_ne!(key(None), key(Some("p0/v1")));
+        assert_eq!(key(Some("p0/v1")), key(Some("p0/v1")));
     }
 
     #[test]

@@ -67,6 +67,17 @@ pub enum EngineNotice {
     },
     /// The source declared its authoritative end.
     End,
+    /// The manifest has a section (a DASH Period) that has begun and does
+    /// not carry this track. Also counts as input for the assembler's stall
+    /// detection: a track that is absent by design is not stalled.
+    TrackAbsent {
+        section_id: Option<Arc<str>>,
+        section_start: std::time::Duration,
+        /// Sequence numbers below this were planned before the section:
+        /// notices are forwarded ahead of payloads, so a consumer acts on
+        /// the gap only once it has seen the track up to here.
+        after_sequence: u64,
+    },
 }
 
 /// What one planned snapshot means for the reactor.

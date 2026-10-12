@@ -26,7 +26,7 @@ mod init;
 
 pub use error::MergeError;
 pub use fragment::{FragmentWriter, SourceFragment};
-pub use init::{MergedInit, MergedTrack, merge_init};
+pub use init::{MergedInit, MergedTrack, merge_init, validate_init};
 
 #[cfg(test)]
 mod tests;

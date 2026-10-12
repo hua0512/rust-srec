@@ -786,7 +786,7 @@ fn source_inits_outside_the_contract_are_rejected() {
                 traks: 2,
                 ..Default::default()
             },
-            MergeError::unsupported(b"moov", "each source must contain exactly one track"),
+            MergeError::MultipleTracks { count: 2 },
         ),
         (
             InitSpec {
@@ -933,4 +933,110 @@ fn edit_lists_are_rescaled_to_the_movie_timescale() {
         merge_init(&[video.build(), too_long.build()]).unwrap_err(),
         MergeError::Overflow("edit list segment duration")
     );
+}
+
+#[test]
+fn validate_init_accepts_clear_multi_track_inits_and_rejects_protected_ones() {
+    let (video, _) = video_fixture();
+    let (audio, _) = audio_fixture();
+    assert_eq!(validate_init(&video), Ok(1));
+    let muxed = merge_init(&[video.clone(), audio]).unwrap();
+    assert_eq!(validate_init(muxed.data()), Ok(2));
+    assert_eq!(
+        merge_init(std::slice::from_ref(muxed.data())).err(),
+        Some(MergeError::MultipleTracks { count: 2 })
+    );
+
+    let mut protected = muxed.data().to_vec();
+    let at = protected
+        .windows(4)
+        .position(|window| window == b"avc1")
+        .unwrap();
+    protected[at..at + 4].copy_from_slice(b"encv");
+    assert_eq!(
+        validate_init(&Bytes::from(protected)),
+        Err(MergeError::Protected {
+            fourcc: FourCc(*b"encv")
+        })
+    );
+    let truncated = muxed.data().slice(..muxed.data().len() - 40);
+    assert!(validate_init(&truncated).is_err());
+    assert!(validate_init(&Bytes::from_static(b"\0\0\0\x08free")).is_err());
+}
+
+/// `muxed` with its `trex` boxes edited by `edit`, box sizes kept.
+fn with_trex_edit(muxed: &Bytes, edit: impl Fn(&mut Vec<u8>, &[usize])) -> Bytes {
+    let mut data = muxed.to_vec();
+    let at: Vec<usize> = data
+        .windows(4)
+        .enumerate()
+        .filter(|(_, window)| *window == b"trex")
+        .map(|(position, _)| position - 4)
+        .collect();
+    edit(&mut data, &at);
+    Bytes::from(data)
+}
+
+#[test]
+fn validate_init_requires_one_valid_trex_per_track() {
+    let (video, _) = video_fixture();
+    let (audio, _) = audio_fixture();
+    let muxed = merge_init(&[video, audio]).unwrap();
+    let muxed = muxed.data();
+    assert_eq!(validate_init(muxed), Ok(2));
+
+    // trex body: size, `trex`, version/flags, track_ID, sample description
+    // index, ... The second trex claims the first track too.
+    let duplicate = with_trex_edit(muxed, |data, at| {
+        let first = u32::from_be_bytes(data[at[0] + 12..at[0] + 16].try_into().unwrap());
+        data[at[1] + 12..at[1] + 16].copy_from_slice(&first.to_be_bytes());
+    });
+    assert_eq!(
+        validate_init(&duplicate),
+        Err(MergeError::malformed(
+            b"mvex",
+            "more than one trex for the track"
+        ))
+    );
+
+    let out_of_range = with_trex_edit(muxed, |data, at| {
+        data[at[1] + 16..at[1] + 20].copy_from_slice(&2u32.to_be_bytes());
+    });
+    assert_eq!(
+        validate_init(&out_of_range),
+        Err(MergeError::malformed(
+            b"trex",
+            "default sample description index refers to no sample entry"
+        ))
+    );
+
+    let unknown = with_trex_edit(muxed, |data, at| {
+        data[at[1] + 12..at[1] + 16].copy_from_slice(&9u32.to_be_bytes());
+    });
+    assert_eq!(
+        validate_init(&unknown),
+        Err(MergeError::UnknownTrack { track_id: 9 })
+    );
+}
+
+#[test]
+fn fragments_shift_individually_after_parsing() {
+    let (video, segments) = video_fixture();
+    let merged = merge_init(&[video]).unwrap();
+    let mut fragments = merged.parse_media_segment(0, &segments[1], 0).unwrap();
+    let fragment = &mut fragments[0];
+    let original = fragment.decode_time();
+    assert!(original > 0);
+    fragment.shift_decode_time(-(original as i64)).unwrap();
+    assert_eq!(fragment.decode_time(), 0);
+    assert!(fragment.shift_decode_time(-1).is_err());
+    assert_eq!(fragment.decode_time(), 0, "unchanged on error");
+    fragment.shift_decode_time(1_000).unwrap();
+
+    let mut out = Vec::new();
+    FragmentWriter::new()
+        .write(fragments.remove(0), &mut out)
+        .unwrap();
+    let written = merged.parse_media_segment(0, &Bytes::from(out), 0).unwrap();
+    assert_eq!(written[0].decode_time(), 1_000, "the written tfdt moved");
 }

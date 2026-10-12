@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 use url::Url;
 
 use crate::cache::CacheManager;
+use crate::dash::{DashConfig, DashDownloader, DashSelectionConfig, MediaTrack};
 use crate::flv::{FlvDownloader, FlvProtocolConfig};
 use crate::hls::config::HlsVariantSelectionPolicy;
 use crate::hls::engine::identity::SegmentKey;
@@ -35,6 +36,8 @@ pub enum ProtocolType {
     Flv,
     /// HLS protocol.
     Hls,
+    /// MPEG-DASH protocol.
+    Dash,
     /// Auto-detect from URL.
     Auto,
 }
@@ -91,6 +94,7 @@ impl DownloadRequest {
 pub struct DownloadOptions {
     pub hls: HlsRequestOptions,
     pub flv: FlvRequestOptions,
+    pub dash: DashRequestOptions,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -99,11 +103,18 @@ pub enum ProtocolSelection {
     Auto,
     Hls(HlsRequestOptions),
     Flv(FlvRequestOptions),
+    Dash(DashRequestOptions),
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct HlsRequestOptions {
     pub variant_selection_policy: Option<HlsVariantSelectionPolicy>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DashRequestOptions {
+    /// Replaces the configured Representation selection for this request.
+    pub selection: Option<DashSelectionConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,24 +154,49 @@ pub enum DownloadTerminal {
 pub enum DownloaderSession {
     Flv(DownloadSession<flv::data::FlvData>),
     Hls(DownloadSession<hls::HlsData>),
+    /// DASH output uses the HLS fMP4 item type; the variant keeps the
+    /// protocol visible to consumers.
+    Dash(DownloadSession<hls::HlsData>),
 }
 
 impl DownloaderSession {
+    pub fn protocol(&self) -> ProtocolType {
+        match self {
+            Self::Flv(_) => ProtocolType::Flv,
+            Self::Hls(_) => ProtocolType::Hls,
+            Self::Dash(_) => ProtocolType::Dash,
+        }
+    }
+
     pub fn into_hls(self) -> Result<DownloadSession<hls::HlsData>, DownloadError> {
         match self {
             Self::Hls(session) => Ok(session),
-            Self::Flv(_) => Err(DownloadError::UnsupportedProtocol {
-                protocol: "expected HLS session, got FLV".to_string(),
-            }),
+            other => Err(other.mismatch("HLS")),
+        }
+    }
+
+    pub fn into_dash(self) -> Result<DownloadSession<hls::HlsData>, DownloadError> {
+        match self {
+            Self::Dash(session) => Ok(session),
+            other => Err(other.mismatch("DASH")),
         }
     }
 
     pub fn into_flv(self) -> Result<DownloadSession<flv::data::FlvData>, DownloadError> {
         match self {
             Self::Flv(session) => Ok(session),
-            Self::Hls(_) => Err(DownloadError::UnsupportedProtocol {
-                protocol: "expected FLV session, got HLS".to_string(),
-            }),
+            other => Err(other.mismatch("FLV")),
+        }
+    }
+
+    fn mismatch(&self, expected: &str) -> DownloadError {
+        let actual = match self {
+            Self::Flv(_) => "FLV",
+            Self::Hls(_) => "HLS",
+            Self::Dash(_) => "DASH",
+        };
+        DownloadError::UnsupportedProtocol {
+            protocol: format!("expected {expected} session, got {actual}"),
         }
     }
 }
@@ -278,6 +314,18 @@ pub enum DownloadEvent {
         media_sequence_base: u64,
         target_duration: f64,
     },
+    /// A track of a separately delivered stream (DASH audio) fell behind;
+    /// output stopped waiting for it, and its late data is dropped.
+    TrackStalled {
+        track: MediaTrack,
+        waited: Duration,
+    },
+    /// A track stopped contributing to the output for the rest of the
+    /// session; recording continues with the remaining track.
+    TrackDropped {
+        track: MediaTrack,
+        reason: Arc<str>,
+    },
     Lagged {
         dropped: u64,
     },
@@ -289,6 +337,8 @@ pub enum ResourceId {
     HlsSegment { key: SegmentKey },
     HlsKey { uri: Arc<str> },
     FlvStream { url: Arc<str> },
+    DashManifest { url: Arc<str> },
+    DashSegment { track: MediaTrack, key: SegmentKey },
 }
 
 #[derive(Clone)]
@@ -359,6 +409,7 @@ pub trait MediaEngine: Send + Sync + 'static {
 pub struct MesioConfig {
     pub flv: FlvProtocolConfig,
     pub hls: HlsConfig,
+    pub dash: DashConfig,
     pub token: CancellationToken,
 }
 
@@ -367,6 +418,7 @@ impl Default for MesioConfig {
         Self {
             flv: FlvProtocolConfig::default(),
             hls: HlsConfig::default(),
+            dash: DashConfig::default(),
             token: CancellationToken::new(),
         }
     }
@@ -396,6 +448,12 @@ impl MesioDownloader {
         })?;
 
         let path = url.path().to_lowercase();
+        // Checked first: an MPD URL can carry `manifest` or `playlist` in its
+        // query or path, which the HLS heuristics below would claim.
+        if path.ends_with(".mpd") {
+            return Ok(ProtocolType::Dash);
+        }
+
         if path.ends_with(".m3u8") || path.ends_with(".m3u") || path.contains("playlist") {
             return Ok(ProtocolType::Hls);
         }
@@ -430,6 +488,7 @@ impl MesioDownloader {
             ProtocolSelection::Auto => Self::detect_protocol(request.url.as_str())?,
             ProtocolSelection::Hls(_) => ProtocolType::Hls,
             ProtocolSelection::Flv(_) => ProtocolType::Flv,
+            ProtocolSelection::Dash(_) => ProtocolType::Dash,
         };
 
         match protocol {
@@ -447,7 +506,10 @@ impl MesioDownloader {
                 }
                 Ok(DownloaderSession::Flv(self.start_flv(request).await?))
             }
-            ProtocolType::Auto => unreachable!(),
+            ProtocolType::Dash => Ok(DownloaderSession::Dash(self.start_dash(request).await?)),
+            ProtocolType::Auto => Err(DownloadError::ProtocolDetectionFailed {
+                url: crate::redact::redact_url(&request.url).to_string(),
+            }),
         }
     }
 
@@ -460,17 +522,39 @@ impl MesioDownloader {
             request.protocol = ProtocolSelection::Hls(request.options.hls.clone());
         }
         if request.sources.is_empty() {
-            return self.start_single_hls(request).await;
+            let downloader = HlsDownloader::with_config(self.config.hls.clone())?;
+            return downloader.start(request).await;
         }
-        self.start_hls_with_sources(request).await
+        let config = self.config.hls.clone();
+        let event_capacity = (config.scheduler_config.download_concurrency.max(1) * 64).max(256);
+        self.start_with_sources(request, SegmentedProtocol::HLS, event_capacity, move || {
+            HlsDownloader::with_config(config.clone())
+        })
     }
 
-    async fn start_single_hls(
+    /// Starts a DASH session, failing over between `request.sources` when
+    /// any are given.
+    pub async fn start_dash(
         &self,
-        request: DownloadRequest,
+        mut request: DownloadRequest,
     ) -> Result<DownloadSession<hls::HlsData>, DownloadError> {
-        let downloader = HlsDownloader::with_config(self.config.hls.clone())?;
-        downloader.start(request).await
+        self.apply_defaults(&mut request);
+        if matches!(request.protocol, ProtocolSelection::Auto) {
+            request.protocol = ProtocolSelection::Dash(request.options.dash.clone());
+        }
+        if request.sources.is_empty() {
+            let downloader = DashDownloader::with_config(self.config.dash.clone())?;
+            return downloader.start(request).await;
+        }
+        let config = self.config.dash.clone();
+        config.validate()?;
+        let event_capacity = (config.scheduler.download_concurrency.max(1) * 128).max(256);
+        self.start_with_sources(
+            request,
+            SegmentedProtocol::DASH,
+            event_capacity,
+            move || DashDownloader::with_config(config.clone()),
+        )
     }
 
     pub async fn start_flv(
@@ -532,32 +616,38 @@ impl MesioDownloader {
         })
     }
 
-    async fn start_hls_with_sources(
+    /// A session that tries `request.sources` in turn, starting a fresh
+    /// engine from `make_engine` per attempt.
+    fn start_with_sources<E, F>(
         &self,
         request: DownloadRequest,
-    ) -> Result<DownloadSession<hls::HlsData>, DownloadError> {
+        protocol: SegmentedProtocol,
+        event_capacity: usize,
+        make_engine: F,
+    ) -> Result<DownloadSession<hls::HlsData>, DownloadError>
+    where
+        E: MediaEngine<Item = HlsData>,
+        F: Fn() -> Result<E, DownloadError> + Send + 'static,
+    {
         let parent_token = request
             .cancel
             .clone()
             .unwrap_or_else(|| self.config.token.clone());
         let session_token = parent_token.child_token();
-        let event_capacity =
-            (self.config.hls.scheduler_config.download_concurrency.max(1) * 64).max(256);
         let (events, event_stream) = EventSink::channel(event_capacity);
         let dropped_counter = events.dropped_counter();
         let (item_tx, item_rx) = mpsc::channel(32);
-        let config = self.config.clone();
         let request_cache = request.cache.clone();
         let active_metrics = Arc::new(Mutex::new(None));
         let lifecycle_token = session_token.clone();
-        let request_for_task = request;
         let events_for_task = events.clone();
         let metrics_for_task = Arc::clone(&active_metrics);
 
         let lifecycle = tokio::spawn(async move {
-            run_hls_source_failover(
-                config,
-                request_for_task,
+            run_source_failover(
+                protocol,
+                make_engine,
+                request,
                 request_cache,
                 lifecycle_token,
                 events_for_task,
@@ -593,15 +683,44 @@ struct SelectedSource {
     priority: u8,
 }
 
-async fn run_hls_source_failover(
-    config: MesioConfig,
+/// A segmented protocol whose sessions fail over between sources.
+#[derive(Clone, Copy)]
+struct SegmentedProtocol {
+    name: &'static str,
+    /// The selection an attempt uses when the request left it on `Auto`.
+    default_selection: fn() -> ProtocolSelection,
+}
+
+impl SegmentedProtocol {
+    const HLS: Self = Self {
+        name: "HLS",
+        default_selection: || ProtocolSelection::Hls(HlsRequestOptions::default()),
+    };
+    const DASH: Self = Self {
+        name: "DASH",
+        default_selection: || ProtocolSelection::Dash(DashRequestOptions::default()),
+    };
+}
+
+/// Runs attempts against the request's sources until one ends the stream,
+/// the consumer goes away, or every source has failed. Items of successive
+/// attempts are separated by a discontinuity marker once media was delivered.
+#[allow(clippy::too_many_arguments)]
+async fn run_source_failover<E, F>(
+    protocol: SegmentedProtocol,
+    make_engine: F,
     request: DownloadRequest,
     request_cache: Option<Arc<CacheManager>>,
     token: CancellationToken,
     events: EventSink,
     item_tx: mpsc::Sender<Result<HlsData, DownloadError>>,
     active_metrics: Arc<Mutex<Option<Arc<PerformanceMetrics>>>>,
-) -> DownloadTerminal {
+) -> DownloadTerminal
+where
+    E: MediaEngine<Item = HlsData>,
+    F: Fn() -> Result<E, DownloadError>,
+{
+    let name = protocol.name;
     let mut manager = SourceManager::new();
     for source in request.sources.iter().cloned() {
         manager.add_source(source);
@@ -624,17 +743,17 @@ async fn run_hls_source_failover(
             Ok(None) => {
                 let reason = last_error
                     .map(|err| err.to_string())
-                    .unwrap_or_else(|| "all HLS sources failed".to_string());
+                    .unwrap_or_else(|| format!("all {name} sources failed"));
                 let error = DownloadError::source_exhausted(reason.clone());
-                if item_tx.send(Err(error)).await.is_err() {
-                    debug!("HLS error receiver closed after source exhaustion");
+                if deliver(&item_tx, Err(error), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
             Err(err) => {
                 let reason = err.to_string();
-                if item_tx.send(Err(err)).await.is_err() {
-                    debug!("HLS error receiver closed after source selection failure");
+                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
@@ -643,14 +762,13 @@ async fn run_hls_source_failover(
         attempt = attempt.saturating_add(1);
 
         if pending_discontinuity {
-            if item_tx
-                .send(Ok(HlsData::end_marker_with_reason(
-                    hls::SplitReason::Discontinuity,
-                )))
-                .await
-                .is_err()
-            {
-                return DownloadTerminal::DownstreamClosed;
+            let marker = Ok(HlsData::end_marker_with_reason(
+                hls::SplitReason::Discontinuity,
+            ));
+            match deliver(&item_tx, marker, &token).await {
+                Delivery::Sent => {}
+                Delivery::Closed => return DownloadTerminal::DownstreamClosed,
+                Delivery::Cancelled => return DownloadTerminal::Cancelled,
             }
             pending_discontinuity = false;
         }
@@ -667,16 +785,16 @@ async fn run_hls_source_failover(
         attempt_request.cache = request_cache.clone();
         attempt_request.cancel = Some(token.clone());
         attempt_request.protocol = match &attempt_request.protocol {
-            ProtocolSelection::Auto => ProtocolSelection::Hls(Default::default()),
+            ProtocolSelection::Auto => (protocol.default_selection)(),
             other => other.clone(),
         };
 
-        let downloader = match HlsDownloader::with_config(config.hls.clone()) {
+        let downloader = match make_engine() {
             Ok(downloader) => downloader,
             Err(err) => {
                 let reason = err.to_string();
-                if item_tx.send(Err(err)).await.is_err() {
-                    debug!("HLS error receiver closed after downloader initialization failure");
+                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
+                    return DownloadTerminal::Cancelled;
                 }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
@@ -702,6 +820,11 @@ async fn run_hls_source_failover(
         let mut failed = None;
         let mut attempt_delivered = false;
 
+        // Items that announce an fMP4 epoch (a structure-change marker and
+        // an init) are held and delivered together with the media item that
+        // follows, so a cancellation cannot leave a consumer with an
+        // announced epoch and no media.
+        let mut group: Vec<HlsData> = Vec::new();
         while let Some(item) = items.next().await {
             match item {
                 Ok(item) => {
@@ -714,19 +837,33 @@ async fn run_hls_source_failover(
                         }
                         delivered_media = true;
                     }
-                    if item_tx.send(Ok(item)).await.is_err() {
+                    let announces = matches!(
+                        item,
+                        HlsData::EndMarker(Some(hls::SplitReason::StreamStructureChange { .. }))
+                            | HlsData::M4sData(hls::M4sData::InitSegment(_))
+                    );
+                    group.push(item);
+                    if announces && group.len() < MAX_ANNOUNCEMENT {
+                        continue;
+                    }
+                    let delivery =
+                        deliver_group(&item_tx, std::mem::take(&mut group), &token).await;
+                    if delivery != Delivery::Sent {
                         // The item stream and the attempt's engine task both
                         // hold event sinks; the forwarder only finishes once
                         // both are gone.
                         drop(items);
                         handle.cancel();
                         if let Some(Err(error)) = handle.join().await {
-                            debug!(error = %crate::redact::redact_diagnostic(&error), "HLS attempt failed after downstream closed");
+                            debug!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "attempt failed after downstream closed");
                         }
                         if let Err(error) = event_task.await {
-                            warn!(error = %crate::redact::redact_diagnostic(&error), "HLS event forwarding task failed during cancellation");
+                            warn!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "event forwarding task failed during cancellation");
                         }
-                        return DownloadTerminal::DownstreamClosed;
+                        return match delivery {
+                            Delivery::Cancelled => DownloadTerminal::Cancelled,
+                            _ => DownloadTerminal::DownstreamClosed,
+                        };
                     }
                 }
                 Err(err) => {
@@ -734,6 +871,13 @@ async fn run_hls_source_failover(
                     break;
                 }
             }
+        }
+        if !group.is_empty() {
+            debug!(
+                protocol = name,
+                items = group.len(),
+                "attempt ended after announcing media it never delivered"
+            );
         }
 
         drop(items);
@@ -747,7 +891,7 @@ async fn run_hls_source_failover(
             }
         }
         if let Err(error) = event_task.await {
-            warn!(error = %crate::redact::redact_diagnostic(&error), "HLS event forwarding task failed");
+            warn!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "event forwarding task failed");
         }
 
         if let Some(err) = failed {
@@ -769,6 +913,70 @@ async fn run_hls_source_failover(
                 pending_discontinuity = delivered_media;
             }
         }
+    }
+}
+
+/// Longest run of announcing items held for the media that follows them: an
+/// end marker and an init, with room to spare. A longer run is delivered as
+/// it is rather than buffered without bound.
+const MAX_ANNOUNCEMENT: usize = 4;
+
+/// Delivers `group` whole, or nothing of it when `token` is cancelled first:
+/// permits for every item are reserved before any is sent.
+async fn deliver_group(
+    tx: &mpsc::Sender<Result<HlsData, DownloadError>>,
+    group: Vec<HlsData>,
+    token: &CancellationToken,
+) -> Delivery {
+    if group.len() > tx.max_capacity() {
+        for item in group {
+            let delivery = deliver(tx, Ok(item), token).await;
+            if delivery != Delivery::Sent {
+                return delivery;
+            }
+        }
+        return Delivery::Sent;
+    }
+    if tx.is_closed() {
+        return Delivery::Closed;
+    }
+    tokio::select! {
+        biased;
+        permits = tx.reserve_many(group.len()) => match permits {
+            Ok(permits) => {
+                for (permit, item) in permits.zip(group) {
+                    permit.send(Ok(item));
+                }
+                Delivery::Sent
+            }
+            Err(_) => Delivery::Closed,
+        },
+        _ = token.cancelled() => Delivery::Cancelled,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Sent,
+    Closed,
+    Cancelled,
+}
+
+/// Sends `item` downstream unless `token` is cancelled first. A consumer
+/// that stops reading without dropping the stream would otherwise keep a
+/// cancelled session blocked here forever. A dropped stream (which also
+/// cancels the session) reports `Closed`.
+async fn deliver<T>(tx: &mpsc::Sender<T>, item: T, token: &CancellationToken) -> Delivery {
+    if tx.is_closed() {
+        return Delivery::Closed;
+    }
+    tokio::select! {
+        biased;
+        sent = tx.send(item) => match sent {
+            Ok(()) => Delivery::Sent,
+            Err(_) => Delivery::Closed,
+        },
+        _ = token.cancelled() => Delivery::Cancelled,
     }
 }
 
@@ -846,6 +1054,129 @@ impl<T> Drop for SessionCancelOnDropStream<T> {
 mod tests {
     use super::*;
 
+    /// An engine whose single attempt yields `items`, then stays open until
+    /// cancelled.
+    struct ScriptedEngine {
+        items: Vec<HlsData>,
+    }
+
+    impl MediaEngine for ScriptedEngine {
+        type Item = HlsData;
+
+        async fn start(
+            &self,
+            request: DownloadRequest,
+        ) -> Result<DownloadSession<HlsData>, DownloadError> {
+            // Ends on cancellation, as a real engine's stream does.
+            let cancel = request.cancel.unwrap_or_default();
+            let stopped = cancel.clone().cancelled_owned();
+            let items = futures::stream::iter(self.items.clone().into_iter().map(Ok))
+                .chain(futures::stream::once(stopped).filter_map(|()| async { None }));
+            Ok(DownloadSession {
+                items: Box::pin(items),
+                events: Box::pin(futures::stream::empty()),
+                handle: DownloadHandle::new(cancel, None, Arc::new(AtomicU64::new(0)), None),
+            })
+        }
+    }
+
+    fn scripted_epoch_change() -> Vec<HlsData> {
+        let segment = m3u8_rs::MediaSegment::default;
+        let data = |tag: &'static [u8]| bytes::Bytes::from_static(tag);
+        vec![
+            HlsData::mp4_init(segment(), data(b"init0")),
+            HlsData::mp4_segment(segment(), data(b"m0")),
+            HlsData::mp4_segment(segment(), data(b"m0b")),
+            HlsData::end_marker_with_reason(hls::SplitReason::StreamStructureChange {
+                description: "next epoch".to_owned(),
+            }),
+            HlsData::mp4_init(segment(), data(b"init1")),
+            HlsData::mp4_segment(segment(), data(b"m1")),
+        ]
+    }
+
+    /// Runs the failover forwarder over the scripted attempt into a
+    /// three-item consumer channel.
+    fn forward_scripted() -> (
+        mpsc::Receiver<Result<HlsData, DownloadError>>,
+        CancellationToken,
+        JoinHandle<DownloadTerminal>,
+    ) {
+        let url = "https://example.test/live.mpd";
+        let request = DownloadRequest::from_url(url)
+            .unwrap()
+            .add_source(ContentSource::new(url, 0));
+        let (item_tx, item_rx) = mpsc::channel(3);
+        let (events, _events) = EventSink::channel(16);
+        let token = CancellationToken::new();
+        let task = tokio::spawn(run_source_failover(
+            SegmentedProtocol::DASH,
+            || {
+                Ok(ScriptedEngine {
+                    items: scripted_epoch_change(),
+                })
+            },
+            request,
+            None,
+            token.clone(),
+            events,
+            item_tx,
+            Arc::new(Mutex::new(None)),
+        ));
+        (item_rx, token, task)
+    }
+
+    fn payload(item: Option<Result<HlsData, DownloadError>>) -> Vec<u8> {
+        match item.expect("an item").expect("no error") {
+            HlsData::EndMarker(_) => b"marker".to_vec(),
+            item => item.data().expect("payload").to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn failover_delivers_an_epoch_announcement_with_its_first_media() {
+        let (mut items, token, task) = forward_scripted();
+        for expected in [&b"init0"[..], b"m0", b"m0b", b"marker"] {
+            let item = tokio::time::timeout(Duration::from_secs(5), items.recv()).await;
+            assert_eq!(payload(item.expect("forwarded in time")), expected);
+        }
+        // The rest of the group is already there, cancellation or not.
+        token.cancel();
+        assert_eq!(payload(items.try_recv().ok()), b"init1");
+        assert_eq!(payload(items.try_recv().ok()), b"m1");
+        let terminal = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert_eq!(
+            terminal.expect("forwarder ends").unwrap(),
+            DownloadTerminal::Cancelled
+        );
+    }
+
+    #[tokio::test]
+    async fn failover_cancelled_during_an_epoch_change_announces_nothing() {
+        let (mut items, token, task) = forward_scripted();
+        assert_eq!(payload(items.recv().await), b"init0");
+        assert_eq!(payload(items.recv().await), b"m0");
+        // The announcement group needs three free slots and has two.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while items.len() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the third media item is forwarded");
+        token.cancel();
+        let terminal = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert_eq!(
+            terminal.expect("forwarder ends").unwrap(),
+            DownloadTerminal::Cancelled
+        );
+        assert_eq!(payload(items.recv().await), b"m0b");
+        assert!(
+            items.recv().await.is_none(),
+            "no marker or init of the epoch"
+        );
+    }
+
     #[tokio::test]
     async fn wrapped_flv_session_reports_the_inner_sessions_dropped_events() {
         let (inner_sink, inner_events) = EventSink::channel(1);
@@ -919,6 +1250,56 @@ mod tests {
             events.next().await,
             Some(DownloadEvent::Lagged { dropped: 1 })
         ));
+    }
+
+    #[test]
+    fn mpd_paths_are_detected_as_dash_before_hls_heuristics() {
+        let detect = |url: &str| MesioDownloader::detect_protocol(url).unwrap();
+        assert_eq!(
+            detect("https://e.com/live/Manifest.mpd"),
+            ProtocolType::Dash
+        );
+        // `manifest`/`playlist` in the query or path must not make them HLS.
+        assert_eq!(
+            detect("https://e.com/live/stream.mpd?type=manifest&token=x"),
+            ProtocolType::Dash
+        );
+        assert_eq!(
+            detect("https://e.com/playlist/stream.mpd"),
+            ProtocolType::Dash
+        );
+        assert_eq!(detect("https://e.com/live/index.m3u8"), ProtocolType::Hls);
+        assert_eq!(
+            detect("https://e.com/live/stream?manifest=1"),
+            ProtocolType::Hls
+        );
+        assert_eq!(detect("https://e.com/live/stream.flv"), ProtocolType::Flv);
+        assert!(MesioDownloader::detect_protocol("https://e.com/live/stream.mp4").is_err());
+    }
+
+    #[test]
+    fn downloader_session_conversions_name_both_protocols() {
+        let session = || DownloadSession::<hls::HlsData> {
+            items: Box::pin(futures::stream::empty()),
+            events: Box::pin(futures::stream::empty()),
+            handle: DownloadHandle::new(
+                CancellationToken::new(),
+                None,
+                Arc::new(AtomicU64::new(0)),
+                None,
+            ),
+        };
+        assert_eq!(
+            DownloaderSession::Dash(session()).protocol(),
+            ProtocolType::Dash
+        );
+        assert!(DownloaderSession::Dash(session()).into_dash().is_ok());
+        let error = DownloaderSession::Dash(session())
+            .into_hls()
+            .err()
+            .expect("a DASH session is not an HLS session");
+        assert!(error.to_string().contains("expected HLS session, got DASH"));
+        assert!(DownloaderSession::Hls(session()).into_dash().is_err());
     }
 
     #[test]
