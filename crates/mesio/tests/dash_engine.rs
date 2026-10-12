@@ -73,8 +73,6 @@ struct OriginState {
     numbered: HashMap<String, Numbered>,
     /// Path prefixes answered only once their gate opens.
     gates: HashMap<String, tokio::sync::watch::Receiver<bool>>,
-    /// Serves of the MPD body set last.
-    current_mpd_serves: u32,
     hits: HashMap<String, u64>,
 }
 
@@ -83,20 +81,7 @@ struct Origin(Arc<Mutex<OriginState>>);
 
 impl Origin {
     fn set_mpd(&self, body: impl Into<String>) {
-        let mut state = self.0.lock().unwrap();
-        state.mpd = body.into();
-        state.current_mpd_serves = 0;
-    }
-
-    /// Waits until the MPD set last was served.
-    async fn wait_for_mpd(&self) {
-        tokio::time::timeout(TEST_TIMEOUT, async {
-            while self.0.lock().unwrap().current_mpd_serves == 0 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("the new MPD is fetched");
+        self.0.lock().unwrap().mpd = body.into();
     }
 
     fn add_file(&self, path: &str, body: impl Into<Vec<u8>>) {
@@ -199,7 +184,6 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
             return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
         }
         state.mpd_serves += 1;
-        state.current_mpd_serves += 1;
         return respond(StatusCode::OK, state.mpd.clone().into_bytes());
     }
     if let Some(entry) = state.files.get_mut(&path) {
@@ -879,11 +863,42 @@ async fn period_change_starts_a_new_file_epoch_without_cross_epoch_merging() {
     assert_two_track_stream(&items[barrier + 1..]);
 }
 
+/// A/V `$Number$` presentation whose video path names the Representation;
+/// `early` makes video segments available a second ahead of the clock.
+fn switch_mpd(dynamic: bool, video_id: &str, early: bool) -> String {
+    let presentation = if dynamic {
+        r#"type="dynamic" minimumUpdatePeriod="PT0.1S""#
+    } else {
+        r#"type="static" mediaPresentationDuration="PT11S""#
+    };
+    let offset = if early {
+        r#" availabilityTimeOffset="1""#
+    } else {
+        ""
+    };
+    format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" {presentation} availabilityStartTime="2024-01-01T00:00:00Z">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"{offset}/>
+      <Representation id="{video_id}" bandwidth="40000"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="24000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+    )
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn representation_switch_is_an_epoch_change() {
     let origin = Origin::default();
     origin.add_av();
-    origin.set_mpd(number_mpd(true, 0, "v-hd"));
+    origin.add_numbered("v-hd", VIDEO_1, VIDEO_TIMESCALE);
+    origin.add_numbered("v-sd", VIDEO_1, VIDEO_TIMESCALE);
+    origin.set_mpd(switch_mpd(true, "v-hd", false));
     let base = origin.clone().serve().await;
     let clock = live_clock(10);
     let mut config = config(Some(Arc::clone(&clock)));
@@ -896,22 +911,21 @@ async fn representation_switch_is_an_epoch_change() {
         mut items, handle, ..
     } = session;
     let mut out = Vec::new();
-    // Each step is gated on the previous one being observed, so the clock
-    // and the MPD generations reach the planners in a known order.
-    wait_for_hit(&origin, "v/10.m4s").await;
+    wait_for_hit(&origin, "v-hd/10.m4s").await;
     wait_for_hit(&origin, "a/10.m4s").await;
-    origin.set_mpd(number_mpd(true, 0, "v-sd"));
-    origin.wait_for_mpd().await;
+    // The replacement offers segment 11 a second early. The clock stays at
+    // 10 s, so only a planner that consumed the replacement can request it:
+    // the request proves the switch was planned, with no clock race.
+    origin.set_mpd(switch_mpd(true, "v-sd", true));
+    wait_for_hit(&origin, "v-sd/11.m4s").await;
+    // Audio segment 11 completes the audio of video segment 10.
     clock.advance(Duration::from_secs(1));
-    // Segment 11 of the replacement Representation, and the audio that
-    // completes segment 10's slice.
-    wait_for_hit(&origin, "v/11.m4s").await;
     assert!(
         read_until(&mut items, &mut out, |out| !media(out).is_empty())
             .await
             .is_none()
     );
-    origin.set_mpd(number_mpd(false, 11, "v-sd"));
+    origin.set_mpd(switch_mpd(false, "v-sd", false));
     assert!(read_until(&mut items, &mut out, |_| false).await.is_none());
     tokio::time::timeout(TEST_TIMEOUT, handle.join())
         .await
@@ -935,7 +949,10 @@ async fn representation_switch_is_an_epoch_change() {
         .filter(|(_, track, _)| *track == 1)
         .map(|(_, _, time)| time / VIDEO_TIMESCALE)
         .collect();
-    assert_eq!(video, [9, 10], "segments 10 and 11, one per Representation");
+    // Segment 10 under v-hd; 11 and 12 (offered a second early) under v-sd.
+    assert_eq!(video, [9, 10, 11]);
+    assert_eq!(origin.hits("v-hd/11.m4s"), 0);
+    assert_eq!(origin.hits("v-sd/10.m4s"), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1143,6 +1160,54 @@ fn long_static(origin: &Origin, count: u64) -> String {
     number_mpd(false, count, "v")
 }
 
+/// Media segments the origin served under `prefix/`.
+fn segment_hits(origin: &Origin, prefix: &str) -> u64 {
+    origin
+        .0
+        .lock()
+        .unwrap()
+        .hits
+        .iter()
+        .filter(|(path, _)| path.starts_with(prefix) && path.ends_with(".m4s"))
+        .map(|(_, hits)| *hits)
+        .sum()
+}
+
+/// Waits until downloads stop although segments remain: with nobody
+/// reading the items, every buffer between the origin and the consumer is
+/// full and the engine's last delivery is blocked.
+async fn wait_until_backpressured(origin: &Origin, total: u64) {
+    tokio::time::timeout(TEST_TIMEOUT, async {
+        let mut last = u64::MAX;
+        loop {
+            let served = segment_hits(origin, "v/");
+            if served == last && served > 0 {
+                break;
+            }
+            last = served;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    })
+    .await
+    .expect("downloads stall behind the unread consumer");
+    let served = segment_hits(origin, "v/");
+    assert!(
+        served < total,
+        "the presentation must outlast the buffers ({served} of {total} served)"
+    );
+}
+
+/// One track, minimal buffers: what is downloaded before backpressure stops
+/// the pipeline stays far below the presentation length.
+fn backpressure_config() -> DashConfig {
+    let mut config = config(None);
+    config.selection.include_audio = false;
+    config.scheduler.download_concurrency = 1;
+    config.scheduler.processed_segment_buffer_multiplier = 1;
+    config.engine.max_pending_items = 1;
+    config
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_a_session_whose_consumer_stopped_reading_finishes() {
     let origin = Origin::default();
@@ -1150,7 +1215,7 @@ async fn cancelling_a_session_whose_consumer_stopped_reading_finishes() {
     origin.set_mpd(mpd);
     let base = origin.clone().serve().await;
 
-    let session = start(&format!("{base}/manifest.mpd"), config(None))
+    let session = start(&format!("{base}/manifest.mpd"), backpressure_config())
         .await
         .expect("session starts");
     // Hold the item stream without reading it until output is saturated.
@@ -1159,7 +1224,7 @@ async fn cancelling_a_session_whose_consumer_stopped_reading_finishes() {
         handle,
         ..
     } = session;
-    wait_for_hit(&origin, "v/60.m4s").await;
+    wait_until_backpressured(&origin, 200).await;
     handle.cancel();
     let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
         .await
@@ -1177,7 +1242,7 @@ async fn cancelling_a_failover_session_whose_consumer_stopped_reading_finishes()
     let base = origin.clone().serve().await;
 
     let downloader = MesioDownloader::new(MesioConfig {
-        dash: config(None),
+        dash: backpressure_config(),
         ..Default::default()
     });
     let url = format!("{base}/manifest.mpd");
@@ -1193,7 +1258,7 @@ async fn cancelling_a_failover_session_whose_consumer_stopped_reading_finishes()
         handle,
         ..
     } = session;
-    wait_for_hit(&origin, "v/60.m4s").await;
+    wait_until_backpressured(&origin, 200).await;
     handle.cancel();
     let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
         .await
@@ -1362,4 +1427,70 @@ async fn engine_output_splits_through_the_hls_pipeline_at_independent_items() {
         };
         assert!(check.is_independent(&first.data));
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn presentations_longer_than_the_planning_window_are_recorded_whole() {
+    let origin = Origin::default();
+    let mpd = long_static(&origin, 300);
+    origin.set_mpd(mpd);
+    let base = origin.clone().serve().await;
+    let mut config = config(None);
+    config.selection.include_audio = false;
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let (items, error, _, terminal) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_eq!(count_track(&items, 1), 300);
+    for number in [1, 256, 257, 300] {
+        assert_eq!(
+            origin.hits(&format!("v/{number}.m4s")),
+            1,
+            "segment {number}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_static_presentation_with_a_protected_first_period_fails_typed() {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.set_mpd(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="drm" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
+      <SegmentTemplate media="d/$Number$.m4s" initialization="d/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="clear" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#,
+    );
+    let base = origin.clone().serve().await;
+
+    let error = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .err()
+        .expect("the first Period cannot be skipped");
+    assert!(
+        matches!(
+            error,
+            DownloadError::Unsupported {
+                protocol: "dash",
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(segment_hits(&origin, "v/"), 0);
 }
