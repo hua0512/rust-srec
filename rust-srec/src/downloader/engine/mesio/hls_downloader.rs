@@ -8,11 +8,13 @@
 //! through [`HlsDownloader::record`] as well, labelled with their protocol.
 
 use futures::StreamExt;
+use futures::future::BoxFuture;
 use hls::{HlsData, SplitReason};
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::{
-    BoxMediaStream, DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection,
+    BoxMediaStream, DownloadError, DownloadRequest, DownloadTerminal, MesioConfig, MesioDownloader,
+    ProtocolSelection,
 };
 use parking_lot::RwLock;
 use pipeline_common::{
@@ -22,8 +24,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
+use super::super::utils::TASK_SETTLEMENT_TIMEOUT;
 use super::super::utils::observe_segment_event_send;
 use super::super::utils::sanitize_engine_message;
 use super::classify_download_error;
@@ -91,6 +94,118 @@ async fn next_initial_item<T>(
         _ = session_cancellation.cancelled() => Err(cancelled()),
         item = next => Ok(item),
     }
+}
+
+/// The mesio session's own report of how it ended, joined after its items
+/// were consumed. The items alone cannot tell a clean end from one where an
+/// engine task failed after the last item was produced.
+pub(super) struct SessionLifecycle {
+    cancel: Box<dyn Fn() + Send + Sync>,
+    join: BoxFuture<'static, Option<Result<DownloadTerminal, DownloadError>>>,
+}
+
+impl From<mesio::DownloadHandle> for SessionLifecycle {
+    fn from(handle: mesio::DownloadHandle) -> Self {
+        let cancel_handle = handle.clone();
+        Self {
+            cancel: Box::new(move || cancel_handle.cancel()),
+            join: Box::pin(async move { handle.join().await }),
+        }
+    }
+}
+
+/// How a session ended, as far as the backend needs to know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SessionEnd {
+    /// The engine reported an authoritative end.
+    AuthoritativeEnd,
+    /// Cancelled, or the consumer went away.
+    Stopped,
+    /// An engine task failed or panicked.
+    Failed(String),
+    /// The session reported nothing (its lifecycle was already joined).
+    Unreported,
+    /// The session did not finish within the settlement window.
+    TimedOut,
+}
+
+impl SessionLifecycle {
+    /// Waits for the session to finish. A session whose items ran out is
+    /// finishing on its own and gets a grace period before it is cancelled;
+    /// one abandoned early (cancellation, writer failure, stream error) is
+    /// cancelled at once. Cancelling cannot change an outcome the engine has
+    /// already decided.
+    async fn settle(self, items_exhausted: bool) -> SessionEnd {
+        let Self { cancel, mut join } = self;
+        if !items_exhausted {
+            cancel();
+        }
+        let joined = match tokio::time::timeout(TASK_SETTLEMENT_TIMEOUT, &mut join).await {
+            Ok(joined) => joined,
+            Err(_) if items_exhausted => {
+                cancel();
+                match tokio::time::timeout(TASK_SETTLEMENT_TIMEOUT, join).await {
+                    Ok(joined) => joined,
+                    Err(_) => return SessionEnd::TimedOut,
+                }
+            }
+            Err(_) => return SessionEnd::TimedOut,
+        };
+        match joined {
+            None => SessionEnd::Unreported,
+            Some(Ok(DownloadTerminal::AuthoritativeEnd)) => SessionEnd::AuthoritativeEnd,
+            Some(Ok(DownloadTerminal::Cancelled | DownloadTerminal::DownstreamClosed)) => {
+                SessionEnd::Stopped
+            }
+            Some(Ok(DownloadTerminal::PipelineError(reason))) => {
+                SessionEnd::Failed(reason.to_string())
+            }
+            Some(Err(error)) => SessionEnd::Failed(error.to_string()),
+        }
+    }
+}
+
+/// What the consumed items and the session's own report say together.
+struct SessionObservation {
+    /// The items ran out rather than being abandoned.
+    items_exhausted: bool,
+    /// An `EndOfStream` marker was among the items.
+    saw_end_of_stream: bool,
+    /// The download was cancelled through either token.
+    cancelled: bool,
+}
+
+/// The terminal stream error and engine signal of a recording.
+///
+/// A typed stream error is kept as is. A session that ran out of items
+/// without one but reports a failed engine task is a processing failure,
+/// whatever its items ended with. The protocol's authoritative end is only
+/// reported when the items ended with `EndOfStream` and the session confirms
+/// an authoritative end; cancellation keeps its existing outcome.
+fn conclude_session(
+    protocol: SegmentedProtocol,
+    observation: &SessionObservation,
+    stream_error: Option<(DownloadFailureKind, String)>,
+    session_end: &SessionEnd,
+) -> (Option<(DownloadFailureKind, String)>, EngineEndSignal) {
+    let stream_error = match (stream_error, session_end) {
+        (None, SessionEnd::Failed(reason))
+            if observation.items_exhausted && !observation.cancelled =>
+        {
+            Some((
+                DownloadFailureKind::Processing,
+                format!("{} session failed: {reason}", protocol.label()),
+            ))
+        }
+        (stream_error, _) => stream_error,
+    };
+    let engine_signal =
+        if observation.saw_end_of_stream && matches!(session_end, SessionEnd::AuthoritativeEnd) {
+            protocol.authoritative_end()
+        } else {
+            EngineEndSignal::CleanDisconnect
+        };
+    (stream_error, engine_signal)
 }
 
 /// HLS-specific download orchestrator.
@@ -186,8 +301,13 @@ impl HlsDownloader {
             EngineStartError::new(kind, format!("Failed to start HLS download: {}", e))
         })?;
 
-        self.record(SegmentedProtocol::Hls, token, session.items)
-            .await
+        self.record(
+            SegmentedProtocol::Hls,
+            token,
+            session.items,
+            SessionLifecycle::from(session.handle),
+        )
+        .await
     }
 
     /// Record the items of a started session to files.
@@ -207,6 +327,7 @@ impl HlsDownloader {
         protocol: SegmentedProtocol,
         token: CancellationToken,
         mut hls_stream: BoxMediaStream<HlsData, DownloadError>,
+        lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let label = protocol.label();
         let config = self.config_snapshot();
@@ -288,11 +409,25 @@ impl HlsDownloader {
 
         // Route based on enable_processing flag AND engine config
         if processing {
-            self.download_with_pipeline(protocol, token, hls_stream, first_segment, extension)
-                .await
+            self.download_with_pipeline(
+                protocol,
+                token,
+                hls_stream,
+                first_segment,
+                extension,
+                lifecycle,
+            )
+            .await
         } else {
-            self.download_raw(protocol, token, hls_stream, first_segment, extension)
-                .await
+            self.download_raw(
+                protocol,
+                token,
+                hls_stream,
+                first_segment,
+                extension,
+                lifecycle,
+            )
+            .await
         }
     }
 
@@ -310,6 +445,7 @@ impl HlsDownloader {
         + Unpin,
         first_segment: HlsData,
         extension: &str,
+        lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
@@ -364,49 +500,16 @@ impl HlsDownloader {
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
 
-        // Tap each item to detect the `EndOfStream` marker mesio emits only
-        // when the platform ended the stream (HLS `#EXT-X-ENDLIST`, the end of
-        // a static or ended DASH presentation). When set, the engine signal
-        // escalates from CleanDisconnect (ambiguous) to the protocol's
-        // authoritative end (lifecycle bypasses hysteresis).
-        let saw_endlist = Arc::new(AtomicBool::new(false));
-        let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
-
-        // Feed the peeked segment through the same cancellation-aware path as
-        // the rest of the stream. This prevents a full pipeline input from
-        // pinning shutdown before the normal settlement path can join writers.
-        let hls_stream = futures::stream::once(std::future::ready(Ok::<
-            HlsData,
-            mesio::hls::HlsDownloaderError,
-        >(first_segment)))
-        .chain(hls_stream);
-        let stream_error = helpers::consume_stream(
-            hls_stream,
-            &pipeline_input_tx,
-            helpers::StreamConsumeContext {
-                managed_credentials: config.managed_credentials,
-                parent_token: &self.cancellation_token,
-                child_token: &token,
-                streamer_id: &streamer_id,
-                protocol: protocol.label(),
-            },
-            classify_download_error,
-            move |item: &HlsData| {
-                if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
-                    saw_endlist_for_inspect.store(true, Ordering::Relaxed);
-                }
-            },
-        )
-        .await;
-
-        // Close the pipeline input channel to signal completion
-        drop(pipeline_input_tx);
-
-        let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
-            protocol.authoritative_end()
-        } else {
-            EngineEndSignal::CleanDisconnect
-        };
+        let (stream_error, engine_signal) = self
+            .consume_session(
+                protocol,
+                &token,
+                hls_stream,
+                first_segment,
+                pipeline_input_tx,
+                lifecycle,
+            )
+            .await;
 
         helpers::handle_writer_result(
             writer_task,
@@ -438,6 +541,7 @@ impl HlsDownloader {
         + Unpin,
         first_segment: HlsData,
         extension: &str,
+        lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
@@ -474,45 +578,9 @@ impl HlsDownloader {
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
 
-        // See `download_with_pipeline` for the rationale; raw mode uses the
-        // same end-of-stream observer.
-        let saw_endlist = Arc::new(AtomicBool::new(false));
-        let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
-
-        // Consume the full stream, including the peeked segment, through the
-        // cancellation-aware forwarding path.
-        let hls_stream = futures::stream::once(std::future::ready(Ok::<
-            HlsData,
-            mesio::hls::HlsDownloaderError,
-        >(first_segment)))
-        .chain(hls_stream);
-        let stream_error = helpers::consume_stream(
-            hls_stream,
-            &tx,
-            helpers::StreamConsumeContext {
-                managed_credentials: config.managed_credentials,
-                parent_token: &self.cancellation_token,
-                child_token: &token,
-                streamer_id: &streamer_id,
-                protocol: protocol.label(),
-            },
-            classify_download_error,
-            move |item: &HlsData| {
-                if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
-                    saw_endlist_for_inspect.store(true, Ordering::Relaxed);
-                }
-            },
-        )
-        .await;
-
-        // Close the channel to signal writer to finish
-        drop(tx);
-
-        let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
-            protocol.authoritative_end()
-        } else {
-            EngineEndSignal::CleanDisconnect
-        };
+        let (stream_error, engine_signal) = self
+            .consume_session(protocol, &token, hls_stream, first_segment, tx, lifecycle)
+            .await;
 
         helpers::handle_writer_result(
             writer_task,
@@ -529,6 +597,91 @@ impl HlsDownloader {
         )
         .await
         .map_err(EngineStartError::from)
+    }
+
+    /// Forwards the session's items, starting with the peeked one, to the
+    /// writer side through `tx`, then settles the session and concludes how
+    /// the recording ended (see [`conclude_session`]).
+    async fn consume_session(
+        &self,
+        protocol: SegmentedProtocol,
+        token: &CancellationToken,
+        hls_stream: impl futures::Stream<
+            Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
+        > + Send
+        + Unpin,
+        first_segment: HlsData,
+        tx: impl helpers::StreamSender<HlsData>,
+        lifecycle: SessionLifecycle,
+    ) -> (Option<(DownloadFailureKind, String)>, EngineEndSignal) {
+        let config = self.config_snapshot();
+
+        // Tap each item to detect the `EndOfStream` marker mesio emits only
+        // when the platform ended the stream (HLS `#EXT-X-ENDLIST`, the end of
+        // a static or ended DASH presentation).
+        let saw_end_of_stream = Arc::new(AtomicBool::new(false));
+        let saw_end_of_stream_for_inspect = Arc::clone(&saw_end_of_stream);
+        let items_exhausted = Arc::new(AtomicBool::new(false));
+        let items_exhausted_for_tail = Arc::clone(&items_exhausted);
+
+        // Feed the peeked segment through the same cancellation-aware path as
+        // the rest of the stream. This prevents a full pipeline input from
+        // pinning shutdown before the normal settlement path can join writers.
+        // The empty tail runs only once the session's items have run out.
+        let hls_stream = futures::stream::once(std::future::ready(Ok::<
+            HlsData,
+            mesio::hls::HlsDownloaderError,
+        >(first_segment)))
+        .chain(hls_stream)
+        .chain(
+            futures::stream::once(std::future::ready(())).filter_map(move |()| {
+                items_exhausted_for_tail.store(true, Ordering::Relaxed);
+                std::future::ready(None)
+            }),
+        );
+        let stream_error = helpers::consume_stream(
+            hls_stream,
+            &tx,
+            helpers::StreamConsumeContext {
+                managed_credentials: config.managed_credentials,
+                parent_token: &self.cancellation_token,
+                child_token: token,
+                streamer_id: &config.streamer_id,
+                protocol: protocol.label(),
+            },
+            classify_download_error,
+            move |item: &HlsData| {
+                if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
+                    saw_end_of_stream_for_inspect.store(true, Ordering::Relaxed);
+                }
+            },
+        )
+        .await;
+
+        // Closing the input lets the writer finish while the session settles.
+        drop(tx);
+
+        let observation = SessionObservation {
+            items_exhausted: items_exhausted.load(Ordering::Relaxed),
+            saw_end_of_stream: saw_end_of_stream.load(Ordering::Relaxed),
+            cancelled: self.cancellation_token.is_cancelled() || token.is_cancelled(),
+        };
+        let session_end = lifecycle.settle(observation.items_exhausted).await;
+        match &session_end {
+            SessionEnd::Failed(reason) => warn!(
+                protocol = protocol.label(),
+                streamer_id = %config.streamer_id,
+                reason = %sanitize_engine_message(reason, config.managed_credentials),
+                "Download session reported a failed engine task"
+            ),
+            SessionEnd::TimedOut => warn!(
+                protocol = protocol.label(),
+                streamer_id = %config.streamer_id,
+                "Download session did not finish within the settlement window"
+            ),
+            _ => {}
+        }
+        conclude_session(protocol, &observation, stream_error, &session_end)
     }
 }
 
@@ -640,6 +793,7 @@ mod tests {
                 hls_stream,
                 first_segment,
                 "ts",
+                scripted_lifecycle(None).0,
             )
             .await;
         assert!(result.is_err(), "expected stream error");
@@ -670,5 +824,253 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         );
+    }
+
+    /// A session lifecycle that reports `joined` and records whether it was
+    /// cancelled.
+    fn scripted_lifecycle(
+        joined: Option<Result<DownloadTerminal, DownloadError>>,
+    ) -> (SessionLifecycle, Arc<AtomicBool>) {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled_by = Arc::clone(&cancelled);
+        (
+            SessionLifecycle {
+                cancel: Box::new(move || cancelled_by.store(true, Ordering::Relaxed)),
+                join: Box::pin(async move { joined }),
+            },
+            cancelled,
+        )
+    }
+
+    fn ts_segment(uri: &str) -> HlsData {
+        HlsData::ts(
+            MediaSegment {
+                uri: uri.to_string(),
+                duration: 1.0,
+                ..Default::default()
+            },
+            Bytes::from_static(&[0_u8; 188]),
+        )
+    }
+
+    /// Records `rest` after a first TS segment in raw mode and returns the
+    /// result with the terminal segment event.
+    async fn record_raw(
+        protocol: SegmentedProtocol,
+        rest: impl futures::Stream<Item = Result<HlsData, DownloadError>> + Send + Unpin,
+        lifecycle: SessionLifecycle,
+        parent: CancellationToken,
+    ) -> (
+        std::result::Result<DownloadStats, EngineStartError>,
+        SegmentEvent,
+    ) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = DownloadConfig::new(
+            "http://example.invalid/stream",
+            temp.path().to_path_buf(),
+            "streamer",
+            "streamer",
+            "session",
+        )
+        .with_filename_template("test-session-end");
+        let (event_tx, mut event_rx) = mpsc::channel::<SegmentEvent>(64);
+        let downloader = HlsDownloader::new(
+            Arc::new(RwLock::new(config)),
+            MesioEngineConfig::default(),
+            event_tx,
+            parent.clone(),
+            None,
+        );
+        let result = timeout(
+            Duration::from_secs(10),
+            downloader.download_raw(
+                protocol,
+                parent.child_token(),
+                rest,
+                ts_segment("seg0.ts"),
+                "ts",
+                lifecycle,
+            ),
+        )
+        .await
+        .expect("recording settles");
+        let mut terminal = None;
+        while let Ok(event) = event_rx.try_recv() {
+            if matches!(
+                event,
+                SegmentEvent::DownloadCompleted { .. } | SegmentEvent::DownloadFailed { .. }
+            ) {
+                terminal = Some(event);
+            }
+        }
+        (result, terminal.expect("a terminal segment event"))
+    }
+
+    fn ended_items() -> impl futures::Stream<Item = Result<HlsData, DownloadError>> + Send + Unpin {
+        futures::stream::iter([
+            Ok(ts_segment("seg1.ts")),
+            Ok(HlsData::end_marker_with_reason(SplitReason::EndOfStream)),
+        ])
+    }
+
+    #[tokio::test]
+    async fn end_of_stream_with_a_failed_session_is_a_processing_failure() {
+        let (lifecycle, cancelled) = scripted_lifecycle(Some(Ok(DownloadTerminal::PipelineError(
+            Arc::from("DASH assembler task failed"),
+        ))));
+        let (result, terminal) = record_raw(
+            SegmentedProtocol::Dash,
+            ended_items(),
+            lifecycle,
+            CancellationToken::new(),
+        )
+        .await;
+
+        // The terminal event carries the classification, as for stream
+        // errors; it is queued before the engine returns, so it wins.
+        assert!(result.is_err());
+        match terminal {
+            SegmentEvent::DownloadFailed { kind, message } => {
+                assert_eq!(kind, DownloadFailureKind::Processing);
+                assert!(message.contains("DASH session failed"), "{message}");
+            }
+            other => panic!("expected DownloadFailed, got {other:?}"),
+        }
+        assert!(
+            !cancelled.load(Ordering::Relaxed),
+            "a session that ran out of items is joined, not cancelled"
+        );
+
+        // A panicked lifecycle task is a failure too.
+        let (lifecycle, _) = scripted_lifecycle(Some(Err(DownloadError::Internal {
+            reason: "download lifecycle task failed: panicked".to_string(),
+        })));
+        let (result, terminal) = record_raw(
+            SegmentedProtocol::Dash,
+            ended_items(),
+            lifecycle,
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(
+            matches!(
+                terminal,
+                SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::Processing,
+                    ..
+                }
+            ),
+            "{terminal:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn end_of_stream_with_an_authoritative_session_end_is_authoritative() {
+        for (protocol, signal) in [
+            (SegmentedProtocol::Dash, EngineEndSignal::DashEnd),
+            (SegmentedProtocol::Hls, EngineEndSignal::HlsEndlist),
+        ] {
+            let (lifecycle, _) = scripted_lifecycle(Some(Ok(DownloadTerminal::AuthoritativeEnd)));
+            let (result, terminal) =
+                record_raw(protocol, ended_items(), lifecycle, CancellationToken::new()).await;
+            assert!(result.is_ok(), "{protocol:?}");
+            assert!(
+                matches!(
+                    terminal,
+                    SegmentEvent::DownloadCompleted { engine_signal, .. } if engine_signal == signal
+                ),
+                "{protocol:?}: {terminal:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_keeps_its_outcome_whatever_the_session_reports() {
+        let parent = CancellationToken::new();
+        let (lifecycle, cancelled) = scripted_lifecycle(Some(Ok(DownloadTerminal::PipelineError(
+            Arc::from("task failed while stopping"),
+        ))));
+        let stop = parent.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            stop.cancel();
+        });
+        let (result, terminal) = record_raw(
+            SegmentedProtocol::Dash,
+            futures::stream::pending(),
+            lifecycle,
+            parent,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            matches!(
+                terminal,
+                SegmentEvent::DownloadCompleted {
+                    engine_signal: EngineEndSignal::CleanDisconnect,
+                    ..
+                }
+            ),
+            "{terminal:?}"
+        );
+        assert!(
+            cancelled.load(Ordering::Relaxed),
+            "an abandoned session is cancelled"
+        );
+    }
+
+    #[test]
+    fn session_conclusions() {
+        let ended = SessionObservation {
+            items_exhausted: true,
+            saw_end_of_stream: true,
+            cancelled: false,
+        };
+        let failed = SessionEnd::Failed("task failed".to_string());
+        let conclude = |observation: &SessionObservation, error, end: &SessionEnd| {
+            conclude_session(SegmentedProtocol::Dash, observation, error, end)
+        };
+
+        // A typed stream error is kept over the session's report.
+        let typed = Some((DownloadFailureKind::Network, "playlist".to_string()));
+        assert_eq!(conclude(&ended, typed.clone(), &failed).0, typed);
+
+        // An end the session cannot confirm is not authoritative.
+        for end in [
+            SessionEnd::Stopped,
+            SessionEnd::TimedOut,
+            SessionEnd::Unreported,
+            failed.clone(),
+        ] {
+            assert_eq!(
+                conclude(&ended, None, &end).1,
+                EngineEndSignal::CleanDisconnect,
+                "{end:?}"
+            );
+        }
+        assert_eq!(
+            conclude(&ended, None, &SessionEnd::AuthoritativeEnd).1,
+            EngineEndSignal::DashEnd
+        );
+
+        // Without the marker a confirmed end stays a clean disconnect.
+        let no_marker = SessionObservation {
+            saw_end_of_stream: false,
+            ..ended
+        };
+        assert_eq!(
+            conclude(&no_marker, None, &SessionEnd::AuthoritativeEnd),
+            (None, EngineEndSignal::CleanDisconnect)
+        );
+
+        // Items abandoned early (writer failure) leave the error to the writer.
+        let abandoned = SessionObservation {
+            items_exhausted: false,
+            saw_end_of_stream: false,
+            cancelled: false,
+        };
+        assert_eq!(conclude(&abandoned, None, &failed).0, None);
     }
 }

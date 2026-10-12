@@ -21,7 +21,7 @@ use super::super::utils::sanitize_engine_message;
 use super::classify_download_error;
 use super::config::build_dash_config;
 use super::helpers::DownloadStats;
-use super::hls_downloader::{HlsDownloader, SegmentedProtocol};
+use super::hls_downloader::{HlsDownloader, SegmentedProtocol, SessionLifecycle};
 use crate::database::models::engine::MesioEngineConfig;
 use crate::downloader::engine::traits::{DownloadConfig, EngineStartError, SegmentEvent};
 
@@ -131,7 +131,12 @@ impl DashDownloader {
             None,
         )
         .with_manual_split(self.manual_split)
-        .record(SegmentedProtocol::Dash, token, session.items)
+        .record(
+            SegmentedProtocol::Dash,
+            token,
+            session.items,
+            SessionLifecycle::from(session.handle),
+        )
         .await
     }
 }
