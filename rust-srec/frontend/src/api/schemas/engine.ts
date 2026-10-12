@@ -220,8 +220,10 @@ export const MesioHlsConfigSchema = z.object({
 });
 
 // --- Mesio MPEG-DASH ---
-// Every field is optional: an unset field takes the engine default below, and in a template
-// override it inherits the engine's value. `null` (only from hand-edited JSON) counts as unset.
+// Every field is optional and an unset field takes the engine default below. In a template
+// override an absent field inherits the engine's value, while `null` resets it to the engine
+// default (the backend merge removes null-valued keys); overrides therefore keep `null`, and the
+// engine configuration treats it as unset.
 
 const U32_MAX = 4_294_967_295;
 
@@ -240,17 +242,21 @@ export const MESIO_DASH_DEFAULTS = {
   live_start: { type: 'auto' },
 } as const;
 
-const dashInt = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
+const dashInt = (
+  keepNull: boolean,
+  min: number,
+  max: number = Number.MAX_SAFE_INTEGER,
+) =>
   z
     .union([z.number(), z.string(), z.null()])
     .transform((val) => {
-      if (val === '' || val === null) return undefined;
+      if (val === null) return keepNull ? null : undefined;
+      if (val === '') return undefined;
       return typeof val === 'number' ? val : Number(val);
     })
     .refine(
       (val) =>
-        val === undefined ||
-        (Number.isInteger(val) && val >= min && val <= max),
+        val == null || (Number.isInteger(val) && val >= min && val <= max),
       {
         message:
           min > 0
@@ -267,12 +273,12 @@ const dashRequiredInt = (max: number) =>
     .min(1, 'Must be a positive whole number')
     .max(max, 'Must be a positive whole number');
 
-const dashBoolean = () =>
+const dashBoolean = (keepNull: boolean) =>
   z
     .boolean()
     .nullable()
     .optional()
-    .transform((val) => val ?? undefined);
+    .transform((val) => (val === null && keepNull ? null : (val ?? undefined)));
 
 /** Language tag shape the backend accepts: 1–8 letters or digits per subtag, joined by '-'. */
 const LANGUAGE_TAG = /^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$/;
@@ -312,40 +318,44 @@ export const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
 ]);
 export type MesioDashLiveStart = z.infer<typeof MesioDashLiveStartSchema>;
 
-const unsetIfNull = <T extends z.ZodType>(schema: T) =>
+const dashPolicy = <T extends z.ZodType>(schema: T, keepNull: boolean) =>
   schema
     .nullable()
     .optional()
-    .transform((val) => val ?? undefined);
+    .transform((val) => (val === null && keepNull ? null : (val ?? undefined)));
 
-const MesioDashConfigShape = {
-  video_quality: unsetIfNull(MesioDashVideoQualitySchema),
-  audio_quality: unsetIfNull(MesioDashAudioQualitySchema),
-  audio_language: z
+const dashLanguage = (keepNull: boolean) =>
+  z
     .string()
     .nullable()
     .optional()
     .transform((val) => {
+      if (val === null) return keepNull ? null : undefined;
       const trimmed = val?.trim();
       return trimmed ? trimmed : undefined;
     })
-    .refine((val) => val === undefined || LANGUAGE_TAG.test(val), {
+    .refine((val) => val == null || LANGUAGE_TAG.test(val), {
       message: "Use a language tag such as 'en' or 'pt-BR'",
-    }),
-  include_video: dashBoolean(),
-  include_audio: dashBoolean(),
-  download_concurrency: dashInt(1),
-  manifest_timeout_ms: dashInt(1),
-  min_refresh_interval_ms: dashInt(1),
-  max_refresh_retries: dashInt(0, U32_MAX),
-  segment_timeout_ms: dashInt(1),
-  max_segment_retries: dashInt(0, U32_MAX),
-  live_start: unsetIfNull(MesioDashLiveStartSchema),
-};
+    });
+
+const mesioDashShape = (keepNull: boolean) => ({
+  video_quality: dashPolicy(MesioDashVideoQualitySchema, keepNull),
+  audio_quality: dashPolicy(MesioDashAudioQualitySchema, keepNull),
+  audio_language: dashLanguage(keepNull),
+  include_video: dashBoolean(keepNull),
+  include_audio: dashBoolean(keepNull),
+  download_concurrency: dashInt(keepNull, 1),
+  manifest_timeout_ms: dashInt(keepNull, 1),
+  min_refresh_interval_ms: dashInt(keepNull, 1),
+  max_refresh_retries: dashInt(keepNull, 0, U32_MAX),
+  segment_timeout_ms: dashInt(keepNull, 1),
+  max_segment_retries: dashInt(keepNull, 0, U32_MAX),
+  live_start: dashPolicy(MesioDashLiveStartSchema, keepNull),
+});
 
 /** The engine rejects a configuration that records neither track. */
 function requireATrack(
-  value: { include_video?: boolean; include_audio?: boolean },
+  value: { include_video?: boolean | null; include_audio?: boolean | null },
   ctx: z.RefinementCtx,
 ) {
   if (value.include_video === false && value.include_audio === false) {
@@ -358,20 +368,65 @@ function requireATrack(
 }
 
 export const MesioDashConfigSchema = z
-  .object(MesioDashConfigShape)
+  .object(mesioDashShape(false))
   .superRefine(requireATrack);
 export type MesioDashConfig = z.infer<typeof MesioDashConfigSchema>;
 
-const MesioDashConfigOverrideSchema = z
-  .object(MesioDashConfigShape)
+export const MesioDashConfigOverrideSchema = z
+  .object(mesioDashShape(true))
   .strict()
   .superRefine(requireATrack);
+export type MesioDashConfigOverride = z.input<
+  typeof MesioDashConfigOverrideSchema
+>;
 
-/** A form that registered the DASH fields but set none of them saves no `dash` object. */
+/**
+ * A form that registered the DASH fields but set none of them saves no `dash` object. A `null`
+ * field is a reset, not an unset field, so it keeps the object.
+ */
 function unlessEmpty<T extends object>(value: T): T | undefined {
   return Object.values(value).some((field) => field !== undefined)
     ? value
     : undefined;
+}
+
+/** DASH settings with every field resolved: what a template override inherits. */
+export type MesioDashSettings = {
+  [K in keyof Omit<MesioDashConfig, 'audio_language'>]-?: NonNullable<
+    MesioDashConfig[K]
+  >;
+} & { audio_language?: string };
+
+/** An engine's DASH settings with its unset fields at the engine defaults. */
+export function resolveDashSettings(
+  engineDash: Partial<MesioDashConfig> | null | undefined,
+): MesioDashSettings {
+  const settings: Record<string, unknown> = { ...MESIO_DASH_DEFAULTS };
+  for (const [key, value] of Object.entries(engineDash ?? {})) {
+    if (value != null) settings[key] = value;
+  }
+  return settings as MesioDashSettings;
+}
+
+/**
+ * Whether a template's DASH override, merged over the engine's settings the way the backend
+ * merges it (absent inherits, `null` resets to the default), records neither video nor audio.
+ */
+export function dashOverrideDisablesBothTracks(
+  inherited: MesioDashSettings,
+  override: unknown,
+): boolean {
+  if (override === null || typeof override !== 'object') return false;
+  const fields = override as Record<string, unknown>;
+  const effective = (key: 'include_video' | 'include_audio') => {
+    const value = fields[key];
+    if (value === undefined) return inherited[key];
+    if (value === null) return MESIO_DASH_DEFAULTS[key];
+    return value;
+  };
+  return (
+    effective('include_video') === false && effective('include_audio') === false
+  );
 }
 
 export const MesioConfigSchema = z.object({
@@ -476,10 +531,11 @@ export const MesioConfigOverrideSchema = z
     buffer_size: optionalInt(1),
     fix_flv: z.boolean().optional(),
     fix_hls: z.boolean().optional(),
-    fix_dash: z.boolean().optional(),
+    // `null` resets to the engine default, like the DASH fields.
+    fix_dash: z.boolean().nullable().optional(),
     flv_fix: MesioFlvFixOverrideSchema.optional(),
     hls: MesioHlsConfigSchema.optional(),
-    // `null` resets the engine's DASH settings to the defaults for this template.
+    // `null` resets all of the engine's DASH settings to the defaults.
     dash: MesioDashConfigOverrideSchema.nullable()
       .optional()
       .transform((val) => (val ? unlessEmpty(val) : val)),

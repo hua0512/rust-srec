@@ -6,11 +6,14 @@ import { FfmpegForm } from '../../engines/forms/ffmpeg-form';
 import { StreamlinkForm } from '../../engines/forms/streamlink-form';
 import { MesioForm } from '../../engines/forms/mesio-form';
 import { Trans } from '@lingui/react/macro';
+import type { MesioConfig } from '@/api/schemas/engine';
 
 interface EngineOverrideCardProps {
   engineId: string;
   engineName: string;
   engineType?: string;
+  /** The overridden engine's configuration, shown for settings the override leaves unset. */
+  engineConfig?: Record<string, unknown>;
   onRemove: () => void;
 }
 
@@ -18,6 +21,7 @@ export function EngineOverrideCard({
   engineId,
   engineName,
   engineType,
+  engineConfig,
   onRemove,
 }: EngineOverrideCardProps) {
   // Determine which form to render based on engine type
@@ -29,7 +33,13 @@ export function EngineOverrideCard({
       case 'STREAMLINK':
         return <StreamlinkForm basePath={basePath} isOverride />;
       case 'MESIO':
-        return <MesioForm basePath={basePath} />;
+        return (
+          <MesioForm
+            basePath={basePath}
+            isOverride
+            engineConfig={engineConfig as Partial<MesioConfig> | undefined}
+          />
+        );
       default:
         return (
           <div className="text-muted-foreground p-4">

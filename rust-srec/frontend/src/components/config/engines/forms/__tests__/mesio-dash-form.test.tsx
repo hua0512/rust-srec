@@ -10,6 +10,7 @@ import {
   MesioConfigSchema,
 } from '@/api/schemas/engine';
 import { Form } from '@/components/ui/form';
+import { withEngineOverrideChecks } from '../../../templates/engine-override-checks';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { MesioDashForm } from '../mesio-dash-form';
 
@@ -24,13 +25,30 @@ beforeAll(() => {
   HTMLElement.prototype.releasePointerCapture = vi.fn();
 });
 
-function mount(override = false, config: Record<string, unknown> = {}) {
+function mount(
+  override = false,
+  config: Record<string, unknown> = {},
+  engineConfig: Record<string, unknown> = {},
+) {
   let form!: UseFormReturn<Values>;
+  const engine = MesioConfigSchema.parse(engineConfig);
   function Harness() {
     form = useForm<Values>({
-      resolver: zodResolver(
-        z.object({ config: MesioConfigSchema.optional() }),
-      ) as never,
+      resolver: override
+        ? withEngineOverrideChecks<Values>(
+            zodResolver(
+              z.object({
+                engines_override: z
+                  .record(z.string(), MesioConfigOverrideSchema)
+                  .optional(),
+              }),
+            ) as never,
+            () => [{ id: 'mesio', engine_type: 'MESIO', config: engine }],
+            () => NO_TRACK,
+          )
+        : (zodResolver(
+            z.object({ config: MesioConfigSchema.optional() }),
+          ) as never),
       defaultValues: override
         ? { engines_override: { mesio: config } }
         : { config: MesioConfigSchema.parse(config) },
@@ -42,6 +60,7 @@ function mount(override = false, config: Record<string, unknown> = {}) {
             engineId="mesio"
             engineName="Mesio"
             engineType="MESIO"
+            engineConfig={engine}
             onRemove={vi.fn()}
           />
         ) : (
@@ -68,6 +87,15 @@ function mount(override = false, config: Record<string, unknown> = {}) {
         ),
       ),
   };
+}
+
+const NO_TRACK = 'Records neither video nor audio';
+
+function openDashTab() {
+  fireEvent.mouseDown(screen.getByRole('tab', { name: /DASH Tuning/ }), {
+    button: 0,
+    ctrlKey: false,
+  });
 }
 
 async function choose(select: string, option: string) {
@@ -150,16 +178,122 @@ describe('Mesio DASH settings', () => {
 
   it('is available in template overrides, which stay partial', async () => {
     const { saved } = mount(true, { fix_hls: false });
-    fireEvent.mouseDown(screen.getByRole('tab', { name: /DASH Tuning/ }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.change(await screen.findByLabelText('Preferred Audio Language'), {
-      target: { value: 'pt-BR' },
-    });
+    openDashTab();
+    await choose('Preferred Audio Language', 'Custom');
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'Preferred Audio Language' }),
+      { target: { value: 'pt-BR' } },
+    );
     expect(saved()).toEqual({
       fix_hls: false,
       dash: { audio_language: 'pt-BR' },
     });
+  });
+});
+
+describe('Mesio DASH template overrides', () => {
+  it('shows what unset settings inherit from the engine', async () => {
+    mount(
+      true,
+      {},
+      { dash: { include_video: false, download_concurrency: 2 } },
+    );
+    openDashTab();
+    expect(
+      await screen.findByRole('combobox', {
+        name: 'Record Video (Default: On)',
+      }),
+    ).toHaveTextContent('Use engine setting (Off)');
+    expect(
+      screen.getByRole('combobox', { name: 'Video Quality' }),
+    ).toHaveTextContent('Use engine setting (Highest bandwidth)');
+    fireEvent.click(screen.getByRole('button', { name: 'Downloads' }));
+    expect(
+      screen.getByRole('combobox', { name: 'Download Concurrency' }),
+    ).toHaveTextContent('Use engine setting (2)');
+  });
+
+  it('keeps per-setting resets to the default through an unrelated change', async () => {
+    const config = {
+      dash: {
+        audio_language: null,
+        include_video: null,
+        video_quality: null,
+        download_concurrency: null,
+      },
+    };
+    const { saved } = mount(true, config, {
+      dash: { audio_language: 'en', include_video: false },
+    });
+    openDashTab();
+    expect(
+      await screen.findByRole('combobox', { name: 'Preferred Audio Language' }),
+    ).toHaveTextContent('Default (Any language)');
+    expect(
+      screen.getByRole('combobox', { name: 'Video Quality' }),
+    ).toHaveTextContent('Default (Highest bandwidth)');
+    fireEvent.click(screen.getByRole('button', { name: 'Downloads' }));
+    await choose('Segment Retries', 'Custom');
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Segment Retries' }),
+      {
+        target: { value: '7' },
+      },
+    );
+    expect(saved()).toEqual({
+      dash: { ...config.dash, max_segment_retries: 7 },
+    });
+
+    await choose('Preferred Audio Language', 'Use engine setting (en)');
+    expect(saved().dash).not.toHaveProperty('audio_language');
+    await choose('Preferred Audio Language', 'Default (Any language)');
+    expect(saved().dash.audio_language).toBeNull();
+  });
+
+  it('keeps a whole-section reset without mounting its settings', async () => {
+    const { saved } = mount(true, { fix_hls: false, dash: null });
+    openDashTab();
+    const choice = await screen.findByRole('combobox', {
+      name: 'DASH settings in this template',
+    });
+    expect(choice).toHaveTextContent('Reset all DASH settings to defaults');
+    expect(
+      screen.queryByRole('combobox', { name: 'Video Quality' }),
+    ).toBeNull();
+    expect(saved()).toEqual({ fix_hls: false, dash: null });
+
+    await choose(
+      'DASH settings in this template',
+      'Change individual settings',
+    );
+    expect(
+      screen.getByRole('combobox', { name: 'Video Quality' }),
+    ).toBeInTheDocument();
+    expect(saved()).toEqual({ fix_hls: false });
+
+    await choose(
+      'DASH settings in this template',
+      'Reset all DASH settings to defaults',
+    );
+    expect(
+      screen.queryByRole('combobox', { name: 'Video Quality' }),
+    ).toBeNull();
+    expect(saved()).toEqual({ fix_hls: false, dash: null });
+  });
+
+  it('refuses an override that leaves no track once merged with the engine', async () => {
+    const { form } = mount(true, {}, { dash: { include_video: false } });
+    openDashTab();
+    await choose('Record Separate Audio (Default: On)', 'Off');
+    expect(await screen.findByText(NO_TRACK)).toBeInTheDocument();
+    expect(await form.trigger()).toBe(false);
+
+    await choose('Record Video (Default: On)', 'On');
+    await waitFor(() => expect(screen.queryByText(NO_TRACK)).toBeNull());
+    expect(await form.trigger()).toBe(true);
+
+    // A reset returns video to its default (on), so audio may stay off.
+    await choose('Record Video (Default: On)', 'Default (On)');
+    expect(await form.trigger()).toBe(true);
   });
 });

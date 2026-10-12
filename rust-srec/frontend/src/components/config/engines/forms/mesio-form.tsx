@@ -41,6 +41,7 @@ import {
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
+import { resolveDashSettings, type MesioConfig } from '@/api/schemas/engine';
 
 interface SubFormProps {
   basePath: string;
@@ -248,9 +249,24 @@ MesioFlvForm.displayName = 'MesioFlvForm';
 
 interface MesioFormProps {
   basePath?: string;
+  /** Edit a template's override of an engine instead of the engine itself. */
+  isOverride?: boolean;
+  /** The overridden engine's configuration, whose values unset override fields inherit. */
+  engineConfig?: Partial<MesioConfig>;
 }
 
-export function MesioForm({ basePath = 'config' }: MesioFormProps) {
+export function MesioForm({
+  basePath = 'config',
+  isOverride = false,
+  engineConfig,
+}: MesioFormProps) {
+  const inheritedDash = React.useMemo(
+    () => (isOverride ? resolveDashSettings(engineConfig?.dash) : undefined),
+    [isOverride, engineConfig],
+  );
+  // An unset override inherits the engine's value; `null` resets it to the default.
+  const inheritedFixDash = isOverride ? (engineConfig?.fix_dash ?? true) : true;
+
   const fixFlv = useWatch({
     name: `${basePath}.fix_flv`,
   });
@@ -402,7 +418,11 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
                   </div>
                   <FormControl>
                     <Switch
-                      checked={field.value ?? true}
+                      checked={
+                        field.value === null
+                          ? true
+                          : (field.value ?? inheritedFixDash)
+                      }
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
@@ -422,7 +442,7 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
       </TabsContent>
 
       <TabsContent value="dash" className="mt-0 focus-visible:outline-none">
-        <MesioDashForm basePath={basePath} />
+        <MesioDashForm basePath={basePath} inherited={inheritedDash} />
       </TabsContent>
     </Tabs>
   );

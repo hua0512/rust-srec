@@ -108,7 +108,7 @@ The other settings are on the **DASH Tuning** tab of a Mesio engine and are stor
 | Minimum Refresh Interval (ms) | `dash.min_refresh_interval_ms` | `1000` | Shortest time between live manifest refreshes; the manifest's own update period applies when longer. |
 | Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. |
 
-Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. A template's [engine override](../reference/configuration-overrides.md#engines-override-template-only) can change single DASH fields; `"dash": null` there returns all of them to the defaults.
+Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. In a template's [engine override](../reference/configuration-overrides.md#engines-override-template-only), each DASH setting can use the engine's setting (the field is left out), the default (`null`), or a custom value, and **Reset all DASH settings to defaults** stores `"dash": null`. A template cannot be saved if, together with the engine's settings, it would record neither video nor audio.
 
 To prefer DASH when a platform offers several formats, add `dash` to the streamer's or template's **Preferred Formats**.
 

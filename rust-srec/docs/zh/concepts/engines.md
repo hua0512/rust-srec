@@ -108,7 +108,7 @@ Mesio 可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的流。D
 | 最小刷新间隔 (ms) | `dash.min_refresh_interval_ms` | `1000` | 两次直播清单刷新之间的最短间隔；清单自身的更新周期更长时以其为准。 |
 | 刷新重试次数 | `dash.max_refresh_retries` | `5` | 清单连续刷新失败多少次后录制失败。 |
 
-数量和时限必须为正数，重试次数和直播起点延迟可以为 `0`。引擎无法使用的设置会使录制以配置错误失败。模板的[引擎覆盖](../reference/configuration-overrides.md#engines-override-仅模板层)可以只修改个别 DASH 字段；在覆盖中设置 `"dash": null` 会让全部 DASH 设置恢复默认值。
+数量和时限必须为正数，重试次数和直播起点延迟可以为 `0`。引擎无法使用的设置会使录制以配置错误失败。在模板的[引擎覆盖](../reference/configuration-overrides.md#engines-override-仅模板层)中，每项 DASH 设置都可以使用引擎设置（不写该字段）、默认值（`null`）或自定义值；**将所有 DASH 设置恢复为默认值**会保存为 `"dash": null`。如果模板与引擎设置合并后既不录制视频也不录制音频，模板将无法保存。
 
 若平台提供多种格式时希望优先使用 DASH，请在主播或模板的**首选格式**中添加 `dash`。
 
