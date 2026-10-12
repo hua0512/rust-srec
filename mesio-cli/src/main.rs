@@ -12,7 +12,9 @@ use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig,
 use output::provider::PipeStream;
 use pipeline_common::{CancellationToken, config::PipelineConfig};
 use tracing::{Level, error, info, warn};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_indicatif::IndicatifLayer;
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -56,6 +58,62 @@ fn main() {
     }
 }
 
+/// Installs the global subscriber: console output, plus a daily log file
+/// unless disabled. The returned guard flushes the log file when dropped.
+fn init_logging(args: &CliArgs) -> Option<WorkerGuard> {
+    let log_level = if args.verbose {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
+    let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+
+    let (file_layer, file_guard) = if args.disable_log_file {
+        (None, None)
+    } else {
+        let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
+        let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(non_blocking_file)
+            .with_ansi(false);
+        (Some(file_layer), Some(guard))
+    };
+
+    // Pipe output writes media to stdout or stderr. Progress bars and logs
+    // must stay off that stream: progress bars are shown only for file
+    // output, and logs go to the other stream.
+    let pipe_stream = PipeStream::of(args.output_format);
+    let indicatif_layer = (args.show_progress && pipe_stream.is_none())
+        .then(|| IndicatifLayer::new().with_max_progress_bars(8, None));
+    let (console_writer, console_ansi) = match (&indicatif_layer, pipe_stream) {
+        // Logs are drawn with the progress bars, on stderr.
+        (Some(indicatif), _) => (
+            BoxMakeWriter::new(indicatif.get_stderr_writer()),
+            io::stderr().is_terminal(),
+        ),
+        // Media is on stdout.
+        (None, Some(PipeStream::Stdout)) => {
+            (BoxMakeWriter::new(io::stderr), io::stderr().is_terminal())
+        }
+        // File output without progress bars, or media on stderr.
+        (None, _) => (BoxMakeWriter::new(io::stdout), io::stdout().is_terminal()),
+    };
+    let console_layer = tracing_subscriber::fmt::layer()
+        .with_writer(console_writer)
+        .with_ansi(console_ansi)
+        .without_time()
+        .with_target(true)
+        .compact();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(file_layer)
+        .with(console_layer)
+        .with(indicatif_layer)
+        .init();
+    file_guard
+}
+
 #[tokio::main]
 async fn bootstrap() -> Result<(), AppError> {
     // Parse command-line arguments
@@ -76,85 +134,7 @@ async fn bootstrap() -> Result<(), AppError> {
             move || input_handler(token, cut_target)
         });
 
-    // Setup logging with tracing-indicatif
-    let log_level = if args.verbose {
-        Level::DEBUG
-    } else {
-        Level::INFO
-    };
-
-    let (file_layer, _file_guard) = if args.disable_log_file {
-        (None, None)
-    } else {
-        let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
-        let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
-
-        let file_layer = tracing_subscriber::fmt::layer()
-            .with_writer(non_blocking_file)
-            .with_ansi(false);
-
-        (Some(file_layer), Some(guard))
-    };
-
-    let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
-    let stdout_supports_ansi = io::stdout().is_terminal();
-    let stderr_supports_ansi = io::stderr().is_terminal();
-
-    // Pipe output writes media to stdout or stderr. Progress bars and logs
-    // must stay off that stream: progress bars are disabled, and logs go to
-    // the other stream.
-    let pipe_stream = PipeStream::of(args.output_format);
-
-    if args.show_progress && pipe_stream.is_none() {
-        // Create IndicatifLayer for progress bars and console output
-        let indicatif_layer = IndicatifLayer::new().with_max_progress_bars(8, None);
-
-        // Create console logging layer that writes through indicatif
-        // Use compact format to reduce verbosity
-        let console_layer = tracing_subscriber::fmt::layer()
-            .with_writer(indicatif_layer.get_stderr_writer())
-            .with_ansi(stderr_supports_ansi)
-            .without_time()
-            .with_target(true)
-            .compact(); // Use compact format without full span paths
-
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(file_layer)
-            .with(console_layer)
-            .with(indicatif_layer)
-            .init();
-    } else if pipe_stream == Some(PipeStream::Stdout) {
-        // Stdout pipe mode: all logging goes to stderr, no progress bars
-        // This ensures stdout is reserved exclusively for binary data output
-        let console_layer = tracing_subscriber::fmt::layer()
-            .with_writer(io::stderr)
-            .with_ansi(stderr_supports_ansi)
-            .without_time()
-            .with_target(true)
-            .compact();
-
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(file_layer)
-            .with(console_layer)
-            .init();
-    } else {
-        // Simple console output on stdout, without progress bars; this is
-        // also stderr pipe mode, where stdout is free of media.
-        // Use compact format to reduce verbosity
-        let console_layer = tracing_subscriber::fmt::layer()
-            .with_ansi(stdout_supports_ansi)
-            .without_time()
-            .with_target(true)
-            .compact(); // Use compact format without full span paths
-
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(file_layer)
-            .with(console_layer)
-            .init();
-    }
+    let _log_file_guard = init_logging(&args);
 
     if let Err(error) = input_thread {
         warn!(%error, "Failed to start the input handler; `q` will not stop mesio");
@@ -203,7 +183,7 @@ async fn bootstrap() -> Result<(), AppError> {
     );
 
     // Check if we're in pipe mode (stdout/stderr output)
-    let is_pipe_mode = pipe_stream.is_some();
+    let is_pipe_mode = PipeStream::of(args.output_format).is_some();
 
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()

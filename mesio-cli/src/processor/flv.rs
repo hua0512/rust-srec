@@ -2,7 +2,7 @@ use crate::cut::{Boundary, CutSession};
 use crate::output::pipe_flv_strategy::PipeFlvStrategy;
 use crate::output::provider::PipeStream;
 use crate::processor::generic::{
-    process_pipe_stream, process_pipe_stream_with_processing, process_stream,
+    PipeStreamStats, process_pipe_stream, process_pipe_stream_with_processing, process_stream,
     process_stream_with_span,
 };
 use crate::processor::{Recording, SessionCleanup};
@@ -85,6 +85,43 @@ impl PipelineProvider for RawCutPipeline {
     }
 }
 
+/// Writes `stream` to `pipe_stream`, through the FLV pipeline when
+/// processing is enabled, and logs what was written.
+async fn pipe_flv(
+    stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
+    config: &ProgramConfig,
+    pipe_stream: PipeStream,
+) -> Result<PipeStreamStats, AppError> {
+    let start_time = Instant::now();
+    let strategy = PipeFlvStrategy::new().with_stream(pipe_stream);
+    let stats = if config.enable_processing {
+        info!(
+            output_mode = %config.output_format,
+            "Starting pipe output with FLV processing"
+        );
+        process_pipe_stream_with_processing::<FlvPipeline, _>(
+            stream,
+            &config.pipeline_config,
+            config.flv_pipeline_config.clone(),
+            strategy,
+            "flv",
+        )
+        .await?
+    } else {
+        process_pipe_stream(stream, &config.pipeline_config, strategy, "flv").await?
+    };
+    info!(
+        duration = ?start_time.elapsed(),
+        tags_written = stats.items_written,
+        bytes_written = stats.bytes_written,
+        segment_count = stats.segment_count,
+        output_mode = %config.output_format,
+        processing_enabled = config.enable_processing,
+        "FLV pipe output complete"
+    );
+    Ok(stats)
+}
+
 /// Process a single FLV file
 pub async fn process_file(
     input_path: &Path,
@@ -109,66 +146,26 @@ pub async fn process_file(
 
     let start_time = std::time::Instant::now();
 
+    let file = File::open(input_path).await?;
+    let file_reader = BufReader::new(file);
+    let file_size = file_reader.get_ref().metadata().await?.len();
+
     // Create span for file processing
     let file_span = span!(Level::INFO, "process_flv_file", path = %input_path.display());
     file_span.in_scope(|| {
         info!(
             path = %input_path.display(),
+            input_size = %format_bytes(file_size),
             processing_enabled = config.enable_processing,
             "Starting to process file"
         );
     });
 
-    let file = File::open(input_path).await?;
-    let file_reader = BufReader::new(file);
-    let file_size = file_reader.get_ref().metadata().await?.len();
     let decoder_stream = FlvDecoderStream::with_capacity(file_reader, 4 * 1024 * 1024) // 4MB buffer for better I/O throughput
         .map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
-    // Use pipe output strategy when stdout mode is active
     let stats = if let Some(pipe_stream) = pipe_stream {
-        // Pipe mode: write to stdout using PipeFlvStrategy
-        let pipe_stats = if config.enable_processing {
-            // Processing enabled: run through FlvPipeline before writing to stdout
-            info!(
-                path = %input_path.display(),
-                processing_enabled = true,
-                output_mode = %config.output_format,
-                "Starting pipe output with FLV processing"
-            );
-            process_pipe_stream_with_processing::<FlvPipeline, _>(
-                Box::pin(decoder_stream),
-                &config.pipeline_config,
-                config.flv_pipeline_config.clone(),
-                PipeFlvStrategy::new().with_stream(pipe_stream),
-                "flv",
-            )
-            .await?
-        } else {
-            // Raw output: bypass processing pipeline
-            process_pipe_stream(
-                Box::pin(decoder_stream),
-                &config.pipeline_config,
-                PipeFlvStrategy::new().with_stream(pipe_stream),
-                "flv",
-            )
-            .await?
-        };
-
-        // Log completion statistics for pipe mode
-        let elapsed = start_time.elapsed();
-        info!(
-            path = %input_path.display(),
-            input_size = %format_bytes(file_size),
-            duration = ?elapsed,
-            tags_written = pipe_stats.items_written,
-            bytes_written = pipe_stats.bytes_written,
-            segment_count = pipe_stats.segment_count,
-            output_mode = %config.output_format,
-            processing_enabled = config.enable_processing,
-            "FLV pipe output complete"
-        );
-
+        pipe_flv(Box::pin(decoder_stream), config, pipe_stream).await?;
         return Ok(());
     } else if config.enable_processing {
         // we need to expand base_name with %i for output file numbering
@@ -273,50 +270,8 @@ pub async fn process_flv_stream(
 
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
-    // Use pipe output strategy when stdout mode is active
     let stats = if let Some(pipe_stream) = pipe_stream {
-        // Pipe mode: write to stdout using PipeFlvStrategy
-        // Check if processing is enabled to determine whether to use FlvPipeline
-        let pipe_stats = if config.enable_processing {
-            // Processing enabled: run through FlvPipeline before writing to stdout
-            info!(
-                url = %url_str,
-                processing_enabled = true,
-                output_mode = %config.output_format,
-                "Starting pipe output with FLV processing"
-            );
-            process_pipe_stream_with_processing::<FlvPipeline, _>(
-                Box::pin(stream),
-                &config.pipeline_config,
-                config.flv_pipeline_config.clone(),
-                PipeFlvStrategy::new().with_stream(pipe_stream),
-                "flv",
-            )
-            .await?
-        } else {
-            // Raw output: bypass processing pipeline
-            process_pipe_stream(
-                Box::pin(stream),
-                &config.pipeline_config,
-                PipeFlvStrategy::new().with_stream(pipe_stream),
-                "flv",
-            )
-            .await?
-        };
-
-        // Log completion statistics for pipe mode
-        let elapsed = start_time.elapsed();
-        info!(
-            url = %url_str,
-            duration = ?elapsed,
-            tags_written = pipe_stats.items_written,
-            bytes_written = pipe_stats.bytes_written,
-            segment_count = pipe_stats.segment_count,
-            output_mode = %config.output_format,
-            processing_enabled = config.enable_processing,
-            "FLV pipe output complete"
-        );
-
+        let pipe_stats = pipe_flv(Box::pin(stream), config, pipe_stream).await?;
         cleanup.finish().await;
         return Ok(pipe_stats.items_written as u64);
     } else {
