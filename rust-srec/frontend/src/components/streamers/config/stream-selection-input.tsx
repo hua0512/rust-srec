@@ -92,7 +92,7 @@ export function StreamSelectionInput({
                 <TagInput
                   value={value.preferred_formats || []}
                   onChange={(tags) => updateField('preferred_formats', tags)}
-                  placeholder={i18n._(msg`e.g. flv, hls`)}
+                  placeholder={i18n._(msg`e.g. flv, hls, dash`)}
                   className={CONFIG_INPUT}
                 />
               </FormControl>

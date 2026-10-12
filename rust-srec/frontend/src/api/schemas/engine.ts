@@ -219,10 +219,166 @@ export const MesioHlsConfigSchema = z.object({
   output_config: MesioHlsOutputConfigOverrideSchema.optional(),
 });
 
+// --- Mesio MPEG-DASH ---
+// Every field is optional: an unset field takes the engine default below, and in a template
+// override it inherits the engine's value. `null` (only from hand-edited JSON) counts as unset.
+
+const U32_MAX = 4_294_967_295;
+
+/** The mesio engine's MPEG-DASH defaults, used when a field is unset. */
+export const MESIO_DASH_DEFAULTS = {
+  video_quality: { type: 'highest' },
+  audio_quality: { type: 'highest' },
+  include_video: true,
+  include_audio: true,
+  download_concurrency: 5,
+  manifest_timeout_ms: 15000,
+  min_refresh_interval_ms: 1000,
+  max_refresh_retries: 5,
+  segment_timeout_ms: 10000,
+  max_segment_retries: 3,
+  live_start: { type: 'auto' },
+} as const;
+
+const dashInt = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
+  z
+    .union([z.number(), z.string(), z.null()])
+    .transform((val) => {
+      if (val === '' || val === null) return undefined;
+      return typeof val === 'number' ? val : Number(val);
+    })
+    .refine(
+      (val) =>
+        val === undefined ||
+        (Number.isInteger(val) && val >= min && val <= max),
+      {
+        message:
+          min > 0
+            ? 'Must be a positive whole number'
+            : 'Must be a whole number of 0 or more',
+      },
+    )
+    .optional();
+
+const dashRequiredInt = (max: number) =>
+  z.coerce
+    .number()
+    .int('Must be a positive whole number')
+    .min(1, 'Must be a positive whole number')
+    .max(max, 'Must be a positive whole number');
+
+const dashBoolean = () =>
+  z
+    .boolean()
+    .nullable()
+    .optional()
+    .transform((val) => val ?? undefined);
+
+/** Language tag shape the backend accepts: 1–8 letters or digits per subtag, joined by '-'. */
+const LANGUAGE_TAG = /^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$/;
+
+export const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('highest') }),
+  z.object({ type: z.literal('lowest') }),
+  z.object({ type: z.literal('max_height'), height: dashRequiredInt(U32_MAX) }),
+  z.object({
+    type: z.literal('closest_bandwidth'),
+    bandwidth: dashRequiredInt(Number.MAX_SAFE_INTEGER),
+  }),
+]);
+export type MesioDashVideoQuality = z.infer<typeof MesioDashVideoQualitySchema>;
+
+export const MesioDashAudioQualitySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('highest') }),
+  z.object({ type: z.literal('lowest') }),
+  z.object({
+    type: z.literal('closest_bandwidth'),
+    bandwidth: dashRequiredInt(Number.MAX_SAFE_INTEGER),
+  }),
+]);
+export type MesioDashAudioQuality = z.infer<typeof MesioDashAudioQualitySchema>;
+
+export const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('auto') }),
+  z.object({ type: z.literal('live_edge') }),
+  z.object({
+    type: z.literal('delay'),
+    delay_ms: z.coerce
+      .number()
+      .int('Must be a whole number of 0 or more')
+      .min(0, 'Must be a whole number of 0 or more')
+      .max(Number.MAX_SAFE_INTEGER, 'Must be a whole number of 0 or more'),
+  }),
+]);
+export type MesioDashLiveStart = z.infer<typeof MesioDashLiveStartSchema>;
+
+const unsetIfNull = <T extends z.ZodType>(schema: T) =>
+  schema
+    .nullable()
+    .optional()
+    .transform((val) => val ?? undefined);
+
+const MesioDashConfigShape = {
+  video_quality: unsetIfNull(MesioDashVideoQualitySchema),
+  audio_quality: unsetIfNull(MesioDashAudioQualitySchema),
+  audio_language: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((val) => {
+      const trimmed = val?.trim();
+      return trimmed ? trimmed : undefined;
+    })
+    .refine((val) => val === undefined || LANGUAGE_TAG.test(val), {
+      message: "Use a language tag such as 'en' or 'pt-BR'",
+    }),
+  include_video: dashBoolean(),
+  include_audio: dashBoolean(),
+  download_concurrency: dashInt(1),
+  manifest_timeout_ms: dashInt(1),
+  min_refresh_interval_ms: dashInt(1),
+  max_refresh_retries: dashInt(0, U32_MAX),
+  segment_timeout_ms: dashInt(1),
+  max_segment_retries: dashInt(0, U32_MAX),
+  live_start: unsetIfNull(MesioDashLiveStartSchema),
+};
+
+/** The engine rejects a configuration that records neither track. */
+function requireATrack(
+  value: { include_video?: boolean; include_audio?: boolean },
+  ctx: z.RefinementCtx,
+) {
+  if (value.include_video === false && value.include_audio === false) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Record at least one of video and audio',
+      path: ['include_audio'],
+    });
+  }
+}
+
+export const MesioDashConfigSchema = z
+  .object(MesioDashConfigShape)
+  .superRefine(requireATrack);
+export type MesioDashConfig = z.infer<typeof MesioDashConfigSchema>;
+
+const MesioDashConfigOverrideSchema = z
+  .object(MesioDashConfigShape)
+  .strict()
+  .superRefine(requireATrack);
+
+/** A form that registered the DASH fields but set none of them saves no `dash` object. */
+function unlessEmpty<T extends object>(value: T): T | undefined {
+  return Object.values(value).some((field) => field !== undefined)
+    ? value
+    : undefined;
+}
+
 export const MesioConfigSchema = z.object({
   buffer_size: z.coerce.number().int().min(1).default(8388608), // 8MB
   fix_flv: z.boolean().default(true),
   fix_hls: z.boolean().default(true),
+  fix_dash: z.boolean().default(true),
   flv_fix: z
     .object({
       sequence_header_change_mode: z
@@ -255,6 +411,9 @@ export const MesioConfigSchema = z.object({
     })
     .optional(),
   hls: MesioHlsConfigSchema.optional(),
+  dash: MesioDashConfigSchema.nullable()
+    .optional()
+    .transform((val) => (val ? unlessEmpty(val) : undefined)),
 });
 export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 
@@ -317,8 +476,13 @@ export const MesioConfigOverrideSchema = z
     buffer_size: optionalInt(1),
     fix_flv: z.boolean().optional(),
     fix_hls: z.boolean().optional(),
+    fix_dash: z.boolean().optional(),
     flv_fix: MesioFlvFixOverrideSchema.optional(),
     hls: MesioHlsConfigSchema.optional(),
+    // `null` resets the engine's DASH settings to the defaults for this template.
+    dash: MesioDashConfigOverrideSchema.nullable()
+      .optional()
+      .transform((val) => (val ? unlessEmpty(val) : val)),
   })
   .strict();
 export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;

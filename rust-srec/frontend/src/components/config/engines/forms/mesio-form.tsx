@@ -25,9 +25,11 @@ import {
   Settings2,
   RefreshCw,
   Layers,
+  Combine,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { MesioHlsForm } from './mesio-hls-form';
+import { MesioDashForm } from './mesio-dash-form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   CONFIG_DESCRIPTION,
@@ -290,6 +292,11 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             </Badge>
           )}
         </TabsTrigger>
+        {/* Track selection and timing apply whether or not DASH fixing is on. */}
+        <TabsTrigger value="dash" className="flex-1 min-w-[100px] gap-2">
+          <Combine className="w-4 h-4 text-emerald-500" />
+          <Trans>DASH Tuning</Trans>
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent
@@ -333,49 +340,76 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormField
-            name={`${basePath}.fix_flv`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
-                <div className="space-y-0.5">
-                  <ConfigFieldLabel icon={Film}>
-                    <Trans>Fix FLV Streams</Trans>
-                  </ConfigFieldLabel>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Enable advanced FLV timestamp repairing</Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-          <FormField
-            name={`${basePath}.fix_hls`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
-                <div className="space-y-0.5">
-                  <ConfigFieldLabel icon={Wrench}>
-                    <Trans>Fix HLS Discontinuities</Trans>
-                  </ConfigFieldLabel>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Enable advanced HLS segment reconstruction</Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
+        {/* Three across when there is room, otherwise stacked: never two and an orphan. */}
+        <div className="@container">
+          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-3">
+            <FormField
+              name={`${basePath}.fix_flv`}
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
+                  <div className="space-y-0.5">
+                    <ConfigFieldLabel icon={Film}>
+                      <Trans>Fix FLV Streams</Trans>
+                    </ConfigFieldLabel>
+                    <FormDescription className={CONFIG_DESCRIPTION}>
+                      <Trans>Enable advanced FLV timestamp repairing</Trans>
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              name={`${basePath}.fix_hls`}
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
+                  <div className="space-y-0.5">
+                    <ConfigFieldLabel icon={Wrench}>
+                      <Trans>Fix HLS Discontinuities</Trans>
+                    </ConfigFieldLabel>
+                    <FormDescription className={CONFIG_DESCRIPTION}>
+                      <Trans>Enable advanced HLS segment reconstruction</Trans>
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              name={`${basePath}.fix_dash`}
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-emerald-500/5 p-4 shadow-sm transition-all hover:border-emerald-500/20">
+                  <div className="space-y-0.5">
+                    <ConfigFieldLabel icon={Combine}>
+                      <Trans>Fix DASH Streams</Trans>
+                    </ConfigFieldLabel>
+                    <FormDescription className={CONFIG_DESCRIPTION}>
+                      <Trans>
+                        Check merged DASH output and start a new file on stream
+                        changes
+                      </Trans>
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value ?? true}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
         </div>
       </TabsContent>
 
@@ -385,6 +419,10 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
 
       <TabsContent value="hls" className="mt-0 focus-visible:outline-none">
         <MesioHlsForm basePath={basePath} />
+      </TabsContent>
+
+      <TabsContent value="dash" className="mt-0 focus-visible:outline-none">
+        <MesioDashForm basePath={basePath} />
       </TabsContent>
     </Tabs>
   );
