@@ -176,18 +176,24 @@ export function useEngineOverride() {
         const segments = relativeSegments(context.basePath, path);
         let fields = objectFields(context.schema);
         for (let depth = 0; depth < segments.length - 1; depth += 1) {
+          const groupSegments = segments.slice(0, depth + 1);
           fields = objectFields(fields?.[segments[depth]]);
-          const groupPath = [
-            context.basePath,
-            ...segments.slice(0, depth + 1),
-          ].join('.');
-          if (fields && getValues(groupPath) === null) {
-            setValue(
-              groupPath,
-              Object.fromEntries(Object.keys(fields).map((key) => [key, null])),
-              { shouldDirty: true },
-            );
-          }
+          const groupPath = [context.basePath, ...groupSegments].join('.');
+          if (getValues(groupPath) !== null) continue;
+          // Reset every field the form knows and every one the engine sets: a key left out
+          // would inherit the engine's value instead.
+          const engineGroup = valueAt(context.engineConfig, groupSegments);
+          const keys = new Set([
+            ...Object.keys(fields ?? {}),
+            ...(engineGroup !== null && typeof engineGroup === 'object'
+              ? Object.keys(engineGroup)
+              : []),
+          ]);
+          setValue(
+            groupPath,
+            Object.fromEntries([...keys].map((key) => [key, null])),
+            { shouldDirty: true },
+          );
         }
       }
       setValue(path, value, { shouldDirty: true, shouldValidate: true });
@@ -204,16 +210,15 @@ export function useEngineOverride() {
  */
 export function useSettingValue(path: string): unknown {
   const context = React.useContext(EngineOverrideContext);
-  const groups = React.useMemo(() => {
-    if (!context) return [];
+  // The field's groups, outermost first, then the field itself.
+  const names = React.useMemo(() => {
+    if (!context) return [path];
     const segments = relativeSegments(context.basePath, path);
-    return segments
-      .slice(0, -1)
-      .map((_, depth) =>
-        [context.basePath, ...segments.slice(0, depth + 1)].join('.'),
-      );
+    return segments.map((_, depth) =>
+      [context.basePath, ...segments.slice(0, depth + 1)].join('.'),
+    );
   }, [context, path]);
-  const values = useWatch({ name: [...groups, path] }) as unknown[];
+  const values = useWatch({ name: names }) as unknown[];
   return values.slice(0, -1).some((group) => group === null)
     ? null
     : values[values.length - 1];

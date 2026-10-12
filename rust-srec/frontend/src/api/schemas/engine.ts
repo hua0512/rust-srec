@@ -220,10 +220,29 @@ export const MesioHlsConfigSchema = z.object({
 });
 
 /**
+ * An override field set to a custom value must hold one: an emptied input would otherwise save
+ * as an absent field, which inherits the engine's value while the form still shows "Custom".
+ */
+function requireValue<T extends z.ZodType>(field: T): T {
+  // Every override field may be absent. Typed as the field: the check accepts nothing the field
+  // would not, so its input and output types are the field's.
+  return z
+    .unknown()
+    .refine((value) => typeof value !== 'string' || value.trim() !== '', {
+      message: 'Enter a value, or choose another option',
+    })
+    .pipe(field)
+    .optional() as unknown as T;
+}
+
+/**
  * A settings object as a template override sees it: every field, at every depth, may also be
  * `null`, which resets that setting (or that whole group) to the engine default. The backend
  * merge removes null-valued keys, so an override cannot express an engine's own `null`, such as
  * a disabled timeout.
+ *
+ * Keys the form does not know are kept: the backend accepts more settings than the form shows,
+ * and dropping one on save would change what the template does.
  */
 function allowResets(schema: z.ZodObject): z.ZodObject {
   const shape = Object.fromEntries(
@@ -233,11 +252,11 @@ function allowResets(schema: z.ZodObject): z.ZodObject {
         key,
         inner instanceof z.ZodObject
           ? allowResets(inner).nullable().optional()
-          : field.nullable(),
+          : requireValue(field.nullable()),
       ];
     }),
   );
-  return z.object(shape);
+  return z.looseObject(shape);
 }
 
 const MesioHlsConfigOverrideSchema = allowResets(MesioHlsConfigSchema);
@@ -532,9 +551,9 @@ export type StreamlinkConfigOverride = z.infer<
 
 const MesioDuplicateTagFilterOverrideSchema = z
   .object({
-    window_capacity_tags: optionalInt(1).nullable(),
-    window_capacity_bytes: optionalInt(0).nullable(),
-    replay_backjump_threshold_ms: optionalInt(0).nullable(),
+    window_capacity_tags: requireValue(optionalInt(1).nullable()),
+    window_capacity_bytes: requireValue(optionalInt(0).nullable()),
+    replay_backjump_threshold_ms: requireValue(optionalInt(0).nullable()),
     enable_replay_offset_matching: z.boolean().nullable().optional(),
   })
   .strict();
@@ -554,7 +573,7 @@ const MesioFlvFixOverrideSchema = z
 
 export const MesioConfigOverrideSchema = z
   .object({
-    buffer_size: optionalInt(1).nullable(),
+    buffer_size: requireValue(optionalInt(1).nullable()),
     fix_flv: z.boolean().nullable().optional(),
     fix_hls: z.boolean().nullable().optional(),
     fix_dash: z.boolean().nullable().optional(),

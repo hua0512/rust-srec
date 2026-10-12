@@ -301,6 +301,8 @@ function MesioSettings({
   );
 }
 
+const NO_ENGINE_CONFIG = {};
+
 interface MesioFormProps {
   basePath?: string;
   /** Edit a template's override of an engine instead of the engine itself. */
@@ -323,7 +325,9 @@ export function MesioForm({
   return (
     <EngineOverrideProvider
       basePath={basePath}
-      engineConfig={(engineConfig ?? {}) as Record<string, unknown>}
+      engineConfig={
+        (engineConfig ?? NO_ENGINE_CONFIG) as Record<string, unknown>
+      }
       schema={MesioConfigOverrideSchema}
     >
       <MesioSettings basePath={basePath} inheritedDash={inheritedDash} />

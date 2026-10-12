@@ -48,6 +48,26 @@ describe('Mesio override resets', () => {
     ).toBe(false);
   });
 
+  it('refuses a custom value left empty', () => {
+    for (const override of [
+      { buffer_size: '' },
+      { hls: { base: { user_agent: '  ' } } },
+      { hls: { fetcher_config: { max_segment_retries: '' } } },
+      {
+        flv_fix: { duplicate_tag_filter_config: { window_capacity_tags: '' } },
+      },
+    ]) {
+      expect(MesioConfigOverrideSchema.safeParse(override).success).toBe(false);
+    }
+  });
+
+  it('keeps settings the form does not show', () => {
+    const override = {
+      hls: { fetcher_config: { progress_emit_min_bytes: null } },
+    };
+    expect(MesioConfigOverrideSchema.parse(override)).toEqual(override);
+  });
+
   it('leaves the engine settings as they were', () => {
     expect(
       MesioConfigSchema.safeParse({ hls: { base: { timeout_ms: null } } })

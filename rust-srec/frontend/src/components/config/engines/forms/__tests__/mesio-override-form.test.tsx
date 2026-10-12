@@ -29,7 +29,8 @@ function mountOverride(
   engineConfig: Record<string, unknown> = {},
 ) {
   let form!: UseFormReturn<Values>;
-  const engine = MesioConfigSchema.parse(engineConfig);
+  // As the engines API returns it, including settings the form does not show.
+  const engine = engineConfig;
   function Harness() {
     form = useForm<Values>({
       resolver: zodResolver(
@@ -202,6 +203,34 @@ describe('Mesio template override', () => {
     expect(hls.base.read_timeout_ms).toBeNull();
     expect(hls.playlist_config).toBeNull();
     expect(hls.output_config).toBeNull();
+  });
+
+  it('also resets the settings the form does not show', async () => {
+    const { saved } = mountOverride(
+      { hls: null },
+      { hls: { fetcher_config: { progress_emit_min_bytes: 1 } } },
+    );
+    openTab(/HLS Tuning/);
+    fireEvent.click(screen.getByRole('button', { name: 'Fetcher' }));
+    await choose('Max Segment Retries', 'Custom');
+    expect(saved().hls.fetcher_config).toMatchObject({
+      max_segment_retries: 3,
+      progress_emit_min_bytes: null,
+    });
+  });
+
+  it('refuses to save a custom value left empty', async () => {
+    const { form } = mountOverride({});
+    openTab(/HLS Tuning/);
+    await choose('Connect Timeout (ms)', 'Custom');
+    fireEvent.change(
+      screen.getByRole('spinbutton', { name: 'Connect Timeout (ms)' }),
+      { target: { value: '' } },
+    );
+    expect(await form.trigger()).toBe(false);
+    expect(
+      await screen.findByText('Enter a value, or choose another option'),
+    ).toBeInTheDocument();
   });
 
   it('saves a template whose settings hold resets', async () => {
