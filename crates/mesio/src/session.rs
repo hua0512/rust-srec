@@ -820,6 +820,11 @@ where
         let mut failed = None;
         let mut attempt_delivered = false;
 
+        // Items that announce an fMP4 epoch (a structure-change marker and
+        // an init) are held and delivered together with the media item that
+        // follows, so a cancellation cannot leave a consumer with an
+        // announced epoch and no media.
+        let mut group: Vec<HlsData> = Vec::new();
         while let Some(item) = items.next().await {
             match item {
                 Ok(item) => {
@@ -832,7 +837,17 @@ where
                         }
                         delivered_media = true;
                     }
-                    let delivery = deliver(&item_tx, Ok(item), &token).await;
+                    let announces = matches!(
+                        item,
+                        HlsData::EndMarker(Some(hls::SplitReason::StreamStructureChange { .. }))
+                            | HlsData::M4sData(hls::M4sData::InitSegment(_))
+                    );
+                    group.push(item);
+                    if announces && group.len() < MAX_ANNOUNCEMENT {
+                        continue;
+                    }
+                    let delivery =
+                        deliver_group(&item_tx, std::mem::take(&mut group), &token).await;
                     if delivery != Delivery::Sent {
                         // The item stream and the attempt's engine task both
                         // hold event sinks; the forwarder only finishes once
@@ -856,6 +871,13 @@ where
                     break;
                 }
             }
+        }
+        if !group.is_empty() {
+            debug!(
+                protocol = name,
+                items = group.len(),
+                "attempt ended after announcing media it never delivered"
+            );
         }
 
         drop(items);
@@ -891,6 +913,45 @@ where
                 pending_discontinuity = delivered_media;
             }
         }
+    }
+}
+
+/// Longest run of announcing items held for the media that follows them: an
+/// end marker and an init, with room to spare. A longer run is delivered as
+/// it is rather than buffered without bound.
+const MAX_ANNOUNCEMENT: usize = 4;
+
+/// Delivers `group` whole, or nothing of it when `token` is cancelled first:
+/// permits for every item are reserved before any is sent.
+async fn deliver_group(
+    tx: &mpsc::Sender<Result<HlsData, DownloadError>>,
+    group: Vec<HlsData>,
+    token: &CancellationToken,
+) -> Delivery {
+    if group.len() > tx.max_capacity() {
+        for item in group {
+            let delivery = deliver(tx, Ok(item), token).await;
+            if delivery != Delivery::Sent {
+                return delivery;
+            }
+        }
+        return Delivery::Sent;
+    }
+    if tx.is_closed() {
+        return Delivery::Closed;
+    }
+    tokio::select! {
+        biased;
+        permits = tx.reserve_many(group.len()) => match permits {
+            Ok(permits) => {
+                for (permit, item) in permits.zip(group) {
+                    permit.send(Ok(item));
+                }
+                Delivery::Sent
+            }
+            Err(_) => Delivery::Closed,
+        },
+        _ = token.cancelled() => Delivery::Cancelled,
     }
 }
 
@@ -992,6 +1053,129 @@ impl<T> Drop for SessionCancelOnDropStream<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An engine whose single attempt yields `items`, then stays open until
+    /// cancelled.
+    struct ScriptedEngine {
+        items: Vec<HlsData>,
+    }
+
+    impl MediaEngine for ScriptedEngine {
+        type Item = HlsData;
+
+        async fn start(
+            &self,
+            request: DownloadRequest,
+        ) -> Result<DownloadSession<HlsData>, DownloadError> {
+            // Ends on cancellation, as a real engine's stream does.
+            let cancel = request.cancel.unwrap_or_default();
+            let stopped = cancel.clone().cancelled_owned();
+            let items = futures::stream::iter(self.items.clone().into_iter().map(Ok))
+                .chain(futures::stream::once(stopped).filter_map(|()| async { None }));
+            Ok(DownloadSession {
+                items: Box::pin(items),
+                events: Box::pin(futures::stream::empty()),
+                handle: DownloadHandle::new(cancel, None, Arc::new(AtomicU64::new(0)), None),
+            })
+        }
+    }
+
+    fn scripted_epoch_change() -> Vec<HlsData> {
+        let segment = m3u8_rs::MediaSegment::default;
+        let data = |tag: &'static [u8]| bytes::Bytes::from_static(tag);
+        vec![
+            HlsData::mp4_init(segment(), data(b"init0")),
+            HlsData::mp4_segment(segment(), data(b"m0")),
+            HlsData::mp4_segment(segment(), data(b"m0b")),
+            HlsData::end_marker_with_reason(hls::SplitReason::StreamStructureChange {
+                description: "next epoch".to_owned(),
+            }),
+            HlsData::mp4_init(segment(), data(b"init1")),
+            HlsData::mp4_segment(segment(), data(b"m1")),
+        ]
+    }
+
+    /// Runs the failover forwarder over the scripted attempt into a
+    /// three-item consumer channel.
+    fn forward_scripted() -> (
+        mpsc::Receiver<Result<HlsData, DownloadError>>,
+        CancellationToken,
+        JoinHandle<DownloadTerminal>,
+    ) {
+        let url = "https://example.test/live.mpd";
+        let request = DownloadRequest::from_url(url)
+            .unwrap()
+            .add_source(ContentSource::new(url, 0));
+        let (item_tx, item_rx) = mpsc::channel(3);
+        let (events, _events) = EventSink::channel(16);
+        let token = CancellationToken::new();
+        let task = tokio::spawn(run_source_failover(
+            SegmentedProtocol::DASH,
+            || {
+                Ok(ScriptedEngine {
+                    items: scripted_epoch_change(),
+                })
+            },
+            request,
+            None,
+            token.clone(),
+            events,
+            item_tx,
+            Arc::new(Mutex::new(None)),
+        ));
+        (item_rx, token, task)
+    }
+
+    fn payload(item: Option<Result<HlsData, DownloadError>>) -> Vec<u8> {
+        match item.expect("an item").expect("no error") {
+            HlsData::EndMarker(_) => b"marker".to_vec(),
+            item => item.data().expect("payload").to_vec(),
+        }
+    }
+
+    #[tokio::test]
+    async fn failover_delivers_an_epoch_announcement_with_its_first_media() {
+        let (mut items, token, task) = forward_scripted();
+        for expected in [&b"init0"[..], b"m0", b"m0b", b"marker"] {
+            let item = tokio::time::timeout(Duration::from_secs(5), items.recv()).await;
+            assert_eq!(payload(item.expect("forwarded in time")), expected);
+        }
+        // The rest of the group is already there, cancellation or not.
+        token.cancel();
+        assert_eq!(payload(items.try_recv().ok()), b"init1");
+        assert_eq!(payload(items.try_recv().ok()), b"m1");
+        let terminal = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert_eq!(
+            terminal.expect("forwarder ends").unwrap(),
+            DownloadTerminal::Cancelled
+        );
+    }
+
+    #[tokio::test]
+    async fn failover_cancelled_during_an_epoch_change_announces_nothing() {
+        let (mut items, token, task) = forward_scripted();
+        assert_eq!(payload(items.recv().await), b"init0");
+        assert_eq!(payload(items.recv().await), b"m0");
+        // The announcement group needs three free slots and has two.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while items.len() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the third media item is forwarded");
+        token.cancel();
+        let terminal = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert_eq!(
+            terminal.expect("forwarder ends").unwrap(),
+            DownloadTerminal::Cancelled
+        );
+        assert_eq!(payload(items.recv().await), b"m0b");
+        assert!(
+            items.recv().await.is_none(),
+            "no marker or init of the epoch"
+        );
+    }
 
     #[tokio::test]
     async fn wrapped_flv_session_reports_the_inner_sessions_dropped_events() {
