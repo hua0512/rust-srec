@@ -1,22 +1,5 @@
 import React from 'react';
-import { useWatch } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import {
   Database,
@@ -30,213 +13,151 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { MesioHlsForm } from './mesio-hls-form';
 import { MesioDashForm } from './mesio-dash-form';
+import {
+  EngineOverrideProvider,
+  SettingInput,
+  SettingSelect,
+  SettingSwitch,
+  SettingGrid,
+  useEffectiveValue,
+  type SettingOption,
+} from './setting-fields';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  CONFIG_DESCRIPTION,
-  CONFIG_INPUT,
-  CONFIG_SELECT_CONTENT,
-  CONFIG_SELECT_TRIGGER,
-  ConfigFieldLabel,
-} from '@/components/config/shared/config-field';
-import { msg } from '@lingui/core/macro';
-import { useLingui } from '@lingui/react';
-import { cn } from '@/lib/utils';
-import { resolveDashSettings, type MesioConfig } from '@/api/schemas/engine';
+  MesioConfigOverrideSchema,
+  resolveDashSettings,
+  type MesioConfig,
+} from '@/api/schemas/engine';
 
 interface SubFormProps {
   basePath: string;
 }
 
+const SEQUENCE_HEADER_MODE_OPTIONS: readonly SettingOption[] = [
+  {
+    value: 'crc32',
+    label: 'crc32',
+    content: (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-medium text-xs">crc32 (Default)</span>
+        <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
+          <Trans>
+            Split on any raw header change. Safe but may cause extra files.
+          </Trans>
+        </span>
+      </div>
+    ),
+  },
+  {
+    value: 'semantic_signature',
+    label: 'semantic_signature',
+    content: (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-xs">semantic_signature</span>
+          <Badge
+            variant="secondary"
+            className="text-[8px] h-3.5 px-1 bg-orange-500/10 text-orange-600 border-none font-bold"
+          >
+            <Trans>NEW</Trans>
+          </Badge>
+        </div>
+        <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
+          <Trans>
+            Split only on codec configuration changes. Reduces false splits.
+          </Trans>
+        </span>
+      </div>
+    ),
+  },
+];
+
+const FLV_SWITCH_ROW =
+  'rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10';
+
 const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
-  const { i18n } = useLingui();
-  const duplicateTagFiltering = useWatch({
-    name: `${basePath}.flv_fix.duplicate_tag_filtering`,
-  });
+  const flvPath = `${basePath}.flv_fix`;
+  const duplicateTagFiltering = useEffectiveValue(
+    `${flvPath}.duplicate_tag_filtering`,
+    false,
+  );
+  const filterPath = `${flvPath}.duplicate_tag_filter_config`;
 
   return (
     <div className="space-y-4">
       <Card className="border-border/50 shadow-sm">
         <CardContent className="p-4 space-y-6">
-          {/* Header/Mode Section */}
-          <div className="space-y-4">
-            <FormField
-              name={`${basePath}.flv_fix.sequence_header_change_mode`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel icon={RefreshCw} className="mb-2">
-                    <Trans>Stream Splitting Strategy</Trans>
-                  </ConfigFieldLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value || 'crc32'}
-                  >
-                    <FormControl>
-                      <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className={CONFIG_SELECT_CONTENT}>
-                      <SelectItem value="crc32" className="py-2.5">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium text-xs">
-                            crc32 (Default)
-                          </span>
-                          <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
-                            <Trans>
-                              Split on any raw header change. Safe but may cause
-                              extra files.
-                            </Trans>
-                          </span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="semantic_signature" className="py-2.5">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-xs">
-                              semantic_signature
-                            </span>
-                            <Badge
-                              variant="secondary"
-                              className="text-[8px] h-3.5 px-1 bg-orange-500/10 text-orange-600 border-none font-bold"
-                            >
-                              <Trans>NEW</Trans>
-                            </Badge>
-                          </div>
-                          <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
-                            <Trans>
-                              Split only on codec configuration changes. Reduces
-                              false splits.
-                            </Trans>
-                          </span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+          <SettingSelect
+            name={`${flvPath}.sequence_header_change_mode`}
+            label={<Trans>Stream Splitting Strategy</Trans>}
+            icon={RefreshCw}
+            options={SEQUENCE_HEADER_MODE_OPTIONS}
+            fallback="crc32"
+          />
 
           <div className="space-y-3">
-            <FormField
-              name={`${basePath}.flv_fix.drop_duplicate_sequence_headers`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
-                  <div className="space-y-0.5">
-                    <ConfigFieldLabel>
-                      <Trans>Optimize Stream Headers</Trans>
-                    </ConfigFieldLabel>
-                    <FormDescription className={CONFIG_DESCRIPTION}>
-                      <Trans>
-                        Suppress redundant headers to reduce player
-                        micro-stutter
-                      </Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      className="scale-90"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <SettingSwitch
+              name={`${flvPath}.drop_duplicate_sequence_headers`}
+              label={<Trans>Optimize Stream Headers</Trans>}
+              description={
+                <Trans>
+                  Suppress redundant headers to reduce player micro-stutter
+                </Trans>
+              }
+              fallback={false}
+              size="default"
+              className={FLV_SWITCH_ROW}
+              switchClassName="scale-90"
             />
 
-            <FormField
-              name={`${basePath}.flv_fix.duplicate_tag_filtering`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
-                  <div className="space-y-0.5">
-                    <ConfigFieldLabel icon={Layers}>
-                      <Trans>Loop Protection</Trans>
-                      <Badge
-                        variant="secondary"
-                        className="text-[8px] h-3.5 px-1 bg-blue-500/10 text-blue-600 border-none font-bold"
-                      >
-                        <Trans>BETA</Trans>
-                      </Badge>
-                    </ConfigFieldLabel>
-                    <FormDescription className={CONFIG_DESCRIPTION}>
-                      <Trans>
-                        Filter repeated tags and detect stream replay loops
-                      </Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      className="scale-90"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <SettingSwitch
+              name={`${flvPath}.duplicate_tag_filtering`}
+              label={
+                <>
+                  <Trans>Loop Protection</Trans>
+                  <Badge
+                    variant="secondary"
+                    className="ml-2 text-[8px] h-3.5 px-1 bg-blue-500/10 text-blue-600 border-none font-bold"
+                  >
+                    <Trans>BETA</Trans>
+                  </Badge>
+                </>
+              }
+              description={
+                <Trans>
+                  Filter repeated tags and detect stream replay loops
+                </Trans>
+              }
+              fallback={false}
+              icon={Layers}
+              size="default"
+              className={FLV_SWITCH_ROW}
+              switchClassName="scale-90"
             />
 
             {duplicateTagFiltering && (
               <div className="grid gap-3 pt-1">
-                <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    name={`${basePath}.flv_fix.duplicate_tag_filter_config.window_capacity_tags`}
-                    render={({ field }) => (
-                      <FormItem className="space-y-2">
-                        <ConfigFieldLabel size="sm" className="mb-1">
-                          <Trans>Filter Window Size</Trans>
-                        </ConfigFieldLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            className={cn(CONFIG_INPUT, 'font-mono')}
-                            placeholder={i18n._(msg`Tags`)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                <SettingGrid className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4">
+                  <SettingInput
+                    name={`${filterPath}.window_capacity_tags`}
+                    label={<Trans>Filter Window Size</Trans>}
+                    fallback={8192}
+                    size="sm"
                   />
-                  <FormField
-                    name={`${basePath}.flv_fix.duplicate_tag_filter_config.replay_backjump_threshold_ms`}
-                    render={({ field }) => (
-                      <FormItem className="space-y-2">
-                        <ConfigFieldLabel size="sm" className="mb-1">
-                          <Trans>Backjump Threshold</Trans>
-                        </ConfigFieldLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            className={cn(CONFIG_INPUT, 'font-mono')}
-                            placeholder="ms"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                  <SettingInput
+                    name={`${filterPath}.replay_backjump_threshold_ms`}
+                    label={<Trans>Backjump Threshold</Trans>}
+                    fallback={2000}
+                    size="sm"
                   />
                   <div className="sm:col-span-2 pt-1 border-t border-blue-500/10">
-                    <FormField
-                      name={`${basePath}.flv_fix.duplicate_tag_filter_config.enable_replay_offset_matching`}
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between space-y-0">
-                          <ConfigFieldLabel size="sm">
-                            <Trans>Offset Consistency Check</Trans>
-                          </ConfigFieldLabel>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              className="scale-75"
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
+                    <SettingSwitch
+                      name={`${filterPath}.enable_replay_offset_matching`}
+                      label={<Trans>Offset Consistency Check</Trans>}
+                      fallback={false}
                     />
                   </div>
-                </div>
+                </SettingGrid>
               </div>
             )}
           </div>
@@ -247,33 +168,21 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
 });
 MesioFlvForm.displayName = 'MesioFlvForm';
 
-interface MesioFormProps {
-  basePath?: string;
-  /** Edit a template's override of an engine instead of the engine itself. */
-  isOverride?: boolean;
-  /** The overridden engine's configuration, whose values unset override fields inherit. */
-  engineConfig?: Partial<MesioConfig>;
+/** Classes of the three stream-fixing toggles, tinted per protocol. */
+function fixToggleClass(accent: string) {
+  return `rounded-xl border border-border/40 bg-gradient-to-br from-background/50 p-4 shadow-sm transition-all ${accent}`;
 }
 
-export function MesioForm({
-  basePath = 'config',
-  isOverride = false,
-  engineConfig,
-}: MesioFormProps) {
-  const inheritedDash = React.useMemo(
-    () => (isOverride ? resolveDashSettings(engineConfig?.dash) : undefined),
-    [isOverride, engineConfig],
-  );
-  // An unset override inherits the engine's value; `null` resets it to the default.
-  const inheritedFixDash = isOverride ? (engineConfig?.fix_dash ?? true) : true;
-
-  const fixFlv = useWatch({
-    name: `${basePath}.fix_flv`,
-  });
-
-  const fixHls = useWatch({
-    name: `${basePath}.fix_hls`,
-  });
+function MesioSettings({
+  basePath,
+  inheritedDash,
+}: {
+  basePath: string;
+  inheritedDash?: ReturnType<typeof resolveDashSettings>;
+}) {
+  // FLV tuning applies only while FLV fixing is on. The HLS and DASH settings also cover
+  // downloading, so they apply whether or not fixing is on.
+  const fixFlv = useEffectiveValue(`${basePath}.fix_flv`, true);
 
   return (
     <Tabs defaultValue="general" className="w-full space-y-4">
@@ -295,20 +204,10 @@ export function MesioForm({
             </Badge>
           )}
         </TabsTrigger>
-        <TabsTrigger
-          value="hls"
-          className="flex-1 min-w-[100px] gap-2 disabled:opacity-50"
-          disabled={!fixHls}
-        >
+        <TabsTrigger value="hls" className="flex-1 min-w-[100px] gap-2">
           <Wrench className="w-4 h-4 text-blue-500" />
           <Trans>HLS Tuning</Trans>
-          {!fixHls && (
-            <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">
-              Off
-            </Badge>
-          )}
         </TabsTrigger>
-        {/* Track selection and timing apply whether or not DASH fixing is on. */}
         <TabsTrigger value="dash" className="flex-1 min-w-[100px] gap-2">
           <Combine className="w-4 h-4 text-emerald-500" />
           <Trans>DASH Tuning</Trans>
@@ -327,31 +226,11 @@ export function MesioForm({
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <FormField
+            <SettingInput
               name={`${basePath}.buffer_size`}
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <ConfigFieldLabel>
-                    <Trans>Global Buffer Size</Trans>
-                  </ConfigFieldLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        {...field}
-                        className="bg-background/50 font-mono"
-                      />
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        <Trans>bytes</Trans>
-                      </span>
-                    </div>
-                  </FormControl>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Recommended: 8388608 (8 MiB)</Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Global Buffer Size (bytes)</Trans>}
+              description={<Trans>Recommended: 8388608 (8 MiB)</Trans>}
+              fallback={8388608}
             />
           </CardContent>
         </Card>
@@ -359,75 +238,50 @@ export function MesioForm({
         {/* Three across when there is room, otherwise stacked: never two and an orphan. */}
         <div className="@container">
           <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-3">
-            <FormField
+            <SettingSwitch
               name={`${basePath}.fix_flv`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
-                  <div className="space-y-0.5">
-                    <ConfigFieldLabel icon={Film}>
-                      <Trans>Fix FLV Streams</Trans>
-                    </ConfigFieldLabel>
-                    <FormDescription className={CONFIG_DESCRIPTION}>
-                      <Trans>Enable advanced FLV timestamp repairing</Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
+              label={<Trans>Fix FLV Streams</Trans>}
+              description={
+                <Trans>Enable advanced FLV timestamp repairing</Trans>
+              }
+              fallback={true}
+              icon={Film}
+              size="default"
+              className={fixToggleClass(
+                'to-orange-500/5 hover:border-orange-500/20',
               )}
+              switchClassName=""
             />
-            <FormField
+            <SettingSwitch
               name={`${basePath}.fix_hls`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
-                  <div className="space-y-0.5">
-                    <ConfigFieldLabel icon={Wrench}>
-                      <Trans>Fix HLS Discontinuities</Trans>
-                    </ConfigFieldLabel>
-                    <FormDescription className={CONFIG_DESCRIPTION}>
-                      <Trans>Enable advanced HLS segment reconstruction</Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
+              label={<Trans>Fix HLS Discontinuities</Trans>}
+              description={
+                <Trans>Enable advanced HLS segment reconstruction</Trans>
+              }
+              fallback={true}
+              icon={Wrench}
+              size="default"
+              className={fixToggleClass(
+                'to-blue-500/5 hover:border-blue-500/20',
               )}
+              switchClassName=""
             />
-            <FormField
+            <SettingSwitch
               name={`${basePath}.fix_dash`}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-emerald-500/5 p-4 shadow-sm transition-all hover:border-emerald-500/20">
-                  <div className="space-y-0.5">
-                    <ConfigFieldLabel icon={Combine}>
-                      <Trans>Fix DASH Streams</Trans>
-                    </ConfigFieldLabel>
-                    <FormDescription className={CONFIG_DESCRIPTION}>
-                      <Trans>
-                        Check merged DASH output and start a new file on stream
-                        changes
-                      </Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={
-                        field.value === null
-                          ? true
-                          : (field.value ?? inheritedFixDash)
-                      }
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
+              label={<Trans>Fix DASH Streams</Trans>}
+              description={
+                <Trans>
+                  Check merged DASH output and start a new file on stream
+                  changes
+                </Trans>
+              }
+              fallback={true}
+              icon={Combine}
+              size="default"
+              className={fixToggleClass(
+                'to-emerald-500/5 hover:border-emerald-500/20',
               )}
+              switchClassName=""
             />
           </div>
         </div>
@@ -445,5 +299,39 @@ export function MesioForm({
         <MesioDashForm basePath={basePath} inherited={inheritedDash} />
       </TabsContent>
     </Tabs>
+  );
+}
+
+const NO_ENGINE_CONFIG = {};
+
+interface MesioFormProps {
+  basePath?: string;
+  /** Edit a template's override of an engine instead of the engine itself. */
+  isOverride?: boolean;
+  /** The overridden engine's configuration, whose values unset override fields inherit. */
+  engineConfig?: Partial<MesioConfig>;
+}
+
+export function MesioForm({
+  basePath = 'config',
+  isOverride = false,
+  engineConfig,
+}: MesioFormProps) {
+  const inheritedDash = React.useMemo(
+    () => (isOverride ? resolveDashSettings(engineConfig?.dash) : undefined),
+    [isOverride, engineConfig],
+  );
+
+  if (!isOverride) return <MesioSettings basePath={basePath} />;
+  return (
+    <EngineOverrideProvider
+      basePath={basePath}
+      engineConfig={
+        (engineConfig ?? NO_ENGINE_CONFIG) as Record<string, unknown>
+      }
+      schema={MesioConfigOverrideSchema}
+    >
+      <MesioSettings basePath={basePath} inheritedDash={inheritedDash} />
+    </EngineOverrideProvider>
   );
 }

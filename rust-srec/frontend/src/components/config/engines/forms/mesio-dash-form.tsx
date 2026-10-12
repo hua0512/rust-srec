@@ -32,7 +32,6 @@ import {
   CONFIG_DESCRIPTION,
   CONFIG_INPUT,
   CONFIG_SELECT_CONTENT,
-  CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
@@ -41,10 +40,14 @@ import {
   type MesioDashSettings,
 } from '@/api/schemas/engine';
 import { cn } from '@/lib/utils';
-
-/** Fields sit side by side only when the form is wide enough for both. */
-const FIELD_GRID =
-  'grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]';
+import {
+  INHERIT,
+  OVERRIDE_SELECT_TRIGGER,
+  OverrideStateItems,
+  RESET,
+  SettingGrid,
+  overrideMode,
+} from './setting-fields';
 
 type SettingKey = keyof MesioDashSettings;
 
@@ -63,18 +66,6 @@ const DashFormContext = React.createContext<DashFormContextValue>({
   dashPath: 'config.dash',
   inherited: null,
 });
-
-/** Select values for the two non-value states of an override field. */
-const INHERIT = 'inherit';
-const RESET = 'reset';
-
-type OverrideMode = typeof INHERIT | typeof RESET | 'custom';
-
-function overrideMode(value: unknown): OverrideMode {
-  if (value === undefined) return INHERIT;
-  if (value === null) return RESET;
-  return 'custom';
-}
 
 interface PolicyOption {
   type: string;
@@ -108,27 +99,6 @@ function describeSetting(
   return String(value);
 }
 
-/** The two non-value choices an override field offers, labelled with what they resolve to. */
-function OverrideStateItems({
-  inherited,
-  fallback,
-}: {
-  inherited: string;
-  fallback: string;
-}) {
-  const { i18n } = useLingui();
-  return (
-    <>
-      <SelectItem value={INHERIT}>
-        {i18n._(msg`Use engine setting (${inherited})`)}
-      </SelectItem>
-      <SelectItem value={RESET}>
-        {i18n._(msg`Default (${fallback})`)}
-      </SelectItem>
-    </>
-  );
-}
-
 function FieldCard({
   labelId,
   label,
@@ -143,17 +113,13 @@ function FieldCard({
   return (
     <Card className="border-border/40 bg-muted/5">
       <CardContent className="p-3 space-y-3">
-        <div className="space-y-0.5">
-          <div id={labelId} className="text-xs font-medium">
-            {label}
-          </div>
-          {description && (
-            <div className="text-[10px] text-muted-foreground">
-              {description}
-            </div>
-          )}
+        <div id={labelId} className="text-xs font-medium">
+          {label}
         </div>
         {children}
+        {description && (
+          <div className="text-[10px] text-muted-foreground">{description}</div>
+        )}
       </CardContent>
     </Card>
   );
@@ -205,7 +171,7 @@ function PolicyField({
       <Select value={selected} onValueChange={select}>
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -365,7 +331,7 @@ function ValueField({
         <SelectTrigger
           id={selectId}
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>
@@ -417,61 +383,81 @@ function TrackField({
     void trigger(errorPath);
   };
 
-  return (
-    <div className="space-y-1 rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm">
-      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
-          <ConfigFieldLabel size="sm">
-            <span id={labelId}>{label}</span>
-          </ConfigFieldLabel>
-          {description && <p className={CONFIG_DESCRIPTION}>{description}</p>}
-        </div>
-        {inherited ? (
-          <Select
-            value={
-              typeof value === 'boolean' ? String(value) : overrideMode(value)
-            }
-            onValueChange={(next) =>
-              change(
-                next === INHERIT
-                  ? undefined
-                  : next === RESET
-                    ? null
-                    : next === 'true',
-              )
-            }
-          >
-            <SelectTrigger
-              aria-labelledby={labelId}
-              aria-invalid={error ? true : undefined}
-              className={cn(CONFIG_SELECT_TRIGGER, 'sm:w-56')}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className={CONFIG_SELECT_CONTENT}>
-              <OverrideStateItems
-                inherited={describeSetting(i18n, inherited[setting])}
-                fallback={describeSetting(i18n, MESIO_DASH_DEFAULTS[setting])}
-              />
-              <SelectItem value="true">{i18n._(msg`On`)}</SelectItem>
-              <SelectItem value="false">{i18n._(msg`Off`)}</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : (
-          <Switch
+  const labelText = (
+    <ConfigFieldLabel size="sm">
+      <span id={labelId}>{label}</span>
+    </ConfigFieldLabel>
+  );
+  const descriptionText = description && (
+    <p className={CONFIG_DESCRIPTION}>{description}</p>
+  );
+  const errorText = error?.message && (
+    <p role="alert" className="text-destructive text-sm">
+      {error.message}
+    </p>
+  );
+  const box =
+    'rounded-lg border border-border/40 bg-muted/5 px-3 py-2 shadow-sm';
+
+  // In an override the select sits under its label, like the other override fields.
+  if (inherited) {
+    return (
+      <div className={cn('space-y-2', box)}>
+        {labelText}
+        <Select
+          value={
+            typeof value === 'boolean' ? String(value) : overrideMode(value)
+          }
+          onValueChange={(next) =>
+            change(
+              next === INHERIT
+                ? undefined
+                : next === RESET
+                  ? null
+                  : next === 'true',
+            )
+          }
+        >
+          <SelectTrigger
             aria-labelledby={labelId}
             aria-invalid={error ? true : undefined}
-            checked={value ?? MESIO_DASH_DEFAULTS[setting]}
-            onCheckedChange={change}
-            className="scale-75 origin-right"
-          />
-        )}
+            className={OVERRIDE_SELECT_TRIGGER}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className={CONFIG_SELECT_CONTENT}>
+            <OverrideStateItems
+              inherited={describeSetting(i18n, inherited[setting])}
+              fallback={describeSetting(i18n, MESIO_DASH_DEFAULTS[setting])}
+            />
+            <SelectItem value="true">{i18n._(msg`On`)}</SelectItem>
+            <SelectItem value="false">{i18n._(msg`Off`)}</SelectItem>
+          </SelectContent>
+        </Select>
+        {descriptionText}
+        {errorText}
       </div>
-      {error?.message && (
-        <p role="alert" className="text-destructive text-sm">
-          {error.message}
-        </p>
-      )}
+    );
+  }
+
+  return (
+    <div className={cn('space-y-1', box)}>
+      {/* The switch stays beside its label: wrapping it under a description would put the two
+          track switches of a row in different places. */}
+      <div className="flex flex-row items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          {labelText}
+          {descriptionText}
+        </div>
+        <Switch
+          aria-labelledby={labelId}
+          aria-invalid={error ? true : undefined}
+          checked={value ?? MESIO_DASH_DEFAULTS[setting]}
+          onCheckedChange={change}
+          className="scale-75 origin-right shrink-0"
+        />
+      </div>
+      {errorText}
     </div>
   );
 }
@@ -524,7 +510,7 @@ function DashTrackSettings() {
   const { dashPath } = React.useContext(DashFormContext);
   return (
     <div className="space-y-4">
-      <div className={FIELD_GRID}>
+      <SettingGrid>
         <PolicyField
           setting="video_quality"
           label={<Trans>Video Quality</Trans>}
@@ -568,7 +554,7 @@ function DashTrackSettings() {
             ) : null
           }
         />
-      </div>
+      </SettingGrid>
 
       <ValueField
         setting="audio_language"
@@ -583,7 +569,7 @@ function DashTrackSettings() {
         placeholder={i18n._(msg`e.g. en, pt-BR`)}
       />
 
-      <div className={FIELD_GRID}>
+      <SettingGrid>
         <TrackField
           setting="include_video"
           label={<Trans>Record Video (Default: On)</Trans>}
@@ -595,7 +581,7 @@ function DashTrackSettings() {
             <Trans>Audio inside the video stream is always kept.</Trans>
           }
         />
-      </div>
+      </SettingGrid>
     </div>
   );
 }
@@ -628,7 +614,7 @@ function DashLiveStartSettings() {
 
 function DashDownloadSettings() {
   return (
-    <div className={FIELD_GRID}>
+    <SettingGrid>
       <ValueField
         setting="download_concurrency"
         label={<Trans>Download Concurrency</Trans>}
@@ -642,13 +628,13 @@ function DashDownloadSettings() {
         setting="max_segment_retries"
         label={<Trans>Segment Retries</Trans>}
       />
-    </div>
+    </SettingGrid>
   );
 }
 
 function DashManifestSettings() {
   return (
-    <div className={FIELD_GRID}>
+    <SettingGrid>
       <ValueField
         setting="manifest_timeout_ms"
         label={<Trans>Manifest Timeout (ms)</Trans>}
@@ -669,7 +655,7 @@ function DashManifestSettings() {
           </Trans>
         }
       />
-    </div>
+    </SettingGrid>
   );
 }
 
@@ -734,7 +720,7 @@ function DashResetChoice({ dashPath }: { dashPath: string }) {
       >
         <SelectTrigger
           aria-labelledby={labelId}
-          className={CONFIG_SELECT_TRIGGER}
+          className={OVERRIDE_SELECT_TRIGGER}
         >
           <SelectValue />
         </SelectTrigger>

@@ -48,7 +48,9 @@ describe('Mesio DASH configuration', () => {
     },
   );
 
-  it.each(schemas)(
+  // A template override refuses an emptied field instead: there, an input only shows for a
+  // custom value (see mesio-override.test.ts).
+  it.each(schemas.slice(0, 1))(
     'drops empty form fields in the %s schema instead of sending them',
     (_, schema) => {
       const dash = {
