@@ -463,6 +463,38 @@ mod tests {
     }
 
     #[test]
+    fn dash_is_a_configurable_preferred_format() {
+        let config: StreamSelectionConfig =
+            serde_json::from_value(serde_json::json!({ "preferred_formats": ["dash", "hls"] }))
+                .unwrap();
+        assert_eq!(
+            config.preferred_formats,
+            Some(vec![StreamFormat::Dash, StreamFormat::Hls])
+        );
+        let selector = StreamSelector::with_config(config);
+
+        let streams = vec![
+            create_test_stream(
+                "http://example.com/stream.m3u8",
+                StreamFormat::Hls,
+                "1080p",
+                5000000,
+                1,
+            ),
+            create_test_stream(
+                "http://example.com/stream.mpd",
+                StreamFormat::Dash,
+                "1080p",
+                5000000,
+                1,
+            ),
+        ];
+
+        let best = selector.select_best(&streams).unwrap();
+        assert_eq!(best.stream_format, StreamFormat::Dash);
+    }
+
+    #[test]
     fn test_select_best_by_format() {
         let config = StreamSelectionConfig {
             preferred_formats: Some(vec![StreamFormat::Flv]),

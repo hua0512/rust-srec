@@ -107,7 +107,8 @@ pub enum DownloadEndPolicy {
     /// [`crate::session::TerminalCause::is_authoritative_end_with_signal`]
     /// using the engine signal carried on
     /// [`crate::downloader::DownloadTerminalEvent::Completed`]:
-    /// `HlsEndlist` is authoritative; `CleanDisconnect` enters hysteresis.
+    /// `HlsEndlist` and `DashEnd` are authoritative; `CleanDisconnect` enters
+    /// hysteresis.
     ///
     /// The actor must NOT push `process_status(LiveStatus::Offline)` for
     /// this variant. Doing so would emit a `MonitorEvent::StreamerOffline`

@@ -459,4 +459,54 @@ mod tests {
         assert_eq!(second.binary_path, "first-executable");
         assert_eq!(second.timeout_secs, 9);
     }
+
+    #[test]
+    fn mesio_dash_overrides_merge_field_by_field() {
+        use crate::database::models::engine::{MesioDashConfig, MesioDashVideoQuality};
+
+        // No stored DASH settings: the override fills the rest with defaults.
+        let partial = DownloadManager::apply_override(
+            MesioEngineConfig::default(),
+            &serde_json::json!({"fix_dash": false, "dash": {"include_audio": false}}),
+        )
+        .unwrap();
+        assert!(!partial.fix_dash);
+        assert!(partial.fix_hls);
+        let dash = partial.dash.unwrap();
+        assert!(!dash.include_audio);
+        assert_eq!(
+            dash.download_concurrency,
+            MesioDashConfig::default().download_concurrency
+        );
+
+        // Stored DASH settings: only the overridden fields change.
+        let base = MesioEngineConfig {
+            dash: Some(MesioDashConfig {
+                download_concurrency: 2,
+                audio_language: Some("en".to_owned()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let merged = DownloadManager::apply_override(
+            base.clone(),
+            &serde_json::json!({"dash": {
+                "video_quality": {"type": "max_height", "height": 720},
+                "audio_language": null
+            }}),
+        )
+        .unwrap();
+        let dash = merged.dash.unwrap();
+        assert_eq!(
+            dash.video_quality,
+            MesioDashVideoQuality::MaxHeight { height: 720 }
+        );
+        assert_eq!(dash.download_concurrency, 2);
+        assert_eq!(dash.audio_language, None);
+
+        // `null` clears the stored DASH settings back to the defaults.
+        let cleared =
+            DownloadManager::apply_override(base, &serde_json::json!({"dash": null})).unwrap();
+        assert!(cleared.dash.is_none());
+    }
 }

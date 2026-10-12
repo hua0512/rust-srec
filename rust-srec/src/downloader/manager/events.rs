@@ -35,6 +35,10 @@ pub enum EngineEndSignal {
     /// HLS playlist contained `#EXT-X-ENDLIST`. The platform itself marked
     /// the stream as complete — definitively over.
     HlsEndlist,
+    /// The DASH presentation was static, or its MPD turned static or gained
+    /// an end, and every segment was recorded. Definitively over, like
+    /// [`Self::HlsEndlist`].
+    DashEnd,
     /// Connection closed cleanly with no explicit end marker. Could be EOF,
     /// could be a reconnect-friendly drop. Ambiguous; the lifecycle should
     /// hold the session in hysteresis to absorb a possible resume.
@@ -57,9 +61,19 @@ impl EngineEndSignal {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::HlsEndlist => "hls_endlist",
+            Self::DashEnd => "dash_end",
             Self::CleanDisconnect => "clean_disconnect",
             Self::SubprocessExitZero => "subprocess_exit_zero",
             Self::Unknown => "unknown",
+        }
+    }
+
+    /// Whether the signal is the platform asserting the stream is over,
+    /// rather than a disconnect that a reconnect may follow.
+    pub fn is_authoritative(&self) -> bool {
+        match self {
+            Self::HlsEndlist | Self::DashEnd => true,
+            Self::CleanDisconnect | Self::SubprocessExitZero | Self::Unknown => false,
         }
     }
 }
@@ -487,4 +501,28 @@ pub enum DownloadRejectedKind {
     /// already persisted, so the scheduler only reschedules the actor after
     /// `retry_after_secs`; no `InfraBlockReason` write is needed.
     StreamerBackoff,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_platform_asserted_ends_are_authoritative() {
+        let signals = [
+            (EngineEndSignal::HlsEndlist, "hls_endlist", true),
+            (EngineEndSignal::DashEnd, "dash_end", true),
+            (EngineEndSignal::CleanDisconnect, "clean_disconnect", false),
+            (
+                EngineEndSignal::SubprocessExitZero,
+                "subprocess_exit_zero",
+                false,
+            ),
+            (EngineEndSignal::Unknown, "unknown", false),
+        ];
+        for (signal, label, authoritative) in signals {
+            assert_eq!(signal.as_str(), label);
+            assert_eq!(signal.is_authoritative(), authoritative, "{label}");
+        }
+    }
 }

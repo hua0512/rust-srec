@@ -4,7 +4,7 @@
 //!
 //! ## Rules
 //!
-//! - **mesio HLS / mesio FLV + `Network` failures** — accumulate per
+//! - **mesio (HLS, FLV, DASH) + `Network` failures** — accumulate per
 //!   streamer; reaching the threshold inside the trailing window is treated
 //!   as a definitive offline. Returns
 //!   [`OfflineSignal::ConsecutiveFailures`] with the threshold. Counter resets
@@ -26,7 +26,8 @@
 //! playlist requests can race sliding-window eviction or token expiry.
 //! A 404 alone therefore does not establish `DefinitiveOffline`.
 //!
-//! Mesio HLS `#EXT-X-ENDLIST` produces `EngineEndSignal::HlsEndlist`
+//! Mesio HLS `#EXT-X-ENDLIST` produces `EngineEndSignal::HlsEndlist`, and
+//! the end of a static or ended DASH presentation `EngineEndSignal::DashEnd`,
 //! through the authoritative `Completed` path. Consecutive `Network`
 //! failures use the window and threshold below.
 //!
@@ -218,6 +219,7 @@ impl Default for OfflineClassifier {
 pub enum EngineKind {
     MesioHls,
     MesioFlv,
+    MesioDash,
     MesioUnknown,
     Ffmpeg,
     Streamlink,
@@ -225,7 +227,10 @@ pub enum EngineKind {
 
 impl EngineKind {
     pub fn is_mesio(&self) -> bool {
-        matches!(self, Self::MesioHls | Self::MesioFlv | Self::MesioUnknown)
+        matches!(
+            self,
+            Self::MesioHls | Self::MesioFlv | Self::MesioDash | Self::MesioUnknown
+        )
     }
 
     pub fn from_engine_and_protocol(engine_type: EngineType, protocol: DownloadProtocol) -> Self {
@@ -235,6 +240,7 @@ impl EngineKind {
             EngineType::Mesio => match protocol {
                 DownloadProtocol::Hls => Self::MesioHls,
                 DownloadProtocol::Flv => Self::MesioFlv,
+                DownloadProtocol::Dash => Self::MesioDash,
                 DownloadProtocol::Unknown => Self::MesioUnknown,
             },
         }
@@ -270,6 +276,10 @@ mod tests {
             EngineKind::MesioFlv
         );
         assert_eq!(
+            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Dash),
+            EngineKind::MesioDash
+        );
+        assert_eq!(
             EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Unknown),
             EngineKind::MesioUnknown
         );
@@ -278,6 +288,21 @@ mod tests {
             EngineKind::Ffmpeg
         );
     }
+    #[test]
+    fn mesio_dash_network_failures_classify_like_other_mesio_protocols() {
+        assert!(EngineKind::MesioDash.is_mesio());
+        let c = classic_classifier();
+        let kind = EngineKind::MesioDash;
+        assert_eq!(
+            c.classify_failure("s1", &kind, &DownloadFailureKind::Network),
+            None
+        );
+        assert_eq!(
+            c.classify_failure("s1", &kind, &DownloadFailureKind::Network),
+            Some(OfflineSignal::ConsecutiveFailures(2))
+        );
+    }
+
     #[test]
     fn two_consecutive_network_failures_classify_as_definitive_offline() {
         let c = classic_classifier();

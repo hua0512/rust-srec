@@ -10,6 +10,8 @@ pub enum StreamFormat {
     Hls,
     Mp4,
     Wss,
+    /// MPEG-DASH: the URL is a Media Presentation Description (MPD).
+    Dash,
 }
 
 impl StreamFormat {
@@ -19,6 +21,7 @@ impl StreamFormat {
             StreamFormat::Hls => "hls",
             StreamFormat::Mp4 => "mp4",
             StreamFormat::Wss => "wss",
+            StreamFormat::Dash => "dash",
         }
     }
 
@@ -28,6 +31,7 @@ impl StreamFormat {
             "m3u8" => StreamFormat::Hls,
             "mp4" => StreamFormat::Mp4,
             "wss" => StreamFormat::Wss,
+            "mpd" => StreamFormat::Dash,
             _ => StreamFormat::Flv,
         }
     }
@@ -48,6 +52,7 @@ impl FromStr for StreamFormat {
             "hls" => Ok(StreamFormat::Hls),
             "mp4" => Ok(StreamFormat::Mp4),
             "wss" => Ok(StreamFormat::Wss),
+            "dash" => Ok(StreamFormat::Dash),
             _ => Err(()),
         }
     }
@@ -99,5 +104,28 @@ impl FromStr for MediaFormat {
             "fmp4" | "mp4" => Ok(MediaFormat::Mp4),
             _ => Err(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dash_round_trips_through_every_representation() {
+        assert_eq!(StreamFormat::Dash.as_str(), "dash");
+        assert_eq!(StreamFormat::Dash.to_string(), "dash");
+        assert_eq!("dash".parse::<StreamFormat>(), Ok(StreamFormat::Dash));
+        assert_eq!("DASH".parse::<StreamFormat>(), Ok(StreamFormat::Dash));
+        assert_eq!(StreamFormat::from_extension("mpd"), StreamFormat::Dash);
+        assert_eq!(StreamFormat::from_extension("MPD"), StreamFormat::Dash);
+        assert_eq!(
+            serde_json::to_string(&StreamFormat::Dash).unwrap(),
+            "\"dash\""
+        );
+        assert_eq!(
+            serde_json::from_str::<StreamFormat>("\"dash\"").unwrap(),
+            StreamFormat::Dash
+        );
     }
 }

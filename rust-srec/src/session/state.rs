@@ -267,11 +267,12 @@ impl TerminalCause {
     /// call), the platform's status API (`StreamerOffline`), the
     /// classifier-derived `DefinitiveOffline { ConsecutiveFailures }`, or an
     /// engine boundary observation that constitutes platform-asserted end
-    /// (HLS `#EXT-X-ENDLIST` → `Completed` with
-    /// [`crate::downloader::EngineEndSignal::HlsEndlist`]).
+    /// (HLS `#EXT-X-ENDLIST` or the end of a DASH presentation → `Completed`
+    /// with an [authoritative](crate::downloader::EngineEndSignal::is_authoritative)
+    /// engine signal).
     ///
-    /// `Completed` itself is ambiguous (mesio HLS-with-endlist is
-    /// authoritative; mesio FLV clean disconnect is not). Callers that have
+    /// `Completed` itself is ambiguous (mesio HLS-with-endlist and DASH
+    /// presentation end are authoritative; mesio FLV clean disconnect is not). Callers that have
     /// access to the engine-side signal should prefer
     /// [`Self::is_authoritative_end_with_signal`].
     ///
@@ -298,7 +299,8 @@ impl TerminalCause {
 
     /// Authority decision when the engine's end signal is known. This is the
     /// preferred form for `on_download_terminal`: mesio HLS with EXT-X-ENDLIST
-    /// is authoritative, mesio FLV clean disconnect is not.
+    /// and the end of a DASH presentation are authoritative, mesio FLV clean
+    /// disconnect is not.
     pub fn is_authoritative_end_with_signal(
         &self,
         signal: Option<crate::downloader::EngineEndSignal>,
@@ -306,13 +308,7 @@ impl TerminalCause {
         if self.is_authoritative_end() {
             return true;
         }
-        matches!(
-            (self, signal),
-            (
-                Self::Completed,
-                Some(crate::downloader::EngineEndSignal::HlsEndlist)
-            )
-        )
+        matches!(self, Self::Completed) && signal.is_some_and(|signal| signal.is_authoritative())
     }
 
     /// Short, stable string for logging / metrics labels.
@@ -513,6 +509,19 @@ mod tests {
             TerminalCause::Completed
                 .is_authoritative_end_with_signal(Some(EngineEndSignal::HlsEndlist))
         );
+    }
+
+    #[test]
+    fn authority_completed_with_dash_end_is_authoritative() {
+        assert!(
+            TerminalCause::Completed
+                .is_authoritative_end_with_signal(Some(EngineEndSignal::DashEnd))
+        );
+        assert!(
+            !TerminalCause::Completed
+                .is_authoritative_end_with_signal(Some(EngineEndSignal::SubprocessExitZero))
+        );
+        assert!(!TerminalCause::Completed.is_authoritative_end_with_signal(None));
     }
 
     #[test]
