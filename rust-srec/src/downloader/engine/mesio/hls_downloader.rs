@@ -661,28 +661,65 @@ impl HlsDownloader {
         // Closing the input lets the writer finish while the session settles.
         drop(tx);
 
-        let observation = SessionObservation {
-            items_exhausted: items_exhausted.load(Ordering::Relaxed),
-            saw_end_of_stream: saw_end_of_stream.load(Ordering::Relaxed),
-            cancelled: self.cancellation_token.is_cancelled() || token.is_cancelled(),
-        };
-        let session_end = lifecycle.settle(observation.items_exhausted).await;
-        match &session_end {
-            SessionEnd::Failed(reason) => warn!(
-                protocol = protocol.label(),
-                streamer_id = %config.streamer_id,
-                reason = %sanitize_engine_message(reason, config.managed_credentials),
-                "Download session reported a failed engine task"
-            ),
-            SessionEnd::TimedOut => warn!(
-                protocol = protocol.label(),
-                streamer_id = %config.streamer_id,
-                "Download session did not finish within the settlement window"
-            ),
-            _ => {}
-        }
-        conclude_session(protocol, &observation, stream_error, &session_end)
+        settle_session(
+            SettleContext {
+                protocol,
+                parent_token: &self.cancellation_token,
+                child_token: token,
+                streamer_id: &config.streamer_id,
+                managed_credentials: config.managed_credentials,
+            },
+            lifecycle,
+            items_exhausted.load(Ordering::Relaxed),
+            saw_end_of_stream.load(Ordering::Relaxed),
+            stream_error,
+        )
+        .await
     }
+}
+
+/// Per-download context for [`settle_session`].
+struct SettleContext<'a> {
+    protocol: SegmentedProtocol,
+    parent_token: &'a CancellationToken,
+    child_token: &'a CancellationToken,
+    streamer_id: &'a str,
+    managed_credentials: bool,
+}
+
+/// Settles the session once its items were consumed and concludes how the
+/// recording ended (see [`conclude_session`]). Cancellation is read after
+/// settling, so a download cancelled while its session finishes keeps the
+/// cancellation outcome even if a task fails as it stops.
+async fn settle_session(
+    context: SettleContext<'_>,
+    lifecycle: SessionLifecycle,
+    items_exhausted: bool,
+    saw_end_of_stream: bool,
+    stream_error: Option<(DownloadFailureKind, String)>,
+) -> (Option<(DownloadFailureKind, String)>, EngineEndSignal) {
+    let protocol = context.protocol;
+    let session_end = lifecycle.settle(items_exhausted).await;
+    match &session_end {
+        SessionEnd::Failed(reason) => warn!(
+            protocol = protocol.label(),
+            streamer_id = %context.streamer_id,
+            reason = %sanitize_engine_message(reason, context.managed_credentials),
+            "Download session reported a failed engine task"
+        ),
+        SessionEnd::TimedOut => warn!(
+            protocol = protocol.label(),
+            streamer_id = %context.streamer_id,
+            "Download session did not finish within the settlement window"
+        ),
+        _ => {}
+    }
+    let observation = SessionObservation {
+        items_exhausted,
+        saw_end_of_stream,
+        cancelled: context.parent_token.is_cancelled() || context.child_token.is_cancelled(),
+    };
+    conclude_session(protocol, &observation, stream_error, &session_end)
 }
 
 #[cfg(test)]
@@ -1072,5 +1109,134 @@ mod tests {
             cancelled: false,
         };
         assert_eq!(conclude(&abandoned, None, &failed).0, None);
+    }
+
+    /// A lifecycle whose join is `join` and whose cancel records when it was
+    /// called and cancels `session`.
+    fn timed_lifecycle(
+        join: impl std::future::Future<Output = Option<Result<DownloadTerminal, DownloadError>>>
+        + Send
+        + 'static,
+        session: CancellationToken,
+    ) -> (
+        SessionLifecycle,
+        Arc<parking_lot::Mutex<Option<tokio::time::Instant>>>,
+    ) {
+        let cancelled_at = Arc::new(parking_lot::Mutex::new(None));
+        let record = Arc::clone(&cancelled_at);
+        (
+            SessionLifecycle {
+                cancel: Box::new(move || {
+                    record.lock().get_or_insert_with(tokio::time::Instant::now);
+                    session.cancel();
+                }),
+                join: Box::pin(join),
+            },
+            cancelled_at,
+        )
+    }
+
+    fn settle_context<'a>(
+        protocol: SegmentedProtocol,
+        parent: &'a CancellationToken,
+        child: &'a CancellationToken,
+    ) -> SettleContext<'a> {
+        SettleContext {
+            protocol,
+            parent_token: parent,
+            child_token: child,
+            streamer_id: "streamer",
+            managed_credentials: false,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_session_finishing_within_the_window_decides_the_outcome() {
+        for (protocol, signal) in [
+            (SegmentedProtocol::Dash, EngineEndSignal::DashEnd),
+            (SegmentedProtocol::Hls, EngineEndSignal::HlsEndlist),
+        ] {
+            let (parent, child) = (CancellationToken::new(), CancellationToken::new());
+            let (lifecycle, cancelled_at) = timed_lifecycle(
+                async {
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                    Some(Ok(DownloadTerminal::AuthoritativeEnd))
+                },
+                CancellationToken::new(),
+            );
+            let started = tokio::time::Instant::now();
+
+            let concluded = settle_session(
+                settle_context(protocol, &parent, &child),
+                lifecycle,
+                true,
+                true,
+                None,
+            )
+            .await;
+
+            assert_eq!(concluded, (None, signal), "{protocol:?}");
+            assert_eq!(started.elapsed(), Duration::from_millis(1500));
+            assert!(cancelled_at.lock().is_none(), "not cancelled");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_session_that_never_finishes_is_cancelled_then_abandoned() {
+        let (parent, child) = (CancellationToken::new(), CancellationToken::new());
+        let (lifecycle, cancelled_at) =
+            timed_lifecycle(std::future::pending(), CancellationToken::new());
+        let started = tokio::time::Instant::now();
+
+        let concluded = settle_session(
+            settle_context(SegmentedProtocol::Dash, &parent, &child),
+            lifecycle,
+            true,
+            true,
+            None,
+        )
+        .await;
+
+        assert_eq!(concluded, (None, EngineEndSignal::CleanDisconnect));
+        let cancelled_at = cancelled_at.lock().expect("cancelled after the window");
+        assert_eq!(cancelled_at - started, TASK_SETTLEMENT_TIMEOUT);
+        assert_eq!(started.elapsed(), TASK_SETTLEMENT_TIMEOUT * 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_the_download_while_the_session_settles_keeps_cancellation() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+        // Like a mesio session: its engine token is a child of the download's,
+        // and a task fails as it stops.
+        let engine = child.child_token();
+        let stopped = engine.clone();
+        let (lifecycle, _) = timed_lifecycle(
+            async move {
+                stopped.cancelled().await;
+                Some(Ok(DownloadTerminal::PipelineError(Arc::from(
+                    "DASH assembler task failed",
+                ))))
+            },
+            engine,
+        );
+        let stop = parent.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            stop.cancel();
+        });
+        let started = tokio::time::Instant::now();
+
+        let concluded = settle_session(
+            settle_context(SegmentedProtocol::Dash, &parent, &child),
+            lifecycle,
+            true,
+            true,
+            None,
+        )
+        .await;
+
+        assert_eq!(concluded, (None, EngineEndSignal::CleanDisconnect));
+        assert_eq!(started.elapsed(), Duration::from_millis(500));
     }
 }
