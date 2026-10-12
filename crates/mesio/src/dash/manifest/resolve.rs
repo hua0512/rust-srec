@@ -123,7 +123,34 @@ pub struct Rejected {
     pub adaptation_set_id: Option<String>,
     /// `None` when the whole AdaptationSet was rejected.
     pub representation_id: Option<String>,
+    /// Video or audio, when `@contentType` or the MIME type tells, so a
+    /// rejection can be attributed to the track it would have served.
+    pub content_type: Option<ContentType>,
     pub feature: UnsupportedFeature,
+}
+
+/// The media type `@contentType` or a `video/…`/`audio/…` MIME type
+/// declares, whatever the container.
+fn declared_content_type(
+    set: &RawAdaptationSet,
+    common: Option<&RawCommon>,
+) -> Option<ContentType> {
+    match set.content_type.as_deref() {
+        Some("video") => return Some(ContentType::Video),
+        Some("audio") => return Some(ContentType::Audio),
+        _ => {}
+    }
+    let mime = common
+        .and_then(|common| common.mime_type.as_deref())
+        .or(set.common.mime_type.as_deref())?;
+    let mime = mime.trim_start().to_ascii_lowercase();
+    if mime.starts_with("video/") {
+        Some(ContentType::Video)
+    } else if mime.starts_with("audio/") {
+        Some(ContentType::Audio)
+    } else {
+        None
+    }
 }
 
 /// A resolved AdaptationSet.
@@ -411,9 +438,16 @@ impl Resolver {
             let set_base = match check_set(&set, &base) {
                 Ok(set_base) => set_base,
                 Err(ManifestError::Unsupported(feature)) => {
+                    let content_type = declared_content_type(
+                        &set,
+                        representations
+                            .first()
+                            .map(|representation| &representation.common),
+                    );
                     rejected.push(Rejected {
                         adaptation_set_id: set.id.clone(),
                         representation_id: None,
+                        content_type,
                         feature,
                     });
                     continue;
@@ -424,6 +458,7 @@ impl Resolver {
             for representation in representations {
                 self.charge(REPRESENTATION_OVERHEAD + 2 * representation.id.len())?;
                 let id = representation.id.clone();
+                let content_type = declared_content_type(&set, Some(&representation.common));
                 let context = SetContext {
                     set: &set,
                     period_info: &period.segment_info,
@@ -436,6 +471,7 @@ impl Resolver {
                         rejected.push(Rejected {
                             adaptation_set_id: set.id.clone(),
                             representation_id: Some(id),
+                            content_type,
                             feature,
                         });
                     }
