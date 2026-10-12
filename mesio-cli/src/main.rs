@@ -11,7 +11,7 @@ use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::{DownloaderConfig, HlsProtocolBuilder, ProxyAuth, ProxyConfig, ProxyType};
 use output::provider::OutputFormat;
 use pipeline_common::{CancellationToken, config::PipelineConfig};
-use tracing::{Level, error, info};
+use tracing::{Level, error, info, warn};
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -22,6 +22,7 @@ mod error;
 mod input;
 mod output;
 mod processor;
+mod signal;
 mod utils;
 
 use cli::CliArgs;
@@ -32,7 +33,12 @@ use utils::{parse_headers, parse_params, parse_size, parse_time};
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
-    if let Err(e) = bootstrap() {
+    let result = bootstrap();
+    // The input thread may still hold the terminal in raw mode.
+    if let Err(error) = input::restore_terminal() {
+        error!(%error, "Failed to restore the terminal mode");
+    }
+    if let Err(e) = result {
         // Check if it's a broken pipe error - this is expected behavior
         // when the consumer closes the pipe (e.g., `mesio ... | head -c 1000`)
         if matches!(e, AppError::BrokenPipe) {
@@ -57,8 +63,14 @@ async fn bootstrap() -> Result<(), AppError> {
     // Create a cancellation token
     let token = CancellationToken::new();
 
-    // Spawn the input handler
-    tokio::spawn(input_handler(token.clone()));
+    // A thread of its own rather than a runtime task: it blocks, and runtime
+    // shutdown would wait for it. The process exits without joining it.
+    let input_thread = std::thread::Builder::new()
+        .name("mesio-input".to_owned())
+        .spawn({
+            let token = token.clone();
+            move || input_handler(token)
+        });
 
     // Setup logging with tracing-indicatif
     let log_level = if args.verbose {
@@ -140,6 +152,17 @@ async fn bootstrap() -> Result<(), AppError> {
             .with(file_layer)
             .with(console_layer)
             .init();
+    }
+
+    if let Err(error) = input_thread {
+        warn!(%error, "Failed to start the input handler; `q` will not stop mesio");
+    }
+
+    if let Err(error) = signal::spawn(token.clone()) {
+        warn!(
+            %error,
+            "Failed to install signal handlers; a signal will stop mesio without finishing the current file"
+        );
     }
 
     info!("███╗   ███╗███████╗███████╗██╗ ██████╗ ");
@@ -337,15 +360,12 @@ async fn bootstrap() -> Result<(), AppError> {
     )
     .await;
 
-    // Ensure the token is always cancelled to terminate the input_handler.
     let final_result = if token.is_cancelled() {
         info!("Operation cancelled by user. Exiting gracefully.");
         Ok(())
     } else {
         result
     };
-
-    token.cancel();
 
     // Give a moment for any background spans to complete
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

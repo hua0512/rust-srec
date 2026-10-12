@@ -239,10 +239,16 @@ DASH output is a fragmented MP4 (`.m4s`) that players and ffmpeg read directly. 
 
 ### Stopping a Recording
 
-Press `q` or `Ctrl+C` in the terminal running mesio to stop gracefully: the current file is
-finished and closed. When stdin is piped, a line containing `q` does the same. Mesio does not
-install a `SIGINT` handler, so an interrupt delivered any other way (for example `kill -INT`)
-ends the process immediately without finishing the current file.
+Mesio stops gracefully, finishing and closing the current file, when:
+
+- `q` or `Ctrl+C` is pressed in the terminal running it;
+- a line consisting of `q` is read from stdin, when stdin is piped;
+- it receives `SIGINT` or `SIGTERM` (for example from `kill`, `docker stop` or a service
+  manager), or Ctrl+C or Ctrl+Break on Windows.
+
+A graceful stop exits with status 0. A signal received while a stop is already under way,
+including one started with `q`, exits at once with status 130 instead, and the current file
+may be incomplete. Pressing `Ctrl+C` twice does the same.
 
 ### Custom Output Names
 

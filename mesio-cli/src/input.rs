@@ -4,40 +4,89 @@ use crossterm::{
 };
 use pipeline_common::CancellationToken;
 use std::io::{self, BufRead, IsTerminal};
-use std::sync::mpsc;
+use std::sync::{Mutex, PoisonError, mpsc};
 use std::thread;
 use std::time::Duration;
 use tracing::info;
 
-/// Asynchronously listens for user input to trigger cancellation.
+/// Whether this process has put the terminal in raw mode. Enabling and
+/// restoring hold the lock, so raw mode is never enabled after
+/// [`restore_terminal`] has run, whichever thread gets there first.
+static RAW_MODE: Mutex<RawMode> = Mutex::new(RawMode::Off);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RawMode {
+    Off,
+    On,
+    Restored,
+}
+
+/// Puts the terminal in raw mode unless it has already been restored.
+fn enable_raw_mode() -> bool {
+    let enabled = {
+        let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
+        if *mode != RawMode::Off {
+            return false;
+        }
+        let enabled = terminal::enable_raw_mode();
+        if enabled.is_ok() {
+            *mode = RawMode::On;
+        }
+        enabled
+    };
+    if let Err(error) = enabled {
+        info!(%error, "Failed to enable raw mode. Input handling will be disabled.");
+        return false;
+    }
+    true
+}
+
+/// Takes the terminal out of raw mode if this process put it there, and
+/// keeps it from being enabled again. Callable from any thread, including
+/// while the input handler is blocked reading the terminal. On failure the
+/// terminal stays marked raw, so a later call retries.
+///
+/// It does not log, so a forced exit can call it with stderr stalled.
+pub fn restore_terminal() -> io::Result<()> {
+    let mut mode = RAW_MODE.lock().unwrap_or_else(PoisonError::into_inner);
+    if *mode == RawMode::On {
+        terminal::disable_raw_mode()?;
+    }
+    *mode = RawMode::Restored;
+    Ok(())
+}
+
+/// Listens for user input that requests a stop, and cancels `token` on it.
 ///
 /// This function checks if stdin is a terminal or piped input:
 /// - If stdin is a terminal, it enables raw mode and listens for key presses.
 ///   Pressing 'q' or Ctrl+C will trigger the cancellation token.
 /// - If stdin is not a terminal (piped input), it reads lines from stdin.
-///   If a line contains 'q', it triggers the cancellation token.
+///   A line consisting of 'q' triggers the cancellation token.
 ///
-/// The function will clean up by disabling raw mode when the token is cancelled.
-pub async fn input_handler(token: CancellationToken) {
+/// It blocks its thread, possibly beyond its poll timeout (a terminal read
+/// waits for an escape sequence to complete), so run it on a thread of its
+/// own that nothing waits for, and call [`restore_terminal`] before exiting.
+pub fn input_handler(token: CancellationToken) {
     let stdin = io::stdin();
 
     // Check if stdin is a terminal
     if stdin.is_terminal() {
         // Terminal mode: use keyboard events
-        handle_terminal_input(token).await;
+        handle_terminal_input(token);
     } else {
         // Stdin mode: read from piped input
-        handle_stdin_input(token).await;
+        handle_stdin_input(token);
     }
 }
 
 /// Handle input from terminal keyboard events
-async fn handle_terminal_input(token: CancellationToken) {
-    if terminal::enable_raw_mode().is_err() {
-        info!("Failed to enable raw mode. Input handling will be disabled.");
+fn handle_terminal_input(token: CancellationToken) {
+    if !enable_raw_mode() {
         return;
     }
 
+    let mut requested = false;
     loop {
         // Check for cancellation signal first.
         if token.is_cancelled() {
@@ -65,20 +114,27 @@ async fn handle_terminal_input(token: CancellationToken) {
             };
 
             if should_cancel {
-                println!("Cancellation requested. Shutting down gracefully...");
                 token.cancel();
+                requested = true;
                 break;
             }
         }
     }
 
-    if terminal::disable_raw_mode().is_err() {
-        info!("Failed to disable raw mode.");
+    // Logging comes last: if it blocks on a stalled pipe, the stop is
+    // already under way, and with the terminal no longer raw a second Ctrl+C
+    // is a signal that forces the exit.
+    let restored = restore_terminal();
+    if requested {
+        info!("Cancellation requested. Shutting down gracefully...");
+    }
+    if let Err(error) = restored {
+        info!(%error, "Failed to disable raw mode.");
     }
 }
 
 /// Handle input from stdin (piped input)
-async fn handle_stdin_input(token: CancellationToken) {
+fn handle_stdin_input(token: CancellationToken) {
     let (tx, rx) = mpsc::channel();
 
     // Spawn a blocking thread to read from stdin
@@ -108,8 +164,8 @@ async fn handle_stdin_input(token: CancellationToken) {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(line) => {
                 if line.trim() == "q" {
-                    println!("Cancellation requested. Shutting down gracefully...");
                     token.cancel();
+                    info!("Cancellation requested. Shutting down gracefully...");
                     break;
                 }
             }

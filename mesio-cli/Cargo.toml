@@ -39,6 +39,12 @@ indicatif = { workspace = true }
 thiserror = { workspace = true }
 mimalloc = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 m3u8-rs = { workspace = true }
 
