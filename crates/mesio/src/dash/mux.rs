@@ -248,6 +248,13 @@ struct Output {
     init: Option<MergedInit>,
 }
 
+/// A new output epoch, announced only together with its first media item.
+struct PendingOutput {
+    output: Output,
+    /// The end marker (when an epoch precedes it) and the init.
+    header: Vec<HlsData>,
+}
+
 /// Follower fragments chosen for one slice: a run of `count` fragments
 /// starting at `first` of one queued segment.
 struct FollowerPart {
@@ -280,7 +287,10 @@ struct MuxState {
     follower: Option<TrackState>,
     output: Option<Output>,
     writer: FragmentWriter,
-    out: Vec<HlsData>,
+    /// Output groups, each delivered whole: an epoch's end marker and init
+    /// travel with its first media item, so a consumer that opens a file on
+    /// the init never sees the init without media.
+    out: Vec<Vec<HlsData>>,
     /// When the current wait for follower data gives up.
     wait_deadline: Option<Instant>,
     /// Set when output stopped waiting for the follower; cleared by the next
@@ -346,8 +356,8 @@ pub(crate) async fn run_muxer(
             break fail(&out, error, &cancel).await;
         }
         let mut stopped = None;
-        for item in state.out.drain(..) {
-            if let Err(stop) = send(&out, Ok(item), &cancel).await {
+        for group in state.out.drain(..) {
+            if let Err(stop) = send_group(&out, group, &cancel).await {
                 stopped = Some(stop);
                 break;
             }
@@ -429,6 +439,41 @@ async fn send(
                 MuxOutcome::DownstreamClosed
             }
         }),
+    }
+}
+
+/// Delivers `group` whole, or nothing of it when the session is cancelled
+/// first: permits for every item are reserved before any is sent.
+async fn send_group(
+    out: &mpsc::Sender<Result<HlsData, DownloadError>>,
+    group: Vec<HlsData>,
+    cancel: &CancellationToken,
+) -> Result<(), MuxOutcome> {
+    let closed = || {
+        if cancel.is_cancelled() {
+            MuxOutcome::Cancelled
+        } else {
+            MuxOutcome::DownstreamClosed
+        }
+    };
+    if group.len() > out.max_capacity() {
+        // Cannot be reserved at once; only a channel smaller than a group
+        // (three items) gets here.
+        for item in group {
+            send(out, Ok(item), cancel).await?;
+        }
+        return Ok(());
+    }
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(MuxOutcome::Cancelled),
+        permits = out.reserve_many(group.len()) => {
+            let permits = permits.map_err(|_| closed())?;
+            for (permit, item) in permits.zip(group) {
+                permit.send(Ok(item));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -854,8 +899,9 @@ impl MuxState {
                     debug!("follower did not end in time; finishing without its tail");
                 }
                 self.flush_follower(false);
-                self.out
-                    .push(HlsData::end_marker_with_reason(SplitReason::EndOfStream));
+                self.out.push(vec![HlsData::end_marker_with_reason(
+                    SplitReason::EndOfStream,
+                )]);
                 Step::Finished
             }
         }
@@ -1016,9 +1062,15 @@ impl MuxState {
             .filter(|init| init.period.same(&leader.period))
     }
 
-    /// Makes `(leader, follower)` the output epoch, writing an end marker
-    /// and the merged init when it changes.
-    fn ensure_output(&mut self, leader: &Arc<TrackInit>, follower: Option<Arc<TrackInit>>) {
+    /// The output epoch `(leader, follower)` when it differs from the
+    /// current one, with the end marker and merged init that announce it.
+    /// Nothing is emitted or committed here: the caller sends the header
+    /// with the epoch's first media item, or drops it with that item.
+    fn prepare_output(
+        &mut self,
+        leader: &Arc<TrackInit>,
+        follower: Option<Arc<TrackInit>>,
+    ) -> Option<PendingOutput> {
         if let Some(output) = &self.output
             && Arc::ptr_eq(&output.leader, leader)
             && match (&output.follower, &follower) {
@@ -1027,16 +1079,15 @@ impl MuxState {
                 _ => false,
             }
         {
-            return;
+            return None;
         }
+        let mut header = Vec::with_capacity(2);
         if let Some(output) = &self.output {
             let description = epoch_change(output, leader, follower.as_deref());
-            info!(%description, "DASH output epoch changes");
-            self.out.push(HlsData::end_marker_with_reason(
+            header.push(HlsData::end_marker_with_reason(
                 SplitReason::StreamStructureChange { description },
             ));
         }
-        self.tail_flushed = false;
         let (init, follower) = match (&leader.probe, follower) {
             (Some(_), Some(follower)) => {
                 match merge_init(&[leader.data.clone(), follower.data.clone()]) {
@@ -1056,16 +1107,38 @@ impl MuxState {
         let data = init
             .as_ref()
             .map_or_else(|| leader.data.clone(), |init| init.data().clone());
-        self.out
-            .push(HlsData::M4sData(M4sData::InitSegment(M4sInitSegmentData {
-                segment: init_media_segment(&leader.descriptor),
-                data,
-            })));
-        self.output = Some(Output {
-            leader: Arc::clone(leader),
-            follower,
-            init,
-        });
+        header.push(HlsData::M4sData(M4sData::InitSegment(M4sInitSegmentData {
+            segment: init_media_segment(&leader.descriptor),
+            data,
+        })));
+        Some(PendingOutput {
+            output: Output {
+                leader: Arc::clone(leader),
+                follower,
+                init,
+            },
+            header,
+        })
+    }
+
+    /// Emits `item`, preceded by the header of `pending` when it opens a new
+    /// output epoch, and commits that epoch.
+    fn emit_media(&mut self, pending: Option<PendingOutput>, item: HlsData) {
+        let mut group = Vec::with_capacity(3);
+        if let Some(pending) = pending {
+            if let Some(HlsData::EndMarker(Some(SplitReason::StreamStructureChange {
+                description,
+            }))) = pending.header.first()
+            {
+                info!(%description, "DASH output epoch changes");
+            }
+            group.extend(pending.header);
+            self.output = Some(pending.output);
+            self.tail_flushed = false;
+        }
+        group.push(item);
+        self.out.push(group);
+        self.stats.items += 1;
     }
 
     fn write_slice(
@@ -1079,13 +1152,16 @@ impl MuxState {
             Some(part) => Some(Arc::clone(&part.init)),
             None => self.idle_follower_init(&media.init),
         };
-        self.ensure_output(&media.init, follower);
-        if self
-            .output
-            .as_ref()
-            .is_some_and(|output| output.init.is_none())
-        {
-            self.write_passthrough(media);
+        let pending = self.prepare_output(&media.init, follower);
+        let passthrough = match &pending {
+            Some(pending) => pending.output.init.is_none(),
+            None => self
+                .output
+                .as_ref()
+                .is_some_and(|output| output.init.is_none()),
+        };
+        if passthrough {
+            self.write_passthrough_with(media, pending);
             return Ok(());
         }
         self.choose_origin(
@@ -1097,12 +1173,17 @@ impl MuxState {
             .iter()
             .map(|part| self.output_shift(&part.init))
             .collect();
-        let Some(output) = &self.output else {
+        let Some(output) = pending
+            .as_ref()
+            .map(|pending| &pending.output)
+            .or(self.output.as_ref())
+        else {
             return Ok(());
         };
         let Some(init) = &output.init else {
             return Ok(());
         };
+        let has_follower = output.follower.is_some();
 
         let mut data = Vec::with_capacity(
             media.data.len() + parts.iter().map(|part| part.data.len()).sum::<usize>(),
@@ -1115,12 +1196,13 @@ impl MuxState {
                     .try_for_each(|fragment| self.writer.write(fragment, &mut data))
             });
         if let Err(error) = leader_written {
+            // An epoch whose first item is rejected is not announced.
             return self.reject_leader_segment(&error);
         }
         self.leader_rejections = 0;
 
-        let follower_written = match &output.follower {
-            Some(_) => parts.iter().zip(part_shifts).try_for_each(|(part, shift)| {
+        let follower_written = match has_follower {
+            true => parts.iter().zip(part_shifts).try_for_each(|(part, shift)| {
                 shift
                     .and_then(|shift| init.parse_media_segment(1, &part.data, shift))
                     .and_then(|fragments| {
@@ -1131,7 +1213,7 @@ impl MuxState {
                             .try_for_each(|fragment| self.writer.write(fragment, &mut data))
                     })
             }),
-            None => Ok(()),
+            false => Ok(()),
         };
         if let Err(error) = follower_written {
             // The leader's fragments are complete; what follower data was
@@ -1142,17 +1224,22 @@ impl MuxState {
         let timescale = media.init.timescale;
         self.leader_end = Some((end, timescale));
         let segment = media_segment(&media.descriptor, start, end, timescale);
-        self.out
-            .push(HlsData::M4sData(M4sData::Segment(M4sSegmentData {
+        self.emit_media(
+            pending,
+            HlsData::M4sData(M4sData::Segment(M4sSegmentData {
                 segment,
                 data: Bytes::from(data),
-            })));
-        self.stats.items += 1;
+            })),
+        );
         Ok(())
     }
 
     fn write_passthrough(&mut self, media: QueuedMedia) {
-        self.ensure_output(&media.init, None);
+        let pending = self.prepare_output(&media.init, None);
+        self.write_passthrough_with(media, pending);
+    }
+
+    fn write_passthrough_with(&mut self, media: QueuedMedia, pending: Option<PendingOutput>) {
         let duration = match &media.descriptor.meta {
             SegmentMeta::Dash(meta) => meta.duration_secs() as f32,
             SegmentMeta::Hls(segment) => segment.duration,
@@ -1162,12 +1249,13 @@ impl MuxState {
             duration,
             ..Default::default()
         };
-        self.out
-            .push(HlsData::M4sData(M4sData::Segment(M4sSegmentData {
+        self.emit_media(
+            pending,
+            HlsData::M4sData(M4sData::Segment(M4sSegmentData {
                 segment,
                 data: media.data,
-            })));
-        self.stats.items += 1;
+            })),
+        );
     }
 
     /// Writes queued follower fragments of the output's epoch as one item.
@@ -1246,10 +1334,10 @@ impl MuxState {
             let mut segment = init_media_segment(&descriptor);
             segment.duration = 0.0;
             self.out
-                .push(HlsData::M4sData(M4sData::Segment(M4sSegmentData {
+                .push(vec![HlsData::M4sData(M4sData::Segment(M4sSegmentData {
                     segment,
                     data: Bytes::from(data),
-                })));
+                }))]);
             self.stats.items += 1;
         }
     }
@@ -2134,6 +2222,125 @@ mod tests {
         assert!(matches!(item, Err(DownloadError::Internal { .. })));
         let outcome = tokio::time::timeout(WAIT, h.muxer).await.unwrap().unwrap();
         assert!(matches!(outcome, MuxOutcome::Failed(_)));
+    }
+
+    /// A single-track muxer with its cancel token, for tests that end the
+    /// session themselves.
+    type OutputRx = mpsc::Receiver<Result<HlsData, DownloadError>>;
+
+    fn start_cancellable() -> (
+        mpsc::Sender<TrackItem>,
+        OutputRx,
+        CancellationToken,
+        tokio::task::JoinHandle<MuxOutcome>,
+    ) {
+        let (video, video_rx) = mpsc::channel(64);
+        let (out_tx, out) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let muxer = tokio::spawn(run_muxer(
+            MuxTrack {
+                track: MediaTrack::Video,
+                rx: video_rx,
+                cancel: CancellationToken::new(),
+            },
+            None,
+            out_tx,
+            None,
+            lag(WAIT),
+            cancel.clone(),
+        ));
+        (video, out, cancel, muxer)
+    }
+
+    fn kind(item: &HlsData) -> &'static str {
+        match item {
+            HlsData::M4sData(M4sData::InitSegment(_)) => "init",
+            HlsData::M4sData(M4sData::Segment(_)) => "media",
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. })) => "epoch",
+            HlsData::EndMarker(Some(SplitReason::EndOfStream)) => "end",
+            _ => "other",
+        }
+    }
+
+    async fn next_kind(out: &mut OutputRx) -> &'static str {
+        let item = tokio::time::timeout(WAIT, out.recv())
+            .await
+            .expect("muxer output")
+            .expect("open output")
+            .expect("no stream error");
+        kind(&item)
+    }
+
+    #[tokio::test]
+    async fn an_epoch_without_media_is_never_announced() {
+        let v = MediaTrack::Video;
+        for cancel_session in [false, true] {
+            let (video, mut out, cancel, muxer) = start_cancellable();
+            video
+                .send(init(v, Some("p0"), 0, VIDEO_INIT))
+                .await
+                .unwrap();
+            video
+                .send(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+                .await
+                .unwrap();
+            assert_eq!(next_kind(&mut out).await, "init");
+            assert_eq!(next_kind(&mut out).await, "media");
+            // The next Period's init arrives; its media never does.
+            video
+                .send(init(v, Some("p1"), 1, VIDEO_INIT))
+                .await
+                .unwrap();
+            if cancel_session {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                cancel.cancel();
+            } else {
+                video.send(Ok(AssembledItem::StreamEnded)).await.unwrap();
+            }
+            let outcome = tokio::time::timeout(WAIT, muxer).await.unwrap().unwrap();
+            let mut rest = Vec::new();
+            while let Ok(item) = out.try_recv() {
+                rest.push(kind(&item.unwrap()));
+            }
+            if cancel_session {
+                assert_eq!(outcome, MuxOutcome::Cancelled);
+                assert!(rest.is_empty(), "{rest:?}");
+            } else {
+                assert_eq!(outcome, MuxOutcome::Ended);
+                assert_eq!(rest, ["end"]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_epoch_is_announced_together_with_its_first_media() {
+        let v = MediaTrack::Video;
+        let (video, mut out, cancel, muxer) = start_cancellable();
+        video
+            .send(init(v, Some("p0"), 0, VIDEO_INIT))
+            .await
+            .unwrap();
+        video
+            .send(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await
+            .unwrap();
+        video
+            .send(init(v, Some("p1"), 1, VIDEO_INIT))
+            .await
+            .unwrap();
+        video
+            .send(media(v, Some("p1"), 1, 1, Bytes::from_static(VIDEO_1)))
+            .await
+            .unwrap();
+        assert_eq!(next_kind(&mut out).await, "init");
+        assert_eq!(next_kind(&mut out).await, "media");
+        assert_eq!(next_kind(&mut out).await, "epoch");
+        // Cancelling right after the barrier cannot strand its init: the
+        // whole group was delivered at once.
+        cancel.cancel();
+        assert_eq!(next_kind(&mut out).await, "init");
+        assert_eq!(next_kind(&mut out).await, "media");
+        tokio::time::timeout(WAIT, muxer).await.unwrap().unwrap();
     }
 
     #[tokio::test]
