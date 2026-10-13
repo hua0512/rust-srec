@@ -41,11 +41,13 @@ describe('Streamlink engine FFmpeg path serialization', () => {
           engine_type: 'STREAMLINK',
           config: encoded ? JSON.stringify(config) : config,
         };
+        // A null path is unset, like an absent one: both use the environment default. Any
+        // text, even empty, is a path the backend uses as given.
+        const expected = ffmpegPath === null ? { quality: 'best' } : config;
+        const unset = ffmpegPath == null;
         fetchBackendMock.mockResolvedValueOnce(row);
         const loaded = await getEngine({ data: row.id });
-        expect(JSON.parse(JSON.stringify(loaded.config))).toMatchObject(config);
-        if (ffmpegPath === undefined)
-          expect(loaded.config).not.toHaveProperty('ffmpeg_path');
+        expect(JSON.parse(JSON.stringify(loaded.config))).toEqual(expected);
 
         fetchBackendMock.mockResolvedValueOnce([row]);
         const listed = await listEngines();
@@ -63,9 +65,8 @@ describe('Streamlink engine FFmpeg path serialization', () => {
         expect(url).toBe('/engines');
         expect(request.method).toBe('POST');
         let sent = JSON.parse(request.body);
-        expect(sent.config).toMatchObject(config);
-        if (ffmpegPath === undefined)
-          expect(sent.config).not.toHaveProperty('ffmpeg_path');
+        expect(sent.config).toEqual(expected);
+        if (unset) expect(sent.config).not.toHaveProperty('ffmpeg_path');
 
         fetchBackendMock.mockResolvedValueOnce(row);
         await updateEngine({
@@ -81,9 +82,8 @@ describe('Streamlink engine FFmpeg path serialization', () => {
         expect(url).toBe('/engines/streamlink-1');
         expect(request.method).toBe('PATCH');
         sent = JSON.parse(request.body);
-        expect(sent.config).toMatchObject({ ...config, quality: 'worst' });
-        if (ffmpegPath === undefined)
-          expect(sent.config).not.toHaveProperty('ffmpeg_path');
+        expect(sent.config).toEqual({ ...expected, quality: 'worst' });
+        if (unset) expect(sent.config).not.toHaveProperty('ffmpeg_path');
       }
     },
   );

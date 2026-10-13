@@ -1,4 +1,5 @@
-import type { MessageDescriptor } from '@lingui/core';
+import React from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { msg } from '@lingui/core/macro';
 import {
   Cable,
@@ -10,76 +11,23 @@ import {
   Layers,
   RefreshCw,
   TriangleAlert,
-  type LucideIcon,
 } from 'lucide-react';
 import { MESIO_DASH_DEFAULTS } from '@/api/schemas/engine';
-import type {
-  PolicyOption,
-  SettingOption,
-  SettingText,
+import {
+  FieldError,
+  type PolicyOption,
+  type SettingOption,
 } from './setting-fields';
+import type { Dependency, FieldSpec, SectionSpec } from './setting-sections';
 
 /*
- * Every Mesio setting the form edits, grouped the way it is shown. Paths are relative to the
- * Mesio configuration object. Each field's `fallback` is the engine default: the form shows it
- * for an unset field, and a field counts as changed when it holds something else.
+ * Every Mesio setting the form edits, by protocol and section. Paths are relative to the Mesio
+ * configuration object; each field's `fallback` is the engine default.
  */
 
-interface FieldBase {
-  path: string;
-  label: MessageDescriptor;
-  description?: MessageDescriptor;
-  /** A switch this field only matters while on; the field is disabled while it is off. */
-  requires?: Dependency;
-}
-
-export interface Dependency {
-  path: string;
-  fallback: boolean;
-}
-
-export type FieldSpec =
-  | (FieldBase & {
-      kind: 'number';
-      fallback: number;
-      fallbackLabel?: SettingText;
-    })
-  | (FieldBase & {
-      kind: 'text';
-      fallback: string;
-      fallbackLabel?: SettingText;
-      placeholder?: MessageDescriptor;
-    })
-  | (FieldBase & { kind: 'switch'; fallback: boolean })
-  | (FieldBase & {
-      kind: 'select';
-      fallback: string;
-      options: readonly SettingOption[];
-    })
-  | (FieldBase & {
-      kind: 'policy';
-      fallback: Record<string, unknown>;
-      options: readonly PolicyOption[];
-    })
-  | (FieldBase & { kind: 'pairs'; fallback: readonly never[] })
-  | (FieldBase & {
-      kind: 'disableable';
-      fallback: number | null;
-      seed: number;
-    });
-
-export interface SectionSpec {
-  id: string;
-  label: MessageDescriptor;
-  description?: MessageDescriptor;
-  icon: LucideIcon;
-  fields: readonly FieldSpec[];
+export interface MesioSectionSpec extends SectionSpec {
   /** Whether the settings only apply while the protocol's fixing is on. */
   requiresFix?: boolean;
-  /** A switch the whole section only matters while on. */
-  requires?: Dependency;
-  /** The protocol's rule across fields of the section, shown below them. */
-  check?: 'dash-tracks';
 }
 
 export type Protocol = 'flv' | 'hls' | 'dash';
@@ -89,9 +37,31 @@ export interface ProtocolSpec {
   name: string;
   fix: FieldSpec & { kind: 'switch' };
   /** The settings most recordings need, always shown. */
-  essentials: SectionSpec;
+  essentials: MesioSectionSpec;
   /** The rest, folded away. */
-  advanced: readonly SectionSpec[];
+  advanced: readonly MesioSectionSpec[];
+}
+
+/**
+ * The validation message of the DASH track switches, which may not both be off. The rule spans two
+ * fields, so it is checked again whenever either changes.
+ */
+function DashTrackCheck({ basePath }: { basePath: string }) {
+  const { control, trigger } = useFormContext();
+  const errorPath = `${basePath}.dash.include_audio`;
+  const [video, audio] = useWatch({
+    control,
+    name: [`${basePath}.dash.include_video`, errorPath],
+  }) as unknown[];
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    void trigger(errorPath);
+  }, [video, audio, errorPath, trigger]);
+  return <FieldError name={errorPath} />;
 }
 
 // --- FLV ---
@@ -196,8 +166,9 @@ const FLV: ProtocolSpec = {
         {
           kind: 'number',
           path: 'buffer_size',
-          label: msg`Buffer Size (bytes)`,
-          fallback: 8388608,
+          label: msg`Read Buffer Size (bytes)`,
+          description: msg`Memory reserved for reading each FLV recording. Values below 65536 use 65536.`,
+          fallback: 65536,
         },
       ],
     },
@@ -761,7 +732,7 @@ const DASH: ProtocolSpec = {
     id: 'dash-tracks',
     label: msg`Tracks`,
     icon: Layers,
-    check: 'dash-tracks',
+    after: DashTrackCheck,
     fields: [
       {
         kind: 'policy',
@@ -876,52 +847,4 @@ export function protocolFields(protocol: ProtocolSpec): FieldSpec[] {
     ...protocol.essentials.fields,
     ...protocol.advanced.flatMap((section) => section.fields),
   ];
-}
-
-/**
- * The value at `path` below `config`. In an override, a group reset with `null` resets every
- * field below it, which reads as `null`.
- */
-function valueAt(config: unknown, path: string): unknown {
-  let current = config;
-  for (const segment of path.split('.')) {
-    if (current === null) return null;
-    if (typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
-}
-
-/** A value with numeric text as numbers, as the form holds numbers typed into inputs. */
-function normalized(value: unknown): unknown {
-  return JSON.stringify(value, (_, entry: unknown) =>
-    typeof entry === 'string' &&
-    entry.trim() !== '' &&
-    Number.isFinite(Number(entry))
-      ? Number(entry)
-      : entry,
-  );
-}
-
-/**
- * Whether a field holds something other than its default. In an override, any value the field
- * holds counts: an unset field inherits the engine's value, and a `null` resets it.
- */
-export function isChanged(
-  config: unknown,
-  field: FieldSpec,
-  isOverride: boolean,
-): boolean {
-  const value = valueAt(config, field.path);
-  if (isOverride) return value !== undefined;
-  if (value === undefined || value === '') return false;
-  return normalized(value) !== normalized(field.fallback);
-}
-
-export function changedCount(
-  config: unknown,
-  fields: readonly FieldSpec[],
-  isOverride: boolean,
-): number {
-  return fields.filter((field) => isChanged(config, field, isOverride)).length;
 }

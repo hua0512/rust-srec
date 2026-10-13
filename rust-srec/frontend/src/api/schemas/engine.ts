@@ -1,40 +1,129 @@
 import { z } from 'zod';
 
-// --- Engine-Specific Config Schemas ---
+/*
+ * Engine settings are saved as the user set them. A field left unset is left out, so the backend
+ * applies its own default, and a later change of that default reaches every engine that never
+ * chose a value. A field therefore reads an emptied input, and `null`, as unset; the form shows
+ * the defaults from its own field lists without writing them.
+ *
+ * Settings groups keep keys the form does not know: the backend accepts more than the form edits,
+ * and dropping one when an engine or template is saved would change its behaviour.
+ */
 
-const optionalNonEmptyString = () =>
+const U32_MAX = 4_294_967_295;
+
+/** A whole number from `min` to `max`, typed into a number input or sent by the backend. */
+const intSetting = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
   z
-    .string()
+    .union([z.number(), z.string(), z.null()])
     .transform((val) => {
-      const trimmed = val.trim();
-      return trimmed.length === 0 ? undefined : trimmed;
-    })
-    .optional();
-
-const optionalString = () =>
-  z
-    .string()
-    .transform((val) => (val.length === 0 ? undefined : val))
-    .optional();
-
-const optionalInt = (min: number) =>
-  z
-    .union([z.number(), z.string()])
-    .transform((val) => {
-      if (val === '') return undefined;
+      if (val === null || (typeof val === 'string' && val.trim() === '')) {
+        return undefined;
+      }
       return typeof val === 'number' ? val : Number(val);
     })
     .refine(
       (val) =>
         val === undefined ||
-        (Number.isFinite(val) && Number.isInteger(val) && val >= min),
-      { message: `Must be an integer >= ${min}` },
+        (Number.isInteger(val) && val >= min && val <= max),
+      {
+        message:
+          min > 0
+            ? 'Must be a positive whole number'
+            : 'Must be a whole number of 0 or more',
+      },
     )
     .optional();
 
 /**
- * `schema`, refusing an emptied input. Numeric fields read `''` as 0 or as unset, so a cleared
- * input would otherwise save a value the form does not show.
+ * Text, trimmed, and unset when that leaves it empty. A `literal` value, such as a path, is kept
+ * exactly as stored, even empty: the backend reads an empty path as a path, not as unset. The
+ * form leaves a field the user clears unset rather than empty.
+ */
+const textSetting = ({ literal = false }: { literal?: boolean } = {}) =>
+  z
+    .string()
+    .nullable()
+    .optional()
+    .transform((val) => {
+      if (val == null) return undefined;
+      if (literal) return val;
+      const text = val.trim();
+      return text === '' ? undefined : text;
+    });
+
+const boolSetting = () =>
+  z
+    .boolean()
+    .nullable()
+    .optional()
+    .transform((val) => val ?? undefined);
+
+const listSetting = () =>
+  z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .transform((val) => val ?? undefined);
+
+/** A value of `schema`, such as a choice or a group of settings; `null` leaves it unset. */
+const optionalSetting = <T extends z.ZodType>(schema: T) =>
+  schema
+    .nullable()
+    .optional()
+    .transform((val) => val ?? undefined);
+
+/**
+ * A timeout an engine can disable: `null` disables it, unlike other fields. A template override
+ * cannot, as the backend merge reads `null` there as "use the default".
+ */
+const disableableIntSetting = () =>
+  z
+    .union([z.number(), z.string(), z.null()])
+    .transform((val) => {
+      if (val === null) return null;
+      if (typeof val === 'string' && val.trim() === '') return undefined;
+      return typeof val === 'number' ? val : Number(val);
+    })
+    .refine((val) => val == null || (Number.isInteger(val) && val >= 0), {
+      message: 'Must be a whole number of 0 or more',
+    })
+    .optional();
+
+const group = <T extends z.ZodRawShape>(shape: T) =>
+  z.object(shape).catchall(z.json());
+
+/**
+ * `value` without unset fields or groups left empty by them. A form that registered a group's
+ * fields but set none of them would otherwise save the empty group. `null` is a reset and stays.
+ */
+function withoutEmptyGroups<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  const entries = Object.entries(value).flatMap(([key, field]) => {
+    const pruned = withoutEmptyGroups(field as unknown);
+    if (pruned === undefined) return [];
+    if (
+      pruned !== null &&
+      typeof pruned === 'object' &&
+      !Array.isArray(pruned) &&
+      Object.keys(pruned).length === 0
+    ) {
+      return [];
+    }
+    return [[key, pruned]];
+  });
+  return Object.fromEntries(entries) as T;
+}
+
+/** An engine's settings object, saved without unset fields. */
+const engineSettings = <T extends z.ZodRawShape>(shape: T) =>
+  group(shape).transform(withoutEmptyGroups);
+
+/**
+ * `schema`, refusing an emptied input. Numeric fields read `''` as unset, so a cleared input would
+ * otherwise save a value the form does not show.
  */
 function rejectBlank<T extends z.ZodType>(
   schema: T,
@@ -50,199 +139,31 @@ function rejectBlank<T extends z.ZodType>(
     .pipe(schema) as unknown as T;
 }
 
-export const FfmpegConfigSchema = z.object({
-  enable_lossless_cutting: z.boolean().default(false),
-  binary_path: z.string().default('ffmpeg'),
-  input_args: z.array(z.string()).default([]),
-  output_args: z.array(z.string()).default([]),
-  timeout_secs: z.coerce.number().int().min(0).default(30),
-  graceful_stop_timeout_secs: z.coerce.number().int().min(0).default(60),
-  user_agent: z
-    .string()
-    .nullable()
-    .optional()
-    .transform((val) => val ?? undefined),
-});
-export type FfmpegConfig = z.infer<typeof FfmpegConfigSchema>;
-
-export const StreamlinkConfigSchema = z.object({
-  enable_lossless_cutting: z.boolean().default(false),
-  binary_path: z.string().default('streamlink'),
-  ffmpeg_path: z.string().nullable().optional(),
-  quality: z.string().default('best'),
-  extra_args: z.array(z.string()).default([]),
-  graceful_stop_timeout_secs: z.coerce.number().int().min(0).default(60),
-  // Twitch proxy playlist (ttv-lol)
-  twitch_proxy_playlist: z
-    .string()
-    .nullable()
-    .optional()
-    .transform((val) => (val?.trim() ? val.trim() : undefined)),
-  twitch_proxy_playlist_exclude: z
-    .string()
-    .nullable()
-    .optional()
-    .transform((val) => (val?.trim() ? val.trim() : undefined)),
-});
-export type StreamlinkConfig = z.infer<typeof StreamlinkConfigSchema>;
-
-// The HLS settings keep keys the form does not show: the backend accepts more than the form
-// edits, and dropping one when an engine or template is saved would change its behaviour.
-const hlsGroup = <T extends z.ZodRawShape>(shape: T) =>
-  z.object(shape).catchall(z.json());
-
-export const MesioHttpVersionPreferenceSchema = z.enum([
-  'auto',
-  'http2_only',
-  'http1_only',
-]);
-
-export const MesioDownloaderBaseOverrideSchema = hlsGroup({
-  timeout_ms: optionalInt(0),
-  connect_timeout_ms: optionalInt(0),
-  read_timeout_ms: optionalInt(0),
-  write_timeout_ms: optionalInt(0),
-  follow_redirects: z.boolean().optional(),
-  user_agent: optionalNonEmptyString(),
-  params: z.array(z.array(z.string()).length(2)).optional(),
-  danger_accept_invalid_certs: z.boolean().optional(),
-  force_ipv4: z.boolean().optional(),
-  force_ipv6: z.boolean().optional(),
-  http_version: MesioHttpVersionPreferenceSchema.optional(),
-  http2_keep_alive_interval_ms: optionalInt(0),
-  pool_max_idle_per_host: optionalInt(0),
-  pool_idle_timeout_ms: optionalInt(0),
-});
-
-export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
-  'type',
-  [
-    z.object({ type: z.literal('highest_bitrate') }),
-    z.object({ type: z.literal('lowest_bitrate') }),
-    z.object({
-      type: z.literal('closest_to_bitrate'),
-      target_bitrate: rejectBlank(z.coerce.number().int().min(0)),
-    }),
-    z.object({ type: z.literal('audio_only') }),
-    z.object({ type: z.literal('video_only') }),
-    z.object({
-      type: z.literal('matching_resolution'),
-      width: rejectBlank(z.coerce.number().int()),
-      height: rejectBlank(z.coerce.number().int()),
-    }),
-    z.object({ type: z.literal('custom'), value: z.string() }),
-  ],
-);
-
-export const MesioHlsPlaylistConfigOverrideSchema = hlsGroup({
-  initial_playlist_fetch_timeout_ms: optionalInt(0),
-  live_refresh_interval_ms: optionalInt(0),
-  live_max_refresh_retries: optionalInt(0),
-  live_refresh_retry_delay_ms: optionalInt(0),
-  variant_selection_policy: MesioHlsVariantSelectionPolicySchema.optional(),
-  adaptive_refresh_enabled: z.boolean().optional(),
-  adaptive_refresh_min_interval_ms: optionalInt(0),
-  adaptive_refresh_max_interval_ms: optionalInt(0),
-});
-
-export const MesioHlsSchedulerConfigOverrideSchema = hlsGroup({
-  download_concurrency: optionalInt(1),
-  processed_segment_buffer_multiplier: optionalInt(0),
-});
-
-export const MesioHlsFetcherConfigOverrideSchema = hlsGroup({
-  segment_download_timeout_ms: optionalInt(0),
-  max_segment_retries: optionalInt(0),
-  segment_retry_delay_base_ms: optionalInt(0),
-  max_segment_retry_delay_ms: optionalInt(0),
-  key_download_timeout_ms: optionalInt(0),
-  max_key_retries: optionalInt(0),
-  key_retry_delay_base_ms: optionalInt(0),
-  max_key_retry_delay_ms: optionalInt(0),
-  progress_emit_min_bytes: optionalInt(0),
-  progress_emit_min_interval_ms: optionalInt(0),
-});
-
-export const MesioHlsProcessorConfigOverrideSchema = hlsGroup({
-  processed_segment_ttl_ms: optionalInt(0),
-});
-
-export const MesioHlsDecryptionConfigOverrideSchema = hlsGroup({
-  key_cache_ttl_ms: optionalInt(0),
-  offload_decryption_to_cpu_pool: z.boolean().optional(),
-});
-
-export const MesioHlsCacheConfigOverrideSchema = hlsGroup({
-  playlist_ttl_ms: optionalInt(0),
-  segment_ttl_ms: optionalInt(0),
-  decryption_key_ttl_ms: optionalInt(0),
-});
-
-export const MesioBufferLimitsOverrideSchema = hlsGroup({
-  max_segments: optionalInt(0),
-  max_bytes: optionalInt(0),
-});
-
-export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('wait_indefinitely') }),
-  z.object({
-    type: z.literal('skip_after_count'),
-    count: rejectBlank(z.coerce.number().int().min(0)),
-  }),
-  z.object({
-    type: z.literal('skip_after_duration'),
-    duration_ms: rejectBlank(z.coerce.number().int().min(0)),
-  }),
-  z.object({
-    type: z.literal('skip_after_both'),
-    count: rejectBlank(z.coerce.number().int().min(0)),
-    duration_ms: rejectBlank(z.coerce.number().int().min(0)),
-  }),
-]);
-
-export const NullableIntSchema = z
-  .union([z.number(), z.string(), z.null()])
-  .transform((val) => {
-    // For tri-state fields:
-    // - undefined/missing => leave unset (use default)
-    // - null            => explicitly disable/clear
-    // - number          => set value
-    // Treat empty input as "unset" (undefined), not "disabled".
-    if (val === '') return undefined;
-    if (val === null) return null;
-    return typeof val === 'number' ? val : Number(val);
-  })
-  .refine(
-    (val) =>
-      val === undefined ||
-      val === null ||
-      (Number.isFinite(val) && Number.isInteger(val)),
-    { message: 'Must be an integer, null, or empty' },
+/** A required whole number inside a policy, such as a target bitrate. */
+const policyInt = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
+  rejectBlank(
+    z.coerce
+      .number()
+      .int(
+        min > 0
+          ? 'Must be a positive whole number'
+          : 'Must be a whole number of 0 or more',
+      )
+      .min(
+        min,
+        min > 0
+          ? 'Must be a positive whole number'
+          : 'Must be a whole number of 0 or more',
+      )
+      .max(
+        max,
+        min > 0
+          ? 'Must be a positive whole number'
+          : 'Must be a whole number of 0 or more',
+      ),
   );
 
-export const MesioHlsOutputConfigOverrideSchema = hlsGroup({
-  live_reorder_buffer_duration_ms: optionalInt(0),
-  live_reorder_buffer_max_segments: optionalInt(0),
-  gap_evaluation_interval_ms: optionalInt(0),
-  max_pending_init_segments: optionalInt(0),
-  live_max_overall_stall_duration_ms: NullableIntSchema.optional(),
-  live_gap_strategy: MesioGapSkipStrategySchema.optional(),
-  vod_gap_strategy: MesioGapSkipStrategySchema.optional(),
-  vod_segment_timeout_ms: NullableIntSchema.optional(),
-  buffer_limits: MesioBufferLimitsOverrideSchema.optional(),
-  metrics_enabled: z.boolean().optional(),
-});
-
-export const MesioHlsConfigSchema = hlsGroup({
-  base: MesioDownloaderBaseOverrideSchema.optional(),
-  playlist_config: MesioHlsPlaylistConfigOverrideSchema.optional(),
-  scheduler_config: MesioHlsSchedulerConfigOverrideSchema.optional(),
-  fetcher_config: MesioHlsFetcherConfigOverrideSchema.optional(),
-  processor_config: MesioHlsProcessorConfigOverrideSchema.optional(),
-  decryption_config: MesioHlsDecryptionConfigOverrideSchema.optional(),
-  cache_config: MesioHlsCacheConfigOverrideSchema.optional(),
-  output_config: MesioHlsOutputConfigOverrideSchema.optional(),
-});
+// --- Template overrides ---
 
 /**
  * An override field set to a custom value must hold one: an emptied input would otherwise save
@@ -256,39 +177,233 @@ function requireValue<T extends z.ZodType>(field: T): T {
   ).optional() as unknown as T;
 }
 
-/**
- * A settings object as a template override sees it: every field, at every depth, may also be
- * `null`, which resets that setting (or that whole group) to the engine default. The backend
- * merge removes null-valued keys, so an override cannot express an engine's own `null`, such as
- * a disabled timeout.
- *
- * Keys the form does not know are kept: the backend accepts more settings than the form shows,
- * and dropping one on save would change what the template does.
- */
-function allowResets(schema: z.ZodObject): z.ZodObject {
-  const shape = Object.fromEntries(
-    Object.entries(schema.shape).map(([key, field]) => {
-      const inner = field instanceof z.ZodOptional ? field.unwrap() : field;
+/** The settings group a field holds, behind the wrappers that let it be unset. */
+function groupOf(field: z.ZodType): z.ZodObject | undefined {
+  let inner: unknown = field;
+  for (;;) {
+    if (inner instanceof z.ZodObject) return inner;
+    if (inner instanceof z.ZodOptional || inner instanceof z.ZodNullable) {
+      inner = inner.unwrap();
+    } else if (inner instanceof z.ZodPipe) {
+      inner = inner.in;
+    } else {
+      return undefined;
+    }
+  }
+}
+
+/** `shape` as a template override sees it: every field, and every group, may also be `null`. */
+function resettableShape(shape: z.ZodRawShape): z.ZodRawShape {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, entry]) => {
+      const field = entry as z.ZodType;
+      const fields = groupOf(field);
       return [
         key,
-        inner instanceof z.ZodObject
-          ? allowResets(inner).nullable().optional()
+        fields
+          ? resettableGroup(fields).nullable().optional()
           : requireValue(field.nullable()),
       ];
     }),
   );
-  return z.object(shape).catchall(z.json());
 }
 
-const MesioHlsConfigOverrideSchema = allowResets(MesioHlsConfigSchema);
+function resettableGroup(fields: z.ZodObject): z.ZodObject {
+  const rebuilt = group(resettableShape(fields.shape));
+  // Rules across a group's fields, such as recording at least one DASH track, still apply.
+  const checks = (fields._zod.def.checks ?? []) as z.core.$ZodCheck<
+    Record<string, unknown>
+  >[];
+  return checks.length > 0 ? rebuilt.check(...checks) : rebuilt;
+}
+
+/**
+ * A template's override of an engine's settings: every field, at every depth, may also be `null`,
+ * which resets that setting (or that whole group) to the engine default. The backend merge removes
+ * null-valued keys, so an override cannot express an engine's own `null`, such as a disabled
+ * timeout.
+ *
+ * Unknown keys are refused at the top level only: a template's overrides are checked against each
+ * engine type in turn, and that refusal is what tells the types apart.
+ */
+function overrideSettings(shape: z.ZodRawShape) {
+  return z
+    .object(resettableShape(shape))
+    .strict()
+    .transform(withoutEmptyGroups);
+}
+
+// --- FFmpeg and Streamlink ---
+
+const ffmpegShape = {
+  enable_lossless_cutting: boolSetting(),
+  binary_path: textSetting({ literal: true }),
+  input_args: listSetting(),
+  output_args: listSetting(),
+  timeout_secs: intSetting(0, U32_MAX),
+  graceful_stop_timeout_secs: intSetting(0, U32_MAX),
+  user_agent: textSetting(),
+};
+
+export const FfmpegConfigSchema = engineSettings(ffmpegShape);
+export type FfmpegConfig = z.infer<typeof FfmpegConfigSchema>;
+export const FfmpegConfigOverrideSchema = overrideSettings(ffmpegShape);
+export type FfmpegConfigOverride = z.infer<typeof FfmpegConfigOverrideSchema>;
+
+const streamlinkShape = {
+  enable_lossless_cutting: boolSetting(),
+  binary_path: textSetting({ literal: true }),
+  ffmpeg_path: textSetting({ literal: true }),
+  quality: textSetting(),
+  extra_args: listSetting(),
+  graceful_stop_timeout_secs: intSetting(0, U32_MAX),
+  // Twitch proxy playlist (ttv-lol)
+  twitch_proxy_playlist: textSetting(),
+  twitch_proxy_playlist_exclude: textSetting(),
+};
+
+export const StreamlinkConfigSchema = engineSettings(streamlinkShape);
+export type StreamlinkConfig = z.infer<typeof StreamlinkConfigSchema>;
+export const StreamlinkConfigOverrideSchema = overrideSettings(streamlinkShape);
+export type StreamlinkConfigOverride = z.infer<
+  typeof StreamlinkConfigOverrideSchema
+>;
+
+// --- Mesio HLS ---
+
+export const MesioHttpVersionPreferenceSchema = z.enum([
+  'auto',
+  'http2_only',
+  'http1_only',
+]);
+
+const MesioDownloaderBaseSchema = group({
+  timeout_ms: intSetting(0),
+  connect_timeout_ms: intSetting(0),
+  read_timeout_ms: intSetting(0),
+  write_timeout_ms: intSetting(0),
+  follow_redirects: boolSetting(),
+  user_agent: textSetting(),
+  params: optionalSetting(z.array(z.array(z.string()).length(2))),
+  danger_accept_invalid_certs: boolSetting(),
+  force_ipv4: boolSetting(),
+  force_ipv6: boolSetting(),
+  http_version: optionalSetting(MesioHttpVersionPreferenceSchema),
+  http2_keep_alive_interval_ms: intSetting(0),
+  pool_max_idle_per_host: intSetting(0),
+  pool_idle_timeout_ms: intSetting(0),
+});
+
+export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
+  'type',
+  [
+    z.object({ type: z.literal('highest_bitrate') }),
+    z.object({ type: z.literal('lowest_bitrate') }),
+    z.object({
+      type: z.literal('closest_to_bitrate'),
+      target_bitrate: policyInt(0),
+    }),
+    z.object({ type: z.literal('audio_only') }),
+    z.object({ type: z.literal('video_only') }),
+    z.object({
+      type: z.literal('matching_resolution'),
+      width: policyInt(0, U32_MAX),
+      height: policyInt(0, U32_MAX),
+    }),
+    z.object({ type: z.literal('custom'), value: z.string() }),
+  ],
+);
+
+export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('wait_indefinitely') }),
+  z.object({ type: z.literal('skip_after_count'), count: policyInt(0) }),
+  z.object({
+    type: z.literal('skip_after_duration'),
+    duration_ms: policyInt(0),
+  }),
+  z.object({
+    type: z.literal('skip_after_both'),
+    count: policyInt(0),
+    duration_ms: policyInt(0),
+  }),
+]);
+
+export const MesioHlsConfigSchema = group({
+  base: optionalSetting(MesioDownloaderBaseSchema),
+  playlist_config: optionalSetting(
+    group({
+      initial_playlist_fetch_timeout_ms: intSetting(0),
+      live_refresh_interval_ms: intSetting(0),
+      live_max_refresh_retries: intSetting(0, U32_MAX),
+      live_refresh_retry_delay_ms: intSetting(0),
+      variant_selection_policy: optionalSetting(
+        MesioHlsVariantSelectionPolicySchema,
+      ),
+      adaptive_refresh_enabled: boolSetting(),
+      adaptive_refresh_min_interval_ms: intSetting(0),
+      adaptive_refresh_max_interval_ms: intSetting(0),
+    }),
+  ),
+  scheduler_config: optionalSetting(
+    group({
+      download_concurrency: intSetting(1),
+      processed_segment_buffer_multiplier: intSetting(0),
+    }),
+  ),
+  fetcher_config: optionalSetting(
+    group({
+      segment_download_timeout_ms: intSetting(0),
+      max_segment_retries: intSetting(0, U32_MAX),
+      segment_retry_delay_base_ms: intSetting(0),
+      max_segment_retry_delay_ms: intSetting(0),
+      key_download_timeout_ms: intSetting(0),
+      max_key_retries: intSetting(0, U32_MAX),
+      key_retry_delay_base_ms: intSetting(0),
+      max_key_retry_delay_ms: intSetting(0),
+      progress_emit_min_bytes: intSetting(0),
+      progress_emit_min_interval_ms: intSetting(0),
+    }),
+  ),
+  processor_config: optionalSetting(
+    group({
+      processed_segment_ttl_ms: intSetting(0),
+    }),
+  ),
+  decryption_config: optionalSetting(
+    group({
+      key_cache_ttl_ms: intSetting(0),
+      offload_decryption_to_cpu_pool: boolSetting(),
+    }),
+  ),
+  cache_config: optionalSetting(
+    group({
+      playlist_ttl_ms: intSetting(0),
+      segment_ttl_ms: intSetting(0),
+      decryption_key_ttl_ms: intSetting(0),
+    }),
+  ),
+  output_config: optionalSetting(
+    group({
+      live_reorder_buffer_duration_ms: intSetting(0),
+      live_reorder_buffer_max_segments: intSetting(0),
+      gap_evaluation_interval_ms: intSetting(0),
+      max_pending_init_segments: intSetting(0),
+      live_max_overall_stall_duration_ms: disableableIntSetting(),
+      live_gap_strategy: optionalSetting(MesioGapSkipStrategySchema),
+      vod_gap_strategy: optionalSetting(MesioGapSkipStrategySchema),
+      vod_segment_timeout_ms: disableableIntSetting(),
+      buffer_limits: optionalSetting(
+        group({
+          max_segments: intSetting(0),
+          max_bytes: intSetting(0),
+        }),
+      ),
+      metrics_enabled: boolSetting(),
+    }),
+  ),
+});
 
 // --- Mesio MPEG-DASH ---
-// Every field is optional and an unset field takes the engine default below. In a template
-// override an absent field inherits the engine's value, while `null` resets it to the engine
-// default (the backend merge removes null-valued keys); overrides therefore keep `null`, and the
-// engine configuration treats it as unset.
-
-const U32_MAX = 4_294_967_295;
 
 /** The mesio engine's MPEG-DASH defaults, used when a field is unset. */
 export const MESIO_DASH_DEFAULTS = {
@@ -305,130 +420,49 @@ export const MESIO_DASH_DEFAULTS = {
   live_start: { type: 'auto' },
 } as const;
 
-/** A DASH field: in an override, one chosen as custom must hold a value (see `requireValue`). */
-const overrideValue = <T extends z.ZodType>(keepNull: boolean, field: T): T =>
-  keepNull ? requireValue(field) : field;
-
-const dashInt = (
-  keepNull: boolean,
-  min: number,
-  max: number = Number.MAX_SAFE_INTEGER,
-) =>
-  overrideValue(
-    keepNull,
-    z
-      .union([z.number(), z.string(), z.null()])
-      .transform((val) => {
-        if (val === null) return keepNull ? null : undefined;
-        if (val === '') return undefined;
-        return typeof val === 'number' ? val : Number(val);
-      })
-      .refine(
-        (val) =>
-          val == null || (Number.isInteger(val) && val >= min && val <= max),
-        {
-          message:
-            min > 0
-              ? 'Must be a positive whole number'
-              : 'Must be a whole number of 0 or more',
-        },
-      )
-      .optional(),
-  );
-
-const dashRequiredInt = (max: number) =>
-  rejectBlank(
-    z.coerce
-      .number()
-      .int('Must be a positive whole number')
-      .min(1, 'Must be a positive whole number')
-      .max(max, 'Must be a positive whole number'),
-  );
-
-const dashBoolean = (keepNull: boolean) =>
-  z
-    .boolean()
-    .nullable()
-    .optional()
-    .transform((val) => (val === null && keepNull ? null : (val ?? undefined)));
-
 /** Language tag shape the backend accepts: 1–8 letters or digits per subtag, joined by '-'. */
 const LANGUAGE_TAG = /^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$/;
 
 export const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('highest') }),
   z.object({ type: z.literal('lowest') }),
-  z.object({ type: z.literal('max_height'), height: dashRequiredInt(U32_MAX) }),
-  z.object({
-    type: z.literal('closest_bandwidth'),
-    bandwidth: dashRequiredInt(Number.MAX_SAFE_INTEGER),
-  }),
+  z.object({ type: z.literal('max_height'), height: policyInt(1, U32_MAX) }),
+  z.object({ type: z.literal('closest_bandwidth'), bandwidth: policyInt(1) }),
 ]);
 export type MesioDashVideoQuality = z.infer<typeof MesioDashVideoQualitySchema>;
 
 export const MesioDashAudioQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('highest') }),
   z.object({ type: z.literal('lowest') }),
-  z.object({
-    type: z.literal('closest_bandwidth'),
-    bandwidth: dashRequiredInt(Number.MAX_SAFE_INTEGER),
-  }),
+  z.object({ type: z.literal('closest_bandwidth'), bandwidth: policyInt(1) }),
 ]);
 export type MesioDashAudioQuality = z.infer<typeof MesioDashAudioQualitySchema>;
 
 export const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auto') }),
   z.object({ type: z.literal('live_edge') }),
-  z.object({
-    type: z.literal('delay'),
-    delay_ms: rejectBlank(
-      z.coerce
-        .number()
-        .int('Must be a whole number of 0 or more')
-        .min(0, 'Must be a whole number of 0 or more')
-        .max(Number.MAX_SAFE_INTEGER, 'Must be a whole number of 0 or more'),
-    ),
-  }),
+  z.object({ type: z.literal('delay'), delay_ms: policyInt(0) }),
 ]);
 export type MesioDashLiveStart = z.infer<typeof MesioDashLiveStartSchema>;
 
-const dashPolicy = <T extends z.ZodType>(schema: T, keepNull: boolean) =>
-  schema
-    .nullable()
-    .optional()
-    .transform((val) => (val === null && keepNull ? null : (val ?? undefined)));
-
-const dashLanguage = (keepNull: boolean) =>
-  overrideValue(
-    keepNull,
-    z
-      .string()
-      .nullable()
-      .optional()
-      .transform((val) => {
-        if (val === null) return keepNull ? null : undefined;
-        const trimmed = val?.trim();
-        return trimmed ? trimmed : undefined;
-      })
-      .refine((val) => val == null || LANGUAGE_TAG.test(val), {
-        message: "Use a language tag such as 'en' or 'pt-BR'",
-      }),
-  );
-
-const mesioDashShape = (keepNull: boolean) => ({
-  video_quality: dashPolicy(MesioDashVideoQualitySchema, keepNull),
-  audio_quality: dashPolicy(MesioDashAudioQualitySchema, keepNull),
-  audio_language: dashLanguage(keepNull),
-  include_video: dashBoolean(keepNull),
-  include_audio: dashBoolean(keepNull),
-  download_concurrency: dashInt(keepNull, 1),
-  manifest_timeout_ms: dashInt(keepNull, 1),
-  min_refresh_interval_ms: dashInt(keepNull, 1),
-  max_refresh_retries: dashInt(keepNull, 0, U32_MAX),
-  segment_timeout_ms: dashInt(keepNull, 1),
-  max_segment_retries: dashInt(keepNull, 0, U32_MAX),
-  live_start: dashPolicy(MesioDashLiveStartSchema, keepNull),
+const MesioDashFieldsSchema = z.object({
+  video_quality: optionalSetting(MesioDashVideoQualitySchema),
+  audio_quality: optionalSetting(MesioDashAudioQualitySchema),
+  audio_language: textSetting().refine(
+    (val) => val === undefined || LANGUAGE_TAG.test(val),
+    { message: "Use a language tag such as 'en' or 'pt-BR'" },
+  ),
+  include_video: boolSetting(),
+  include_audio: boolSetting(),
+  download_concurrency: intSetting(1),
+  manifest_timeout_ms: intSetting(1),
+  min_refresh_interval_ms: intSetting(1),
+  max_refresh_retries: intSetting(0, U32_MAX),
+  segment_timeout_ms: intSetting(1),
+  max_segment_retries: intSetting(0, U32_MAX),
+  live_start: optionalSetting(MesioDashLiveStartSchema),
 });
+export type MesioDashConfig = z.infer<typeof MesioDashFieldsSchema>;
 
 /** The engine rejects a configuration that records neither track. */
 function requireATrack(
@@ -444,28 +478,9 @@ function requireATrack(
   }
 }
 
-export const MesioDashConfigSchema = z
-  .object(mesioDashShape(false))
-  .superRefine(requireATrack);
-export type MesioDashConfig = z.infer<typeof MesioDashConfigSchema>;
-
-export const MesioDashConfigOverrideSchema = z
-  .object(mesioDashShape(true))
-  .strict()
-  .superRefine(requireATrack);
-export type MesioDashConfigOverride = z.input<
-  typeof MesioDashConfigOverrideSchema
->;
-
-/**
- * A form that registered the DASH fields but set none of them saves no `dash` object. A `null`
- * field is a reset, not an unset field, so it keeps the object.
- */
-function unlessEmpty<T extends object>(value: T): T | undefined {
-  return Object.values(value).some((field) => field !== undefined)
-    ? value
-    : undefined;
-}
+export const MesioDashConfigSchema = MesioDashFieldsSchema.catchall(
+  z.json(),
+).superRefine(requireATrack);
 
 /** DASH settings with every field resolved: what a template override inherits. */
 export type MesioDashSettings = {
@@ -506,120 +521,40 @@ export function dashOverrideDisablesBothTracks(
   );
 }
 
-export const MesioConfigSchema = z.object({
-  buffer_size: z.coerce.number().int().min(1).default(8388608), // 8MB
-  fix_flv: z.boolean().default(true),
-  fix_hls: z.boolean().default(true),
-  fix_dash: z.boolean().default(true),
-  flv_fix: z
-    .object({
-      sequence_header_change_mode: z
-        .enum(['crc32', 'semantic_signature'])
-        .default('crc32'),
-      drop_duplicate_sequence_headers: z.boolean().default(false),
-      duplicate_tag_filtering: z.boolean().default(false),
-      duplicate_tag_filter_config: z
-        .object({
-          window_capacity_tags: z.coerce.number().int().min(1).default(8192),
-          window_capacity_bytes: z.coerce
-            .number()
-            .int()
-            .min(0)
-            .default(16777216),
-          replay_backjump_threshold_ms: z.coerce
-            .number()
-            .int()
-            .min(0)
-            .default(2000),
-          enable_replay_offset_matching: z.boolean().default(false),
-        })
-        .optional()
-        .default({
-          window_capacity_tags: 8192,
-          window_capacity_bytes: 16777216,
-          replay_backjump_threshold_ms: 2000,
-          enable_replay_offset_matching: false,
+// --- Mesio ---
+
+const mesioShape = {
+  buffer_size: intSetting(1),
+  fix_flv: boolSetting(),
+  fix_hls: boolSetting(),
+  fix_dash: boolSetting(),
+  flv_fix: optionalSetting(
+    group({
+      sequence_header_change_mode: optionalSetting(
+        z.enum(['crc32', 'semantic_signature']),
+      ),
+      drop_duplicate_sequence_headers: boolSetting(),
+      duplicate_tag_filtering: boolSetting(),
+      duplicate_tag_filter_config: optionalSetting(
+        group({
+          window_capacity_tags: intSetting(1),
+          window_capacity_bytes: intSetting(0),
+          replay_backjump_threshold_ms: intSetting(0, U32_MAX),
+          enable_replay_offset_matching: boolSetting(),
         }),
-    })
-    .optional(),
-  hls: MesioHlsConfigSchema.optional(),
-  dash: MesioDashConfigSchema.nullable()
-    .optional()
-    .transform((val) => (val ? unlessEmpty(val) : undefined)),
-});
+      ),
+    }),
+  ),
+  hls: optionalSetting(MesioHlsConfigSchema),
+  dash: optionalSetting(MesioDashConfigSchema),
+};
+
+export const MesioConfigSchema = engineSettings(mesioShape);
 export type MesioConfig = z.infer<typeof MesioConfigSchema>;
+export const MesioConfigOverrideSchema = overrideSettings(mesioShape);
+export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;
 
 // --- Engine Override Schemas ---
-// Used by template engine overrides. These are *partial* (no defaults) and
-// strict (unknown keys fail), so typos don't silently get ignored.
-
-export const FfmpegConfigOverrideSchema = z
-  .object({
-    enable_lossless_cutting: z.boolean().optional(),
-    binary_path: optionalString(),
-    input_args: z.array(z.string()).optional(),
-    output_args: z.array(z.string()).optional(),
-    timeout_secs: optionalInt(0),
-    graceful_stop_timeout_secs: optionalInt(0),
-    user_agent: optionalNonEmptyString(),
-  })
-  .strict();
-export type FfmpegConfigOverride = z.infer<typeof FfmpegConfigOverrideSchema>;
-
-export const StreamlinkConfigOverrideSchema = z
-  .object({
-    enable_lossless_cutting: z.boolean().optional(),
-    binary_path: optionalString(),
-    ffmpeg_path: z.string().nullable().optional(),
-    quality: optionalString(),
-    extra_args: z.array(z.string()).optional(),
-    graceful_stop_timeout_secs: optionalInt(0),
-    twitch_proxy_playlist: optionalNonEmptyString(),
-    twitch_proxy_playlist_exclude: optionalNonEmptyString(),
-  })
-  .strict();
-export type StreamlinkConfigOverride = z.infer<
-  typeof StreamlinkConfigOverrideSchema
->;
-
-// In the Mesio override, `null` at any level resets that setting or group to the engine default.
-
-const MesioDuplicateTagFilterOverrideSchema = z
-  .object({
-    window_capacity_tags: requireValue(optionalInt(1).nullable()),
-    window_capacity_bytes: requireValue(optionalInt(0).nullable()),
-    replay_backjump_threshold_ms: requireValue(optionalInt(0).nullable()),
-    enable_replay_offset_matching: z.boolean().nullable().optional(),
-  })
-  .strict();
-
-const MesioFlvFixOverrideSchema = z
-  .object({
-    sequence_header_change_mode: z
-      .enum(['crc32', 'semantic_signature'])
-      .nullable()
-      .optional(),
-    drop_duplicate_sequence_headers: z.boolean().nullable().optional(),
-    duplicate_tag_filtering: z.boolean().nullable().optional(),
-    duplicate_tag_filter_config:
-      MesioDuplicateTagFilterOverrideSchema.nullable().optional(),
-  })
-  .strict();
-
-export const MesioConfigOverrideSchema = z
-  .object({
-    buffer_size: requireValue(optionalInt(1).nullable()),
-    fix_flv: z.boolean().nullable().optional(),
-    fix_hls: z.boolean().nullable().optional(),
-    fix_dash: z.boolean().nullable().optional(),
-    flv_fix: MesioFlvFixOverrideSchema.nullable().optional(),
-    hls: MesioHlsConfigOverrideSchema.nullable().optional(),
-    dash: MesioDashConfigOverrideSchema.nullable()
-      .optional()
-      .transform((val) => (val ? unlessEmpty(val) : val)),
-  })
-  .strict();
-export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;
 
 export const EngineConfigOverrideSchema = z.union([
   FfmpegConfigOverrideSchema,

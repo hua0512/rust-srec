@@ -35,9 +35,6 @@ import {
   EngineConfigSchema,
   CreateEngineRequestSchema,
   UpdateEngineRequestSchema,
-  FfmpegConfigSchema,
-  StreamlinkConfigSchema,
-  MesioConfigSchema,
 } from '@/api/schemas';
 import { createEngine, updateEngine } from '@/server/functions';
 import { SaveFab } from '@/components/shared/save-fab';
@@ -65,6 +62,17 @@ interface EngineFormProps {
   onSuccess: () => void;
 }
 
+const ENGINE_NAMES: Record<string, string> = {
+  FFMPEG: 'FFmpeg',
+  STREAMLINK: 'Streamlink',
+  MESIO: 'Mesio',
+};
+
+function EngineSettingsTitle({ engineType }: { engineType: string }) {
+  const engine = ENGINE_NAMES[engineType] ?? engineType;
+  return <Trans>{engine} Settings</Trans>;
+}
+
 function EngineConfigCard() {
   const engineType = useWatch({
     name: 'engine_type',
@@ -80,13 +88,8 @@ function EngineConfigCard() {
             {engineType === 'MESIO' && <Database className="w-5 h-5" />}
           </div>
           <div className="space-y-0.5">
-            <CardTitle className="text-lg flex items-center gap-2">
-              {engineType === 'FFMPEG'
-                ? 'FFmpeg'
-                : engineType === 'STREAMLINK'
-                  ? 'Streamlink'
-                  : 'Mesio'}
-              <Trans>Settings</Trans>
+            <CardTitle className="text-lg">
+              <EngineSettingsTitle engineType={engineType} />
             </CardTitle>
             <CardDescription>
               <Trans>Configure granular options for the selected engine.</Trans>
@@ -212,22 +215,9 @@ function EngineForm({
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value);
-                      // Reset config to defaults of new type
-                      if (value === 'FFMPEG')
-                        form.setValue(
-                          'config',
-                          FfmpegConfigSchema.parse({}) as any,
-                        );
-                      if (value === 'STREAMLINK')
-                        form.setValue(
-                          'config',
-                          StreamlinkConfigSchema.parse({}) as any,
-                        );
-                      if (value === 'MESIO')
-                        form.setValue(
-                          'config',
-                          MesioConfigSchema.parse({}) as any,
-                        );
+                      // Another type's settings do not carry over; an empty configuration uses
+                      // the new engine's defaults.
+                      form.setValue('config', {});
                     }}
                     value={field.value}
                   >
@@ -296,7 +286,7 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
     : {
         name: '',
         engine_type: 'FFMPEG' as const,
-        config: FfmpegConfigSchema.parse({}),
+        config: {},
       };
 
   return (

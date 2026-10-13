@@ -173,7 +173,7 @@ describe('Mesio template override', () => {
     expect(saved().hls.base.connect_timeout_ms).toBe(5000);
 
     await choose('Connect Timeout (ms)', 'Use engine setting (1234)');
-    expect(saved().hls.base).not.toHaveProperty('connect_timeout_ms');
+    expect(saved()).toEqual({});
   });
 
   it('gives on/off settings the override states', async () => {
@@ -274,7 +274,7 @@ describe('Mesio template override', () => {
     expect(combobox('Split Files On')).toBeDisabled();
     // The buffer is not part of fixing.
     openSection('Download');
-    expect(combobox('Buffer Size (bytes)')).toBeEnabled();
+    expect(combobox('Read Buffer Size (bytes)')).toBeEnabled();
   });
 
   it('cannot disable a timeout, which only the engine can', async () => {
@@ -392,7 +392,7 @@ describe('Mesio engine settings', () => {
     openTab(/^HLS/);
     openSection('HTTP connection');
     fireEvent.click(screen.getByRole('button', { name: 'Restore defaults' }));
-    expect(saved().hls.base.connect_timeout_ms).toBeUndefined();
+    expect(saved().hls).not.toHaveProperty('base');
     expect(saved().hls.fetcher_config.max_segment_retries).toBe(9);
     expect(
       screen.getByRole('button', { name: /^HTTP connection/ }),
@@ -452,7 +452,7 @@ describe('Mesio template override sections', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Use engine settings' }),
     );
-    expect(saved().hls.base).toEqual({});
+    expect(saved()).toEqual({});
     expect(combobox('Connect Timeout (ms)')).toHaveTextContent(
       'Use engine setting (1234)',
     );

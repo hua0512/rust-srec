@@ -24,7 +24,9 @@ Streamlink can also be an **extractor**, which resolves the stream URL before do
 
 For Mesio, enable FLV, HLS and DASH Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
 
-A Mesio engine's settings have one tab each for FLV, HLS and DASH. Each tab starts with its consistency fix switch and the settings most recordings need; the rest are grouped under **Advanced**. Each tab and section shows how many of its settings differ from the default, or in a template override, how many the template sets, and **Restore defaults** (**Use engine settings** in a template) clears them for one section.
+A Mesio engine's settings have one tab each for FLV, HLS and DASH, each starting with its consistency fix switch and the settings most recordings need. FFmpeg and Streamlink settings start with **Enable lossless cutting**. On every engine, the less common settings are grouped under **Advanced**. Each section, and each Mesio tab, shows how many of its settings differ from the default, or in a template override, how many the template sets, and **Restore defaults** (**Use engine settings** in a template) clears them for one section.
+
+An empty field uses the default shown in it, and saving an engine stores only the settings you set, so engines follow later changes to the defaults. In a template's engine override, each setting can use the engine's setting (the field is left out), the default (`null`), or a custom value.
 
 ## 2. FLV Consistency Fix
 
@@ -128,7 +130,7 @@ The action waits for a safe media boundary. Repeated clicks share the pending re
 | FFmpeg | Requires experimental **Enable lossless cutting**, MP4, MKV, FLV, TS, or MOV output, and no custom output arguments. |
 | Streamlink | Requires experimental **Enable lossless cutting**, the same output formats, and no extra Streamlink arguments. |
 
-In the download engine configuration, turn on **Enable lossless cutting** for the FFmpeg or Streamlink engine you use. This setting is marked **Experimental** and is off by default, including for existing configurations. The JSON field is `enable_lossless_cutting` (default `false`). Changes apply to new recordings. Template engine overrides can enable or disable it explicitly, or select **Use engine setting** to inherit the engine configuration. Mesio does not require this option.
+In the download engine configuration, turn on **Enable lossless cutting** for the FFmpeg or Streamlink engine you use. This setting is marked **Experimental** and is off by default, including for existing configurations. The JSON field is `enable_lossless_cutting` (default `false`). Changes apply to new recordings. Template engine overrides can turn it on or off, select **Default** for the default (off), or select **Use engine setting** to inherit the engine configuration. Mesio does not require this option.
 
 When enabled for a supported FFmpeg or Streamlink mode, recording uses temporary chunks and assembles each final file after a manual cut, an automatic limit, or the end of recording. Final files become available only after assembly finishes, even when no manual cut is requested. This uses additional disk space and I/O during finalization. Final filenames follow your configured template, including `%i` when present. A numeric suffix such as `-001` is added only if that filename already exists. The recording attempt ID and unfinished remux files stay inside the `.srec-chunks-*` staging directory. When the option is off, or the output format or custom arguments are unsupported, the engine retains its existing recording behavior and the action does not appear. The engine settings warn when custom arguments prevent lossless cutting.
 
@@ -161,14 +163,14 @@ Empty or whitespace-only strings are explicit executable values, not a request
 for fallback; use omission or `null` to clear the override.
 
 The engine editor exposes **FFmpeg Path** and preserves it when other settings
-change. Clearing the field or choosing **Use environment default** restores the
-environment/default lookup. Enter the path on the backend server without shell
-quotes; path text is preserved exactly.
+change. Clearing the field removes it, restoring the environment/default lookup.
+Enter the path on the backend server without shell quotes; path text is
+preserved exactly.
 
-In a template's Streamlink override, clearing the field or choosing **Use engine
-setting** removes the override and inherits the engine path. **Use environment
-default** instead writes an explicit `null`, clearing the engine path for that
-template so `FFMPEG_PATH` or `ffmpeg` is used.
+In a template's Streamlink override, **Use engine setting** leaves the field out
+and inherits the engine path. **Default (FFMPEG_PATH or ffmpeg)** instead writes
+an explicit `null`, clearing the engine path for that template so `FFMPEG_PATH`
+or `ffmpeg` is used. **Custom** sets a path for the template.
 
 ## Executable Checks {#executable-checks}
 

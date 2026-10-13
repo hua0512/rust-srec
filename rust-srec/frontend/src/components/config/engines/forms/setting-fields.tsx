@@ -1,5 +1,10 @@
 import React from 'react';
-import { useFormContext, useFormState, useWatch } from 'react-hook-form';
+import {
+  useFormContext,
+  useFormState,
+  useWatch,
+  type ControllerRenderProps,
+} from 'react-hook-form';
 import type { I18n, MessageDescriptor } from '@lingui/core';
 import { msg, plural } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
@@ -15,6 +20,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { InputWithUnit } from '@/components/ui/input-with-unit';
+import { ListInput } from '@/components/ui/list-input';
 import { Switch } from '@/components/ui/switch';
 import {
   Select,
@@ -129,11 +136,29 @@ interface EngineOverrideContextValue {
   /** The overridden engine's configuration, which unset override fields inherit. */
   engineConfig: Record<string, unknown>;
   /** The override's schema, which lists the fields of a group reset with `null`. */
-  schema: z.ZodObject;
+  schema: z.ZodType;
 }
 
 const EngineOverrideContext =
   React.createContext<EngineOverrideContextValue | null>(null);
+
+/**
+ * The fields below edit a template's override of an engine when `isOverride`, and the engine's
+ * own settings otherwise.
+ */
+export function OverrideScope({
+  isOverride,
+  children,
+  ...override
+}: EngineOverrideContextValue & {
+  isOverride: boolean;
+  children: React.ReactNode;
+}) {
+  if (!isOverride) return children;
+  return (
+    <EngineOverrideProvider {...override}>{children}</EngineOverrideProvider>
+  );
+}
 
 /** Marks the fields below as editing a template's override of an engine. */
 export function EngineOverrideProvider({
@@ -317,8 +342,66 @@ interface SettingInputProps {
   fallbackLabel?: SettingText;
   /** Placeholder of an engine's empty input, in place of naming the default. */
   placeholder?: string;
-  numeric?: boolean;
+  /** A `duration` is a number of seconds, entered in a unit of the user's choice. */
+  kind?: 'number' | 'text' | 'duration';
   size?: 'sm' | 'default';
+}
+
+/** A number of seconds as text. */
+function describeSeconds(i18n: I18n, seconds: unknown): string {
+  return typeof seconds === 'number'
+    ? i18n._(msg`${seconds} s`)
+    : describeValue(i18n, seconds);
+}
+
+/**
+ * The input of a `SettingInput`, bound to a registered field. Other props, such as the id and ARIA
+ * attributes `FormControl` adds, reach the input.
+ */
+function SettingInputControl({
+  field,
+  kind,
+  placeholder,
+  ...props
+}: {
+  field: ControllerRenderProps;
+  kind: NonNullable<SettingInputProps['kind']>;
+  placeholder?: string;
+} & Omit<React.ComponentProps<'input'>, 'type' | 'value' | 'onChange'>) {
+  if (kind === 'duration') {
+    return (
+      <InputWithUnit
+        id={props.id}
+        aria-labelledby={props['aria-labelledby']}
+        aria-describedby={props['aria-describedby']}
+        aria-invalid={props['aria-invalid']}
+        value={field.value ?? null}
+        onChange={field.onChange}
+        unitType="duration"
+        placeholder={placeholder}
+        className="bg-background/50"
+        inputClassName="font-mono"
+      />
+    );
+  }
+  return (
+    <Input
+      type={kind === 'number' ? 'number' : 'text'}
+      {...props}
+      {...field}
+      // A cleared text field is unset, not empty text, which a path setting would keep.
+      onChange={(event) =>
+        field.onChange(
+          kind === 'text' && event.target.value === ''
+            ? undefined
+            : event.target.value,
+        )
+      }
+      value={field.value ?? ''}
+      className={cn(CONFIG_INPUT, 'font-mono')}
+      placeholder={placeholder}
+    />
+  );
 }
 
 /**
@@ -332,7 +415,7 @@ export function SettingInput({
   fallback,
   fallbackLabel,
   placeholder,
-  numeric = true,
+  kind = 'number',
   size,
 }: SettingInputProps) {
   const { i18n } = useLingui();
@@ -340,9 +423,13 @@ export function SettingInput({
   const defaultPlaceholder = useDefaultPlaceholder();
   const { isOverride, inherited, setField } = useEngineOverride();
   const value = useSettingValue(name);
+  const describe = (candidate: unknown) =>
+    kind === 'duration'
+      ? describeSeconds(i18n, candidate)
+      : describeValue(i18n, candidate);
   const shownDefault =
     fallbackLabel === undefined
-      ? String(fallback)
+      ? describe(fallback)
       : translate(i18n, fallbackLabel);
 
   if (!isOverride) {
@@ -353,11 +440,9 @@ export function SettingInput({
           <FormItem className="space-y-2">
             <ConfigFieldLabel size={size}>{label}</ConfigFieldLabel>
             <FormControl>
-              <Input
-                type={numeric ? 'number' : 'text'}
-                {...field}
-                value={field.value ?? ''}
-                className={cn(CONFIG_INPUT, 'font-mono')}
+              <SettingInputControl
+                field={field}
+                kind={kind}
                 placeholder={placeholder ?? defaultPlaceholder(shownDefault)}
               />
             </FormControl>
@@ -400,9 +485,7 @@ export function SettingInput({
         <SelectContent className={CONFIG_SELECT_CONTENT}>
           <OverrideStateItems
             inherited={
-              engineValue == null
-                ? shownDefault
-                : describeValue(i18n, engineValue)
+              engineValue == null ? shownDefault : describe(engineValue)
             }
             fallback={shownDefault}
           />
@@ -417,12 +500,10 @@ export function SettingInput({
           render={({ field }) => (
             <FormItem className="space-y-2">
               <FormControl>
-                <Input
-                  type={numeric ? 'number' : 'text'}
-                  {...field}
-                  value={field.value ?? ''}
+                <SettingInputControl
+                  field={field}
+                  kind={kind}
                   aria-labelledby={labelId}
-                  className={cn(CONFIG_INPUT, 'font-mono')}
                 />
               </FormControl>
               <FormMessage />
@@ -442,6 +523,8 @@ interface SettingSwitchProps {
   /** The engine default, used when the field is unset. */
   fallback: boolean;
   icon?: LucideIcon;
+  /** Shown beside the label, outside it, such as a status badge. */
+  badge?: React.ReactNode;
   size?: 'sm' | 'default';
   /** Classes of the row holding the label and the control. */
   className?: string;
@@ -455,6 +538,7 @@ export function SettingSwitch({
   description,
   fallback,
   icon,
+  badge,
   size = 'sm',
   className,
   switchClassName = 'scale-75 origin-right',
@@ -479,9 +563,12 @@ export function SettingSwitch({
             )}
           >
             <div className="min-w-0 space-y-0.5">
-              <ConfigFieldLabel icon={icon} size={size}>
-                {label}
-              </ConfigFieldLabel>
+              <div className="flex flex-wrap items-center gap-2">
+                <ConfigFieldLabel icon={icon} size={size}>
+                  {label}
+                </ConfigFieldLabel>
+                {badge}
+              </div>
               {(description || changed) && (
                 <FormDescription className={CONFIG_DESCRIPTION}>
                   {description}
@@ -507,7 +594,15 @@ export function SettingSwitch({
   return (
     // Label above the select, like the other override fields, so a row of them lines up.
     <div className={cn('space-y-2', className)}>
-      <OverrideLabel labelId={labelId} label={label} icon={icon} size={size} />
+      <div className="flex flex-wrap items-center gap-2">
+        <OverrideLabel
+          labelId={labelId}
+          label={label}
+          icon={icon}
+          size={size}
+        />
+        {badge}
+      </div>
       <Select
         value={typeof value === 'boolean' ? String(value) : overrideMode(value)}
         onValueChange={(next) =>
@@ -942,6 +1037,87 @@ export function KeyValueField({
         <OverrideStateItems
           inherited={describePairs(i18n, engineValue)}
           fallback={describePairs(i18n, [])}
+        />
+        <SelectItem value="custom">
+          <Trans>Custom</Trans>
+        </SelectItem>
+      </StateSelect>
+      {mode === 'custom' && editor}
+      <OverrideDescription>{description}</OverrideDescription>
+    </div>
+  );
+}
+
+function describeList(i18n: I18n, items: unknown): string {
+  const count = Array.isArray(items) ? items.length : 0;
+  return count === 0
+    ? i18n._(msg`None`)
+    : i18n._(msg`${plural(count, { one: '# item', other: '# items' })}`);
+}
+
+/** A list of text items, such as command line arguments. */
+export function SettingList({
+  name,
+  label,
+  description,
+  placeholder,
+}: {
+  name: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  placeholder?: string;
+}) {
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const raw = useSettingValue(name) as string[] | null | undefined;
+  const mode = overrideMode(raw);
+
+  const editor = (
+    <ListInput
+      value={raw ?? []}
+      // In an override, an empty list replaces the engine's items with none.
+      onChange={(next) =>
+        setField(name, next.length > 0 || isOverride ? next : undefined)
+      }
+      placeholder={placeholder}
+      className={cn(CONFIG_INPUT, 'flex-grow font-mono')}
+    />
+  );
+
+  if (!isOverride) {
+    return (
+      <div className="space-y-2">
+        <OverrideLabel labelId={labelId} label={label} />
+        {editor}
+        <OverrideDescription>{description}</OverrideDescription>
+      </div>
+    );
+  }
+
+  const engineValue = inherited(name);
+  return (
+    <div className="space-y-2">
+      <OverrideLabel labelId={labelId} label={label} />
+      <StateSelect
+        labelId={labelId}
+        value={mode}
+        onValueChange={(next) =>
+          setField(
+            name,
+            next === INHERIT
+              ? undefined
+              : next === RESET
+                ? null
+                : Array.isArray(engineValue)
+                  ? [...engineValue]
+                  : [],
+          )
+        }
+      >
+        <OverrideStateItems
+          inherited={describeList(i18n, engineValue)}
+          fallback={describeList(i18n, [])}
         />
         <SelectItem value="custom">
           <Trans>Custom</Trans>

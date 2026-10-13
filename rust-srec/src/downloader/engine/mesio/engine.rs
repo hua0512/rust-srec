@@ -63,6 +63,7 @@ impl MesioEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: MesioEngineConfig) -> Self {
+        let buffer_size = config.buffer_size;
         Self {
             available: true,
             config,
@@ -76,6 +77,7 @@ impl MesioEngine {
                 FlvProtocolBuilder::new()
                     // override default headers
                     .headers(HeaderMap::new())
+                    .buffer_size(buffer_size)
                     .get_config(),
             ),
             dash_config: Some(
@@ -280,6 +282,20 @@ mod tests {
         let config = MesioEngineConfig::default();
         let engine = MesioEngine::with_config(config);
         assert!(engine.is_available());
+    }
+
+    #[test]
+    fn flv_downloads_use_the_configured_buffer_size() {
+        let config = MesioEngineConfig {
+            buffer_size: 256 * 1024,
+            ..MesioEngineConfig::default()
+        };
+        let engine = MesioEngine::with_config(config);
+        let flv_config = engine.flv_config.as_ref().map(|c| c.buffer_size);
+        assert_eq!(flv_config, Some(256 * 1024));
+
+        let default_size = MesioEngine::new().flv_config.map(|c| c.buffer_size);
+        assert_eq!(default_size, Some(64 * 1024));
     }
 
     #[test]

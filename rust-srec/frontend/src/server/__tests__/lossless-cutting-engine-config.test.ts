@@ -25,25 +25,23 @@ it.each(['FFMPEG', 'STREAMLINK'] as const)(
         config: JSON.stringify(config),
       };
       fetchBackendMock.mockResolvedValue(row);
+      // An unset choice stays unset, leaving the default (off) to the backend.
       const loaded = await getEngine({ data: row.id });
-      expect(loaded.config).toHaveProperty(
-        'enable_lossless_cutting',
-        enabled ?? false,
-      );
+      expect(loaded.config.enable_lossless_cutting).toBe(enabled);
       await createEngine({
         data: { name: row.name, engine_type, config: loaded.config },
       });
       expect(
         JSON.parse(fetchBackendMock.mock.calls.at(-1)![1].body).config
           .enable_lossless_cutting,
-      ).toBe(enabled ?? false);
+      ).toBe(enabled);
       await updateEngine({
         data: { id: row.id, data: { engine_type, config: loaded.config } },
       });
       expect(
         JSON.parse(fetchBackendMock.mock.calls.at(-1)![1].body).config
           .enable_lossless_cutting,
-      ).toBe(enabled ?? false);
+      ).toBe(enabled);
     }
   },
 );
