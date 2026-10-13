@@ -578,6 +578,25 @@ async fn a_vod_segment_retried_while_later_ones_fill_the_byte_limit_is_still_emi
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_vod_playlist_repeating_a_segment_plays_it_each_time() {
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["a.ts", "b.ts", "a.ts", "c.ts", "a.ts"], true));
+    for name in ["a.ts", "b.ts", "c.ts"] {
+        origin.add_file(name, name.as_bytes().to_vec());
+    }
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, fast_config()).await;
+
+    let expected: Vec<String> = ["a", "b", "a", "c", "a"]
+        .iter()
+        .map(|name| format!("{base}/{name}.ts"))
+        .collect();
+    assert_eq!(data_uris(&events), expected);
+    assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn terminal_failure_skips_segment_instead_of_stalling() {
     let origin = Origin::new();
     origin.push_playlist(playlist(0, &["seg0.ts", "seg1.ts", "seg2.ts"], true));
