@@ -507,12 +507,17 @@ export function SettingsSection({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <div className="flex min-h-7 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+        {/* Wraps the reset under the heading when a narrow card cannot fit both. */}
+        <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex items-center gap-2">
             <h3 className={SECTION_HEADING}>{i18n._(section.label)}</h3>
             <ChangedBadge basePath={basePath} fields={section.fields} />
           </div>
-          <SectionReset basePath={basePath} fields={section.fields} />
+          <SectionReset
+            basePath={basePath}
+            fields={section.fields}
+            className="ml-auto"
+          />
         </div>
         <SectionNote section={section} notice={notice} />
       </div>
