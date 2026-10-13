@@ -472,7 +472,8 @@ the keep-draining rule exists to prevent. The same fail-safe applies when the
 cursor media is gated on an unresolved fMP4 init key: below the buffer limit the
 assembler still waits for a slow init, but at the limit it skips that media as a
 visible `GapSkipped` and advances. For VOD, the reactor's reordering window keeps
-the buffer below its segment limit (see "Reordering window (VOD)").
+the buffer near both limits, and a VOD stream that waits for every segment is
+exempt from the forced skip (see "Reordering window (VOD)").
 
 ### OutputSink
 
@@ -1401,15 +1402,30 @@ Important rule:
 The sequence assembler must continue draining completed payloads even when its reorder buffer is near a configured limit. Otherwise, an older segment queued behind newer segments can never arrive at the assembler, which can create a false gap or a deadlock.
 
 **Reordering window (VOD).** A VOD stream waits for every segment, yet the
-forced skip at the reorder buffer's limit would still skip one that is slow or
+forced skip at the reorder buffer's limits would still skip one that is slow or
 awaiting a lifecycle retry while later segments complete. The assembler
 therefore publishes its emit cursor, and for VOD the reactor admits media only
-below that cursor plus `buffer_limits.max_segments`: completed media waiting
-behind a gap stays below the segment limit, so that limit never skips a VOD
-segment. Inits are admitted regardless, and the window re-opens as the cursor
-advances. Live streams have no window; their gap policy decides. The byte
-limit (`max_bytes`) is not covered: segments larger on average than
-`max_bytes / max_segments` can still reach it.
+while what lies beyond that cursor stays inside both limits:
+
+- by count, media below the cursor plus `buffer_limits.max_segments`;
+- by bytes, media whose downloading estimate plus the completed media beyond
+  the cursor stays within 80% of `buffer_limits.max_bytes`. The store keeps that
+  ledger per MSN: the admission estimate while a segment downloads, its real
+  size once complete, nothing once it fails or the cursor passes it. The margin
+  absorbs estimates that turn out low.
+
+The segment at the cursor is exempt from the byte bound — it is the one that
+frees the buffer, so holding it back could only deadlock the stream — and so is
+any segment while nothing is held, so a bound below one segment's size still
+downloads. Inits are admitted
+regardless, and the window re-opens as the cursor advances. A straggler
+therefore stalls new downloads once the window is full; that is the cost of not
+giving it up. Live streams have no window; their gap policy decides.
+
+A VOD stream with `WaitIndefinitely` never takes the forced skip at all: the
+assembler keeps draining its input, so waiting on the missing segment loses
+nothing, and the window above only keeps memory bounded when estimates run low.
+Streams with a skipping gap strategy keep the forced skip.
 
 When memory is above budget:
 

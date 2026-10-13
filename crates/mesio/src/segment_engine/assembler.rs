@@ -570,7 +570,15 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
         // Buffer pressure overrides thresholds: waiting at the cap recreates
         // the deadlock the keep-draining rule exists to prevent.
-        if self.buffer_at_limit() {
+        //
+        // A stream that waits for every segment is exempt: the reactor keeps
+        // what is buffered near the limits, and the assembler keeps draining
+        // its input either way, so waiting on the missing segment loses
+        // nothing. Giving it up would silently drop a segment that is still
+        // coming.
+        let waits_for_every_segment = !self.is_live_stream
+            && matches!(self.gap_strategy(), GapSkipStrategy::WaitIndefinitely);
+        if self.buffer_at_limit() && !waits_for_every_segment {
             return Some(GapSkipReason::BufferPressure);
         }
 
@@ -1723,6 +1731,56 @@ mod tests {
         .expect("timed out: buffer-pressure skip did not fire");
         assert!(saw_pressure_skip, "WaitIndefinitely must yield at the cap");
         assert_eq!(uris, ["https://e.com/seg101.ts", "https://e.com/seg102.ts"]);
+        h.cancel.cancel();
+        let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn a_waiting_vod_stream_keeps_waiting_at_the_buffer_limit() {
+        let mut config = HlsConfig::default();
+        config.output_config.vod_gap_strategy = GapSkipStrategy::WaitIndefinitely;
+        config.output_config.buffer_limits.max_segments = 2;
+        config.output_config.buffer_limits.max_bytes = 0;
+        let mut h = spawn_assembler(config, false, 100);
+
+        h.input_tx.send(ts_payload(101)).await.unwrap();
+        h.input_tx.send(ts_payload(102)).await.unwrap();
+        h.input_tx.send(ts_payload(103)).await.unwrap();
+        // Segment 100 is late: nothing may be emitted or skipped meanwhile.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), h.event_rx.recv())
+                .await
+                .is_err(),
+            "the stream must wait for segment 100"
+        );
+
+        h.input_tx.send(ts_payload(100)).await.unwrap();
+        let mut uris = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while uris.len() < 4 {
+                match h.event_rx.recv().await {
+                    Some(Ok(HlsStreamEvent::Data(d))) => {
+                        uris.push(d.media_segment().map(|s| s.uri.clone()).unwrap_or_default());
+                    }
+                    Some(Ok(HlsStreamEvent::GapSkipped { .. })) => {
+                        panic!("segment 100 must not be given up on")
+                    }
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for the stream to resume");
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/seg100.ts",
+                "https://e.com/seg101.ts",
+                "https://e.com/seg102.ts",
+                "https://e.com/seg103.ts",
+            ]
+        );
         h.cancel.cancel();
         let _ = h.join.await;
     }

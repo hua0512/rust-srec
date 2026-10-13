@@ -8,7 +8,7 @@
 //! is removed while its key still sits in an index.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -226,6 +226,23 @@ impl Default for StoreConfig {
     }
 }
 
+/// How far past the emit cursor media is admitted, for a stream that waits
+/// for every segment. The assembler skips the segment it waits for once its
+/// reorder buffer holds `max_segments` segments or `max_bytes` bytes, so
+/// admission keeps what can pile up behind that segment below both.
+#[derive(Debug, Clone, Copy)]
+pub struct MediaWindow {
+    /// The next MSN the assembler emits or skips.
+    pub cursor: u64,
+    /// Media at or beyond `cursor + segments` waits (0 = no limit).
+    pub segments: u64,
+    /// Media waits while the media at or beyond the cursor, downloading or
+    /// complete, would exceed this many bytes (0 = no limit). The estimate
+    /// of a segment still downloading may be off, so this stays below the
+    /// assembler's own byte limit.
+    pub bytes: u64,
+}
+
 /// Counters for ingest observability (aggregated, bounded cardinality).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct IngestStats {
@@ -302,6 +319,10 @@ pub struct SegmentStateStore {
     /// EMA of actual completed segment sizes; the admission estimate for
     /// segments without a BYTERANGE length.
     size_estimate: u64,
+    /// Bytes of admitted or completed media at or beyond the emit cursor,
+    /// by MSN: the estimate while a segment downloads, its size once it has
+    /// completed. Maintained for the byte bound of a [`MediaWindow`].
+    window_bytes: BTreeMap<u64, u64>,
     /// Aggregated counters (bounded cardinality — per-segment detail goes to
     /// spans, not labels).
     pub lifecycle_retries: u64,
@@ -320,6 +341,7 @@ impl SegmentStateStore {
             retry_heap: BinaryHeap::new(),
             next_order: 0,
             size_estimate,
+            window_bytes: BTreeMap::new(),
             lifecycle_retries: 0,
             terminal_failures: 0,
             dedup_hits: 0,
@@ -493,20 +515,27 @@ impl SegmentStateStore {
         now: Instant,
         budget: &ByteBudget,
     ) -> (Vec<ReadyJob>, Vec<AssemblerInput>) {
-        self.next_ready_jobs_below(slots, now, budget, None)
+        self.next_ready_jobs_within(slots, now, budget, None)
     }
 
-    /// [`Self::next_ready_jobs`], admitting no media segment whose MSN is
-    /// at or beyond `media_limit`; such segments stay ready for a later
-    /// call. Inits are always admitted: media waits for them.
-    pub fn next_ready_jobs_below(
+    /// [`Self::next_ready_jobs`], admitting media only inside `window`;
+    /// segments outside it stay ready for a later call. Inits are always
+    /// admitted: media waits for them.
+    pub fn next_ready_jobs_within(
         &mut self,
         slots: usize,
         now: Instant,
         budget: &ByteBudget,
-        media_limit: Option<u64>,
+        window: Option<MediaWindow>,
     ) -> (Vec<ReadyJob>, Vec<AssemblerInput>) {
         self.promote_due_retries(now);
+
+        let mut held_bytes = 0;
+        if let Some(window) = window {
+            // Media below the cursor has left the reorder buffer.
+            self.window_bytes = self.window_bytes.split_off(&window.cursor);
+            held_bytes = self.window_bytes.values().sum::<u64>();
+        }
 
         let mut jobs = Vec::new();
         let mut inputs = Vec::new();
@@ -530,8 +559,12 @@ impl SegmentStateStore {
             }
             // Ready media follows every init in MSN order (prefetch, newer
             // still, last), so no later entry is below the limit either.
-            if record.descriptor.key.kind == SegmentKind::Media
-                && media_limit.is_some_and(|limit| record.descriptor.msn >= limit)
+            let is_media = record.descriptor.key.kind == SegmentKind::Media;
+            if is_media
+                && window.is_some_and(|window| {
+                    window.segments > 0
+                        && record.descriptor.msn >= window.cursor.saturating_add(window.segments)
+                })
             {
                 break;
             }
@@ -614,6 +647,19 @@ impl SegmentStateStore {
             } else {
                 estimate
             };
+            // The segment at the cursor is exempt: it is the one that frees
+            // the buffer, so holding it back could only deadlock the stream.
+            // So is any segment when nothing is held, which keeps a bound
+            // below one segment's estimate from stalling the stream.
+            if is_media
+                && held_bytes > 0
+                && let Some(window) = window
+                && window.bytes > 0
+                && record.descriptor.msn > window.cursor
+                && held_bytes.saturating_add(reserve_size) > window.bytes
+            {
+                break;
+            }
             let Some(reservation) = budget.download.try_reserve(reserve_size) else {
                 break;
             };
@@ -627,6 +673,11 @@ impl SegmentStateStore {
                 started_at: now,
             };
             record.attempt_generation = record.generation;
+            if is_media && window.is_some_and(|window| window.bytes > 0) {
+                self.window_bytes
+                    .insert(record.descriptor.msn, reserve_size);
+                held_bytes = held_bytes.saturating_add(reserve_size);
+            }
             trace!(
                 msn = record.descriptor.msn,
                 kind = ?record.descriptor.key.kind,
@@ -663,6 +714,11 @@ impl SegmentStateStore {
                     init.governs_fmp4 = true;
                 }
                 let payload_len = payload.len() as u64;
+                if !payload.is_init()
+                    && let Some(bytes) = self.window_bytes.get_mut(&msn)
+                {
+                    *bytes = payload_len;
+                }
                 if let Some(record) = self.records.get_mut(&key) {
                     record.state = SegmentState::Completed { completed_at: now };
                     self.update_size_estimate(payload_len);
@@ -682,6 +738,9 @@ impl SegmentStateStore {
                 reason,
                 error,
             } => {
+                if key.kind == SegmentKind::Media {
+                    self.window_bytes.remove(&msn);
+                }
                 let Some(record) = self.records.get_mut(&key) else {
                     return OutcomeEffects::default();
                 };
@@ -1099,7 +1158,16 @@ mod tests {
             Instant::now(),
         );
         let admitted = |s: &mut SegmentStateStore, limit| {
-            let (jobs, inputs) = s.next_ready_jobs_below(10, Instant::now(), &b, Some(limit));
+            let (jobs, inputs) = s.next_ready_jobs_within(
+                10,
+                Instant::now(),
+                &b,
+                Some(MediaWindow {
+                    cursor: 0,
+                    segments: limit,
+                    bytes: 0,
+                }),
+            );
             assert!(inputs.is_empty());
             jobs.into_iter()
                 .map(|job| (job.descriptor.key.kind, job.descriptor.msn))
@@ -1576,6 +1644,83 @@ mod tests {
         let first = take_one(&mut s, &b).unwrap();
         assert_eq!(first.descriptor.msn, 10);
         assert_eq!(first.descriptor.source, SegmentSource::Playlist);
+    }
+
+    #[test]
+    fn media_beyond_the_byte_window_waits_but_the_cursor_segment_is_always_admitted() {
+        const MIB: u64 = 1024 * 1024;
+        let mut s = store();
+        let b = budget_unlimited();
+        s.ingest(
+            (0..6)
+                .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
+                .collect(),
+            Instant::now(),
+        );
+        let admit = |s: &mut SegmentStateStore, cursor: u64| -> Vec<u64> {
+            let window = MediaWindow {
+                cursor,
+                segments: 0,
+                bytes: 5 * MIB,
+            };
+            let (jobs, _) = s.next_ready_jobs_within(10, Instant::now(), &b, Some(window));
+            jobs.into_iter()
+                .map(|job| job.descriptor.msn)
+                .collect::<Vec<_>>()
+        };
+
+        // Two 2 MiB estimates fit; a third would pass 5 MiB.
+        assert_eq!(admit(&mut s, 0), [0, 1]);
+        assert_eq!(admit(&mut s, 0), Vec::<u64>::new());
+        // The cursor moving past 0 releases its bytes.
+        assert_eq!(admit(&mut s, 1), [2]);
+        assert_eq!(admit(&mut s, 1), Vec::<u64>::new());
+        // A cursor at a segment held back by the bytes admits it regardless.
+        assert_eq!(admit(&mut s, 3), [3, 4]);
+        assert_eq!(admit(&mut s, 5), [5]);
+    }
+
+    #[test]
+    fn a_failed_attempt_gives_back_its_bytes_in_the_window() {
+        const MIB: u64 = 1024 * 1024;
+        let mut s = store();
+        let b = budget_unlimited();
+        s.ingest(
+            (0..3)
+                .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
+                .collect(),
+            Instant::now(),
+        );
+        let window = MediaWindow {
+            cursor: 0,
+            segments: 0,
+            bytes: 3 * MIB,
+        };
+        let (jobs, _) = s.next_ready_jobs_within(10, Instant::now(), &b, Some(window));
+        assert_eq!(jobs.len(), 1, "one 2 MiB estimate fits in 3 MiB");
+        let job = jobs.into_iter().next().unwrap();
+        s.apply_outcome(
+            SegmentOutcome::Failed {
+                key: job.descriptor.key.clone(),
+                msn: 0,
+                class: FailureClass::Network,
+                reason: Arc::from("reset"),
+                error: None,
+            },
+            Instant::now(),
+        );
+        // Segment 0 retries later; meanwhile its failed attempt holds nothing.
+        let window = MediaWindow {
+            cursor: 1,
+            ..window
+        };
+        let (jobs, _) = s.next_ready_jobs_within(10, Instant::now(), &b, Some(window));
+        assert_eq!(
+            jobs.iter()
+                .map(|job| job.descriptor.msn)
+                .collect::<Vec<_>>(),
+            [1]
+        );
     }
 
     #[test]
