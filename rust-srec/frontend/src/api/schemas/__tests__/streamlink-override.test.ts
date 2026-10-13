@@ -5,7 +5,7 @@ import {
 } from '../template';
 
 describe('Streamlink FFmpeg path overrides', () => {
-  it.each([undefined, null, '', '   ', '/opt/media tools/ffmpeg'])(
+  it.each([undefined, null, '/opt/media tools/ffmpeg', ' C:\\ffmpeg.exe '])(
     'preserves %s through template create/update validation',
     (ffmpegPath) => {
       const override =
@@ -21,6 +21,16 @@ describe('Streamlink FFmpeg path overrides', () => {
         const serialized = JSON.parse(JSON.stringify(request));
         expect(serialized.engines_override['streamlink-1']).toEqual(override);
       }
+    },
+  );
+
+  it.each(['', '   '])(
+    'refuses a custom path %j left empty instead of saving it',
+    (ffmpegPath) => {
+      expect(
+        StreamlinkConfigOverrideSchema.safeParse({ ffmpeg_path: ffmpegPath })
+          .success,
+      ).toBe(false);
     },
   );
 

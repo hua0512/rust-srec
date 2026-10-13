@@ -265,7 +265,8 @@ impl MesioFlvFixConfig {
 /// Mesio engine configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MesioEngineConfig {
-    /// Buffer size in bytes
+    /// Initial capacity of the FLV read buffer, in bytes. Mesio raises values
+    /// below 64 KiB to 64 KiB.
     #[serde(default = "default_buffer_size")]
     pub buffer_size: usize,
     /// Enable FLV fixing
@@ -601,7 +602,7 @@ pub enum MesioGapSkipStrategy {
 }
 
 fn default_buffer_size() -> usize {
-    8 * 1024 * 1024 // 8MB
+    64 * 1024
 }
 
 fn default_true() -> bool {

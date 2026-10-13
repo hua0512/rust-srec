@@ -4,45 +4,31 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import {
+  StreamlinkConfigOverrideSchema,
   StreamlinkConfigSchema,
-  type StreamlinkConfig,
 } from '@/api/schemas/engine';
 import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { StreamlinkForm } from '../streamlink-form';
 
 type Values = {
-  config?: StreamlinkConfig;
-  engines_override?: Record<string, Partial<StreamlinkConfig>>;
+  config?: Record<string, unknown>;
+  engines_override?: Record<string, Record<string, unknown>>;
 };
 
-function renderForm(ffmpegPath: string | null | undefined, override = false) {
+beforeAll(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
+});
+
+function renderEngine(config: Record<string, unknown>) {
   let form!: UseFormReturn<Values>;
-  const path = override
-    ? 'engines_override.streamlink-1.ffmpeg_path'
-    : 'config.ffmpeg_path';
-  const config =
-    ffmpegPath === undefined
-      ? { quality: 'best' }
-      : { quality: 'best', ffmpeg_path: ffmpegPath };
   function Harness() {
-    form = useForm<Values>({
-      defaultValues: override
-        ? { engines_override: { 'streamlink-1': config } }
-        : { config: StreamlinkConfigSchema.parse(config) },
-    });
+    form = useForm<Values>({ defaultValues: { config } });
     return (
       <Form {...form}>
-        {override ? (
-          <EngineOverrideCard
-            engineId="streamlink-1"
-            engineName="Streamlink"
-            engineType="STREAMLINK"
-            onRemove={vi.fn()}
-          />
-        ) : (
-          <StreamlinkForm />
-        )}
+        <StreamlinkForm />
       </Form>
     );
   }
@@ -51,74 +37,111 @@ function renderForm(ffmpegPath: string | null | undefined, override = false) {
       <Harness />
     </I18nProvider>,
   );
-  return {
-    value: () => form.getValues(path),
-    serialized: () => JSON.parse(JSON.stringify(form.getValues())),
-  };
+  return () =>
+    JSON.parse(
+      JSON.stringify(StreamlinkConfigSchema.parse(form.getValues('config'))),
+    );
+}
+
+function renderOverride(
+  override: Record<string, unknown>,
+  engineConfig: Record<string, unknown>,
+) {
+  let form!: UseFormReturn<Values>;
+  function Harness() {
+    form = useForm<Values>({
+      defaultValues: { engines_override: { 'streamlink-1': override } },
+    });
+    return (
+      <Form {...form}>
+        <EngineOverrideCard
+          engineId="streamlink-1"
+          engineName="Streamlink"
+          engineType="STREAMLINK"
+          engineConfig={engineConfig}
+          onRemove={vi.fn()}
+        />
+      </Form>
+    );
+  }
+  render(
+    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
+      <Harness />
+    </I18nProvider>,
+  );
+  return () =>
+    JSON.parse(
+      JSON.stringify(
+        StreamlinkConfigOverrideSchema.parse(
+          form.getValues('engines_override.streamlink-1'),
+        ),
+      ),
+    );
+}
+
+async function choose(select: string, option: string) {
+  fireEvent.keyDown(screen.getByRole('combobox', { name: select }), {
+    key: 'Enter',
+  });
+  fireEvent.click(await screen.findByRole('option', { name: option }));
 }
 
 describe('Streamlink FFmpeg path field', () => {
-  it.each(['C:\\Media Tools\\ffmpeg.exe', '', '   ', null, undefined])(
-    'preserves saved %s when other engine settings change',
-    (path) => {
-      const { value } = renderForm(path);
-      fireEvent.change(screen.getByLabelText('Quality'), {
-        target: { value: 'worst' },
-      });
-      expect(value()).toBe(path);
-    },
-  );
-
-  it('keeps entered paths literal and clears a base path to environment fallback', () => {
-    const { value } = renderForm(null);
+  it('saves an entered path literally and a cleared one as the environment default', () => {
+    const saved = renderEngine({ quality: 'best' });
     const input = screen.getByLabelText('FFmpeg Path');
+    expect(input).toHaveAttribute(
+      'placeholder',
+      'Default: FFMPEG_PATH or ffmpeg',
+    );
     fireEvent.change(input, {
       target: { value: ' C:\\Media Tools\\ffmpeg.exe ' },
     });
-    expect(value()).toBe(' C:\\Media Tools\\ffmpeg.exe ');
+    expect(saved().ffmpeg_path).toBe(' C:\\Media Tools\\ffmpeg.exe ');
     fireEvent.change(input, { target: { value: '' } });
-    expect(value()).toBeNull();
-    expect(input).toHaveAttribute('placeholder', 'FFMPEG_PATH or ffmpeg');
+    expect(saved()).not.toHaveProperty('ffmpeg_path');
   });
 
-  it('allows an explicitly empty saved executable to be reset', () => {
-    const { value } = renderForm('');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Use environment default' }),
-    );
-    expect(value()).toBeNull();
+  it.each([
+    ['C:\\Media Tools\\ffmpeg.exe', 'C:\\Media Tools\\ffmpeg.exe'],
+    // A null path is unset, which also uses the environment.
+    [null, undefined],
+    // The backend reads empty text as a path; only the user changes it.
+    ['', ''],
+    ['   ', '   '],
+  ])('keeps a saved %j when other engine settings change', (path, expected) => {
+    const saved = renderEngine({ quality: 'best', ffmpeg_path: path });
+    fireEvent.change(screen.getByLabelText('Quality'), {
+      target: { value: 'worst' },
+    });
+    expect(saved().quality).toBe('worst');
+    expect(saved().ffmpeg_path).toBe(expected);
   });
 
-  it('keeps inherited and environment-default template overrides distinct', () => {
-    const { value, serialized } = renderForm(undefined, true);
-    const input = screen.getByLabelText('FFmpeg Path');
-    expect(value()).toBeUndefined();
-    expect(serialized().engines_override['streamlink-1']).not.toHaveProperty(
-      'ffmpeg_path',
-    );
-    expect(input).toHaveAttribute('placeholder', 'Inherited from engine');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Use environment default' }),
-    );
-    expect(value()).toBeNull();
+  it('keeps inherited and environment-default template overrides distinct', async () => {
+    const saved = renderOverride({}, { ffmpeg_path: '/opt/ffmpeg' });
     expect(
-      serialized().engines_override['streamlink-1'].ffmpeg_path,
-    ).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Use engine setting' }));
-    expect(value()).toBeUndefined();
-    expect(serialized().engines_override['streamlink-1']).not.toHaveProperty(
-      'ffmpeg_path',
-    );
+      screen.getByRole('combobox', { name: 'FFmpeg Path' }),
+    ).toHaveTextContent('Use engine setting (/opt/ffmpeg)');
+    expect(saved()).toEqual({});
+
+    await choose('FFmpeg Path', 'Default (FFMPEG_PATH or ffmpeg)');
+    expect(saved().ffmpeg_path).toBeNull();
+
+    await choose('FFmpeg Path', 'Custom');
+    const input = screen.getByRole('textbox', { name: 'FFmpeg Path' });
+    expect(input).toHaveValue('/opt/ffmpeg');
+    fireEvent.change(input, { target: { value: '/opt/custom/ffmpeg' } });
+    expect(saved().ffmpeg_path).toBe('/opt/custom/ffmpeg');
+
+    await choose('FFmpeg Path', 'Use engine setting (/opt/ffmpeg)');
+    expect(saved()).toEqual({});
   });
 
-  it('preserves an existing null override and clears custom paths back to inheritance', () => {
-    const { value } = renderForm(null, true);
-    const input = screen.getByLabelText('FFmpeg Path');
-    expect(value()).toBeNull();
-    expect(input).toHaveAttribute('placeholder', 'FFMPEG_PATH or ffmpeg');
-    fireEvent.change(input, { target: { value: '/opt/custom/ffmpeg' } });
-    expect(value()).toBe('/opt/custom/ffmpeg');
-    fireEvent.change(input, { target: { value: '' } });
-    expect(value()).toBeUndefined();
+  it('shows an existing environment-default override as the default', () => {
+    renderOverride({ ffmpeg_path: null }, { ffmpeg_path: '/opt/ffmpeg' });
+    expect(
+      screen.getByRole('combobox', { name: 'FFmpeg Path' }),
+    ).toHaveTextContent('Default (FFMPEG_PATH or ffmpeg)');
   });
 });

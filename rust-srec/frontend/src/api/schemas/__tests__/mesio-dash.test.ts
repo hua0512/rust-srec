@@ -30,9 +30,9 @@ const schemas = [
 ] as const;
 
 describe('Mesio DASH configuration', () => {
-  it('defaults DASH fixing on and leaves DASH settings to the engine', () => {
+  it('leaves DASH fixing and the DASH settings to the engine', () => {
     const parsed = MesioConfigSchema.parse({});
-    expect(parsed.fix_dash).toBe(true);
+    expect(parsed).not.toHaveProperty('fix_dash');
     expect(parsed).not.toHaveProperty('dash');
     expect(MesioConfigSchema.parse({ dash: null }).dash).toBeUndefined();
     expect(MesioConfigOverrideSchema.parse({})).toEqual({});
@@ -97,9 +97,12 @@ describe('Mesio DASH configuration', () => {
     });
   });
 
-  it('rejects unknown keys in a DASH override', () => {
+  it('keeps DASH keys the form does not know, but not unknown engine settings', () => {
     expect(
-      MesioConfigOverrideSchema.safeParse({ dash: { include_vidoe: false } })
+      MesioConfigOverrideSchema.parse({ dash: { future_setting: false } }),
+    ).toEqual({ dash: { future_setting: false } });
+    expect(
+      MesioConfigOverrideSchema.safeParse({ dashh: { include_video: false } })
         .success,
     ).toBe(false);
   });

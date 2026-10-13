@@ -1,273 +1,138 @@
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { ListInput } from '@/components/ui/list-input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Terminal, Settings, Command, TimerOff } from 'lucide-react';
 import { msg } from '@lingui/core/macro';
-import { Trans } from '@lingui/react/macro';
-import { useLingui } from '@lingui/react';
-
-import { InputWithUnit } from '@/components/ui/input-with-unit';
+import { Radio, Terminal, TimerOff, Tv } from 'lucide-react';
+import { StreamlinkConfigOverrideSchema } from '@/api/schemas/engine';
 import { LosslessCuttingField } from './lossless-cutting-field';
+import { OverrideScope } from './setting-fields';
 import {
-  CONFIG_DESCRIPTION,
-  ConfigFieldLabel,
-} from '@/components/config/shared/config-field';
+  AdvancedSections,
+  SettingsSection,
+  type SectionSpec,
+} from './setting-sections';
+
+/* Streamlink's settings; each field's `fallback` is the engine default. */
+
+const STREAMLINK_SECTIONS: readonly SectionSpec[] = [
+  {
+    id: 'streamlink-recording',
+    label: msg({ message: 'Recording', context: 'engine settings section' }),
+    icon: Radio,
+    fields: [
+      {
+        kind: 'text',
+        path: 'quality',
+        label: msg`Quality`,
+        description: msg`e.g. 'best', 'worst', '720p', 'audio_only'`,
+        fallback: 'best',
+      },
+      {
+        kind: 'list',
+        path: 'extra_args',
+        label: msg`Extra Arguments`,
+        description: msg`Any additional command line arguments to pass to Streamlink`,
+        placeholder: '--hls-live-edge 3',
+        fallback: [],
+      },
+    ],
+  },
+  {
+    id: 'streamlink-programs',
+    label: msg`Programs`,
+    icon: Terminal,
+    fields: [
+      {
+        kind: 'text',
+        path: 'binary_path',
+        label: msg`Binary Path`,
+        description: msg`Absolute path or 'streamlink' in PATH`,
+        fallback: 'streamlink',
+      },
+      {
+        kind: 'text',
+        path: 'ffmpeg_path',
+        label: msg`FFmpeg Path`,
+        description: msg`FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH.`,
+        fallback: '',
+        fallbackLabel: 'FFMPEG_PATH or ffmpeg',
+      },
+    ],
+  },
+];
+
+const STREAMLINK_ADVANCED: readonly SectionSpec[] = [
+  {
+    id: 'streamlink-twitch',
+    label: msg`Twitch (ttv-lol)`,
+    icon: Tv,
+    fields: [
+      {
+        kind: 'text',
+        path: 'twitch_proxy_playlist',
+        label: msg`Twitch Proxy Playlist`,
+        description: msg`Custom proxy URL for Twitch playlists`,
+        placeholder: 'https://lb-eu.cdn-perfprod.com',
+        fallback: '',
+        fallbackLabel: msg`None`,
+      },
+      {
+        kind: 'text',
+        path: 'twitch_proxy_playlist_exclude',
+        label: msg`Twitch Proxy Playlist Exclude`,
+        description: msg`Comma-separated list of channels to exclude from proxy`,
+        placeholder: 'channel1,channel2',
+        fallback: '',
+        fallbackLabel: msg`None`,
+      },
+    ],
+  },
+  {
+    id: 'streamlink-stopping',
+    label: msg`Stopping`,
+    icon: TimerOff,
+    fields: [
+      {
+        kind: 'duration',
+        path: 'graceful_stop_timeout_secs',
+        label: msg`Graceful Stop Timeout`,
+        description: msg`Time to wait for ffmpeg to finalize the file before force-killing it`,
+        fallback: 60,
+      },
+    ],
+  },
+];
+
+const NO_ENGINE_CONFIG = {};
 
 interface StreamlinkFormProps {
   basePath?: string;
+  /** Edit a template's override of an engine instead of the engine itself. */
   isOverride?: boolean;
+  /** The overridden engine's configuration, whose values unset override fields inherit. */
+  engineConfig?: Record<string, unknown>;
 }
 
 export function StreamlinkForm({
   basePath = 'config',
   isOverride = false,
+  engineConfig,
 }: StreamlinkFormProps) {
-  const { i18n } = useLingui();
   return (
-    <div className="space-y-6">
-      <LosslessCuttingField
-        basePath={basePath}
-        argsField="extra_args"
-        isOverride={isOverride}
-      />
-      <div className="grid gap-6 md:grid-cols-2">
-        <FormField
-          name={`${basePath}.binary_path`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={Terminal}>
-                <Trans>Binary Path</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder={i18n._(msg`streamlink`)}
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>Absolute path or 'streamlink' in PATH</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${basePath}.ffmpeg_path`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={Terminal}>
-                <Trans>FFmpeg Path</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  value={field.value ?? ''}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    field.onChange(
-                      value === '' ? (isOverride ? undefined : null) : value,
-                    );
-                  }}
-                  placeholder={
-                    isOverride && field.value === undefined
-                      ? i18n._(msg`Inherited from engine`)
-                      : field.value == null
-                        ? i18n._(msg`FFMPEG_PATH or ffmpeg`)
-                        : i18n._(msg`Path to FFmpeg`)
-                  }
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>
-                  FFmpeg used to remux Streamlink output. Enter a path on the
-                  backend server without shell quotes. The environment default
-                  uses FFMPEG_PATH, then ffmpeg from PATH.
-                </Trans>
-                {isOverride && (
-                  <>
-                    {' '}
-                    <Trans>
-                      Clearing the field inherits the engine setting.
-                    </Trans>
-                  </>
-                )}
-              </FormDescription>
-              <div className="flex flex-wrap gap-2">
-                {isOverride && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={field.value === undefined}
-                    onClick={() => field.onChange(undefined)}
-                  >
-                    <Trans>Use engine setting</Trans>
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    field.value === null ||
-                    (!isOverride && field.value === undefined)
-                  }
-                  onClick={() => field.onChange(null)}
-                >
-                  <Trans>Use environment default</Trans>
-                </Button>
-              </div>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${basePath}.quality`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={Settings}>
-                <Trans>Quality</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder={i18n._(msg`best`)}
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>e.g. 'best', 'worst', '720p', 'audio_only'</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${basePath}.graceful_stop_timeout_secs`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={TimerOff}>
-                <Trans>Graceful Stop Timeout</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <InputWithUnit
-                  value={field.value}
-                  onChange={field.onChange}
-                  unitType="duration"
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>
-                  Time to wait for ffmpeg to finalize the file before
-                  force-killing it
-                </Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+    <OverrideScope
+      isOverride={isOverride}
+      basePath={basePath}
+      engineConfig={engineConfig ?? NO_ENGINE_CONFIG}
+      schema={StreamlinkConfigOverrideSchema}
+    >
+      <div className="space-y-6">
+        <LosslessCuttingField basePath={basePath} argsField="extra_args" />
+        {STREAMLINK_SECTIONS.map((section) => (
+          <SettingsSection
+            key={section.id}
+            section={section}
+            basePath={basePath}
+          />
+        ))}
+        <AdvancedSections sections={STREAMLINK_ADVANCED} basePath={basePath} />
       </div>
-
-      <Separator className="bg-border/50" />
-
-      <Card className="border-border/40 bg-background/40 shadow-sm">
-        <CardHeader className="pb-3 pt-4 px-4">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Settings className="w-4 h-4 text-primary" />
-            <Trans>Twitch (ttv-lol)</Trans>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4 space-y-4">
-          <FormField
-            name={`${basePath}.twitch_proxy_playlist`}
-            render={({ field }) => (
-              <FormItem>
-                <ConfigFieldLabel size="sm">
-                  <Trans>Twitch Proxy Playlist</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    placeholder={i18n._(msg`https://lb-eu.cdn-perfprod.com`)}
-                    className="bg-background/50"
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>Custom proxy URL for Twitch playlists</Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            name={`${basePath}.twitch_proxy_playlist_exclude`}
-            render={({ field }) => (
-              <FormItem>
-                <ConfigFieldLabel size="sm">
-                  <Trans>Twitch Proxy Playlist Exclude</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    placeholder={i18n._(msg`channel1,channel2`)}
-                    className="bg-background/50"
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Comma-separated list of channels to exclude from proxy
-                  </Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/40 bg-background/40 shadow-sm">
-        <CardHeader className="pb-3 pt-4 px-4">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Command className="w-4 h-4 text-primary" />
-            <Trans>Extra Arguments</Trans>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          <FormField
-            name={`${basePath}.extra_args`}
-            render={({ field }) => (
-              <FormItem>
-                <FormControl>
-                  <ListInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder={i18n._(msg`--hls-live-edge 3`)}
-                    className="bg-background/50"
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>
-                    Any additional command line arguments to pass to Streamlink
-                  </Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </CardContent>
-      </Card>
-    </div>
+    </OverrideScope>
   );
 }

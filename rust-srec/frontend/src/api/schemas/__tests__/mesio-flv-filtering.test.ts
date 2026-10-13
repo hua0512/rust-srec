@@ -3,17 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { MesioConfigOverrideSchema, MesioConfigSchema } from '../engine';
 
 describe('Mesio FLV filtering configuration', () => {
-  it('keeps missing configuration optional and defaults an empty form to disabled', () => {
+  it('saves an untouched form without FLV settings, leaving the defaults to the engine', () => {
     expect(MesioConfigSchema.parse({})).not.toHaveProperty('flv_fix');
-    for (const flv_fix of [{}, { duplicate_tag_filter_config: {} }]) {
-      const parsed = MesioConfigSchema.parse({ flv_fix });
-      expect(parsed.flv_fix).toMatchObject({
-        duplicate_tag_filtering: false,
-        duplicate_tag_filter_config: {
-          enable_replay_offset_matching: false,
-          window_capacity_bytes: 16777216,
-        },
-      });
+    for (const flv_fix of [
+      {},
+      { duplicate_tag_filter_config: {} },
+      { duplicate_tag_filtering: undefined, sequence_header_change_mode: null },
+    ]) {
+      expect(MesioConfigSchema.parse({ flv_fix })).not.toHaveProperty(
+        'flv_fix',
+      );
     }
   });
 

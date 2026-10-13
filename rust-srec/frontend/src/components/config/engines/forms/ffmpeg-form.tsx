@@ -1,207 +1,121 @@
-// ... imports
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { ListInput } from '@/components/ui/list-input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import {
-  Terminal,
-  Clock,
-  Shield,
-  ArrowRightFromLine,
-  ArrowLeftFromLine,
-  TimerOff,
-} from 'lucide-react';
 import { msg } from '@lingui/core/macro';
-import { Trans } from '@lingui/react/macro';
-import { useLingui } from '@lingui/react';
-
-import { InputWithUnit } from '@/components/ui/input-with-unit';
+import { Clock, SquareTerminal, Terminal } from 'lucide-react';
+import { FfmpegConfigOverrideSchema } from '@/api/schemas/engine';
 import { LosslessCuttingField } from './lossless-cutting-field';
+import { OverrideScope } from './setting-fields';
 import {
-  CONFIG_DESCRIPTION,
-  ConfigFieldLabel,
-} from '@/components/config/shared/config-field';
+  AdvancedSections,
+  SettingsSection,
+  type SectionSpec,
+} from './setting-sections';
+
+/* FFmpeg's settings; each field's `fallback` is the engine default. */
+
+const FFMPEG_SECTIONS: readonly SectionSpec[] = [
+  {
+    id: 'ffmpeg-program',
+    label: msg`Program`,
+    icon: Terminal,
+    fields: [
+      {
+        kind: 'text',
+        path: 'binary_path',
+        label: msg`Binary Path`,
+        description: msg`Absolute path or 'ffmpeg' if in PATH`,
+        fallback: 'ffmpeg',
+      },
+      {
+        kind: 'text',
+        path: 'user_agent',
+        label: msg`User Agent`,
+        description: msg`Custom User-Agent string (Optional)`,
+        fallback: '',
+        fallbackLabel: msg`None`,
+      },
+    ],
+  },
+  {
+    id: 'ffmpeg-arguments',
+    label: msg`Arguments`,
+    icon: SquareTerminal,
+    fields: [
+      {
+        kind: 'list',
+        path: 'input_args',
+        label: msg`Input Arguments`,
+        description: msg`Args inserted before -i input_url`,
+        placeholder: '-reconnect 1',
+        fallback: [],
+      },
+      {
+        kind: 'list',
+        path: 'output_args',
+        label: msg`Output Arguments`,
+        description: msg`Args used for processing/encoding`,
+        placeholder: '-c copy',
+        fallback: [],
+      },
+    ],
+  },
+];
+
+const FFMPEG_ADVANCED: readonly SectionSpec[] = [
+  {
+    id: 'ffmpeg-timeouts',
+    label: msg`Timeouts`,
+    icon: Clock,
+    fields: [
+      {
+        kind: 'duration',
+        path: 'timeout_secs',
+        label: msg`Timeout`,
+        description: msg`Connection/activity timeout`,
+        fallback: 30,
+      },
+      {
+        kind: 'duration',
+        path: 'graceful_stop_timeout_secs',
+        label: msg`Graceful Stop Timeout`,
+        description: msg`Time to wait for ffmpeg to finalize the file before force-killing it`,
+        fallback: 60,
+      },
+    ],
+  },
+];
+
+const NO_ENGINE_CONFIG = {};
 
 interface FfmpegFormProps {
   basePath?: string;
+  /** Edit a template's override of an engine instead of the engine itself. */
   isOverride?: boolean;
+  /** The overridden engine's configuration, whose values unset override fields inherit. */
+  engineConfig?: Record<string, unknown>;
 }
 
 export function FfmpegForm({
   basePath = 'config',
   isOverride = false,
+  engineConfig,
 }: FfmpegFormProps) {
-  const { i18n } = useLingui();
   return (
-    <div className="space-y-6">
-      <LosslessCuttingField
-        basePath={basePath}
-        argsField="output_args"
-        isOverride={isOverride}
-      />
-      <div className="grid gap-6 md:grid-cols-2">
-        <FormField
-          name={`${basePath}.binary_path`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={Terminal}>
-                <Trans>Binary Path</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder={i18n._(msg`/usr/bin/ffmpeg or ffmpeg`)}
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>Absolute path or 'ffmpeg' if in PATH</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${basePath}.timeout_secs`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={Clock}>
-                <Trans>Timeout</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <InputWithUnit
-                  value={field.value}
-                  onChange={field.onChange}
-                  unitType="duration"
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>Connection/activity timeout</Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${basePath}.graceful_stop_timeout_secs`}
-          render={({ field }) => (
-            <FormItem>
-              <ConfigFieldLabel icon={TimerOff}>
-                <Trans>Graceful Stop Timeout</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <InputWithUnit
-                  value={field.value}
-                  onChange={field.onChange}
-                  unitType="duration"
-                  className="bg-background/50"
-                />
-              </FormControl>
-              <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>
-                  Time to wait for ffmpeg to finalize the file before
-                  force-killing it
-                </Trans>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+    <OverrideScope
+      isOverride={isOverride}
+      basePath={basePath}
+      engineConfig={engineConfig ?? NO_ENGINE_CONFIG}
+      schema={FfmpegConfigOverrideSchema}
+    >
+      <div className="space-y-6">
+        <LosslessCuttingField basePath={basePath} argsField="output_args" />
+        {FFMPEG_SECTIONS.map((section) => (
+          <SettingsSection
+            key={section.id}
+            section={section}
+            basePath={basePath}
+          />
+        ))}
+        <AdvancedSections sections={FFMPEG_ADVANCED} basePath={basePath} />
       </div>
-
-      <FormField
-        name={`${basePath}.user_agent`}
-        render={({ field }) => (
-          <FormItem>
-            <ConfigFieldLabel icon={Shield}>
-              <Trans>User Agent</Trans>
-            </ConfigFieldLabel>
-            <FormControl>
-              <Input
-                {...field}
-                placeholder={i18n._(msg`Mozilla/5.0...`)}
-                className="bg-background/50"
-              />
-            </FormControl>
-            <FormDescription className={CONFIG_DESCRIPTION}>
-              <Trans>Custom User-Agent string (Optional)</Trans>
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <Separator className="bg-border/50" />
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="border-border/40 bg-background/40 shadow-sm">
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ArrowRightFromLine className="w-4 h-4 text-emerald-500" />
-              <Trans>Input Arguments</Trans>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <FormField
-              name={`${basePath}.input_args`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <ListInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder={i18n._(msg`-reconnect 1`)}
-                      className="bg-background/50"
-                    />
-                  </FormControl>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Args inserted before -i input_url</Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/40 bg-background/40 shadow-sm">
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ArrowLeftFromLine className="w-4 h-4 text-sky-500" />
-              <Trans>Output Arguments</Trans>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <FormField
-              name={`${basePath}.output_args`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <ListInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder={i18n._(msg`-c copy`)}
-                      className="bg-background/50"
-                    />
-                  </FormControl>
-                  <FormDescription className={CONFIG_DESCRIPTION}>
-                    <Trans>Args used for processing/encoding</Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    </OverrideScope>
   );
 }

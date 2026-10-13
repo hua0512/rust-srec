@@ -42,9 +42,12 @@ describe('Mesio override resets', () => {
         hls: { base: null, fetcher_config: { max_segment_retries: -1 } },
       }).success,
     ).toBe(false);
+    // Within a group, unknown keys are kept like the HLS ones; only the top level refuses them.
     expect(
-      MesioConfigOverrideSchema.safeParse({ flv_fix: { unknown: null } })
-        .success,
+      MesioConfigOverrideSchema.parse({ flv_fix: { future_setting: null } }),
+    ).toEqual({ flv_fix: { future_setting: null } });
+    expect(
+      MesioConfigOverrideSchema.safeParse({ future_setting: null }).success,
     ).toBe(false);
   });
 
@@ -113,11 +116,10 @@ describe('Mesio override resets', () => {
     ).toEqual({ fetcher_config: { progress_emit_min_bytes: 1 } });
   });
 
-  it('leaves the engine settings as they were', () => {
+  it('reads null as unset in engine settings, except a disabled timeout', () => {
     expect(
-      MesioConfigSchema.safeParse({ hls: { base: { timeout_ms: null } } })
-        .success,
-    ).toBe(false);
+      MesioConfigSchema.parse({ hls: { base: { timeout_ms: null } } }),
+    ).toEqual({});
     // An engine disables these timeouts with `null`.
     expect(
       MesioConfigSchema.parse({

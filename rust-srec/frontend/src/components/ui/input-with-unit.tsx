@@ -67,6 +67,10 @@ export function InputWithUnit({
   min,
   max,
   step,
+  id,
+  'aria-labelledby': ariaLabelledBy,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   ...props
 }: InputWithUnitProps) {
   const { i18n } = useLingui();
@@ -168,6 +172,11 @@ export function InputWithUnit({
           'h-full min-w-0 flex-1 rounded-r-none border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
           inputClassName,
         )}
+        // A label or description given to the component names the number it edits.
+        id={id}
+        aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         value={inputValue}
         onChange={handleInputChange}
         placeholder={placeholder}

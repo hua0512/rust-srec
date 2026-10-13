@@ -51,7 +51,12 @@ describe.each([
 ])(
   '$type lossless cutting configuration',
   ({ type, argsField, warning, Component, schema, overrideSchema }) => {
-    function mount(value?: boolean, override = false, args?: string[]) {
+    function mount(
+      value?: boolean,
+      override = false,
+      args?: string[],
+      engineConfig?: EngineValues,
+    ) {
       let form!: UseFormReturn<Values>;
       const config: EngineValues = {
         ...(value === undefined ? {} : { enable_lossless_cutting: value }),
@@ -70,6 +75,7 @@ describe.each([
                 engineId="engine"
                 engineName={type}
                 engineType={type}
+                engineConfig={engineConfig}
                 onRemove={vi.fn()}
               />
             ) : (
@@ -95,7 +101,8 @@ describe.each([
         name: 'Enable lossless cutting',
       });
       expect(toggle).not.toBeChecked();
-      expect(saved().enable_lossless_cutting).toBe(false);
+      // Left to the engine default (off) rather than saved.
+      expect(saved().enable_lossless_cutting).toBeUndefined();
       expect(screen.getByText('Experimental')).toBeInTheDocument();
       expect(
         screen.getByText(/Split recordings without reconnecting/),
@@ -139,7 +146,7 @@ describe.each([
       expect(screen.queryByRole('alert')).toBeNull();
     });
 
-    it('evaluates only settings present in an override', () => {
+    it('evaluates an override together with the engine settings it inherits', () => {
       mount(true, true);
       expect(details()).toBeInTheDocument();
       expect(screen.queryByRole('alert')).toBeNull();
@@ -149,6 +156,21 @@ describe.each([
       cleanup();
       mount(undefined, true, ['-flag']);
       expect(details()).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+      cleanup();
+      // Both inherited from the engine.
+      mount(undefined, true, undefined, {
+        enable_lossless_cutting: true,
+        [argsField]: ['-flag'],
+      });
+      expect(details()).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(warning);
+      cleanup();
+      // The override clears the engine's arguments.
+      mount(undefined, true, [], {
+        enable_lossless_cutting: true,
+        [argsField]: ['-flag'],
+      });
       expect(screen.queryByRole('alert')).toBeNull();
     });
 
@@ -165,14 +187,15 @@ describe.each([
       const choice = screen.getByRole('combobox', {
         name: 'Enable lossless cutting',
       });
-      expect(choice).toHaveTextContent('Use engine setting');
+      expect(choice).toHaveTextContent('Use engine setting (Off)');
       expect(JSON.parse(JSON.stringify(saved()))).not.toHaveProperty(
         'enable_lossless_cutting',
       );
       for (const [label, expected] of [
-        ['Enabled', true],
-        ['Disabled', false],
-        ['Use engine setting', undefined],
+        ['On', true],
+        ['Off', false],
+        ['Default (Off)', null],
+        ['Use engine setting (Off)', undefined],
       ] as const) {
         fireEvent.keyDown(choice, { key: 'Enter' });
         fireEvent.click(await screen.findByRole('option', { name: label }));
