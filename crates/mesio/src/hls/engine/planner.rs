@@ -92,6 +92,14 @@ pub struct PlannerContext {
     /// When true, SOOP `preloading` placeholder segments are skipped at plan
     /// time without removing them from the playlist (MSN indices stay stable).
     soop: bool,
+    /// Set by the first plan: the stream is a finished playlist, one that
+    /// carries `EXT-X-ENDLIST` from its first fetch. Its media is then
+    /// identified by MSN as well as URI, because a finished playlist may list
+    /// the same resource at several positions and each is its own segment. A
+    /// live playlist is identified by URI alone: its window is re-listed on
+    /// every refresh, and a server that renumbers it must not make the same
+    /// segment download twice.
+    finished: Option<bool>,
 }
 
 impl PlannerContext {
@@ -105,6 +113,7 @@ impl PlannerContext {
             current_map: None,
             twitch: twitch.then(TwitchPlaylistProcessor::new),
             soop,
+            finished: None,
         }
     }
 }
@@ -179,6 +188,8 @@ const MIN_RESET_REGRESSION: u64 = 16;
 pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     let mut planned = Planned::default();
     let playlist = snapshot.playlist.as_ref();
+    let first_plan = ctx.next_undecided_msn.is_none();
+    let finished = *ctx.finished.get_or_insert(first_plan && playlist.end_list);
     let window_start = playlist.media_sequence;
     let window_end = window_start.saturating_add(playlist.segments.len() as u64);
 
@@ -478,7 +489,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 kind: SegmentKind::Media,
                 uri: ctx.policy.canonical_uri(&parsed_url),
                 byte_range: byte_range_key,
-                scope: None,
+                scope: finished.then(|| Arc::from(msn.to_string())),
             },
             msn,
             source,
@@ -773,6 +784,35 @@ mod tests {
         );
         assert!(planned.missing.is_empty());
         assert!(planned.skipped.is_empty());
+    }
+
+    #[test]
+    fn a_finished_playlist_tells_repeated_segments_apart() {
+        let body = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.0,\na.ts\n#EXTINF:2.0,\na.ts\n";
+        let keys = |input: String| {
+            let planned = plan(&snapshot(0, &input), &mut ctx());
+            planned
+                .descriptors
+                .into_iter()
+                .map(|d| d.key)
+                .collect::<Vec<_>>()
+        };
+
+        let finished = keys(format!("{body}#EXT-X-ENDLIST\n"));
+        assert_ne!(finished[0], finished[1]);
+
+        // A live playlist is identified by URI alone.
+        let live = keys(body.to_owned());
+        assert_eq!(live[0], live[1]);
+    }
+
+    #[test]
+    fn a_live_playlist_that_ends_keeps_the_identities_it_had() {
+        let live = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.0,\na.ts\n";
+        let mut c = ctx();
+        let before = plan(&snapshot(0, live), &mut c).descriptors;
+        let after = plan(&snapshot(1, &format!("{live}#EXT-X-ENDLIST\n")), &mut c).descriptors;
+        assert_eq!(before[0].key, after[0].key);
     }
 
     #[test]

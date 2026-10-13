@@ -39,8 +39,9 @@ pub struct SegmentKey {
     /// Manifest context the resource belongs to, for protocols that reuse a
     /// URL across contexts whose bodies differ: a DASH template without
     /// $RepresentationID$ can name the same URL in two Periods or
-    /// Representations. `None` for HLS, where the URL alone identifies the
-    /// resource.
+    /// Representations. For HLS it is `None`, the URL alone identifying the
+    /// resource, except in a finished playlist, where the MSN tells apart
+    /// the positions at which one URL is listed.
     pub scope: Option<Arc<str>>,
 }
 
