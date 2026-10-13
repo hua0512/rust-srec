@@ -25,7 +25,7 @@ use crate::session::DownloadEvent;
 use super::control::{SegmentPlanner, SourceFailure, TerminalCause};
 use super::fetch::{FetchContext, fetch_and_process};
 use super::input::{AssemblerInput, PendingQueue};
-use super::store::{SegmentOutcome, SegmentStateStore, StoreConfig};
+use super::store::{MediaWindow, SegmentOutcome, SegmentStateStore, StoreConfig};
 
 /// Why the reactor stopped. Reported to the runtime for logging; the
 /// consumer-visible effect (StreamEnded / nothing / `Err`) is delivered
@@ -62,9 +62,10 @@ pub struct ReactorConfig {
     /// The assembler's emit cursor, for a stream that waits for every
     /// segment (VOD); `None` for a live stream, whose gap policy skips.
     ///
-    /// Media is then admitted only below the cursor plus the reorder
-    /// buffer's segment limit (`buffer_limits.max_segments`, when set). The
-    /// assembler skips the segment it waits for once the buffer reaches that
+    /// Media is then admitted only while the segments and bytes beyond the
+    /// cursor stay inside the reorder buffer's limits
+    /// (`buffer_limits.max_segments` and `max_bytes`, when set). The
+    /// assembler skips the segment it waits for once the buffer reaches a
     /// limit, so without this bound a segment that is slow or retried while
     /// later ones complete would be skipped although it is still coming.
     pub emit_cursor: Option<watch::Receiver<u64>>,
@@ -83,9 +84,14 @@ pub async fn run_reactor<P: SegmentPlanner>(
     let mut inflight: JoinSet<SegmentOutcome> = JoinSet::new();
     let budget = Arc::clone(&fetch_ctx.budget);
     let max_concurrency = config.max_concurrency.max(1);
-    let reorder_window = fetch_ctx.config.output.buffer_limits.max_segments;
-    let reorder_window = u64::try_from(reorder_window).unwrap_or(u64::MAX);
-    let mut emit_cursor = config.emit_cursor.filter(|_| reorder_window > 0);
+    let limits = &fetch_ctx.config.output.buffer_limits;
+    let window_segments = u64::try_from(limits.max_segments).unwrap_or(u64::MAX);
+    // Download estimates can be off, so stay clear of the assembler's own
+    // byte limit.
+    let window_bytes = u64::try_from(limits.max_bytes).unwrap_or(u64::MAX) / 5 * 4;
+    let mut emit_cursor = config
+        .emit_cursor
+        .filter(|_| window_segments > 0 || window_bytes > 0);
 
     // `ending`: a terminal cause was seen — drain known work, then finish.
     // `end_queued`: AssemblerInput::End enqueued exactly once.
@@ -140,11 +146,13 @@ pub async fn run_reactor<P: SegmentPlanner>(
             && pending.len() < config.max_pending_items
         {
             let slots = max_concurrency - inflight.len();
-            let media_limit = emit_cursor
-                .as_mut()
-                .map(|cursor| cursor.borrow_and_update().saturating_add(reorder_window));
+            let window = emit_cursor.as_mut().map(|cursor| MediaWindow {
+                cursor: *cursor.borrow_and_update(),
+                segments: window_segments,
+                bytes: window_bytes,
+            });
             let (jobs, admission_inputs) =
-                store.next_ready_jobs_below(slots, Instant::now(), &budget, media_limit);
+                store.next_ready_jobs_within(slots, Instant::now(), &budget, window);
             for input in admission_inputs {
                 pending.push(input);
             }
