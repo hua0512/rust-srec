@@ -196,7 +196,10 @@ impl FailedInits {
 /// if the stream switches back to it — whenever media at the cursor needs it.
 /// The store never re-downloads a completed init, so this is the only copy.
 /// Bounded least-recently-used; an evicted key is unresolved again, with the
-/// same fail-safes as [`FailedInits`].
+/// same fail-safes as [`FailedInits`]. An init that has not been emitted yet
+/// and may govern media at or beyond the cursor is never evicted: a finished
+/// stream fetches its inits ahead of their media, and evicting one would leave
+/// that media waiting for a map that is never fetched again.
 #[derive(Debug)]
 struct RetainedInits {
     /// `0` disables the limit.
@@ -228,7 +231,8 @@ impl RetainedInits {
         self.clock
     }
 
-    fn insert(&mut self, payload: SegmentPayload) {
+    /// `cursor` is the next media sequence number the stream emits.
+    fn insert(&mut self, payload: SegmentPayload, cursor: u64) {
         let key = payload.descriptor().key.clone();
         let now = self.tick();
         match self.entries.get_mut(&key) {
@@ -252,6 +256,7 @@ impl RetainedInits {
             && let Some(oldest) = self
                 .entries
                 .iter()
+                .filter(|(_, entry)| entry.emitted || entry.payload.msn() < cursor)
                 .min_by_key(|(_, entry)| entry.last_used)
                 .map(|(key, _)| key.clone())
         {
@@ -796,7 +801,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         // emitted. Not counted in current_buffer_bytes: they are not media.
         if payload.is_init() {
             self.latest_init_key = Some(payload.descriptor().key.clone());
-            self.inits.insert(payload);
+            self.inits
+                .insert(payload, self.expected_next_media_sequence);
             // An init can unblock already-buffered media gated on its key.
             return self.try_emit().await;
         }
@@ -1995,6 +2001,37 @@ mod tests {
                 "https://e.com/seg102.m4s",
                 "https://e.com/a.mp4",
                 "https://e.com/seg103.m4s",
+            ]
+        );
+        h.join.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn inits_fetched_ahead_of_their_media_are_not_evicted_before_use() {
+        let mut config = HlsConfig::default();
+        config.output_config.max_pending_init_segments = 2;
+        let mut h = spawn_assembler(config, false, 100);
+        let (init_a, key_a) = mp4_init_keyed("https://e.com/a.mp4", 100);
+        let (init_b, key_b) = mp4_init_keyed("https://e.com/b.mp4", 101);
+        let (init_c, key_c) = mp4_init_keyed("https://e.com/c.mp4", 102);
+        // A finished stream's inits all arrive before the first media.
+        h.input_tx.send(init_a).await.unwrap();
+        h.input_tx.send(init_b).await.unwrap();
+        h.input_tx.send(init_c).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(100, &key_a)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(101, &key_b)).await.unwrap();
+        h.input_tx.send(mp4_media_keyed(102, &key_c)).await.unwrap();
+        h.input_tx.send(AssemblerInput::End).await.unwrap();
+        let (uris, _) = collect_until_stream_end(&mut h).await;
+        assert_eq!(
+            uris,
+            [
+                "https://e.com/a.mp4",
+                "https://e.com/seg100.m4s",
+                "https://e.com/b.mp4",
+                "https://e.com/seg101.m4s",
+                "https://e.com/c.mp4",
+                "https://e.com/seg102.m4s",
             ]
         );
         h.join.await.unwrap();

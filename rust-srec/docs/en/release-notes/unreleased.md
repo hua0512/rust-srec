@@ -11,6 +11,7 @@
 - Fixed Mesio refusing to record a stream whose address does not show whether it is HLS or FLV. It now uses the format the platform reports.
 - Fixed Mesio sometimes leaving segments out of a recording of a finished HLS stream (a replay or VOD). When a segment downloaded slowly or had to be retried while many later ones finished, it was dropped and the recording still ended normally without it. This also applied to high-bitrate streams with large segments.
 - Fixed Mesio leaving out repeated segments when recording a finished HLS stream (a replay or VOD). If a playlist listed the same segment more than once, only the last occurrence was recorded.
+- Fixed Mesio hanging when recording a finished HLS stream (a replay or VOD) in fMP4 format that switches between more than eight different initialization segments: recording stopped at the first switch and never finished.
 - When every segment of an HLS stream fails to download, Mesio now reports why, such as the HTTP status or a network error, instead of "stream is empty". When an fMP4 stream's initialization segment cannot be downloaded, Mesio stops downloading the media that depends on it, which could only be thrown away, so such an attempt ends sooner.
 
 ## Web interface
