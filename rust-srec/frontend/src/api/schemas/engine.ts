@@ -159,6 +159,8 @@ export const MesioHlsFetcherConfigOverrideSchema = hlsGroup({
   max_key_retries: optionalInt(0),
   key_retry_delay_base_ms: optionalInt(0),
   max_key_retry_delay_ms: optionalInt(0),
+  progress_emit_min_bytes: optionalInt(0),
+  progress_emit_min_interval_ms: optionalInt(0),
 });
 
 export const MesioHlsProcessorConfigOverrideSchema = hlsGroup({

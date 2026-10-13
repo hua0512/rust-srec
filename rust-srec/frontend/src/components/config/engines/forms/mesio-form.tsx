@@ -1,303 +1,514 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Database,
-  Wrench,
-  Film,
-  Settings2,
-  RefreshCw,
-  Layers,
-  Combine,
-} from 'lucide-react';
+import { useFormContext, useWatch } from 'react-hook-form';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { MesioHlsForm } from './mesio-hls-form';
-import { MesioDashForm } from './mesio-dash-form';
+import { useLingui } from '@lingui/react';
+import { Info, RotateCcw } from 'lucide-react';
 import {
-  EngineOverrideProvider,
-  SettingInput,
-  SettingSelect,
-  SettingSwitch,
-  SettingGrid,
-  useEffectiveValue,
-  type SettingOption,
-} from './setting-fields';
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   MesioConfigOverrideSchema,
-  resolveDashSettings,
   type MesioConfig,
 } from '@/api/schemas/engine';
+import { cn } from '@/lib/utils';
+import {
+  DisableableDurationField,
+  EngineOverrideProvider,
+  FieldError,
+  KeyValueField,
+  PolicyField,
+  SettingGrid,
+  SettingInput,
+  SettingSelect,
+  SettingSwitch,
+  useEffectiveValue,
+  useEngineOverride,
+} from './setting-fields';
+import {
+  MESIO_PROTOCOLS,
+  changedCount,
+  protocolFields,
+  type Dependency,
+  type FieldSpec,
+  type ProtocolSpec,
+  type SectionSpec,
+} from './mesio-sections';
 
-interface SubFormProps {
-  basePath: string;
+const SECTION_HEADING =
+  'text-xs font-semibold uppercase tracking-wider text-muted-foreground';
+
+/** Row of an engine's on/off setting. An override's shows a select under its label instead. */
+const SWITCH_ROW =
+  'rounded-xl border border-border/40 bg-muted/5 px-3 py-2.5 shadow-none';
+
+/** How many of `fields` hold something other than their default (an override: hold anything). */
+function useChangedCount(basePath: string, fields: readonly FieldSpec[]) {
+  const { isOverride } = useEngineOverride();
+  const config = useWatch({ name: basePath }) as unknown;
+  return changedCount(config, fields, isOverride);
 }
 
-const SEQUENCE_HEADER_MODE_OPTIONS: readonly SettingOption[] = [
-  {
-    value: 'crc32',
-    label: 'crc32',
-    content: (
-      <div className="flex flex-col gap-0.5">
-        <span className="font-medium text-xs">crc32 (Default)</span>
-        <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
-          <Trans>
-            Split on any raw header change. Safe but may cause extra files.
-          </Trans>
-        </span>
-      </div>
-    ),
-  },
-  {
-    value: 'semantic_signature',
-    label: 'semantic_signature',
-    content: (
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-xs">semantic_signature</span>
-          <Badge
-            variant="secondary"
-            className="text-[8px] h-3.5 px-1 bg-orange-500/10 text-orange-600 border-none font-bold"
-          >
-            <Trans>NEW</Trans>
-          </Badge>
-        </div>
-        <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
-          <Trans>
-            Split only on codec configuration changes. Reduces false splits.
-          </Trans>
-        </span>
-      </div>
-    ),
-  },
-];
-
-const FLV_SWITCH_ROW =
-  'rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10';
-
-const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
-  const flvPath = `${basePath}.flv_fix`;
-  const duplicateTagFiltering = useEffectiveValue(
-    `${flvPath}.duplicate_tag_filtering`,
-    false,
+/** `compact` shows only the count, for a tab strip that must fit a phone's width. */
+function ChangedBadge({
+  basePath,
+  fields,
+  compact = false,
+}: {
+  basePath: string;
+  fields: readonly FieldSpec[];
+  compact?: boolean;
+}) {
+  const { i18n } = useLingui();
+  const { isOverride } = useEngineOverride();
+  const count = useChangedCount(basePath, fields);
+  if (count === 0) return null;
+  const text = isOverride
+    ? i18n._(msg`${count} overridden`)
+    : i18n._(msg`${count} changed`);
+  return (
+    <Badge
+      variant="secondary"
+      title={compact ? text : undefined}
+      className="h-5 min-w-5 shrink-0 justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums"
+    >
+      {compact ? (
+        <>
+          <span aria-hidden="true">{count}</span>
+          <span className="sr-only">{text}</span>
+        </>
+      ) : (
+        text
+      )}
+    </Badge>
   );
-  const filterPath = `${flvPath}.duplicate_tag_filter_config`;
+}
+
+/** Returns a section's settings to their defaults, or in an override to the engine's settings. */
+function SectionReset({
+  basePath,
+  fields,
+  className,
+}: {
+  basePath: string;
+  fields: readonly FieldSpec[];
+  className?: string;
+}) {
+  const { isOverride, setField } = useEngineOverride();
+  const count = useChangedCount(basePath, fields);
+  if (count === 0) return null;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={cn(
+        'h-7 shrink-0 px-2 text-xs text-muted-foreground',
+        className,
+      )}
+      onClick={() => {
+        for (const field of fields) {
+          setField(`${basePath}.${field.path}`, undefined);
+        }
+      }}
+    >
+      <RotateCcw className="h-3.5 w-3.5" />
+      {isOverride ? (
+        <Trans>Use engine settings</Trans>
+      ) : (
+        <Trans>Restore defaults</Trans>
+      )}
+    </Button>
+  );
+}
+
+function FieldControl({
+  field,
+  basePath,
+}: {
+  field: FieldSpec;
+  basePath: string;
+}) {
+  const { i18n } = useLingui();
+  const { isOverride } = useEngineOverride();
+  const name = `${basePath}.${field.path}`;
+  const label = i18n._(field.label);
+  const description = field.description && i18n._(field.description);
+
+  switch (field.kind) {
+    case 'number':
+      return (
+        <SettingInput
+          name={name}
+          label={label}
+          description={description}
+          fallback={field.fallback}
+          fallbackLabel={field.fallbackLabel}
+        />
+      );
+    case 'text':
+      return (
+        <SettingInput
+          name={name}
+          label={label}
+          description={description}
+          fallback={field.fallback}
+          fallbackLabel={field.fallbackLabel}
+          placeholder={field.placeholder && i18n._(field.placeholder)}
+          numeric={false}
+        />
+      );
+    case 'switch':
+      return (
+        <SettingSwitch
+          name={name}
+          label={label}
+          description={description}
+          fallback={field.fallback}
+          className={isOverride ? undefined : SWITCH_ROW}
+        />
+      );
+    case 'select':
+      return (
+        <SettingSelect
+          name={name}
+          label={label}
+          description={description}
+          options={field.options}
+          fallback={field.fallback}
+        />
+      );
+    case 'policy':
+      return (
+        <PolicyField
+          name={name}
+          label={label}
+          description={description}
+          options={field.options}
+          fallback={field.fallback}
+        />
+      );
+    case 'pairs':
+      return (
+        <KeyValueField name={name} label={label} description={description} />
+      );
+    case 'disableable':
+      return (
+        <DisableableDurationField
+          name={name}
+          label={label}
+          description={description}
+          fallback={field.fallback}
+          seed={field.seed}
+        />
+      );
+  }
+}
+
+/**
+ * Settings that only matter while another setting is on: shown, so a value they hold stays
+ * visible, but disabled.
+ */
+function Requires({
+  basePath,
+  requires,
+  children,
+}: {
+  basePath: string;
+  requires: Dependency;
+  children: React.ReactNode;
+}) {
+  const enabled = useEffectiveValue(
+    `${basePath}.${requires.path}`,
+    requires.fallback,
+  );
+  return (
+    <fieldset
+      disabled={!enabled}
+      className={cn('min-w-0', !enabled && 'opacity-50')}
+    >
+      {children}
+    </fieldset>
+  );
+}
+
+type FieldGroup = {
+  layout: 'cells' | 'switches' | 'wide';
+  fields: FieldSpec[];
+};
+
+/** Consecutive fields that share a layout: inputs and selects, on/off rows, or full-width lists. */
+function groupFields(fields: readonly FieldSpec[]): FieldGroup[] {
+  const groups: FieldGroup[] = [];
+  for (const field of fields) {
+    const layout =
+      field.kind === 'switch'
+        ? 'switches'
+        : field.kind === 'pairs'
+          ? 'wide'
+          : 'cells';
+    const last = groups[groups.length - 1];
+    if (last && last.layout === layout && layout !== 'wide') {
+      last.fields.push(field);
+    } else {
+      groups.push({ layout, fields: [field] });
+    }
+  }
+  return groups;
+}
+
+/**
+ * The validation message of the DASH track switches, which may not both be off. The rule spans two
+ * fields, so it is checked again whenever either changes.
+ */
+function DashTrackCheck({ basePath }: { basePath: string }) {
+  const { control, trigger } = useFormContext();
+  const errorPath = `${basePath}.dash.include_audio`;
+  const [video, audio] = useWatch({
+    control,
+    name: [`${basePath}.dash.include_video`, errorPath],
+  }) as unknown[];
+  const mounted = React.useRef(false);
+  React.useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    void trigger(errorPath);
+  }, [video, audio, errorPath, trigger]);
+  return <FieldError name={errorPath} />;
+}
+
+function SectionFields({
+  section,
+  basePath,
+  disabled,
+}: {
+  section: SectionSpec;
+  basePath: string;
+  disabled: boolean;
+}) {
+  const body = (
+    <div className="space-y-4">
+      {groupFields(section.fields).map((group) => {
+        const controls = group.fields.map((field) =>
+          field.requires ? (
+            <Requires
+              key={field.path}
+              basePath={basePath}
+              requires={field.requires}
+            >
+              <FieldControl field={field} basePath={basePath} />
+            </Requires>
+          ) : (
+            <FieldControl key={field.path} field={field} basePath={basePath} />
+          ),
+        );
+        return group.layout === 'wide' ? (
+          <React.Fragment key={group.fields[0].path}>{controls}</React.Fragment>
+        ) : (
+          <SettingGrid key={group.fields[0].path}>{controls}</SettingGrid>
+        );
+      })}
+      {section.check === 'dash-tracks' && (
+        <DashTrackCheck basePath={basePath} />
+      )}
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
-      <Card className="border-border/50 shadow-sm">
-        <CardContent className="p-4 space-y-6">
-          <SettingSelect
-            name={`${flvPath}.sequence_header_change_mode`}
-            label={<Trans>Stream Splitting Strategy</Trans>}
-            icon={RefreshCw}
-            options={SEQUENCE_HEADER_MODE_OPTIONS}
-            fallback="crc32"
-          />
+    <fieldset
+      disabled={disabled}
+      className={cn('min-w-0', disabled && 'opacity-50')}
+    >
+      {section.requires ? (
+        <Requires basePath={basePath} requires={section.requires}>
+          {body}
+        </Requires>
+      ) : (
+        body
+      )}
+    </fieldset>
+  );
+}
 
-          <div className="space-y-3">
-            <SettingSwitch
-              name={`${flvPath}.drop_duplicate_sequence_headers`}
-              label={<Trans>Optimize Stream Headers</Trans>}
-              description={
-                <Trans>
-                  Suppress redundant headers to reduce player micro-stutter
-                </Trans>
-              }
-              fallback={false}
-              size="default"
-              className={FLV_SWITCH_ROW}
-              switchClassName="scale-90"
-            />
+/** A section's description and the notes on why its settings have no effect. */
+function SectionNote({
+  section,
+  protocol,
+  fixing,
+}: {
+  section: SectionSpec;
+  protocol: ProtocolSpec;
+  fixing: boolean;
+}) {
+  const { i18n } = useLingui();
+  const name = protocol.name;
+  const fixOff = Boolean(section.requiresFix) && !fixing;
+  if (!section.description && !fixOff) return null;
+  return (
+    <p className="flex items-start gap-2 text-xs text-muted-foreground">
+      {fixOff && <Info className="mt-px h-3.5 w-3.5 shrink-0" />}
+      <span>
+        {fixOff ? (
+          <Trans>{name} fixing is off, so these settings have no effect.</Trans>
+        ) : (
+          section.description && i18n._(section.description)
+        )}
+      </span>
+    </p>
+  );
+}
 
-            <SettingSwitch
-              name={`${flvPath}.duplicate_tag_filtering`}
-              label={
-                <>
-                  <Trans>Loop Protection</Trans>
-                  <Badge
-                    variant="secondary"
-                    className="ml-2 text-[8px] h-3.5 px-1 bg-blue-500/10 text-blue-600 border-none font-bold"
-                  >
-                    <Trans>BETA</Trans>
-                  </Badge>
-                </>
-              }
-              description={
-                <Trans>
-                  Filter repeated tags and detect stream replay loops
-                </Trans>
-              }
-              fallback={false}
-              icon={Layers}
-              size="default"
-              className={FLV_SWITCH_ROW}
-              switchClassName="scale-90"
-            />
+const ProtocolPanel = React.memo(function ProtocolPanel({
+  protocol,
+  basePath,
+}: {
+  protocol: ProtocolSpec;
+  basePath: string;
+}) {
+  const { i18n } = useLingui();
+  const { isOverride } = useEngineOverride();
+  const fixing = useEffectiveValue(
+    `${basePath}.${protocol.fix.path}`,
+    protocol.fix.fallback,
+  );
+  const sectionDisabled = (section: SectionSpec) =>
+    Boolean(section.requiresFix) && !fixing;
+  const { essentials } = protocol;
 
-            {duplicateTagFiltering && (
-              <div className="grid gap-3 pt-1">
-                <SettingGrid className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4">
-                  <SettingInput
-                    name={`${filterPath}.window_capacity_tags`}
-                    label={<Trans>Filter Window Size</Trans>}
-                    fallback={8192}
-                    size="sm"
-                  />
-                  <SettingInput
-                    name={`${filterPath}.replay_backjump_threshold_ms`}
-                    label={<Trans>Backjump Threshold</Trans>}
-                    fallback={2000}
-                    size="sm"
-                  />
-                  <div className="sm:col-span-2 pt-1 border-t border-blue-500/10">
-                    <SettingSwitch
-                      name={`${filterPath}.enable_replay_offset_matching`}
-                      label={<Trans>Offset Consistency Check</Trans>}
-                      fallback={false}
-                    />
-                  </div>
-                </SettingGrid>
-              </div>
-            )}
+  return (
+    <div className="space-y-6">
+      <div
+        className={cn(
+          'rounded-xl border border-border/50 bg-muted/10 p-4',
+          !isOverride && 'py-3',
+        )}
+      >
+        <SettingSwitch
+          name={`${basePath}.${protocol.fix.path}`}
+          label={i18n._(protocol.fix.label)}
+          description={
+            protocol.fix.description && i18n._(protocol.fix.description)
+          }
+          fallback={protocol.fix.fallback}
+          size="default"
+          switchClassName=""
+        />
+      </div>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <div className="flex min-h-7 items-center justify-between gap-3">
+            <h3 className={SECTION_HEADING}>{i18n._(essentials.label)}</h3>
+            <SectionReset basePath={basePath} fields={essentials.fields} />
           </div>
-        </CardContent>
-      </Card>
+          <SectionNote
+            section={essentials}
+            protocol={protocol}
+            fixing={fixing}
+          />
+        </div>
+        <SectionFields
+          section={essentials}
+          basePath={basePath}
+          disabled={sectionDisabled(essentials)}
+        />
+      </section>
+
+      {protocol.advanced.length > 0 && (
+        <section className="space-y-1">
+          <h3 className={SECTION_HEADING}>
+            <Trans>Advanced</Trans>
+          </h3>
+          <Accordion type="multiple" className="w-full">
+            {protocol.advanced.map((section) => {
+              const Icon = section.icon;
+              return (
+                <AccordionItem
+                  key={section.id}
+                  value={section.id}
+                  className="border-border/50"
+                >
+                  <AccordionTrigger className="items-center py-3 hover:no-underline">
+                    <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm font-medium">
+                        {i18n._(section.label)}
+                      </span>
+                      <ChangedBadge
+                        basePath={basePath}
+                        fields={section.fields}
+                      />
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-4 pb-5 pt-1">
+                    <div className="flex items-start justify-between gap-3 empty:hidden">
+                      <SectionNote
+                        section={section}
+                        protocol={protocol}
+                        fixing={fixing}
+                      />
+                      <SectionReset
+                        basePath={basePath}
+                        fields={section.fields}
+                        className="ml-auto"
+                      />
+                    </div>
+                    <SectionFields
+                      section={section}
+                      basePath={basePath}
+                      disabled={sectionDisabled(section)}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        </section>
+      )}
     </div>
   );
 });
-MesioFlvForm.displayName = 'MesioFlvForm';
 
-/** Classes of the three stream-fixing toggles, tinted per protocol. */
-function fixToggleClass(accent: string) {
-  return `rounded-xl border border-border/40 bg-gradient-to-br from-background/50 p-4 shadow-sm transition-all ${accent}`;
-}
+const PROTOCOL_FIELDS = new Map(
+  MESIO_PROTOCOLS.map((protocol) => [protocol.id, protocolFields(protocol)]),
+);
 
-function MesioSettings({
-  basePath,
-  inheritedDash,
-}: {
-  basePath: string;
-  inheritedDash?: ReturnType<typeof resolveDashSettings>;
-}) {
-  // FLV tuning applies only while FLV fixing is on. The HLS and DASH settings also cover
-  // downloading, so they apply whether or not fixing is on.
-  const fixFlv = useEffectiveValue(`${basePath}.fix_flv`, true);
-
+function MesioSettings({ basePath }: { basePath: string }) {
   return (
-    <Tabs defaultValue="general" className="w-full space-y-4">
-      <TabsList className="w-full bg-background/40 border border-border/40 p-1 py-1.5 h-auto overflow-x-auto no-scrollbar justify-start">
-        <TabsTrigger value="general" className="flex-1 min-w-[100px] gap-2">
-          <Settings2 className="w-4 h-4 text-primary" />
-          <Trans>General</Trans>
-        </TabsTrigger>
-        <TabsTrigger
-          value="flv"
-          className="flex-1 min-w-[100px] gap-2 disabled:opacity-50"
-          disabled={!fixFlv}
-        >
-          <Film className="w-4 h-4 text-orange-500" />
-          <Trans>FLV Tuning</Trans>
-          {!fixFlv && (
-            <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">
-              Off
-            </Badge>
-          )}
-        </TabsTrigger>
-        <TabsTrigger value="hls" className="flex-1 min-w-[100px] gap-2">
-          <Wrench className="w-4 h-4 text-blue-500" />
-          <Trans>HLS Tuning</Trans>
-        </TabsTrigger>
-        <TabsTrigger value="dash" className="flex-1 min-w-[100px] gap-2">
-          <Combine className="w-4 h-4 text-emerald-500" />
-          <Trans>DASH Tuning</Trans>
-        </TabsTrigger>
+    <Tabs defaultValue="flv" className="w-full space-y-6">
+      <TabsList className="grid h-auto w-full grid-cols-3 border border-border/40 bg-background/40 p-1">
+        {MESIO_PROTOCOLS.map((protocol) => (
+          <TabsTrigger
+            key={protocol.id}
+            value={protocol.id}
+            className="min-w-0 gap-2 py-1.5"
+          >
+            {protocol.name}
+            <ChangedBadge
+              basePath={basePath}
+              fields={PROTOCOL_FIELDS.get(protocol.id) ?? []}
+              compact
+            />
+          </TabsTrigger>
+        ))}
       </TabsList>
-
-      <TabsContent
-        value="general"
-        className="space-y-6 mt-0 focus-visible:outline-none"
-      >
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="pb-3 pt-4 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Database className="w-4 h-4 text-primary" />
-              <Trans>Global Configuration</Trans>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <SettingInput
-              name={`${basePath}.buffer_size`}
-              label={<Trans>Global Buffer Size (bytes)</Trans>}
-              description={<Trans>Recommended: 8388608 (8 MiB)</Trans>}
-              fallback={8388608}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Three across when there is room, otherwise stacked: never two and an orphan. */}
-        <div className="@container">
-          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-3">
-            <SettingSwitch
-              name={`${basePath}.fix_flv`}
-              label={<Trans>Fix FLV Streams</Trans>}
-              description={
-                <Trans>Enable advanced FLV timestamp repairing</Trans>
-              }
-              fallback={true}
-              icon={Film}
-              size="default"
-              className={fixToggleClass(
-                'to-orange-500/5 hover:border-orange-500/20',
-              )}
-              switchClassName=""
-            />
-            <SettingSwitch
-              name={`${basePath}.fix_hls`}
-              label={<Trans>Fix HLS Discontinuities</Trans>}
-              description={
-                <Trans>Enable advanced HLS segment reconstruction</Trans>
-              }
-              fallback={true}
-              icon={Wrench}
-              size="default"
-              className={fixToggleClass(
-                'to-blue-500/5 hover:border-blue-500/20',
-              )}
-              switchClassName=""
-            />
-            <SettingSwitch
-              name={`${basePath}.fix_dash`}
-              label={<Trans>Fix DASH Streams</Trans>}
-              description={
-                <Trans>
-                  Check merged DASH output and start a new file on stream
-                  changes
-                </Trans>
-              }
-              fallback={true}
-              icon={Combine}
-              size="default"
-              className={fixToggleClass(
-                'to-emerald-500/5 hover:border-emerald-500/20',
-              )}
-              switchClassName=""
-            />
-          </div>
-        </div>
-      </TabsContent>
-
-      <TabsContent value="flv" className="mt-0 focus-visible:outline-none">
-        <MesioFlvForm basePath={basePath} />
-      </TabsContent>
-
-      <TabsContent value="hls" className="mt-0 focus-visible:outline-none">
-        <MesioHlsForm basePath={basePath} />
-      </TabsContent>
-
-      <TabsContent value="dash" className="mt-0 focus-visible:outline-none">
-        <MesioDashForm basePath={basePath} inherited={inheritedDash} />
-      </TabsContent>
+      {MESIO_PROTOCOLS.map((protocol) => (
+        <TabsContent
+          key={protocol.id}
+          value={protocol.id}
+          className="mt-0 focus-visible:outline-none"
+        >
+          <ProtocolPanel protocol={protocol} basePath={basePath} />
+        </TabsContent>
+      ))}
     </Tabs>
   );
 }
@@ -317,11 +528,6 @@ export function MesioForm({
   isOverride = false,
   engineConfig,
 }: MesioFormProps) {
-  const inheritedDash = React.useMemo(
-    () => (isOverride ? resolveDashSettings(engineConfig?.dash) : undefined),
-    [isOverride, engineConfig],
-  );
-
   if (!isOverride) return <MesioSettings basePath={basePath} />;
   return (
     <EngineOverrideProvider
@@ -331,7 +537,7 @@ export function MesioForm({
       }
       schema={MesioConfigOverrideSchema}
     >
-      <MesioSettings basePath={basePath} inheritedDash={inheritedDash} />
+      <MesioSettings basePath={basePath} />
     </EngineOverrideProvider>
   );
 }

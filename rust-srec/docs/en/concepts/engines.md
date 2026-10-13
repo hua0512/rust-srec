@@ -24,6 +24,8 @@ Streamlink can also be an **extractor**, which resolves the stream URL before do
 
 For Mesio, enable FLV, HLS and DASH Consistency Fix when you need their repair and segmentation features. They cannot recover media the source never delivered.
 
+A Mesio engine's settings have one tab each for FLV, HLS and DASH. Each tab starts with its consistency fix switch and the settings most recordings need; the rest are grouped under **Advanced**. Each tab and section shows how many of its settings differ from the default, or in a template override, how many the template sets, and **Restore defaults** (**Use engine settings** in a template) clears them for one section.
+
 ## 2. FLV Consistency Fix
 
 When enabled, FLV items pass through one ordered repair chain before the writer. The chain preserves media payloads while fixing container-level structure:
@@ -60,7 +62,7 @@ Memory use per recording while Loop Protection is on:
 - Offset Consistency Check holds up to another 1 MiB while it checks a possible replay.
 - Nothing is allocated while Loop Protection is off.
 
-The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It is not shown in the web form.
+The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It is under **Advanced → Loop protection** on the FLV tab.
 
 ## 3. Raw Data Mode
 
@@ -91,7 +93,7 @@ Mesio records MPEG-DASH (`.mpd`) streams, live or finished. When video and audio
 
 **Fix DASH Streams** (`fix_dash`, default on) applies the same consistency fix as HLS to the merged output: it starts a new file on incompatible stream changes and enforces file-size and duration limits.
 
-The other settings are on the **DASH Tuning** tab of a Mesio engine and are stored in its `dash` object. An empty field uses the default below.
+The other settings are on the **DASH** tab of a Mesio engine and are stored in its `dash` object. An empty field uses the default below.
 
 | Setting | JSON field | Default | Meaning |
 | --- | --- | --- | --- |
@@ -108,7 +110,7 @@ The other settings are on the **DASH Tuning** tab of a Mesio engine and are stor
 | Minimum Refresh Interval (ms) | `dash.min_refresh_interval_ms` | `1000` | Shortest time between live manifest refreshes; the manifest's own update period applies when longer. |
 | Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. Also how many times a failed read of a stream's index is retried. |
 
-Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. In a template's [engine override](../reference/configuration-overrides.md#engines-override-template-only), each DASH setting can use the engine's setting (the field is left out), the default (`null`), or a custom value, and **Reset all DASH settings to defaults** stores `"dash": null`. A template cannot be saved if, together with the engine's settings, it would record neither video nor audio.
+Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. In a template's [engine override](../reference/configuration-overrides.md#engines-override-template-only), each DASH setting can use the engine's setting (the field is left out), the default (`null`), or a custom value. An override storing `"dash": null` resets every DASH setting to its default. A template cannot be saved if, together with the engine's settings, it would record neither video nor audio.
 
 To prefer DASH when a platform offers several formats, add `dash` to the streamer's or template's **Preferred Formats**.
 

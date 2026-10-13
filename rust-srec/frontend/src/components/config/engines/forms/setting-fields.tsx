@@ -1,11 +1,12 @@
 import React from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext, useFormState, useWatch } from 'react-hook-form';
 import type { I18n, MessageDescriptor } from '@lingui/core';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import type { LucideIcon } from 'lucide-react';
+import { Plus, Trash2, type LucideIcon } from 'lucide-react';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
 import {
   FormControl,
   FormDescription,
@@ -30,6 +31,7 @@ import {
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
+import { useRowKeys } from '@/hooks/use-row-keys';
 import { cn } from '@/lib/utils';
 
 /*
@@ -87,6 +89,11 @@ export function overrideMode(value: unknown): OverrideMode {
   return 'custom';
 }
 
+/** The choice that uses the default, labelled with what that is. */
+function defaultChoice(i18n: I18n, fallback: string): string {
+  return i18n._(msg`Default (${fallback})`);
+}
+
 /** The two non-value choices an override field offers, labelled with what they resolve to. */
 export function OverrideStateItems({
   inherited,
@@ -101,9 +108,7 @@ export function OverrideStateItems({
       <SelectItem value={INHERIT}>
         {i18n._(msg`Use engine setting (${inherited})`)}
       </SelectItem>
-      <SelectItem value={RESET}>
-        {i18n._(msg`Default (${fallback})`)}
-      </SelectItem>
+      <SelectItem value={RESET}>{defaultChoice(i18n, fallback)}</SelectItem>
     </>
   );
 }
@@ -295,6 +300,13 @@ function OverrideDescription({ children }: { children?: React.ReactNode }) {
   return children ? <p className={CONFIG_DESCRIPTION}>{children}</p> : null;
 }
 
+/** A message, or a literal such as an identifier that is not translated. */
+export type SettingText = MessageDescriptor | string;
+
+function translate(i18n: I18n, text: SettingText): string {
+  return typeof text === 'string' ? text : i18n._(text);
+}
+
 interface SettingInputProps {
   name: string;
   label: React.ReactNode;
@@ -302,7 +314,9 @@ interface SettingInputProps {
   /** The engine default, used when the field is unset. */
   fallback: number | string;
   /** How the default is shown when its raw value would not explain it. */
-  fallbackLabel?: string;
+  fallbackLabel?: SettingText;
+  /** Placeholder of an engine's empty input, in place of naming the default. */
+  placeholder?: string;
   numeric?: boolean;
   size?: 'sm' | 'default';
 }
@@ -317,6 +331,7 @@ export function SettingInput({
   description,
   fallback,
   fallbackLabel,
+  placeholder,
   numeric = true,
   size,
 }: SettingInputProps) {
@@ -325,7 +340,10 @@ export function SettingInput({
   const defaultPlaceholder = useDefaultPlaceholder();
   const { isOverride, inherited, setField } = useEngineOverride();
   const value = useSettingValue(name);
-  const shownDefault = fallbackLabel ?? String(fallback);
+  const shownDefault =
+    fallbackLabel === undefined
+      ? String(fallback)
+      : translate(i18n, fallbackLabel);
 
   if (!isOverride) {
     return (
@@ -340,7 +358,7 @@ export function SettingInput({
                 {...field}
                 value={field.value ?? ''}
                 className={cn(CONFIG_INPUT, 'font-mono')}
-                placeholder={defaultPlaceholder(shownDefault)}
+                placeholder={placeholder ?? defaultPlaceholder(shownDefault)}
               />
             </FormControl>
             {description && (
@@ -443,10 +461,13 @@ export function SettingSwitch({
 }: SettingSwitchProps) {
   const { i18n } = useLingui();
   const labelId = React.useId();
+  const defaultPlaceholder = useDefaultPlaceholder();
   const { isOverride, inherited, setField } = useEngineOverride();
   const value = useSettingValue(name) as boolean | null | undefined;
 
   if (!isOverride) {
+    // A switch has no empty state to name the default in, so it names it once changed.
+    const changed = typeof value === 'boolean' && value !== fallback;
     return (
       <FormField
         name={name}
@@ -461,9 +482,11 @@ export function SettingSwitch({
               <ConfigFieldLabel icon={icon} size={size}>
                 {label}
               </ConfigFieldLabel>
-              {description && (
+              {(description || changed) && (
                 <FormDescription className={CONFIG_DESCRIPTION}>
                   {description}
+                  {description && changed && ' '}
+                  {changed && defaultPlaceholder(describeValue(i18n, fallback))}
                 </FormDescription>
               )}
             </div>
@@ -523,15 +546,13 @@ export function SettingSwitch({
 
 export interface SettingOption {
   value: string;
-  /** A message, or a literal such as an identifier that is not translated. */
-  label: MessageDescriptor | string;
-  /** Richer content for the option in the list; the label names it elsewhere. */
-  content?: React.ReactNode;
+  label: SettingText;
 }
 
 interface SettingSelectProps {
   name: string;
   label: React.ReactNode;
+  description?: React.ReactNode;
   options: readonly SettingOption[];
   /** The option in effect when the field is unset. */
   fallback: string;
@@ -542,6 +563,7 @@ interface SettingSelectProps {
 export function SettingSelect({
   name,
   label,
+  description,
   options,
   fallback,
   icon,
@@ -552,10 +574,9 @@ export function SettingSelect({
   const value = useSettingValue(name) as string | null | undefined;
   const describe = (candidate: unknown) => {
     const option = options.find((entry) => entry.value === candidate);
-    if (!option) return describeValue(i18n, candidate);
-    return typeof option.label === 'string'
-      ? option.label
-      : i18n._(option.label);
+    return option
+      ? translate(i18n, option.label)
+      : describeValue(i18n, candidate);
   };
   const engineValue = inherited(name);
 
@@ -580,7 +601,6 @@ export function SettingSelect({
           )
         }
       >
-        {/* Kept to one line: an option's richer list content would otherwise fill it. */}
         <SelectTrigger
           aria-labelledby={labelId}
           className={CONFIG_SELECT_TRIGGER}
@@ -598,14 +618,466 @@ export function SettingSelect({
           )}
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
-              {option.content ??
-                (typeof option.label === 'string'
-                  ? option.label
-                  : i18n._(option.label))}
+              {translate(i18n, option.label)}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
+      <OverrideDescription>{description}</OverrideDescription>
     </div>
   );
+}
+
+/** The selects of the policy, list and timeout fields below, which name what each choice means. */
+function StateSelect({
+  labelId,
+  value,
+  onValueChange,
+  children,
+}: {
+  labelId: string;
+  value: string;
+  onValueChange: (next: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger
+        aria-labelledby={labelId}
+        className={OVERRIDE_SELECT_TRIGGER}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className={CONFIG_SELECT_CONTENT}>
+        {children}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** A value of a policy's payload, as option text. */
+export interface PolicyPayload {
+  key: string;
+  label: MessageDescriptor;
+  /** Unit after the label and the value, such as `ms`. */
+  unit?: string;
+  description?: MessageDescriptor;
+  numeric?: boolean;
+}
+
+export interface PolicyOption {
+  type: string;
+  label: MessageDescriptor;
+  /** The value written when this option is chosen. */
+  value: Record<string, unknown>;
+  /** The values the option carries beside its `type`, in the order they are described. */
+  payload?: readonly PolicyPayload[];
+  /** Joins the payload values when the policy is described; `, ` by default. */
+  separator?: string;
+}
+
+/** A policy payload value as text, or `undefined` when it is not a plain value. */
+function scalar(value: unknown): string | undefined {
+  if (typeof value === 'number') return String(value);
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+export function describePolicy(
+  i18n: I18n,
+  options: readonly PolicyOption[],
+  policy: unknown,
+): string {
+  if (!policy || typeof policy !== 'object') return describeValue(i18n, policy);
+  const fields = policy as Record<string, unknown>;
+  const option = options.find((candidate) => candidate.type === fields.type);
+  if (!option) return scalar(fields.type) ?? '';
+  const label = i18n._(option.label);
+  const details = (option.payload ?? []).flatMap((payload) => {
+    const value = scalar(fields[payload.key]);
+    if (value === undefined) return [];
+    return [payload.unit ? `${value} ${payload.unit}` : value];
+  });
+  return details.length > 0
+    ? `${label} (${details.join(option.separator ?? ', ')})`
+    : label;
+}
+
+function PayloadInput({
+  name,
+  payload,
+}: {
+  name: string;
+  payload: PolicyPayload;
+}) {
+  const { i18n } = useLingui();
+  const label = i18n._(payload.label);
+  return (
+    <FormField
+      name={name}
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <ConfigFieldLabel size="sm">
+            {payload.unit ? `${label} (${payload.unit})` : label}
+          </ConfigFieldLabel>
+          <FormControl>
+            <Input
+              type={payload.numeric === false ? 'text' : 'number'}
+              {...field}
+              value={field.value ?? ''}
+              className={cn(CONFIG_INPUT, 'font-mono')}
+            />
+          </FormControl>
+          {payload.description && (
+            <FormDescription className={CONFIG_DESCRIPTION}>
+              {i18n._(payload.description)}
+            </FormDescription>
+          )}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/**
+ * A choice of tagged policy object (`{ type, ...payload }`) whose payload values are edited below
+ * it. In an engine, "Default" leaves the field unset; in an override, the field can also inherit
+ * the engine's choice.
+ */
+export function PolicyField({
+  name,
+  label,
+  description,
+  options,
+  fallback,
+}: {
+  name: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  options: readonly PolicyOption[];
+  /** The policy in effect when the field is unset. */
+  fallback: Record<string, unknown>;
+}) {
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const value = useSettingValue(name) as { type?: string } | null | undefined;
+  const isPolicy = value !== null && typeof value === 'object';
+  const selected = isPolicy
+    ? (value.type ?? RESET)
+    : isOverride
+      ? overrideMode(value)
+      : RESET;
+  const payload =
+    options.find((option) => option.type === selected)?.payload ?? [];
+
+  const select = (next: string) => {
+    const option = options.find((candidate) => candidate.type === next);
+    if (option) setField(name, { ...option.value });
+    else if (next === RESET && isOverride) setField(name, null);
+    else setField(name, undefined);
+  };
+
+  return (
+    <div className="space-y-2">
+      <OverrideLabel labelId={labelId} label={label} />
+      <StateSelect labelId={labelId} value={selected} onValueChange={select}>
+        {isOverride ? (
+          <OverrideStateItems
+            inherited={describePolicy(
+              i18n,
+              options,
+              inherited(name) ?? fallback,
+            )}
+            fallback={describePolicy(i18n, options, fallback)}
+          />
+        ) : (
+          <SelectItem value={RESET}>
+            {defaultChoice(i18n, describePolicy(i18n, options, fallback))}
+          </SelectItem>
+        )}
+        {options.map((option) => (
+          <SelectItem key={option.type} value={option.type}>
+            {i18n._(option.label)}
+          </SelectItem>
+        ))}
+      </StateSelect>
+      {isPolicy && payload.length > 0 && (
+        <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
+          {payload.map((entry) => (
+            <PayloadInput
+              key={entry.key}
+              name={`${name}.${entry.key}`}
+              payload={entry}
+            />
+          ))}
+        </div>
+      )}
+      <OverrideDescription>{description}</OverrideDescription>
+    </div>
+  );
+}
+
+function describePairs(i18n: I18n, pairs: unknown): string {
+  const count = Array.isArray(pairs) ? pairs.length : 0;
+  return count === 0
+    ? i18n._(msg`None`)
+    : i18n._(
+        msg`${plural(count, { one: '# parameter', other: '# parameters' })}`,
+      );
+}
+
+/** A list of key and value pairs, such as query parameters. */
+export function KeyValueField({
+  name,
+  label,
+  description,
+}: {
+  name: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+}) {
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const raw = useSettingValue(name) as
+    | Array<[string, string]>
+    | null
+    | undefined;
+  const value = raw ?? [];
+  const rowKeys = useRowKeys(value.length);
+  const mode = overrideMode(raw);
+
+  const updateEntry = (idx: number, next: [string, string]) => {
+    setField(
+      name,
+      value.map((pair, i) => (i === idx ? next : pair)),
+    );
+  };
+
+  const removeEntry = (idx: number) => {
+    rowKeys.removeAt(idx);
+    const nextValue = value.filter((_, i) => i !== idx);
+    // In an override, an empty list replaces the engine's parameters with none.
+    setField(name, nextValue.length > 0 || isOverride ? nextValue : undefined);
+  };
+
+  const editor = (
+    <div className="space-y-2">
+      {value.map(([k, v], idx) => (
+        <div
+          key={rowKeys.keyAt(idx)}
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2"
+        >
+          <Input
+            value={k}
+            aria-label={i18n._(msg`Name`)}
+            onChange={(e) => updateEntry(idx, [e.target.value, v])}
+            className={cn(CONFIG_INPUT, 'font-mono')}
+            placeholder="key"
+          />
+          <Input
+            value={v}
+            aria-label={i18n._(msg`Value`)}
+            onChange={(e) => updateEntry(idx, [k, e.target.value])}
+            className={cn(CONFIG_INPUT, 'font-mono')}
+            placeholder="value"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 text-muted-foreground hover:text-destructive"
+            onClick={() => removeEntry(idx)}
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="sr-only">
+              <Trans>Remove</Trans>
+            </span>
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setField(name, [...value, ['', '']])}
+      >
+        <Plus className="h-4 w-4" />
+        <Trans>Add parameter</Trans>
+      </Button>
+    </div>
+  );
+
+  if (!isOverride) {
+    return (
+      <div className="space-y-2">
+        <OverrideLabel labelId={labelId} label={label} />
+        {editor}
+        <OverrideDescription>{description}</OverrideDescription>
+      </div>
+    );
+  }
+
+  const engineValue = inherited(name);
+  return (
+    <div className="space-y-2">
+      <OverrideLabel labelId={labelId} label={label} />
+      <StateSelect
+        labelId={labelId}
+        value={mode}
+        onValueChange={(next) =>
+          setField(
+            name,
+            next === INHERIT
+              ? undefined
+              : next === RESET
+                ? null
+                : Array.isArray(engineValue)
+                  ? engineValue.map((pair) => [...pair])
+                  : [],
+          )
+        }
+      >
+        <OverrideStateItems
+          inherited={describePairs(i18n, engineValue)}
+          fallback={describePairs(i18n, [])}
+        />
+        <SelectItem value="custom">
+          <Trans>Custom</Trans>
+        </SelectItem>
+      </StateSelect>
+      {mode === 'custom' && editor}
+      <OverrideDescription>{description}</OverrideDescription>
+    </div>
+  );
+}
+
+/**
+ * A timeout an engine can also disable, which it stores as `null`. A template override cannot:
+ * the backend merge reads `null` there as "use the default", so an override offers the usual
+ * override states instead.
+ */
+export function DisableableDurationField({
+  name,
+  label,
+  description,
+  fallback,
+  seed,
+}: {
+  name: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  /** The engine default: a duration in ms, or `null` when it is disabled by default. */
+  fallback: number | null;
+  /** The value a custom duration starts from. */
+  seed: number;
+}) {
+  const { i18n } = useLingui();
+  const labelId = React.useId();
+  const { isOverride, inherited, setField } = useEngineOverride();
+  const raw = useSettingValue(name) as unknown;
+  // An emptied input holds `''`, which is unset, not disabled.
+  const value = raw === '' ? undefined : raw;
+  const custom = value !== undefined && value !== null;
+
+  let control: React.ReactNode;
+  if (isOverride) {
+    const engineValue = inherited(name);
+    control = (
+      <StateSelect
+        labelId={labelId}
+        value={overrideMode(value)}
+        onValueChange={(next) =>
+          setField(
+            name,
+            next === INHERIT
+              ? undefined
+              : next === RESET
+                ? null
+                : typeof engineValue === 'number'
+                  ? engineValue
+                  : seed,
+          )
+        }
+      >
+        <OverrideStateItems
+          inherited={describeValue(
+            i18n,
+            engineValue === undefined ? fallback : engineValue,
+          )}
+          fallback={describeValue(i18n, fallback)}
+        />
+        <SelectItem value="custom">
+          <Trans>Custom</Trans>
+        </SelectItem>
+      </StateSelect>
+    );
+  } else {
+    control = (
+      <StateSelect
+        labelId={labelId}
+        value={value === null ? 'disabled' : custom ? 'custom' : 'default'}
+        onValueChange={(next) => {
+          if (next === 'default') setField(name, undefined);
+          else if (next === 'disabled') setField(name, null);
+          else if (!custom) setField(name, seed);
+        }}
+      >
+        <SelectItem value="default">
+          {defaultChoice(i18n, describeValue(i18n, fallback))}
+        </SelectItem>
+        <SelectItem value="disabled">
+          <Trans>Disabled</Trans>
+        </SelectItem>
+        <SelectItem value="custom">
+          <Trans>Custom</Trans>
+        </SelectItem>
+      </StateSelect>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <OverrideLabel labelId={labelId} label={label} />
+      {control}
+      {custom && (
+        <Input
+          type="number"
+          value={
+            typeof value === 'number' || typeof value === 'string' ? value : ''
+          }
+          aria-labelledby={labelId}
+          onChange={(e) =>
+            setField(name, e.target.value === '' ? undefined : e.target.value)
+          }
+          className={cn(CONFIG_INPUT, 'font-mono')}
+          placeholder={String(seed)}
+        />
+      )}
+      <OverrideDescription>
+        {description}
+        {isOverride && (
+          <>
+            {description && ' '}
+            <Trans>
+              A template can't turn this off; do that on the engine.
+            </Trans>
+          </>
+        )}
+      </OverrideDescription>
+    </div>
+  );
+}
+
+/** The validation message of a path that no registered field shows, such as a rule across fields. */
+export function FieldError({ name }: { name: string }) {
+  const { control, getFieldState } = useFormContext();
+  const formState = useFormState({ control, name });
+  const message = getFieldState(name, formState).error?.message;
+  return message ? (
+    <p role="alert" className="text-destructive text-sm">
+      {message}
+    </p>
+  ) : null;
 }
