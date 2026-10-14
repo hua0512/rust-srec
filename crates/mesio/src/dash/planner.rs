@@ -1968,6 +1968,150 @@ mod tests {
         assert_ne!(second_init, first_init, "but a distinct resource");
     }
 
+    /// `@duration` Periods of 2 s segments: `(id, start)`, the last one
+    /// open, each numbered from 1 under its own URLs.
+    fn duration_periods(ast: &str, periods: &[(&str, u64)]) -> String {
+        let periods: String = periods
+            .iter()
+            .map(|(id, start)| {
+                format!(
+                    r#"<Period id="{id}" start="PT{start}S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="{id}/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#
+                )
+            })
+            .collect();
+        format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="{ast}" minimumUpdatePeriod="PT2S">
+  {periods}
+</MPD>"#
+        )
+    }
+
+    fn planned_periods(outcome: &PlanOutcome) -> Vec<(u64, Option<&str>, u64)> {
+        media(outcome)
+            .iter()
+            .map(|(msn, meta, _)| (*msn, meta.period_id.as_deref(), meta.number))
+            .collect()
+    }
+
+    fn absent_periods(outcome: &PlanOutcome) -> Vec<(Option<&str>, u64)> {
+        outcome
+            .notices
+            .iter()
+            .filter_map(|notice| match notice {
+                EngineNotice::TrackAbsent {
+                    section_id,
+                    after_sequence,
+                    ..
+                } => Some((section_id.as_deref(), *after_sequence)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Plans the open p0 of `duration_periods` from 8 s through 14 s:
+    /// ordinals 0–3 are its segments 4–7, the last two (10–14 s) past
+    /// where p1 will start.
+    fn plan_open_p0_through_14s(fixture: &mut Fixture) {
+        let open = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0)]);
+        assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 4)]);
+        fixture.consume_all();
+        fixture.advance(6);
+        assert_eq!(
+            planned_periods(&fixture.plan(&open)),
+            [(1, Some("p0"), 5), (2, Some("p0"), 6), (3, Some("p0"), 7)]
+        );
+    }
+
+    #[test]
+    fn a_period_revealed_inside_planned_media_is_planned_from_its_start() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        plan_open_p0_through_14s(&mut fixture);
+        fixture.consume_all();
+        // p1's first two segments repeat p0's 10–14 s; whether p0's copy
+        // reached the output is only known downstream.
+        let revealed = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0), ("p1", 10)]);
+        let outcome = fixture.plan(&revealed);
+        assert_eq!(
+            planned_periods(&outcome),
+            [(4, Some("p1"), 1), (5, Some("p1"), 2)]
+        );
+        fixture.consume_all();
+        fixture.advance(2);
+        let next = fixture.plan(&revealed);
+        assert_eq!(planned_periods(&next), [(6, Some("p1"), 3)]);
+    }
+
+    #[test]
+    fn a_period_inside_planned_media_lets_later_gaps_be_announced() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        plan_open_p0_through_14s(&mut fixture);
+        fixture.consume_all();
+        // p1 (10–12 s) lies within p0's overhang; p2 carries no video.
+        let revealed = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0), ("p1", 10)])
+            .replace("</MPD>", &format!("{}\n</MPD>", r#"<Period id="p2" start="PT12S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#));
+        let outcome = fixture.plan(&revealed);
+        assert_eq!(planned_periods(&outcome), [(4, Some("p1"), 1)]);
+        assert_eq!(absent_periods(&outcome), [(Some("p2"), 5)]);
+    }
+
+    #[test]
+    fn a_period_inside_planned_media_stays_complete_after_its_segments_expire() {
+        let mpd = |periods: &str| {
+            format!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p0/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  {periods}
+</MPD>"#
+            )
+        };
+        let p1 = r#"<Period id="p1" start="PT10S" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p1/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let p2 = r#"<Period id="p2" start="PT12S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        // The open p0 is planned through 14 s.
+        for step in 0..4 {
+            if step > 0 {
+                fixture.advance(2);
+            }
+            assert_eq!(planned_periods(&fixture.plan(&mpd(""))).len(), 1);
+            fixture.consume_all();
+        }
+        // At 14 s p1 (10–12 s) is revealed while its segment is available.
+        let revealed = fixture.plan(&mpd(p1));
+        assert_eq!(planned_periods(&revealed), [(4, Some("p1"), 1)]);
+        fixture.consume_all();
+        // At 16 s p1's segment has left the window; p2 has no video.
+        fixture.advance(2);
+        let later = fixture.plan(&mpd(&format!("{p1}{p2}")));
+        assert_eq!(absent_periods(&later), [(Some("p2"), 5)]);
+    }
+
     #[test]
     fn a_vanished_representation_is_replaced_by_a_new_epoch() {
         let with = |id: &str| {
@@ -2643,6 +2787,21 @@ mod tests {
                 RejectedContent::Other,
                 RejectedContent::Other,
                 RejectedContent::Unknown
+            ]
+        );
+        // ISO BMFF text is rejected as text, not for its container.
+        let features: Vec<&UnsupportedFeature> = manifest.periods[0]
+            .rejected
+            .iter()
+            .map(|rejected| &rejected.feature)
+            .collect();
+        assert_eq!(
+            features,
+            [
+                &UnsupportedFeature::NotAudioVideo("text/vtt".into()),
+                &UnsupportedFeature::NotAudioVideo("application/mp4".into()),
+                &UnsupportedFeature::NotAudioVideo("image/jpeg".into()),
+                &UnsupportedFeature::MimeType("application/x-unknown".into()),
             ]
         );
         let known = static_periods(&[&format!("{CLEAR_VIDEO}{}", sets[..3].concat())]);

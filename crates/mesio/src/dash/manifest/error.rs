@@ -141,8 +141,13 @@ impl ManifestError {
 pub enum UnsupportedFeature {
     /// `ContentProtection` (DRM or common encryption).
     ContentProtection,
-    /// A container other than ISO BMFF (`video/mp4`, `audio/mp4`), e.g. WebM.
+    /// Audio, video or undeclared content in a container other than ISO
+    /// BMFF audio or video (`video/mp4`, `audio/mp4`), e.g. WebM.
     MimeType(String),
+    /// Content that is neither audio nor video (subtitles and captions,
+    /// images, metadata), with its MIME type: only audio and video are
+    /// recorded, whatever the container.
+    NotAudioVideo(String),
     /// A Representation that is a single resource without a Segment Index:
     /// no segment information, or a `SegmentBase` without `@indexRange`.
     UnindexedResource,
@@ -189,7 +194,14 @@ impl fmt::Display for UnsupportedFeature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ContentProtection => f.write_str("content protection (DRM)"),
-            Self::MimeType(mime) => write!(f, "container `{mime}` (only ISO BMFF is supported)"),
+            Self::MimeType(mime) => write!(
+                f,
+                "MIME type `{mime}` (only `video/mp4` and `audio/mp4` are supported)"
+            ),
+            Self::NotAudioVideo(mime) => write!(
+                f,
+                "`{mime}` text, image or metadata track (only audio and video are recorded)"
+            ),
             Self::UnindexedResource => {
                 f.write_str("single-resource Representation without a Segment Index")
             }
