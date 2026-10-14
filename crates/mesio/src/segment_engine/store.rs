@@ -110,22 +110,12 @@ pub enum SegmentState {
     Discovered,
     /// A due retry placed back in the ready index.
     Queued,
-    InFlight {
-        attempt: u32,
-        started_at: Instant,
-    },
-    Completed {
-        completed_at: Instant,
-    },
+    InFlight,
+    Completed,
     RetryAt {
-        attempt: u32,
         retry_at: Instant,
-        class: FailureClass,
-        reason: Arc<str>,
     },
     TerminalFailed {
-        class: FailureClass,
-        reason: Arc<str>,
         /// What the stream reports should it deliver nothing because of
         /// this; for an init, also what its media fails with.
         error: SharedError,
@@ -143,7 +133,7 @@ impl SegmentState {
         // open until it completes or terminalizes.
         matches!(
             self,
-            Self::Discovered | Self::Queued | Self::InFlight { .. } | Self::RetryAt { .. }
+            Self::Discovered | Self::Queued | Self::InFlight | Self::RetryAt { .. }
         )
     }
 }
@@ -168,20 +158,10 @@ pub enum SegmentOutcome {
     },
 }
 
-impl SegmentOutcome {
-    pub fn key(&self) -> &SegmentKey {
-        match self {
-            Self::Completed { key, .. } | Self::Failed { key, .. } => key,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct RetryNotice {
-    pub key: SegmentKey,
     /// The descriptor the retry will fetch, for the event's resource identity.
     pub descriptor: Arc<SegmentDescriptor>,
-    pub msn: u64,
     pub attempt: u32,
     pub delay: Duration,
     pub reason: Arc<str>,
@@ -198,8 +178,6 @@ pub struct OutcomeEffects {
 #[derive(Debug)]
 pub struct ReadyJob {
     pub descriptor: Arc<SegmentDescriptor>,
-    /// 1-based attempt number (lifecycle attempts, not per-attempt HTTP retries).
-    pub attempt: u32,
     pub reservation: ByteReservation,
 }
 
@@ -354,11 +332,6 @@ pub struct SegmentStateStore {
     /// by MSN: the estimate while a segment downloads, its size once it has
     /// completed. Maintained for the byte bound of a [`MediaWindow`].
     window_bytes: BTreeMap<u64, u64>,
-    /// Aggregated counters (bounded cardinality — per-segment detail goes to
-    /// spans, not labels).
-    pub lifecycle_retries: u64,
-    pub terminal_failures: u64,
-    pub dedup_hits: u64,
 }
 
 impl SegmentStateStore {
@@ -373,20 +346,10 @@ impl SegmentStateStore {
             next_order: 0,
             size_estimate,
             window_bytes: BTreeMap::new(),
-            lifecycle_retries: 0,
-            terminal_failures: 0,
-            dedup_hits: 0,
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.records.is_empty()
-    }
-
+    #[cfg(test)]
     pub fn current_size_estimate(&self) -> u64 {
         self.size_estimate
     }
@@ -427,7 +390,7 @@ impl SegmentStateStore {
             let mut promote = false;
             if let Some(record) = self.records.get_mut(&key) {
                 let stale_entry = match record.state {
-                    SegmentState::Completed { .. } | SegmentState::TerminalFailed { .. } => {
+                    SegmentState::Completed | SegmentState::TerminalFailed { .. } => {
                         // Never fetched again; nothing volatile to refresh.
                         // An init's MSN does move forward, though: it records
                         // where the map still applies, which is what keeps a
@@ -436,13 +399,12 @@ impl SegmentStateStore {
                             record.descriptor = Arc::new(descriptor);
                         }
                         stats.deduplicated += 1;
-                        self.dedup_hits += 1;
                         continue;
                     }
                     SegmentState::Discovered
                     | SegmentState::Queued
                     | SegmentState::RetryAt { .. }
-                    | SegmentState::InFlight { .. } => {
+                    | SegmentState::InFlight => {
                         // For InFlight the running attempt keeps its URL; the
                         // refreshed descriptor is what a post-failure retry
                         // will fetch.
@@ -455,7 +417,6 @@ impl SegmentStateStore {
                             record.generation += 1;
                         }
                         stats.refreshed += 1;
-                        self.dedup_hits += 1;
                         if url_changed
                             && record.awaiting_refresh
                             && matches!(record.state, SegmentState::RetryAt { .. })
@@ -552,10 +513,8 @@ impl SegmentStateStore {
         self.records.values().any(|r| r.state.is_unfinished())
     }
 
-    /// Batched admission: returns up to `slots` jobs in priority order, each
-    /// owning its download-byte reservation, plus any assembler items implied
-    /// by admission-time terminalization (oversize segments). Stops early when
-    /// the budget cannot fit the next estimate — admission is the byte gate.
+    /// [`Self::next_ready_jobs_within`] without a media window.
+    #[cfg(test)]
     pub fn next_ready_jobs(
         &mut self,
         slots: usize,
@@ -565,9 +524,12 @@ impl SegmentStateStore {
         self.next_ready_jobs_within(slots, now, budget, None)
     }
 
-    /// [`Self::next_ready_jobs`], admitting media only inside `window`;
-    /// segments outside it stay ready for a later call. Inits are always
-    /// admitted: media waits for them.
+    /// Batched admission: returns up to `slots` jobs in priority order, each
+    /// owning its download-byte reservation, plus any assembler items implied
+    /// by admission-time terminalization (oversize segments). Stops early when
+    /// the budget cannot fit the next estimate — admission is the byte gate.
+    /// Media is admitted only inside `window`; segments outside it stay ready
+    /// for a later call. Inits are always admitted: media waits for them.
     pub fn next_ready_jobs_within(
         &mut self,
         slots: usize,
@@ -630,12 +592,7 @@ impl SegmentStateStore {
                     "skipping media of a failed init"
                 );
                 inputs.push(terminal_input(&record.descriptor, init_error.clone(), true));
-                record.state = SegmentState::TerminalFailed {
-                    class: FailureClass::InvalidFormat,
-                    reason: Arc::from("its init segment failed"),
-                    error: init_error,
-                };
-                self.terminal_failures += 1;
+                record.state = SegmentState::TerminalFailed { error: init_error };
                 continue;
             }
 
@@ -675,12 +632,7 @@ impl SegmentStateStore {
                 let error =
                     SharedError::new(FailureClass::Oversize.error(&reason, &record.descriptor));
                 inputs.push(terminal_input(&record.descriptor, error.clone(), false));
-                record.state = SegmentState::TerminalFailed {
-                    class: FailureClass::Oversize,
-                    reason,
-                    error,
-                };
-                self.terminal_failures += 1;
+                record.state = SegmentState::TerminalFailed { error };
                 continue;
             }
 
@@ -716,10 +668,7 @@ impl SegmentStateStore {
             record.ready_entry = None;
             let attempt = record.reschedules + 1;
             record.awaiting_refresh = false;
-            record.state = SegmentState::InFlight {
-                attempt,
-                started_at: now,
-            };
+            record.state = SegmentState::InFlight;
             record.attempt_generation = record.generation;
             if is_media && window.is_some_and(|window| window.bytes > 0) {
                 self.window_bytes
@@ -735,7 +684,6 @@ impl SegmentStateStore {
             );
             jobs.push(ReadyJob {
                 descriptor: Arc::clone(&record.descriptor),
-                attempt,
                 reservation,
             });
         }
@@ -768,7 +716,7 @@ impl SegmentStateStore {
                     *bytes = payload_len;
                 }
                 if let Some(record) = self.records.get_mut(&key) {
-                    record.state = SegmentState::Completed { completed_at: now };
+                    record.state = SegmentState::Completed;
                     self.update_size_estimate(payload_len);
                     trace!(msn, "segment completed");
                 }
@@ -883,14 +831,8 @@ impl SegmentStateStore {
                 if let Some(delay) = retry_delay {
                     let reschedules = record.reschedules;
                     let retry_at = now + delay;
-                    record.state = SegmentState::RetryAt {
-                        attempt: reschedules,
-                        retry_at,
-                        class,
-                        reason: Arc::clone(&reason),
-                    };
+                    record.state = SegmentState::RetryAt { retry_at };
                     let descriptor = Arc::clone(&record.descriptor);
-                    self.lifecycle_retries += 1;
                     debug!(
                         msn,
                         ?class,
@@ -908,9 +850,7 @@ impl SegmentStateStore {
                     OutcomeEffects {
                         assembler_inputs: Vec::new(),
                         retry_notice: Some(RetryNotice {
-                            key,
                             descriptor,
-                            msn,
                             attempt: reschedules,
                             delay,
                             reason,
@@ -925,12 +865,7 @@ impl SegmentStateStore {
                         error.unwrap_or_else(|| class.error(&reason, &record.descriptor)),
                     );
                     let input = terminal_input(&record.descriptor, error.clone(), false);
-                    record.state = SegmentState::TerminalFailed {
-                        class,
-                        reason,
-                        error,
-                    };
-                    self.terminal_failures += 1;
+                    record.state = SegmentState::TerminalFailed { error };
                     OutcomeEffects {
                         assembler_inputs: vec![input],
                         retry_notice: None,
@@ -1053,7 +988,7 @@ impl SegmentStateStore {
                 r.descriptor.key.kind == SegmentKind::Media
                     && r.descriptor.msn < window_start_msn
                     && r.state.is_unfinished()
-                    && !matches!(r.state, SegmentState::InFlight { .. })
+                    && !matches!(r.state, SegmentState::InFlight)
             })
             .map(|(key, r)| (r.descriptor.msn, key.clone()))
             .collect();
@@ -1310,8 +1245,6 @@ mod tests {
             "retryable failure emits nothing yet"
         );
         let notice = out.retry_notice.expect("retry notice should be surfaced");
-        assert_eq!(notice.key, key);
-        assert_eq!(notice.msn, 1);
         assert_eq!(notice.attempt, 1);
         assert_eq!(notice.reason.as_ref(), "404");
         assert_eq!(notice.delay, Duration::from_millis(10));
@@ -1325,7 +1258,6 @@ mod tests {
         let later = now + Duration::from_millis(50);
         let (jobs, _) = s.next_ready_jobs(1, later, &b);
         assert_eq!(jobs.len(), 1);
-        assert_eq!(jobs[0].attempt, 2);
     }
 
     #[test]

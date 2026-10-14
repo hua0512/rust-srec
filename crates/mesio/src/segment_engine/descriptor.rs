@@ -286,7 +286,7 @@ impl SegmentDescriptor {
 
     /// Admission-time size estimate. A BYTERANGE length is the one size the
     /// playlist states exactly; everything else falls back to the caller's
-    /// running estimate (`next_ready_jobs` passes the configured/EMA value).
+    /// running estimate (`next_ready_jobs_within` passes the configured/EMA value).
     pub fn size_estimate(&self, fallback: u64) -> u64 {
         match self.key.byte_range {
             Some(range) => range.length,

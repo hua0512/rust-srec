@@ -53,10 +53,6 @@ impl SegmentPayload {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     pub fn is_init(&self) -> bool {
         matches!(self, Self::Mp4Init { .. } | Self::TsInit { .. })
     }

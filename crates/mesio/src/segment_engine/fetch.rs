@@ -1023,7 +1023,6 @@ mod tests {
     fn job(ctx: &FetchContext, uri: &str) -> ReadyJob {
         ReadyJob {
             descriptor: descriptor(uri, SegmentKind::Media, None),
-            attempt: 1,
             reservation: ctx.budget.download.try_reserve(1024).expect("budget"),
         }
     }

@@ -37,10 +37,6 @@ impl CryptoExecutor {
         Self { backend }
     }
 
-    pub fn backend(&self) -> CryptoBackend {
-        self.backend
-    }
-
     /// AES-128-CBC with PKCS#7 padding. The single intentional copy of the
     /// zero-copy strategy happens here: encrypted `Bytes` -> mutable buffer ->
     /// in-place decrypt -> decrypted `Bytes`. Output is never larger than the

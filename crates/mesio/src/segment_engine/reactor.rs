@@ -137,7 +137,7 @@ pub async fn run_reactor<P: SegmentPlanner>(
         }
 
         // Top-up gate: slots ∧ pending-bytes ∧ pending-items. Download bytes
-        // gate via the admission reservation inside `next_ready_jobs`, not a
+        // gate via the admission reservation inside `next_ready_jobs_within`, not a
         // separate read. This runs while `ending` too — the final window is
         // ready work that must download before the drain above can
         // be satisfied.

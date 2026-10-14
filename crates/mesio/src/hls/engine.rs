@@ -20,8 +20,8 @@ pub(crate) mod output;
 pub mod planner;
 pub mod watcher;
 
-pub use crate::segment_engine::{
-    assembler, budget, crypto, descriptor, fetch, identity, input, payload, reactor, store,
+pub(crate) use crate::segment_engine::{
+    assembler, budget, crypto, descriptor, fetch, identity, reactor, store,
 };
 
 use std::sync::Arc;

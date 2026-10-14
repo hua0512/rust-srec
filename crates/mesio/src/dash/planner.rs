@@ -1417,11 +1417,11 @@ impl SegmentPlanner for DashPlanner {
     }
 
     fn failure_error(&self, failure: SourceFailure) -> DownloadError {
-        let reason = match failure {
-            SourceFailure::Reset(kind) => format!("{} timeline reset ({kind:?})", self.track),
-            SourceFailure::Lost => "MPD watcher stopped without a terminal cause".to_owned(),
-        };
-        DownloadError::Manifest { reason }
+        // This planner never reports a reset, so only a lost watcher fails it.
+        debug_assert!(matches!(failure, SourceFailure::Lost), "{failure:?}");
+        DownloadError::Manifest {
+            reason: "MPD watcher stopped without a terminal cause".to_owned(),
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 //! Both budgets are reservation primitives, not bare counters you read then
 //! charge: capacity is acquired up front and held by an RAII guard
 //! ([`ByteReservation`]) that releases on drop. Download bytes are reserved at
-//! admission inside `SegmentStateStore::next_ready_jobs` (closing the
+//! admission inside `SegmentStateStore::next_ready_jobs_within` (closing the
 //! check-then-spawn-then-reserve race); processing bytes are reserved at the
 //! encrypted-input upper bound before decrypt and reconciled after.
 
@@ -94,6 +94,7 @@ impl ByteSemaphore {
         self.inner.capacity == 0
     }
 
+    #[cfg(test)]
     pub fn available(&self) -> u64 {
         if self.unlimited() {
             return u64::MAX;
