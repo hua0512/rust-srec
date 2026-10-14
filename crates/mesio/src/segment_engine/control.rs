@@ -25,6 +25,11 @@ pub enum TerminalCause {
     /// carrying this still contains the final window and is planned before
     /// the reactor drains.
     End,
+    /// The source restarted its stream (a DASH `$Number$` timeline restarted
+    /// its numbering): what follows is another recording. Drained like
+    /// [`Self::End`], so everything planned before the restart is
+    /// delivered, but reported as [`crate::DownloadTerminal::Restarted`].
+    Restarted,
     /// The source could not keep refreshing (fetch/parse failure after
     /// retries), or its snapshot cannot be planned. A pipeline error, never a
     /// clean end; it keeps its type, so consumers classify it as they would

@@ -41,6 +41,9 @@ impl Drop for CancelOnDropStream {
 /// writing path with HLS: an init segment, then media items, with end
 /// markers where the init changes. A static or ended presentation finishes
 /// with an `EndOfStream` end marker and [`crate::DownloadTerminal::AuthoritativeEnd`].
+/// A live stream that restarts its segment numbering finishes the same way
+/// once everything before the restart is written, but with
+/// [`crate::DownloadTerminal::Restarted`]: a new session records what follows.
 pub struct DashDownloader {
     clients: Arc<ClientPool>,
     config: DashConfig,

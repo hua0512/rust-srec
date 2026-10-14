@@ -228,6 +228,7 @@ impl From<Terminal> for DownloadTerminal {
     fn from(value: Terminal) -> Self {
         match value {
             Terminal::AuthoritativeEnd => Self::AuthoritativeEnd,
+            Terminal::Restarted => Self::Restarted,
             Terminal::Cancelled => Self::Cancelled,
             Terminal::DownstreamClosed => Self::DownstreamClosed,
             Terminal::PipelineError(reason) => Self::PipelineError(reason),

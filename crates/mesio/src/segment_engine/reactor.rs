@@ -34,6 +34,9 @@ pub enum Terminal {
     /// Authoritative end drained: every known segment completed,
     /// terminalized, or was skipped, and `AssemblerInput::End` was forwarded.
     AuthoritativeEnd,
+    /// Drained like [`Self::AuthoritativeEnd`], after the source restarted
+    /// its stream ([`TerminalCause::Restarted`]).
+    Restarted,
     /// Caller-initiated stop. In-flight work aborted, nothing emitted.
     Cancelled,
     /// The assembler dropped its receiver. Surfaced, never swallowed.
@@ -47,6 +50,7 @@ impl std::fmt::Debug for Terminal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::AuthoritativeEnd => "AuthoritativeEnd",
+            Self::Restarted => "Restarted",
             Self::Cancelled => "Cancelled",
             Self::DownstreamClosed => "DownstreamClosed",
             Self::PipelineError(_) => "PipelineError([redacted])",
@@ -94,8 +98,10 @@ pub async fn run_reactor<P: SegmentPlanner>(
         .filter(|_| window_segments > 0 || window_bytes > 0);
 
     // `ending`: a terminal cause was seen — drain known work, then finish.
+    // `restarted`: that cause was a restart of the source's stream.
     // `end_queued`: AssemblerInput::End enqueued exactly once.
     let mut ending = false;
+    let mut restarted = false;
     let mut end_queued = false;
 
     // Pipeline-error exits forward the error as Fatal so the consumer sees a
@@ -112,6 +118,7 @@ pub async fn run_reactor<P: SegmentPlanner>(
             &mut store,
             &mut pending,
             &mut ending,
+            &mut restarted,
         ) {
             let reason: Arc<str> = Arc::from(err.to_string());
             if assembler_tx.send(AssemblerInput::Fatal(err)).await.is_err() {
@@ -132,7 +139,10 @@ pub async fn run_reactor<P: SegmentPlanner>(
                 end_queued = true;
             } else if pending.is_empty() {
                 // End has been forwarded; nothing left to do.
-                break Terminal::AuthoritativeEnd;
+                break match restarted {
+                    true => Terminal::Restarted,
+                    false => Terminal::AuthoritativeEnd,
+                };
             }
         }
 
@@ -193,6 +203,7 @@ pub async fn run_reactor<P: SegmentPlanner>(
                             &mut store,
                             &mut pending,
                             &mut ending,
+                            &mut restarted,
                         ) {
                             fatal = Some(err);
                             break Terminal::PipelineError(Arc::from("manifest failure"));
@@ -290,6 +301,9 @@ pub async fn run_reactor<P: SegmentPlanner>(
         Terminal::AuthoritativeEnd => {
             info!("reactor finished: authoritative end drained");
         }
+        Terminal::Restarted => {
+            info!("reactor finished: drained up to a restart of the source's stream");
+        }
         Terminal::Cancelled => {
             debug!("reactor cancelled; aborting in-flight segment tasks");
             // JoinSet drop aborts the spawned tasks (the reason it is a
@@ -324,13 +338,14 @@ fn process_snapshot<P: SegmentPlanner>(
     store: &mut SegmentStateStore,
     pending: &mut PendingQueue,
     ending: &mut bool,
+    restarted: &mut bool,
 ) -> Option<DownloadError> {
     let planned = planner.plan(snapshot);
     match &planned.terminal {
         Some(TerminalCause::Failed(error)) => return Some(error.to_error()),
         // An end snapshot still carries the final window: it is planned and
         // ingested *before* `ending` is set, or its segments are lost.
-        Some(TerminalCause::End) | None => {}
+        Some(TerminalCause::End | TerminalCause::Restarted) | None => {}
     }
     if let Some(kind) = planned.reset {
         // Output continuity cannot be preserved across a reset (the
@@ -360,8 +375,13 @@ fn process_snapshot<P: SegmentPlanner>(
     for notice in planned.notices {
         pending.push(AssemblerInput::Notice(notice));
     }
-    if matches!(planned.terminal, Some(TerminalCause::End)) {
-        *ending = true;
+    match planned.terminal {
+        Some(TerminalCause::End) => *ending = true,
+        Some(TerminalCause::Restarted) => {
+            *ending = true;
+            *restarted = true;
+        }
+        _ => {}
     }
     // Prune under the window invariant: only entries below the new window
     // start are eligible (see SegmentStateStore::prune_below).

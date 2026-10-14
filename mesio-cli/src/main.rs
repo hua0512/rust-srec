@@ -51,6 +51,13 @@ fn main() {
             std::process::exit(141);
         }
 
+        if matches!(e, AppError::StreamRestarted(_)) {
+            // EX_TEMPFAIL (sysexits.h): the recording ended normally, and
+            // running again picks up the restarted stream.
+            eprintln!("{e}");
+            std::process::exit(75);
+        }
+
         eprintln!("Error: {e}");
         // Log the full error for debugging
         error!(error = ?e, "Application failed");

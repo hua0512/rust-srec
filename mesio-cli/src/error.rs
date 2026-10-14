@@ -26,6 +26,11 @@ pub enum AppError {
 
     #[error("Broken pipe: consumer closed the connection")]
     BrokenPipe,
+
+    /// The source restarted its stream while recording; everything before
+    /// the restart was written. Not a failure: a new run records the rest.
+    #[error("the stream restarted while recording {0}; run mesio again to record the new stream")]
+    StreamRestarted(String),
 }
 
 /// Check if an error string indicates a broken pipe error
