@@ -44,9 +44,16 @@ pub(crate) struct DouyinPcData<'a> {
     pub id_str: &'a str,
     pub status: i32,
     pub finish_time: Option<i64>,
+    pub last_ping_time: Option<i64>,
+    pub finish_reason: Option<i64>,
+    /// Marks a room that serves a replay instead of a live broadcast. Only the reflow
+    /// API reports it; the web enter API omits it.
+    pub is_replay: Option<bool>,
     pub title: String,
     #[serde(borrow)]
     pub cover: Option<DouyinCover<'a>>,
+    #[serde(borrow)]
+    pub owner: Option<DouyinRoomOwner<'a>>,
     #[serde(borrow)]
     pub stream_url: Option<DouyinStreamUrl<'a>>,
     /// Scene type information, contains is_union_live_room flag
@@ -57,6 +64,22 @@ pub(crate) struct DouyinPcData<'a> {
 }
 
 impl DouyinPcData<'_> {
+    /// Whether the room records that its broadcast has ended, regardless of `status`.
+    ///
+    /// While a room is live, the mobile reflow API fills `finish_time` with the anchor's
+    /// latest heartbeat, so it equals `last_ping_time` and is never zero. A non-zero
+    /// `finish_time` therefore only means the broadcast ended when it is later than the
+    /// last heartbeat (ended rooms reset `last_ping_time` to zero) or when no heartbeat
+    /// is reported at all. Ended rooms also carry a non-zero `finish_reason`.
+    pub fn has_ended(&self) -> bool {
+        if self.finish_reason.is_some_and(|reason| reason != 0) {
+            return true;
+        }
+        self.finish_time.is_some_and(|finish| {
+            finish > 0 && self.last_ping_time.is_none_or(|ping| finish > ping)
+        })
+    }
+
     /// Detects if this is an interactive game stream (互动玩法).
     ///
     /// Interactive game streams are identified by:
@@ -149,6 +172,14 @@ impl DouyinUserInfo<'_> {
                 .map(|url| url.contains("aweme_default_avatar.png"))
                 .unwrap_or(false)
     }
+}
+
+/// The streamer who owns a room.
+#[derive(Deserialize, Debug)]
+pub(crate) struct DouyinRoomOwner<'a> {
+    pub nickname: Option<String>,
+    #[serde(borrow)]
+    pub avatar_thumb: Option<DouyinAvatarThumb<'a>>,
 }
 
 #[derive(Deserialize, Debug)]

@@ -1,0 +1,115 @@
+{
+  "data": {
+    "room": {
+      "id_str": "7000000000000000001",
+      "status": 2,
+      "create_time": 1699959205,
+      "start_time": 1699959206,
+      "finish_time": 1700000000,
+      "last_ping_time": 1700000000,
+      "finish_reason": 0,
+      "stream_close_time": 0,
+      "is_replay": false,
+      "title": "Test Room",
+      "cover": {
+        "url_list": [
+          "https://p3-webcast.example.com/cover.image"
+        ]
+      },
+      "owner": {
+        "id_str": "100000000000",
+        "sec_uid": "MS4wLjABAAAA_test_sec_uid",
+        "nickname": "Test User",
+        "avatar_thumb": {
+          "url_list": [
+            "https://p3-webcast.example.com/avatar.image"
+          ]
+        }
+      },
+      "stream_url": {
+        "flv_pull_url": {
+          "FULL_HD1": "http://pull-flv.example.com/stage/stream-1000000000000000000_or4.flv?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common",
+          "SD1": "http://pull-flv.example.com/stage/stream-1000000000000000000_ld.flv?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common"
+        },
+        "default_resolution": "FULL_HD1",
+        "hls_pull_url_map": {
+          "FULL_HD1": "http://pull-hls.example.com/stage/stream-1000000000000000000_or4.m3u8?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common",
+          "SD1": "http://pull-hls.example.com/stage/stream-1000000000000000000_ld.m3u8?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common"
+        },
+        "hls_pull_url": "http://pull-hls.example.com/stage/stream-1000000000000000000_or4.m3u8?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common",
+        "stream_orientation": 1,
+        "live_core_sdk_data": {
+          "pull_data": {
+            "options": {
+              "default_quality": {
+                "name": "高清",
+                "sdk_key": "origin",
+                "v_codec": "",
+                "resolution": "",
+                "level": 0,
+                "v_bit_rate": 0,
+                "additional_content": "",
+                "fps": 0,
+                "disable": 0
+              },
+              "qualities": [
+                {
+                  "name": "标清",
+                  "sdk_key": "ld",
+                  "v_codec": "264",
+                  "resolution": "480x847",
+                  "level": 1,
+                  "v_bit_rate": 1000000,
+                  "additional_content": "",
+                  "fps": 14,
+                  "disable": 0
+                },
+                {
+                  "name": "高清",
+                  "sdk_key": "origin",
+                  "v_codec": "264",
+                  "resolution": "544x960",
+                  "level": 2,
+                  "v_bit_rate": 511000,
+                  "additional_content": "",
+                  "fps": 14,
+                  "disable": 0
+                }
+              ]
+            },
+            "stream_data": "{\"data\":{\"ao\":{\"main\":{\"flv\":\"http://pull-flv.example.com/stage/stream-1000000000000000000.flv?expire=1700000000&sign=0123456789abcdef&major_anchor_level=common&rtm_expr_tag=reflow_room_info&only_audio=1\",\"hls\":\"\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"\",\"enableEncryption\":false}},\"origin\":{\"main\":{\"flv\":\"http://pull-flv.example.com/stage/stream-1000000000000000000_or4.flv?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"hls\":\"http://pull-hls.example.com/stage/stream-1000000000000000000_or4.m3u8?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-flv.example.com/stage/stream-1000000000000000000_or4.sdp?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"\",\"enableEncryption\":false}},\"ld\":{\"main\":{\"flv\":\"http://pull-flv.example.com/stage/stream-1000000000000000000_ld.flv?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"hls\":\"http://pull-hls.example.com/stage/stream-1000000000000000000_ld.m3u8?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"http://pull-flv.example.com/stage/stream-1000000000000000000_ld.sdp?expire=1700000000&sign=0123456789abcdef&rtm_expr_tag=reflow_room_info&major_anchor_level=common\",\"tsl\":\"\",\"tile\":\"\",\"http_ts\":\"\",\"ll_hls\":\"\",\"sdk_params\":\"\",\"enableEncryption\":false}}}}"
+          }
+        },
+        "extra": {
+          "height": 960,
+          "width": 544,
+          "fps": 0,
+          "max_bitrate": 0,
+          "min_bitrate": 0,
+          "default_bitrate": 0,
+          "bitrate_adapt_strategy": 0,
+          "anchor_interact_profile": 0,
+          "audience_interact_profile": 0,
+          "hardware_encode": false,
+          "video_profile": 0,
+          "h265_enable": false,
+          "gop_sec": 0,
+          "bframe_enable": false,
+          "roi": false,
+          "sw_roi": false,
+          "bytevc1_enable": false,
+          "business_name": ""
+        },
+        "pull_datas": {}
+      }
+    },
+    "user": {
+      "id": 0,
+      "id_str": "",
+      "sec_uid": "",
+      "nickname": "",
+      "display_id": ""
+    }
+  },
+  "status_code": 0
+}
