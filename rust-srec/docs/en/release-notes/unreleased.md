@@ -5,6 +5,7 @@
 ## New features
 
 - **MPEG-DASH recording:** Mesio can now record MPEG-DASH (`.mpd`) streams, both live and finished ones. Video and audio delivered separately are merged into one MP4 file. Choose the video and audio quality, audio language, where a live recording starts, and download limits on the new **DASH** tab of a Mesio engine, and add `dash` to **Preferred Formats** to prefer DASH when a platform offers it. Encrypted (DRM) streams are not supported, and the web player cannot play DASH streams. See [MPEG-DASH recording](../concepts/engines.md#mpeg-dash).
+- **TikTok DASH streams:** TikTok live rooms now also list their MPEG-DASH streams, available for most qualities including audio-only. FLV is still recorded by default; add `dash` to **Preferred Formats** for TikTok, a template or a streamer to record DASH with the Mesio engine. See [TikTok](../platforms/tiktok.md).
 
 ## Recording and recovery
 

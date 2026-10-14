@@ -12,7 +12,7 @@ The `@username` is the channel ID, so a streamer stays monitored after going off
 
 ## Features
 
-- ✅ FLV and HLS streams
+- ✅ FLV, HLS and MPEG-DASH streams
 - ✅ Multiple qualities (Original, 1080p60, 720p, 540p, 360p, audio-only) with AVC and HEVC variants
 - ✅ Danmaku collection (chat, emotes, and gifts over the webcast WebSocket)
 - ✅ Stream-end detection from the chat socket
@@ -31,4 +31,5 @@ Platform options are under **Settings** → **Platforms** → **TikTok**. **Noth
 - **Authentication**: No cookies are needed. Chat collection registers a temporary `ttwid` session automatically; providing browser cookies is optional.
 - **Region locks**: Some rooms are unavailable in certain regions. Use a proxy if extraction reports region-locked content (see [Proxies](../concepts/configuration.md#proxies)).
 - **Danmaku**: Chat messages, emote-only messages, and gifts are captured. Combo gifts are recorded once with the final count.
+- **MPEG-DASH**: Most qualities, including audio-only, are also offered as DASH, which records to MP4. FLV is still recorded by default. To record DASH, add `dash` to **Preferred Formats** in the TikTok platform settings, a template or the streamer, and use the Mesio engine (see [MPEG-DASH recording](../concepts/engines.md#mpeg-dash)). The web player cannot play DASH streams.
 :::

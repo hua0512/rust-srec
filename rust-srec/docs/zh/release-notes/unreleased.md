@@ -5,6 +5,7 @@
 ## 新增功能
 
 - **MPEG-DASH 录制：** Mesio 现在可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的流。分开传输的视频和音频会合并为一个 MP4 文件。可在 Mesio 引擎新增的 **DASH** 选项卡中选择视频和音频质量、音频语言、直播录制起点以及下载限制；在**首选格式**中添加 `dash`，即可在平台提供 DASH 时优先使用。不支持 DRM 加密的流，网页播放器也无法播放 DASH 流。详见 [MPEG-DASH 录制](../concepts/engines.md#mpeg-dash)。
+- **TikTok DASH 流：** TikTok 直播间现在会列出 MPEG-DASH 流，大多数画质（包括纯音频）均提供。默认仍录制 FLV；在 TikTok 平台、模板或主播的**首选格式**中添加 `dash`，即可使用 Mesio 引擎录制 DASH。详见 [TikTok](../platforms/tiktok.md)。
 
 ## 录制与恢复
 
