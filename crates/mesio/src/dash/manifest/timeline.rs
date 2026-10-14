@@ -75,9 +75,12 @@ pub struct InitSegment {
 
 /// How a Representation's segments are addressed.
 ///
-/// This determines a segment's stable identity across MPD updates: with a
-/// `SegmentTimeline` (see [`super::Representation::uses_segment_timeline`]),
-/// [`Segment::time`]; otherwise [`Segment::number`].
+/// This determines a segment's stable identity across MPD updates: what its
+/// URL is built from. That is [`Segment::number`] for `$Number$` templates
+/// (with or without a `SegmentTimeline`) and for any `@duration`
+/// addressing, and [`Segment::time`] for every other `SegmentTimeline`
+/// addressing: `$Time$` templates, timed `SegmentList`s and indexed
+/// subsegments (see [`Segment`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressingKind {
     /// `SegmentTemplate@media` with `$Number$`.
@@ -93,11 +96,13 @@ pub enum AddressingKind {
 
 /// A media segment.
 ///
-/// Identity across MPD updates: for `SegmentTimeline` addressing it is
-/// [`Self::time`], because numbers are positions in the listed timeline and
-/// shift when expired `S` entries are removed; for `@duration` addressing
-/// (`$Number$` templates and lists) it is [`Self::number`], from which the
-/// time is derived.
+/// Identity across MPD updates: under `SegmentTimeline` addressing it is
+/// [`Self::time`] unless the URL is a `$Number$` template, because numbers
+/// are positions in the listed timeline and shift when expired `S` entries
+/// are removed. A `$Number$` URL pins the number to the resource, so there
+/// the number is the identity, and the times are what an update may
+/// rewrite. Under `@duration` addressing (`$Number$` templates and lists) it
+/// is [`Self::number`], from which the time is derived.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     /// Segment number (`$Number$`): `startNumber` + position in the
@@ -124,6 +129,20 @@ impl Segment {
     pub fn duration_secs(&self) -> f64 {
         self.duration as f64 / self.timescale as f64
     }
+}
+
+/// How far ahead of the availability window a running Period's
+/// `SegmentTimeline` lies when none of its listed segments is available
+/// (see [`super::Representation::timeline_ahead`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimelineLead {
+    /// Time until the earliest listed segment becomes available.
+    pub earliest: Duration,
+    /// Time until the newest listed segment becomes available, at most
+    /// until `availabilityEndTime`.
+    pub newest: Duration,
+    /// The earliest listed segment's duration.
+    pub segment_duration: Duration,
 }
 
 /// A run of equal-duration segments: one `S` element, or the whole
@@ -409,6 +428,159 @@ impl Addressing {
             return Ok(0..0);
         };
         Ok(first..end)
+    }
+
+    /// How far ahead of the availability window at `now` the segments the
+    /// `SegmentTimeline` lists lie, when not one of them is available yet
+    /// and the Period has begun and not ended by the clock. `None`
+    /// otherwise, and without a timeline, for static presentations or with
+    /// an infinite availability time offset.
+    ///
+    /// Listed means described by an `S` entry and allowed by `@endNumber`,
+    /// the Period's bounds and `availabilityEndTime`; a trailing `S@r=-1`
+    /// lists only its first segment, since later repetitions are
+    /// extrapolated.
+    pub(crate) fn timeline_ahead(
+        &self,
+        timing: &PeriodTiming,
+        offset: AvailabilityTimeOffset,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TimelineLead>, ManifestError> {
+        let overflow = || ManifestError::overflow("timeline lead");
+        if !self.has_timeline || timing.presentation_type == PresentationType::Static {
+            return Ok(None);
+        }
+        let AvailabilityTimeOffset::Finite(offset) = offset else {
+            return Ok(None);
+        };
+        let Some(ast) = timing.availability_start else {
+            return Err(ManifestError::MissingAttribute {
+                element: "MPD",
+                attribute: "availabilityStartTime",
+            });
+        };
+        let elapsed = xs::instant_nanos(now)
+            .checked_sub(ast)
+            .ok_or_else(overflow)?;
+        let into_period = elapsed
+            .checked_sub(timing.period_start)
+            .ok_or_else(overflow)?;
+        if into_period < 0
+            || timing
+                .period_duration
+                .is_some_and(|duration| into_period >= duration)
+        {
+            return Ok(None);
+        }
+
+        // The listed positions: the window without its clock bounds, with
+        // an open trailing run closed after its first segment.
+        let closed;
+        let listing = if self.runs.last().is_some_and(|run| run.count.is_none()) {
+            let runs: Vec<Run> = self
+                .runs
+                .iter()
+                .map(|run| Run {
+                    count: Some(run.count.unwrap_or(1)),
+                    ..*run
+                })
+                .collect();
+            closed = Addressing {
+                runs: runs.into(),
+                ..self.clone()
+            };
+            &closed
+        } else {
+            self
+        };
+        let unclocked = PeriodTiming {
+            presentation_type: PresentationType::Static,
+            ..*timing
+        };
+        let listed = listing.window(&unclocked, AvailabilityTimeOffset::ZERO, now)?;
+        let (Some(first), Some(last)) = (
+            listing.run_timing(listed.start),
+            listed
+                .end
+                .checked_sub(1)
+                .and_then(|last| listing.run_timing(last)),
+        ) else {
+            return Ok(None);
+        };
+
+        let timescale = i128::from(self.timescale.max(1));
+        let pto = i128::from(self.presentation_time_offset);
+        // Rounded up so that evaluating availability that much later makes
+        // the segment available exactly: the window compares unrounded ticks.
+        let end = |(time, duration): (u64, u64)| {
+            (i128::from(time) + i128::from(duration) - pto)
+                .checked_mul(NANOS_PER_SEC)
+                .and_then(|scaled| ceil_div(scaled, timescale))
+                .and_then(|end| end.checked_add(timing.period_start))
+                .ok_or_else(overflow)
+        };
+        let edge = elapsed
+            .checked_add(xs::duration_nanos(offset))
+            .ok_or_else(overflow)?;
+        let earliest = end(first)? - edge;
+        if earliest <= 0 {
+            return Ok(None);
+        }
+        let mut newest = end(last)? - edge;
+        // Nothing is available after `availabilityEndTime`, so the newest
+        // listed segment that can still become available is the one
+        // available by then.
+        if let Some(availability_end) = timing.availability_end {
+            let remaining = availability_end
+                .checked_sub(xs::instant_nanos(now))
+                .ok_or_else(overflow)?;
+            if remaining < earliest {
+                return Ok(None);
+            }
+            newest = newest.min(remaining);
+        }
+        let nanos = |value: i128| Duration::from_nanos(u64::try_from(value).unwrap_or(u64::MAX));
+        Ok(Some(TimelineLead {
+            earliest: nanos(earliest),
+            newest: nanos(newest),
+            segment_duration: nanos(i128::from(first.1).saturating_mul(NANOS_PER_SEC) / timescale),
+        }))
+    }
+
+    /// The first segment the `SegmentTimeline` lists from `number` on, as
+    /// `(number, media time)`, whatever the clock says. A trailing
+    /// `S@r=-1` lists only its first segment; `@endNumber` is respected.
+    pub(crate) fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        if !self.has_timeline {
+            return None;
+        }
+        let last = self.runs.last()?;
+        let mut listed = last.first_index.checked_add(last.count.unwrap_or(1))?;
+        if let Some(end_number) = self.end_number {
+            let allowed = end_number.checked_sub(self.start_number)?.checked_add(1)?;
+            listed = listed.min(allowed);
+        }
+        let index = number.saturating_sub(self.start_number);
+        if index >= listed {
+            return None;
+        }
+        let (time, _) = self.run_timing(index)?;
+        Some((self.start_number.checked_add(index)?, time))
+    }
+
+    /// Media time and duration of the segment at sequence position
+    /// `index`, when a run covers it.
+    fn run_timing(&self, index: u64) -> Option<(u64, u64)> {
+        let position = self.runs.partition_point(|run| run.first_index <= index);
+        let run = self.runs.get(position.checked_sub(1)?)?;
+        let repetition = index - run.first_index;
+        if run.count.is_some_and(|count| repetition >= count) {
+            return None;
+        }
+        let time = run
+            .start
+            .checked_add(repetition.checked_mul(run.duration)?)?;
+        Some((time, run.duration))
     }
 
     /// The window available at `now`, with its segment numbers validated.
@@ -1175,5 +1347,204 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn timeline_ahead_reaches_the_newest_listed_segment_exactly() {
+        // 12288 ticks/s, so segment ends are not whole nanoseconds. The
+        // newest entry ends at 12 312 577 / 12288 s ≈ 1002.0000814 s.
+        const T: u64 = 12288;
+        let runs =
+            Addressing::timeline_runs(&[s(Some(1000 * T), T, 0), s(None, T + 1, 0)]).unwrap();
+        let mut addressing = addressing(runs, T, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        let timing = dynamic(0, Some(5 * SEC));
+        let now = at(10, 0);
+        let ahead = addressing
+            .timeline_ahead(&timing, finite(1), now)
+            .unwrap()
+            .expect("everything listed is beyond x + A = 11 s");
+        assert_eq!(ahead.earliest, Duration::from_secs(990));
+        assert_eq!(ahead.newest, Duration::from_nanos(991_000_081_381));
+        assert_eq!(ahead.segment_duration, Duration::from_secs(1));
+
+        let reached = now + chrono::TimeDelta::from_std(ahead.newest).unwrap();
+        assert_eq!(
+            addressing.window(&timing, finite(1), reached).unwrap(),
+            0..2
+        );
+        let before = reached - chrono::TimeDelta::nanoseconds(1);
+        assert_eq!(addressing.window(&timing, finite(1), before).unwrap(), 0..1);
+        assert_eq!(
+            addressing
+                .timeline_ahead(&timing, finite(1), reached)
+                .unwrap(),
+            None,
+            "available now"
+        );
+
+        assert_eq!(
+            addressing
+                .timeline_ahead(&timing, AvailabilityTimeOffset::Infinite, now)
+                .unwrap(),
+            None
+        );
+        let static_timing = PeriodTiming {
+            presentation_type: PresentationType::Static,
+            ..timing
+        };
+        assert_eq!(
+            addressing
+                .timeline_ahead(&static_timing, finite(1), now)
+                .unwrap(),
+            None
+        );
+        addressing.has_timeline = false;
+        assert_eq!(
+            addressing.timeline_ahead(&timing, finite(1), now).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn timeline_ahead_of_an_open_run_counts_only_its_listed_segment() {
+        let runs = Addressing::timeline_runs(&[s(Some(100), 2, -1)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        // The first repetition ends at 102 s; the edge is at 10 + 0 s.
+        let ahead = addressing
+            .timeline_ahead(&dynamic(0, None), finite(0), at(10, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ahead.earliest, Duration::from_secs(92));
+        assert_eq!(ahead.newest, Duration::from_secs(92));
+        assert_eq!(ahead.segment_duration, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn timeline_ahead_counts_only_segments_the_addressing_allows() {
+        let timeline = |start: u64| {
+            let runs = Addressing::timeline_runs(&[s(Some(start), 2, 100)]).unwrap();
+            let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+            addressing.has_timeline = true;
+            addressing.end_number = Some(4);
+            addressing
+        };
+        let timing = dynamic(0, Some(12 * SEC));
+        // Segments 1–4 end at 2–8 s; the timeline's 101st would end at 202 s.
+        let allowed = timeline(0);
+        assert_eq!(
+            allowed
+                .timeline_ahead(&timing, finite(0), at(6, 0))
+                .unwrap(),
+            None
+        );
+        assert_eq!(allowed.window(&timing, finite(0), at(6, 0)).unwrap(), 0..3);
+
+        // Far ahead, the newest listed segment is the fourth (1008 s).
+        let ahead = timeline(1000)
+            .timeline_ahead(&timing, finite(0), at(6, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ahead.earliest, Duration::from_secs(996));
+        assert_eq!(ahead.newest, Duration::from_secs(1002));
+
+        // `availabilityEndTime` bounds how far ahead availability is taken:
+        // at 20 s with the end at 1005 s, the segments ending at 1002 and
+        // 1004 s are still available before it.
+        let ending = PeriodTiming {
+            availability_end: Some(1005 * SEC),
+            ..timing
+        };
+        let addressing = timeline(1000);
+        let ahead = addressing
+            .timeline_ahead(&ending, finite(0), at(20, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ahead.newest, Duration::from_secs(985));
+        let reached = at(20, 0) + chrono::TimeDelta::from_std(ahead.newest).unwrap();
+        assert_eq!(
+            addressing.window(&ending, finite(0), reached).unwrap(),
+            0..2
+        );
+        // Nothing listed becomes available before an earlier end.
+        let early = PeriodTiming {
+            availability_end: Some(1001 * SEC),
+            ..timing
+        };
+        assert_eq!(
+            addressing
+                .timeline_ahead(&early, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
+
+        // Nothing is listed past `availabilityEndTime`.
+        let ended = PeriodTiming {
+            availability_end: Some(5 * SEC),
+            ..timing
+        };
+        assert_eq!(
+            timeline(1000)
+                .timeline_ahead(&ended, finite(0), at(6, 0))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn timeline_ahead_ignores_periods_not_running_by_the_clock() {
+        let runs = Addressing::timeline_runs(&[s(Some(0), 2, 4)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        // A Period starting at 100 s, preannounced at 20 s.
+        let future = dynamic(100 * SEC, None);
+        assert_eq!(
+            addressing
+                .timeline_ahead(&future, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
+        // A Period that ended at 50 s.
+        let past = PeriodTiming {
+            period_duration: Some(50 * SEC),
+            ..dynamic(0, None)
+        };
+        let runs = Addressing::timeline_runs(&[s(Some(1000), 2, 4)]).unwrap();
+        addressing.runs = runs.into();
+        assert_eq!(
+            addressing
+                .timeline_ahead(&past, finite(0), at(60, 0))
+                .unwrap(),
+            None
+        );
+        // While it runs, entries past its end are not listed either.
+        assert_eq!(
+            addressing
+                .timeline_ahead(&past, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn listed_from_reads_the_timeline_whatever_the_clock() {
+        let runs = Addressing::timeline_runs(&[s(Some(1000), 2, 2), s(None, 3, -1)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        addressing.start_number = 10;
+        // Numbers 10–12 at 1000, 1002, 1004; 13 opens the `S@r=-1` at 1006.
+        assert_eq!(addressing.listed_from(0), Some((10, 1000)));
+        assert_eq!(addressing.listed_from(12), Some((12, 1004)));
+        assert_eq!(addressing.listed_from(13), Some((13, 1006)));
+        assert_eq!(
+            addressing.listed_from(14),
+            None,
+            "only the open run's first"
+        );
+        addressing.end_number = Some(11);
+        assert_eq!(addressing.listed_from(12), None);
+        addressing.has_timeline = false;
+        assert_eq!(addressing.listed_from(10), None);
     }
 }

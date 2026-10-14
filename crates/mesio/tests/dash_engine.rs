@@ -64,6 +64,15 @@ struct FileEntry {
 #[derive(Default)]
 struct OriginState {
     mpd: String,
+    /// Replaces `mpd` when the MPD is next requested, and sets `clock` to
+    /// the given server time then.
+    next_mpd: Option<(String, DateTime<Utc>)>,
+    clock: Option<Arc<ManualClock>>,
+    /// Numbered media `n` requested with a query `d` at most `description`
+    /// answers 404 (see [`Origin::hold`]).
+    held: Option<Held>,
+    /// `(prefix, d)` of every numbered media request carrying `?d=`.
+    descriptions_seen: HashSet<(String, u32)>,
     mpd_serves: u32,
     /// After this many successful MPD serves, the MPD answers 500.
     mpd_fail_after: Option<u32>,
@@ -76,6 +85,12 @@ struct OriginState {
     hits: HashMap<String, u64>,
 }
 
+#[derive(Clone, Copy)]
+struct Held {
+    number: u64,
+    description: u32,
+}
+
 #[derive(Clone, Default)]
 struct Origin(Arc<Mutex<OriginState>>);
 
@@ -86,6 +101,39 @@ impl Origin {
 
     fn add_file(&self, path: &str, body: impl Into<Vec<u8>>) {
         self.add_file_failing(path, body, 0, 0);
+    }
+
+    /// Answers 404 to numbered media `number` while requested with a
+    /// `?d=` of at most `description`: only a URL from a later MPD
+    /// description fetches it.
+    fn hold(&self, number: u64, description: u32) {
+        self.0.lock().unwrap().held = Some(Held {
+            number,
+            description,
+        });
+    }
+
+    /// Whether numbered media under `prefix` was requested with
+    /// `?d={description}`.
+    fn saw_description(&self, prefix: &str, description: u32) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .descriptions_seen
+            .contains(&(prefix.to_string(), description))
+    }
+
+    /// Serves `body` from the next MPD request on, as if fetched at
+    /// `server_time`: the clock jumps there when it is served.
+    fn serve_next_mpd(
+        &self,
+        body: impl Into<String>,
+        server_time: DateTime<Utc>,
+        clock: &Arc<ManualClock>,
+    ) {
+        let mut state = self.0.lock().unwrap();
+        state.next_mpd = Some((body.into(), server_time));
+        state.clock = Some(Arc::clone(clock));
     }
 
     fn add_file_failing(&self, path: &str, body: impl Into<Vec<u8>>, status: u16, times: u32) {
@@ -174,6 +222,12 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     *state.hits.entry(path.clone()).or_default() += 1;
 
     if path.ends_with(".mpd") {
+        if let Some((body, server_time)) = state.next_mpd.take() {
+            state.mpd = body;
+            if let Some(clock) = &state.clock {
+                clock.set(server_time);
+            }
+        }
         if let Some(status) = state.mpd_status {
             return respond(StatusCode::from_u16(status).unwrap(), Vec::new());
         }
@@ -197,12 +251,27 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
         return respond(StatusCode::OK, entry.body.clone());
     }
     if let Some((prefix, name)) = path.rsplit_once('/')
-        && let Some(numbered) = state.numbered.get(prefix)
+        && let Some(numbered) = state.numbered.get(prefix).cloned()
         && let Some(number) = name
             .strip_suffix(".m4s")
             .and_then(|number| number.parse::<u64>().ok())
         && number > 0
     {
+        let description = uri
+            .query()
+            .and_then(|query| query.strip_prefix("d="))
+            .and_then(|value| value.parse::<u32>().ok());
+        if let Some(description) = description {
+            state
+                .descriptions_seen
+                .insert((prefix.to_string(), description));
+            if let Some(held) = state.held
+                && held.number == number
+                && description <= held.description
+            {
+                return respond(StatusCode::NOT_FOUND, Vec::new());
+            }
+        }
         let body = with_tfdt(numbered.segment, (number - 1) * numbered.timescale);
         return respond(StatusCode::OK, body);
     }
@@ -1820,4 +1889,248 @@ async fn rejected_subtitles_do_not_count_against_the_media_tracks() {
     assert!(error.is_none(), "{error:?}");
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
     assert_eq!(count_track(&items, 1), 2);
+}
+
+/// Consecutive live MPDs from a TikTok origin (sanitised: media paths
+/// rewritten for this origin; each carries its response `Date` in a
+/// `served` comment). Its edges alternate between describing the newest
+/// segment at `t="0"` with `availabilityStartTime` moved to the response
+/// time, and describing real media times that lie ~45 minutes past
+/// `availabilityStartTime`. Segment numbers agree throughout.
+const TIKTOK_LIVE: [&str; 18] = [
+    include_str!("fixtures/dash/tiktok-live/01.mpd"),
+    include_str!("fixtures/dash/tiktok-live/02.mpd"),
+    include_str!("fixtures/dash/tiktok-live/03.mpd"),
+    include_str!("fixtures/dash/tiktok-live/04.mpd"),
+    include_str!("fixtures/dash/tiktok-live/05.mpd"),
+    include_str!("fixtures/dash/tiktok-live/06.mpd"),
+    include_str!("fixtures/dash/tiktok-live/07.mpd"),
+    include_str!("fixtures/dash/tiktok-live/08.mpd"),
+    include_str!("fixtures/dash/tiktok-live/09.mpd"),
+    include_str!("fixtures/dash/tiktok-live/10.mpd"),
+    include_str!("fixtures/dash/tiktok-live/11.mpd"),
+    include_str!("fixtures/dash/tiktok-live/12.mpd"),
+    include_str!("fixtures/dash/tiktok-live/13.mpd"),
+    include_str!("fixtures/dash/tiktok-live/14.mpd"),
+    include_str!("fixtures/dash/tiktok-live/15.mpd"),
+    include_str!("fixtures/dash/tiktok-live/16.mpd"),
+    include_str!("fixtures/dash/tiktok-live/17.mpd"),
+    include_str!("fixtures/dash/tiktok-live/18.mpd"),
+];
+
+/// The server time a fixture MPD was served at.
+fn served(mpd: &str) -> DateTime<Utc> {
+    let (_, rest) = mpd.split_once("<!-- served: ").expect("served comment");
+    let (time, _) = rest.split_once(" -->").expect("served comment end");
+    DateTime::parse_from_rfc3339(time)
+        .expect("served time")
+        .with_timezone(&Utc)
+}
+
+/// The newest segment number a fixture MPD lists (both of its timelines
+/// list the same numbers).
+fn newest_listed(mpd: &str) -> u64 {
+    let (_, rest) = mpd.split_once(r#"startNumber=""#).expect("startNumber");
+    let (start, _) = rest.split_once('"').expect("startNumber end");
+    let entries = mpd.matches("<S ").count() as u64 / 2;
+    start.parse::<u64>().expect("numeric startNumber") + entries - 1
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoch() {
+    let origin = Origin::default();
+    origin.add_av();
+    let clock = Arc::new(ManualClock::new(ast()));
+    // Description `d` (1-based) tags its media URLs with `?d={d}` and is
+    // refreshed as often as this test steps through them.
+    let tagged = |description: u32, mpd: &str| {
+        mpd.replace(
+            r#"minimumUpdatePeriod="PT1.000S""#,
+            r#"minimumUpdatePeriod="PT0.05S""#,
+        )
+        .replace(
+            r#"media="v/$Number$.m4s""#,
+            &format!(r#"media="v/$Number$.m4s?d={description}""#),
+        )
+        .replace(
+            r#"media="a/$Number$.m4s""#,
+            &format!(r#"media="a/$Number$.m4s?d={description}""#),
+        )
+    };
+    // Half a second into each response's second, as the `Date` header
+    // truncates.
+    let at = |mpd: &str| served(mpd) + chrono::TimeDelta::milliseconds(500);
+    let newest: Vec<u64> = TIKTOK_LIVE.iter().map(|mpd| newest_listed(mpd)).collect();
+    // Each description must be observably planned (see below): one that
+    // offers nothing new is seen through the newest segment held back since
+    // the previous one, so two of those may not follow each other.
+    assert!(
+        newest
+            .windows(3)
+            .all(|run| !(run[0] == run[1] && run[1] == run[2])),
+        "{newest:?}"
+    );
+
+    origin.hold(newest[0], 1);
+    origin.serve_next_mpd(tagged(1, TIKTOK_LIVE[0]), at(TIKTOK_LIVE[0]), &clock);
+    let base = origin.clone().serve().await;
+    let mut config = config(Some(Arc::clone(&clock)));
+    // A held segment is retried until the next description releases it.
+    config.fetcher.max_segment_retries = 10_000;
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        mut items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
+    let reader = tokio::spawn(async move {
+        let mut out = Vec::new();
+        let error = read_until(&mut items, &mut out, |_| false).await;
+        (out, error)
+    });
+
+    // One description per refresh, each confirmed planned by both tracks
+    // before the next is served: a request tagged with its `d` comes only
+    // from work planned or reissued from it. The newest number is held
+    // back (404) until a later description, so a description that adds no
+    // number still reissues it under its own tag.
+    for (index, mpd) in TIKTOK_LIVE.iter().enumerate() {
+        let description = index as u32 + 1;
+        if index > 0 {
+            if newest[index] > newest[index - 1] {
+                origin.hold(newest[index], description);
+            }
+            origin.serve_next_mpd(tagged(description, mpd), at(mpd), &clock);
+        }
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            while !(origin.saw_description("v", description)
+                && origin.saw_description("a", description))
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("description {description} was never planned by both tracks"));
+    }
+    // The stream ends with the last description, now static.
+    let last = TIKTOK_LIVE[TIKTOK_LIVE.len() - 1];
+    let ended = tagged(TIKTOK_LIVE.len() as u32 + 1, last)
+        .replace(r#"type="dynamic""#, r#"type="static""#)
+        .replace(r#" minimumUpdatePeriod="PT0.05S""#, "")
+        .replace(r#" timeShiftBufferDepth="PT12.000S""#, "");
+    origin.serve_next_mpd(ended, at(last), &clock);
+
+    let (out, error) = tokio::time::timeout(TEST_TIMEOUT, reader)
+        .await
+        .expect("the stream ends")
+        .expect("reader joins");
+    assert!(error.is_none(), "{error:?}");
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert!(ends_with_end_of_stream(&out), "{}", describe(&out));
+    assert_eq!(inits(&out).len(), 1, "one epoch: {}", describe(&out));
+    assert!(
+        !out.iter().any(|item| matches!(
+            item,
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        )),
+        "{}",
+        describe(&out)
+    );
+    assert_two_track_stream(&out);
+    let video: Vec<u64> = media(&out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .filter(|(_, track, _)| *track == 1)
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE + 1)
+        .collect();
+    assert_eq!(video, (1319..=1331).collect::<Vec<_>>());
+
+    let events = log.finish().await;
+    for number in 1319..=1331 {
+        for track in ["v", "a"] {
+            assert_eq!(
+                downloads(&events, &format!("{track}/{number}.m4s")),
+                1,
+                "{track}/{number}"
+            );
+        }
+    }
+    assert_eq!(downloads(&events, "v/init.mp4"), 1);
+    assert_eq!(downloads(&events, "a/init.mp4"), 1);
+    assert_eq!(origin.hits("v/1318.m4s"), 0);
+    assert_eq!(origin.hits("v/1332.m4s"), 0);
+}
+
+/// A/V `$Number$` timelines of one-second segments from `start_number`,
+/// the first at `first_secs`, anchored `ast_secs` after [`ast`].
+fn numbered_timeline_mpd(ast_secs: i64, start_number: u64, first_secs: u64) -> String {
+    let ast = (ast() + chrono::TimeDelta::seconds(ast_secs)).to_rfc3339();
+    let t = first_secs * 1000;
+    let template = |track: &str| {
+        format!(
+            r#"<SegmentTemplate media="{track}/$Number$.m4s" initialization="{track}/init.mp4" timescale="1000" startNumber="{start_number}">
+        <SegmentTimeline><S t="{t}" d="1000" r="2"/></SegmentTimeline>
+      </SegmentTemplate>"#
+        )
+    };
+    let (video, audio) = (template("v"), template("a"));
+    format!(
+        r#"<?xml version="1.0"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic" availabilityStartTime="{ast}" minimumUpdatePeriod="PT0.1S" timeShiftBufferDepth="PT10S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      {video}
+      <Representation id="v" bandwidth="40000" codecs="avc1.64000a"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4" lang="en">
+      {audio}
+      <Representation id="a" bandwidth="24000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+    )
+}
+
+/// A numbering restarted below the newest planned number (an encoder
+/// restart under the same ids) cannot be told from a stale MPD: nothing more
+/// is planned, and the live stall watchdog ends the session with a typed
+/// timeout instead of hanging.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_numbering_restart_ends_the_session_through_the_stall_watchdog() {
+    let origin = Origin::default();
+    origin.add_av();
+    // #100–#102 cover 99–102 s.
+    origin.set_mpd(numbered_timeline_mpd(0, 100, 99));
+    let base = origin.clone().serve().await;
+    let mut config = config(Some(live_clock(103)));
+    config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(10)));
+    config.output.live_max_overall_stall_duration = Some(Duration::from_secs(2));
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    wait_for_hit(&origin, "v/102.m4s").await;
+    wait_for_hit(&origin, "a/102.m4s").await;
+    // The encoder restarts: a new anchor, numbering from 1 again.
+    origin.set_mpd(numbered_timeline_mpd(103, 1, 0));
+
+    let (items, error, _, terminal) = drain(session).await;
+    assert!(
+        matches!(error, Some(DownloadError::Timeout { .. })),
+        "{error:?}"
+    );
+    assert!(
+        matches!(terminal, DownloadTerminal::PipelineError(_)),
+        "{terminal:?}"
+    );
+    assert!(!media(&items).is_empty(), "{}", describe(&items));
+    assert_eq!(origin.hits("v/1.m4s"), 0, "nothing below the frontier");
+    assert_eq!(origin.hits("a/1.m4s"), 0);
 }

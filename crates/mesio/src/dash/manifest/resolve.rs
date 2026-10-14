@@ -22,7 +22,7 @@ use super::parse::{
 use super::template::{Template, TemplateKind};
 use super::timeline::{
     Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, PeriodTiming, Run,
-    SegmentUrls, SegmentWindow,
+    SegmentUrls, SegmentWindow, TimelineLead,
 };
 use super::xs::{self, RawOffset};
 
@@ -238,9 +238,9 @@ impl Representation {
         self.addressing.kind()
     }
 
-    /// Whether segment timing comes from a `SegmentTimeline`. If so, a
-    /// segment's stable identity across MPD updates is its
-    /// [`super::Segment::time`]; otherwise its [`super::Segment::number`].
+    /// Whether segment timing comes from a `SegmentTimeline`. Together with
+    /// [`Self::addressing_kind`] it decides a segment's stable identity
+    /// across MPD updates (see [`super::AddressingKind`]).
     pub fn uses_segment_timeline(&self) -> bool {
         self.addressing.has_timeline
     }
@@ -265,6 +265,33 @@ impl Representation {
             AvailabilityTimeOffset::ZERO
         };
         self.addressing.segments(&self.timing, offset, now)
+    }
+
+    /// How far ahead of the segments available at `now` everything this
+    /// Representation's `SegmentTimeline` lists lies, when not one listed
+    /// segment is available yet and the Period is running by the clock
+    /// (see [`Self::segments`] for the availability rules).
+    ///
+    /// An MPD may describe segments before they become available, so this
+    /// alone does not prove the clock wrong; what it means is the caller's
+    /// decision.
+    pub fn timeline_ahead(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TimelineLead>, ManifestError> {
+        let offset = if self.availability_time_complete {
+            self.availability_time_offset
+        } else {
+            AvailabilityTimeOffset::ZERO
+        };
+        self.addressing.timeline_ahead(&self.timing, offset, now)
+    }
+
+    /// The first segment this Representation's `SegmentTimeline` lists
+    /// from segment `number` on, as `(number, media time)`, regardless of
+    /// availability; `None` without a timeline or past its end.
+    pub fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        self.addressing.listed_from(number)
     }
 
     /// Where this `SegmentBase` Representation's Segment Index is, while it

@@ -20,7 +20,7 @@ mod segment_index;
 mod selection;
 pub mod watcher;
 
-pub use crate::segment_engine::descriptor::{DashSegmentMeta, MediaTrack};
+pub use crate::segment_engine::descriptor::{DashSegmentMeta, MediaTrack, WallClockAnchor};
 pub use config::{
     AudioSelection, DashBudgetSplit, DashConfig, DashManifestConfig, DashMuxConfig,
     DashSelectionConfig, LiveStartPolicy, VideoSelection,

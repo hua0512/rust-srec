@@ -68,7 +68,7 @@ use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
 use crate::segment_engine::control::EngineNotice;
 use crate::segment_engine::descriptor::{
-    DashSegmentMeta, MediaTrack, SegmentDescriptor, SegmentMeta,
+    DashSegmentMeta, MediaTrack, SegmentDescriptor, SegmentMeta, WallClockAnchor,
 };
 use crate::segment_engine::payload::SegmentPayload;
 use crate::session::{DownloadEvent, EventSink};
@@ -1829,8 +1829,8 @@ fn init_media_segment(descriptor: &SegmentDescriptor) -> m3u8_rs::MediaSegment {
 }
 
 /// The synthetic playlist entry describing an output item: leader coverage
-/// as duration and, for dynamic presentations, the wall-clock time of its
-/// start.
+/// as duration and, for dynamic presentations whose timing anchor the
+/// planner still trusts, the wall-clock time of its start.
 fn media_segment(
     descriptor: &SegmentDescriptor,
     start: i128,
@@ -1843,7 +1843,8 @@ fn media_segment(
         ((end - start).max(0) as f64 / f64::from(timescale)) as f32
     };
     let program_date_time = dash_meta(descriptor)
-        .and_then(|meta| meta.availability_start_time)
+        .and_then(|meta| meta.availability_start_time.as_ref())
+        .and_then(WallClockAnchor::get)
         .and_then(|anchor| presentation_instant(anchor, start, timescale))
         .map(|time| time.fixed_offset());
     m3u8_rs::MediaSegment {
