@@ -166,7 +166,7 @@ async fn fetch_key(
                             .timeout(fetcher.key_download_timeout)
                             .send()
                             .await
-                            .map_err(|error| crate::rate_limit::request_error(error, KEY_FETCH))?;
+                            .map_err(HlsDownloaderError::from)?;
                         let status = response.status();
                         if let Some(retry_in) =
                             admission.observe(response.url(), status, response.headers())

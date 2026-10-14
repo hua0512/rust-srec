@@ -140,6 +140,12 @@ impl MpdFetcher {
         self.clients.rate_limiter().policy().max_throttled
     }
 
+    /// What is left of the allowance for rate limiting that began at
+    /// `since`.
+    pub(crate) fn allowance_left(&self, since: Instant) -> Option<Duration> {
+        self.clients.rate_limiter().policy().allowance_left(since)
+    }
+
     /// Sets the tracks the session records; later fetches read the Segment
     /// Indexes those tracks select.
     pub(crate) fn record_tracks(&self, tracks: Vec<MediaTrack>) {
@@ -214,7 +220,7 @@ impl MpdFetcher {
             _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
             response = request.send() => response,
         }
-        .map_err(|error| crate::rate_limit::request_error(error, "MPD fetch"))?;
+        .map_err(DownloadError::from)?;
         let status = response.status();
         if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
             return Err(DownloadError::rate_limited(
@@ -596,8 +602,9 @@ impl MpdWatcher {
                                     error = %crate::redact::redact_diagnostic(&error),
                                     "MPD refresh rate limited"
                                 );
-                                (since.elapsed() < self.fetcher.max_throttled())
-                                    .then_some(*retry_in)
+                                self.fetcher
+                                    .allowance_left(since)
+                                    .map(|left| (*retry_in).min(left))
                             } else {
                                 retries += 1;
                                 warn!(

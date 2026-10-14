@@ -809,15 +809,20 @@ impl SegmentStateStore {
                     // with the backlog and skipped (see `prune_below`).
                     // The bound is wall-clock time since the first refusal, so
                     // it also covers short cool-downs and time spent queued.
+                    // The retry is clamped to the rest of the allowance, so a
+                    // long cool-down near its end cannot carry it past it.
                     FailureClass::RateLimited { delay, .. } => {
                         let since = *record.throttled_since.get_or_insert(now);
-                        (now.saturating_duration_since(since) < self.config.max_throttled).then(
-                            || {
+                        self.config
+                            .max_throttled
+                            .checked_sub(now.saturating_duration_since(since))
+                            .filter(|left| !left.is_zero())
+                            .map(|left| {
                                 delay
                                     .max(self.config.retry_delay_base)
                                     .max(MIN_RATE_LIMITED_RETRY)
-                            },
-                        )
+                                    .min(left)
+                            })
                     }
                     // A signed URL can expire while its segment waits out
                     // rate limiting, and the playlist that would refresh it
@@ -2274,6 +2279,42 @@ mod tests {
         }
         assert!(now.duration_since(start) >= Duration::from_secs(60));
         assert!(now.duration_since(start) < Duration::from_secs(61));
+    }
+
+    #[test]
+    fn a_rate_limit_retry_never_lands_past_the_bound() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            max_throttled: Duration::from_secs(300),
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let refused = |seconds| FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(seconds),
+            held_back: false,
+        };
+        let start = Instant::now();
+        fail_at(&mut s, &b, refused(1), start);
+        // A minute-long cool-down one second before the bound.
+        let now = start + Duration::from_secs(299);
+        let effects = fail_at(&mut s, &b, refused(60), now);
+        assert_eq!(
+            effects.retry_notice.expect("one more try").delay,
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            s.next_retry_deadline(),
+            Some(start + Duration::from_secs(300))
+        );
+        let effects = fail_at(&mut s, &b, refused(60), start + Duration::from_secs(300));
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
     }
 
     #[test]

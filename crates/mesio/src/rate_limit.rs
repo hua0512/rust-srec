@@ -2,14 +2,15 @@
 //! through one [`ClientPool`](crate::downloader::ClientPool).
 //!
 //! A `429 Too Many Requests`, or a `503 Service Unavailable` that carries a
-//! `Retry-After` header, puts the answering origin into a cool-down. The
-//! answering origin is the one the response came from, after redirects.
-//! While it lasts, requests to that origin are held back: manifest,
-//! playlist and Segment Index requests wait for it ([`RateLimiter::admit`]),
-//! while segment and key requests return at once
-//! ([`RateLimiter::try_admit`]) so that a waiting segment does not hold a
-//! download slot that requests to other servers could use. A redirect into
-//! a cooling origin is refused as well (see [`RateLimiter::redirect_gate`]).
+//! `Retry-After` header, puts origins into a cool-down: the origin the
+//! request was sent to, and the origin that answered when a redirect led
+//! elsewhere. Requests are admitted by the origin they are sent to, so a
+//! refusal from a redirect target pauses the requests that lead there,
+//! while direct requests to the target are paused by its own cool-down.
+//! While it lasts, manifest, playlist and Segment Index requests wait for
+//! it ([`RateLimiter::admit`]), while segment and key requests return at
+//! once ([`RateLimiter::try_admit`]) so that a waiting segment does not hold
+//! a download slot that requests to other servers could use.
 //!
 //! When the cool-down ends, one request goes first as a probe and the
 //! others wait for its answer, so a server that is recovering does not
@@ -32,7 +33,6 @@
 //! refresh, waiting for admission included.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -85,6 +85,15 @@ impl Default for RateLimitPolicy {
 }
 
 impl RateLimitPolicy {
+    /// What is left of the allowance for rate limiting that began at
+    /// `since`; `None` once it is spent. Delays are clamped to it, so the
+    /// bound holds even when a long cool-down starts near its end.
+    pub(crate) fn allowance_left(&self, since: Instant) -> Option<Duration> {
+        self.max_throttled
+            .checked_sub(since.elapsed())
+            .filter(|left| !left.is_zero())
+    }
+
     /// The cool-down after `strikes` consecutive rate-limited probes without
     /// `Retry-After`, with `jitter` in `[0, 1]` choosing a point in its upper
     /// half. Equal jitter keeps sessions that were limited together from
@@ -148,47 +157,6 @@ impl Throttled {
     }
 }
 
-/// The error the client's redirect policy stops a redirect into a cooling
-/// origin with; see [`request_error`].
-#[derive(Debug)]
-pub(crate) struct RedirectThrottled {
-    url: Url,
-    throttled: Throttled,
-}
-
-impl fmt::Display for RedirectThrottled {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "redirect into {}, which is rate limiting",
-            self.url.origin().ascii_serialization()
-        )
-    }
-}
-
-impl std::error::Error for RedirectThrottled {}
-
-/// The error for a request that failed before an answer: a redirect into a
-/// cooling origin becomes [`DownloadError::RateLimited`] for that origin.
-pub(crate) fn request_error(error: reqwest::Error, operation: &'static str) -> DownloadError {
-    match redirect_throttled(&error) {
-        Some(redirect) => redirect.throttled.error(&redirect.url, operation),
-        None => DownloadError::from(error),
-    }
-}
-
-/// The cool-down that stopped `error`'s redirect, if one did.
-pub(crate) fn redirect_throttled(error: &reqwest::Error) -> Option<&RedirectThrottled> {
-    let mut source = std::error::Error::source(error);
-    while let Some(error) = source {
-        if let Some(redirect) = error.downcast_ref::<RedirectThrottled>() {
-            return Some(redirect);
-        }
-        source = error.source();
-    }
-    None
-}
-
 #[derive(Debug)]
 struct Cooldown {
     /// Consecutive rate-limited answers to fresh requests; what the backoff
@@ -240,29 +208,32 @@ impl Default for RateLimiter {
 pub(crate) struct Admission<'a> {
     limiter: &'a RateLimiter,
     seq: u64,
-    /// The origin this admission probes.
-    probe: Option<String>,
+    /// The origin the request is sent to.
+    origin: String,
+    /// Whether this request is that origin's probe.
+    probe: bool,
 }
 
 impl Drop for Admission<'_> {
     fn drop(&mut self) {
-        if let Some(origin) = self.probe.take() {
-            self.limiter.release_probe(&origin, self.seq);
+        if self.probe {
+            self.limiter.release_probe(&self.origin, self.seq);
         }
     }
 }
 
 impl Admission<'_> {
-    /// Records the answer to the admitted request. `url` is the URL that
-    /// answered (`Response::url`, after redirects). Returns how long its
-    /// origin now cools down when the answer is rate limiting.
+    /// Records the answer to the admitted request. `answered` is the URL
+    /// that answered (`Response::url`, after redirects). Returns how long
+    /// the request's origin now cools down when the answer is rate
+    /// limiting.
     pub(crate) fn observe(
         &self,
-        url: &Url,
+        answered: &Url,
         status: StatusCode,
         headers: &HeaderMap,
     ) -> Option<Duration> {
-        self.limiter.observe(self.seq, url, status, headers)
+        self.limiter.observe(self, answered, status, headers)
     }
 }
 
@@ -290,7 +261,8 @@ impl RateLimiter {
             return Ok(Admission {
                 limiter: self,
                 seq,
-                probe: None,
+                origin,
+                probe: false,
             });
         };
         let now = Instant::now();
@@ -311,7 +283,8 @@ impl RateLimiter {
         Ok(Admission {
             limiter: self,
             seq,
-            probe: Some(origin),
+            origin,
+            probe: true,
         })
     }
 
@@ -348,71 +321,75 @@ impl RateLimiter {
         }
     }
 
-    /// Whether a redirect hop into `url` must be refused: its origin is
-    /// cooling down, or its probe has not answered yet. Hops are not probes
-    /// themselves; after the cool-down they pass, and their answers count
-    /// like those of direct requests admitted at the same time.
-    pub(crate) fn redirect_gate(&self, url: &Url) -> Option<Throttled> {
-        let state = self.state.lock();
-        let cooldown = state.cooldowns.get(&origin_key(url))?;
-        let now = Instant::now();
-        if now < cooldown.until {
-            Some(Throttled {
-                status: cooldown.status,
-                retry_in: cooldown.until - now,
-            })
-        } else {
-            cooldown.probe.map(|_| Throttled {
-                status: cooldown.status,
-                retry_in: PROBE_POLL,
-            })
-        }
-    }
-
-    /// Error for a redirect hop the policy refuses.
-    pub(crate) fn redirect_error(url: &Url, throttled: Throttled) -> RedirectThrottled {
-        RedirectThrottled {
-            url: url.clone(),
-            throttled,
-        }
-    }
-
     fn observe(
         &self,
-        seq: u64,
-        url: &Url,
+        admission: &Admission<'_>,
+        answered: &Url,
         status: StatusCode,
         headers: &HeaderMap,
     ) -> Option<Duration> {
         let has_retry_after = headers.contains_key(RETRY_AFTER);
         let retry_after = retry_after(headers, Utc::now());
-        let origin = origin_key(url);
+        let answered = origin_key(answered);
+        let mut origins = vec![admission.origin.as_str()];
+        if answered != admission.origin {
+            origins.push(&answered);
+        }
         let now = Instant::now();
         let mut state = self.state.lock();
         if !is_rate_limited(status, has_retry_after) {
-            if state
-                .cooldowns
-                .get(&origin)
-                .is_some_and(|cooldown| seq > cooldown.started)
-            {
-                state.cooldowns.remove(&origin);
-                drop(state);
+            let mut ended = false;
+            for origin in origins {
+                if state
+                    .cooldowns
+                    .get(origin)
+                    .is_some_and(|cooldown| admission.seq > cooldown.started)
+                {
+                    state.cooldowns.remove(origin);
+                    ended = true;
+                    debug!(origin, "server stopped rate limiting");
+                }
+            }
+            drop(state);
+            if ended {
                 self.changed.notify_waiters();
-                debug!(origin, "server stopped rate limiting");
             }
             return None;
         }
 
         let wait = retry_after
             .map(|wait| wait.clamp(self.policy.min_cool_down, self.policy.max_retry_after));
-        let strikes = match state.cooldowns.get_mut(&origin) {
+        let mut requested_wait = Duration::ZERO;
+        for origin in origins {
+            let remaining = self.cool_down(&mut state, origin, admission.seq, status, wait, now);
+            if origin == admission.origin {
+                requested_wait = remaining;
+            }
+        }
+        drop(state);
+        self.changed.notify_waiters();
+        Some(requested_wait)
+    }
+
+    /// Puts `origin` into a cool-down after a rate-limiting answer to the
+    /// request admitted as `seq`, and returns what is left of it.
+    fn cool_down(
+        &self,
+        state: &mut State,
+        origin: &str,
+        seq: u64,
+        status: StatusCode,
+        wait: Option<Duration>,
+        now: Instant,
+    ) -> Duration {
+        let strikes = match state.cooldowns.get_mut(origin) {
             // Sent before this cool-down began: no evidence that the server
             // needs longer, unless it says so.
             Some(cooldown) if seq < cooldown.started => {
                 if let Some(wait) = wait {
                     cooldown.until = cooldown.until.max(now + wait);
                 }
-                return Some(cooldown.until.saturating_duration_since(now));
+                return cooldown.until.saturating_duration_since(now);
             }
             Some(cooldown) => cooldown.strikes.saturating_add(1),
             None => 1,
@@ -424,7 +401,7 @@ impl RateLimiter {
         });
         let started = state.next_seq();
         state.cooldowns.insert(
-            origin.clone(),
+            origin.to_owned(),
             Cooldown {
                 strikes,
                 until: now + delay,
@@ -433,17 +410,14 @@ impl RateLimiter {
                 status,
             },
         );
-        drop(state);
-        self.changed.notify_waiters();
         warn!(
             origin,
             status = status.as_u16(),
             strikes,
-            retry_after_secs = retry_after.map(|wait| wait.as_secs()),
             delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
             "server is rate limiting; pausing requests to it"
         );
-        Some(delay)
+        delay
     }
 
     fn release_probe(&self, origin: &str, seq: u64) {
@@ -671,7 +645,7 @@ mod tests {
             .admit(&url("https://other.example/a"), &cancel, far(), "t")
             .await
             .unwrap();
-        assert!(elsewhere.probe.is_none());
+        assert!(!elsewhere.probe);
         assert_eq!(started.elapsed(), Duration::ZERO);
         // Requests that must not wait are told how long to stay away.
         assert_eq!(
@@ -684,7 +658,7 @@ mod tests {
 
         let probe = limiter.admit(&segment, &cancel, far(), "t").await.unwrap();
         assert_eq!(started.elapsed(), Duration::from_secs(10));
-        assert!(probe.probe.is_some());
+        assert!(probe.probe);
         assert_eq!(
             limiter.try_admit(&segment).err().map(|t| t.retry_in),
             Some(PROBE_POLL),
@@ -698,7 +672,7 @@ mod tests {
             let segment = segment.clone();
             async move {
                 let admission = limiter.admit(&segment, &cancel, far(), "t").await.unwrap();
-                (Instant::now(), admission.probe.is_some())
+                (Instant::now(), admission.probe)
             }
         });
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -745,7 +719,7 @@ mod tests {
         // release the requests waiting for the probe.
         tokio::time::sleep(first).await;
         let probe = limiter.try_admit(&mpd).expect("probe");
-        assert!(probe.probe.is_some());
+        assert!(probe.probe);
         assert_eq!(slow.observe(&mpd, StatusCode::OK, &HeaderMap::new()), None);
         assert!(
             limiter.try_admit(&mpd).is_err(),
@@ -765,7 +739,7 @@ mod tests {
         let probe = limiter.try_admit(&mpd).expect("next probe");
         probe.observe(&mpd, StatusCode::OK, &HeaderMap::new());
         drop(probe);
-        assert!(limiter.try_admit(&mpd).unwrap().probe.is_none(), "over");
+        assert!(!limiter.try_admit(&mpd).unwrap().probe, "over");
     }
 
     #[tokio::test(start_paused = true)]
@@ -785,7 +759,7 @@ mod tests {
             let cancel = cancel.clone();
             async move {
                 let admission = limiter.admit(&mpd, &cancel, far(), "t").await.unwrap();
-                admission.probe.is_some()
+                admission.probe
             }
         });
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -861,34 +835,60 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn answers_are_attributed_to_the_origin_that_gave_them() {
+    async fn a_redirected_refusal_pauses_the_entry_point_and_the_target() {
         let limiter = RateLimiter::default();
         let playlist = url("https://origin.example/live.m3u8");
         let cdn = url("https://cdn.example/live.m3u8?token=1");
+        let elsewhere = url("https://origin.example/other.m3u8");
         // The playlist was redirected to the CDN, which refused it.
         let admission = limiter.try_admit(&playlist).unwrap();
-        admission.observe(
+        let delay = admission.observe(
             &cdn,
             StatusCode::TOO_MANY_REQUESTS,
             &headers(&[(RETRY_AFTER, "5")]),
         );
-        assert!(limiter.try_admit(&playlist).is_ok(), "the origin is fine");
-        assert!(limiter.try_admit(&cdn).is_err(), "the CDN cools down");
-        // Redirects into the CDN are refused while it cools down.
-        assert_eq!(
-            limiter.redirect_gate(&cdn),
-            Some(Throttled {
-                status: StatusCode::TOO_MANY_REQUESTS,
-                retry_in: Duration::from_secs(5),
-            })
+        assert_eq!(delay, Some(Duration::from_secs(5)));
+        drop(admission);
+        // Requests that lead there pause, and so do direct ones.
+        assert!(
+            limiter.try_admit(&elsewhere).is_err(),
+            "the entry point pauses"
         );
-        assert_eq!(limiter.redirect_gate(&playlist), None);
+        assert!(limiter.try_admit(&cdn).is_err(), "the CDN pauses");
+
+        // After the pause, the probe is a request to the entry point; its
+        // redirected success ends both cool-downs.
         tokio::time::sleep(Duration::from_secs(5)).await;
-        assert_eq!(limiter.redirect_gate(&cdn), None, "hops pass afterwards");
-        // A fresh request redirected there ends the cool-down when it is
-        // answered.
-        let admission = limiter.try_admit(&playlist).unwrap();
-        admission.observe(&cdn, StatusCode::OK, &HeaderMap::new());
-        assert!(limiter.try_admit(&cdn).unwrap().probe.is_none());
+        let probe = limiter.try_admit(&playlist).expect("probe");
+        assert!(probe.probe);
+        assert!(limiter.try_admit(&playlist).is_err(), "one probe at a time");
+        assert!(
+            probe
+                .observe(&cdn, StatusCode::OK, &HeaderMap::new())
+                .is_none()
+        );
+        drop(probe);
+        assert!(!limiter.try_admit(&playlist).unwrap().probe);
+        assert!(!limiter.try_admit(&cdn).unwrap().probe);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_redirected_within_its_origin_ends_the_cool_down() {
+        let limiter = RateLimiter::default();
+        let segment = url("https://origin.example/seg/1.ts");
+        let moved = url("https://origin.example/v2/seg/1.ts");
+        let admission = limiter.try_admit(&segment).unwrap();
+        admission.observe(
+            &moved,
+            StatusCode::TOO_MANY_REQUESTS,
+            &headers(&[(RETRY_AFTER, "2")]),
+        );
+        drop(admission);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let probe = limiter.try_admit(&segment).expect("probe");
+        assert!(probe.probe);
+        probe.observe(&moved, StatusCode::OK, &HeaderMap::new());
+        drop(probe);
+        assert!(!limiter.try_admit(&segment).unwrap().probe, "recovered");
     }
 }

@@ -151,7 +151,13 @@ impl PlaylistWatcher {
         loop {
             let base_refresh_interval = Duration::from_secs_f64(current_target_duration * 0.5)
                 .max(self.config.playlist_config.live_refresh_interval);
-            let refresh_delay = tracker.get_refresh_interval(base_refresh_interval);
+            let mut refresh_delay = tracker.get_refresh_interval(base_refresh_interval);
+            // While rate limited, the next refresh must not land past the
+            // bound on it.
+            if let Some(since) = throttled_since {
+                let policy = self.clients.rate_limiter().policy();
+                refresh_delay = refresh_delay.min(policy.allowance_left(since).unwrap_or_default());
+            }
 
             tokio::select! {
                 biased;
@@ -246,7 +252,10 @@ impl PlaylistWatcher {
                             error = %crate::redact::redact_diagnostic(&e),
                             "playlist refresh rate limited"
                         );
-                        (since.elapsed() < rate_limiter.policy().max_throttled).then_some(*retry_in)
+                        rate_limiter
+                            .policy()
+                            .allowance_left(since)
+                            .map(|left| (*retry_in).min(left))
                     } else {
                         error!(
                             "Error refreshing playlist {}: {}",
@@ -319,7 +328,7 @@ impl PlaylistWatcher {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
             response = request.send() => response,
         }
-        .map_err(|error| crate::rate_limit::request_error(error, "playlist refresh"))?;
+        .map_err(HlsDownloaderError::from)?;
         if let Some(retry_in) =
             admission.observe(response.url(), response.status(), response.headers())
         {

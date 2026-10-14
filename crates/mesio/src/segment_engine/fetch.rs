@@ -420,10 +420,6 @@ async fn download_once(
         response = request.send() => response,
     }
     .map_err(|e| {
-        if crate::rate_limit::redirect_throttled(&e).is_some() {
-            let error = crate::rate_limit::request_error(e, operation);
-            return (held_back_failure(error), false);
-        }
         let class = classify_reqwest(&e);
         (
             Failure::new(class, crate::redact::redact_reqwest(e).to_string()),
@@ -666,8 +662,7 @@ pub(crate) async fn fetch_range(
         .await?;
     let response = tokio::select! {
         _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-        response = request.send() => response
-            .map_err(|error| crate::rate_limit::request_error(error, operation))?,
+        response = request.send() => response?,
     };
     let status = response.status();
     if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
@@ -1129,7 +1124,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redirected_refusals_cool_down_the_server_that_refused() {
+    async fn redirected_refusals_pause_the_entry_point_and_the_target() {
         let (cdn, cdn_hits) = serve(|| {
             axum::response::Response::builder()
                 .status(429)
@@ -1139,7 +1134,7 @@ mod tests {
         })
         .await;
         let target = format!("{cdn}/index.mp4");
-        let (origin, _) = serve(move || {
+        let (origin, origin_hits) = serve(move || {
             axum::response::Response::builder()
                 .status(302)
                 .header("location", target.as_str())
@@ -1151,15 +1146,11 @@ mod tests {
         let cancel = CancellationToken::new();
         let origin_url = Url::parse(&format!("{origin}/index.mp4")).unwrap();
         let cdn_url = Url::parse(&format!("{cdn}/index.mp4")).unwrap();
-        let range = ByteRangeKey {
-            offset: 0,
-            length: 8,
-        };
         let fetch = || async {
             fetch_range(
                 &clients,
                 &origin_url,
-                range,
+                RANGE_8,
                 &RangeRequest {
                     params: &[],
                     timeout: Duration::from_secs(5),
@@ -1178,22 +1169,106 @@ mod tests {
             matches!(&refused, Err(DownloadError::RateLimited { url, .. }) if url.starts_with(&cdn)),
             "{refused:?}"
         );
-        assert!(
-            clients.rate_limiter().try_admit(&origin_url).is_ok(),
-            "the redirecting server did not refuse anything"
-        );
         assert!(clients.rate_limiter().try_admit(&cdn_url).is_err());
+        assert!(
+            clients.rate_limiter().try_admit(&origin_url).is_err(),
+            "requests that lead to the refusing server pause too"
+        );
 
-        // The next request is redirected into the cooling server, and the
-        // hop is held back like a direct request would be.
+        // The next request is held back at the entry point: neither server
+        // is asked again during the pause.
         let held = tokio::time::timeout(Duration::from_secs(5), fetch())
             .await
             .unwrap();
         assert!(
-            matches!(&held, Err(DownloadError::RateLimited { url, retry_in, .. })
-                if url.starts_with(&cdn) && *retry_in > Duration::from_secs(25)),
+            matches!(&held, Err(DownloadError::RateLimited { retry_in, .. })
+                if *retry_in > Duration::from_secs(25)),
             "{held:?}"
         );
+        assert_eq!(origin_hits.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(cdn_hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    const RANGE_8: ByteRangeKey = ByteRangeKey {
+        offset: 0,
+        length: 8,
+    };
+
+    #[tokio::test]
+    async fn a_probe_redirected_within_its_origin_succeeds_once_the_server_recovers() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let refusals = Arc::new(AtomicU32::new(1));
+        let app = axum::Router::new()
+            .route(
+                "/a",
+                axum::routing::get(|| async {
+                    axum::response::Response::builder()
+                        .status(302)
+                        .header("location", "/b")
+                        .body(axum::body::Body::empty())
+                        .unwrap()
+                }),
+            )
+            .route(
+                "/b",
+                axum::routing::get(move || {
+                    let refuse = refusals
+                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                        .is_ok();
+                    async move {
+                        let builder = axum::response::Response::builder();
+                        if refuse {
+                            builder.status(429).header("retry-after", "1")
+                        } else {
+                            builder.status(200)
+                        }
+                        .body(axum::body::Body::from(vec![7_u8; 16]))
+                        .unwrap()
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let clients = ClientPool::new(&Default::default()).unwrap();
+        let cancel = CancellationToken::new();
+        let url = Url::parse(&format!("http://{addr}/a")).unwrap();
+        let fetch = |deadline: tokio::time::Instant| {
+            let request = RangeRequest {
+                params: &[],
+                timeout: Duration::from_secs(5),
+                cancel: &cancel,
+                operation: "test",
+                throttle_deadline: deadline,
+            };
+            let clients = &clients;
+            let url = &url;
+            async move { fetch_range(clients, url, RANGE_8, &request).await }
+        };
+
+        let refused = fetch(tokio::time::Instant::now()).await;
+        assert!(
+            matches!(refused, Err(DownloadError::RateLimited { .. })),
+            "{refused:?}"
+        );
+        // The next request waits out the pause, goes first as the probe,
+        // follows the redirect within the origin and is answered.
+        let started = tokio::time::Instant::now();
+        let recovered = tokio::time::timeout(
+            Duration::from_secs(5),
+            fetch(started + Duration::from_secs(5)),
+        )
+        .await
+        .expect("bounded");
+        assert_eq!(recovered.unwrap(), Bytes::from(vec![7_u8; 8]));
+        assert!(started.elapsed() >= Duration::from_millis(900));
+        let limiter = clients.rate_limiter();
+        let first = limiter.try_admit(&url);
+        assert!(
+            first.is_ok() && limiter.try_admit(&url).is_ok(),
+            "no cool-down left, so no probe"
+        );
     }
 }

@@ -106,7 +106,7 @@ impl PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|error| crate::rate_limit::request_error(error, "initial playlist fetch"))?;
+            .map_err(HlsDownloaderError::from)?;
         if let Some(retry_in) =
             admission.observe(response.url(), response.status(), response.headers())
         {
@@ -249,7 +249,7 @@ impl PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|error| crate::rate_limit::request_error(error, "media playlist fetch"))?;
+            .map_err(HlsDownloaderError::from)?;
         if let Some(retry_in) =
             admission.observe(response.url(), response.status(), response.headers())
         {
