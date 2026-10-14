@@ -580,11 +580,7 @@ async fn download_once(
 
     if let Some(metrics) = &ctx.metrics {
         metrics.record_download(bytes.len() as u64, started.elapsed().as_millis() as u64);
-        metrics.record_request_with_host(
-            http_version,
-            bytes.len() as u64,
-            url.host_str().unwrap_or_default(),
-        );
+        metrics.record_response(http_version, bytes.len() as u64);
     }
     emit_event(
         ctx,
