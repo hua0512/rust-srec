@@ -449,13 +449,17 @@ impl CommandExecutor {
         Ok(streams.swap_remove(index))
     }
 
+    /// Lowest priority, then highest bitrate. Opt-in-only streams (see
+    /// `StreamInfo::format_opt_in`) are picked only when nothing else is
+    /// offered, as strev has no format preference to opt in with.
     fn best_stream_index(streams: &[StreamInfo]) -> Option<usize> {
         streams
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                a.priority
-                    .cmp(&b.priority)
+                a.format_opt_in
+                    .cmp(&b.format_opt_in)
+                    .then_with(|| a.priority.cmp(&b.priority))
                     .then_with(|| b.bitrate.cmp(&a.bitrate))
             })
             .map(|(index, _)| index)
@@ -681,6 +685,15 @@ mod tests {
     fn best_stream_uses_bitrate_to_break_priority_ties() {
         let streams = vec![stream(0, 1_000_000), stream(0, 8_000_000)];
         assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+    }
+
+    #[test]
+    fn best_stream_skips_opt_in_streams_while_others_exist() {
+        let mut opt_in = stream(0, 8_000_000);
+        opt_in.format_opt_in = true;
+        let streams = vec![opt_in.clone(), stream(5, 1_000_000)];
+        assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+        assert_eq!(CommandExecutor::best_stream_index(&[opt_in]), Some(0));
     }
 
     #[test]

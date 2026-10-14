@@ -31,5 +31,5 @@ https://www.tiktok.com/@{用户名}/live
 - **认证**：无需 Cookie。弹幕采集会自动注册临时 `ttwid` 会话；浏览器 Cookie 为可选项。
 - **地区限制**：部分直播间在某些地区不可用。若提示地区限制，请使用代理（见[代理](../concepts/configuration.md#proxies)）。
 - **弹幕**：采集聊天、纯表情消息和礼物。连击礼物只记录一次，取最终数量。
-- **MPEG-DASH**：大多数画质（包括纯音频）同时以 DASH 提供，录制为 MP4 文件。默认仍录制 FLV。如需录制 DASH，请在 TikTok 平台设置、模板或主播的**首选格式**中添加 `dash`，并使用 Mesio 引擎（见 [MPEG-DASH 录制](../concepts/engines.md#mpeg-dash)）。网页播放器无法播放 DASH 流。
+- **MPEG-DASH**：大多数画质（包括纯音频）同时以 DASH 提供，录制为 MP4 文件。FLV 优先于 DASH：即使你偏好的画质（例如原画）只以 DASH 提供，或 `dash` 排在其他格式之后，仍会录制 FLV。如需录制 DASH，请在 TikTok 平台设置、模板或主播的**首选格式**中将 `dash` 放在第一位（或只填 `dash`），并使用 Mesio 引擎（见 [MPEG-DASH 录制](../concepts/engines.md#mpeg-dash)）。网页播放器无法播放 DASH 流。
 :::

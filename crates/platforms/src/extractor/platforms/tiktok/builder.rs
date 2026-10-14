@@ -91,13 +91,6 @@ impl TikTok {
     /// `LiveRoom.liveRoomStatus` values that mean the viewer is region blocked.
     const PAGE_STATUS_REGIONAL_UNAVAILABLE: i32 = -6;
 
-    /// Added to a DASH variant's priority so that, without a format
-    /// preference naming `dash`, every FLV/HLS variant of any quality sorts
-    /// first. Whether DASH can be recorded depends on the download engine
-    /// (Mesio supports it), so it is only chosen when asked for. Quality
-    /// priorities stay within 1..=100.
-    const DASH_PRIORITY_PENALTY: u32 = 100;
-
     pub fn new(
         url: String,
         client: Client,
@@ -357,8 +350,11 @@ impl TikTok {
                 streams.push(create_stream(main.hls, StreamFormat::Hls, MediaFormat::Ts));
             }
             if let Some(url) = dash {
+                // Recording DASH depends on the download engine (Mesio
+                // supports it) and FLV is what TikTok recordings have always
+                // used, so DASH is only picked when the user asks for it.
                 let mut stream = create_stream(url, StreamFormat::Dash, MediaFormat::Fmp4);
-                stream.priority = stream.priority.saturating_add(Self::DASH_PRIORITY_PENALTY);
+                stream.format_opt_in = true;
                 streams.push(stream);
             }
         }
@@ -420,15 +416,16 @@ impl TikTok {
         streams.sort_by_key(|s| s.stream_format == StreamFormat::Dash);
 
         if self.force_origin_quality {
-            let has_origin = streams.iter().any(|s| {
+            let is_origin = |s: &StreamInfo| {
                 s.extras.as_ref().and_then(|e| e.get("sdk_key")) == Some(&json!("origin"))
-            });
+            };
+            // An opt-in-only origin is not selectable by default, so it alone
+            // must not remove every stream that is.
+            let has_origin = streams.iter().any(|s| is_origin(s) && !s.format_opt_in);
             if has_origin {
-                streams.retain(|s| {
-                    s.extras.as_ref().and_then(|e| e.get("sdk_key")) == Some(&json!("origin"))
-                });
+                streams.retain(is_origin);
             } else {
-                debug!("force_origin_quality set but TikTok offered no origin stream");
+                debug!("force_origin_quality set but TikTok offered no origin FLV/HLS stream");
             }
         }
 
@@ -685,25 +682,6 @@ mod tests {
             .unwrap_or_else(|| panic!("no {codec} {sdk_key} stream"))
     }
 
-    /// The backend `StreamSelector` order without quality or CDN preferences:
-    /// listed formats first, then ascending priority, then descending bitrate.
-    fn pick<'a>(streams: &'a [StreamInfo], formats: &[StreamFormat]) -> &'a StreamInfo {
-        let format_rank = |s: &StreamInfo| {
-            formats
-                .iter()
-                .position(|f| *f == s.stream_format)
-                .unwrap_or(if formats.is_empty() { 0 } else { usize::MAX })
-        };
-        let mut sorted: Vec<&StreamInfo> = streams.iter().collect();
-        sorted.sort_by(|a, b| {
-            format_rank(a)
-                .cmp(&format_rank(b))
-                .then_with(|| a.priority.cmp(&b.priority))
-                .then_with(|| b.bitrate.cmp(&a.bitrate))
-        });
-        sorted[0]
-    }
-
     #[test]
     fn emits_dash_for_mpd_cmaf_urls() {
         let media = tiktok(None)
@@ -718,18 +696,26 @@ mod tests {
         for stream in &dash {
             assert_eq!(stream.media_format, MediaFormat::Fmp4);
             assert!(stream.url.contains("/index.mpd?"), "{}", stream.url);
+            assert!(stream.format_opt_in);
         }
+        assert!(
+            media
+                .streams
+                .iter()
+                .filter(|s| s.stream_format != StreamFormat::Dash)
+                .all(|s| !s.format_opt_in)
+        );
 
         let avc_hd = find(&dash, "avc", "hd");
         assert_eq!(avc_hd.quality, "720p");
         assert_eq!(avc_hd.bitrate, 1_000_000);
-        assert_eq!(avc_hd.priority, 97 + TikTok::DASH_PRIORITY_PENALTY);
+        assert_eq!(avc_hd.priority, 97);
         assert!(!avc_hd.is_audio_only);
 
         let hevc_origin = find(&dash, "hevc", "origin");
         assert_eq!(hevc_origin.quality, "Original");
         assert_eq!(hevc_origin.bitrate, 1_514_000);
-        assert_eq!(hevc_origin.priority, 90 + TikTok::DASH_PRIORITY_PENALTY);
+        assert_eq!(hevc_origin.priority, 90);
         assert_eq!(
             hevc_origin.extras.as_ref().unwrap()["resolution"],
             "1080x1920"
@@ -817,43 +803,26 @@ mod tests {
             .collect();
         assert_eq!(origin.len(), 1);
         assert_eq!(origin[0].stream_format, StreamFormat::Dash);
-        // Without a format preference the best FLV/HLS quality still wins
-        // over the better DASH-only one.
-        let best = pick(&media.streams, &[]);
-        assert_eq!(best.stream_format, StreamFormat::Flv);
-        assert_eq!(best.quality, "720p");
+        assert!(origin[0].format_opt_in);
     }
 
     #[test]
-    fn default_selection_keeps_flv_and_dash_is_opt_in() {
+    fn dash_variants_are_listed_after_flv_and_hls() {
         let media = tiktok(None)
             .build_media_info(fixture_room(|_, _| {}))
             .unwrap();
-
-        let best = pick(&media.streams, &[]);
-        assert_eq!(best.stream_format, StreamFormat::Flv);
-        assert_eq!(best.quality, "Original");
-
         // Consumers that take the first listed stream never start on DASH.
         let first_dash = media
             .streams
             .iter()
             .position(|s| s.stream_format == StreamFormat::Dash)
             .unwrap();
+        assert!(first_dash > 0);
         assert!(
             media.streams[first_dash..]
                 .iter()
                 .all(|s| s.stream_format == StreamFormat::Dash)
         );
-
-        let preferred = pick(&media.streams, &[StreamFormat::Dash]);
-        assert_eq!(preferred.stream_format, StreamFormat::Dash);
-        assert_eq!(preferred.quality, "Original");
-        assert_eq!(preferred.codec, "hevc");
-
-        // Other format preferences are unaffected.
-        let hls = pick(&media.streams, &[StreamFormat::Hls]);
-        assert_eq!(hls.stream_format, StreamFormat::Hls);
     }
 
     #[test]
@@ -866,6 +835,22 @@ mod tests {
             formats,
             [StreamFormat::Flv, StreamFormat::Hls, StreamFormat::Dash]
         );
+    }
+
+    #[test]
+    fn force_origin_quality_ignores_a_dash_only_origin() {
+        let media = tiktok(Some(json!({"force_origin_quality": true})))
+            .build_media_info(fixture_room(|key, data| {
+                if key == "hevcStreamData" {
+                    data["origin"]["main"]["flv"] = json!("");
+                    data["origin"]["main"]["hls"] = json!("");
+                }
+            }))
+            .unwrap();
+        // Keeping only the DASH origin would leave nothing selectable by
+        // default, so every stream stays.
+        assert_eq!(media.streams.len(), 14);
+        assert_eq!(media.streams[0].stream_format, StreamFormat::Flv);
     }
 
     #[test]
