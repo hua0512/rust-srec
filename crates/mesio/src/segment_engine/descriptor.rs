@@ -6,6 +6,7 @@
 //! the accessors on [`SegmentMeta`] and [`SegmentDescriptor`].
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -177,11 +178,50 @@ pub struct DashSegmentMeta {
     /// `@presentationTimeOffset` in `timescale` units.
     pub presentation_time_offset: u64,
     /// `MPD@availabilityStartTime`, the wall-clock anchor of a dynamic
-    /// presentation's timeline. For media, the one the segment's epoch
-    /// opened with, and `None` once an MPD update contradicted that
-    /// epoch's timing.
-    pub availability_start_time: Option<DateTime<Utc>>,
+    /// presentation's timeline: the one the segment's epoch opened with.
+    pub availability_start_time: Option<WallClockAnchor>,
 }
+
+/// The wall-clock anchor of a dynamic presentation's timeline, shared by
+/// every segment of one epoch.
+///
+/// The planner withdraws it when an MPD update contradicts the timing it
+/// anchors. The flag is shared rather than copied so that the withdrawal
+/// also reaches segments already queued, downloading or buffered, whose
+/// descriptors were built before the contradiction was seen.
+#[derive(Debug, Clone)]
+pub struct WallClockAnchor {
+    time: DateTime<Utc>,
+    withdrawn: Arc<AtomicBool>,
+}
+
+impl WallClockAnchor {
+    pub fn new(time: DateTime<Utc>) -> Self {
+        Self {
+            time,
+            withdrawn: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// The anchor, unless it was withdrawn.
+    pub fn get(&self) -> Option<DateTime<Utc>> {
+        (!self.withdrawn.load(Ordering::Acquire)).then_some(self.time)
+    }
+
+    /// Withdraws the anchor from every holder.
+    pub fn withdraw(&self) {
+        self.withdrawn.store(true, Ordering::Release);
+    }
+}
+
+/// Anchors are equal when they are the same shared anchor.
+impl PartialEq for WallClockAnchor {
+    fn eq(&self, other: &Self) -> bool {
+        self.time == other.time && Arc::ptr_eq(&self.withdrawn, &other.withdrawn)
+    }
+}
+
+impl Eq for WallClockAnchor {}
 
 impl DashSegmentMeta {
     /// MPD duration in seconds; 0 for an init or an invalid timescale.

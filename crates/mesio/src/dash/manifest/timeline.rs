@@ -138,7 +138,8 @@ impl Segment {
 pub struct TimelineLead {
     /// Time until the earliest listed segment becomes available.
     pub earliest: Duration,
-    /// Time until the newest listed segment becomes available.
+    /// Time until the newest listed segment becomes available, at most
+    /// until `availabilityEndTime`.
     pub newest: Duration,
     /// The earliest listed segment's duration.
     pub segment_duration: Duration,
@@ -525,7 +526,19 @@ impl Addressing {
         if earliest <= 0 {
             return Ok(None);
         }
-        let newest = end(last)? - edge;
+        let mut newest = end(last)? - edge;
+        // Nothing is available after `availabilityEndTime`, so the newest
+        // listed segment that can still become available is the one
+        // available by then.
+        if let Some(availability_end) = timing.availability_end {
+            let remaining = availability_end
+                .checked_sub(xs::instant_nanos(now))
+                .ok_or_else(overflow)?;
+            if remaining < earliest {
+                return Ok(None);
+            }
+            newest = newest.min(remaining);
+        }
         let nanos = |value: i128| Duration::from_nanos(u64::try_from(value).unwrap_or(u64::MAX));
         Ok(Some(TimelineLead {
             earliest: nanos(earliest),
@@ -1414,6 +1427,36 @@ mod tests {
             .unwrap();
         assert_eq!(ahead.earliest, Duration::from_secs(996));
         assert_eq!(ahead.newest, Duration::from_secs(1002));
+
+        // `availabilityEndTime` bounds how far ahead availability is taken:
+        // at 20 s with the end at 1005 s, the segments ending at 1002 and
+        // 1004 s are still available before it.
+        let ending = PeriodTiming {
+            availability_end: Some(1005 * SEC),
+            ..timing
+        };
+        let addressing = timeline(1000);
+        let ahead = addressing
+            .timeline_ahead(&ending, finite(0), at(20, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ahead.newest, Duration::from_secs(985));
+        let reached = at(20, 0) + chrono::TimeDelta::from_std(ahead.newest).unwrap();
+        assert_eq!(
+            addressing.window(&ending, finite(0), reached).unwrap(),
+            0..2
+        );
+        // Nothing listed becomes available before an earlier end.
+        let early = PeriodTiming {
+            availability_end: Some(1001 * SEC),
+            ..timing
+        };
+        assert_eq!(
+            addressing
+                .timeline_ahead(&early, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
 
         // Nothing is listed past `availabilityEndTime`.
         let ended = PeriodTiming {

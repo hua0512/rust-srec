@@ -184,6 +184,7 @@ pub(crate) async fn start(
             identity: identity_policy(&engine.identity_policy),
             frontier: Arc::clone(&frontier),
             start: start.clone(),
+            live_start: config.live_start,
             absent_tracks: if leader {
                 selected.absent.clone()
             } else {

@@ -68,6 +68,11 @@ struct OriginState {
     /// the given server time then.
     next_mpd: Option<(String, DateTime<Utc>)>,
     clock: Option<Arc<ManualClock>>,
+    /// Numbered media `n` requested with a query `d` at most `description`
+    /// answers 404 (see [`Origin::hold`]).
+    held: Option<Held>,
+    /// `(prefix, d)` of every numbered media request carrying `?d=`.
+    descriptions_seen: HashSet<(String, u32)>,
     mpd_serves: u32,
     /// After this many successful MPD serves, the MPD answers 500.
     mpd_fail_after: Option<u32>,
@@ -80,6 +85,12 @@ struct OriginState {
     hits: HashMap<String, u64>,
 }
 
+#[derive(Clone, Copy)]
+struct Held {
+    number: u64,
+    description: u32,
+}
+
 #[derive(Clone, Default)]
 struct Origin(Arc<Mutex<OriginState>>);
 
@@ -90,6 +101,26 @@ impl Origin {
 
     fn add_file(&self, path: &str, body: impl Into<Vec<u8>>) {
         self.add_file_failing(path, body, 0, 0);
+    }
+
+    /// Answers 404 to numbered media `number` while requested with a
+    /// `?d=` of at most `description`: only a URL from a later MPD
+    /// description fetches it.
+    fn hold(&self, number: u64, description: u32) {
+        self.0.lock().unwrap().held = Some(Held {
+            number,
+            description,
+        });
+    }
+
+    /// Whether numbered media under `prefix` was requested with
+    /// `?d={description}`.
+    fn saw_description(&self, prefix: &str, description: u32) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .descriptions_seen
+            .contains(&(prefix.to_string(), description))
     }
 
     /// Serves `body` from the next MPD request on, as if fetched at
@@ -220,12 +251,27 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
         return respond(StatusCode::OK, entry.body.clone());
     }
     if let Some((prefix, name)) = path.rsplit_once('/')
-        && let Some(numbered) = state.numbered.get(prefix)
+        && let Some(numbered) = state.numbered.get(prefix).cloned()
         && let Some(number) = name
             .strip_suffix(".m4s")
             .and_then(|number| number.parse::<u64>().ok())
         && number > 0
     {
+        let description = uri
+            .query()
+            .and_then(|query| query.strip_prefix("d="))
+            .and_then(|value| value.parse::<u32>().ok());
+        if let Some(description) = description {
+            state
+                .descriptions_seen
+                .insert((prefix.to_string(), description));
+            if let Some(held) = state.held
+                && held.number == number
+                && description <= held.description
+            {
+                return respond(StatusCode::NOT_FOUND, Vec::new());
+            }
+        }
         let body = with_tfdt(numbered.segment, (number - 1) * numbered.timescale);
         return respond(StatusCode::OK, body);
     }
@@ -1895,23 +1941,45 @@ async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoc
     let origin = Origin::default();
     origin.add_av();
     let clock = Arc::new(ManualClock::new(ast()));
-    // Half a second into each response's second, as the `Date` header
-    // truncates; refreshed as often as this test steps through them.
-    let live = |mpd: &str| {
+    // Description `d` (1-based) tags its media URLs with `?d={d}` and is
+    // refreshed as often as this test steps through them.
+    let tagged = |description: u32, mpd: &str| {
         mpd.replace(
             r#"minimumUpdatePeriod="PT1.000S""#,
             r#"minimumUpdatePeriod="PT0.05S""#,
         )
+        .replace(
+            r#"media="v/$Number$.m4s""#,
+            &format!(r#"media="v/$Number$.m4s?d={description}""#),
+        )
+        .replace(
+            r#"media="a/$Number$.m4s""#,
+            &format!(r#"media="a/$Number$.m4s?d={description}""#),
+        )
     };
+    // Half a second into each response's second, as the `Date` header
+    // truncates.
     let at = |mpd: &str| served(mpd) + chrono::TimeDelta::milliseconds(500);
-    origin.serve_next_mpd(live(TIKTOK_LIVE[0]), at(TIKTOK_LIVE[0]), &clock);
+    let newest: Vec<u64> = TIKTOK_LIVE.iter().map(|mpd| newest_listed(mpd)).collect();
+    // Each description must be observably planned (see below): one that
+    // offers nothing new is seen through the newest segment held back since
+    // the previous one, so two of those may not follow each other.
+    assert!(
+        newest
+            .windows(3)
+            .all(|run| !(run[0] == run[1] && run[1] == run[2])),
+        "{newest:?}"
+    );
+
+    origin.hold(newest[0], 1);
+    origin.serve_next_mpd(tagged(1, TIKTOK_LIVE[0]), at(TIKTOK_LIVE[0]), &clock);
     let base = origin.clone().serve().await;
-    let session = start(
-        &format!("{base}/manifest.mpd"),
-        config(Some(Arc::clone(&clock))),
-    )
-    .await
-    .expect("session starts");
+    let mut config = config(Some(Arc::clone(&clock)));
+    // A held segment is retried until the next description releases it.
+    config.fetcher.max_segment_retries = 10_000;
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
     let DownloadSession {
         mut items,
         events,
@@ -1924,29 +1992,32 @@ async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoc
         (out, error)
     });
 
-    // One description per refresh. Each step waits until the newest
-    // number listed so far has been requested, so no description is
-    // coalesced away before it was planned.
-    let mut newest = 0;
+    // One description per refresh, each confirmed planned by both tracks
+    // before the next is served: a request tagged with its `d` comes only
+    // from work planned or reissued from it. The newest number is held
+    // back (404) until a later description, so a description that adds no
+    // number still reissues it under its own tag.
     for (index, mpd) in TIKTOK_LIVE.iter().enumerate() {
+        let description = index as u32 + 1;
         if index > 0 {
-            let serves = origin.hits("manifest.mpd");
-            origin.serve_next_mpd(live(mpd), at(mpd), &clock);
-            tokio::time::timeout(TEST_TIMEOUT, async {
-                while origin.hits("manifest.mpd") <= serves {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            })
-            .await
-            .expect("the MPD is refreshed");
+            if newest[index] > newest[index - 1] {
+                origin.hold(newest[index], description);
+            }
+            origin.serve_next_mpd(tagged(description, mpd), at(mpd), &clock);
         }
-        newest = newest.max(newest_listed(mpd));
-        wait_for_hit(&origin, &format!("v/{newest}.m4s")).await;
-        wait_for_hit(&origin, &format!("a/{newest}.m4s")).await;
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            while !(origin.saw_description("v", description)
+                && origin.saw_description("a", description))
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("description {description} was never planned by both tracks"));
     }
     // The stream ends with the last description, now static.
     let last = TIKTOK_LIVE[TIKTOK_LIVE.len() - 1];
-    let ended = live(last)
+    let ended = tagged(TIKTOK_LIVE.len() as u32 + 1, last)
         .replace(r#"type="dynamic""#, r#"type="static""#)
         .replace(r#" minimumUpdatePeriod="PT0.05S""#, "")
         .replace(r#" timeShiftBufferDepth="PT12.000S""#, "");
