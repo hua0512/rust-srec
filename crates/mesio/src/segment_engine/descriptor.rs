@@ -108,14 +108,6 @@ impl SegmentMeta {
         }
     }
 
-    /// Nominal media duration in seconds (`0.0` for init segments).
-    pub fn duration_secs(&self) -> f32 {
-        match self {
-            Self::Hls(segment) => segment.duration,
-            Self::Dash(meta) => meta.duration_secs() as f32,
-        }
-    }
-
     /// The container the manifest declares, or `None` when it must be
     /// detected from the downloaded body. HLS playlists do not declare it
     /// reliably (`EXT-X-MAP` is allowed for MPEG-TS too), so HLS always

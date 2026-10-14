@@ -1021,8 +1021,6 @@ mod tests {
                     max_segment_size_bytes: 0,
                 },
                 output: OutputConfig {
-                    live_reorder_buffer_duration: Duration::ZERO,
-                    live_reorder_buffer_max_segments: 0,
                     gap_evaluation_interval: Duration::from_millis(10),
                     max_pending_init_segments: 0,
                     live_max_overall_stall_duration: None,

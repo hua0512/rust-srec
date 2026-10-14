@@ -226,12 +226,6 @@ fn apply_hls_engine_overrides(
 
     // Optional durations: use tri-state (missing => unchanged, null => clear, value => set)
     if let Some(ref oc) = cfg.output_config {
-        if let Some(v) = oc.live_reorder_buffer_duration_ms {
-            builder = builder.live_reorder_buffer_duration(ms(v));
-        }
-        if let Some(v) = oc.live_reorder_buffer_max_segments {
-            builder = builder.live_reorder_buffer_max_segments(v.max(1));
-        }
         if let Some(value) = oc.live_max_overall_stall_duration_ms {
             builder = builder.live_max_overall_stall_duration(value.map(ms));
         }

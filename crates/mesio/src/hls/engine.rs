@@ -293,8 +293,6 @@ impl From<&HlsConfig> for SegmentCoreConfig {
                 max_segment_size_bytes: config.engine_config.max_segment_size_bytes,
             },
             output: OutputConfig {
-                live_reorder_buffer_duration: output.live_reorder_buffer_duration,
-                live_reorder_buffer_max_segments: output.live_reorder_buffer_max_segments,
                 gap_evaluation_interval: output.gap_evaluation_interval,
                 max_pending_init_segments: output.max_pending_init_segments,
                 live_max_overall_stall_duration: output.live_max_overall_stall_duration,

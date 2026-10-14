@@ -557,10 +557,6 @@ pub struct MesioBufferLimitsOverride {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MesioHlsOutputConfigOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub live_reorder_buffer_duration_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub live_reorder_buffer_max_segments: Option<usize>,
     /// How often to wake up and re-evaluate gap policies when stalled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gap_evaluation_interval_ms: Option<u64>,
@@ -772,6 +768,23 @@ mod tests {
                 .and_then(|cfg| cfg.download_concurrency),
             Some(3)
         );
+    }
+
+    #[test]
+    fn stored_configs_with_retired_output_settings_still_load() {
+        let json = r#"
+        {
+          "hls": {
+            "output_config": {
+              "live_reorder_buffer_duration_ms": 30000,
+              "live_reorder_buffer_max_segments": 10,
+              "max_pending_init_segments": 4
+            }
+          }
+        }"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        let output = parsed.hls.unwrap().output_config.unwrap();
+        assert_eq!(output.max_pending_init_segments, Some(4));
     }
 
     #[test]

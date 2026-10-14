@@ -33,10 +33,6 @@ pub struct FetchConfig {
 /// Reorder, gap and stall policy for the sequence assembler.
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
-    /// Live: buffered duration kept below the emit cursor (zero = unlimited).
-    pub live_reorder_buffer_duration: Duration,
-    /// Live: buffered segments kept below the emit cursor (0 = unlimited).
-    pub live_reorder_buffer_max_segments: usize,
     /// How often a pending gap is re-evaluated without new input.
     pub gap_evaluation_interval: Duration,
     /// Init payloads retained by key (0 = unlimited).

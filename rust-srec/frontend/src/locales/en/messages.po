@@ -191,7 +191,7 @@ msgid "{0} s"
 msgstr "{0} s"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:199
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "{0} stream(s) added successfully"
 msgstr "{0} stream(s) added successfully"
 
@@ -231,7 +231,7 @@ msgstr "{count, plural, one {# account needs login} other {# accounts need login
 msgid "{count, plural, one {# active upload} other {# active uploads}}"
 msgstr "{count, plural, one {# active upload} other {# active uploads}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1047
+#: src/components/config/engines/forms/setting-fields.tsx:1055
 msgid "{count, plural, one {# item} other {# items}}"
 msgstr "{count, plural, one {# item} other {# items}}"
 
@@ -239,7 +239,7 @@ msgstr "{count, plural, one {# item} other {# items}}"
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, one {# output} other {# outputs}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:913
+#: src/components/config/engines/forms/setting-fields.tsx:921
 msgid "{count, plural, one {# parameter} other {# parameters}}"
 msgstr "{count, plural, one {# parameter} other {# parameters}}"
 
@@ -398,7 +398,7 @@ msgstr "0 = unlimited"
 msgid "0 = Unlimited"
 msgstr "0 = Unlimited"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:593
+#: src/components/config/engines/forms/mesio-sections.tsx:581
 msgid "0 disables the limit."
 msgstr "0 disables the limit."
 
@@ -470,7 +470,7 @@ msgstr "A backward timestamp jump at least this large is checked for a shifted r
 msgid "A check found it needs a refresh"
 msgstr "A check found it needs a refresh"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:756
+#: src/components/config/engines/forms/mesio-sections.tsx:744
 msgid "A language tag. Any language is used when none matches."
 msgstr "A language tag. Any language is used when none matches."
 
@@ -482,7 +482,7 @@ msgstr "A recording keeps using the account it started with."
 msgid "A template being removed lets go of the proxy once the recordings using it finish."
 msgstr "A template being removed lets go of the proxy once the recordings using it finish."
 
-#: src/components/config/engines/forms/setting-fields.tsx:1231
+#: src/components/config/engines/forms/setting-fields.tsx:1239
 msgid "A template can't turn this off; do that on the engine."
 msgstr "A template can't turn this off; do that on the engine."
 
@@ -637,7 +637,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:437
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:436
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
@@ -744,7 +744,7 @@ msgstr "Add one with its cookies or tokens to record signed in."
 msgid "Add Override"
 msgstr "Add Override"
 
-#: src/components/config/engines/forms/setting-fields.tsx:994
+#: src/components/config/engines/forms/setting-fields.tsx:1002
 msgid "Add parameter"
 msgstr "Add parameter"
 
@@ -774,8 +774,8 @@ msgstr "Add rclone argument"
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:446
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:478
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:445
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:477
 msgid "Add Stream"
 msgstr "Add Stream"
 
@@ -820,7 +820,7 @@ msgstr "Adjust sidebar style and behavior."
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
-#: src/components/config/engines/forms/setting-sections.tsx:546
+#: src/components/config/engines/forms/setting-sections.tsx:551
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:88
@@ -965,7 +965,7 @@ msgstr "Any header change"
 msgid "Any header change splits whenever the stream header bytes change, which is safe but may split more often than needed. Codec changes only splits when the codec configuration changes."
 msgstr "Any header change splits whenever the stream header bytes change, which is safe but may split more often than needed. Codec changes only splits when the codec configuration changes."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:758
+#: src/components/config/engines/forms/mesio-sections.tsx:746
 msgid "Any language"
 msgstr "Any language"
 
@@ -1161,7 +1161,7 @@ msgstr "Audio Extract"
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:779
+#: src/components/config/engines/forms/mesio-sections.tsx:767
 msgid "Audio inside the video stream is always kept."
 msgstr "Audio inside the video stream is always kept."
 
@@ -1180,7 +1180,7 @@ msgstr "Audio Processing"
 msgid "Audio Properties"
 msgstr "Audio Properties"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:747
+#: src/components/config/engines/forms/mesio-sections.tsx:735
 msgid "Audio Quality"
 msgstr "Audio Quality"
 
@@ -1236,7 +1236,7 @@ msgstr "Autofill name from URL"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "Automate your stream recordings with ease and reliability."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:709
+#: src/components/config/engines/forms/mesio-sections.tsx:697
 msgid "Automatic"
 msgstr "Automatic"
 
@@ -1244,7 +1244,7 @@ msgstr "Automatic"
 msgid "Automatic (match the site)"
 msgstr "Automatic (match the site)"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:765
+#: src/components/config/engines/forms/mesio-sections.tsx:753
 msgid "Automatic follows the delay the stream suggests, else three segments behind the live edge. Finished streams are always recorded from the beginning."
 msgstr "Automatic follows the delay the stream suggests, else three segments behind the live edge. Finished streams are always recorded from the beginning."
 
@@ -1438,7 +1438,7 @@ msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:213
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
@@ -1536,11 +1536,11 @@ msgstr "Browser Notifications"
 msgid "Browser Status"
 msgstr "Browser Status"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:586
+#: src/components/config/engines/forms/mesio-sections.tsx:574
 msgid "Buffer Limit (bytes)"
 msgstr "Buffer Limit (bytes)"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:580
+#: src/components/config/engines/forms/mesio-sections.tsx:568
 msgid "Buffer Limit (segments)"
 msgstr "Buffer Limit (segments)"
 
@@ -1573,7 +1573,7 @@ msgstr "Bytes"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:607
+#: src/components/config/engines/forms/mesio-sections.tsx:595
 msgid "Caching and progress"
 msgstr "Caching and progress"
 
@@ -1870,7 +1870,7 @@ msgstr "Choose which accounts sign in to the platform."
 msgid "Choose your display language"
 msgstr "Choose your display language"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:748
+#: src/components/config/engines/forms/mesio-sections.tsx:736
 msgid "Chosen among the audio in the preferred language."
 msgstr "Chosen among the audio in the preferred language."
 
@@ -1940,8 +1940,8 @@ msgstr "Close"
 msgid "Close playback details"
 msgstr "Close playback details"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:683
-#: src/components/config/engines/forms/mesio-sections.tsx:700
+#: src/components/config/engines/forms/mesio-sections.tsx:671
+#: src/components/config/engines/forms/mesio-sections.tsx:688
 msgid "Closest to a bandwidth"
 msgstr "Closest to a bandwidth"
 
@@ -2619,11 +2619,11 @@ msgid "Current Password"
 msgstr "Current Password"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:242
-#: src/components/config/engines/forms/setting-fields.tsx:485
-#: src/components/config/engines/forms/setting-fields.tsx:1034
-#: src/components/config/engines/forms/setting-fields.tsx:1115
-#: src/components/config/engines/forms/setting-fields.tsx:1180
-#: src/components/config/engines/forms/setting-fields.tsx:1202
+#: src/components/config/engines/forms/setting-fields.tsx:493
+#: src/components/config/engines/forms/setting-fields.tsx:1042
+#: src/components/config/engines/forms/setting-fields.tsx:1123
+#: src/components/config/engines/forms/setting-fields.tsx:1188
+#: src/components/config/engines/forms/setting-fields.tsx:1210
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:333
 msgid "Custom"
@@ -2791,7 +2791,7 @@ msgstr "Days"
 msgid "Decrypt on Worker Threads"
 msgstr "Decrypt on Worker Threads"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:631
+#: src/components/config/engines/forms/mesio-sections.tsx:619
 msgid "Decryption Key Cache TTL (ms)"
 msgstr "Decryption Key Cache TTL (ms)"
 
@@ -2874,7 +2874,7 @@ msgstr "Definitive Offline"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:716
+#: src/components/config/engines/forms/mesio-sections.tsx:704
 msgid "Delay behind the live edge"
 msgstr "Delay behind the live edge"
 
@@ -3212,7 +3212,7 @@ msgid "Disable selected"
 msgstr "Disable selected"
 
 #: src/components/config/engines/forms/setting-fields.tsx:127
-#: src/components/config/engines/forms/setting-fields.tsx:1199
+#: src/components/config/engines/forms/setting-fields.tsx:1207
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/credentials/account-row.tsx:92
 #: src/components/credentials/account-selection-section.tsx:157
@@ -3305,7 +3305,7 @@ msgid "Download Backup"
 msgstr "Download Backup"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:307
-#: src/components/config/engines/forms/mesio-sections.tsx:793
+#: src/components/config/engines/forms/mesio-sections.tsx:781
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
 
@@ -3340,7 +3340,7 @@ msgstr "Download Retry Policy"
 msgid "Download started"
 msgstr "Download started"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:638
+#: src/components/config/engines/forms/mesio-sections.tsx:626
 msgid "Downloaded bytes between progress updates. 0 updates on every chunk."
 msgstr "Downloaded bytes between progress updates. 0 updates on every chunk."
 
@@ -3444,7 +3444,7 @@ msgstr "e.g. cdn-to-avoid"
 msgid "e.g. Claude assistant"
 msgstr "e.g. Claude assistant"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:759
+#: src/components/config/engines/forms/mesio-sections.tsx:747
 msgid "e.g. en, pt-BR"
 msgstr "e.g. en, pt-BR"
 
@@ -3685,7 +3685,7 @@ msgstr "Enter a unique name"
 msgid "Enter a URL above"
 msgstr "Enter a URL above"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:481
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:480
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -3855,8 +3855,8 @@ msgstr "Execution time (default)"
 msgid "Executions"
 msgstr "Executions"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:313
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:377
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:312
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:376
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -3978,7 +3978,7 @@ msgctxt "terminal-cause"
 msgid "Failed"
 msgstr "Failed"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:833
+#: src/components/config/engines/forms/mesio-sections.tsx:821
 msgid "Failed manifest refreshes in a row before the recording fails."
 msgstr "Failed manifest refreshes in a row before the recording fails."
 
@@ -4204,7 +4204,7 @@ msgstr "Failed to load workflows: {0}"
 msgid "Failed to parse danmu file"
 msgstr "Failed to parse danmu file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:133
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:132
 msgid "Failed to parse URL"
 msgstr "Failed to parse URL"
 
@@ -4499,7 +4499,7 @@ msgstr "First output file path"
 msgid "Fix configuration errors before saving"
 msgstr "Fix configuration errors before saving"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:727
+#: src/components/config/engines/forms/mesio-sections.tsx:715
 msgid "Fix DASH Streams"
 msgstr "Fix DASH Streams"
 
@@ -4515,7 +4515,7 @@ msgstr "Fix HLS Streams"
 msgid "Fixed account"
 msgstr "Fixed account"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:713
+#: src/components/config/engines/forms/mesio-sections.tsx:701
 msgid "Fixed delay"
 msgstr "Fixed delay"
 
@@ -4945,8 +4945,8 @@ msgstr "High+"
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:664
-#: src/components/config/engines/forms/mesio-sections.tsx:694
+#: src/components/config/engines/forms/mesio-sections.tsx:652
+#: src/components/config/engines/forms/mesio-sections.tsx:682
 msgid "Highest bandwidth"
 msgstr "Highest bandwidth"
 
@@ -4954,7 +4954,7 @@ msgstr "Highest bandwidth"
 msgid "Highest bitrate"
 msgstr "Highest bitrate"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:670
+#: src/components/config/engines/forms/mesio-sections.tsx:658
 msgid "Highest up to a height"
 msgstr "Highest up to a height"
 
@@ -5179,7 +5179,7 @@ msgstr "Ignore streams below this bitrate."
 msgid "Ignored words"
 msgstr "Ignored words"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:381
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -5635,7 +5635,7 @@ msgstr "Live"
 msgid "LIVE"
 msgstr "LIVE"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:710
+#: src/components/config/engines/forms/mesio-sections.tsx:698
 msgid "Live edge"
 msgstr "Live edge"
 
@@ -5660,15 +5660,7 @@ msgstr "Live polling notifications enabled"
 msgid "Live Preview"
 msgstr "Live Preview"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:568
-msgid "Live Reorder Window (ms)"
-msgstr "Live Reorder Window (ms)"
-
-#: src/components/config/engines/forms/mesio-sections.tsx:574
-msgid "Live Reorder Window (segments)"
-msgstr "Live Reorder Window (segments)"
-
-#: src/components/config/engines/forms/mesio-sections.tsx:764
+#: src/components/config/engines/forms/mesio-sections.tsx:752
 msgid "Live Start Position"
 msgstr "Live Start Position"
 
@@ -5810,7 +5802,7 @@ msgstr "Logs"
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 msgstr "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:645
+#: src/components/config/engines/forms/mesio-sections.tsx:633
 msgid "Longest time between progress updates while data arrives. 0 updates on every chunk."
 msgstr "Longest time between progress updates while data arrives. 0 updates on every chunk."
 
@@ -5858,8 +5850,8 @@ msgstr "Lower value = Higher Quality"
 msgid "Lowest (0)"
 msgstr "Lowest (0)"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:667
-#: src/components/config/engines/forms/mesio-sections.tsx:697
+#: src/components/config/engines/forms/mesio-sections.tsx:655
+#: src/components/config/engines/forms/mesio-sections.tsx:685
 msgid "Lowest bandwidth"
 msgstr "Lowest bandwidth"
 
@@ -5912,11 +5904,11 @@ msgstr "Manage your application configuration."
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:813
+#: src/components/config/engines/forms/mesio-sections.tsx:801
 msgid "Manifest refresh"
 msgstr "Manifest refresh"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:819
+#: src/components/config/engines/forms/mesio-sections.tsx:807
 msgid "Manifest Timeout (ms)"
 msgstr "Manifest Timeout (ms)"
 
@@ -5989,7 +5981,7 @@ msgstr "Max Key Retry Delay (ms)"
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:592
+#: src/components/config/engines/forms/mesio-sections.tsx:580
 msgid "Max Pending Init Segments"
 msgstr "Max Pending Init Segments"
 
@@ -6032,7 +6024,7 @@ msgstr "Maximum attempts for metadata and App playback requests."
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "Maximum compression to minimize storage usage, then delete original."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:675
+#: src/components/config/engines/forms/mesio-sections.tsx:663
 msgid "Maximum height"
 msgstr "Maximum height"
 
@@ -6141,7 +6133,7 @@ msgstr "Min size to keep."
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:825
+#: src/components/config/engines/forms/mesio-sections.tsx:813
 msgid "Minimum Refresh Interval (ms)"
 msgstr "Minimum Refresh Interval (ms)"
 
@@ -6281,7 +6273,7 @@ msgstr "Multimedia Archive"
 msgid "Multiplier for exponential backoff."
 msgstr "Multiplier for exponential backoff."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:600
+#: src/components/config/engines/forms/mesio-sections.tsx:588
 msgid "Multiplies the download concurrency."
 msgstr "Multiplies the download concurrency."
 
@@ -6297,7 +6289,7 @@ msgstr "My Channel"
 msgid "My Template"
 msgstr "My Template"
 
-#: src/components/config/engines/forms/setting-fields.tsx:961
+#: src/components/config/engines/forms/setting-fields.tsx:969
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
@@ -6618,11 +6610,11 @@ msgstr "No platforms configured"
 msgid "No platforms found"
 msgstr "No platforms found"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:130
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
 msgid "No playable stream found in response"
 msgstr "No playable stream found in response"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:208
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:207
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
@@ -6738,8 +6730,8 @@ msgid "No workflows yet"
 msgstr "No workflows yet"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:33
-#: src/components/config/engines/forms/setting-fields.tsx:911
-#: src/components/config/engines/forms/setting-fields.tsx:1046
+#: src/components/config/engines/forms/setting-fields.tsx:919
+#: src/components/config/engines/forms/setting-fields.tsx:1054
 #: src/components/config/engines/forms/streamlink-form.tsx:74
 #: src/components/config/engines/forms/streamlink-form.tsx:83
 #: src/components/notifications/forms/webhook-form.tsx:214
@@ -6928,7 +6920,7 @@ msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC High Quality"
 
 #: src/components/config/engines/forms/setting-fields.tsx:126
-#: src/components/config/engines/forms/setting-fields.tsx:626
+#: src/components/config/engines/forms/setting-fields.tsx:634
 msgid "Off"
 msgstr "Off"
 
@@ -6983,7 +6975,7 @@ msgid "OK"
 msgstr "OK"
 
 #: src/components/config/engines/forms/setting-fields.tsx:125
-#: src/components/config/engines/forms/setting-fields.tsx:625
+#: src/components/config/engines/forms/setting-fields.tsx:633
 msgid "On"
 msgstr "On"
 
@@ -7129,7 +7121,7 @@ msgstr "Output folder unavailable"
 msgid "Output Format"
 msgstr "Output Format"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:651
+#: src/components/config/engines/forms/mesio-sections.tsx:639
 msgid "Output Metrics"
 msgstr "Output Metrics"
 
@@ -7269,7 +7261,7 @@ msgstr "Paired Segment Pipeline"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:363
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:362
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
@@ -7278,7 +7270,7 @@ msgid "Parse Batch"
 msgstr "Parse Batch"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:138
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
 
@@ -7290,7 +7282,7 @@ msgstr "Parse Mode"
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:412
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:411
 msgid "Parsing Stream..."
 msgstr "Parsing Stream..."
 
@@ -7669,7 +7661,7 @@ msgstr "Player settings"
 msgid "Playing"
 msgstr "Playing"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:613
+#: src/components/config/engines/forms/mesio-sections.tsx:601
 msgid "Playlist Cache TTL (ms)"
 msgstr "Playlist Cache TTL (ms)"
 
@@ -7706,7 +7698,7 @@ msgstr "Please restart the system to ensure all configuration changes are fully 
 msgid "Please select a JSON file"
 msgstr "Please select a JSON file"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:415
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:414
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
@@ -7746,7 +7738,7 @@ msgstr "Prefer session pairing"
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:755
+#: src/components/config/engines/forms/mesio-sections.tsx:743
 msgid "Preferred Audio Language"
 msgstr "Preferred Audio Language"
 
@@ -7933,11 +7925,11 @@ msgstr "Processed {0} pipelines; {1} failed"
 msgid "Processed {0} streamers; {1} failed"
 msgstr "Processed {0} streamers; {1} failed"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:599
+#: src/components/config/engines/forms/mesio-sections.tsx:587
 msgid "Processed Buffer Multiplier"
 msgstr "Processed Buffer Multiplier"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:625
+#: src/components/config/engines/forms/mesio-sections.tsx:613
 msgid "Processed Segment TTL (ms)"
 msgstr "Processed Segment TTL (ms)"
 
@@ -7989,11 +7981,11 @@ msgstr "Programs"
 msgid "Progress"
 msgstr "Progress"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:637
+#: src/components/config/engines/forms/mesio-sections.tsx:625
 msgid "Progress Update Bytes"
 msgstr "Progress Update Bytes"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:644
+#: src/components/config/engines/forms/mesio-sections.tsx:632
 msgid "Progress Update Interval (ms)"
 msgstr "Progress Update Interval (ms)"
 
@@ -8165,7 +8157,7 @@ msgstr "Ready"
 msgid "Ready to play"
 msgstr "Ready to play"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:434
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:433
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -8220,11 +8212,11 @@ msgstr "Reconnect to request a cut."
 msgid "Record Danmu"
 msgstr "Record Danmu"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:778
+#: src/components/config/engines/forms/mesio-sections.tsx:766
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:772
+#: src/components/config/engines/forms/mesio-sections.tsx:760
 msgid "Record Video"
 msgstr "Record Video"
 
@@ -8319,7 +8311,7 @@ msgid "Refresh Interval (ms)"
 msgstr "Refresh Interval (ms)"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:357
-#: src/components/config/engines/forms/mesio-sections.tsx:832
+#: src/components/config/engines/forms/mesio-sections.tsx:820
 msgid "Refresh Retries"
 msgstr "Refresh Retries"
 
@@ -8374,7 +8366,7 @@ msgstr "Reload Player"
 msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
-#: src/components/config/engines/forms/setting-fields.tsx:982
+#: src/components/config/engines/forms/setting-fields.tsx:990
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:164
 msgid "Remove"
 msgstr "Remove"
@@ -9085,12 +9077,12 @@ msgstr "Security & Identity"
 msgid "Segment"
 msgstr "Segment"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:619
+#: src/components/config/engines/forms/mesio-sections.tsx:607
 msgid "Segment Cache TTL (ms)"
 msgstr "Segment Cache TTL (ms)"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:301
-#: src/components/config/engines/forms/mesio-sections.tsx:787
+#: src/components/config/engines/forms/mesio-sections.tsx:775
 msgid "Segment downloads"
 msgstr "Segment downloads"
 
@@ -9099,7 +9091,7 @@ msgid "Segment finished"
 msgstr "Segment finished"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:320
-#: src/components/config/engines/forms/mesio-sections.tsx:806
+#: src/components/config/engines/forms/mesio-sections.tsx:794
 msgid "Segment Retries"
 msgstr "Segment Retries"
 
@@ -9108,7 +9100,7 @@ msgid "Segment started"
 msgstr "Segment started"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:314
-#: src/components/config/engines/forms/mesio-sections.tsx:800
+#: src/components/config/engines/forms/mesio-sections.tsx:788
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
 
@@ -9116,7 +9108,7 @@ msgstr "Segment Timeout (ms)"
 msgid "Segments"
 msgstr "Segments"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:794
+#: src/components/config/engines/forms/mesio-sections.tsx:782
 msgid "Segments downloaded at once, per track."
 msgstr "Segments downloaded at once, per track."
 
@@ -9607,7 +9599,7 @@ msgstr "Skip Interactive Games"
 msgid "Skipped"
 msgstr "Skipped"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:204
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:203
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
@@ -9697,7 +9689,7 @@ msgstr "Standard cron expression (sec min hour day mon dow)."
 msgid "Start"
 msgstr "Start"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:728
+#: src/components/config/engines/forms/mesio-sections.tsx:716
 msgid "Start a new file on incompatible stream changes in the merged output, and apply file size and duration limits. The settings below apply either way."
 msgstr "Start a new file on incompatible stream changes in the merged output, and apply file size and duration limits. The settings below apply either way."
 
@@ -9829,7 +9821,7 @@ msgstr "Stream offline"
 msgid "Stream online"
 msgstr "Stream online"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:127
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
@@ -9840,7 +9832,7 @@ msgstr "Stream parsed successfully"
 msgid "Stream Password"
 msgstr "Stream Password"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:359
 msgid "Stream Player"
 msgstr "Stream Player"
 
@@ -10115,8 +10107,8 @@ msgstr "T"
 msgid "Takes effect while Loop Protection is on."
 msgstr "Takes effect while Loop Protection is on."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:686
-#: src/components/config/engines/forms/mesio-sections.tsx:703
+#: src/components/config/engines/forms/mesio-sections.tsx:674
+#: src/components/config/engines/forms/mesio-sections.tsx:691
 msgid "Target bandwidth"
 msgstr "Target bandwidth"
 
@@ -10284,7 +10276,7 @@ msgstr "The language this channel's messages are written in, whoever reads them.
 msgid "The last refresh failed"
 msgstr "The last refresh failed"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:826
+#: src/components/config/engines/forms/mesio-sections.tsx:814
 msgid "The manifest's own update period applies when longer."
 msgstr "The manifest's own update period applies when longer."
 
@@ -10324,7 +10316,7 @@ msgstr "The selection changed during the active recording. The recording switche
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
 msgstr "The server rejected this source. Check the URL and, for local sources, the private network access setting."
 
-#: src/components/config/engines/forms/mesio-sections.tsx:677
+#: src/components/config/engines/forms/mesio-sections.tsx:665
 msgid "The smallest picture is used when none fits."
 msgstr "The smallest picture is used when none fits."
 
@@ -10746,7 +10738,7 @@ msgstr "TPS Limit help"
 msgid "Track Information"
 msgstr "Track Information"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:733
+#: src/components/config/engines/forms/mesio-sections.tsx:721
 msgid "Tracks"
 msgstr "Tracks"
 
@@ -10974,8 +10966,8 @@ msgid "Unknown engine type: {engineType}"
 msgstr "Unknown engine type: {engineType}"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:280
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:138
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:213
 msgid "Unknown error"
 msgstr "Unknown error"
 
@@ -11237,7 +11229,7 @@ msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:244
-#: src/components/config/engines/forms/setting-fields.tsx:968
+#: src/components/config/engines/forms/setting-fields.tsx:976
 #: src/components/notifications/forms/webhook-form.tsx:436
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:119
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:157
@@ -11298,7 +11290,7 @@ msgstr "Video only"
 msgid "Video Player"
 msgstr "Video Player"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:740
+#: src/components/config/engines/forms/mesio-sections.tsx:728
 msgid "Video Quality"
 msgstr "Video Quality"
 
