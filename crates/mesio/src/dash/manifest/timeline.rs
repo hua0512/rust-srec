@@ -131,13 +131,16 @@ impl Segment {
     }
 }
 
-/// How far a `SegmentTimeline` runs ahead of the availability window (see
-/// [`super::Representation::timeline_lead`]).
+/// How far ahead of the availability window a running Period's
+/// `SegmentTimeline` lies when none of its listed segments is available
+/// (see [`super::Representation::timeline_ahead`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelineLead {
-    /// Time until the newest described segment becomes available.
-    pub lead: Duration,
-    /// That segment's duration.
+    /// Time until the earliest listed segment becomes available.
+    pub earliest: Duration,
+    /// Time until the newest listed segment becomes available.
+    pub newest: Duration,
+    /// The earliest listed segment's duration.
     pub segment_duration: Duration,
 }
 
@@ -426,16 +429,17 @@ impl Addressing {
         Ok(first..end)
     }
 
-    /// How far the newest segment the `SegmentTimeline` explicitly describes
-    /// lies beyond the availability window at `now`: the time until its end
-    /// reaches `x + A`. `None` when it is already available, and without a
-    /// timeline, for static presentations or with an infinite availability
-    /// time offset.
+    /// How far ahead of the availability window at `now` the segments the
+    /// `SegmentTimeline` lists lie, when not one of them is available yet
+    /// and the Period has begun and not ended by the clock. `None`
+    /// otherwise, and without a timeline, for static presentations or with
+    /// an infinite availability time offset.
     ///
-    /// For a trailing `S@r=-1` that segment is the run's first: later
-    /// repetitions are only extrapolated, so they say nothing about what the
-    /// server has produced.
-    pub(crate) fn timeline_lead(
+    /// Listed means described by an `S` entry and allowed by `@endNumber`,
+    /// the Period's bounds and `availabilityEndTime`; a trailing `S@r=-1`
+    /// lists only its first segment, since later repetitions are
+    /// extrapolated.
+    pub(crate) fn timeline_ahead(
         &self,
         timing: &PeriodTiming,
         offset: AvailabilityTimeOffset,
@@ -448,44 +452,101 @@ impl Addressing {
         let AvailabilityTimeOffset::Finite(offset) = offset else {
             return Ok(None);
         };
-        let Some(run) = self.runs.last() else {
-            return Ok(None);
-        };
         let Some(ast) = timing.availability_start else {
             return Err(ManifestError::MissingAttribute {
                 element: "MPD",
                 attribute: "availabilityStartTime",
             });
         };
-        let timescale = i128::from(self.timescale.max(1));
-        let repetition = i128::from(run.count.map_or(0, |count| count.saturating_sub(1)));
-        let duration = i128::from(run.duration);
-        let end_ticks = repetition
-            .checked_add(1)
-            .and_then(|count| count.checked_mul(duration))
-            .and_then(|length| length.checked_add(i128::from(run.start)))
-            .map(|end| end - i128::from(self.presentation_time_offset))
-            .ok_or_else(overflow)?;
-        // Rounded up so that evaluating availability `lead` later makes the
-        // segment available exactly: the window compares unrounded ticks.
-        let end = end_ticks
-            .checked_mul(NANOS_PER_SEC)
-            .and_then(|scaled| ceil_div(scaled, timescale))
-            .and_then(|end| end.checked_add(timing.period_start))
-            .ok_or_else(overflow)?;
-        let edge = xs::instant_nanos(now)
+        let elapsed = xs::instant_nanos(now)
             .checked_sub(ast)
-            .and_then(|elapsed| elapsed.checked_add(xs::duration_nanos(offset)))
             .ok_or_else(overflow)?;
-        let lead = end.checked_sub(edge).ok_or_else(overflow)?;
-        if lead <= 0 {
+        let into_period = elapsed
+            .checked_sub(timing.period_start)
+            .ok_or_else(overflow)?;
+        if into_period < 0
+            || timing
+                .period_duration
+                .is_some_and(|duration| into_period >= duration)
+        {
             return Ok(None);
         }
+
+        // The listed positions: the window without its clock bounds, with
+        // an open trailing run closed after its first segment.
+        let closed;
+        let listing = if self.runs.last().is_some_and(|run| run.count.is_none()) {
+            let runs: Vec<Run> = self
+                .runs
+                .iter()
+                .map(|run| Run {
+                    count: Some(run.count.unwrap_or(1)),
+                    ..*run
+                })
+                .collect();
+            closed = Addressing {
+                runs: runs.into(),
+                ..self.clone()
+            };
+            &closed
+        } else {
+            self
+        };
+        let unclocked = PeriodTiming {
+            presentation_type: PresentationType::Static,
+            ..*timing
+        };
+        let listed = listing.window(&unclocked, AvailabilityTimeOffset::ZERO, now)?;
+        let (Some(first), Some(last)) = (
+            listing.run_timing(listed.start),
+            listed
+                .end
+                .checked_sub(1)
+                .and_then(|last| listing.run_timing(last)),
+        ) else {
+            return Ok(None);
+        };
+
+        let timescale = i128::from(self.timescale.max(1));
+        let pto = i128::from(self.presentation_time_offset);
+        // Rounded up so that evaluating availability that much later makes
+        // the segment available exactly: the window compares unrounded ticks.
+        let end = |(time, duration): (u64, u64)| {
+            (i128::from(time) + i128::from(duration) - pto)
+                .checked_mul(NANOS_PER_SEC)
+                .and_then(|scaled| ceil_div(scaled, timescale))
+                .and_then(|end| end.checked_add(timing.period_start))
+                .ok_or_else(overflow)
+        };
+        let edge = elapsed
+            .checked_add(xs::duration_nanos(offset))
+            .ok_or_else(overflow)?;
+        let earliest = end(first)? - edge;
+        if earliest <= 0 {
+            return Ok(None);
+        }
+        let newest = end(last)? - edge;
         let nanos = |value: i128| Duration::from_nanos(u64::try_from(value).unwrap_or(u64::MAX));
         Ok(Some(TimelineLead {
-            lead: nanos(lead),
-            segment_duration: nanos(duration.saturating_mul(NANOS_PER_SEC) / timescale),
+            earliest: nanos(earliest),
+            newest: nanos(newest),
+            segment_duration: nanos(i128::from(first.1).saturating_mul(NANOS_PER_SEC) / timescale),
         }))
+    }
+
+    /// Media time and duration of the segment at sequence position
+    /// `index`, when a run covers it.
+    fn run_timing(&self, index: u64) -> Option<(u64, u64)> {
+        let position = self.runs.partition_point(|run| run.first_index <= index);
+        let run = self.runs.get(position.checked_sub(1)?)?;
+        let repetition = index - run.first_index;
+        if run.count.is_some_and(|count| repetition >= count) {
+            return None;
+        }
+        let time = run
+            .start
+            .checked_add(repetition.checked_mul(run.duration)?)?;
+        Some((time, run.duration))
     }
 
     /// The window available at `now`, with its segment numbers validated.
@@ -1255,7 +1316,7 @@ mod tests {
     }
 
     #[test]
-    fn timeline_lead_reaches_the_newest_described_segment_exactly() {
+    fn timeline_ahead_reaches_the_newest_listed_segment_exactly() {
         // 12288 ticks/s, so segment ends are not whole nanoseconds. The
         // newest entry ends at 12 312 577 / 12288 s ≈ 1002.0000814 s.
         const T: u64 = 12288;
@@ -1265,14 +1326,15 @@ mod tests {
         addressing.has_timeline = true;
         let timing = dynamic(0, Some(5 * SEC));
         let now = at(10, 0);
-        let lead = addressing
-            .timeline_lead(&timing, finite(1), now)
+        let ahead = addressing
+            .timeline_ahead(&timing, finite(1), now)
             .unwrap()
-            .expect("far ahead of x + A = 11 s");
-        assert_eq!(lead.segment_duration, Duration::from_nanos(1_000_081_380));
-        assert_eq!(lead.lead, Duration::from_nanos(991_000_081_381));
+            .expect("everything listed is beyond x + A = 11 s");
+        assert_eq!(ahead.earliest, Duration::from_secs(990));
+        assert_eq!(ahead.newest, Duration::from_nanos(991_000_081_381));
+        assert_eq!(ahead.segment_duration, Duration::from_secs(1));
 
-        let reached = now + chrono::TimeDelta::from_std(lead.lead).unwrap();
+        let reached = now + chrono::TimeDelta::from_std(ahead.newest).unwrap();
         assert_eq!(
             addressing.window(&timing, finite(1), reached).unwrap(),
             0..2
@@ -1281,14 +1343,15 @@ mod tests {
         assert_eq!(addressing.window(&timing, finite(1), before).unwrap(), 0..1);
         assert_eq!(
             addressing
-                .timeline_lead(&timing, finite(1), reached)
+                .timeline_ahead(&timing, finite(1), reached)
                 .unwrap(),
-            None
+            None,
+            "available now"
         );
 
         assert_eq!(
             addressing
-                .timeline_lead(&timing, AvailabilityTimeOffset::Infinite, now)
+                .timeline_ahead(&timing, AvailabilityTimeOffset::Infinite, now)
                 .unwrap(),
             None
         );
@@ -1298,28 +1361,105 @@ mod tests {
         };
         assert_eq!(
             addressing
-                .timeline_lead(&static_timing, finite(1), now)
+                .timeline_ahead(&static_timing, finite(1), now)
                 .unwrap(),
             None
         );
         addressing.has_timeline = false;
         assert_eq!(
-            addressing.timeline_lead(&timing, finite(1), now).unwrap(),
+            addressing.timeline_ahead(&timing, finite(1), now).unwrap(),
             None
         );
     }
 
     #[test]
-    fn timeline_lead_of_an_open_run_counts_only_its_described_segment() {
+    fn timeline_ahead_of_an_open_run_counts_only_its_listed_segment() {
         let runs = Addressing::timeline_runs(&[s(Some(100), 2, -1)]).unwrap();
         let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
         addressing.has_timeline = true;
         // The first repetition ends at 102 s; the edge is at 10 + 0 s.
-        let lead = addressing
-            .timeline_lead(&dynamic(0, None), finite(0), at(10, 0))
+        let ahead = addressing
+            .timeline_ahead(&dynamic(0, None), finite(0), at(10, 0))
             .unwrap()
             .unwrap();
-        assert_eq!(lead.lead, Duration::from_secs(92));
-        assert_eq!(lead.segment_duration, Duration::from_secs(2));
+        assert_eq!(ahead.earliest, Duration::from_secs(92));
+        assert_eq!(ahead.newest, Duration::from_secs(92));
+        assert_eq!(ahead.segment_duration, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn timeline_ahead_counts_only_segments_the_addressing_allows() {
+        let timeline = |start: u64| {
+            let runs = Addressing::timeline_runs(&[s(Some(start), 2, 100)]).unwrap();
+            let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+            addressing.has_timeline = true;
+            addressing.end_number = Some(4);
+            addressing
+        };
+        let timing = dynamic(0, Some(12 * SEC));
+        // Segments 1–4 end at 2–8 s; the timeline's 101st would end at 202 s.
+        let allowed = timeline(0);
+        assert_eq!(
+            allowed
+                .timeline_ahead(&timing, finite(0), at(6, 0))
+                .unwrap(),
+            None
+        );
+        assert_eq!(allowed.window(&timing, finite(0), at(6, 0)).unwrap(), 0..3);
+
+        // Far ahead, the newest listed segment is the fourth (1008 s).
+        let ahead = timeline(1000)
+            .timeline_ahead(&timing, finite(0), at(6, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ahead.earliest, Duration::from_secs(996));
+        assert_eq!(ahead.newest, Duration::from_secs(1002));
+
+        // Nothing is listed past `availabilityEndTime`.
+        let ended = PeriodTiming {
+            availability_end: Some(5 * SEC),
+            ..timing
+        };
+        assert_eq!(
+            timeline(1000)
+                .timeline_ahead(&ended, finite(0), at(6, 0))
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn timeline_ahead_ignores_periods_not_running_by_the_clock() {
+        let runs = Addressing::timeline_runs(&[s(Some(0), 2, 4)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        // A Period starting at 100 s, preannounced at 20 s.
+        let future = dynamic(100 * SEC, None);
+        assert_eq!(
+            addressing
+                .timeline_ahead(&future, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
+        // A Period that ended at 50 s.
+        let past = PeriodTiming {
+            period_duration: Some(50 * SEC),
+            ..dynamic(0, None)
+        };
+        let runs = Addressing::timeline_runs(&[s(Some(1000), 2, 4)]).unwrap();
+        addressing.runs = runs.into();
+        assert_eq!(
+            addressing
+                .timeline_ahead(&past, finite(0), at(60, 0))
+                .unwrap(),
+            None
+        );
+        // While it runs, entries past its end are not listed either.
+        assert_eq!(
+            addressing
+                .timeline_ahead(&past, finite(0), at(20, 0))
+                .unwrap(),
+            None
+        );
     }
 }

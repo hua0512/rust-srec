@@ -19,13 +19,15 @@
 //! times, or describe segments far beyond the clock's live edge, while the
 //! numbers stay consistent. Planning only ever moves forward by locator, so
 //! such an update never re-plans or reorders work; one that offers nothing
-//! after the newest planned segment is skipped. A `SegmentTimeline` that
-//! runs further ahead of the clock than a server could have produced
-//! ([`timeline_contradicts_clock`]) is trusted over the clock: the segments
-//! a server lists are the ones it has. Each kind of contradiction is logged
-//! once per track. Output timing does not depend on any of this: the muxer
-//! times output from the media (`tfdt`/`trun`), and only the wall-clock
-//! anchor of an epoch whose timing was contradicted is dropped.
+//! after the newest planned segment is skipped, and an epoch change in the
+//! same Period continues after the newest planned number once times can no
+//! longer be compared. Only in one narrow case is the clock overruled
+//! ([`timeline_contradicts_clock`]): a `$Number$` timeline of the Period
+//! the clock says is running, none of whose listed segments the clock
+//! considers available. Each kind of contradiction is logged once per
+//! track. Output timing does not depend on any of this: the muxer times
+//! output from the media (`tfdt`/`trun`); only the wall-clock anchor is
+//! dropped once the timing was contradicted.
 //!
 //! An *epoch* is one run of segments sharing one initialization segment and
 //! timing: a Period and Representation, until the Representation's
@@ -235,11 +237,11 @@ fn locate(segment: &Segment, locator: Locator) -> u64 {
     }
 }
 
-/// Slack, on top of one segment duration, by which a `SegmentTimeline` may
-/// describe segments ahead of the clock's live edge. A server may list the
-/// segment it is producing, and the clock offset is only as precise as the
-/// `Date` header (whole seconds) or time server it came from; anything
-/// further ahead contradicts the MPD's timing anchor.
+/// Slack, on top of one segment duration, by which even the earliest
+/// segment a running Period's timeline lists may lie ahead of the clock's
+/// live edge before the clock is overruled. A server may list the segment
+/// it is producing, and the clock offset is only as precise as the `Date`
+/// header (whole seconds) or time server it came from.
 const TIMELINE_LEAD_SLACK: Duration = Duration::from_secs(10);
 
 /// Segments of a Representation that are available, and when.
@@ -251,23 +253,41 @@ struct Availability<'a> {
     lead: Option<Duration>,
 }
 
-/// How far ahead of the clock `representation`'s `SegmentTimeline` runs,
-/// when that is further than a server could have produced segments (see
-/// [`TIMELINE_LEAD_SLACK`]).
+/// How far ahead of the clock the newest segment `representation` lists
+/// lies, when its timing anchor and its `SegmentTimeline` cannot both be
+/// right.
+///
+/// An MPD may describe segments before they become available, so a
+/// listing alone proves nothing, and the clock is overruled only when all
+/// of these hold:
+///
+/// - The Period is running by the clock ([`Representation::timeline_ahead`]
+///   ignores others), so a preannounced Period never becomes the live edge.
+/// - Not even the earliest listed segment is available, by more than one
+///   segment plus [`TIMELINE_LEAD_SLACK`]. A server keeps the segments it
+///   has produced listed for the time-shift buffer, so a running Period's
+///   timeline in which nothing has been produced yet means the anchor that
+///   places it is wrong, not that the media does not exist.
+/// - Its URLs are keyed by `$Number$`, which does not depend on the
+///   contradicted times. A `$Time$` URL is built from the very times in
+///   question, so nothing says those resources exist.
 fn timeline_contradicts_clock(
     representation: &Representation,
     now: DateTime<Utc>,
 ) -> Result<Option<Duration>, ManifestError> {
+    if representation.addressing_kind() != AddressingKind::Number {
+        return Ok(None);
+    }
     Ok(representation
-        .timeline_lead(now)?
-        .filter(|lead| lead.lead > lead.segment_duration.saturating_add(TIMELINE_LEAD_SLACK))
-        .map(|lead| lead.lead))
+        .timeline_ahead(now)?
+        .filter(|ahead| ahead.earliest > ahead.segment_duration.saturating_add(TIMELINE_LEAD_SLACK))
+        .map(|ahead| ahead.newest))
 }
 
 /// The segments of `representation` available at `now`. A timeline that
-/// contradicts the clock is evaluated at the instant its newest described
-/// segment becomes available instead: the server listed those segments, so
-/// they exist, and the time-shift buffer is kept relative to them.
+/// contradicts the clock ([`timeline_contradicts_clock`]) is evaluated at
+/// the instant its newest listed segment becomes available instead, which
+/// keeps the time-shift buffer relative to the listed segments.
 fn available(
     representation: &Representation,
     now: DateTime<Utc>,
@@ -298,6 +318,53 @@ enum TimingConflict {
     /// A segment's media time changed, or a later segment does not start
     /// after an earlier one.
     TimesRewritten = 4,
+}
+
+/// `availabilityStartTime` an epoch opened with (`from`), and an MPD's.
+struct MovedAnchor {
+    from: Option<DateTime<Utc>>,
+    to: Option<DateTime<Utc>>,
+}
+
+/// How `scope`'s MPD contradicts the timing an epoch was planned with.
+struct Contradiction {
+    moved_anchor: Option<MovedAnchor>,
+    rewritten: Option<RewrittenTime>,
+}
+
+impl Contradiction {
+    fn of(
+        scope: PeriodScope<'_>,
+        window: &SegmentWindow<'_>,
+        epoch: &Epoch,
+    ) -> Result<Self, ManifestError> {
+        let manifest = scope.manifest();
+        let moved_anchor = anchor_moved(manifest, epoch).then_some(MovedAnchor {
+            from: epoch.availability_start,
+            to: manifest.availability_start_time,
+        });
+        let rewritten = match epoch.fingerprint.locator() {
+            Locator::Number if epoch.fingerprint.timeline => rewritten_time(window, epoch)?,
+            _ => None,
+        };
+        Ok(Self {
+            moved_anchor,
+            rewritten,
+        })
+    }
+
+    /// Whether the epoch's timing is contradicted, counting a timeline
+    /// evaluated ahead of the clock (`scope.lead`).
+    fn any(&self, scope: PeriodScope<'_>) -> bool {
+        self.moved_anchor.is_some() || self.rewritten.is_some() || scope.lead.is_some()
+    }
+}
+
+/// Whether a dynamic MPD's `availabilityStartTime` differs from the one
+/// `epoch` opened with.
+fn anchor_moved(manifest: &Manifest, epoch: &Epoch) -> bool {
+    manifest.presentation_type == PresentationType::Dynamic
+        && manifest.availability_start_time != epoch.availability_start
 }
 
 /// The Period and Representation being planned, with the snapshot they
@@ -559,13 +626,17 @@ impl DashPlanner {
     /// Issues every unconsumed planned segment, and its epoch's init, again
     /// with URLs from the new MPD. Ordinals and keys stay the same, so the
     /// store refreshes the fetch URL of queued and retrying work.
+    ///
+    /// An epoch whose timing this MPD contradicts loses its wall-clock
+    /// anchor first, so reissued work does not carry it either.
     fn reissue(
-        &self,
+        &mut self,
         snapshot: &MpdSnapshot,
         now: DateTime<Utc>,
         outcome: &mut PlanOutcome,
     ) -> Result<(), ManifestError> {
-        for epoch in &self.epochs {
+        for index in 0..self.epochs.len() {
+            let epoch = &self.epochs[index];
             let Some(period) = snapshot
                 .manifest
                 .periods
@@ -583,10 +654,11 @@ impl DashPlanner {
             else {
                 continue;
             };
+            let key = epoch.period.clone();
             let scope = PeriodScope {
                 snapshot,
                 period,
-                key: &epoch.period,
+                key: &key,
                 representation,
                 lead: None,
             };
@@ -598,13 +670,18 @@ impl DashPlanner {
                 // URLs it was planned with.
                 continue;
             }
+            let Availability { window, lead, .. } = available(representation, now)?;
+            let scope = PeriodScope { lead, ..scope };
+            if Contradiction::of(scope, &window, epoch)?.any(scope) {
+                self.epochs[index].timing_consistent = false;
+            }
+            let epoch = &self.epochs[index];
             outcome.descriptors.push(init_descriptor(
                 epoch.init_key.clone(),
                 init_url,
                 epoch.first_ordinal,
                 Arc::clone(&epoch.init_meta),
             ));
-            let window = available(representation, now)?.window;
             let locator = epoch.fingerprint.locator();
             // Each pending segment is looked up on its own: the window
             // between two pending locators can be arbitrarily long.
@@ -671,16 +748,35 @@ impl DashPlanner {
                 first
             }
             None => {
-                let after = match newest {
-                    Some(epoch) if epoch.period.same(key) => Some(epoch.last_end),
+                let first = match newest {
+                    // Media times cannot place the switch once the timing
+                    // was contradicted; numbers of one Period's `$Number$`
+                    // timelines still can.
+                    Some(epoch)
+                        if epoch.period.same(key)
+                            && locator == Locator::Number
+                            && epoch.fingerprint.locator() == Locator::Number
+                            && !self.timing_trusted(scope, epoch) =>
+                    {
+                        let last = epoch.last_locator;
+                        Some(first_index(window, |segment| segment.number > last)?)
+                    }
+                    Some(epoch) if epoch.period.same(key) => {
+                        let after = epoch.last_end;
+                        Some(first_index(window, |segment| {
+                            scope.bounds(segment).1 > after
+                        })?)
+                    }
                     Some(_) => None,
-                    None if self.start.period.same(key) => self.start.after_nanos,
+                    None if self.start.period.same(key) => match self.start.after_nanos {
+                        Some(after) => Some(first_index(window, |segment| {
+                            scope.bounds(segment).1 > after
+                        })?),
+                        None => None,
+                    },
                     None => None,
                 };
-                match after {
-                    Some(after) => first_index(window, |segment| scope.bounds(segment).1 > after)?,
-                    None => 0,
-                }
+                first.unwrap_or(0)
             }
         };
         let continuing = continuing.is_some();
@@ -784,16 +880,13 @@ impl DashPlanner {
         let Some(epoch) = self.epochs.back().filter(|_| continuing) else {
             return Ok(());
         };
-        let manifest = scope.manifest();
-        let moved_anchor = (manifest.presentation_type == PresentationType::Dynamic
-            && manifest.availability_start_time != epoch.availability_start)
-            .then_some((epoch.availability_start, manifest.availability_start_time));
-        let rewritten = match epoch.fingerprint.locator() {
-            Locator::Number if epoch.fingerprint.timeline => rewritten_time(window, epoch)?,
-            _ => None,
-        };
-        let consistent = moved_anchor.is_none() && rewritten.is_none() && scope.lead.is_none();
-        if let Some((from, to)) = moved_anchor {
+        let contradiction = Contradiction::of(scope, window, epoch)?;
+        let consistent = !contradiction.any(scope);
+        let Contradiction {
+            moved_anchor,
+            rewritten,
+        } = contradiction;
+        if let Some(MovedAnchor { from, to }) = moved_anchor {
             let from = from.map(|time| time.to_rfc3339());
             let to = to.map(|time| time.to_rfc3339());
             if self.first_conflict(TimingConflict::AnchorMoved) {
@@ -830,6 +923,15 @@ impl DashPlanner {
             epoch.timing_consistent = false;
         }
         Ok(())
+    }
+
+    /// Whether `epoch`'s media times can still be compared with those of
+    /// `scope`'s MPD: nothing has contradicted the presentation's timing.
+    fn timing_trusted(&self, scope: PeriodScope<'_>, epoch: &Epoch) -> bool {
+        self.reported_conflicts == 0
+            && epoch.timing_consistent
+            && scope.lead.is_none()
+            && !anchor_moved(scope.manifest(), epoch)
     }
 
     /// The Representation this track records in `period`: the newest
@@ -906,6 +1008,13 @@ impl DashPlanner {
             scope: Some(Arc::clone(&epoch_scope)),
         };
         let availability_start = scope.manifest().availability_start_time;
+        // `availabilityStartTime` belongs to the presentation: once any
+        // update contradicted it, no later epoch is anchored by it either.
+        let timing_consistent = scope.lead.is_none()
+            && self.reported_conflicts == 0
+            && self.epochs.back().is_none_or(|previous| {
+                previous.timing_consistent && !anchor_moved(scope.manifest(), previous)
+            });
         let init_meta = Arc::new(segment_meta(
             self.track,
             scope,
@@ -963,7 +1072,7 @@ impl DashPlanner {
             last_time: first.time,
             last_end: scope.bounds(first).0,
             availability_start,
-            timing_consistent: scope.lead.is_none(),
+            timing_consistent,
             fingerprint,
             scope: epoch_scope,
             init_key,
@@ -2582,6 +2691,18 @@ mod tests {
     /// (`t` in milliseconds) from `start_number`, published with
     /// `availabilityStartTime` `ast_secs` after [`ast`].
     fn number_timeline(ast_secs: i64, start_number: u64, times: &[u64]) -> String {
+        timeline_variant(ast_secs, start_number, times, "v/init.mp4", "v")
+    }
+
+    /// [`number_timeline`] with another initialization URL or
+    /// Representation id.
+    fn timeline_variant(
+        ast_secs: i64,
+        start_number: u64,
+        times: &[u64],
+        init: &str,
+        representation: &str,
+    ) -> String {
         let ast = (ast() + chrono::TimeDelta::seconds(ast_secs)).to_rfc3339();
         let entries: String = times
             .iter()
@@ -2592,11 +2713,11 @@ mod tests {
      timeShiftBufferDepth="PT12S" availabilityStartTime="{ast}" publishTime="{ast}">
   <Period id="dash" start="PT0S">
     <AdaptationSet mimeType="video/mp4">
-      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" timescale="1000"
+      <SegmentTemplate media="v/$Number$.m4s" initialization="{init}" timescale="1000"
           availabilityTimeOffset="1.95" startNumber="{start_number}">
         <SegmentTimeline>{entries}</SegmentTimeline>
       </SegmentTemplate>
-      <Representation id="v" bandwidth="1000000"/>
+      <Representation id="{representation}" bandwidth="1000000"/>
     </AdaptationSet>
   </Period>
 </MPD>"#
@@ -2628,8 +2749,17 @@ mod tests {
         // Real media times, ~16 minutes past the anchor: followed anyway.
         at(&fixture, 101);
         let ahead = fixture.plan(&number_timeline(101, 50, &[1_000_000, 1_002_000]));
-        assert_eq!(planned_numbers(&ahead)[1..], [(1, 51)]);
-        assert_eq!(media(&ahead)[1].1.availability_start_time, None);
+        assert_eq!(
+            planned_numbers(&ahead),
+            [(0, 50), (1, 51)],
+            "50 is reissued"
+        );
+        assert!(
+            media(&ahead)
+                .iter()
+                .all(|(_, meta, _)| meta.availability_start_time.is_none()),
+            "neither new nor reissued work keeps the contradicted anchor"
+        );
 
         // `t` back at 0 for an already planned number: nothing new.
         at(&fixture, 102);
@@ -2757,5 +2887,136 @@ mod tests {
         ));
         assert_eq!(planned_numbers(&outcome), [(0, 1323)]);
         assert_eq!(media(&outcome)[0].1.availability_start_time, None);
+    }
+
+    /// A live MPD at 20 s whose current Period `p0` runs to 100 s, with
+    /// `p1` preannounced from 100 s.
+    fn preannounced_period(media: &str) -> String {
+        format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p0/{media}" initialization="p0/init.mp4" timescale="1">
+        <SegmentTimeline><S t="0" d="2" r="49"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="p1" start="PT100S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p1/{media}" initialization="p1/init.mp4" timescale="1">
+        <SegmentTimeline><S t="0" d="2" r="4"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+        )
+    }
+
+    #[test]
+    fn a_preannounced_period_never_becomes_the_live_edge() {
+        for media in ["$Number$.m4s", "$Time$.m4s"] {
+            let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 20);
+            let mpd = preannounced_period(media);
+            let first = fixture.plan(&mpd);
+            let planned: Vec<(Option<&str>, u64, u64)> = media_of(&first);
+            // The segment ending at 20 s: number 10, time 18.
+            assert_eq!(planned, [(Some("p0"), 10, 18)], "{media}");
+            fixture.consume_all();
+            fixture.advance(2);
+            let next = fixture.plan(&mpd);
+            assert_eq!(media_of(&next), [(Some("p0"), 11, 20)], "{media}");
+            assert_eq!(fixture.planner.as_ref().unwrap().reported_conflicts, 0);
+        }
+    }
+
+    fn media_of(outcome: &PlanOutcome) -> Vec<(Option<&str>, u64, u64)> {
+        media(outcome)
+            .iter()
+            .map(|(_, meta, _)| (meta.period_id.as_deref(), meta.number, meta.time))
+            .collect()
+    }
+
+    #[test]
+    fn a_timeline_scheduling_future_segments_is_not_trusted_over_the_clock() {
+        let timeline = |media: &str, entries: &str| {
+            format!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/{media}" initialization="v/init.mp4" timescale="1">
+        <SegmentTimeline>{entries}</SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+            )
+        };
+        // Listed up to 200 s at 20 s: the clock decides, whatever the key.
+        for media in ["$Number$.m4s", "$Time$.m4s"] {
+            let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 20);
+            let outcome = fixture.plan(&timeline(media, r#"<S t="0" d="2" r="99"/>"#));
+            assert_eq!(media_of(&outcome), [(Some("p0"), 10, 18)], "{media}");
+            assert_eq!(fixture.planner.as_ref().unwrap().reported_conflicts, 0);
+        }
+        // Everything listed lies ahead, but `$Time$` URLs are built from
+        // those very times: wait for the clock.
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 20);
+        let outcome = fixture.plan(&timeline("$Time$.m4s", r#"<S t="1000" d="2" r="4"/>"#));
+        assert!(media(&outcome).is_empty());
+        assert_eq!(fixture.planner.as_ref().unwrap().reported_conflicts, 0);
+    }
+
+    #[test]
+    fn epoch_changes_during_contradicting_updates_continue_by_number() {
+        let variants = [("v/init2.mp4", "v"), ("v/init.mp4", "v2")];
+        for (init, representation) in variants {
+            let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::default(), 100);
+            let at = |fixture: &Fixture, secs: i64| {
+                fixture
+                    .clock
+                    .set(ast() + chrono::TimeDelta::milliseconds(secs * 1000 + 500));
+            };
+            at(&fixture, 100);
+            let first = fixture.plan(&number_timeline(100, 50, &[0]));
+            fixture.consume_all();
+            at(&fixture, 101);
+            let ahead = fixture.plan(&number_timeline(101, 50, &[1_000_000, 1_002_000]));
+            assert_eq!(planned_numbers(&ahead), [(1, 51)]);
+            fixture.consume_all();
+            // A new init or Representation, described at `t="0"` again.
+            at(&fixture, 102);
+            let switched = fixture.plan(&timeline_variant(102, 52, &[0], init, representation));
+            assert_eq!(
+                planned_numbers(&switched),
+                [(2, 52)],
+                "{init} {representation}"
+            );
+            let scopes: std::collections::HashSet<_> = [first, ahead, switched]
+                .iter()
+                .flat_map(init_scopes)
+                .collect();
+            assert_eq!(scopes.len(), 2, "a new epoch");
+            fixture.consume_all();
+            // The new epoch keeps following numbers across descriptions.
+            at(&fixture, 103);
+            let later = fixture.plan(&timeline_variant(
+                103,
+                52,
+                &[1_004_000, 1_006_000],
+                init,
+                representation,
+            ));
+            assert_eq!(planned_numbers(&later), [(3, 53)]);
+            assert!(
+                media(&later)
+                    .iter()
+                    .all(|(_, meta, _)| meta.availability_start_time.is_none())
+            );
+        }
     }
 }

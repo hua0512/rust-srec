@@ -267,21 +267,24 @@ impl Representation {
         self.addressing.segments(&self.timing, offset, now)
     }
 
-    /// How far the newest segment this Representation's `SegmentTimeline`
-    /// describes lies ahead of the segments available at `now`; `None` when
-    /// it is available already or nothing is described ahead (see
-    /// [`Self::segments`] for the availability rules).
+    /// How far ahead of the segments available at `now` everything this
+    /// Representation's `SegmentTimeline` lists lies, when not one listed
+    /// segment is available yet and the Period is running by the clock
+    /// (see [`Self::segments`] for the availability rules).
     ///
-    /// A server lists the segments it has produced, so a lead much longer
-    /// than one segment means the MPD's timing anchor and its timeline
-    /// disagree; whether to trust the timeline is the caller's decision.
-    pub fn timeline_lead(&self, now: DateTime<Utc>) -> Result<Option<TimelineLead>, ManifestError> {
+    /// An MPD may describe segments before they become available, so this
+    /// alone does not prove the clock wrong; what it means is the caller's
+    /// decision.
+    pub fn timeline_ahead(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TimelineLead>, ManifestError> {
         let offset = if self.availability_time_complete {
             self.availability_time_offset
         } else {
             AvailabilityTimeOffset::ZERO
         };
-        self.addressing.timeline_lead(&self.timing, offset, now)
+        self.addressing.timeline_ahead(&self.timing, offset, now)
     }
 
     /// Where this `SegmentBase` Representation's Segment Index is, while it
