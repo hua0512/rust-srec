@@ -384,6 +384,10 @@ impl PeriodScope<'_> {
 enum PeriodPlan {
     /// Every currently available segment is planned.
     Complete,
+    /// Every segment of the Period, through its last one, lies within media
+    /// already planned from an earlier Period, so it never gets an epoch
+    /// (see [`DashPlanner::period_change_index`]); nothing of it remains.
+    Covered,
     /// A window bound was reached; more will be planned later.
     Blocked,
 }
@@ -698,16 +702,23 @@ impl DashPlanner {
                 at,
                 lead,
             };
-            match self.plan_period(scope, &window, &mut budget, &mut target_duration, outcome)? {
-                PeriodPlan::Complete => {}
+            let covered = match self.plan_period(
+                scope,
+                &window,
+                &mut budget,
+                &mut target_duration,
+                outcome,
+            )? {
+                PeriodPlan::Complete => false,
+                PeriodPlan::Covered => true,
                 PeriodPlan::Blocked => {
                     blocked = true;
                     break;
                 }
-            }
+            };
             let nothing_to_plan =
                 window.is_empty() && manifest.presentation_type == PresentationType::Static;
-            earlier_complete &= self.period_fully_planned(period, &key, nothing_to_plan);
+            earlier_complete &= covered || self.period_fully_planned(period, &key, nothing_to_plan);
         }
 
         let planned = self.next_ordinal - first_new;
@@ -746,11 +757,9 @@ impl DashPlanner {
         key: &PeriodKey,
         nothing_to_plan: bool,
     ) -> bool {
-        let Some(duration) = period.duration else {
+        let Some(end) = period_end(period) else {
             return false;
         };
-        let end =
-            i128::try_from(period.start.saturating_add(duration).as_nanos()).unwrap_or(i128::MAX);
         match self
             .epochs
             .iter()
@@ -923,6 +932,17 @@ impl DashPlanner {
         let continuing = continuing.is_some();
         self.note_lead(scope);
         if first_index >= window.len() {
+            // A later Period's segments are skipped only up to what was
+            // already planned; once its last segment, reaching the Period
+            // end, is among them, the Period is done without an epoch.
+            if same_period == Some(false)
+                && first_index > 0
+                && let Some(end) = period_end(scope.period)
+                && let Some(last) = window.last().transpose()?
+                && scope.bounds(&last).1 >= end
+            {
+                return Ok(PeriodPlan::Covered);
+            }
             return Ok(PeriodPlan::Complete);
         }
         if *budget == 0 {
@@ -1395,6 +1415,13 @@ fn live_start_target(
                 .min(last_start)
         }
     }
+}
+
+/// The end of `period` on the MPD timeline, in nanoseconds; `None` while
+/// it is open.
+fn period_end(period: &Period) -> Option<i128> {
+    let duration = period.duration?;
+    Some(i128::try_from(period.start.saturating_add(duration).as_nanos()).unwrap_or(i128::MAX))
 }
 
 /// Whether `period` has begun at `now` (always, for static presentations).
@@ -2080,6 +2107,45 @@ mod tests {
         // Times of the two MPDs cannot be compared: p1 starts at its start.
         let moved = duration_periods("2024-01-01T00:00:01Z", &[("p0", 0), ("p1", 10)]);
         assert_eq!(planned_periods(&fixture.plan(&moved)), [(1, Some("p1"), 1)]);
+    }
+
+    #[test]
+    fn a_period_covered_by_planned_media_lets_later_gaps_be_announced() {
+        const AST: &str = "2024-01-01T00:00:00Z";
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        let open = duration_periods(AST, &[("p0", 0)]);
+        assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 4)]);
+        fixture.consume_all();
+        fixture.advance(6);
+        assert_eq!(planned_periods(&fixture.plan(&open)).len(), 3);
+        fixture.consume_all();
+        // p1 (10–12 s) lies within the 14 s planned from p0; p2 carries no
+        // video.
+        let revealed = duration_periods(AST, &[("p0", 0), ("p1", 10)]).replace(
+            "</MPD>",
+            r#"<Period id="p2" start="PT12S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#,
+        );
+        let outcome = fixture.plan(&revealed);
+        assert!(planned_periods(&outcome).is_empty());
+        let absent: Vec<(Option<&str>, u64)> = outcome
+            .notices
+            .iter()
+            .filter_map(|notice| match notice {
+                EngineNotice::TrackAbsent {
+                    section_id,
+                    after_sequence,
+                    ..
+                } => Some((section_id.as_deref(), *after_sequence)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(absent, [(Some("p2"), 4)]);
     }
 
     #[test]
