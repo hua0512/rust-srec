@@ -22,6 +22,7 @@ use std::time::Duration;
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use mp4::sidx::{BoxExtent, ReferenceKind, SegmentIndex, SegmentReference, locate};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -78,7 +79,9 @@ impl RangeReader for HttpRangeReader<'_> {
             length: range_len(range)?,
         };
         let manifest = &self.config.manifest;
+        let rate_limiter = self.clients.rate_limiter();
         let mut failures: u32 = 0;
+        let mut throttled_since: Option<Instant> = None;
         loop {
             let error = match fetch_range(
                 self.clients,
@@ -94,6 +97,16 @@ impl RangeReader for HttpRangeReader<'_> {
                 Ok(bytes) => return Ok(bytes),
                 Err(error) => error,
             };
+            // The next request waits out the cool-down itself (see
+            // `fetch_range`); rate limiting is bounded by time, not tries.
+            if rate_limiter.throttled(&url, &error).is_some() {
+                let since = *throttled_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= rate_limiter.policy().max_throttled {
+                    return Err(error);
+                }
+                debug!(error = %error, "Segment Index request rate limited; retrying");
+                continue;
+            }
             failures += 1;
             if matches!(error, DownloadError::Cancelled)
                 || error.is_non_recoverable_source_error()

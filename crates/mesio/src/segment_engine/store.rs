@@ -31,6 +31,14 @@ use super::payload::SegmentPayload;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureClass {
     Http(u16),
+    /// The server is rate limiting (a 429, or a 503 with `Retry-After`);
+    /// `delay` is the cool-down it imposed. Retried after it without
+    /// spending the retry budget, until the segment has waited
+    /// [`StoreConfig::max_throttled`] in total.
+    RateLimited {
+        status: u16,
+        delay: Duration,
+    },
     Network,
     Timeout,
     Decode,
@@ -59,10 +67,12 @@ impl FailureClass {
                 retryable: !StatusCode::from_u16(status)
                     .is_ok_and(crate::error::is_permanent_client_error),
             },
-            Self::Network | Self::OverBudget => DownloadError::SegmentFetch {
-                reason,
-                retryable: true,
-            },
+            Self::Network | Self::OverBudget | Self::RateLimited { .. } => {
+                DownloadError::SegmentFetch {
+                    reason,
+                    retryable: true,
+                }
+            }
             Self::Timeout => DownloadError::Timeout { reason },
             Self::Decode => DownloadError::Decryption { reason },
             Self::UnsupportedCrypto => DownloadError::Unsupported {
@@ -202,6 +212,9 @@ pub struct StoreConfig {
     pub retry_budget: u32,
     pub retry_delay_base: Duration,
     pub retry_delay_max: Duration,
+    /// Total time one segment may wait out rate limiting before it fails;
+    /// rate-limited attempts do not spend `retry_budget`.
+    pub max_throttled: Duration,
     /// Size estimate used before any segment has completed; afterwards an EMA
     /// of actual completed sizes takes over.
     pub fallback_size_estimate: u64,
@@ -219,6 +232,7 @@ impl Default for StoreConfig {
             retry_budget: 3,
             retry_delay_base: Duration::from_millis(500),
             retry_delay_max: Duration::from_secs(10),
+            max_throttled: crate::rate_limit::RateLimitPolicy::default().max_throttled,
             fallback_size_estimate: 2 * 1024 * 1024,
             max_segment_size: 0,
             max_retained_inits: 8,
@@ -256,6 +270,8 @@ struct SegmentRecord {
     descriptor: Arc<SegmentDescriptor>,
     state: SegmentState,
     reschedules: u32,
+    /// Cool-downs waited out because the server was rate limiting.
+    throttled: Duration,
     /// Bumped whenever re-discovery refreshes the fetch metadata. Compared
     /// against `attempt_generation` for the 401/403 stale-signed-URL rule.
     generation: u64,
@@ -444,6 +460,7 @@ impl SegmentStateStore {
                         descriptor: Arc::new(descriptor),
                         state: SegmentState::Discovered,
                         reschedules: 0,
+                        throttled: Duration::ZERO,
                         generation: 0,
                         attempt_generation: 0,
                         ready_entry: None,
@@ -745,45 +762,70 @@ impl SegmentStateStore {
                     return OutcomeEffects::default();
                 };
 
-                let retryable = match class {
-                    // 425 Too Early: an origin that enforces live availability
-                    // (DASH) rejects a request that lands before the segment is
-                    // published on its clock; it is published moments later.
-                    FailureClass::Http(404 | 425 | 429) | FailureClass::Http(500..=599) => true,
-                    FailureClass::Network
-                    | FailureClass::Timeout
-                    | FailureClass::Decode
-                    | FailureClass::OverBudget => true,
-                    // Auth failures are conditionally retryable: a signed URL
-                    // can expire mid-flight while a newer playlist already
-                    // refreshed it. Retry only when re-discovery advanced the
-                    // generation past the one this attempt fetched with —
-                    // otherwise the denial is real.
-                    FailureClass::Http(401 | 403) => record.generation > record.attempt_generation,
-                    FailureClass::Http(_)
-                    | FailureClass::UnsupportedCrypto
-                    | FailureClass::InvalidFormat
-                    | FailureClass::Oversize => false,
-                };
-
-                // Budget contention says nothing about the segment: it only
-                // means other downloads hold the budget right now, so it does
-                // not spend the retry budget. It still ends: a size that can
-                // never fit is terminal at the fetch, contention clears as
-                // siblings finish, and a live backlog is bounded.
-                let spends_budget = class != FailureClass::OverBudget;
-                if retryable && (!spends_budget || record.reschedules < self.config.retry_budget) {
-                    if spends_budget {
-                        record.reschedules += 1;
-                    }
-                    let reschedules = record.reschedules;
+                let backoff = |reschedules: u32| {
                     let exp = reschedules.saturating_sub(1).min(16);
-                    let delay = self
-                        .config
+                    self.config
                         .retry_delay_base
                         .checked_mul(1u32 << exp)
                         .unwrap_or(self.config.retry_delay_max)
-                        .min(self.config.retry_delay_max);
+                        .min(self.config.retry_delay_max)
+                };
+                let retry_delay = match class {
+                    // Rate limiting says the server is busy, not that the
+                    // segment is bad: it is retried once the cool-down ends,
+                    // for as long as the throttling bound allows. A live
+                    // segment that leaves the window meanwhile is dropped
+                    // with the backlog and skipped (see `prune_below`).
+                    FailureClass::RateLimited { delay, .. } => {
+                        let throttled = record.throttled.saturating_add(delay);
+                        (throttled <= self.config.max_throttled).then(|| {
+                            record.throttled = throttled;
+                            delay.max(self.config.retry_delay_base)
+                        })
+                    }
+                    // Budget contention says nothing about the segment: it
+                    // only means other downloads hold the budget right now,
+                    // so it does not spend the retry budget. It still ends:
+                    // a size that can never fit is terminal at the fetch,
+                    // contention clears as siblings finish, and a live
+                    // backlog is bounded.
+                    FailureClass::OverBudget => Some(backoff(record.reschedules)),
+                    _ => {
+                        let retryable = match class {
+                            // 425 Too Early: an origin that enforces live
+                            // availability (DASH) rejects a request that
+                            // lands before the segment is published on its
+                            // clock; it is published moments later.
+                            FailureClass::Http(404 | 425 | 429)
+                            | FailureClass::Http(500..=599)
+                            | FailureClass::Network
+                            | FailureClass::Timeout
+                            | FailureClass::Decode => true,
+                            // Auth failures are conditionally retryable: a
+                            // signed URL can expire mid-flight while a newer
+                            // playlist already refreshed it. Retry only when
+                            // re-discovery advanced the generation past the
+                            // one this attempt fetched with — otherwise the
+                            // denial is real.
+                            FailureClass::Http(401 | 403) => {
+                                record.generation > record.attempt_generation
+                            }
+                            FailureClass::Http(_)
+                            | FailureClass::UnsupportedCrypto
+                            | FailureClass::InvalidFormat
+                            | FailureClass::Oversize
+                            | FailureClass::RateLimited { .. }
+                            | FailureClass::OverBudget => false,
+                        };
+                        (retryable && record.reschedules < self.config.retry_budget).then(|| {
+                            record.reschedules += 1;
+                            backoff(record.reschedules)
+                        })
+                    }
+                };
+
+                if let Some(delay) = retry_delay {
+                    let reschedules = record.reschedules;
                     let retry_at = now + delay;
                     record.state = SegmentState::RetryAt {
                         attempt: reschedules,
@@ -2057,6 +2099,71 @@ mod tests {
                 .assembler_inputs
                 .as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
+    }
+
+    #[test]
+    fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_budget: 1,
+            retry_delay_base: Duration::from_millis(10),
+            max_throttled: Duration::from_secs(60),
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let mut now = Instant::now();
+        let fail = |s: &mut SegmentStateStore, class, now: Instant| {
+            let (mut jobs, inputs) = s.next_ready_jobs(1, now, &b);
+            assert!(inputs.is_empty());
+            let job = jobs.pop().expect("admitted once due");
+            s.apply_outcome(
+                SegmentOutcome::Failed {
+                    key: job.descriptor.key.clone(),
+                    msn: 1,
+                    class,
+                    reason: Arc::from("HTTP 429"),
+                    error: None,
+                },
+                now,
+            )
+        };
+        let limited = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(20),
+        };
+
+        // Three cool-downs of 20 s fit the 60 s bound; the budget of one
+        // ordinary retry is untouched.
+        for _ in 0..3 {
+            let effects = fail(&mut s, limited, now);
+            assert!(effects.assembler_inputs.is_empty(), "still waiting");
+            let notice = effects.retry_notice.expect("retry scheduled");
+            assert_eq!(notice.delay, Duration::from_secs(20));
+            assert_eq!(
+                s.next_retry_deadline(),
+                Some(now + Duration::from_secs(20)),
+                "retried when the cool-down ends, not before"
+            );
+            assert!(s.next_ready_jobs(1, now, &b).0.is_empty());
+            now += Duration::from_secs(20);
+        }
+        assert!(
+            fail(&mut s, FailureClass::Timeout, now)
+                .assembler_inputs
+                .is_empty(),
+            "the ordinary retry is still available"
+        );
+        now += Duration::from_secs(1);
+        // A fourth cool-down would exceed the bound: the segment ends.
+        let effects = fail(&mut s, limited, now);
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, error, .. }]
+                if matches!(error.get(), DownloadError::SegmentFetch { retryable: true, .. })
         ));
     }
 

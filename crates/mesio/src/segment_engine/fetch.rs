@@ -391,6 +391,14 @@ async fn download_once(
         request = request.header(RANGE, format!("bytes={}-{end}", range.offset));
     }
 
+    // Held until the response has been observed: while the origin cools
+    // down after rate limiting, this waits, and a probe stays out until its
+    // answer is known.
+    let rate_limiter = ctx.clients.rate_limiter();
+    let _admission = rate_limiter
+        .admit(url, &ctx.cancel)
+        .await
+        .map_err(|_| (Failure::new(FailureClass::Network, "cancelled"), false))?;
     let started = std::time::Instant::now();
     let response = tokio::select! {
         _ = ctx.cancel.cancelled() => {
@@ -407,22 +415,28 @@ async fn download_once(
     })?;
 
     let status = response.status();
+    let rate_limited = rate_limiter.observe(url, status, response.headers());
     if !status.is_success() {
-        let failure = Failure::new(
-            FailureClass::Http(status.as_u16()),
-            format!("HTTP {status} for {}", Redacted(url)),
-        )
-        .with_error(DownloadError::http_status(
-            status,
-            url.as_str(),
-            match descriptor.key.kind {
-                SegmentKind::Init => "init segment download",
-                SegmentKind::Media => "segment download",
+        let class = match rate_limited {
+            Some(delay) => FailureClass::RateLimited {
+                status: status.as_u16(),
+                delay,
             },
-        ));
-        // 5xx gets one quick attempt-level retry; 4xx goes straight to the
-        // store (it owns 404/429 pacing and the 401/403 freshness rule).
-        return Err((failure, status.is_server_error()));
+            None => FailureClass::Http(status.as_u16()),
+        };
+        let failure = Failure::new(class, format!("HTTP {status} for {}", Redacted(url)))
+            .with_error(DownloadError::http_status(
+                status,
+                url.as_str(),
+                match descriptor.key.kind {
+                    SegmentKind::Init => "init segment download",
+                    SegmentKind::Media => "segment download",
+                },
+            ));
+        // A plain 5xx gets one quick attempt-level retry; anything else goes
+        // straight to the store (it owns rate-limit and 404 pacing and the
+        // 401/403 freshness rule).
+        return Err((failure, rate_limited.is_none() && status.is_server_error()));
     }
     let range_mode =
         validate_range_response(status, response.headers(), byte_range).map_err(|e| (e, false))?;
@@ -618,11 +632,14 @@ pub(crate) async fn fetch_range(
         .query(params)
         .header(RANGE, format!("bytes={}-{end}", range.offset))
         .timeout(timeout);
+    let rate_limiter = clients.rate_limiter();
+    let _admission = rate_limiter.admit(url, cancel).await?;
     let response = tokio::select! {
         _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
         response = request.send() => response?,
     };
     let status = response.status();
+    rate_limiter.observe(url, status, response.headers());
     if !status.is_success() {
         return Err(DownloadError::http_status(status, url.as_str(), operation));
     }

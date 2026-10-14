@@ -231,6 +231,7 @@ pub async fn start_with_events(
             retry_budget: config.fetcher_config.max_segment_retries,
             retry_delay_base: config.fetcher_config.segment_retry_delay_base,
             retry_delay_max: config.fetcher_config.max_segment_retry_delay,
+            max_throttled: clients.rate_limiter().policy().max_throttled,
             fallback_size_estimate: engine.initial_segment_size_estimate,
             max_segment_size: engine.max_segment_size_bytes,
             max_retained_inits: engine.max_retained_inits,

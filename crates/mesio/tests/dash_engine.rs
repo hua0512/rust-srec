@@ -59,6 +59,16 @@ struct FileEntry {
     body: Vec<u8>,
     fail_status: u16,
     fail_times: u32,
+    /// `Retry-After` sent with the failures.
+    retry_after: Option<&'static str>,
+}
+
+/// Rate-limited MPD answers, once `after_serves` MPDs have been served.
+#[derive(Clone, Copy)]
+struct MpdRateLimit {
+    after_serves: u32,
+    remaining: u32,
+    retry_after: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -78,6 +88,7 @@ struct OriginState {
     mpd_fail_after: Option<u32>,
     /// The MPD answers this status (e.g. 404) forever.
     mpd_status: Option<u16>,
+    mpd_rate_limit: Option<MpdRateLimit>,
     files: HashMap<String, FileEntry>,
     numbered: HashMap<String, Numbered>,
     /// Path prefixes answered only once their gate opens.
@@ -137,14 +148,42 @@ impl Origin {
     }
 
     fn add_file_failing(&self, path: &str, body: impl Into<Vec<u8>>, status: u16, times: u32) {
+        self.rate_limit_file(path, body, status, None, times);
+    }
+
+    /// Answers `path` with `status` and `Retry-After: retry_after` `times`
+    /// times before serving it.
+    fn rate_limit_file(
+        &self,
+        path: &str,
+        body: impl Into<Vec<u8>>,
+        status: u16,
+        retry_after: Option<&'static str>,
+        times: u32,
+    ) {
         self.0.lock().unwrap().files.insert(
             path.to_string(),
             FileEntry {
                 body: body.into(),
                 fail_status: status,
                 fail_times: times,
+                retry_after,
             },
         );
+    }
+
+    /// After `after_serves` MPDs, the next `times` MPD requests answer 429
+    /// with `Retry-After: retry_after`.
+    fn rate_limit_mpd(&self, after_serves: u32, times: u32, retry_after: Option<&'static str>) {
+        self.0.lock().unwrap().mpd_rate_limit = Some(MpdRateLimit {
+            after_serves,
+            remaining: times,
+            retry_after,
+        });
+    }
+
+    fn mpd_serves(&self) -> u32 {
+        self.0.lock().unwrap().mpd_serves
     }
 
     fn add_numbered(&self, prefix: &str, segment: &'static [u8], timescale: u64) {
@@ -205,6 +244,15 @@ fn respond(status: StatusCode, body: Vec<u8>) -> Response {
         .expect("response builds")
 }
 
+fn fail(status: u16, retry_after: Option<&str>) -> Response {
+    let mut response =
+        Response::builder().status(StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND));
+    if let Some(retry_after) = retry_after {
+        response = response.header("retry-after", retry_after);
+    }
+    response.body(Body::empty()).expect("response builds")
+}
+
 async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/').to_string();
     let gate = {
@@ -231,6 +279,14 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
         if let Some(status) = state.mpd_status {
             return respond(StatusCode::from_u16(status).unwrap(), Vec::new());
         }
+        let serves = state.mpd_serves;
+        if let Some(limit) = state.mpd_rate_limit.as_mut()
+            && limit.remaining > 0
+            && serves >= limit.after_serves
+        {
+            limit.remaining -= 1;
+            return fail(429, limit.retry_after);
+        }
         if state
             .mpd_fail_after
             .is_some_and(|after| state.mpd_serves >= after)
@@ -243,10 +299,7 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     if let Some(entry) = state.files.get_mut(&path) {
         if entry.fail_times > 0 {
             entry.fail_times -= 1;
-            return respond(
-                StatusCode::from_u16(entry.fail_status).unwrap_or(StatusCode::NOT_FOUND),
-                Vec::new(),
-            );
+            return fail(entry.fail_status, entry.retry_after);
         }
         return respond(StatusCode::OK, entry.body.clone());
     }
@@ -910,6 +963,95 @@ async fn missing_segments_are_retried() {
             .iter()
             .any(|event| matches!(event, DownloadEvent::RetryScheduled { .. }))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limited_segments_wait_for_the_server_beyond_the_retry_budget() {
+    let origin = Origin::default();
+    origin.set_mpd(static_timeline_mpd());
+    add_timeline_files(&origin);
+    // More rate-limited answers than the retry budget (3) allows for other
+    // failures; a 503 with Retry-After is rate limiting too.
+    origin.rate_limit_file("v/t12288.m4s", VIDEO_2, 429, Some("1"), 4);
+    origin.rate_limit_file("a/t45056.m4s", AUDIO_2, 503, Some("0"), 4);
+    let base = origin.clone().serve().await;
+
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, events, terminal) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_two_track_stream(&items);
+    assert_eq!(count_track(&items, 1), 2, "every video fragment");
+    assert_eq!(count_track(&items, 2), 3, "every audio fragment");
+    // One request per cool-down: rate limiting is not retried within an
+    // attempt, unlike a plain server error.
+    assert_eq!(origin.hits("v/t12288.m4s"), 5);
+    assert_eq!(origin.hits("a/t45056.m4s"), 5);
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, DownloadEvent::RetryScheduled { .. }))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.set_mpd(number_mpd(true, 0, "v"));
+    // After the initial fetch, more rate-limited refreshes than the refresh
+    // retries (2) allow for other failures, without Retry-After.
+    origin.rate_limit_mpd(1, 4, None);
+    let base = origin.clone().serve().await;
+    let clock = live_clock(10);
+    let mut config = config(Some(Arc::clone(&clock)));
+    config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(3)));
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        mut items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
+    let mut out = Vec::new();
+    let error = read_until(&mut items, &mut out, |out| media(out).len() >= 2).await;
+    assert!(error.is_none(), "{error:?}");
+
+    // Planning goes on from the last MPD while its refreshes back off.
+    clock.advance(Duration::from_secs(2));
+    let error = read_until(&mut items, &mut out, |out| media(out).len() >= 4).await;
+    assert!(error.is_none(), "{error:?}");
+    tokio::time::timeout(TEST_TIMEOUT, async {
+        while origin.mpd_serves() < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("refreshes resume once the server stops rate limiting");
+    origin.set_mpd(number_mpd(false, 12, "v"));
+    let error = read_until(&mut items, &mut out, |_| false).await;
+    assert!(error.is_none(), "{error:?}");
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_two_track_stream(&out);
+    assert_eq!(media(&out).len(), 5, "{}", describe(&out));
+    let events = log.finish().await;
+    for number in 8..=12 {
+        assert_eq!(downloads(&events, &format!("v/{number}.m4s")), 1);
+    }
+    // The initial fetch, four rate-limited refreshes, then successful ones.
+    assert!(origin.hits("manifest.mpd") >= 6);
 }
 
 fn failed_url(error: &Option<DownloadError>) -> Option<&str> {

@@ -1,9 +1,10 @@
 use reqwest::Client;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use tracing::{debug, info};
 
 use crate::DownloaderConfig;
+use crate::rate_limit::RateLimiter;
 use crate::{DownloadError, proxy::build_proxy_from_config};
 
 /// Create a reqwest Client with the provided configuration
@@ -178,6 +179,9 @@ pub struct ClientPool {
     #[cfg(feature = "tls-native-fallback")]
     native: Client,
     native_hosts: Vec<String>,
+    /// Shared by every request made through the pool, so rate limiting seen
+    /// by one request slows all of them down (see [`crate::rate_limit`]).
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl ClientPool {
@@ -195,7 +199,12 @@ impl ClientPool {
             #[cfg(feature = "tls-native-fallback")]
             native,
             native_hosts,
+            rate_limiter: Arc::new(RateLimiter::default()),
         })
+    }
+
+    pub(crate) fn rate_limiter(&self) -> &RateLimiter {
+        &self.rate_limiter
     }
 
     pub fn default_client(&self) -> &Client {

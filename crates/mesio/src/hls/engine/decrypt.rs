@@ -153,6 +153,8 @@ async fn fetch_key(
                 let mut retries = 0;
                 loop {
                     let attempt = async {
+                        let rate_limiter = ctx_clients.rate_limiter();
+                        let admission = rate_limiter.admit(&fetch_url, &cancel).await?;
                         let response = client
                             .get(fetch_url.as_ref().clone())
                             .query(&params)
@@ -161,6 +163,8 @@ async fn fetch_key(
                             .await
                             .map_err(HlsDownloaderError::from)?;
                         let status = response.status();
+                        rate_limiter.observe(&fetch_url, status, response.headers());
+                        drop(admission);
                         if !status.is_success() {
                             return Err(HlsDownloaderError::http_status(
                                 status,
@@ -211,7 +215,17 @@ async fn fetch_key(
                 url,
                 operation,
             } => Failure::new(
-                FailureClass::Http(status.as_u16()),
+                match ctx
+                    .clients
+                    .rate_limiter()
+                    .throttled(&enc.key_fetch_url, e.as_ref())
+                {
+                    Some(delay) => FailureClass::RateLimited {
+                        status: status.as_u16(),
+                        delay,
+                    },
+                    None => FailureClass::Http(status.as_u16()),
+                },
                 format!("key fetch failed: {e}"),
             )
             .with_error(HlsDownloaderError::HttpStatus {

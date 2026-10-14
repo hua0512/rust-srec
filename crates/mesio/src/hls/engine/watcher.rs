@@ -17,8 +17,9 @@ use std::time::Duration;
 
 use m3u8_rs::MediaPlaylist;
 use tokio::sync::watch;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::downloader::ClientPool;
@@ -127,6 +128,8 @@ impl PlaylistWatcher {
     async fn run(self, tx: watch::Sender<PlaylistSnapshot>, parent_query: Option<Arc<str>>) {
         let mut generation: u64 = 0;
         let mut retries: u32 = 0;
+        // When the refreshes started being rate limited, while they are.
+        let mut throttled_since: Option<Instant> = None;
         let mut last_playlist_bytes: Option<bytes::Bytes> = None;
         // Follows redirects per refresh: the playlist URL may be re-routed to
         // a different edge, and its relative URIs resolve against that edge.
@@ -181,6 +184,7 @@ impl PlaylistWatcher {
                     } = refreshed;
                     base_url = refreshed_base_url;
                     retries = 0;
+                    throttled_since = None;
                     generation += 1;
                     current_target_duration = playlist.target_duration as f64;
 
@@ -219,33 +223,50 @@ impl PlaylistWatcher {
                     // Unchanged playlist: nothing to publish (URLs unchanged
                     // means there is no fetch metadata to refresh either).
                     retries = 0;
+                    throttled_since = None;
                     tracker.record_refresh(0);
                 }
                 Err(e) => {
                     if matches!(e, HlsDownloaderError::Cancelled) {
                         return;
                     }
-                    error!(
-                        "Error refreshing playlist {}: {}",
-                        Redacted(&self.playlist_url),
-                        crate::redact::redact_diagnostic(&e)
-                    );
-                    retries += 1;
-                    if retries > self.config.playlist_config.live_max_refresh_retries {
+                    let rate_limiter = self.clients.rate_limiter();
+                    // Rate limiting does not spend the retry budget; it
+                    // fails the stream only once it has lasted its bound.
+                    let delay = if let Some(cool_down) =
+                        rate_limiter.throttled(&self.playlist_url, &e)
+                    {
+                        let since = *throttled_since.get_or_insert_with(Instant::now);
+                        warn!(
+                            url = %Redacted(&self.playlist_url),
+                            throttled_secs = since.elapsed().as_secs(),
+                            error = %crate::redact::redact_diagnostic(&e),
+                            "playlist refresh rate limited"
+                        );
+                        (since.elapsed() < rate_limiter.policy().max_throttled).then_some(cool_down)
+                    } else {
+                        error!(
+                            "Error refreshing playlist {}: {}",
+                            Redacted(&self.playlist_url),
+                            crate::redact::redact_diagnostic(&e)
+                        );
+                        retries += 1;
+                        (retries <= self.config.playlist_config.live_max_refresh_retries)
+                            .then(|| self.config.playlist_config.live_refresh_retry_delay * retries)
+                    };
+                    let Some(delay) = delay else {
                         // Publish the explicit failure cause before dropping
                         // the sender, so the reactor can distinguish this from
                         // a clean end.
                         let cause = TerminalCause::Failed(SharedError::new(e));
                         tx.send_modify(|snapshot| snapshot.terminal = Some(cause));
                         return;
-                    }
+                    };
                     tokio::select! {
                         biased;
                         _ = self.cancel.cancelled() => return,
                         _ = tx.closed() => return,
-                        _ = tokio::time::sleep(
-                            self.config.playlist_config.live_refresh_retry_delay * retries,
-                        ) => {}
+                        _ = tokio::time::sleep(delay) => {}
                     }
                 }
             }
@@ -280,11 +301,15 @@ impl PlaylistWatcher {
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params);
 
+        let rate_limiter = self.clients.rate_limiter();
+        let admission = rate_limiter.admit(&self.playlist_url, &self.cancel).await?;
         let response = tokio::select! {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
             response = request.send() => response,
         }
         .map_err(HlsDownloaderError::from)?;
+        rate_limiter.observe(&self.playlist_url, response.status(), response.headers());
+        drop(admission);
 
         if !response.status().is_success() {
             return Err(HlsDownloaderError::http_status(

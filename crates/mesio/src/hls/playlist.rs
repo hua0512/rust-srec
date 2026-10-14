@@ -100,6 +100,11 @@ impl PlaylistEngine {
             .send()
             .await
             .map_err(HlsDownloaderError::from)?;
+        // Startup is not retried here, but the requests that follow honour a
+        // cool-down this answer starts.
+        self.clients
+            .rate_limiter()
+            .observe(&playlist_url, response.status(), response.headers());
         if !response.status().is_success() {
             return Err(HlsDownloaderError::http_status(
                 response.status(),
@@ -225,6 +230,13 @@ impl PlaylistEngine {
             .send()
             .await
             .map_err(HlsDownloaderError::from)?;
+        // Startup is not retried here, but the requests that follow honour a
+        // cool-down this answer starts.
+        self.clients.rate_limiter().observe(
+            &media_playlist_url,
+            response.status(),
+            response.headers(),
+        );
         if !response.status().is_success() {
             return Err(HlsDownloaderError::http_status(
                 response.status(),
