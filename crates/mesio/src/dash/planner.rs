@@ -510,8 +510,9 @@ impl DashPlanner {
 
     /// Notes a dynamic MPD's `availabilityStartTime` moving: since the
     /// previous MPD planned, for the Periods both describe, and since each
-    /// epoch opened. Runs before anything is reissued or planned, and
-    /// withdraws every anchor issued under the old value.
+    /// epoch opened. Runs before anything is reissued or planned. A move
+    /// between MPDs withdraws every anchor issued under the old value; an
+    /// epoch opened under an older value withdraws its own Period's.
     fn note_moved_anchor(&mut self, manifest: &Manifest) {
         if manifest.presentation_type != PresentationType::Dynamic {
             return;
@@ -519,8 +520,12 @@ impl DashPlanner {
         let ast = manifest.availability_start_time;
         let periods: Vec<PeriodKey> = manifest.periods.iter().map(PeriodKey::of).collect();
         let mut moved: Vec<(PeriodKey, Option<DateTime<Utc>>)> = Vec::new();
+        let transition = self
+            .last_anchor
+            .as_ref()
+            .is_some_and(|(previous_ast, _)| *previous_ast != ast);
         if let Some((previous_ast, previous_periods)) = &self.last_anchor
-            && *previous_ast != ast
+            && transition
         {
             moved.extend(
                 periods
@@ -540,9 +545,14 @@ impl DashPlanner {
             return;
         };
         // Every anchor issued under the old `availabilityStartTime`, in any
-        // Period and epoch, retired or not.
-        self.presentation_withdrawal.withdraw();
-        self.presentation_withdrawal = AnchorWithdrawal::default();
+        // Period and epoch, retired or not. Only at the transition itself:
+        // an epoch still queued from before it keeps differing from later
+        // MPDs, and must not withdraw anchors issued under the new value;
+        // its own Period's withdrawal covers it.
+        if transition {
+            self.presentation_withdrawal.withdraw();
+            self.presentation_withdrawal = AnchorWithdrawal::default();
+        }
         for (period, _) in &moved {
             self.record_contradiction(period);
         }
@@ -3663,5 +3673,36 @@ mod tests {
         }
         numbers.dedup();
         assert_eq!(numbers, (50..=69).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn an_epoch_queued_from_before_an_anchor_move_leaves_later_periods_anchored() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        // p0's #3 is planned and still queued.
+        set_clock(&fixture, 6_000);
+        let first = fixture.plan(&periods_mpd(&[(
+            "p0",
+            0,
+            "v",
+            1,
+            r#"<S t="0" d="2" r="2"/>"#,
+        )]));
+        assert_eq!(planned_numbers(&first), [(0, 3)]);
+        assert_eq!(wall_clock(media(&first)[0].1), Some(ast()));
+        // The anchor moves by a second, and p1 begins under it.
+        set_clock(&fixture, 21_000);
+        let moved = periods_mpd(&[("p1", 10, "v", 1, r#"<S t="0" d="2" r="4"/>"#)])
+            .replace("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z");
+        let p1 = fixture.plan(&moved);
+        let anchor = Some(ast() + chrono::TimeDelta::seconds(1));
+        assert!(!media(&p1).is_empty());
+        assert_eq!(wall_clock(media(&first)[0].1), None, "p0's anchor moved");
+        assert_eq!(wall_clock(media(&p1)[0].1), anchor);
+        // Refreshed unchanged while p0's epoch is still queued: p1 keeps its
+        // anchor.
+        set_clock(&fixture, 21_500);
+        fixture.plan(&moved);
+        assert_eq!(fixture.planner.as_ref().unwrap().epochs.len(), 2);
+        assert_eq!(wall_clock(media(&p1)[0].1), anchor);
     }
 }
