@@ -191,7 +191,7 @@ msgid "{0} s"
 msgstr "{0} 秒"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:199
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:198
 msgid "{0} stream(s) added successfully"
 msgstr "成功添加 {0} 个流"
 
@@ -231,7 +231,7 @@ msgstr "{count, plural, other {# 个账号需要登录}}"
 msgid "{count, plural, one {# active upload} other {# active uploads}}"
 msgstr "{count, plural, other {# 个进行中的上传}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1047
+#: src/components/config/engines/forms/setting-fields.tsx:1055
 msgid "{count, plural, one {# item} other {# items}}"
 msgstr "{count, plural, other {# 项}}"
 
@@ -239,7 +239,7 @@ msgstr "{count, plural, other {# 项}}"
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:913
+#: src/components/config/engines/forms/setting-fields.tsx:921
 msgid "{count, plural, one {# parameter} other {# parameters}}"
 msgstr "{count, plural, other {# 个参数}}"
 
@@ -398,7 +398,7 @@ msgstr "0 = 不限"
 msgid "0 = Unlimited"
 msgstr "0 = 不限"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:593
+#: src/components/config/engines/forms/mesio-sections.tsx:581
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
@@ -470,7 +470,7 @@ msgstr "时间戳向后跳变达到此值时，检查是否为偏移后的重放
 msgid "A check found it needs a refresh"
 msgstr "检查发现需要刷新"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:756
+#: src/components/config/engines/forms/mesio-sections.tsx:744
 msgid "A language tag. Any language is used when none matches."
 msgstr "语言标签。没有匹配时使用任意语言。"
 
@@ -482,7 +482,7 @@ msgstr "一次录制会一直使用开始时的账号。"
 msgid "A template being removed lets go of the proxy once the recordings using it finish."
 msgstr "正在移除的模板会在使用它的录制结束后释放该代理。"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1231
+#: src/components/config/engines/forms/setting-fields.tsx:1239
 msgid "A template can't turn this off; do that on the engine."
 msgstr "模板无法关闭此项，请在引擎中关闭。"
 
@@ -637,7 +637,7 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:437
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:436
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
@@ -744,7 +744,7 @@ msgstr "粘贴账号的 Cookie 或令牌来添加账号，即可登录录制。"
 msgid "Add Override"
 msgstr "添加覆盖项"
 
-#: src/components/config/engines/forms/setting-fields.tsx:994
+#: src/components/config/engines/forms/setting-fields.tsx:1002
 msgid "Add parameter"
 msgstr "添加参数"
 
@@ -774,8 +774,8 @@ msgstr "添加 rclone 参数"
 msgid "Add Step"
 msgstr "添加步骤"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:446
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:478
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:445
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:477
 msgid "Add Stream"
 msgstr "添加流"
 
@@ -820,7 +820,7 @@ msgstr "调整侧边栏样式和行为。"
 msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
-#: src/components/config/engines/forms/setting-sections.tsx:546
+#: src/components/config/engines/forms/setting-sections.tsx:551
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:88
@@ -965,7 +965,7 @@ msgstr "任何头部变化"
 msgid "Any header change splits whenever the stream header bytes change, which is safe but may split more often than needed. Codec changes only splits when the codec configuration changes."
 msgstr "“任何头部变化”会在流头部字节变化时分割，较安全但可能产生不必要的分割；“仅编码变化”只在编码配置变化时分割。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:758
+#: src/components/config/engines/forms/mesio-sections.tsx:746
 msgid "Any language"
 msgstr "任意语言"
 
@@ -1161,7 +1161,7 @@ msgstr "提取音频"
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:779
+#: src/components/config/engines/forms/mesio-sections.tsx:767
 msgid "Audio inside the video stream is always kept."
 msgstr "视频流内自带的音频始终保留。"
 
@@ -1180,7 +1180,7 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:747
+#: src/components/config/engines/forms/mesio-sections.tsx:735
 msgid "Audio Quality"
 msgstr "音频质量"
 
@@ -1236,7 +1236,7 @@ msgstr "从 URL 自动填充名称"
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:709
+#: src/components/config/engines/forms/mesio-sections.tsx:697
 msgid "Automatic"
 msgstr "自动"
 
@@ -1244,7 +1244,7 @@ msgstr "自动"
 msgid "Automatic (match the site)"
 msgstr "自动（按站点匹配）"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:765
+#: src/components/config/engines/forms/mesio-sections.tsx:753
 msgid "Automatic follows the delay the stream suggests, else three segments behind the live edge. Finished streams are always recorded from the beginning."
 msgstr "自动：采用流建议的延迟，否则落后直播边缘三个分段。已结束的流始终从头录制。"
 
@@ -1438,7 +1438,7 @@ msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:213
 msgid "Batch parse error: {0}"
 msgstr "批量解析失败：{0}"
 
@@ -1536,11 +1536,11 @@ msgstr "浏览器通知"
 msgid "Browser Status"
 msgstr "浏览器状态"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:586
+#: src/components/config/engines/forms/mesio-sections.tsx:574
 msgid "Buffer Limit (bytes)"
 msgstr "缓冲上限（字节）"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:580
+#: src/components/config/engines/forms/mesio-sections.tsx:568
 msgid "Buffer Limit (segments)"
 msgstr "缓冲上限（分段）"
 
@@ -1573,7 +1573,7 @@ msgstr "字节"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:607
+#: src/components/config/engines/forms/mesio-sections.tsx:595
 msgid "Caching and progress"
 msgstr "缓存与进度"
 
@@ -1870,7 +1870,7 @@ msgstr "选择用于登录平台的账号。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:748
+#: src/components/config/engines/forms/mesio-sections.tsx:736
 msgid "Chosen among the audio in the preferred language."
 msgstr "在首选语言的音频中选择。"
 
@@ -1940,8 +1940,8 @@ msgstr "关闭"
 msgid "Close playback details"
 msgstr "关闭播放详情"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:683
-#: src/components/config/engines/forms/mesio-sections.tsx:700
+#: src/components/config/engines/forms/mesio-sections.tsx:671
+#: src/components/config/engines/forms/mesio-sections.tsx:688
 msgid "Closest to a bandwidth"
 msgstr "最接近目标带宽"
 
@@ -2619,11 +2619,11 @@ msgid "Current Password"
 msgstr "当前密码"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:242
-#: src/components/config/engines/forms/setting-fields.tsx:485
-#: src/components/config/engines/forms/setting-fields.tsx:1034
-#: src/components/config/engines/forms/setting-fields.tsx:1115
-#: src/components/config/engines/forms/setting-fields.tsx:1180
-#: src/components/config/engines/forms/setting-fields.tsx:1202
+#: src/components/config/engines/forms/setting-fields.tsx:493
+#: src/components/config/engines/forms/setting-fields.tsx:1042
+#: src/components/config/engines/forms/setting-fields.tsx:1123
+#: src/components/config/engines/forms/setting-fields.tsx:1188
+#: src/components/config/engines/forms/setting-fields.tsx:1210
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:333
 msgid "Custom"
@@ -2791,7 +2791,7 @@ msgstr "天"
 msgid "Decrypt on Worker Threads"
 msgstr "在工作线程上解密"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:631
+#: src/components/config/engines/forms/mesio-sections.tsx:619
 msgid "Decryption Key Cache TTL (ms)"
 msgstr "解密密钥缓存 TTL（毫秒）"
 
@@ -2874,7 +2874,7 @@ msgstr "已确认离线"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:716
+#: src/components/config/engines/forms/mesio-sections.tsx:704
 msgid "Delay behind the live edge"
 msgstr "落后直播边缘的延迟"
 
@@ -3212,7 +3212,7 @@ msgid "Disable selected"
 msgstr "禁用所选"
 
 #: src/components/config/engines/forms/setting-fields.tsx:127
-#: src/components/config/engines/forms/setting-fields.tsx:1199
+#: src/components/config/engines/forms/setting-fields.tsx:1207
 #: src/components/config/shared/record-danmu-card.tsx:103
 #: src/components/credentials/account-row.tsx:92
 #: src/components/credentials/account-selection-section.tsx:157
@@ -3305,7 +3305,7 @@ msgid "Download Backup"
 msgstr "下载备份"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:307
-#: src/components/config/engines/forms/mesio-sections.tsx:793
+#: src/components/config/engines/forms/mesio-sections.tsx:781
 msgid "Download Concurrency"
 msgstr "下载并发数"
 
@@ -3340,7 +3340,7 @@ msgstr "录制重试策略"
 msgid "Download started"
 msgstr "下载已开始"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:638
+#: src/components/config/engines/forms/mesio-sections.tsx:626
 msgid "Downloaded bytes between progress updates. 0 updates on every chunk."
 msgstr "两次进度更新之间下载的字节数。0 表示每个数据块都更新。"
 
@@ -3444,7 +3444,7 @@ msgstr "例如 黑名单CDN"
 msgid "e.g. Claude assistant"
 msgstr "例如：Claude 助手"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:759
+#: src/components/config/engines/forms/mesio-sections.tsx:747
 msgid "e.g. en, pt-BR"
 msgstr "例如 en, pt-BR"
 
@@ -3685,7 +3685,7 @@ msgstr "输入唯一名称"
 msgid "Enter a URL above"
 msgstr "请在上方输入链接"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:481
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:480
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
@@ -3855,8 +3855,8 @@ msgstr "执行时间（默认）"
 msgid "Executions"
 msgstr "执行记录"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:313
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:377
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:312
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:376
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
@@ -3978,7 +3978,7 @@ msgctxt "terminal-cause"
 msgid "Failed"
 msgstr "下载失败"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:833
+#: src/components/config/engines/forms/mesio-sections.tsx:821
 msgid "Failed manifest refreshes in a row before the recording fails."
 msgstr "清单连续刷新失败多少次后录制失败。"
 
@@ -4204,7 +4204,7 @@ msgstr "加载工作流列表失败：{0}"
 msgid "Failed to parse danmu file"
 msgstr "弹幕文件解析失败"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:133
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:132
 msgid "Failed to parse URL"
 msgstr "解析 URL 失败"
 
@@ -4499,7 +4499,7 @@ msgstr "第一个输出文件路径"
 msgid "Fix configuration errors before saving"
 msgstr "保存前修复配置错误"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:727
+#: src/components/config/engines/forms/mesio-sections.tsx:715
 msgid "Fix DASH Streams"
 msgstr "修复 DASH 流"
 
@@ -4515,7 +4515,7 @@ msgstr "修复 HLS 流"
 msgid "Fixed account"
 msgstr "固定账号"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:713
+#: src/components/config/engines/forms/mesio-sections.tsx:701
 msgid "Fixed delay"
 msgstr "固定延迟"
 
@@ -4945,8 +4945,8 @@ msgstr "高+"
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "数值越高，在高速网络下越快，但对远端和本机 CPU 的压力也更大。仅在网络与服务方能承受时才建议调高。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:664
-#: src/components/config/engines/forms/mesio-sections.tsx:694
+#: src/components/config/engines/forms/mesio-sections.tsx:652
+#: src/components/config/engines/forms/mesio-sections.tsx:682
 msgid "Highest bandwidth"
 msgstr "最高带宽"
 
@@ -4954,7 +4954,7 @@ msgstr "最高带宽"
 msgid "Highest bitrate"
 msgstr "最高码率"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:670
+#: src/components/config/engines/forms/mesio-sections.tsx:658
 msgid "Highest up to a height"
 msgstr "不超过指定高度的最高质量"
 
@@ -5179,7 +5179,7 @@ msgstr "忽略低于此比特率的流。"
 msgid "Ignored words"
 msgstr "忽略的词"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:381
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
@@ -5635,7 +5635,7 @@ msgstr "直播"
 msgid "LIVE"
 msgstr "直播中"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:710
+#: src/components/config/engines/forms/mesio-sections.tsx:698
 msgid "Live edge"
 msgstr "直播边缘"
 
@@ -5660,15 +5660,7 @@ msgstr "实时轮询通知已启用"
 msgid "Live Preview"
 msgstr "实时预览"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:568
-msgid "Live Reorder Window (ms)"
-msgstr "直播重排窗口（毫秒）"
-
-#: src/components/config/engines/forms/mesio-sections.tsx:574
-msgid "Live Reorder Window (segments)"
-msgstr "直播重排窗口（分段）"
-
-#: src/components/config/engines/forms/mesio-sections.tsx:764
+#: src/components/config/engines/forms/mesio-sections.tsx:752
 msgid "Live Start Position"
 msgstr "直播录制起点"
 
@@ -5810,7 +5802,7 @@ msgstr "日志"
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期凭据。只读密钥可以查看录制会话和非敏感状态；配置和运维记录需要完全访问权限。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:645
+#: src/components/config/engines/forms/mesio-sections.tsx:633
 msgid "Longest time between progress updates while data arrives. 0 updates on every chunk."
 msgstr "数据到达期间两次进度更新的最长间隔。0 表示每个数据块都更新。"
 
@@ -5858,8 +5850,8 @@ msgstr "数值越低 = 质量越高"
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:667
-#: src/components/config/engines/forms/mesio-sections.tsx:697
+#: src/components/config/engines/forms/mesio-sections.tsx:655
+#: src/components/config/engines/forms/mesio-sections.tsx:685
 msgid "Lowest bandwidth"
 msgstr "最低带宽"
 
@@ -5912,11 +5904,11 @@ msgstr "管理应用配置。"
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:813
+#: src/components/config/engines/forms/mesio-sections.tsx:801
 msgid "Manifest refresh"
 msgstr "清单刷新"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:819
+#: src/components/config/engines/forms/mesio-sections.tsx:807
 msgid "Manifest Timeout (ms)"
 msgstr "清单超时 (ms)"
 
@@ -5989,7 +5981,7 @@ msgstr "最大密钥重试延迟（毫秒）"
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:592
+#: src/components/config/engines/forms/mesio-sections.tsx:580
 msgid "Max Pending Init Segments"
 msgstr "待处理初始化分段上限"
 
@@ -6032,7 +6024,7 @@ msgstr "元数据及 App 播放请求的最大尝试次数。"
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:675
+#: src/components/config/engines/forms/mesio-sections.tsx:663
 msgid "Maximum height"
 msgstr "最大高度"
 
@@ -6141,7 +6133,7 @@ msgstr "保留的最小大小。"
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:825
+#: src/components/config/engines/forms/mesio-sections.tsx:813
 msgid "Minimum Refresh Interval (ms)"
 msgstr "最小刷新间隔 (ms)"
 
@@ -6281,7 +6273,7 @@ msgstr "多媒体归档"
 msgid "Multiplier for exponential backoff."
 msgstr "指数退避的倍率。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:600
+#: src/components/config/engines/forms/mesio-sections.tsx:588
 msgid "Multiplies the download concurrency."
 msgstr "与下载并发数相乘。"
 
@@ -6297,7 +6289,7 @@ msgstr "我的渠道"
 msgid "My Template"
 msgstr "我的模板"
 
-#: src/components/config/engines/forms/setting-fields.tsx:961
+#: src/components/config/engines/forms/setting-fields.tsx:969
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
@@ -6618,11 +6610,11 @@ msgstr "未配置平台"
 msgid "No platforms found"
 msgstr "未找到平台"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:130
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:129
 msgid "No playable stream found in response"
 msgstr "响应中未找到可播放的流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:208
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:207
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
@@ -6738,8 +6730,8 @@ msgid "No workflows yet"
 msgstr "暂无工作流"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:33
-#: src/components/config/engines/forms/setting-fields.tsx:911
-#: src/components/config/engines/forms/setting-fields.tsx:1046
+#: src/components/config/engines/forms/setting-fields.tsx:919
+#: src/components/config/engines/forms/setting-fields.tsx:1054
 #: src/components/config/engines/forms/streamlink-form.tsx:74
 #: src/components/config/engines/forms/streamlink-form.tsx:83
 #: src/components/notifications/forms/webhook-form.tsx:214
@@ -6928,7 +6920,7 @@ msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
 #: src/components/config/engines/forms/setting-fields.tsx:126
-#: src/components/config/engines/forms/setting-fields.tsx:626
+#: src/components/config/engines/forms/setting-fields.tsx:634
 msgid "Off"
 msgstr "关"
 
@@ -6983,7 +6975,7 @@ msgid "OK"
 msgstr "正常"
 
 #: src/components/config/engines/forms/setting-fields.tsx:125
-#: src/components/config/engines/forms/setting-fields.tsx:625
+#: src/components/config/engines/forms/setting-fields.tsx:633
 msgid "On"
 msgstr "开"
 
@@ -7129,7 +7121,7 @@ msgstr "输出目录不可用"
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:651
+#: src/components/config/engines/forms/mesio-sections.tsx:639
 msgid "Output Metrics"
 msgstr "输出指标"
 
@@ -7269,7 +7261,7 @@ msgstr "配对分段处理管道"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:363
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:362
 msgid "Parse and play live streams"
 msgstr "解析并播放直播流"
 
@@ -7278,7 +7270,7 @@ msgid "Parse Batch"
 msgstr "批量解析"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:138
 msgid "Parse error: {0}"
 msgstr "解析失败：{0}"
 
@@ -7290,7 +7282,7 @@ msgstr "解析模式"
 msgid "Parse Stream"
 msgstr "解析流"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:412
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:411
 msgid "Parsing Stream..."
 msgstr "正在解析流..."
 
@@ -7669,7 +7661,7 @@ msgstr "播放器设置"
 msgid "Playing"
 msgstr "播放中"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:613
+#: src/components/config/engines/forms/mesio-sections.tsx:601
 msgid "Playlist Cache TTL (ms)"
 msgstr "播放列表缓存 TTL（毫秒）"
 
@@ -7706,7 +7698,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:415
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:414
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
@@ -7746,7 +7738,7 @@ msgstr "优先使用会话配对"
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:755
+#: src/components/config/engines/forms/mesio-sections.tsx:743
 msgid "Preferred Audio Language"
 msgstr "首选音频语言"
 
@@ -7933,11 +7925,11 @@ msgstr "已处理 {0} 个流水线；{1} 个失败"
 msgid "Processed {0} streamers; {1} failed"
 msgstr "已处理 {0} 个主播；{1} 个失败"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:599
+#: src/components/config/engines/forms/mesio-sections.tsx:587
 msgid "Processed Buffer Multiplier"
 msgstr "已处理缓冲倍数"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:625
+#: src/components/config/engines/forms/mesio-sections.tsx:613
 msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
@@ -7989,11 +7981,11 @@ msgstr "程序"
 msgid "Progress"
 msgstr "进度"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:637
+#: src/components/config/engines/forms/mesio-sections.tsx:625
 msgid "Progress Update Bytes"
 msgstr "进度更新字节数"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:644
+#: src/components/config/engines/forms/mesio-sections.tsx:632
 msgid "Progress Update Interval (ms)"
 msgstr "进度更新间隔（毫秒）"
 
@@ -8165,7 +8157,7 @@ msgstr "就绪"
 msgid "Ready to play"
 msgstr "就绪，等待播放"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:434
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:433
 msgid "Ready to Watch"
 msgstr "准备观看"
 
@@ -8220,11 +8212,11 @@ msgstr "重新连接后才能请求分段。"
 msgid "Record Danmu"
 msgstr "录制弹幕"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:778
+#: src/components/config/engines/forms/mesio-sections.tsx:766
 msgid "Record Separate Audio"
 msgstr "录制独立音频"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:772
+#: src/components/config/engines/forms/mesio-sections.tsx:760
 msgid "Record Video"
 msgstr "录制视频"
 
@@ -8319,7 +8311,7 @@ msgid "Refresh Interval (ms)"
 msgstr "刷新间隔（毫秒）"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:357
-#: src/components/config/engines/forms/mesio-sections.tsx:832
+#: src/components/config/engines/forms/mesio-sections.tsx:820
 msgid "Refresh Retries"
 msgstr "刷新重试次数"
 
@@ -8374,7 +8366,7 @@ msgstr "重新加载播放器"
 msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
-#: src/components/config/engines/forms/setting-fields.tsx:982
+#: src/components/config/engines/forms/setting-fields.tsx:990
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:164
 msgid "Remove"
 msgstr "移除"
@@ -9085,12 +9077,12 @@ msgstr "安全与身份"
 msgid "Segment"
 msgstr "分段"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:619
+#: src/components/config/engines/forms/mesio-sections.tsx:607
 msgid "Segment Cache TTL (ms)"
 msgstr "分段缓存 TTL（毫秒）"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:301
-#: src/components/config/engines/forms/mesio-sections.tsx:787
+#: src/components/config/engines/forms/mesio-sections.tsx:775
 msgid "Segment downloads"
 msgstr "分段下载"
 
@@ -9099,7 +9091,7 @@ msgid "Segment finished"
 msgstr "分段完成"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:320
-#: src/components/config/engines/forms/mesio-sections.tsx:806
+#: src/components/config/engines/forms/mesio-sections.tsx:794
 msgid "Segment Retries"
 msgstr "分段重试次数"
 
@@ -9108,7 +9100,7 @@ msgid "Segment started"
 msgstr "分段开始"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:314
-#: src/components/config/engines/forms/mesio-sections.tsx:800
+#: src/components/config/engines/forms/mesio-sections.tsx:788
 msgid "Segment Timeout (ms)"
 msgstr "分段超时（毫秒）"
 
@@ -9116,7 +9108,7 @@ msgstr "分段超时（毫秒）"
 msgid "Segments"
 msgstr "分段"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:794
+#: src/components/config/engines/forms/mesio-sections.tsx:782
 msgid "Segments downloaded at once, per track."
 msgstr "每个轨道同时下载的分段数。"
 
@@ -9607,7 +9599,7 @@ msgstr "跳过互动玩法"
 msgid "Skipped"
 msgstr "已跳过"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:204
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:203
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
@@ -9697,7 +9689,7 @@ msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 msgid "Start"
 msgstr "开始"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:728
+#: src/components/config/engines/forms/mesio-sections.tsx:716
 msgid "Start a new file on incompatible stream changes in the merged output, and apply file size and duration limits. The settings below apply either way."
 msgstr "合并输出中出现不兼容的流变化时开始新文件，并应用文件大小和时长限制。无论是否开启，下方设置都会生效。"
 
@@ -9829,7 +9821,7 @@ msgstr "已下播"
 msgid "Stream online"
 msgstr "开播"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:127
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
@@ -9840,7 +9832,7 @@ msgstr "流解析成功"
 msgid "Stream Password"
 msgstr "直播密码"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:359
 msgid "Stream Player"
 msgstr "流播放器"
 
@@ -10115,8 +10107,8 @@ msgstr "二"
 msgid "Takes effect while Loop Protection is on."
 msgstr "在开启循环保护时生效。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:686
-#: src/components/config/engines/forms/mesio-sections.tsx:703
+#: src/components/config/engines/forms/mesio-sections.tsx:674
+#: src/components/config/engines/forms/mesio-sections.tsx:691
 msgid "Target bandwidth"
 msgstr "目标带宽"
 
@@ -10284,7 +10276,7 @@ msgstr "该渠道所发送消息使用的语言，与谁查看无关。"
 msgid "The last refresh failed"
 msgstr "上次刷新失败"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:826
+#: src/components/config/engines/forms/mesio-sections.tsx:814
 msgid "The manifest's own update period applies when longer."
 msgstr "清单自身的更新周期更长时以其为准。"
 
@@ -10324,7 +10316,7 @@ msgstr "当前录制期间账号选择已更改，录制下次重新连接时将
 msgid "The server rejected this source. Check the URL and, for local sources, the private network access setting."
 msgstr "服务器拒绝了此直播源。请检查地址；如果是本地源，请同时检查私有网络访问设置。"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:677
+#: src/components/config/engines/forms/mesio-sections.tsx:665
 msgid "The smallest picture is used when none fits."
 msgstr "没有符合的画面时使用最小的画面。"
 
@@ -10746,7 +10738,7 @@ msgstr "TPS 限制帮助"
 msgid "Track Information"
 msgstr "轨道信息"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:733
+#: src/components/config/engines/forms/mesio-sections.tsx:721
 msgid "Tracks"
 msgstr "轨道"
 
@@ -10974,8 +10966,8 @@ msgid "Unknown engine type: {engineType}"
 msgstr "未知的引擎类型：{engineType}"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:280
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:139
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:214
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:138
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:213
 msgid "Unknown error"
 msgstr "未知错误"
 
@@ -11237,7 +11229,7 @@ msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:244
-#: src/components/config/engines/forms/setting-fields.tsx:968
+#: src/components/config/engines/forms/setting-fields.tsx:976
 #: src/components/notifications/forms/webhook-form.tsx:436
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:119
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:157
@@ -11298,7 +11290,7 @@ msgstr "仅视频"
 msgid "Video Player"
 msgstr "视频播放器"
 
-#: src/components/config/engines/forms/mesio-sections.tsx:740
+#: src/components/config/engines/forms/mesio-sections.tsx:728
 msgid "Video Quality"
 msgstr "视频质量"
 

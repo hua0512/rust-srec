@@ -384,8 +384,6 @@ export const MesioHlsConfigSchema = group({
   ),
   output_config: optionalSetting(
     group({
-      live_reorder_buffer_duration_ms: intSetting(0),
-      live_reorder_buffer_max_segments: intSetting(0),
       gap_evaluation_interval_ms: intSetting(0),
       max_pending_init_segments: intSetting(0),
       live_max_overall_stall_duration_ms: disableableIntSetting(),

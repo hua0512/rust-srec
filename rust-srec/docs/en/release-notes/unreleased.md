@@ -27,4 +27,5 @@
 - The FFmpeg and Streamlink engine settings now work like Mesio's: settings are grouped into sections that show how many differ from the default, the less common ones are under **Advanced**, and in a template override every setting can use the engine setting (shown in the choice), the default, or a custom value. Lossless cutting in a template now takes the engine's own settings into account, so its warning about custom arguments also appears when the arguments come from the engine.
 - Saving an engine now stores only the settings you set instead of every default, so engines follow later changes to the defaults.
 - Saving an engine or template no longer removes settings the form does not show, such as ones set through the API, and a cleared number in a gap strategy, variant or DASH quality choice is now flagged instead of being saved as 0.
+- Removed the **Live Reorder Window (ms)** and **Live Reorder Window (segments)** settings from Mesio's HLS buffering settings: they had no effect. Values saved for them are ignored.
 - The engines settings page is now a list like proxies, showing each engine's type, installed version and status, with **Configure** beside it.

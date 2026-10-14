@@ -28,7 +28,7 @@ pub mod protocol_builder;
 pub mod proxy;
 pub(crate) mod rate_limit;
 pub mod redact;
-pub mod segment_engine;
+pub(crate) mod segment_engine;
 pub mod session;
 pub mod source;
 

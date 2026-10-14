@@ -260,11 +260,6 @@ impl Default for HlsCacheConfig {
 
 #[derive(Debug, Clone)]
 pub struct HlsOutputConfig {
-    /// Max duration of segments to hold in reorder buffer
-    pub live_reorder_buffer_duration: Duration,
-    /// Max number of segments in reorder buffer
-    pub live_reorder_buffer_max_segments: usize,
-
     /// How often to wake up and re-evaluate gap policies when stalled.
     ///
     /// This ensures duration-based gap skipping and VOD timeouts can trigger even
@@ -299,8 +294,6 @@ pub struct HlsOutputConfig {
 impl Default for HlsOutputConfig {
     fn default() -> Self {
         Self {
-            live_reorder_buffer_duration: Duration::from_secs(30),
-            live_reorder_buffer_max_segments: 10,
             gap_evaluation_interval: Duration::from_millis(200),
             max_pending_init_segments: 8,
             live_max_overall_stall_duration: Some(Duration::from_secs(60)),

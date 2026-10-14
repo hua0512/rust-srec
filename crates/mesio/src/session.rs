@@ -492,20 +492,8 @@ impl MesioDownloader {
         };
 
         match protocol {
-            ProtocolType::Hls => {
-                let mut request = request;
-                if matches!(request.protocol, ProtocolSelection::Auto) {
-                    request.protocol = ProtocolSelection::Hls(request.options.hls.clone());
-                }
-                Ok(DownloaderSession::Hls(self.start_hls(request).await?))
-            }
-            ProtocolType::Flv => {
-                let mut request = request;
-                if matches!(request.protocol, ProtocolSelection::Auto) {
-                    request.protocol = ProtocolSelection::Flv(request.options.flv.clone());
-                }
-                Ok(DownloaderSession::Flv(self.start_flv(request).await?))
-            }
+            ProtocolType::Hls => Ok(DownloaderSession::Hls(self.start_hls(request).await?)),
+            ProtocolType::Flv => Ok(DownloaderSession::Flv(self.start_flv(request).await?)),
             ProtocolType::Dash => Ok(DownloaderSession::Dash(self.start_dash(request).await?)),
             ProtocolType::Auto => Err(DownloadError::ProtocolDetectionFailed {
                 url: crate::redact::redact_url(&request.url).to_string(),
@@ -527,7 +515,7 @@ impl MesioDownloader {
         }
         let config = self.config.hls.clone();
         let event_capacity = (config.scheduler_config.download_concurrency.max(1) * 64).max(256);
-        self.start_with_sources(request, SegmentedProtocol::HLS, event_capacity, move || {
+        self.start_with_sources(request, "HLS", event_capacity, move || {
             HlsDownloader::with_config(config.clone())
         })
     }
@@ -549,12 +537,9 @@ impl MesioDownloader {
         let config = self.config.dash.clone();
         config.validate()?;
         let event_capacity = (config.scheduler.download_concurrency.max(1) * 128).max(256);
-        self.start_with_sources(
-            request,
-            SegmentedProtocol::DASH,
-            event_capacity,
-            move || DashDownloader::with_config(config.clone()),
-        )
+        self.start_with_sources(request, "DASH", event_capacity, move || {
+            DashDownloader::with_config(config.clone())
+        })
     }
 
     pub async fn start_flv(
@@ -617,11 +602,12 @@ impl MesioDownloader {
     }
 
     /// A session that tries `request.sources` in turn, starting a fresh
-    /// engine from `make_engine` per attempt.
+    /// engine from `make_engine` per attempt. `request.protocol` is already
+    /// resolved from `Auto`; `name` names the protocol in diagnostics.
     fn start_with_sources<E, F>(
         &self,
         request: DownloadRequest,
-        protocol: SegmentedProtocol,
+        name: &'static str,
         event_capacity: usize,
         make_engine: F,
     ) -> Result<DownloadSession<hls::HlsData>, DownloadError>
@@ -645,7 +631,7 @@ impl MesioDownloader {
 
         let lifecycle = tokio::spawn(async move {
             run_source_failover(
-                protocol,
+                name,
                 make_engine,
                 request,
                 request_cache,
@@ -683,137 +669,63 @@ struct SelectedSource {
     priority: u8,
 }
 
-/// A segmented protocol whose sessions fail over between sources.
-#[derive(Clone, Copy)]
-struct SegmentedProtocol {
+/// How one attempt against a source ended.
+enum AttemptEnd {
+    /// The session is over.
+    Finished(DownloadTerminal),
+    /// The engine could not start a session for the source.
+    NotStarted(DownloadError),
+    /// The session failed after it started.
+    Failed(DownloadError),
+}
+
+/// What the attempts of one failover session share.
+struct Failover {
     name: &'static str,
-    /// The selection an attempt uses when the request left it on `Auto`.
-    default_selection: fn() -> ProtocolSelection,
-}
-
-impl SegmentedProtocol {
-    const HLS: Self = Self {
-        name: "HLS",
-        default_selection: || ProtocolSelection::Hls(HlsRequestOptions::default()),
-    };
-    const DASH: Self = Self {
-        name: "DASH",
-        default_selection: || ProtocolSelection::Dash(DashRequestOptions::default()),
-    };
-}
-
-/// Runs attempts against the request's sources until one ends the stream,
-/// the consumer goes away, or every source has failed. Items of successive
-/// attempts are separated by a discontinuity marker once media was delivered.
-#[allow(clippy::too_many_arguments)]
-async fn run_source_failover<E, F>(
-    protocol: SegmentedProtocol,
-    make_engine: F,
-    request: DownloadRequest,
-    request_cache: Option<Arc<CacheManager>>,
     token: CancellationToken,
     events: EventSink,
     item_tx: mpsc::Sender<Result<HlsData, DownloadError>>,
     active_metrics: Arc<Mutex<Option<Arc<PerformanceMetrics>>>>,
-) -> DownloadTerminal
-where
-    E: MediaEngine<Item = HlsData>,
-    F: Fn() -> Result<E, DownloadError>,
-{
-    let name = protocol.name;
-    let mut manager = SourceManager::new();
-    for source in request.sources.iter().cloned() {
-        manager.add_source(source);
-    }
+    manager: SourceManager,
+    /// Sources tried since media was last delivered.
+    attempted: HashSet<String>,
+    delivered_media: bool,
+}
 
-    let mut attempted = HashSet::new();
-    let mut last_error: Option<DownloadError> = None;
-    let mut delivered_media = false;
-    let mut pending_discontinuity = false;
-    let mut attempt = 0_u32;
-
-    loop {
-        if token.is_cancelled() {
+impl Failover {
+    /// Delivers `error` as the stream's terminal item and ends the session
+    /// with `reason`.
+    async fn fail(&self, error: DownloadError, reason: String) -> DownloadTerminal {
+        if deliver(&self.item_tx, Err(error), &self.token).await == Delivery::Cancelled {
             return DownloadTerminal::Cancelled;
         }
-        *active_metrics.lock() = None;
+        DownloadTerminal::PipelineError(Arc::from(reason))
+    }
 
-        let selected = match select_source_attempt(&mut manager, &attempted) {
-            Ok(Some(source)) => source,
-            Ok(None) => {
-                let reason = last_error
-                    .map(|err| err.to_string())
-                    .unwrap_or_else(|| format!("all {name} sources failed"));
-                let error = DownloadError::source_exhausted(reason.clone());
-                if deliver(&item_tx, Err(error), &token).await == Delivery::Cancelled {
-                    return DownloadTerminal::Cancelled;
-                }
-                return DownloadTerminal::PipelineError(Arc::from(reason));
-            }
-            Err(err) => {
-                let reason = err.to_string();
-                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
-                    return DownloadTerminal::Cancelled;
-                }
-                return DownloadTerminal::PipelineError(Arc::from(reason));
-            }
-        };
-        attempted.insert(selected.original_url.clone());
-        attempt = attempt.saturating_add(1);
-
-        if pending_discontinuity {
-            let marker = Ok(HlsData::end_marker_with_reason(
-                hls::SplitReason::Discontinuity,
-            ));
-            match deliver(&item_tx, marker, &token).await {
-                Delivery::Sent => {}
-                Delivery::Closed => return DownloadTerminal::DownstreamClosed,
-                Delivery::Cancelled => return DownloadTerminal::Cancelled,
-            }
-            pending_discontinuity = false;
-        }
-
-        events.emit(DownloadEvent::SourceSelected {
-            url: Arc::from(selected.original_url.as_str()),
-            priority: selected.priority,
-            attempt,
-        });
-
-        let mut attempt_request = request.clone();
-        attempt_request.url = selected.url;
-        attempt_request.sources.clear();
-        attempt_request.cache = request_cache.clone();
-        attempt_request.cancel = Some(token.clone());
-        attempt_request.protocol = match &attempt_request.protocol {
-            ProtocolSelection::Auto => (protocol.default_selection)(),
-            other => other.clone(),
-        };
-
-        let downloader = match make_engine() {
-            Ok(downloader) => downloader,
-            Err(err) => {
-                let reason = err.to_string();
-                if deliver(&item_tx, Err(err), &token).await == Delivery::Cancelled {
-                    return DownloadTerminal::Cancelled;
-                }
-                return DownloadTerminal::PipelineError(Arc::from(reason));
-            }
-        };
-
+    /// Runs one attempt of `request` on `downloader` against `selected`
+    /// until its stream ends or fails, delivering its items.
+    async fn attempt<E>(
+        &mut self,
+        downloader: E,
+        request: DownloadRequest,
+        selected: &SelectedSource,
+    ) -> AttemptEnd
+    where
+        E: MediaEngine<Item = HlsData>,
+    {
+        let name = self.name;
         let started_at = Instant::now();
-        let session = match downloader.start(attempt_request).await {
+        let session = match downloader.start(request).await {
             Ok(session) => session,
             Err(err) => {
-                manager.record_failure(&selected.original_url, &err, started_at.elapsed());
-                last_error = Some(err);
-                continue;
+                self.manager
+                    .record_failure(&selected.original_url, &err, started_at.elapsed());
+                return AttemptEnd::NotStarted(err);
             }
         };
 
-        *active_metrics.lock() = session.handle.metrics_source();
-        let attempt_events = session.events;
-        let forward_events = events.clone();
-        let event_task = tokio::spawn(forward_event_stream(attempt_events, forward_events));
+        *self.active_metrics.lock() = session.handle.metrics_source();
+        let event_task = tokio::spawn(forward_event_stream(session.events, self.events.clone()));
         let mut items = session.items;
         let handle = session.handle;
         let mut terminal = DownloadTerminal::Cancelled;
@@ -831,11 +743,12 @@ where
                     if !item.is_end_marker() {
                         if !attempt_delivered {
                             attempt_delivered = true;
-                            manager.record_success(&selected.original_url, started_at.elapsed());
-                            attempted.clear();
-                            attempted.insert(selected.original_url.clone());
+                            self.manager
+                                .record_success(&selected.original_url, started_at.elapsed());
+                            self.attempted.clear();
+                            self.attempted.insert(selected.original_url.clone());
                         }
-                        delivered_media = true;
+                        self.delivered_media = true;
                     }
                     let announces = matches!(
                         item,
@@ -847,7 +760,7 @@ where
                         continue;
                     }
                     let delivery =
-                        deliver_group(&item_tx, std::mem::take(&mut group), &token).await;
+                        deliver_group(&self.item_tx, std::mem::take(&mut group), &self.token).await;
                     if delivery != Delivery::Sent {
                         // The item stream and the attempt's engine task both
                         // hold event sinks; the forwarder only finishes once
@@ -860,10 +773,10 @@ where
                         if let Err(error) = event_task.await {
                             warn!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "event forwarding task failed during cancellation");
                         }
-                        return match delivery {
+                        return AttemptEnd::Finished(match delivery {
                             Delivery::Cancelled => DownloadTerminal::Cancelled,
                             _ => DownloadTerminal::DownstreamClosed,
-                        };
+                        });
                     }
                 }
                 Err(err) => {
@@ -894,23 +807,119 @@ where
             warn!(protocol = name, error = %crate::redact::redact_diagnostic(&error), "event forwarding task failed");
         }
 
-        if let Some(err) = failed {
-            manager.record_failure(&selected.original_url, &err, started_at.elapsed());
-            last_error = Some(err);
-            pending_discontinuity = delivered_media;
-            continue;
+        let err = match (failed, terminal) {
+            (Some(err), _) => err,
+            (None, DownloadTerminal::PipelineError(reason)) => DownloadError::Protocol {
+                reason: reason.to_string(),
+            },
+            (None, terminal) => return AttemptEnd::Finished(terminal),
+        };
+        self.manager
+            .record_failure(&selected.original_url, &err, started_at.elapsed());
+        AttemptEnd::Failed(err)
+    }
+}
+
+/// Runs attempts against the request's sources until one ends the stream,
+/// the consumer goes away, or every source has failed. Items of successive
+/// attempts are separated by a discontinuity marker once media was delivered.
+#[allow(clippy::too_many_arguments)]
+async fn run_source_failover<E, F>(
+    name: &'static str,
+    make_engine: F,
+    request: DownloadRequest,
+    request_cache: Option<Arc<CacheManager>>,
+    token: CancellationToken,
+    events: EventSink,
+    item_tx: mpsc::Sender<Result<HlsData, DownloadError>>,
+    active_metrics: Arc<Mutex<Option<Arc<PerformanceMetrics>>>>,
+) -> DownloadTerminal
+where
+    E: MediaEngine<Item = HlsData>,
+    F: Fn() -> Result<E, DownloadError>,
+{
+    let mut manager = SourceManager::new();
+    for source in request.sources.iter().cloned() {
+        manager.add_source(source);
+    }
+    let mut failover = Failover {
+        name,
+        token,
+        events,
+        item_tx,
+        active_metrics,
+        manager,
+        attempted: HashSet::new(),
+        delivered_media: false,
+    };
+
+    let mut last_error: Option<DownloadError> = None;
+    let mut pending_discontinuity = false;
+    let mut attempt = 0_u32;
+
+    loop {
+        if failover.token.is_cancelled() {
+            return DownloadTerminal::Cancelled;
+        }
+        *failover.active_metrics.lock() = None;
+
+        let selected = match select_source_attempt(&mut failover.manager, &failover.attempted) {
+            Ok(Some(source)) => source,
+            Ok(None) => {
+                let reason = last_error
+                    .map(|err| err.to_string())
+                    .unwrap_or_else(|| format!("all {name} sources failed"));
+                let error = DownloadError::source_exhausted(reason.clone());
+                return failover.fail(error, reason).await;
+            }
+            Err(err) => {
+                let reason = err.to_string();
+                return failover.fail(err, reason).await;
+            }
+        };
+        failover.attempted.insert(selected.original_url.clone());
+        attempt = attempt.saturating_add(1);
+
+        if pending_discontinuity {
+            let marker = Ok(HlsData::end_marker_with_reason(
+                hls::SplitReason::Discontinuity,
+            ));
+            match deliver(&failover.item_tx, marker, &failover.token).await {
+                Delivery::Sent => {}
+                Delivery::Closed => return DownloadTerminal::DownstreamClosed,
+                Delivery::Cancelled => return DownloadTerminal::Cancelled,
+            }
+            pending_discontinuity = false;
         }
 
-        match terminal {
-            DownloadTerminal::AuthoritativeEnd | DownloadTerminal::Cancelled => return terminal,
-            DownloadTerminal::DownstreamClosed => return DownloadTerminal::DownstreamClosed,
-            DownloadTerminal::PipelineError(reason) => {
-                let err = DownloadError::Protocol {
-                    reason: reason.to_string(),
-                };
-                manager.record_failure(&selected.original_url, &err, started_at.elapsed());
+        failover.events.emit(DownloadEvent::SourceSelected {
+            url: Arc::from(selected.original_url.as_str()),
+            priority: selected.priority,
+            attempt,
+        });
+
+        let mut attempt_request = request.clone();
+        attempt_request.url = selected.url.clone();
+        attempt_request.sources.clear();
+        attempt_request.cache = request_cache.clone();
+        attempt_request.cancel = Some(failover.token.clone());
+
+        let downloader = match make_engine() {
+            Ok(downloader) => downloader,
+            Err(err) => {
+                let reason = err.to_string();
+                return failover.fail(err, reason).await;
+            }
+        };
+        match failover
+            .attempt(downloader, attempt_request, &selected)
+            .await
+        {
+            AttemptEnd::Finished(terminal) => return terminal,
+            AttemptEnd::NotStarted(err) => last_error = Some(err),
+            AttemptEnd::Failed(err) => {
                 last_error = Some(err);
-                pending_discontinuity = delivered_media;
+                pending_discontinuity = failover.delivered_media;
             }
         }
     }
@@ -1110,7 +1119,7 @@ mod tests {
         let (events, _events) = EventSink::channel(16);
         let token = CancellationToken::new();
         let task = tokio::spawn(run_source_failover(
-            SegmentedProtocol::DASH,
+            "DASH",
             || {
                 Ok(ScriptedEngine {
                     items: scripted_epoch_change(),

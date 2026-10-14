@@ -587,10 +587,10 @@ async fn a_vod_segment_retried_while_many_later_ones_complete_is_still_emitted()
         }
     }
     let mut config = fast_config();
-    // Long enough for every later segment to be downloadable before the
+    // Long enough for the later segments to be downloadable before the
     // retry, far more than the reorder buffer holds.
-    config.fetcher_config.segment_retry_delay_base = Duration::from_secs(2);
-    config.fetcher_config.max_segment_retry_delay = Duration::from_secs(2);
+    config.fetcher_config.segment_retry_delay_base = Duration::from_millis(300);
+    config.fetcher_config.max_segment_retry_delay = Duration::from_millis(300);
 
     let base = origin.clone().serve().await;
     let events = run_engine(&base, config).await;
@@ -615,8 +615,8 @@ async fn a_vod_segment_retried_while_later_ones_fill_the_byte_limit_is_still_emi
         }
     }
     let mut config = fast_config();
-    config.fetcher_config.segment_retry_delay_base = Duration::from_secs(2);
-    config.fetcher_config.max_segment_retry_delay = Duration::from_secs(2);
+    config.fetcher_config.segment_retry_delay_base = Duration::from_millis(300);
+    config.fetcher_config.max_segment_retry_delay = Duration::from_millis(300);
     // Eight segments fill the byte limit, long before the segment limit.
     config.output_config.buffer_limits.max_segments = 1000;
     config.output_config.buffer_limits.max_bytes = 8 * 1000;
@@ -1631,42 +1631,33 @@ async fn flv_downloader_streams_enhanced_av1_tags() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mesio_downloader_rejects_unimplemented_flv_reconnect_modes() {
-    let downloader = MesioDownloader::new(MesioConfig::default());
-    let request = DownloadRequest::from_url("http://127.0.0.1:9/stream.flv")
+    let url = "http://127.0.0.1:9/stream.flv";
+    // Through the protocol selection and through the request options.
+    let selected = DownloadRequest::from_url(url)
         .expect("valid URL")
         .with_protocol(ProtocolSelection::Flv(mesio_engine::FlvRequestOptions {
             reconnect: mesio_engine::FlvReconnect::ReconnectSameSourceWithDiscontinuity,
         }));
+    let mut from_options = DownloadRequest::from_url(url).expect("valid URL");
+    from_options.options.flv.reconnect = mesio_engine::FlvReconnect::SwitchSourceWithDiscontinuity;
 
-    let err = match downloader.start_flv(request).await {
-        Ok(_) => panic!("unsupported reconnect mode must be rejected before network I/O"),
-        Err(err) => err,
-    };
-
-    assert!(matches!(
-        err,
-        mesio_engine::DownloadError::Configuration { reason }
-            if reason.contains("FLV reconnect mode")
-    ));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn mesio_downloader_rejects_flv_reconnect_from_request_options() {
     let downloader = MesioDownloader::new(MesioConfig::default());
-    let mut request =
-        DownloadRequest::from_url("http://127.0.0.1:9/stream.flv").expect("valid URL");
-    request.options.flv.reconnect = mesio_engine::FlvReconnect::SwitchSourceWithDiscontinuity;
-
-    let err = match downloader.start_flv(request).await {
-        Ok(_) => panic!("unsupported reconnect mode must be rejected before network I/O"),
-        Err(err) => err,
-    };
-
-    assert!(matches!(
-        err,
-        mesio_engine::DownloadError::Configuration { reason }
-            if reason.contains("FLV reconnect mode")
-    ));
+    for (case, request) in [("selection", selected), ("options", from_options)] {
+        let err = match downloader.start_flv(request).await {
+            Ok(_) => {
+                panic!("{case}: unsupported reconnect mode must be rejected before network I/O")
+            }
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                &err,
+                mesio_engine::DownloadError::Configuration { reason }
+                    if reason.contains("FLV reconnect mode")
+            ),
+            "{case}: {err}"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

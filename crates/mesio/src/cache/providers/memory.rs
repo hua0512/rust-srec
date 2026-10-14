@@ -304,7 +304,7 @@ mod tests {
         }
 
         sleep(Duration::from_millis(1500)).await;
-        cache.cache.run_pending_tasks().await; // Explicitly run Moka's maintenance for TTL
+        cache.sweep().await.unwrap();
 
         let result = cache.get(&k).await.unwrap();
         assert!(
@@ -386,28 +386,6 @@ mod tests {
         assert_eq!(cache.cache.entry_count(), 0);
     }
 
-    #[tokio::test]
-    async fn test_sweep_runs_and_clears_moka_expired() {
-        let cache = MemoryCache::new(100, 1);
-        let k = key("sweep_item");
-        let d = data("sweep_data");
-        let m = metadata(d.len() as u64, Some(3600));
-
-        cache.put(k.clone(), d, m).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle put
-        assert!(cache.contains(&k).await.unwrap());
-
-        sleep(Duration::from_millis(1500)).await;
-
-        cache.sweep().await.unwrap(); // This calls Moka's run_pending_tasks
-
-        let result = cache.get(&k).await.unwrap();
-        assert!(
-            result.is_none(),
-            "Item should be None after Moka TTL expiry and sweep"
-        );
-        assert!(!cache.contains(&k).await.unwrap());
-    }
     #[tokio::test]
     async fn test_eviction_on_max_size() {
         init_tracing();

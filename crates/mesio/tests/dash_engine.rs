@@ -357,6 +357,43 @@ fn changed_init(init: &[u8], seed: u32) -> Vec<u8> {
     data
 }
 
+/// Where the first `fourcc` box's payload starts in `data` (searched by
+/// name).
+fn box_payload(data: &[u8], fourcc: &[u8; 4]) -> usize {
+    data.windows(4)
+        .position(|window| window == fourcc)
+        .map(|at| at + 4)
+        .unwrap_or_else(|| panic!("no {} box", String::from_utf8_lossy(fourcc)))
+}
+
+/// The video init at twice its timescale.
+fn double_timescale_init(init: &[u8]) -> Vec<u8> {
+    let mut data = init.to_vec();
+    let mdhd = box_payload(&data, b"mdhd");
+    // Version 0: creation and modification time, then the timescale.
+    assert_eq!(data[mdhd], 0, "fixture mdhd is version 0");
+    let timescale = u32::from_be_bytes(data[mdhd + 12..mdhd + 16].try_into().unwrap());
+    assert_eq!(u64::from(timescale), VIDEO_TIMESCALE);
+    data[mdhd + 12..mdhd + 16].copy_from_slice(&(2 * timescale).to_be_bytes());
+    data
+}
+
+/// A video segment for [`double_timescale_init`]: its `sidx` timescale and
+/// default sample duration doubled, so it still lasts one second. The
+/// origin sets its `tfdt`.
+fn double_timescale_segment(segment: &[u8]) -> Vec<u8> {
+    let mut data = segment.to_vec();
+    let sidx = box_payload(&data, b"sidx");
+    let timescale = u32::from_be_bytes(data[sidx + 8..sidx + 12].try_into().unwrap());
+    data[sidx + 8..sidx + 12].copy_from_slice(&(2 * timescale).to_be_bytes());
+    let tfhd = box_payload(&data, b"tfhd");
+    // Flags: default sample duration, size and flags; no base data offset.
+    assert_eq!(data[tfhd + 1..tfhd + 4], [0x02, 0x00, 0x38], "fixture tfhd");
+    let duration = u32::from_be_bytes(data[tfhd + 8..tfhd + 12].try_into().unwrap());
+    data[tfhd + 8..tfhd + 12].copy_from_slice(&(2 * duration).to_be_bytes());
+    data
+}
+
 // --- MPDs ---
 
 fn ast() -> DateTime<Utc> {
@@ -924,6 +961,87 @@ async fn timeline_generations_are_planned_once_across_mpd_updates() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_number_timeline_jumping_forward_records_across_the_gap() {
+    let origin = Origin::default();
+    origin.add_file("v/init.mp4", VIDEO_INIT);
+    origin.add_numbered("v", VIDEO_1, VIDEO_TIMESCALE);
+    // One-second `$Number$` segments #first..=#last, #n at n − 1 s.
+    let mpd = |kind: &str, first: u64, last: u64| {
+        let entries: String = (first..=last)
+            .map(|number| format!(r#"<S t="{}" d="1"/>"#, number - 1))
+            .collect();
+        format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" {kind} availabilityStartTime="2024-01-01T00:00:00Z">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" timescale="1" startNumber="{first}">
+        <SegmentTimeline>{entries}</SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#
+        )
+    };
+    let dynamic = r#"type="dynamic" minimumUpdatePeriod="PT0.1S""#;
+    origin.set_mpd(mpd(dynamic, 1, 3));
+    let base = origin.clone().serve().await;
+    let clock = live_clock(3);
+    let mut config = config(Some(Arc::clone(&clock)));
+    config.live_start = LiveStartPolicy::LiveEdge;
+    config.selection.include_audio = false;
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        mut items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
+    let mut out = Vec::new();
+    assert!(
+        read_until(&mut items, &mut out, |out| !media(out).is_empty())
+            .await
+            .is_none()
+    );
+    // #4–#7 leave the MPD before a refresh lists them.
+    clock.advance(Duration::from_secs(7));
+    origin.set_mpd(mpd(dynamic, 8, 10));
+    assert!(
+        read_until(&mut items, &mut out, |out| media(out).len() >= 4)
+            .await
+            .is_none()
+    );
+    origin.set_mpd(mpd(
+        r#"type="static" mediaPresentationDuration="PT10S""#,
+        8,
+        10,
+    ));
+    assert!(read_until(&mut items, &mut out, |_| false).await.is_none());
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    // The recording goes on in the same file; the hole shows in its times.
+    assert_eq!(inits(&out).len(), 1, "{}", describe(&out));
+    let times: Vec<u64> = media(&out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE)
+        .collect();
+    assert_eq!(times, [2, 7, 8, 9], "{}", describe(&out));
+    let events = log.finish().await;
+    for number in 4..8 {
+        assert_eq!(downloads(&events, &format!("v/{number}.m4s")), 0);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn audio_only_selection_passes_one_normalized_track_through() {
     let origin = Origin::default();
     origin.set_mpd(static_timeline_mpd());
@@ -1296,12 +1414,36 @@ enum Overhang {
 /// past 10 s), then p1 revealed from 10 s with the same inits, then the
 /// end at 13 s. Returns the output and the origin.
 async fn record_revealed_overhang(overhang: Overhang) -> (Vec<HlsData>, Origin) {
+    record_revealed_overhang_with(overhang, false).await
+}
+
+/// [`record_revealed_overhang`], with p1's video at twice the timescale
+/// under its own init when `rescaled`.
+async fn record_revealed_overhang_with(
+    overhang: Overhang,
+    rescaled: bool,
+) -> (Vec<HlsData>, Origin) {
     let origin = Origin::default();
     origin.add_file("v/init.mp4", VIDEO_INIT);
     origin.add_file("a/init.mp4", AUDIO_INIT);
     for period in ["p0", "p1"] {
         origin.add_numbered(&format!("{period}/v"), VIDEO_1, VIDEO_TIMESCALE);
         origin.add_numbered(&format!("{period}/a"), AUDIO_1, AUDIO_TIMESCALE);
+    }
+    let revealed_mpd = |periods: &[(&str, u64, u64)], end_secs: Option<u64>| {
+        let mpd = shared_init_periods(periods, end_secs);
+        match rescaled {
+            true => mpd.replace(
+                r#"media="p1/v/$Number$.m4s" initialization="v/init.mp4""#,
+                r#"media="p1/v/$Number$.m4s" initialization="p1/v/init.mp4""#,
+            ),
+            false => mpd,
+        }
+    };
+    if rescaled {
+        origin.add_file("p1/v/init.mp4", double_timescale_init(VIDEO_INIT));
+        let segment = double_timescale_segment(VIDEO_1).leak();
+        origin.add_numbered("p1/v", segment, 2 * VIDEO_TIMESCALE);
     }
     let gate = match overhang {
         Overhang::InFlight => Some(origin.gate("p0/v/12.m4s")),
@@ -1341,17 +1483,14 @@ async fn record_revealed_overhang(overhang: Overhang) -> (Vec<HlsData>, Origin) 
     // p1 starts at 10 s and offers its third segment (12–13 s) a second
     // early. The clock stays at 12 s, so only a planner that consumed this
     // MPD can request it.
-    origin.set_mpd(shared_init_periods(&[("p0", 0, 0), ("p1", 10, 1)], None));
+    origin.set_mpd(revealed_mpd(&[("p0", 0, 0), ("p1", 10, 1)], None));
     wait_for_hit(&origin, "p1/v/3.m4s").await;
     wait_for_hit(&origin, "p1/a/3.m4s").await;
     if let Some(gate) = gate {
         assert_eq!(origin.hits("p0/v/12.m4s"), 0, "still held");
         gate.send(true).expect("gate open");
     }
-    origin.set_mpd(shared_init_periods(
-        &[("p0", 0, 0), ("p1", 10, 0)],
-        Some(13),
-    ));
+    origin.set_mpd(revealed_mpd(&[("p0", 0, 0), ("p1", 10, 0)], Some(13)));
     let error = read_until(&mut items, &mut out, |_| false).await;
     assert!(error.is_none(), "{error:?}");
     let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
@@ -1414,6 +1553,38 @@ async fn overhang_the_server_never_produced_is_recorded_from_the_new_period() {
     // 11–12 s comes from p1's segment 2.
     assert_one_file_each_second_once(&out);
     assert!(origin.hits("p0/v/12.m4s") >= 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_period_revealed_inside_written_media_under_another_init_drops_the_repeat() {
+    let (out, origin) = record_revealed_overhang_with(Overhang::Delivered, true).await;
+    // p0's file, then p1's under its own init from 12 s: p1's copies of
+    // 10–12 s were written from p0 already.
+    assert_eq!(inits(&out).len(), 2, "{}", describe(&out));
+    let barrier = out
+        .iter()
+        .position(|item| {
+            matches!(
+                item,
+                HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+            )
+        })
+        .unwrap_or_else(|| panic!("no epoch barrier: {}", describe(&out)));
+    let seconds = |items: &[HlsData], track: u32, timescale: u64| -> Vec<u64> {
+        media(items)
+            .iter()
+            .flat_map(|segment| fragments(&segment.data))
+            .filter(|(_, id, _)| *id == track)
+            .map(|(_, _, time)| time / timescale)
+            .collect()
+    };
+    let (before, after) = out.split_at(barrier);
+    assert_eq!(seconds(before, 1, VIDEO_TIMESCALE), [9, 10, 11]);
+    assert_eq!(seconds(after, 1, 2 * VIDEO_TIMESCALE), [12]);
+    assert_eq!(seconds(before, 2, AUDIO_TIMESCALE), [9, 10, 11]);
+    assert_eq!(seconds(after, 2, AUDIO_TIMESCALE), [12]);
+    assert_two_track_stream(&after[1..]);
+    assert_eq!(origin.hits("p1/v/2.m4s"), 1);
 }
 
 /// A/V `$Number$` presentation whose video path names the Representation;

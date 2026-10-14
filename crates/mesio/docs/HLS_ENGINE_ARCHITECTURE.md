@@ -601,7 +601,7 @@ pub enum SegmentSource {
 }
 ```
 
-The descriptor carries parser-native structures in `meta` for output construction, but identity and scheduling use the typed fields. The core reads `meta` only through its accessors (duration for reorder-buffer pruning, a declared container for payload classification, and the `ResourceId` for events); HLS declares no container, so fetch detects it from the body.
+The descriptor carries parser-native structures in `meta` for output construction, but identity and scheduling use the typed fields. The core reads `meta` only through its accessors (a declared container for payload classification, and the `ResourceId` for events); HLS declares no container, so fetch detects it from the body.
 
 `source` carries prefetch-ness for scheduling priority only; it is deliberately
 absent from `SegmentKey` (see `SegmentKind`). When a prefetch URI later appears

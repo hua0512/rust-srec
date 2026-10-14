@@ -77,7 +77,9 @@ use std::time::Duration;
 use bytes::Bytes;
 use chrono::{DateTime, TimeDelta, Utc};
 use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, SplitReason};
-use mp4::merge::{FragmentWriter, MergeError, MergedInit, merge_init, validate_init};
+use mp4::merge::{
+    FragmentWriter, MergeError, MergedInit, SourceFragment, merge_init, validate_init,
+};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -85,6 +87,7 @@ use tracing::{debug, info, warn};
 
 use crate::DownloadError;
 use crate::dash::config::DashMuxConfig;
+use crate::dash::manifest::NANOS_PER_SEC;
 use crate::dash::planner::{ConsumedFrontier, PeriodKey};
 use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
@@ -226,6 +229,11 @@ struct QueuedMedia {
 }
 
 impl QueuedMedia {
+    /// How many fragments are not yet written or dropped.
+    fn remaining(&self) -> usize {
+        self.fragments.len() - self.consumed
+    }
+
     /// The span of the fragments not yet written or dropped.
     fn span(&self) -> Option<(i128, i128)> {
         let fragments = self.fragments.get(self.consumed..)?;
@@ -333,15 +341,15 @@ enum Status {
     Active,
     /// Authoritative end received.
     Ended,
-    /// Closed without an end (cancellation) or dropped by the muxer.
+    /// Closed without an end (cancellation).
     Closed,
+    /// Dropped by the muxer after a failure; never resumes.
+    Dropped,
 }
 
 struct TrackState {
     track: MediaTrack,
     status: Status,
-    /// Dropped by the muxer after a failure; never resumes.
-    dropped: bool,
     cancel: CancellationToken,
     queue: VecDeque<Queued>,
     queued_bytes: usize,
@@ -349,6 +357,8 @@ struct TrackState {
     latest_init: Option<Arc<TrackInit>>,
     /// Follower only: the newest init the slice logic has moved past.
     current_init: Option<Arc<TrackInit>>,
+    /// What the track last wrote.
+    written: Option<Written>,
 }
 
 impl TrackState {
@@ -356,12 +366,12 @@ impl TrackState {
         Self {
             track,
             status: Status::Active,
-            dropped: false,
             cancel,
             queue: VecDeque::new(),
             queued_bytes: 0,
             latest_init: None,
             current_init: None,
+            written: None,
         }
     }
 
@@ -462,8 +472,6 @@ struct MuxState {
     /// Added to every presentation time written, in nanoseconds; chosen with
     /// the first item.
     origin_nanos: Option<i128>,
-    /// What each track last wrote.
-    written: Vec<(MediaTrack, Written)>,
     /// Whether the follower's tail of the current output epoch was written
     /// ahead of a Period change.
     tail_flushed: bool,
@@ -512,7 +520,6 @@ pub(crate) async fn run_muxer(
         leader_absent: VecDeque::new(),
         leader_next_sequence: 0,
         leader_end: None,
-        written: Vec::new(),
         origin_nanos: None,
         tail_flushed: false,
         leader_rejections: 0,
@@ -950,7 +957,7 @@ impl MuxState {
         let Some(follower) = self.follower.as_mut() else {
             return;
         };
-        if follower.dropped {
+        if follower.status == Status::Dropped {
             return;
         }
         warn!(
@@ -959,8 +966,7 @@ impl MuxState {
             detail = %crate::redact::redact_diagnostic(detail),
             "dropping track; recording continues without it"
         );
-        follower.dropped = true;
-        follower.status = Status::Closed;
+        follower.status = Status::Dropped;
         follower.queue.clear();
         follower.queued_bytes = 0;
         follower.cancel.cancel();
@@ -990,12 +996,7 @@ impl MuxState {
             return;
         }
         let earliest = starts
-            .filter(|&(_, timescale)| timescale > 0)
-            .map(|(ticks, timescale)| {
-                ticks
-                    .saturating_mul(NANOS_PER_SEC)
-                    .div_euclid(i128::from(timescale))
-            })
+            .filter_map(|(ticks, timescale)| to_nanos(ticks, timescale))
             .min()
             .unwrap_or(0);
         let origin = (-earliest).max(0);
@@ -1132,7 +1133,7 @@ impl MuxState {
     fn leader_drained(&mut self, now: Instant) -> Step {
         match self.leader.status {
             Status::Active => Step::Wait(None),
-            Status::Closed => Step::Finished,
+            Status::Closed | Status::Dropped => Step::Finished,
             Status::Ended => {
                 // Completion is shared: the follower's tail belongs in the
                 // final items, so its end is awaited while it keeps
@@ -1191,11 +1192,6 @@ impl MuxState {
         timescale: u32,
         may_wait: bool,
     ) -> Collect {
-        let follower_written = self
-            .follower
-            .as_ref()
-            .and_then(|follower| self.written_of(follower.track))
-            .cloned();
         let Some(follower) = self.follower.as_mut() else {
             return Collect::Ready(0);
         };
@@ -1212,7 +1208,7 @@ impl MuxState {
             };
             match item {
                 Queued::Init(init) => {
-                    if picks > 0 || is_after(&init.period, period) {
+                    if picks > 0 || init.period.is_after(period) {
                         return Collect::Ready(picks);
                     }
                     // Nothing is picked, so this init is at the head.
@@ -1221,15 +1217,14 @@ impl MuxState {
                     follower.current_init = Some(init);
                 }
                 Queued::Media(media) => {
-                    if is_after(&media.init.period, period) {
+                    if media.init.period.is_after(period) {
                         return Collect::Ready(picks);
                     }
-                    if is_before(&media.init.period, period) {
+                    if media.init.period.is_before(period) {
                         if picks > 0 {
                             return Collect::Ready(picks);
                         }
-                        self.stats.stale_fragments +=
-                            (media.fragments.len() - media.consumed) as u64;
+                        self.stats.stale_fragments += media.remaining() as u64;
                         follower.pop_front();
                         continue;
                     }
@@ -1241,7 +1236,7 @@ impl MuxState {
                     }
                     let follower_timescale = media.init.timescale;
                     if picks == 0 {
-                        let repeated = media.repeated_prefix(follower_written.as_ref());
+                        let repeated = media.repeated_prefix(follower.written.as_ref());
                         media.consumed += repeated;
                         self.stats.repeated_fragments += repeated as u64;
                     }
@@ -1292,7 +1287,7 @@ impl MuxState {
             let Some(Queued::Media(media)) = follower.queue.front_mut() else {
                 break;
             };
-            let count = picks.min(media.fragments.len() - media.consumed);
+            let count = picks.min(media.remaining());
             parts.push(FollowerPart {
                 init: Arc::clone(&media.init),
                 data: media.data.clone(),
@@ -1320,7 +1315,7 @@ impl MuxState {
             return output.follower.clone();
         }
         let follower = self.follower.as_ref()?;
-        if follower.dropped {
+        if follower.status == Status::Dropped {
             return None;
         }
         follower
@@ -1399,21 +1394,33 @@ impl MuxState {
         })
     }
 
+    fn track_mut(&mut self, track: MediaTrack) -> Option<&mut TrackState> {
+        if self.leader.track == track {
+            return Some(&mut self.leader);
+        }
+        self.follower
+            .as_mut()
+            .filter(|follower| follower.track == track)
+    }
+
     fn written_of(&self, track: MediaTrack) -> Option<&Written> {
-        self.written
-            .iter()
-            .find(|(written, _)| *written == track)
-            .map(|(_, written)| written)
+        if self.leader.track == track {
+            return self.leader.written.as_ref();
+        }
+        self.follower
+            .as_ref()
+            .filter(|follower| follower.track == track)?
+            .written
+            .as_ref()
     }
 
     /// Drops the leader head's fragments that repeat written media (see the
     /// module documentation); returns whether the whole segment went.
     fn drop_repeated_leader(&mut self) -> bool {
-        let written = self.written_of(self.leader.track).cloned();
         let Some(Queued::Media(head)) = self.leader.queue.front_mut() else {
             return false;
         };
-        let repeated = head.repeated_prefix(written.as_ref());
+        let repeated = head.repeated_prefix(self.leader.written.as_ref());
         if repeated == 0 {
             return false;
         }
@@ -1458,14 +1465,11 @@ impl MuxState {
         let mut split = continued == Some(false);
         if !split
             && let Some(track) = overlapping
-            && let Some(output) = pending
-                .as_ref()
-                .map(|pending| &pending.output)
-                .or(self.output.as_ref())
+            && let Some(output) = output_for(pending.as_ref(), self.output.as_ref())
         {
             let description = format!(
                 "DASH {track} media of {} starts before the file's",
-                period_label(&output.leader.period)
+                output.leader.period
             );
             group.push(HlsData::end_marker_with_reason(
                 SplitReason::StreamStructureChange { description },
@@ -1484,26 +1488,24 @@ impl MuxState {
             info!(%description, "DASH output epoch changes");
         }
         if split {
-            for (_, written) in &mut self.written {
+            let tracks = std::iter::once(&mut self.leader).chain(self.follower.as_mut());
+            for written in tracks.filter_map(|track| track.written.as_mut()) {
                 written.in_file = false;
             }
         }
         for span in spans {
             let timescale = span.init.timescale;
-            let track = span.init.track;
-            let index = match self.written.iter().position(|(known, _)| *known == track) {
-                Some(index) => index,
-                None => {
-                    self.written
-                        .push((track, Written::new(Arc::clone(&span.init))));
-                    self.written.len() - 1
-                }
+            let Some(track) = self.track_mut(span.init.track) else {
+                continue;
             };
+            let written = track
+                .written
+                .get_or_insert_with(|| Written::new(Arc::clone(&span.init)));
             for &(start, end) in &span.fragments {
                 if let (Some(start), Some(end)) =
                     (to_nanos(start, timescale), to_nanos(end, timescale))
                 {
-                    self.written[index].1.record(&span.init, start, end);
+                    written.record(&span.init, start, end);
                 }
             }
         }
@@ -1545,11 +1547,7 @@ impl MuxState {
             .iter()
             .map(|part| self.output_shift(&part.init))
             .collect();
-        let Some(output) = pending
-            .as_ref()
-            .map(|pending| &pending.output)
-            .or(self.output.as_ref())
-        else {
+        let Some(output) = output_for(pending.as_ref(), self.output.as_ref()) else {
             return Ok(());
         };
         let Some(init) = &output.init else {
@@ -1563,13 +1561,9 @@ impl MuxState {
         // Parsed unshifted and shifted fragment by fragment: only what is
         // written must land at or after the output origin.
         let leader_written = leader_shift.and_then(|shift| {
-            init.parse_media_segment(0, &media.data, 0)?
-                .into_iter()
-                .skip(media.consumed)
-                .try_for_each(|mut fragment| {
-                    fragment.shift_decode_time(shift)?;
-                    self.writer.write(fragment, &mut data)
-                })
+            let fragments = init.parse_media_segment(0, &media.data, 0)?;
+            let fragments = fragments.into_iter().skip(media.consumed);
+            write_shifted(&mut self.writer, fragments, shift, &mut data)
         });
         if let Err(error) = leader_written {
             // An epoch whose first item is rejected is not announced.
@@ -1580,14 +1574,9 @@ impl MuxState {
         let follower_written = match has_follower {
             true => parts.iter().zip(part_shifts).try_for_each(|(part, shift)| {
                 let shift = shift?;
-                init.parse_media_segment(1, &part.data, 0)?
-                    .into_iter()
-                    .skip(part.first)
-                    .take(part.count)
-                    .try_for_each(|mut fragment| {
-                        fragment.shift_decode_time(shift)?;
-                        self.writer.write(fragment, &mut data)
-                    })
+                let fragments = init.parse_media_segment(1, &part.data, 0)?;
+                let fragments = fragments.into_iter().skip(part.first).take(part.count);
+                write_shifted(&mut self.writer, fragments, shift, &mut data)
             }),
             false => Ok(()),
         };
@@ -1639,8 +1628,9 @@ impl MuxState {
         // Passthrough media is not parsed, so what the track wrote is unknown:
         // nothing later is judged a repeat of it. Passthrough epochs never
         // continue a file.
-        let track = media.init.track;
-        self.written.retain(|(written, _)| *written != track);
+        if let Some(track) = self.track_mut(media.init.track) {
+            track.written = None;
+        }
         self.emit_media(
             pending,
             HlsData::M4sData(M4sData::Segment(M4sSegmentData {
@@ -1668,7 +1658,7 @@ impl MuxState {
     /// reported the Period.
     fn leader_skips(&self, period: &PeriodKey, head: Option<&PeriodKey>) -> bool {
         match head {
-            Some(head) => is_before(period, head),
+            Some(head) => period.is_before(head),
             None => {
                 self.leader.status == Status::Ended
                     || self.leader_absent.iter().any(|(absent, after)| {
@@ -1693,7 +1683,7 @@ impl MuxState {
                 .map(|output| output.leader.period.clone());
             let after_output = output_period
                 .as_ref()
-                .is_none_or(|output| is_after(&run_period, output));
+                .is_none_or(|output| run_period.is_after(output));
             let audio_only_output = self
                 .output
                 .as_ref()
@@ -1720,7 +1710,7 @@ impl MuxState {
                     && self.follower.as_ref().is_some_and(|follower| {
                         follower.queue.iter().any(|item| {
                             matches!(item, Queued::Media(media)
-                                if output_period.as_ref().is_some_and(|output| is_after(&media.init.period, output))
+                                if output_period.as_ref().is_some_and(|output| media.init.period.is_after(output))
                                     && self.leader_skips(&media.init.period, head))
                         })
                     });
@@ -1783,23 +1773,16 @@ impl MuxState {
         let pending = self.prepare_output(&media.init, None);
         self.choose_origin(std::iter::once((start, media.init.timescale)));
         let shift = self.output_shift(&media.init);
-        let Some(init) = pending
-            .as_ref()
-            .map(|pending| &pending.output)
-            .or(self.output.as_ref())
+        let Some(init) = output_for(pending.as_ref(), self.output.as_ref())
             .and_then(|output| output.init.as_ref())
         else {
             return;
         };
         let mut data = Vec::new();
         let written = shift.and_then(|shift| {
-            init.parse_media_segment(0, &media.data, 0)?
-                .into_iter()
-                .skip(media.consumed)
-                .try_for_each(|mut fragment| {
-                    fragment.shift_decode_time(shift)?;
-                    self.writer.write(fragment, &mut data)
-                })
+            let fragments = init.parse_media_segment(0, &media.data, 0)?;
+            let fragments = fragments.into_iter().skip(media.consumed);
+            write_shifted(&mut self.writer, fragments, shift, &mut data)
         });
         if let Err(error) = written {
             warn!(%error, "audio of a Period without video rejected by the merger; dropped");
@@ -1840,10 +1823,10 @@ impl MuxState {
                     return;
                 }
                 let run = self.pop_follower_run();
-                if is_before(&run_period, &output_period) {
+                if run_period.is_before(&output_period) {
                     self.stats.stale_fragments += run
                         .iter()
-                        .map(|media| (media.fragments.len() - media.consumed) as u64)
+                        .map(|media| media.remaining() as u64)
                         .sum::<u64>();
                 } else {
                     for media in run {
@@ -1876,7 +1859,7 @@ impl MuxState {
             } else {
                 self.stats.stale_fragments += run
                     .iter()
-                    .map(|media| (media.fragments.len() - media.consumed) as u64)
+                    .map(|media| media.remaining() as u64)
                     .sum::<u64>();
             }
         }
@@ -1896,11 +1879,7 @@ impl MuxState {
                 return;
             }
         };
-        let Some(output) = pending
-            .as_ref()
-            .map(|pending| &pending.output)
-            .or(self.output.as_ref())
-        else {
+        let Some(output) = output_for(pending.as_ref(), self.output.as_ref()) else {
             return;
         };
         let (Some(init), Some(_)) = (&output.init, &output.follower) else {
@@ -1915,13 +1894,14 @@ impl MuxState {
         };
         // Repeats are judged only until the run writes media: from then on
         // the track has written media of this epoch.
-        let mut previous = self.written_of(run_init.track).cloned();
+        let mut judge_repeats = true;
         let mut data = Vec::new();
         let mut last = None;
         let mut written_fragments: Vec<(i128, i128)> = Vec::new();
         let mut late_fragments = 0u64;
         for mut media in run {
-            let repeated = media.repeated_prefix(previous.as_ref());
+            let previous = self.written_of(run_init.track).filter(|_| judge_repeats);
+            let repeated = media.repeated_prefix(previous);
             media.consumed += repeated;
             self.stats.repeated_fragments += repeated as u64;
             let keep: Vec<bool> = media.fragments.iter().map(|span| !late(span)).collect();
@@ -1938,22 +1918,19 @@ impl MuxState {
             let written = init
                 .parse_media_segment(1, &media.data, 0)
                 .and_then(|fragments| {
-                    fragments
+                    let fragments = fragments
                         .into_iter()
                         .zip(keep)
                         .skip(media.consumed)
-                        .filter(|(_, keep)| *keep)
-                        .try_for_each(|(mut fragment, _)| {
-                            fragment.shift_decode_time(shift)?;
-                            self.writer.write(fragment, &mut data)
-                        })
+                        .filter_map(|(fragment, keep)| keep.then_some(fragment));
+                    write_shifted(&mut self.writer, fragments, shift, &mut data)
                 });
             if let Err(error) = written {
                 warn!(%error, "trailing audio rejected by the merger; dropped");
                 break;
             }
             if !kept.is_empty() {
-                previous = None;
+                judge_repeats = false;
             }
             written_fragments.extend(kept);
             last = Some(Arc::clone(&media.descriptor));
@@ -1979,15 +1956,28 @@ impl MuxState {
     }
 }
 
-fn is_before(a: &PeriodKey, b: &PeriodKey) -> bool {
-    !a.same(b) && a.start < b.start
+/// The output epoch an item is written under: the one `pending` opens, else
+/// the current one.
+fn output_for<'a>(
+    pending: Option<&'a PendingOutput>,
+    current: Option<&'a Output>,
+) -> Option<&'a Output> {
+    pending.map(|pending| &pending.output).or(current)
 }
 
-fn is_after(a: &PeriodKey, b: &PeriodKey) -> bool {
-    !a.same(b) && a.start > b.start
+/// Writes `fragments`, parsed unshifted, to `out` with their decode times
+/// shifted by `shift`.
+fn write_shifted(
+    writer: &mut FragmentWriter,
+    fragments: impl IntoIterator<Item = SourceFragment>,
+    shift: i64,
+    out: &mut Vec<u8>,
+) -> Result<(), MergeError> {
+    fragments.into_iter().try_for_each(|mut fragment| {
+        fragment.shift_decode_time(shift)?;
+        writer.write(fragment, out)
+    })
 }
-
-const NANOS_PER_SEC: i128 = 1_000_000_000;
 
 /// `ticks` of `timescale` in nanoseconds, floored; `None` for a zero
 /// timescale. Equal times in different timescales floor alike.
@@ -2140,7 +2130,7 @@ fn init_item(leader: &TrackInit, init: Option<&MergedInit>) -> HlsData {
 
 fn epoch_change(output: &Output, leader: &TrackInit, follower: Option<&TrackInit>) -> String {
     let describe = |init: Option<&TrackInit>| match init {
-        Some(init) => format!("{}@{}", init.representation, period_label(&init.period)),
+        Some(init) => format!("{}@{}", init.representation, init.period),
         None => "none".to_owned(),
     };
     format!(
@@ -2150,13 +2140,6 @@ fn epoch_change(output: &Output, leader: &TrackInit, follower: Option<&TrackInit
         describe(Some(leader)),
         describe(follower),
     )
-}
-
-fn period_label(period: &PeriodKey) -> String {
-    match &period.id {
-        Some(id) => format!("period {id}"),
-        None => format!("period at {:?}", period.start),
-    }
 }
 
 fn init_media_segment(descriptor: &SegmentDescriptor) -> m3u8_rs::MediaSegment {

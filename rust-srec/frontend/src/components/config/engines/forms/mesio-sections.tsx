@@ -564,18 +564,6 @@ const HLS: ProtocolSpec = {
       fields: [
         {
           kind: 'number',
-          path: 'hls.output_config.live_reorder_buffer_duration_ms',
-          label: msg`Live Reorder Window (ms)`,
-          fallback: 30000,
-        },
-        {
-          kind: 'number',
-          path: 'hls.output_config.live_reorder_buffer_max_segments',
-          label: msg`Live Reorder Window (segments)`,
-          fallback: 10,
-        },
-        {
-          kind: 'number',
           path: 'hls.output_config.buffer_limits.max_segments',
           label: msg`Buffer Limit (segments)`,
           fallback: 50,

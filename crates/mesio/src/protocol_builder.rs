@@ -342,18 +342,6 @@ impl HlsProtocolBuilder {
 
     // --- HLS OutputConfig methods ---
 
-    /// Set maximum duration of segments to hold in the reorder buffer for live streams.
-    pub fn live_reorder_buffer_duration(mut self, duration: Duration) -> Self {
-        self.config.output_config.live_reorder_buffer_duration = duration;
-        self
-    }
-
-    /// Set maximum number of segments to hold in the reorder buffer for live streams.
-    pub fn live_reorder_buffer_max_segments(mut self, max_segments: usize) -> Self {
-        self.config.output_config.live_reorder_buffer_max_segments = max_segments;
-        self
-    }
-
     /// Set the maximum duration to wait for a segment before considering it stalled.
     /// If None, this timeout is disabled.
     pub fn live_max_overall_stall_duration(mut self, duration: Option<Duration>) -> Self {
