@@ -9,13 +9,14 @@ pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) 
 /// HTTP version preference for connections
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum HttpVersionPreference {
-    /// Let ALPN negotiate the best version (default)
+    /// HTTP/2 when an `https` server offers it and the route is direct (no
+    /// explicit proxy, system proxy off); HTTP/1.1 through a proxy, for
+    /// cleartext `http://` URLs and for FLV downloads, which are a single
+    /// long-lived response with nothing to multiplex (default).
     #[default]
     Auto,
-    /// Prefer HTTP/2 when available.
-    ///
-    /// Note: with `reqwest` + `rustls-tls`, HTTP/2 is negotiated via ALPN and
-    /// fallback behavior is not strictly controllable at the client-builder level.
+    /// Speak HTTP/2 only, without negotiation; requests fail against servers,
+    /// and `http://` URLs, that do not support HTTP/2.
     Http2Only,
     /// Force HTTP/1.1 only (disable HTTP/2)
     Http1Only,

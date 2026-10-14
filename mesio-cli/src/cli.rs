@@ -407,7 +407,7 @@ pub struct CliArgs {
     /// HTTP version preference
     #[arg(
         long = "http-version",
-        help = "HTTP version preference: 'auto' (default, prefers HTTP/2), 'http2' (prefer HTTP/2), 'http1' (force HTTP/1.1 only)",
+        help = "HTTP version: 'auto' (default; HTTP/2 when an https server offers it and no proxy is in use, else HTTP/1.1; FLV uses HTTP/1.1), 'http2' (HTTP/2 only; fails on servers and http:// URLs without HTTP/2), 'http1' (HTTP/1.1 only)",
         default_value = "auto",
         value_parser = ["auto", "http2", "http1"]
     )]

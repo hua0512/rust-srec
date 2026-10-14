@@ -4,22 +4,16 @@ use std::sync::{Arc, OnceLock};
 use tracing::{debug, info};
 
 use crate::DownloaderConfig;
+use crate::config::HttpVersionPreference;
 use crate::rate_limit::RateLimiter;
 use crate::{DownloadError, proxy::build_proxy_from_config};
 
-/// Create a reqwest Client with the provided configuration
+/// Create a reqwest Client with the provided configuration.
 ///
-/// HTTP/2 is automatically negotiated via ALPN when using rustls-tls.
-/// The connection pool settings help maximize HTTP/2 multiplexing benefits.
-///
-/// HTTP/2 Multiplexing Benefits for HLS:
-/// - Single TCP connection handles multiple concurrent segment downloads
-/// - Reduced connection overhead (no TCP handshake per segment)
-/// - Better utilization of available bandwidth
-/// - Header compression (HPACK) reduces overhead for repeated headers
+/// The HTTP version follows [`DownloaderConfig::http_version`]; see
+/// [`HttpVersionPreference`] for what each choice means on the wire.
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
     install_rustls_provider();
-    use crate::config::HttpVersionPreference;
 
     let mut client_builder = Client::builder()
         .pool_max_idle_per_host(config.pool_max_idle_per_host) // Configurable: Keep connections warm for HLS segment downloads
@@ -39,36 +33,7 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
         "HTTP connection pool configured"
     );
 
-    // --- HTTP Version Configuration ---
-    // Note: reqwest with rustls-tls automatically negotiates HTTP/2 via ALPN
-    // These options control fallback behavior
-    match config.http_version {
-        HttpVersionPreference::Http2Only => {
-            // With rustls-tls, HTTP/2 is preferred via ALPN
-            // We can't force it, but we log the preference
-            debug!("HTTP/2 preferred mode (ALPN will negotiate)");
-        }
-        HttpVersionPreference::Http1Only => {
-            client_builder = client_builder.http1_only();
-            debug!("HTTP/1.1 only mode enabled");
-        }
-        HttpVersionPreference::Auto => {
-            // Default: let ALPN negotiate (HTTP/2 preferred with rustls)
-            debug!("HTTP version: Auto (ALPN negotiation, HTTP/2 preferred)");
-        }
-    }
-
-    // --- HTTP/2 Configuration Notes ---
-    // With rustls-tls backend, HTTP/2 is automatically negotiated via ALPN.
-    // The flow control window sizes use hyper's defaults which are reasonable
-    // for most use cases. The key optimizations we can apply are:
-    // 1. Connection pooling (configured above)
-    // 2. TCP keep-alive to maintain connections
-    // 3. Proper timeout configuration
-    //
-    // Note: HTTP/2 specific methods like http2_adaptive_window() require
-    // the native-tls backend. With rustls-tls, HTTP/2 works but with
-    // default flow control settings.
+    client_builder = apply_http_version(client_builder, config, TlsBackend::Rustls);
 
     // --- TCP Keep-Alive for long-lived connections ---
     // This helps maintain HTTP/2 connections for multiplexing
@@ -241,6 +206,62 @@ impl ClientPool {
     }
 }
 
+/// Applies the HTTP version preference to a client builder.
+///
+/// `Auto` offers HTTP/2 through TLS ALPN only on a direct route (no explicit
+/// proxy and the system proxy turned off). Through a proxy every HTTP/2
+/// request shares one tunnelled connection, and proxies commonly limit or
+/// stall a single connection, while HTTP/1.1 spreads concurrent downloads
+/// over separate tunnels; measured through an HTTP proxy, HTTP/2 was erratic
+/// and sometimes stalled where HTTP/1.1 stayed steady. Cleartext `http://`
+/// URLs use HTTP/1.1 regardless, as there is no negotiation without TLS.
+///
+/// `Http2Only` speaks HTTP/2 with prior knowledge, so it fails against
+/// servers (and `http://` URLs) without HTTP/2.
+///
+/// HTTP/2 multiplexes a host's requests over one connection, so flow control
+/// decides throughput: hyper's fixed 64 KiB default windows cap a stream at
+/// one window per round trip, so adaptive windows sized from the measured
+/// bandwidth-delay product are used instead.
+///
+/// The native-tls fallback client is built without ALPN support, so it stays
+/// on HTTP/1.1 whatever the preference: forcing HTTP/2 there would send an
+/// HTTP/2 preface the server never agreed to.
+fn apply_http_version(
+    builder: reqwest::ClientBuilder,
+    config: &DownloaderConfig,
+    backend: TlsBackend,
+) -> reqwest::ClientBuilder {
+    let builder = builder.http2_adaptive_window(true);
+    match wire_version(config, backend) {
+        WireVersion::Negotiate => builder,
+        WireVersion::Http1 => builder.http1_only(),
+        WireVersion::Http2 => builder.http2_prior_knowledge(),
+    }
+}
+
+/// How a client speaks HTTP, as decided by [`apply_http_version`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WireVersion {
+    /// Offer `h2` and `http/1.1` through ALPN.
+    Negotiate,
+    Http1,
+    /// HTTP/2 with prior knowledge.
+    Http2,
+}
+
+fn wire_version(config: &DownloaderConfig, backend: TlsBackend) -> WireVersion {
+    let direct = config.proxy.is_none() && !config.use_system_proxy;
+    match (config.http_version, backend) {
+        (HttpVersionPreference::Http1Only, _) => WireVersion::Http1,
+        #[cfg(feature = "tls-native-fallback")]
+        (_, TlsBackend::NativeTls) => WireVersion::Http1,
+        (HttpVersionPreference::Http2Only, TlsBackend::Rustls) => WireVersion::Http2,
+        (HttpVersionPreference::Auto, TlsBackend::Rustls) if direct => WireVersion::Negotiate,
+        (HttpVersionPreference::Auto, TlsBackend::Rustls) => WireVersion::Http1,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TlsBackend {
     Rustls,
@@ -252,8 +273,6 @@ fn create_client_with_backend(
     config: &DownloaderConfig,
     backend: TlsBackend,
 ) -> Result<Client, DownloadError> {
-    use crate::config::HttpVersionPreference;
-
     install_rustls_provider();
 
     let mut client_builder = Client::builder()
@@ -277,15 +296,7 @@ fn create_client_with_backend(
         }
     }
 
-    match config.http_version {
-        HttpVersionPreference::Http2Only => {
-            debug!(?backend, "HTTP/2 preferred mode (ALPN will negotiate)");
-        }
-        HttpVersionPreference::Http1Only => {
-            client_builder = client_builder.http1_only();
-        }
-        HttpVersionPreference::Auto => {}
-    }
+    client_builder = apply_http_version(client_builder, config, backend);
 
     if let Some(interval) = config.http2_keep_alive_interval {
         client_builder = client_builder.tcp_keepalive(interval);
@@ -329,4 +340,91 @@ fn create_client_with_backend(
 
 pub(crate) fn create_client_pool(config: &DownloaderConfig) -> Result<ClientPool, DownloadError> {
     ClientPool::new(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proxy::{ProxyConfig, ProxyType};
+
+    fn config(http_version: HttpVersionPreference, route: Route) -> DownloaderConfig {
+        let mut config = DownloaderConfig {
+            http_version,
+            ..DownloaderConfig::default()
+        };
+        match route {
+            Route::Direct => {
+                config.proxy = None;
+                config.use_system_proxy = false;
+            }
+            Route::System => {
+                config.proxy = None;
+                config.use_system_proxy = true;
+            }
+            Route::Explicit => {
+                config.proxy = Some(ProxyConfig {
+                    url: "http://proxy.example.com:8080".to_owned(),
+                    proxy_type: ProxyType::Http,
+                    auth: None,
+                });
+                config.use_system_proxy = false;
+            }
+        }
+        config
+    }
+
+    #[derive(Clone, Copy)]
+    enum Route {
+        Direct,
+        System,
+        Explicit,
+    }
+
+    #[test]
+    fn auto_negotiates_http2_only_on_a_direct_route() {
+        let wire = |route| {
+            wire_version(
+                &config(HttpVersionPreference::Auto, route),
+                TlsBackend::Rustls,
+            )
+        };
+        assert_eq!(wire(Route::Direct), WireVersion::Negotiate);
+        assert_eq!(wire(Route::System), WireVersion::Http1);
+        assert_eq!(wire(Route::Explicit), WireVersion::Http1);
+    }
+
+    #[test]
+    fn explicit_preferences_apply_on_every_route() {
+        for route in [Route::Direct, Route::System, Route::Explicit] {
+            assert_eq!(
+                wire_version(
+                    &config(HttpVersionPreference::Http2Only, route),
+                    TlsBackend::Rustls
+                ),
+                WireVersion::Http2
+            );
+            assert_eq!(
+                wire_version(
+                    &config(HttpVersionPreference::Http1Only, route),
+                    TlsBackend::Rustls
+                ),
+                WireVersion::Http1
+            );
+        }
+    }
+
+    #[cfg(feature = "tls-native-fallback")]
+    #[test]
+    fn the_native_tls_fallback_stays_on_http1() {
+        for preference in [
+            HttpVersionPreference::Auto,
+            HttpVersionPreference::Http2Only,
+            HttpVersionPreference::Http1Only,
+        ] {
+            assert_eq!(
+                wire_version(&config(preference, Route::Direct), TlsBackend::NativeTls),
+                WireVersion::Http1
+            );
+        }
+    }
 }

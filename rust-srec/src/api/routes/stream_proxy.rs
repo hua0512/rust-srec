@@ -77,7 +77,11 @@ fn stream_proxy_client(
     CLIENTS.get_or_try_build(&(allow_private_targets, upstream_proxy.clone()), || {
         crate::utils::http_client::install_rustls_provider();
         // Never impose a whole-response timeout on continuous FLV/MPEG-TS streams.
+        // HTTP/1.1 like the other backend clients (see `build_client`); a
+        // continuous stream relayed over HTTP/2 would also need adaptive flow
+        // control to keep up.
         let mut builder = reqwest::Client::builder()
+            .http1_only()
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)
             .pool_max_idle_per_host(20)

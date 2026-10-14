@@ -31,7 +31,8 @@ impl HttpDelivery {
         crate::utils::http_client::install_rustls_provider();
         Self {
             channel,
-            client: Client::builder().build(),
+            // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
+            client: Client::builder().http1_only().build(),
             timeout: if timeout.is_zero() {
                 DEFAULT_TIMEOUT
             } else {
