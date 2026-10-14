@@ -69,8 +69,9 @@
 //!
 //! Where recording starts is decided once per session ([`decide_start`]) and
 //! shared by every track. A configured track that the starting Period lacks
-//! is not recorded, even if a later Period carries it; the first such Period
-//! is reported with a warning.
+//! is not recorded, even once a Period that has begun carries it (a later
+//! one, or the starting one after an MPD update); its first appearance is
+//! reported with a warning.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -436,8 +437,8 @@ pub(crate) struct DashPlanner {
     epoch_serial: u64,
     /// Manifest generation of the last snapshot planned.
     manifest_generation: Option<u64>,
-    /// Configured tracks this session does not record, reported once each
-    /// when a Period offers them.
+    /// Configured tracks this session does not record, reported (and
+    /// removed) once a Period that has begun offers them.
     absent_tracks: Vec<MediaTrack>,
     /// Whether a Period lacking this track was reported.
     reported_absence: bool,
@@ -660,6 +661,7 @@ impl DashPlanner {
             None => self.start.period.clone(),
         };
         self.prune_periods(&lower);
+        self.note_late_tracks(manifest, &lower, now);
         // Whether every segment of the Periods iterated so far is planned,
         // including one that overlaps a Period's end and only becomes
         // available after the next Period has begun.
@@ -1035,6 +1037,34 @@ impl DashPlanner {
         }
     }
 
+    /// Reports each configured track this session does not record once a
+    /// Period from `lower` on that has begun offers it, whether a later
+    /// Period or an update of one already planned. Runs on every snapshot,
+    /// whatever gets planned; each track is reported once.
+    fn note_late_tracks(&mut self, manifest: &Manifest, lower: &PeriodKey, now: DateTime<Utc>) {
+        if self.absent_tracks.is_empty() {
+            return;
+        }
+        for period in &manifest.periods {
+            let key = PeriodKey::of(period);
+            if !key.at_or_after(lower) || !has_started(manifest, period, now) {
+                continue;
+            }
+            let selection = &self.selection;
+            self.absent_tracks.retain(|&absent| {
+                if selection::select(period, absent, selection).is_none() {
+                    return true;
+                }
+                warn!(
+                    track = %absent,
+                    period = %key.label(),
+                    "a track appeared after recording started; it is not recorded in this session"
+                );
+                false
+            });
+        }
+    }
+
     /// Where a new epoch in the Period of the newest one starts in
     /// `window`.
     ///
@@ -1154,7 +1184,6 @@ impl DashPlanner {
     ) -> SegmentDescriptor {
         let PeriodScope {
             key,
-            period,
             representation,
             ..
         } = scope;
@@ -1215,18 +1244,6 @@ impl DashPlanner {
                 "Representation does not declare segments starting with a stream access point"
             );
         }
-        let selection = Arc::clone(&self.selection);
-        self.absent_tracks.retain(|&absent| {
-            if selection::select(period, absent, &selection).is_none() {
-                return true;
-            }
-            warn!(
-                track = %absent,
-                period = %key.label(),
-                "a Period offers a track this recording did not start with; it is not recorded"
-            );
-            false
-        });
         self.epochs.push_back(Epoch {
             period: key.clone(),
             representation_id: Arc::from(representation.id.as_str()),
@@ -1670,6 +1687,9 @@ mod tests {
         generation: u64,
         manifest_generation: u64,
         last_mpd: Option<String>,
+        /// Configured tracks the session does not record (see
+        /// [`PlannerParams::absent_tracks`]).
+        absent_tracks: Vec<MediaTrack>,
     }
 
     impl Fixture {
@@ -1685,6 +1705,7 @@ mod tests {
                 generation: 0,
                 manifest_generation: 0,
                 last_mpd: None,
+                absent_tracks: Vec::new(),
             }
         }
 
@@ -1734,7 +1755,7 @@ mod tests {
                     frontier: Arc::clone(&self.frontier),
                     start,
                     live_start: self.live_start,
-                    absent_tracks: Vec::new(),
+                    absent_tracks: self.absent_tracks.clone(),
                 })
             });
             planner.plan(&snapshot)
@@ -1808,6 +1829,51 @@ mod tests {
   </Period>
 </MPD>"#
         )
+    }
+
+    #[test]
+    fn a_track_appearing_in_the_running_period_is_reported_once_and_not_planned() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::default(), 20);
+        fixture.absent_tracks = vec![MediaTrack::Audio];
+        let video_only = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="v/$Number$.m4s" initialization="v/init.mp4" duration="2000" timescale="1000" startNumber="1"/>
+      <Representation id="v1" bandwidth="1000000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let absent = |fixture: &Fixture| fixture.planner.as_ref().unwrap().absent_tracks.clone();
+        fixture.plan(video_only);
+        fixture.consume_all();
+        fixture.advance(2);
+        fixture.plan(video_only);
+        assert_eq!(
+            absent(&fixture),
+            [MediaTrack::Audio],
+            "nothing to report yet"
+        );
+
+        // An update of the same Period adds audio: reported on this
+        // snapshot, whether or not it plans anything, and never again.
+        fixture.consume_all();
+        let with_audio = number_mpd("");
+        let update = fixture.plan(&with_audio);
+        assert!(absent(&fixture).is_empty());
+        assert!(
+            media(&update)
+                .iter()
+                .all(|(_, meta, _)| meta.track == MediaTrack::Video)
+        );
+        fixture.advance(2);
+        let next = fixture.plan(&with_audio);
+        assert!(absent(&fixture).is_empty());
+        assert!(
+            media(&next)
+                .iter()
+                .all(|(_, meta, _)| meta.track == MediaTrack::Video)
+        );
     }
 
     #[test]

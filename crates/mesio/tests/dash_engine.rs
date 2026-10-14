@@ -2364,6 +2364,70 @@ async fn an_audio_only_period_between_video_periods_is_recorded_in_order() {
     }
 }
 
+fn stalled_or_dropped(events: &[DownloadEvent]) -> Vec<&DownloadEvent> {
+    events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                DownloadEvent::TrackStalled { .. } | DownloadEvent::TrackDropped { .. }
+            )
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn audio_appearing_after_a_video_only_start_is_not_recorded() {
+    let origin = Origin::default();
+    origin.add_file("v/init.mp4", VIDEO_INIT);
+    origin.add_file("a/init.mp4", AUDIO_INIT);
+    for id in ["p0", "p1"] {
+        origin.add_numbered(&format!("{id}/v"), VIDEO_1, VIDEO_TIMESCALE);
+        origin.add_numbered(&format!("{id}/a"), AUDIO_1, AUDIO_TIMESCALE);
+    }
+    let video = |id: &str| {
+        format!(
+            r#"<AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="{id}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>"#
+        )
+    };
+    origin.set_mpd(format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="p0" duration="PT2S">{}</Period>
+  <Period id="p1" duration="PT2S">{}
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p1/a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1"/>
+      <Representation id="a" bandwidth="24000"/>
+    </AdaptationSet>
+  </Period>
+</MPD>"#,
+        video("p0"),
+        video("p1"),
+    ));
+    let base = origin.clone().serve().await;
+
+    // The default selection asks for audio, which only p1 carries.
+    let session = start(&format!("{base}/manifest.mpd"), config(None))
+        .await
+        .expect("session starts");
+    let (items, error, events, terminal) = drain(session).await;
+
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert!(ends_with_end_of_stream(&items));
+    let stalled = stalled_or_dropped(&events);
+    assert!(stalled.is_empty(), "{stalled:?}");
+    assert_eq!(count_track(&items, 1), 4, "{}", describe(&items));
+    assert!(inits(&items).iter().all(|init| {
+        let info = mp4::isobmff::parse_init_segment(init);
+        info.has_h264 && !info.has_aac
+    }));
+    assert_eq!(origin.hits("a/init.mp4"), 0);
+    assert_eq!(origin.hits("p1/a/1.m4s"), 0);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn rejected_subtitles_do_not_count_against_the_media_tracks() {
     let origin = Origin::default();

@@ -11,8 +11,14 @@
 //! be held entirely by one of them and starve the other.
 //!
 //! The track set is fixed at start, from the Period recording starts in
-//! (v1 limitation): a configured track that only a later Period carries is
-//! reported with a warning, not recorded.
+//! (v1 limitation): a configured track that Period lacks is not recorded
+//! in this session, even once it appears (in a later Period or in an update
+//! of the starting one), which is reported with a warning. A recorded
+//! track missing from a later Period leaves a gap there, recorded with the
+//! other track alone.
+//!
+//! Only the first `BaseURL` at each MPD level is used; alternatives (other
+//! CDNs) are noted once, at start.
 
 use std::sync::Arc;
 
@@ -101,6 +107,12 @@ pub(crate) async fn start(
     let start = decide_start(&initial.manifest, now, config.live_start, &config.selection)?;
     let (start, selected) = select_tracks(&initial.manifest, &config, start)?;
     let live = initial.manifest.presentation_type == PresentationType::Dynamic;
+    if initial.manifest.ignored_base_urls > 0 {
+        debug!(
+            ignored = initial.manifest.ignored_base_urls,
+            "the MPD offers alternative BaseURLs; only the first at each level is used"
+        );
+    }
     info!(
         live,
         video = selected.video,
