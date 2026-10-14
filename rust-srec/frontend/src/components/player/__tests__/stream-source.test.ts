@@ -167,8 +167,18 @@ describe('streams the player must not open on its own', () => {
     });
   });
 
-  it('falls back to an unplayable stream when nothing else exists', () => {
-    expect(selectInitialStream({ streams: [dash720] })?.url).toBe(dash720.url);
+  it('picks nothing automatically when only opt-in or DASH streams exist', () => {
+    const { format_opt_in: _, ...unmarkedDash } = dash720;
+    const onlyDash = { streams: [dash720, unmarkedDash] };
+    expect(selectInitialStream(onlyDash)).toBeUndefined();
+
+    const [previous] = extractStreams({ streams: [flv540] });
+    expect(selectRefreshedStream(onlyDash, previous)).toBeUndefined();
+
+    // The DASH entries remain available for manual selection.
+    expect(
+      streamLevelOptions(extractStreams(onlyDash), previous, 'format'),
+    ).toEqual([expect.objectContaining({ value: 'dash' })]);
   });
 });
 

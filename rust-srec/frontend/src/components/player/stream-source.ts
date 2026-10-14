@@ -218,13 +218,15 @@ export function isAutoSelectable(stream: StreamOption) {
   );
 }
 
-/** Narrows to the automatically selectable streams when there are any. */
+/**
+ * The streams a player may open on its own. Empty when only opt-in or DASH
+ * streams exist; those stay listed for manual selection.
+ */
 function autoSelectable(streams: StreamOption[]) {
-  const selectable = streams.filter(isAutoSelectable);
-  return selectable.length > 0 ? selectable : streams;
+  return streams.filter(isAutoSelectable);
 }
 
-/** The stream a new player opens with. */
+/** The stream a new player opens with, if any can be opened automatically. */
 export function selectInitialStream(
   mediaInfo: unknown,
 ): StreamOption | undefined {
