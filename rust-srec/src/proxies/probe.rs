@@ -64,7 +64,9 @@ pub async fn probe(endpoint: &ProxyEndpoint, target: &url::Url) -> ProbeOutcome 
     crate::utils::http_client::install_rustls_provider();
     let started = Instant::now();
     let client = crate::utils::http_client::apply_proxy(
+        // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
         reqwest::Client::builder()
+            .http1_only()
             .timeout(PROBE_TIMEOUT)
             .connect_timeout(PROBE_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none()),

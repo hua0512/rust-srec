@@ -127,7 +127,10 @@ pub fn build_platforms_client(
 /// Builds `builder`, reporting a failure without its details, which may
 /// quote a proxy address.
 pub(crate) fn build_client(builder: reqwest::ClientBuilder) -> Result<reqwest::Client, ProxyError> {
-    builder.build().map_err(|error| {
+    // The mesio engine enables reqwest's HTTP/2 support, which then applies
+    // to every client in the build; the backend's own clients stay on
+    // HTTP/1.1 as they always have.
+    builder.http1_only().build().map_err(|error| {
         warn!(error = %error.without_url(), "Could not build an HTTP client");
         ProxyError::ClientUnavailable
     })

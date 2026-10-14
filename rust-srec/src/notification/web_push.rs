@@ -155,7 +155,9 @@ impl std::fmt::Debug for WebPushService {
 
 impl WebPushService {
     pub fn new(pool: DbPool, write_pool: WritePool, config: WebPushConfig) -> Result<Self> {
+        // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
         let client = reqwest::Client::builder()
+            .http1_only()
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| Error::Other(format!("Failed to build reqwest client: {}", e)))?;

@@ -20,6 +20,7 @@ use tracing::{debug, info, warn};
 use super::error::FlvDownloadError;
 use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
+use crate::config::HttpVersionPreference;
 use crate::redact::Redacted;
 use crate::{BoxMediaStream, DownloadError, downloader::create_client_pool};
 use crate::{
@@ -88,7 +89,7 @@ impl FlvDownloader {
 
     /// Create a new FlvDownloader with custom configuration
     pub fn with_config(config: FlvProtocolConfig) -> Result<Self, DownloadError> {
-        let clients = Arc::new(create_client_pool(&config.base)?);
+        let clients = Arc::new(create_client_pool(&connection_config(&config.base))?);
         Ok(Self { clients, config })
     }
 
@@ -435,9 +436,43 @@ impl MediaEngine for FlvDownloader {
     }
 }
 
+/// The downloader settings FLV connects with.
+///
+/// An FLV recording is one long-lived response, so HTTP/2 multiplexing gains
+/// nothing, while a connection-level GOAWAY from a CDN recycling its HTTP/2
+/// connections would cut the recording. `Auto` therefore means HTTP/1.1 here;
+/// an explicit HTTP/2 preference is honoured.
+fn connection_config(base: &crate::DownloaderConfig) -> crate::DownloaderConfig {
+    let mut base = base.clone();
+    if base.http_version == HttpVersionPreference::Auto {
+        base.http_version = HttpVersionPreference::Http1Only;
+    }
+    base
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flv_connects_over_http1_unless_http2_is_asked_for() {
+        let with = |http_version| crate::DownloaderConfig {
+            http_version,
+            ..crate::DownloaderConfig::default()
+        };
+        assert_eq!(
+            connection_config(&with(HttpVersionPreference::Auto)).http_version,
+            HttpVersionPreference::Http1Only
+        );
+        assert_eq!(
+            connection_config(&with(HttpVersionPreference::Http2Only)).http_version,
+            HttpVersionPreference::Http2Only
+        );
+        assert_eq!(
+            connection_config(&with(HttpVersionPreference::Http1Only)).http_version,
+            HttpVersionPreference::Http1Only
+        );
+    }
 
     fn progress(event: &DownloadEvent) -> Option<(u64, u64)> {
         match event {

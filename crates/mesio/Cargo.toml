@@ -19,6 +19,7 @@ futures = { workspace = true }
 reqwest = { workspace = true, features = [
   "json",
   "stream",
+  "http2",
   "system-proxy",
   "socks",
   "gzip",
