@@ -547,6 +547,27 @@ impl Addressing {
         }))
     }
 
+    /// The first segment the `SegmentTimeline` lists from `number` on, as
+    /// `(number, media time)`, whatever the clock says. A trailing
+    /// `S@r=-1` lists only its first segment; `@endNumber` is respected.
+    pub(crate) fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        if !self.has_timeline {
+            return None;
+        }
+        let last = self.runs.last()?;
+        let mut listed = last.first_index.checked_add(last.count.unwrap_or(1))?;
+        if let Some(end_number) = self.end_number {
+            let allowed = end_number.checked_sub(self.start_number)?.checked_add(1)?;
+            listed = listed.min(allowed);
+        }
+        let index = number.saturating_sub(self.start_number);
+        if index >= listed {
+            return None;
+        }
+        let (time, _) = self.run_timing(index)?;
+        Some((self.start_number.checked_add(index)?, time))
+    }
+
     /// Media time and duration of the segment at sequence position
     /// `index`, when a run covers it.
     fn run_timing(&self, index: u64) -> Option<(u64, u64)> {
@@ -1504,5 +1525,26 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn listed_from_reads_the_timeline_whatever_the_clock() {
+        let runs = Addressing::timeline_runs(&[s(Some(1000), 2, 2), s(None, 3, -1)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        addressing.start_number = 10;
+        // Numbers 10–12 at 1000, 1002, 1004; 13 opens the `S@r=-1` at 1006.
+        assert_eq!(addressing.listed_from(0), Some((10, 1000)));
+        assert_eq!(addressing.listed_from(12), Some((12, 1004)));
+        assert_eq!(addressing.listed_from(13), Some((13, 1006)));
+        assert_eq!(
+            addressing.listed_from(14),
+            None,
+            "only the open run's first"
+        );
+        addressing.end_number = Some(11);
+        assert_eq!(addressing.listed_from(12), None);
+        addressing.has_timeline = false;
+        assert_eq!(addressing.listed_from(10), None);
     }
 }

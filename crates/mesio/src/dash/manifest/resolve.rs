@@ -287,6 +287,13 @@ impl Representation {
         self.addressing.timeline_ahead(&self.timing, offset, now)
     }
 
+    /// The first segment this Representation's `SegmentTimeline` lists
+    /// from segment `number` on, as `(number, media time)`, regardless of
+    /// availability; `None` without a timeline or past its end.
+    pub fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        self.addressing.listed_from(number)
+    }
+
     /// Where this `SegmentBase` Representation's Segment Index is, while it
     /// has not been applied. Its segments are unknown until then.
     pub fn pending_segment_index(&self) -> Option<&SegmentIndexLocation> {
