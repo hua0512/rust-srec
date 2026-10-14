@@ -1,6 +1,7 @@
 import {
   extractStreams,
   renewalNeedsNewParse,
+  selectInitialStream,
   selectRefreshedStream,
   selectStreamLevel,
   streamLevelOptions,
@@ -100,6 +101,74 @@ describe('stream selection across refreshes', () => {
     const selected = extractStreams(options)[0]!;
     expect(selected.data).toBe(deferred);
     expect(selectRefreshedStream(options, selected)?.data).toBe(deferred);
+  });
+});
+
+describe('streams the player must not open on its own', () => {
+  const flv540 = {
+    url: 'https://media.example/sd.flv',
+    quality: '540p',
+    stream_format: 'flv',
+  };
+  const dash720 = {
+    url: 'https://media.example/hd/index.mpd',
+    quality: '720p',
+    stream_format: 'dash',
+    format_opt_in: true,
+  };
+
+  it('does not refresh onto DASH when the previous format is gone', () => {
+    const [previous] = extractStreams({
+      streams: [
+        {
+          url: 'https://media.example/hd.m3u8',
+          quality: '720p',
+          stream_format: 'hls',
+        },
+      ],
+    });
+    const refreshed = selectRefreshedStream(
+      { streams: [flv540, dash720] },
+      previous,
+    );
+    expect(refreshed?.url).toBe(flv540.url);
+  });
+
+  it('opens with a playable stream even when DASH is listed first', () => {
+    const { format_opt_in: _, ...unmarkedDash } = dash720;
+    expect(selectInitialStream({ streams: [unmarkedDash, flv540] })?.url).toBe(
+      flv540.url,
+    );
+  });
+
+  it('skips opt-in streams in managed playback', () => {
+    const managed = {
+      handle: 'opaque',
+      title: 'Live',
+      streams: [
+        {
+          url: 'https://media.example/opt-in.flv',
+          quality: '1080p',
+          stream_format: 'flv',
+          media_format: 'flv',
+          format_opt_in: true,
+        },
+        {
+          url: 'https://media.example/hd.flv',
+          quality: '720p',
+          stream_format: 'flv',
+          media_format: 'flv',
+        },
+      ],
+    };
+    expect(selectInitialStream(managed)?.data).toEqual({
+      playback_handle: 'opaque',
+      stream: 1,
+    });
+  });
+
+  it('falls back to an unplayable stream when nothing else exists', () => {
+    expect(selectInitialStream({ streams: [dash720] })?.url).toBe(dash720.url);
   });
 });
 

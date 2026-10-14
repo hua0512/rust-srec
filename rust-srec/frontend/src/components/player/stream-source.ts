@@ -28,6 +28,8 @@ export interface StreamOption {
   fps?: number;
   headers?: Record<string, string>;
   extras?: Record<string, string>;
+  /** The backend marks streams (e.g. TikTok's DASH) that are only used when explicitly chosen. */
+  optIn?: boolean;
 }
 
 // Helper function to extract all stream options from media_info
@@ -46,6 +48,7 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
       codec: stream.codec ?? undefined,
       bitrate: stream.bitrate ?? undefined,
       fps: stream.fps ?? undefined,
+      optIn: stream.format_opt_in === true,
     }));
   if (typeof mediaInfo === 'string')
     return [
@@ -77,6 +80,7 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
             : undefined,
         headers: { ...mediaInfo.headers, ...stream.headers },
         extras,
+        optIn: stream.format_opt_in === true,
       });
     });
   } else if (mediaInfo.url) {
@@ -203,12 +207,36 @@ export function selectStreamLevel(
   return narrowTo(candidates, selected, streamLevels.slice(index + 1))[0];
 }
 
+/**
+ * Whether the player may open `stream` without the user choosing it: not an
+ * opt-in stream, and not DASH, which the player cannot play.
+ */
+export function isAutoSelectable(stream: StreamOption) {
+  return (
+    !stream.optIn &&
+    resolvePlayerMediaType(stream.format, stream.url) !== 'dash'
+  );
+}
+
+/** Narrows to the automatically selectable streams when there are any. */
+function autoSelectable(streams: StreamOption[]) {
+  const selectable = streams.filter(isAutoSelectable);
+  return selectable.length > 0 ? selectable : streams;
+}
+
+/** The stream a new player opens with. */
+export function selectInitialStream(
+  mediaInfo: unknown,
+): StreamOption | undefined {
+  return autoSelectable(extractStreams(mediaInfo))[0];
+}
+
 export function selectRefreshedStream(
   mediaInfo: unknown,
   selected: StreamOption,
 ): StreamOption | undefined {
   // A matching format and quality matter more than keeping the same CDN.
-  return narrowTo(extractStreams(mediaInfo), selected, [
+  return narrowTo(autoSelectable(extractStreams(mediaInfo)), selected, [
     'format',
     'quality',
     'cdn',

@@ -25,7 +25,7 @@ Platform options are under **Settings** → **Platforms** → **TikTok**. **Noth
 | Option | Default | Description |
 |--------|---------|-------------|
 | **Extraction API Mode** (`api_mode`) | `auto` | `auto` uses the signature-free `api-live/user/room` JSON endpoint and falls back to the live page HTML when it fails. `web` and `html` force one path. |
-| **Force Origin Quality** (`force_origin_quality`) | off | Only keep the `origin` quality when TikTok offers it. |
+| **Force Origin Quality** (`force_origin_quality`) | off | Only keep the `origin` quality when TikTok offers it as FLV or HLS. When `origin` is offered only as DASH, every quality is kept, even with `dash` first in **Preferred Formats**. |
 
 ::: info
 - **Authentication**: No cookies are needed. Chat collection registers a temporary `ttwid` session automatically; providing browser cookies is optional.

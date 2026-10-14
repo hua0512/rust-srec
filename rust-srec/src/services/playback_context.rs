@@ -105,6 +105,10 @@ pub struct PlaybackStream {
     pub bitrate: u64,
     pub fps: f64,
     pub is_audio_only: bool,
+    /// The extractor's `StreamInfo::format_opt_in`: players should not open
+    /// this stream on their own. Omitted when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub format_opt_in: bool,
 }
 
 struct Entry {
@@ -158,6 +162,7 @@ impl PlaybackContextService {
                 bitrate: stream.bitrate,
                 fps: stream.fps,
                 is_audio_only: stream.is_audio_only,
+                format_opt_in: stream.format_opt_in,
             })
             .collect();
         let handle = hex::encode(rand::random::<[u8; 32]>());

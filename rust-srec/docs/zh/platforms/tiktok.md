@@ -25,7 +25,7 @@ https://www.tiktok.com/@{用户名}/live
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
 | **API 模式** (`api_mode`) | `auto` | `auto` 优先使用无需签名的 `api-live/user/room` JSON 接口，失败时回退到解析直播页 HTML；`web` 与 `html` 强制使用对应方式。 |
-| **强制原画质量** (`force_origin_quality`) | 关闭 | 当 TikTok 提供 `origin` 画质时只保留该画质。 |
+| **强制原画质量** (`force_origin_quality`) | 关闭 | 当 TikTok 以 FLV 或 HLS 提供 `origin` 画质时只保留该画质。若 `origin` 仅以 DASH 提供，则保留所有画质，即使**首选格式**中 `dash` 排在第一位。 |
 
 ::: info
 - **认证**：无需 Cookie。弹幕采集会自动注册临时 `ttwid` 会话；浏览器 Cookie 为可选项。

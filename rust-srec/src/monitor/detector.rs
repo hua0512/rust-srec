@@ -518,10 +518,17 @@ impl StreamDetector {
                 );
                 stream.clone()
             } else if !media_info.streams.is_empty() {
+                let mut formats: Vec<&str> = media_info
+                    .streams
+                    .iter()
+                    .map(|s| s.stream_format.as_str())
+                    .collect();
+                formats.sort_unstable();
+                formats.dedup();
                 warn!(
                     streamer = %streamer.name,
-                    streams = media_info.streams.len(),
-                    "Streamer is live but only offers formats that must be chosen in Preferred Formats (e.g. DASH). Treating as OFFLINE."
+                    formats = %formats.join(", "),
+                    "Streamer is live but only offers formats that are never selected automatically; put the format first in Preferred Formats (e.g. `dash` first) to record it. Treating as OFFLINE."
                 );
                 return Ok(LiveStatus::Offline);
             } else {
