@@ -145,6 +145,16 @@ pub struct TimelineLead {
     pub segment_duration: Duration,
 }
 
+/// Where a `SegmentTemplate`'s media segments are: the template and the
+/// URL it resolves against, both without query or fragment (rotating
+/// access tokens do not change the resources). Equal locations address the
+/// same resources by number or time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaLocation {
+    base: Url,
+    template: Template,
+}
+
 /// A run of equal-duration segments: one `S` element, or the whole
 /// `@duration` sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -545,6 +555,21 @@ impl Addressing {
             newest: nanos(newest),
             segment_duration: nanos(i128::from(first.1).saturating_mul(NANOS_PER_SEC) / timescale),
         }))
+    }
+
+    /// Where the media segments of a template are; `None` for lists and
+    /// indexed segments.
+    pub(crate) fn media_location(&self) -> Option<MediaLocation> {
+        let SegmentUrls::Template { media, base } = &self.urls else {
+            return None;
+        };
+        let mut base = base.clone();
+        base.set_query(None);
+        base.set_fragment(None);
+        Some(MediaLocation {
+            base,
+            template: media.without_query(),
+        })
     }
 
     /// The first segment the `SegmentTimeline` lists from `number` on, as

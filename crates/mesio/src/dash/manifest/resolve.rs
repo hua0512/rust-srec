@@ -21,8 +21,8 @@ use super::parse::{
 };
 use super::template::{Template, TemplateKind};
 use super::timeline::{
-    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, PeriodTiming, Run,
-    SegmentUrls, SegmentWindow, TimelineLead,
+    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, MediaLocation,
+    PeriodTiming, Run, SegmentUrls, SegmentWindow, TimelineLead,
 };
 use super::xs::{self, RawOffset};
 
@@ -285,6 +285,12 @@ impl Representation {
             AvailabilityTimeOffset::ZERO
         };
         self.addressing.timeline_ahead(&self.timing, offset, now)
+    }
+
+    /// Where this Representation's template media segments are; `None`
+    /// for lists and indexed segments.
+    pub fn media_location(&self) -> Option<MediaLocation> {
+        self.addressing.media_location()
     }
 
     /// The first segment this Representation's `SegmentTimeline` lists

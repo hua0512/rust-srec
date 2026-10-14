@@ -182,42 +182,61 @@ pub struct DashSegmentMeta {
     pub availability_start_time: Option<WallClockAnchor>,
 }
 
-/// The wall-clock anchor of a dynamic presentation's timeline, shared by
-/// every segment of one epoch.
+/// A shared switch that withdraws every [`WallClockAnchor`] holding it.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AnchorWithdrawal(Arc<AtomicBool>);
+
+impl AnchorWithdrawal {
+    pub(crate) fn withdraw(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    fn is_withdrawn(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+/// The wall-clock anchor of a dynamic presentation's timeline.
 ///
-/// The planner withdraws it when an MPD update contradicts the timing it
-/// anchors. The flag is shared rather than copied so that the withdrawal
-/// also reaches segments already queued, downloading or buffered, whose
-/// descriptors were built before the contradiction was seen.
+/// The planner withdraws it when MPD updates contradict the timing it
+/// anchors: through the presentation's withdrawal when
+/// `availabilityStartTime` moves, which reaches every anchor issued under
+/// it, or through its Period's, shared by every epoch of that Period. The
+/// switches are shared rather than copied so that a withdrawal also
+/// reaches segments already queued, downloading or buffered, including
+/// those of epochs the planner has retired.
 #[derive(Debug, Clone)]
 pub struct WallClockAnchor {
     time: DateTime<Utc>,
-    withdrawn: Arc<AtomicBool>,
+    presentation: AnchorWithdrawal,
+    period: AnchorWithdrawal,
 }
 
 impl WallClockAnchor {
-    pub fn new(time: DateTime<Utc>) -> Self {
+    pub(crate) fn new(
+        time: DateTime<Utc>,
+        presentation: &AnchorWithdrawal,
+        period: &AnchorWithdrawal,
+    ) -> Self {
         Self {
             time,
-            withdrawn: Arc::new(AtomicBool::new(false)),
+            presentation: presentation.clone(),
+            period: period.clone(),
         }
     }
 
     /// The anchor, unless it was withdrawn.
     pub fn get(&self) -> Option<DateTime<Utc>> {
-        (!self.withdrawn.load(Ordering::Acquire)).then_some(self.time)
-    }
-
-    /// Withdraws the anchor from every holder.
-    pub fn withdraw(&self) {
-        self.withdrawn.store(true, Ordering::Release);
+        (!self.presentation.is_withdrawn() && !self.period.is_withdrawn()).then_some(self.time)
     }
 }
 
-/// Anchors are equal when they are the same shared anchor.
+/// Anchors are equal when they share the same withdrawals.
 impl PartialEq for WallClockAnchor {
     fn eq(&self, other: &Self) -> bool {
-        self.time == other.time && Arc::ptr_eq(&self.withdrawn, &other.withdrawn)
+        self.time == other.time
+            && Arc::ptr_eq(&self.presentation.0, &other.presentation.0)
+            && Arc::ptr_eq(&self.period.0, &other.period.0)
     }
 }
 
