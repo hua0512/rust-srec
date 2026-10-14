@@ -87,7 +87,8 @@ use tracing::{debug, info, warn};
 
 use crate::DownloadError;
 use crate::dash::config::DashMuxConfig;
-use crate::dash::planner::{ConsumedFrontier, NANOS_PER_SEC, PeriodKey};
+use crate::dash::manifest::NANOS_PER_SEC;
+use crate::dash::planner::{ConsumedFrontier, PeriodKey};
 use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
 use crate::segment_engine::control::EngineNotice;

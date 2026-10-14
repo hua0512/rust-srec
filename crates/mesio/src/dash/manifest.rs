@@ -39,6 +39,7 @@ pub use resolve::{
     AdaptationSet, ContentType, Manifest, Period, PresentationType, Rejected, RejectedContent,
     Representation,
 };
+pub(crate) use timeline::NANOS_PER_SEC;
 pub use timeline::{
     AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, Segment, SegmentIter,
     SegmentWindow, TimelineLead,

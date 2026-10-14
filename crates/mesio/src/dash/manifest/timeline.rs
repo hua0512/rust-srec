@@ -36,7 +36,7 @@ use super::resolve::PresentationType;
 use super::template::Template;
 use super::xs;
 
-const NANOS_PER_SEC: i128 = 1_000_000_000;
+pub(crate) const NANOS_PER_SEC: i128 = 1_000_000_000;
 
 /// `@availabilityTimeOffset`: how much earlier than its nominal availability
 /// a segment can be requested (ISO/IEC 23009-1 §5.3.9.5.3).
@@ -607,19 +607,7 @@ impl Addressing {
     /// run (see [`Self::window`]).
     pub(crate) fn segment(&self, index: u64, period_start: i128) -> Result<Segment, ManifestError> {
         let overflow = || ManifestError::overflow("segment position");
-        let position = self.runs.partition_point(|run| run.first_index <= index);
-        let run = position
-            .checked_sub(1)
-            .and_then(|position| self.runs.get(position))
-            .ok_or_else(overflow)?;
-        let repetition = index - run.first_index;
-        if run.count.is_some_and(|count| repetition >= count) {
-            return Err(overflow());
-        }
-        let time = repetition
-            .checked_mul(run.duration)
-            .and_then(|offset| run.start.checked_add(offset))
-            .ok_or_else(overflow)?;
+        let (time, duration) = self.run_timing(index).ok_or_else(overflow)?;
         let number = self.start_number.checked_add(index).ok_or_else(overflow)?;
         let (url, byte_range) = match &self.urls {
             SegmentUrls::Template { media, base } => {
@@ -663,7 +651,7 @@ impl Addressing {
         Ok(Segment {
             number,
             time,
-            duration: run.duration,
+            duration,
             timescale: self.timescale,
             start_secs,
             url,

@@ -25,6 +25,7 @@ pub use crate::segment_engine::{
 };
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -33,9 +34,12 @@ use tracing::{debug, info};
 use url::Url;
 
 use crate::CacheManager;
+use crate::DownloaderConfig;
 use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
-use crate::hls::config::{HlsConfig, IdentityPolicyConfig};
+use crate::hls::config::{
+    HlsConfig, HlsEngineConfig, HlsFetcherConfig, HlsOutputConfig, IdentityPolicyConfig,
+};
 use crate::hls::events::HlsStreamEvent;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
@@ -277,30 +281,45 @@ pub(crate) fn identity_policy(config: &IdentityPolicyConfig) -> SegmentIdentityP
     }
 }
 
+/// The engine core's configuration from the settings HLS and DASH share.
+pub(crate) fn core_config(
+    base: &DownloaderConfig,
+    fetcher: &HlsFetcherConfig,
+    output: &HlsOutputConfig,
+    engine: &HlsEngineConfig,
+    processed_segment_ttl: Duration,
+) -> SegmentCoreConfig {
+    SegmentCoreConfig {
+        fetch: FetchConfig {
+            params: base.params.clone(),
+            segment_download_timeout: fetcher.segment_download_timeout,
+            max_segment_retries: fetcher.max_segment_retries,
+            segment_retry_delay_base: fetcher.segment_retry_delay_base,
+            progress_emit_min_bytes: fetcher.progress_emit_min_bytes,
+            progress_emit_min_interval: fetcher.progress_emit_min_interval,
+            processed_segment_ttl,
+            max_segment_size_bytes: engine.max_segment_size_bytes,
+        },
+        output: OutputConfig {
+            gap_evaluation_interval: output.gap_evaluation_interval,
+            max_pending_init_segments: output.max_pending_init_segments,
+            live_max_overall_stall_duration: output.live_max_overall_stall_duration,
+            live_gap_strategy: output.live_gap_strategy.clone(),
+            vod_gap_strategy: output.vod_gap_strategy.clone(),
+            vod_segment_timeout: output.vod_segment_timeout,
+            buffer_limits: output.buffer_limits.clone(),
+        },
+    }
+}
+
 impl From<&HlsConfig> for SegmentCoreConfig {
     fn from(config: &HlsConfig) -> Self {
-        let fetcher = &config.fetcher_config;
-        let output = &config.output_config;
-        Self {
-            fetch: FetchConfig {
-                params: config.base.params.clone(),
-                segment_download_timeout: fetcher.segment_download_timeout,
-                max_segment_retries: fetcher.max_segment_retries,
-                segment_retry_delay_base: fetcher.segment_retry_delay_base,
-                progress_emit_min_bytes: fetcher.progress_emit_min_bytes,
-                progress_emit_min_interval: fetcher.progress_emit_min_interval,
-                processed_segment_ttl: config.processor_config.processed_segment_ttl,
-                max_segment_size_bytes: config.engine_config.max_segment_size_bytes,
-            },
-            output: OutputConfig {
-                gap_evaluation_interval: output.gap_evaluation_interval,
-                max_pending_init_segments: output.max_pending_init_segments,
-                live_max_overall_stall_duration: output.live_max_overall_stall_duration,
-                live_gap_strategy: output.live_gap_strategy.clone(),
-                vod_gap_strategy: output.vod_gap_strategy.clone(),
-                vod_segment_timeout: output.vod_segment_timeout,
-                buffer_limits: output.buffer_limits.clone(),
-            },
-        }
+        core_config(
+            &config.base,
+            &config.fetcher_config,
+            &config.output_config,
+            &config.engine_config,
+            config.processor_config.processed_segment_ttl,
+        )
     }
 }

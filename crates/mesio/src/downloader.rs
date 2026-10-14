@@ -13,82 +13,7 @@ use crate::{DownloadError, proxy::build_proxy_from_config};
 /// The HTTP version follows [`DownloaderConfig::http_version`]; see
 /// [`HttpVersionPreference`] for what each choice means on the wire.
 pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError> {
-    install_rustls_provider();
-
-    let mut client_builder = Client::builder()
-        .pool_max_idle_per_host(config.pool_max_idle_per_host) // Configurable: Keep connections warm for HLS segment downloads
-        .pool_idle_timeout(config.pool_idle_timeout) // Configurable: Reuse connections for specified duration
-        .user_agent(&config.user_agent)
-        .default_headers(config.headers.clone())
-        .use_rustls_tls()
-        .redirect(if config.follow_redirects {
-            reqwest::redirect::Policy::limited(10)
-        } else {
-            reqwest::redirect::Policy::none()
-        });
-
-    debug!(
-        pool_max_idle_per_host = config.pool_max_idle_per_host,
-        pool_idle_timeout_secs = config.pool_idle_timeout.as_secs(),
-        "HTTP connection pool configured"
-    );
-
-    client_builder = apply_http_version(client_builder, config, TlsBackend::Rustls);
-
-    // --- TCP Keep-Alive for long-lived connections ---
-    // This helps maintain HTTP/2 connections for multiplexing
-    if let Some(interval) = config.http2_keep_alive_interval {
-        client_builder = client_builder.tcp_keepalive(interval);
-        debug!(
-            ?interval,
-            "TCP keep-alive configured for HTTP/2 connection reuse"
-        );
-    }
-
-    // Force IP Version
-    client_builder = match (config.force_ipv4, config.force_ipv6) {
-        (true, false) => client_builder.local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
-        (false, true) => client_builder.local_address(IpAddr::V6(Ipv6Addr::UNSPECIFIED)),
-        _ => client_builder,
-    };
-
-    if !config.timeout.is_zero() {
-        client_builder = client_builder.timeout(config.timeout);
-    }
-
-    if !config.connect_timeout.is_zero() {
-        client_builder = client_builder.connect_timeout(config.connect_timeout);
-    }
-
-    if !config.read_timeout.is_zero() {
-        client_builder = client_builder.read_timeout(config.read_timeout);
-    }
-
-    // reqwest does not currently expose a per-request "write timeout" builder API.
-    // `timeout` (overall request timeout) is still applied above when configured.
-
-    client_builder = client_builder.danger_accept_invalid_certs(config.danger_accept_invalid_certs);
-
-    // Set up proxy configuration
-    if let Some(proxy_config) = &config.proxy {
-        // Explicit proxy configuration takes precedence
-        let proxy = match build_proxy_from_config(proxy_config) {
-            Ok(p) => p,
-            Err(e) => return Err(DownloadError::proxy_configuration(e)),
-        };
-        client_builder = client_builder.proxy(proxy);
-        info!(proxy_url = %proxy_config.redacted_url(), "Using explicitly configured proxy for downloads");
-    } else if config.use_system_proxy {
-        // No explicit proxy but system proxy enabled
-        // reqwest will use system proxy settings by default when we don't call no_proxy()
-        info!("Using system proxy settings for downloads");
-    } else {
-        // Explicitly disable proxy
-        client_builder = client_builder.no_proxy();
-        debug!("Proxy disabled for downloads");
-    }
-
-    client_builder.build().map_err(DownloadError::from)
+    create_client_with_backend(config, TlsBackend::Rustls)
 }
 
 pub(crate) const ENV_NATIVE_TLS_HOSTS: &str = "RUST_SREC_NATIVE_TLS_HOSTS";
@@ -286,6 +211,12 @@ fn create_client_with_backend(
             reqwest::redirect::Policy::none()
         });
 
+    debug!(
+        pool_max_idle_per_host = config.pool_max_idle_per_host,
+        pool_idle_timeout_secs = config.pool_idle_timeout.as_secs(),
+        "HTTP connection pool configured"
+    );
+
     match backend {
         TlsBackend::Rustls => {
             client_builder = client_builder.use_rustls_tls();
@@ -298,6 +229,7 @@ fn create_client_with_backend(
 
     client_builder = apply_http_version(client_builder, config, backend);
 
+    // Keeps long-lived (HTTP/2) connections alive between segment requests.
     if let Some(interval) = config.http2_keep_alive_interval {
         client_builder = client_builder.tcp_keepalive(interval);
     }
@@ -333,6 +265,7 @@ fn create_client_with_backend(
         info!(?backend, "Using system proxy settings for downloads");
     } else {
         client_builder = client_builder.no_proxy();
+        debug!("Proxy disabled for downloads");
     }
 
     client_builder.build().map_err(DownloadError::from)

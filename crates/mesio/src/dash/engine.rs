@@ -39,7 +39,7 @@ use crate::downloader::ClientPool;
 use crate::hls::engine::identity_policy;
 use crate::segment_engine::assembler::{AssemblerExit, SequenceAssembler};
 use crate::segment_engine::budget::ByteBudget;
-use crate::segment_engine::config::{FetchConfig, OutputConfig, SegmentCoreConfig};
+use crate::segment_engine::config::SegmentCoreConfig;
 use crate::segment_engine::descriptor::MediaTrack;
 use crate::segment_engine::fetch::FetchContext;
 use crate::segment_engine::metrics::PerformanceMetrics;
@@ -408,29 +408,13 @@ fn ensure_initialization<'a>(
 }
 
 fn core_config(config: &DashConfig) -> SegmentCoreConfig {
-    let fetcher = &config.fetcher;
-    let output = &config.output;
-    SegmentCoreConfig {
-        fetch: FetchConfig {
-            params: config.base.params.clone(),
-            segment_download_timeout: fetcher.segment_download_timeout,
-            max_segment_retries: fetcher.max_segment_retries,
-            segment_retry_delay_base: fetcher.segment_retry_delay_base,
-            progress_emit_min_bytes: fetcher.progress_emit_min_bytes,
-            progress_emit_min_interval: fetcher.progress_emit_min_interval,
-            processed_segment_ttl: config.processed_segment_ttl,
-            max_segment_size_bytes: config.engine.max_segment_size_bytes,
-        },
-        output: OutputConfig {
-            gap_evaluation_interval: output.gap_evaluation_interval,
-            max_pending_init_segments: output.max_pending_init_segments,
-            live_max_overall_stall_duration: output.live_max_overall_stall_duration,
-            live_gap_strategy: output.live_gap_strategy.clone(),
-            vod_gap_strategy: output.vod_gap_strategy.clone(),
-            vod_segment_timeout: output.vod_segment_timeout,
-            buffer_limits: output.buffer_limits.clone(),
-        },
-    }
+    crate::hls::engine::core_config(
+        &config.base,
+        &config.fetcher,
+        &config.output,
+        &config.engine,
+        config.processed_segment_ttl,
+    )
 }
 
 /// Waits for every engine task and reports how the session ended. The

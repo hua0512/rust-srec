@@ -91,6 +91,16 @@ impl Failure {
         self.error = Some(error);
         self
     }
+
+    fn into_outcome(self, key: SegmentKey, msn: u64) -> SegmentOutcome {
+        SegmentOutcome::Failed {
+            key,
+            msn,
+            class: self.class,
+            reason: Arc::from(self.reason),
+            error: self.error,
+        }
+    }
 }
 
 pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> SegmentOutcome {
@@ -100,35 +110,24 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     let mut reservation = job.reservation;
 
     // Unsupported crypto is terminal before any byte moves.
-    if let Some(enc) = &descriptor.encryption {
-        if let EncryptionMethod::Unsupported(token) = &enc.method {
-            return SegmentOutcome::Failed {
-                key,
-                msn,
-                class: FailureClass::UnsupportedCrypto,
-                reason: Arc::from(format!("unsupported encryption method: {token}")),
-                error: None,
+    let decryptor = match &descriptor.encryption {
+        Some(enc) => {
+            let unsupported = |reason: String| {
+                Failure::new(FailureClass::UnsupportedCrypto, reason).into_outcome(key.clone(), msn)
             };
+            if let EncryptionMethod::Unsupported(token) = &enc.method {
+                return unsupported(format!("unsupported encryption method: {token}"));
+            }
+            if let KeyFormat::Unsupported(format) = &enc.key_format {
+                return unsupported(format!("unsupported key format: {format}"));
+            }
+            match &ctx.decryptor {
+                Some(decryptor) => Some(decryptor),
+                None => return unsupported(NO_DECRYPTOR.to_owned()),
+            }
         }
-        if let KeyFormat::Unsupported(format) = &enc.key_format {
-            return SegmentOutcome::Failed {
-                key,
-                msn,
-                class: FailureClass::UnsupportedCrypto,
-                reason: Arc::from(format!("unsupported key format: {format}")),
-                error: None,
-            };
-        }
-        if ctx.decryptor.is_none() {
-            return SegmentOutcome::Failed {
-                key,
-                msn,
-                class: FailureClass::UnsupportedCrypto,
-                reason: Arc::from(NO_DECRYPTOR),
-                error: None,
-            };
-        }
-    }
+        None => None,
+    };
 
     // Cache lookup keys on the normalized identity URI (not the volatile
     // fetch URL), so a rotated auth token still hits. Cached bytes are the
@@ -179,13 +178,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
             {
                 metrics.record_download_error();
             }
-            return SegmentOutcome::Failed {
-                key,
-                msn,
-                class: failure.class,
-                reason: Arc::from(failure.reason),
-                error: failure.error,
-            };
+            return failure.into_outcome(key, msn);
         }
     };
 
@@ -197,39 +190,27 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     // leave the decrypted bytes uncharged across that I/O (the spec's release
     // point is "when the payload is wrapped", not "after decrypt"). Held only
     // for its drop.
-    let (final_bytes, output_reservation): (Bytes, ByteReservation) = match &descriptor.encryption {
-        Some(enc) if enc.method == EncryptionMethod::Aes128Cbc => {
-            let decrypted = match &ctx.decryptor {
-                Some(decryptor) => {
-                    decryptor
-                        .decrypt(&ctx, enc, msn, raw, &mut reservation)
-                        .await
-                }
-                None => Err(Failure::new(FailureClass::UnsupportedCrypto, NO_DECRYPTOR)),
-            };
-            match decrypted {
-                Ok((bytes, processing)) => {
-                    // The encrypted input was consumed by decrypt; its download
-                    // reservation is released here and the output is now held by
-                    // the processing reservation alone.
-                    drop(reservation);
-                    (bytes, processing)
-                }
-                Err(failure) => {
-                    return SegmentOutcome::Failed {
-                        key,
-                        msn,
-                        class: failure.class,
-                        reason: Arc::from(failure.reason),
-                        error: failure.error,
-                    };
+    let (final_bytes, output_reservation): (Bytes, ByteReservation) =
+        match (&descriptor.encryption, decryptor) {
+            (Some(enc), Some(decryptor)) if enc.method == EncryptionMethod::Aes128Cbc => {
+                match decryptor
+                    .decrypt(&ctx, enc, msn, raw, &mut reservation)
+                    .await
+                {
+                    Ok((bytes, processing)) => {
+                        // The encrypted input was consumed by decrypt; its download
+                        // reservation is released here and the output is now held by
+                        // the processing reservation alone.
+                        drop(reservation);
+                        (bytes, processing)
+                    }
+                    Err(failure) => return failure.into_outcome(key, msn),
                 }
             }
-        }
-        // Clear path: the handle moves unchanged (zero-copy); the download
-        // reservation keeps the body charged through wrap.
-        _ => (raw, reservation),
-    };
+            // Clear path: the handle moves unchanged (zero-copy); the download
+            // reservation keeps the body charged through wrap.
+            _ => (raw, reservation),
+        };
 
     if let Some(cache) = &ctx.cache_manager {
         let metadata = CacheMetadata::new(final_bytes.len() as u64)

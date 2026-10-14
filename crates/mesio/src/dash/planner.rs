@@ -84,8 +84,8 @@ use url::Url;
 use crate::DownloadError;
 use crate::dash::config::{DashSelectionConfig, LiveStartPolicy};
 use crate::dash::manifest::{
-    AddressingKind, ByteRange, Clock, Manifest, ManifestError, Period, PresentationType,
-    RejectedContent, Representation, Segment, SegmentWindow, UnsupportedFeature,
+    AddressingKind, ByteRange, Clock, Manifest, ManifestError, NANOS_PER_SEC, Period,
+    PresentationType, RejectedContent, Representation, Segment, SegmentWindow, UnsupportedFeature,
 };
 use crate::dash::selection;
 use crate::dash::watcher::MpdSnapshot;
@@ -100,8 +100,6 @@ use crate::segment_engine::descriptor::{
 use crate::segment_engine::identity::{
     ByteRangeKey, IdentityPolicy, SegmentIdentityPolicy, SegmentKey, SegmentKind,
 };
-
-pub(crate) const NANOS_PER_SEC: i128 = 1_000_000_000;
 
 /// Ordinals planned ahead of the consumed frontier, and new segments planned
 /// per snapshot, at most.

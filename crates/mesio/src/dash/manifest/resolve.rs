@@ -17,7 +17,7 @@ use super::limits::{MAX_RESOLVED_BYTES, MAX_URL_BYTES};
 use super::parse::{
     self, RawAdaptationSet, RawBaseUrl, RawCommon, RawMpd, RawMultipleSegmentBase, RawPeriod,
     RawProperty, RawRepresentation, RawS, RawSegmentBase, RawSegmentInfo, RawSegmentList,
-    RawSegmentTemplate,
+    RawSegmentTemplate, RawUrl,
 };
 use super::template::{Template, TemplateKind};
 use super::timeline::{
@@ -259,12 +259,19 @@ impl Representation {
         if let Some(error) = self.unread_segment_index_error() {
             return Err(error);
         }
-        let offset = if self.availability_time_complete {
+        self.addressing
+            .segments(&self.timing, self.effective_offset(), now)
+    }
+
+    /// The availability time offset segments become available by: none
+    /// while a segment is only complete at its unadjusted availability time
+    /// (see [`Self::segments`]).
+    fn effective_offset(&self) -> AvailabilityTimeOffset {
+        if self.availability_time_complete {
             self.availability_time_offset
         } else {
             AvailabilityTimeOffset::ZERO
-        };
-        self.addressing.segments(&self.timing, offset, now)
+        }
     }
 
     /// How far ahead of the segments available at `now` everything this
@@ -279,12 +286,8 @@ impl Representation {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Option<TimelineLead>, ManifestError> {
-        let offset = if self.availability_time_complete {
-            self.availability_time_offset
-        } else {
-            AvailabilityTimeOffset::ZERO
-        };
-        self.addressing.timeline_ahead(&self.timing, offset, now)
+        self.addressing
+            .timeline_ahead(&self.timing, self.effective_offset(), now)
     }
 
     /// The first segment this Representation's `SegmentTimeline` lists
@@ -739,13 +742,7 @@ impl Resolver {
         if common.ept_delta.is_some_and(|delta| delta != 0) {
             return Err(UnsupportedFeature::EptDelta.into());
         }
-        let offset = match common.availability_time_offset {
-            None => AvailabilityTimeOffset::ZERO,
-            Some(RawOffset::Offset(offset)) => offset,
-            Some(RawOffset::Negative) => {
-                return Err(UnsupportedFeature::NegativeAvailabilityTimeOffset.into());
-            }
-        };
+        let offset = availability_offset(common.availability_time_offset)?;
         let timescale = common.timescale.unwrap_or(1);
         let presentation_time_offset = common.presentation_time_offset.unwrap_or(0);
         let start_number = common.start_number.unwrap_or(1);
@@ -797,22 +794,11 @@ impl Resolver {
             base.join(reference)
                 .map_err(|source| ManifestError::InvalidUrl { element, source })
         };
-        let init_from_element = || -> Result<Option<InitSegment>, ManifestError> {
+        let init_from_element = || {
             common
                 .initialization
                 .as_ref()
-                .map(|init| {
-                    // Without `@sourceURL` the BaseURL itself is the resource
-                    // (`URLType`, ISO/IEC 23009-1 §5.3.9.2).
-                    let url = match &init.source_url {
-                        Some(source) => join(source, "Initialization@sourceURL")?,
-                        None => base.clone(),
-                    };
-                    Ok(InitSegment {
-                        url,
-                        byte_range: init.range,
-                    })
-                })
+                .map(|init| init_segment(init, base))
                 .transpose()
         };
 
@@ -896,19 +882,41 @@ impl Resolver {
     }
 }
 
+/// An `availabilityTimeOffset` as given, zero when absent.
+fn availability_offset(raw: Option<RawOffset>) -> Result<AvailabilityTimeOffset, ManifestError> {
+    match raw {
+        None => Ok(AvailabilityTimeOffset::ZERO),
+        Some(RawOffset::Offset(offset)) => Ok(offset),
+        Some(RawOffset::Negative) => Err(UnsupportedFeature::NegativeAvailabilityTimeOffset.into()),
+    }
+}
+
+/// An `Initialization` element resolved against `base`. Without
+/// `@sourceURL` the BaseURL itself is the resource (`URLType`, ISO/IEC
+/// 23009-1 §5.3.9.2).
+fn init_segment(init: &RawUrl, base: &Url) -> Result<InitSegment, ManifestError> {
+    let url = match &init.source_url {
+        Some(source) => base
+            .join(source)
+            .map_err(|source| ManifestError::InvalidUrl {
+                element: "Initialization@sourceURL",
+                source,
+            })?,
+        None => base.clone(),
+    };
+    Ok(InitSegment {
+        url,
+        byte_range: init.range,
+    })
+}
+
 /// Addressing of a `SegmentBase` Representation, whose resource is `url`,
 /// pending its Segment Index.
 fn build_indexed(base: &RawSegmentBase, url: &Url) -> Result<BuiltAddressing, ManifestError> {
     if base.ept_delta.is_some_and(|delta| delta != 0) {
         return Err(UnsupportedFeature::EptDelta.into());
     }
-    let offset = match base.availability_time_offset {
-        None => AvailabilityTimeOffset::ZERO,
-        Some(RawOffset::Offset(offset)) => offset,
-        Some(RawOffset::Negative) => {
-            return Err(UnsupportedFeature::NegativeAvailabilityTimeOffset.into());
-        }
-    };
+    let offset = availability_offset(base.availability_time_offset)?;
     // Where both are given, which index applies is not defined; the
     // resource may not carry one at all.
     if base.has_representation_index {
@@ -924,21 +932,7 @@ fn build_indexed(base: &RawSegmentBase, url: &Url) -> Result<BuiltAddressing, Ma
     let initialization = base
         .initialization
         .as_ref()
-        .map(|init| {
-            Ok::<_, ManifestError>(InitSegment {
-                url: match &init.source_url {
-                    Some(source) => {
-                        url.join(source)
-                            .map_err(|source| ManifestError::InvalidUrl {
-                                element: "Initialization@sourceURL",
-                                source,
-                            })?
-                    }
-                    None => url.clone(),
-                },
-                byte_range: init.range,
-            })
-        })
+        .map(|init| init_segment(init, url))
         .transpose()?;
     let charged_bytes = url.as_str().len()
         + initialization
@@ -1075,13 +1069,7 @@ impl BaseChain {
         if base_url.has_byte_range {
             return Err(UnsupportedFeature::BaseUrlByteRange.into());
         }
-        let offset = match base_url.availability_time_offset {
-            None => AvailabilityTimeOffset::ZERO,
-            Some(RawOffset::Offset(offset)) => offset,
-            Some(RawOffset::Negative) => {
-                return Err(UnsupportedFeature::NegativeAvailabilityTimeOffset.into());
-            }
-        };
+        let offset = availability_offset(base_url.availability_time_offset)?;
         let url = self
             .url
             .join(&base_url.url)
