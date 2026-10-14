@@ -659,8 +659,9 @@ impl<'a> DouyinRequest<'a> {
         data: &DouyinPcData,
         user: &DouyinUserInfo,
     ) -> Result<MediaInfo, ExtractorError> {
-        // Reflow rooms can keep status=2 and playable streams after the broadcast ends.
-        let is_live = data.status == 2 && !data.has_ended();
+        // Reflow rooms can keep status=2 and playable streams after the broadcast ends
+        // or while serving a replay, so `status` alone does not mean live.
+        let is_live = data.status == 2 && !data.has_ended() && data.is_replay != Some(true);
 
         let title = &data.title;
         let (artist, avatar_url) = streamer_identity(Some(user), Some(data));
@@ -1486,6 +1487,41 @@ mod tests {
             assert!(info.is_live, "owner={owner}");
             assert_eq!(info.artist, "", "owner={owner}");
             assert_eq!(info.artist_url, None, "owner={owner}");
+        }
+    }
+
+    #[test]
+    fn test_replay_room_with_live_status_is_offline_across_extraction_paths() {
+        for mobile in [false, true] {
+            for source in STREAM_SOURCES {
+                for (flv, hls) in [(LIVE_FLV, LIVE_HLS), (REFLOW_FLV, REFLOW_HLS)] {
+                    let mut room = room_fixture(source, flv, hls);
+                    room["is_replay"] = json!(true);
+                    room["finish_time"] = json!(1787737453_i64);
+                    room["last_ping_time"] = json!(1787737453_i64);
+                    room["finish_reason"] = json!(0);
+                    let info = parse_room_fixture(room, mobile, source);
+                    assert!(!info.is_live, "mobile={mobile}, source={source:?}");
+                    assert!(info.streams.is_empty());
+                    assert_eq!(info.title, "Test Room");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_reflow_replay_room_is_offline() {
+        for is_replay in [json!(true), json!(false), Value::Null] {
+            let mut body: Value = serde_json::from_str(REFLOW_LIVE_ROOM).unwrap();
+            body["data"]["room"]["is_replay"] = is_replay.clone();
+            let info = parse_app_body(&body.to_string());
+            let expect_live = is_replay != json!(true);
+            assert_eq!(info.is_live, expect_live, "is_replay={is_replay}");
+            assert_eq!(
+                info.streams.is_empty(),
+                !expect_live,
+                "is_replay={is_replay}"
+            );
         }
     }
 

@@ -46,6 +46,9 @@ pub(crate) struct DouyinPcData<'a> {
     pub finish_time: Option<i64>,
     pub last_ping_time: Option<i64>,
     pub finish_reason: Option<i64>,
+    /// Marks a room that serves a replay instead of a live broadcast. Only the reflow
+    /// API reports it; the web enter API omits it.
+    pub is_replay: Option<bool>,
     pub title: String,
     #[serde(borrow)]
     pub cover: Option<DouyinCover<'a>>,
