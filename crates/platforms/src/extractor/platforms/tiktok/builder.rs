@@ -91,6 +91,13 @@ impl TikTok {
     /// `LiveRoom.liveRoomStatus` values that mean the viewer is region blocked.
     const PAGE_STATUS_REGIONAL_UNAVAILABLE: i32 = -6;
 
+    /// Added to a DASH variant's priority so that, without a format
+    /// preference naming `dash`, every FLV/HLS variant of any quality sorts
+    /// first. Whether DASH can be recorded depends on the download engine
+    /// (Mesio supports it), so it is only chosen when asked for. Quality
+    /// priorities stay within 1..=100.
+    const DASH_PRIORITY_PENALTY: u32 = 100;
+
     pub fn new(
         url: String,
         client: Client,
@@ -298,11 +305,14 @@ impl TikTok {
                 ExtractorError::ValidationError(format!("Failed to parse stream data JSON: {e}"))
             })?;
 
-        let mut streams = Vec::with_capacity(stream_info.data.len() * 2);
+        let mut streams = Vec::with_capacity(stream_info.data.len() * 3);
 
         for (sdk_key, quality_info) in stream_info.data {
             let main = quality_info.main_stream;
-            if main.flv.is_empty() && main.hls.is_empty() {
+            let dash = [main.cmaf, main.dash]
+                .into_iter()
+                .find(|url| Self::is_mpd_url(url));
+            if main.flv.is_empty() && main.hls.is_empty() && dash.is_none() {
                 continue;
             }
 
@@ -346,9 +356,27 @@ impl TikTok {
             if !main.hls.is_empty() {
                 streams.push(create_stream(main.hls, StreamFormat::Hls, MediaFormat::Ts));
             }
+            if let Some(url) = dash {
+                let mut stream = create_stream(url, StreamFormat::Dash, MediaFormat::Fmp4);
+                stream.priority = stream.priority.saturating_add(Self::DASH_PRIORITY_PENALTY);
+                streams.push(stream);
+            }
         }
 
         Ok(streams)
+    }
+
+    /// Whether `url` addresses an MPEG-DASH manifest. The fMP4 field may also
+    /// carry an HLS playlist, which must not be labelled DASH.
+    fn is_mpd_url(url: &str) -> bool {
+        let has_mpd_extension = |path: &str| {
+            let bytes = path.as_bytes();
+            bytes.len() >= 4 && bytes[bytes.len() - 4..].eq_ignore_ascii_case(b".mpd")
+        };
+        match url::Url::parse(url) {
+            Ok(parsed) => has_mpd_extension(parsed.path()),
+            Err(_) => has_mpd_extension(url.split(['?', '#']).next().unwrap_or(url)),
+        }
     }
 
     fn build_media_info(&self, info: RoomUserInfo) -> Result<MediaInfo, ExtractorError> {
@@ -387,6 +415,9 @@ impl TikTok {
 
         let mut streams = self.process_stream_data(&stream_details.stream_data, "avc")?;
         streams.extend(self.process_stream_data(&stream_details.hevc_stream_data, "hevc")?);
+        // Consumers that take the first listed stream (e.g. the web player)
+        // must not land on DASH while FLV/HLS exist. The sort is stable.
+        streams.sort_by_key(|s| s.stream_format == StreamFormat::Dash);
 
         if self.force_origin_quality {
             let has_origin = streams.iter().any(|s| {
@@ -612,6 +643,242 @@ mod tests {
         .unwrap();
         assert!(parsed.data.is_none());
         assert_eq!(parsed.status_code, TikTok::API_STATUS_USER_NOT_FOUND);
+    }
+
+    /// Anonymised `api-live/user/room` response. H.264 offers `hd` and `ao`;
+    /// HEVC offers `origin`, `hd` (no HLS), `sd` (empty `cmaf`), `ld` (an
+    /// HLS playlist in `cmaf`) and `ao`.
+    const API_LIVE_ROOM_FIXTURE: &str = include_str!("fixtures/api_live_room.json");
+
+    /// Loads the fixture after `edit` rewrites the parsed `stream_data` of
+    /// `streamData` / `hevcStreamData`.
+    fn fixture_room(edit: impl Fn(&str, &mut serde_json::Value)) -> RoomUserInfo {
+        let mut response: serde_json::Value = serde_json::from_str(API_LIVE_ROOM_FIXTURE).unwrap();
+        for key in ["streamData", "hevcStreamData"] {
+            let raw = &mut response["data"]["liveRoom"][key]["pull_data"]["stream_data"];
+            let mut stream_data: serde_json::Value =
+                serde_json::from_str(raw.as_str().unwrap()).unwrap();
+            edit(key, &mut stream_data["data"]);
+            *raw = json!(stream_data.to_string());
+        }
+        let parsed: ApiLiveRoomResponse = serde_json::from_value(response).unwrap();
+        assert_eq!(parsed.status_code, 0);
+        parsed.data.unwrap()
+    }
+
+    fn dash_streams(media: &MediaInfo) -> Vec<&StreamInfo> {
+        media
+            .streams
+            .iter()
+            .filter(|s| s.stream_format == StreamFormat::Dash)
+            .collect()
+    }
+
+    fn find<'a>(streams: &[&'a StreamInfo], codec: &str, sdk_key: &str) -> &'a StreamInfo {
+        streams
+            .iter()
+            .find(|s| {
+                s.codec == codec
+                    && s.extras.as_ref().and_then(|e| e.get("sdk_key")) == Some(&json!(sdk_key))
+            })
+            .copied()
+            .unwrap_or_else(|| panic!("no {codec} {sdk_key} stream"))
+    }
+
+    /// The backend `StreamSelector` order without quality or CDN preferences:
+    /// listed formats first, then ascending priority, then descending bitrate.
+    fn pick<'a>(streams: &'a [StreamInfo], formats: &[StreamFormat]) -> &'a StreamInfo {
+        let format_rank = |s: &StreamInfo| {
+            formats
+                .iter()
+                .position(|f| *f == s.stream_format)
+                .unwrap_or(if formats.is_empty() { 0 } else { usize::MAX })
+        };
+        let mut sorted: Vec<&StreamInfo> = streams.iter().collect();
+        sorted.sort_by(|a, b| {
+            format_rank(a)
+                .cmp(&format_rank(b))
+                .then_with(|| a.priority.cmp(&b.priority))
+                .then_with(|| b.bitrate.cmp(&a.bitrate))
+        });
+        sorted[0]
+    }
+
+    #[test]
+    fn emits_dash_for_mpd_cmaf_urls() {
+        let media = tiktok(None)
+            .build_media_info(fixture_room(|_, _| {}))
+            .unwrap();
+
+        // h264: hd flv+hls+dash, ao flv+dash. hevc: origin flv+hls+dash,
+        // hd flv+dash, sd flv+hls, ld flv+hls, ao flv+dash.
+        assert_eq!(media.streams.len(), 16);
+        let dash = dash_streams(&media);
+        assert_eq!(dash.len(), 5);
+        for stream in &dash {
+            assert_eq!(stream.media_format, MediaFormat::Fmp4);
+            assert!(stream.url.contains("/index.mpd?"), "{}", stream.url);
+        }
+
+        let avc_hd = find(&dash, "avc", "hd");
+        assert_eq!(avc_hd.quality, "720p");
+        assert_eq!(avc_hd.bitrate, 1_000_000);
+        assert_eq!(avc_hd.priority, 97 + TikTok::DASH_PRIORITY_PENALTY);
+        assert!(!avc_hd.is_audio_only);
+
+        let hevc_origin = find(&dash, "hevc", "origin");
+        assert_eq!(hevc_origin.quality, "Original");
+        assert_eq!(hevc_origin.bitrate, 1_514_000);
+        assert_eq!(hevc_origin.priority, 90 + TikTok::DASH_PRIORITY_PENALTY);
+        assert_eq!(
+            hevc_origin.extras.as_ref().unwrap()["resolution"],
+            "1080x1920"
+        );
+
+        // `hd` HEVC has no HLS, so DASH is its only segmented variant.
+        let hevc_hd = find(&dash, "hevc", "hd");
+        assert_eq!(hevc_hd.bitrate, 1_350_000);
+
+        // The audio-only rendition is listed in both data sets; its codec
+        // comes from `sdk_params`, which reports h264 in both.
+        let audio: Vec<_> = dash.iter().filter(|s| s.is_audio_only).collect();
+        assert_eq!(audio.len(), 2);
+        assert!(audio.iter().all(|s| s.quality == "Audio"));
+    }
+
+    #[test]
+    fn skips_empty_and_hls_cmaf_urls() {
+        let media = tiktok(None)
+            .build_media_info(fixture_room(|_, _| {}))
+            .unwrap();
+        let dash = dash_streams(&media);
+        let sdk_keys = |codec: &str| -> Vec<&str> {
+            let mut keys: Vec<&str> = dash
+                .iter()
+                .filter(|s| s.codec == codec)
+                .filter_map(|s| s.extras.as_ref()?.get("sdk_key")?.as_str())
+                .collect();
+            keys.sort_unstable();
+            keys
+        };
+        // h264 `ao` reports its codec as h264, like HEVC's `ao`.
+        assert_eq!(sdk_keys("avc"), ["ao", "ao", "hd"]);
+        // `sd` has an empty `cmaf` and `ld` an `.m3u8` one.
+        assert_eq!(sdk_keys("hevc"), ["hd", "origin"]);
+        assert!(
+            media
+                .streams
+                .iter()
+                .filter(|s| s.url.contains("/index.m3u8"))
+                .all(|s| s.stream_format == StreamFormat::Hls)
+        );
+        // The `ld` HLS stream still comes from the `hls` field.
+        assert_eq!(
+            media
+                .streams
+                .iter()
+                .filter(|s| s.extras.as_ref().unwrap()["sdk_key"] == "ld")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn dash_field_is_used_when_it_holds_a_manifest() {
+        let media = tiktok(None)
+            .build_media_info(fixture_room(|key, data| {
+                if key == "hevcStreamData" {
+                    data["sd"]["main"]["dash"] =
+                        json!("https://pull-dash.example.com/stage/sd5/index.mpd?sign=SIGNATURE");
+                }
+            }))
+            .unwrap();
+        let dash = dash_streams(&media);
+        assert_eq!(
+            find(&dash, "hevc", "sd").url,
+            "https://pull-dash.example.com/stage/sd5/index.mpd?sign=SIGNATURE"
+        );
+    }
+
+    #[test]
+    fn quality_with_only_a_manifest_is_listed_as_dash() {
+        let media = tiktok(None)
+            .build_media_info(fixture_room(|key, data| {
+                if key == "hevcStreamData" {
+                    data["origin"]["main"]["flv"] = json!("");
+                    data["origin"]["main"]["hls"] = json!("");
+                }
+            }))
+            .unwrap();
+        let origin: Vec<_> = media
+            .streams
+            .iter()
+            .filter(|s| s.quality == "Original")
+            .collect();
+        assert_eq!(origin.len(), 1);
+        assert_eq!(origin[0].stream_format, StreamFormat::Dash);
+        // Without a format preference the best FLV/HLS quality still wins
+        // over the better DASH-only one.
+        let best = pick(&media.streams, &[]);
+        assert_eq!(best.stream_format, StreamFormat::Flv);
+        assert_eq!(best.quality, "720p");
+    }
+
+    #[test]
+    fn default_selection_keeps_flv_and_dash_is_opt_in() {
+        let media = tiktok(None)
+            .build_media_info(fixture_room(|_, _| {}))
+            .unwrap();
+
+        let best = pick(&media.streams, &[]);
+        assert_eq!(best.stream_format, StreamFormat::Flv);
+        assert_eq!(best.quality, "Original");
+
+        // Consumers that take the first listed stream never start on DASH.
+        let first_dash = media
+            .streams
+            .iter()
+            .position(|s| s.stream_format == StreamFormat::Dash)
+            .unwrap();
+        assert!(
+            media.streams[first_dash..]
+                .iter()
+                .all(|s| s.stream_format == StreamFormat::Dash)
+        );
+
+        let preferred = pick(&media.streams, &[StreamFormat::Dash]);
+        assert_eq!(preferred.stream_format, StreamFormat::Dash);
+        assert_eq!(preferred.quality, "Original");
+        assert_eq!(preferred.codec, "hevc");
+
+        // Other format preferences are unaffected.
+        let hls = pick(&media.streams, &[StreamFormat::Hls]);
+        assert_eq!(hls.stream_format, StreamFormat::Hls);
+    }
+
+    #[test]
+    fn force_origin_quality_keeps_origin_dash() {
+        let media = tiktok(Some(json!({"force_origin_quality": true})))
+            .build_media_info(fixture_room(|_, _| {}))
+            .unwrap();
+        let formats: Vec<_> = media.streams.iter().map(|s| s.stream_format).collect();
+        assert_eq!(
+            formats,
+            [StreamFormat::Flv, StreamFormat::Hls, StreamFormat::Dash]
+        );
+    }
+
+    #[test]
+    fn mpd_detection_uses_the_path() {
+        assert!(TikTok::is_mpd_url(
+            "https://pull.example.com/stage/s_hd/index.mpd?auth_mode=2&sign=x"
+        ));
+        assert!(TikTok::is_mpd_url("https://pull.example.com/s/INDEX.MPD"));
+        assert!(!TikTok::is_mpd_url(
+            "https://pull.example.com/s/index.m3u8?next=a.mpd"
+        ));
+        assert!(!TikTok::is_mpd_url("https://pull.example.com/s.flv"));
+        assert!(!TikTok::is_mpd_url(""));
     }
 
     #[tokio::test]
