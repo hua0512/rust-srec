@@ -66,7 +66,8 @@
 //! snapshot of an MPD that later updates may contradict, and it arrives
 //! ahead of earlier audio, so it cannot prove that no audio of a Period is
 //! still to come. A Period without audio is therefore waited for like late
-//! audio (below): its video is written video-only, after `max_audio_lag`.
+//! audio (below): its video is written video-only once no audio has arrived
+//! within up to `max_audio_lag`.
 //!
 //! Audio never fails a recording. A video segment waits for the audio it
 //! overlaps at most `max_audio_lag` after it arrived here (less under buffer
