@@ -101,7 +101,7 @@ use crate::segment_engine::identity::{
     ByteRangeKey, IdentityPolicy, SegmentIdentityPolicy, SegmentKey, SegmentKind,
 };
 
-const NANOS_PER_SEC: i128 = 1_000_000_000;
+pub(crate) const NANOS_PER_SEC: i128 = 1_000_000_000;
 
 /// Ordinals planned ahead of the consumed frontier, and new segments planned
 /// per snapshot, at most.
@@ -146,14 +146,34 @@ impl PeriodKey {
     }
 
     /// Whether `self` comes at or after `other` in presentation order.
-    fn at_or_after(&self, other: &Self) -> bool {
-        self.same(other) || self.start > other.start
+    pub(crate) fn at_or_after(&self, other: &Self) -> bool {
+        self.same(other) || self.is_after(other)
+    }
+
+    /// Whether `self` is another Period, starting before `other`.
+    pub(crate) fn is_before(&self, other: &Self) -> bool {
+        !self.same(other) && self.start < other.start
+    }
+
+    /// Whether `self` is another Period, starting after `other`.
+    pub(crate) fn is_after(&self, other: &Self) -> bool {
+        !self.same(other) && self.start > other.start
     }
 
     pub(crate) fn label(&self) -> String {
         match &self.id {
             Some(id) => format!("id:{id}"),
             None => format!("start:{}", self.start.as_nanos()),
+        }
+    }
+}
+
+/// The Period as output descriptions name it.
+impl std::fmt::Display for PeriodKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.id {
+            Some(id) => write!(f, "period {id}"),
+            None => write!(f, "period at {:?}", self.start),
         }
     }
 }
