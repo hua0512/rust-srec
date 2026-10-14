@@ -868,8 +868,12 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     }
 
     /// Emit everything emittable from the reorder buffer, advancing the
-    /// cursor through dead ranges and applying gap policy. Mirrors the
-    /// while-loop shape of the original OutputManager.
+    /// cursor through dead ranges and applying gap policy.
+    ///
+    /// Every exit that keeps the stream going leaves the buffer's first
+    /// entry at or above the cursor: entries are only buffered at or above
+    /// it, and one the cursor passed (a dead range covering it) is removed
+    /// as stale before the loop can stop.
     async fn try_emit(&mut self) -> EmitOutcome {
         loop {
             // Dead-range fast-forward: the cursor itself can be dead even with
@@ -880,14 +884,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 // cursor would saturate inside the range and re-skip forever.
                 // Only a corrupt/hostile playlist reaches MSN u64::MAX; treat
                 // it as a fatal stream error rather than spin.
-                if run_end == u64::MAX {
-                    error!("dead range extends to u64::MAX; aborting stream");
-                    self.fail(DownloadError::Playlist {
-                        reason: "media sequence reached u64::MAX".to_string(),
-                    })
-                    .await;
+                let Some(to) = run_end.checked_add(1) else {
+                    self.abort_u64_max_cursor().await;
                     return EmitOutcome::Finished;
-                }
+                };
                 // A live stream that would start with media its init cannot
                 // decode (see `undecodable`).
                 if let Some(error) = self
@@ -899,27 +899,15 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     self.fail_with_segments(error).await;
                     return EmitOutcome::Finished;
                 }
-                let to = run_end + 1;
-                self.metrics.gap_skips.fetch_add(1, Ordering::Relaxed);
-                self.metrics
-                    .total_segments_skipped
-                    .fetch_add(to - from, Ordering::Relaxed);
                 debug!(from, to, "advancing past upstream-skipped MSNs");
                 if self
-                    .sink
-                    .send(Ok(AssembledItem::GapSkipped {
-                        from_sequence: from,
-                        to_sequence: to,
-                        reason: GapSkipReason::Upstream,
-                    }))
+                    .emit_gap_skipped(from, to, GapSkipReason::Upstream)
                     .await
                     .is_err()
                 {
                     return EmitOutcome::Finished;
                 }
-                self.expected_next_media_sequence = to;
-                self.gap_state = None;
-                self.dead.prune_below(to);
+                self.advance_to(to);
                 self.undecodable = self.undecodable.split_off(&to);
                 continue;
             }
@@ -986,13 +974,9 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     }
                 }
 
-                let buffered = self
-                    .reorder_buffer
-                    .remove(&first_msn)
-                    .expect("first key exists");
-                self.current_buffer_bytes = self
-                    .current_buffer_bytes
-                    .saturating_sub(buffered.size_bytes);
+                let Some(buffered) = self.remove_buffered_payload(first_msn) else {
+                    break;
+                };
                 trace!(
                     msn = first_msn,
                     buffered_ms = buffered.buffered_at.elapsed().as_millis() as u64,
@@ -1002,16 +986,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 if self.emit_payload(buffered.payload).await.is_err() {
                     return EmitOutcome::Finished;
                 }
-
-                self.expected_next_media_sequence += 1;
-                self.gap_state = None;
-                self.dead.prune_below(self.expected_next_media_sequence);
+                self.advance_to(first_msn + 1);
             } else if first_msn < self.expected_next_media_sequence {
                 // Stale entry left behind by a skip.
-                if let Some(buffered) = self.reorder_buffer.remove(&first_msn) {
-                    self.current_buffer_bytes = self
-                        .current_buffer_bytes
-                        .saturating_sub(buffered.size_bytes);
+                if self.remove_buffered_payload(first_msn).is_some() {
                     self.metrics
                         .segments_rejected_stale
                         .fetch_add(1, Ordering::Relaxed);
@@ -1056,8 +1034,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             return EmitOutcome::Finished;
                         }
                         self.record_gap_skip(first_msn);
-                        self.expected_next_media_sequence = first_msn;
-                        self.gap_state = None;
+                        self.advance_to(first_msn);
                         continue;
                     }
                 }
@@ -1069,21 +1046,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         ?reason,
                         "gap confirmed; skipping"
                     );
-                    self.record_gap_skip(first_msn);
                     if self
-                        .sink
-                        .send(Ok(AssembledItem::GapSkipped {
-                            from_sequence: self.expected_next_media_sequence,
-                            to_sequence: first_msn,
-                            reason,
-                        }))
+                        .emit_gap_skipped(self.expected_next_media_sequence, first_msn, reason)
                         .await
                         .is_err()
                     {
                         return EmitOutcome::Finished;
                     }
-                    self.expected_next_media_sequence = first_msn;
-                    self.gap_state = None;
+                    self.advance_to(first_msn);
                     continue;
                 }
 
@@ -1092,9 +1062,12 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             }
         }
 
-        if self.is_live_stream {
-            self.prune_reorder_buffer();
-        }
+        debug_assert!(
+            self.reorder_buffer
+                .first_key_value()
+                .is_none_or(|(&msn, _)| msn >= self.expected_next_media_sequence),
+            "a buffered entry lies below the emit cursor"
+        );
         self.publish_cursor();
         EmitOutcome::Continue
     }
@@ -1105,6 +1078,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             to.saturating_sub(self.expected_next_media_sequence),
             Ordering::Relaxed,
         );
+    }
+
+    /// Moves the emit cursor to `to`: everything below it was emitted or
+    /// given up on.
+    fn advance_to(&mut self, to: u64) {
+        self.expected_next_media_sequence = to;
+        self.gap_state = None;
+        self.dead.prune_below(to);
     }
 
     fn remove_buffered_payload(&mut self, msn: u64) -> Option<BufferedPayload> {
@@ -1135,13 +1116,12 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             .map_err(|_| ())
     }
 
-    async fn abort_u64_max_cursor(&mut self) -> Result<(), ()> {
+    async fn abort_u64_max_cursor(&mut self) {
         error!("media sequence reached u64::MAX; aborting stream");
         self.fail(DownloadError::Playlist {
             reason: "media sequence reached u64::MAX".to_string(),
         })
         .await;
-        Err(())
     }
 
     async fn skip_buffered_media_as_gap(
@@ -1151,7 +1131,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         advance_cursor: bool,
     ) -> Result<(), ()> {
         let Some(to) = msn.checked_add(1) else {
-            return self.abort_u64_max_cursor().await;
+            self.abort_u64_max_cursor().await;
+            return Err(());
         };
         if self.remove_buffered_payload(msn).is_none() {
             debug!(msn, "gap skip requested for missing buffered media");
@@ -1159,9 +1140,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
         self.emit_gap_skipped(msn, to, reason).await?;
         if advance_cursor {
-            self.expected_next_media_sequence = to;
-            self.gap_state = None;
-            self.dead.prune_below(to);
+            self.advance_to(to);
         }
         Ok(())
     }
@@ -1297,57 +1276,6 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
         self.current_buffer_bytes = 0;
         Ok(())
-    }
-
-    /// Live pruning by count and buffered duration (only entries below the
-    /// emit cursor are eligible — entries at/above it are pending output).
-    fn prune_reorder_buffer(&mut self) {
-        let max_segments = self.config.output.live_reorder_buffer_max_segments;
-        if max_segments > 0 && self.reorder_buffer.len() > max_segments {
-            let excess = self.reorder_buffer.len() - max_segments;
-            let stale: Vec<u64> = self
-                .reorder_buffer
-                .keys()
-                .filter(|&&k| k < self.expected_next_media_sequence)
-                .take(excess)
-                .copied()
-                .collect();
-            for msn in stale {
-                if let Some(b) = self.reorder_buffer.remove(&msn) {
-                    self.current_buffer_bytes =
-                        self.current_buffer_bytes.saturating_sub(b.size_bytes);
-                }
-            }
-        }
-
-        let max_duration = self
-            .config
-            .output
-            .live_reorder_buffer_duration
-            .as_secs_f32();
-        if max_duration > 0.0 {
-            let mut total = 0.0f32;
-            let mut cutoff: Option<u64> = None;
-            for (&msn, buffered) in self
-                .reorder_buffer
-                .range(..self.expected_next_media_sequence)
-                .rev()
-            {
-                total += buffered.payload.descriptor().meta.duration_secs();
-                if total > max_duration {
-                    cutoff = Some(msn);
-                    break;
-                }
-            }
-            if let Some(cutoff) = cutoff {
-                // split_off(cutoff+1)? No: keep >= cutoff+1; everything below
-                // (including cutoff) is removed.
-                let kept = self.reorder_buffer.split_off(&(cutoff + 1));
-                let removed_bytes: usize = self.reorder_buffer.values().map(|b| b.size_bytes).sum();
-                self.current_buffer_bytes = self.current_buffer_bytes.saturating_sub(removed_bytes);
-                self.reorder_buffer = kept;
-            }
-        }
     }
 
     /// Ends the stream with `error` as its terminal item.
@@ -1789,6 +1717,57 @@ mod tests {
         );
         h.cancel.cancel();
         let _ = h.join.await;
+    }
+
+    #[tokio::test]
+    async fn buffered_entries_the_cursor_passes_are_dropped_at_once() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
+        let mut h = spawn_assembler(config, true, 100);
+
+        // 101 and 102 wait behind 100; an upstream skip through 101 makes
+        // the buffered 101 stale.
+        h.input_tx.send(ts_payload(102)).await.unwrap();
+        h.input_tx.send(ts_payload(101)).await.unwrap();
+        h.input_tx
+            .send(AssemblerInput::Skipped {
+                from_msn: 100,
+                to_msn: 101,
+            })
+            .await
+            .unwrap();
+        let uris = collect_data_uris(&mut h, 1).await;
+        assert_eq!(uris, ["https://e.com/seg102.ts"]);
+
+        // 104 is buffered under one URI while another copy of it fails;
+        // once 103 is skipped, the cursor passes the dead 104 as well.
+        h.input_tx.send(ts_payload(104)).await.unwrap();
+        h.input_tx
+            .send(terminal_failure(
+                SegmentKey {
+                    kind: SegmentKind::Media,
+                    uri: Arc::from("https://other.example.com/seg104.ts"),
+                    byte_range: None,
+                    scope: None,
+                },
+                104,
+            ))
+            .await
+            .unwrap();
+        h.input_tx
+            .send(AssemblerInput::Skipped {
+                from_msn: 103,
+                to_msn: 103,
+            })
+            .await
+            .unwrap();
+        h.input_tx.send(ts_payload(105)).await.unwrap();
+        let uris = collect_data_uris(&mut h, 1).await;
+        assert_eq!(uris, ["https://e.com/seg105.ts"]);
+        h.cancel.cancel();
+        // The assembler checks after every emission pass that nothing it
+        // buffered lies below the cursor.
+        assert!(h.join.await.is_ok());
     }
 
     #[tokio::test]
