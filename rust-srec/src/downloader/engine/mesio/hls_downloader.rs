@@ -119,11 +119,6 @@ impl From<mesio::DownloadHandle> for SessionLifecycle {
 enum SessionEnd {
     /// The engine reported an authoritative end.
     AuthoritativeEnd,
-    /// The source restarted its stream (a DASH numbering restart): every
-    /// item before the restart was delivered, and the stream may still be
-    /// live, so it ends like a clean disconnect and a new recording picks up
-    /// what follows.
-    Restarted,
     /// Cancelled, or the consumer went away.
     Stopped,
     /// An engine task failed or panicked.
@@ -159,7 +154,6 @@ impl SessionLifecycle {
         match joined {
             None => SessionEnd::Unreported,
             Some(Ok(DownloadTerminal::AuthoritativeEnd)) => SessionEnd::AuthoritativeEnd,
-            Some(Ok(DownloadTerminal::Restarted)) => SessionEnd::Restarted,
             Some(Ok(DownloadTerminal::Cancelled | DownloadTerminal::DownstreamClosed)) => {
                 SessionEnd::Stopped
             }
@@ -718,11 +712,6 @@ async fn settle_session(
             streamer_id = %context.streamer_id,
             "Download session did not finish within the settlement window"
         ),
-        SessionEnd::Restarted => info!(
-            protocol = protocol.label(),
-            streamer_id = %context.streamer_id,
-            "The stream restarted; this recording ends and the streamer is checked for a new one"
-        ),
         _ => {}
     }
     let observation = SessionObservation {
@@ -1103,13 +1092,6 @@ mod tests {
             EngineEndSignal::DashEnd
         );
 
-        // A restarted stream ends cleanly but not authoritatively, even with
-        // its end marker: the streamer may still be live.
-        assert_eq!(
-            conclude(&ended, None, &SessionEnd::Restarted),
-            (None, EngineEndSignal::CleanDisconnect)
-        );
-
         // Without the marker a confirmed end stays a clean disconnect.
         let no_marker = SessionObservation {
             saw_end_of_stream: false,
@@ -1197,26 +1179,6 @@ mod tests {
             assert_eq!(started.elapsed(), Duration::from_millis(1500));
             assert!(cancelled_at.lock().is_none(), "not cancelled");
         }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_restarted_session_ends_as_a_clean_disconnect() {
-        let (parent, child) = (CancellationToken::new(), CancellationToken::new());
-        let (lifecycle, _) = timed_lifecycle(
-            async { Some(Ok(DownloadTerminal::Restarted)) },
-            CancellationToken::new(),
-        );
-
-        let concluded = settle_session(
-            settle_context(SegmentedProtocol::Dash, &parent, &child),
-            lifecycle,
-            true,
-            true,
-            None,
-        )
-        .await;
-
-        assert_eq!(concluded, (None, EngineEndSignal::CleanDisconnect));
     }
 
     #[tokio::test(start_paused = true)]

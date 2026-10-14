@@ -21,8 +21,8 @@ use super::parse::{
 };
 use super::template::{Template, TemplateKind};
 use super::timeline::{
-    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, ListedSegment,
-    PeriodTiming, Run, SegmentUrls, SegmentWindow, TimelineLead,
+    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, PeriodTiming, Run,
+    SegmentUrls, SegmentWindow, TimelineLead,
 };
 use super::xs::{self, RawOffset};
 
@@ -259,20 +259,12 @@ impl Representation {
         if let Some(error) = self.unread_segment_index_error() {
             return Err(error);
         }
-        self.addressing
-            .segments(&self.timing, self.effective_offset(), now)
-    }
-
-    /// The availability time offset in effect: when
-    /// `availability_time_complete` is false, a segment is only complete at
-    /// its unadjusted availability time, and this engine downloads whole
-    /// segments.
-    fn effective_offset(&self) -> AvailabilityTimeOffset {
-        if self.availability_time_complete {
+        let offset = if self.availability_time_complete {
             self.availability_time_offset
         } else {
             AvailabilityTimeOffset::ZERO
-        }
+        };
+        self.addressing.segments(&self.timing, offset, now)
     }
 
     /// How far ahead of the segments available at `now` everything this
@@ -287,25 +279,19 @@ impl Representation {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Option<TimelineLead>, ManifestError> {
-        self.addressing
-            .timeline_ahead(&self.timing, self.effective_offset(), now)
+        let offset = if self.availability_time_complete {
+            self.availability_time_offset
+        } else {
+            AvailabilityTimeOffset::ZERO
+        };
+        self.addressing.timeline_ahead(&self.timing, offset, now)
     }
 
-    /// The first segment this Representation's `SegmentTimeline` describes
-    /// at `now` from segment `number` on, as `(number, media time)`, whether
-    /// or not it is available; `None` without a timeline or past its end. A
-    /// trailing `S@r=-1` describes its repetitions up to the Period end or
-    /// those available at `now`, and at least its first.
-    pub fn listed_from(&self, number: u64, now: DateTime<Utc>) -> Option<(u64, u64)> {
-        self.addressing
-            .listed_from(number, &self.timing, self.effective_offset(), now)
-    }
-
-    /// The newest segment this Representation's `SegmentTimeline` describes
-    /// at `now` (see [`Self::listed_from`]); `None` without a timeline.
-    pub fn listed_last(&self, now: DateTime<Utc>) -> Option<ListedSegment> {
-        self.addressing
-            .listed_last(&self.timing, self.effective_offset(), now)
+    /// The first segment this Representation's `SegmentTimeline` lists
+    /// from segment `number` on, as `(number, media time)`, regardless of
+    /// availability; `None` without a timeline or past its end.
+    pub fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        self.addressing.listed_from(number)
     }
 
     /// Where this `SegmentBase` Representation's Segment Index is, while it

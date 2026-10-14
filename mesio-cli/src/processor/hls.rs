@@ -2,7 +2,7 @@ use crate::cut::{Boundary, CutSession};
 use crate::output::pipe_hls_strategy::{PipeHlsStrategy, SegmentedProtocol};
 use crate::output::provider::PipeStream;
 use crate::processor::generic::process_pipe_stream;
-use crate::processor::{Recording, RecordingEnd, SessionCleanup};
+use crate::processor::{Recording, SessionCleanup};
 use crate::utils::spans;
 use crate::{error::AppError, utils::expand_name_url};
 use futures::{StreamExt, stream};
@@ -15,13 +15,12 @@ use tracing::{Level, debug, info, span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Process an HLS stream, or a DASH stream (also delivered as `HlsData`)
-/// with `protocol` naming it in spans and logs. Reports whether the
-/// recording ended because its source restarted the stream.
+/// with `protocol` naming it in spans and logs.
 pub async fn process_hls_stream(
     protocol: SegmentedProtocol,
     recording: Recording<'_>,
     session: DownloadSession<HlsData>,
-) -> Result<RecordingEnd, AppError> {
+) -> Result<u64, AppError> {
     let Recording {
         url: url_str,
         output_dir,
@@ -146,9 +145,8 @@ pub async fn process_hls_stream(
             "{label} pipe output complete"
         );
 
-        let end = cleanup.recording_end().await;
         cleanup.finish().await;
-        return Ok(end);
+        return Ok(pipe_stats.items_written as u64);
     } else {
         let max_file_size = if config.pipeline_config.max_file_size > 0 {
             Some(config.pipeline_config.max_file_size)
@@ -183,7 +181,6 @@ pub async fn process_hls_stream(
     if !is_pipe_mode {
         download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
     }
-    let end = cleanup.recording_end().await;
     cleanup.finish().await;
     drop(download_span);
 
@@ -199,7 +196,7 @@ pub async fn process_hls_stream(
         "{label} download complete"
     );
 
-    Ok(end)
+    Ok(stats.items_written as u64)
 }
 
 #[cfg(test)]

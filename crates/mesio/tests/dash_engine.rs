@@ -2099,8 +2099,12 @@ fn numbered_timeline_mpd(ast_secs: i64, start_number: u64, first_secs: u64) -> S
     )
 }
 
+/// A numbering restarted below the newest planned number (an encoder
+/// restart under the same ids) cannot be told from a stale MPD: nothing more
+/// is planned, and the live stall watchdog ends the session with a typed
+/// timeout instead of hanging.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_numbering_restart_ends_the_session_after_what_came_before() {
+async fn a_numbering_restart_ends_the_session_through_the_stall_watchdog() {
     let origin = Origin::default();
     origin.add_av();
     // #100–#102 cover 99–102 s.
@@ -2108,6 +2112,7 @@ async fn a_numbering_restart_ends_the_session_after_what_came_before() {
     let base = origin.clone().serve().await;
     let mut config = config(Some(live_clock(103)));
     config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(10)));
+    config.output.live_max_overall_stall_duration = Some(Duration::from_secs(2));
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
         .expect("session starts");
@@ -2116,20 +2121,16 @@ async fn a_numbering_restart_ends_the_session_after_what_came_before() {
     // The encoder restarts: a new anchor, numbering from 1 again.
     origin.set_mpd(numbered_timeline_mpd(103, 1, 0));
 
-    let (items, error, events, terminal) = drain(session).await;
-    assert!(error.is_none(), "{error:?}");
-    assert_eq!(terminal, DownloadTerminal::Restarted);
-    let video: Vec<u64> = media(&items)
-        .iter()
-        .flat_map(|segment| fragments(&segment.data))
-        .filter(|(_, track, _)| *track == 1)
-        .map(|(_, _, time)| time / VIDEO_TIMESCALE + 1)
-        .collect();
-    assert_eq!(video, [100, 101, 102], "{}", describe(&items));
-    assert!(ends_with_end_of_stream(&items), "{}", describe(&items));
-    for number in 100..=102 {
-        assert_eq!(downloads(&events, &format!("a/{number}.m4s")), 1);
-    }
-    assert_eq!(origin.hits("v/1.m4s"), 0, "nothing after the restart");
+    let (items, error, _, terminal) = drain(session).await;
+    assert!(
+        matches!(error, Some(DownloadError::Timeout { .. })),
+        "{error:?}"
+    );
+    assert!(
+        matches!(terminal, DownloadTerminal::PipelineError(_)),
+        "{terminal:?}"
+    );
+    assert!(!media(&items).is_empty(), "{}", describe(&items));
+    assert_eq!(origin.hits("v/1.m4s"), 0, "nothing below the frontier");
     assert_eq!(origin.hits("a/1.m4s"), 0);
 }

@@ -145,17 +145,6 @@ pub struct TimelineLead {
     pub segment_duration: Duration,
 }
 
-/// A segment a `SegmentTimeline` lists (see
-/// [`super::Representation::listed_last`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ListedSegment {
-    pub number: u64,
-    /// Media time in timescale units.
-    pub time: u64,
-    /// Duration in timescale units.
-    pub duration: u64,
-}
-
 /// A run of equal-duration segments: one `S` element, or the whole
 /// `@duration` sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -558,69 +547,25 @@ impl Addressing {
         }))
     }
 
-    /// The first segment the `SegmentTimeline` describes at `now` from
-    /// `number` on, as `(number, media time)`, whether or not it is
-    /// available ([`Self::listed_len`]); `@endNumber` is respected.
-    pub(crate) fn listed_from(
-        &self,
-        number: u64,
-        timing: &PeriodTiming,
-        offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
-    ) -> Option<(u64, u64)> {
-        let index = number.saturating_sub(self.start_number);
-        if index >= self.listed_len(timing, offset, now)? {
-            return None;
-        }
-        let (time, _) = self.run_timing(index)?;
-        Some((self.start_number.checked_add(index)?, time))
-    }
-
-    /// The newest segment the `SegmentTimeline` describes at `now` (see
-    /// [`Self::listed_from`]).
-    pub(crate) fn listed_last(
-        &self,
-        timing: &PeriodTiming,
-        offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
-    ) -> Option<ListedSegment> {
-        let index = self.listed_len(timing, offset, now)?.checked_sub(1)?;
-        let (time, duration) = self.run_timing(index)?;
-        Some(ListedSegment {
-            number: self.start_number.checked_add(index)?,
-            time,
-            duration,
-        })
-    }
-
-    /// How many segments the `SegmentTimeline` describes at `now` from
-    /// `startNumber`. A trailing `S@r=-1` describes its repetitions up to
-    /// the Period end or up to the availability window at `now` (the bounds
-    /// [`Self::window`] resolves it against), and at least its first: never
-    /// a count of its entries, which would fall ever further behind.
-    fn listed_len(
-        &self,
-        timing: &PeriodTiming,
-        offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
-    ) -> Option<u64> {
+    /// The first segment the `SegmentTimeline` lists from `number` on, as
+    /// `(number, media time)`, whatever the clock says. A trailing
+    /// `S@r=-1` lists only its first segment; `@endNumber` is respected.
+    pub(crate) fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
         if !self.has_timeline {
             return None;
         }
         let last = self.runs.last()?;
-        let first_only = last.first_index.checked_add(1)?;
-        let mut listed = match last.count {
-            Some(count) => last.first_index.checked_add(count)?,
-            None => match self.window(timing, offset, now) {
-                Ok(window) => window.end.max(first_only),
-                Err(_) => first_only,
-            },
-        };
+        let mut listed = last.first_index.checked_add(last.count.unwrap_or(1))?;
         if let Some(end_number) = self.end_number {
             let allowed = end_number.checked_sub(self.start_number)?.checked_add(1)?;
             listed = listed.min(allowed);
         }
-        Some(listed)
+        let index = number.saturating_sub(self.start_number);
+        if index >= listed {
+            return None;
+        }
+        let (time, _) = self.run_timing(index)?;
+        Some((self.start_number.checked_add(index)?, time))
     }
 
     /// Media time and duration of the segment at sequence position
@@ -1588,34 +1533,18 @@ mod tests {
         let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
         addressing.has_timeline = true;
         addressing.start_number = 10;
-        let timing = dynamic(0, None);
-        let listed_from = |addressing: &Addressing, number, secs| {
-            addressing.listed_from(number, &timing, finite(0), at(secs, 0))
-        };
-        let newest = |addressing: &Addressing, secs| {
-            addressing
-                .listed_last(&timing, finite(0), at(secs, 0))
-                .map(|last| (last.number, last.time, last.duration))
-        };
-        // Numbers 10–12 at 1000, 1002, 1004; 13 opens the `S@r=-1` at 1006,
-        // repeating every 3.
-        assert_eq!(listed_from(&addressing, 0, 5), Some((10, 1000)));
-        assert_eq!(listed_from(&addressing, 12, 5), Some((12, 1004)));
-        // Before any is available, the open run describes its first.
-        assert_eq!(newest(&addressing, 5), Some((13, 1006, 3)));
-        assert_eq!(listed_from(&addressing, 14, 5), None);
-        // Later, every repetition available by then.
-        assert_eq!(newest(&addressing, 1011), Some((13, 1006, 3)));
-        assert_eq!(newest(&addressing, 1012), Some((14, 1009, 3)));
-        assert_eq!(listed_from(&addressing, 14, 1012), Some((14, 1009)));
-        assert_eq!(newest(&addressing, 4012), Some((1014, 4009, 3)));
-        addressing.end_number = Some(11);
-        assert_eq!(listed_from(&addressing, 12, 4012), None);
+        // Numbers 10–12 at 1000, 1002, 1004; 13 opens the `S@r=-1` at 1006.
+        assert_eq!(addressing.listed_from(0), Some((10, 1000)));
+        assert_eq!(addressing.listed_from(12), Some((12, 1004)));
+        assert_eq!(addressing.listed_from(13), Some((13, 1006)));
         assert_eq!(
-            newest(&addressing, 4012).map(|(number, ..)| number),
-            Some(11)
+            addressing.listed_from(14),
+            None,
+            "only the open run's first"
         );
+        addressing.end_number = Some(11);
+        assert_eq!(addressing.listed_from(12), None);
         addressing.has_timeline = false;
-        assert_eq!(listed_from(&addressing, 10, 4012), None);
+        assert_eq!(addressing.listed_from(10), None);
     }
 }

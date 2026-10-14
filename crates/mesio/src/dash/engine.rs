@@ -436,15 +436,9 @@ pub(crate) async fn join(
     // Whatever the outcome, nothing downstream consumes the tracks anymore.
     cancel.cancel();
     let mut panicked = None;
-    let mut restarted = false;
     for handles in tracks {
-        match handles.reactor.await {
-            Ok(reactor_terminal) => {
-                restarted |= matches!(reactor_terminal, Terminal::Restarted);
-            }
-            Err(error) => {
-                panicked.get_or_insert(task_failure("reactor", Some(handles.track), &error));
-            }
+        if let Err(error) = handles.reactor.await {
+            panicked.get_or_insert(task_failure("reactor", Some(handles.track), &error));
         }
         if let Err(error) = handles.assembler.await {
             panicked.get_or_insert(task_failure("assembler", Some(handles.track), &error));
@@ -452,11 +446,6 @@ pub(crate) async fn join(
     }
     if let Err(error) = watcher.await {
         panicked.get_or_insert(task_failure("MPD watcher", None, &error));
-    }
-    // The muxer delivered everything and ended because a track drained up
-    // to a restart of the source's stream.
-    if restarted && terminal == DownloadTerminal::AuthoritativeEnd {
-        terminal = DownloadTerminal::Restarted;
     }
     if let Some(failure) = panicked
         && !matches!(terminal, DownloadTerminal::PipelineError(_))
@@ -492,7 +481,6 @@ fn task_failure(
 fn terminal_label(terminal: &crate::DownloadTerminal) -> &'static str {
     match terminal {
         crate::DownloadTerminal::AuthoritativeEnd => "AuthoritativeEnd",
-        crate::DownloadTerminal::Restarted => "Restarted",
         crate::DownloadTerminal::Cancelled => "Cancelled",
         crate::DownloadTerminal::DownstreamClosed => "DownstreamClosed",
         crate::DownloadTerminal::PipelineError(_) => "PipelineError([redacted])",

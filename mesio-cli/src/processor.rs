@@ -10,12 +10,10 @@ use crate::output::provider::PipeStream;
 use crate::utils::spans;
 use crate::{config::ProgramConfig, error::AppError};
 use mesio_engine::{
-    DownloadHandle, DownloadRequest, DownloadTerminal, DownloaderSession, MesioConfig,
-    MesioDownloader,
+    DownloadHandle, DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader,
 };
 use pipeline_common::CancellationToken;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Level, Span, error, info, span, warn};
 
@@ -28,19 +26,6 @@ pub(crate) struct Recording<'a> {
     pub(crate) name_template: &'a str,
     pub(crate) token: &'a CancellationToken,
     pub(crate) cut_target: &'a CutTarget,
-}
-
-/// How long a session whose items ran out may take to report how it
-/// ended.
-const TERMINAL_REPORT_WAIT: Duration = Duration::from_secs(5);
-
-/// How a recording of a URL ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RecordingEnd {
-    Finished,
-    /// The source restarted its stream; everything before the restart was
-    /// written, and what follows needs a new recording.
-    SourceRestarted,
 }
 
 /// Ends a download session on every exit path: cancels it and reports the
@@ -64,17 +49,6 @@ impl SessionCleanup {
             progress,
             span,
             finished: false,
-        }
-    }
-
-    /// How the session ended, once its items ran out: whether its source
-    /// restarted the stream. Call before [`Self::finish`], which cancels
-    /// the session.
-    pub(crate) async fn recording_end(&self) -> RecordingEnd {
-        let terminal = tokio::time::timeout(TERMINAL_REPORT_WAIT, self.handle.join()).await;
-        match terminal {
-            Ok(Some(Ok(DownloadTerminal::Restarted))) => RecordingEnd::SourceRestarted,
-            _ => RecordingEnd::Finished,
         }
     }
 
@@ -136,10 +110,6 @@ pub async fn process_inputs(
     let pipe_mode = PipeStream::of(config.output_format).is_some();
     let _pipe_output = pipe_mode.then(|| cut_target.set_unavailable(Unavailable::PipeOutput));
 
-    // Inputs whose source restarted its stream: they are reported once all
-    // inputs are processed.
-    let mut restarted = Vec::new();
-
     let downloader = MesioDownloader::new(MesioConfig {
         flv: config.flv_config.clone().unwrap_or_default(),
         hls: config.hls_config.clone().unwrap_or_default(),
@@ -186,16 +156,9 @@ pub async fn process_inputs(
                 // DASH output is fMP4 `HlsData`, processed and written like
                 // HLS.
                 DownloaderSession::Dash(session) => {
-                    let end = hls::process_hls_stream(SegmentedProtocol::Dash, recording, session)
+                    hls::process_hls_stream(SegmentedProtocol::Dash, recording, session)
                         .instrument(input_span.clone())
                         .await?;
-                    if end == RecordingEnd::SourceRestarted {
-                        warn!(
-                            input,
-                            "The stream restarted; this recording ends here. Run mesio again to record the new stream."
-                        );
-                        restarted.push(input.to_string());
-                    }
                 }
             }
         } else {
@@ -238,8 +201,5 @@ pub async fn process_inputs(
         }
     }
 
-    if !restarted.is_empty() {
-        return Err(AppError::StreamRestarted(restarted.join(", ")));
-    }
     Ok(())
 }

@@ -146,11 +146,6 @@ pub struct DownloadSession<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadTerminal {
     AuthoritativeEnd,
-    /// The source restarted its stream mid-session (a DASH `$Number$`
-    /// timeline restarted its numbering). Everything before the restart was
-    /// delivered; the stream itself may well be live, so a new session
-    /// records what follows. A normal end, not a failure.
-    Restarted,
     Cancelled,
     DownstreamClosed,
     PipelineError(Arc<str>),
@@ -907,9 +902,7 @@ where
         }
 
         match terminal {
-            DownloadTerminal::AuthoritativeEnd
-            | DownloadTerminal::Restarted
-            | DownloadTerminal::Cancelled => return terminal,
+            DownloadTerminal::AuthoritativeEnd | DownloadTerminal::Cancelled => return terminal,
             DownloadTerminal::DownstreamClosed => return DownloadTerminal::DownstreamClosed,
             DownloadTerminal::PipelineError(reason) => {
                 let err = DownloadError::Protocol {

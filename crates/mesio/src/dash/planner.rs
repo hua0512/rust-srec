@@ -27,16 +27,18 @@
 //! contradicted the Period's timing, and then only for a `$Number$`
 //! timeline of the Period the clock says is running, none of whose listed
 //! segments the clock considers available ([`timeline_contradicts_clock`]).
-//! Timing trust is kept per Period. A `$Number$` listing far behind the
-//! newest planned number restarted its numbering ([`numbering_reset`]):
-//! that is a recording boundary, so the stream ends once everything planned
-//! before it is delivered ([`TerminalCause::Restarted`]) and a new session
-//! records what follows; a listing within the tolerance is a stale MPD and
-//! just waits. Each kind of contradiction is logged
+//! Timing trust is kept per Period. Each kind of contradiction is logged
 //! once per track. Output timing does not depend on any of this: the muxer
 //! times output from the media (`tfdt`/`trun`); only the wall-clock anchor
 //! is withdrawn once the timing was contradicted, also from work already
 //! planned ([`WallClockAnchor`]).
+//!
+//! Known limitation: a numbering that restarts below the newest planned
+//! number under the same Period and Representation ids (an encoder restart
+//! that renumbers from 1) cannot be told from a stale MPD, so nothing is
+//! planned until the numbers pass the frontier again. Unless they do soon,
+//! the assembler's live stall watchdog ends the session with
+//! `DownloadError::Timeout`, and a new recording starts from scratch.
 //!
 //! An *epoch* is one run of segments sharing one initialization segment and
 //! timing: a Period and Representation, until the Representation's
@@ -339,69 +341,6 @@ enum TimingConflict {
     /// A segment's media time changed, or a later segment does not start
     /// after an earlier one.
     TimesRewritten = 4,
-    /// A `$Number$` timeline restarted its numbering.
-    NumbersReset = 8,
-}
-
-/// Numbers a stale or lagging MPD may trail the newest planned number by,
-/// at least, before its listing counts as a restarted numbering: about a
-/// minute of the usual 2 s segments. That is far beyond the few seconds an
-/// edge was seen to keep serving a cached MPD, and far below the distance
-/// of a real restart, which numbers from 1 again.
-const MIN_RESET_DISTANCE: u64 = 30;
-
-/// A `$Number$` listing that restarted the numbering an epoch planned.
-struct NumberingReset {
-    last_planned: u64,
-    newest_listed: u64,
-    tolerance: u64,
-}
-
-/// Whether `representation`'s `SegmentTimeline`, which must be `epoch`'s
-/// own Representation in its Period, restarted the numbering `epoch`
-/// planned: its newest listed number trails the newest planned one by more
-/// than a stale or lagging MPD could. Such an MPD lists at most what it
-/// listed when it was current (its listing length), a server keeps at most
-/// the time-shift buffer listed, and [`MIN_RESET_DISTANCE`] covers caches
-/// far staler than observed. URLs, initialization and CDN play no part:
-/// they change without the numbering restarting, and stay the same when it
-/// does. The listing is what the MPD describes at `now`: an open
-/// `S@r=-1` run counts every repetition it has reached, never one entry.
-fn numbering_reset(
-    manifest: &Manifest,
-    representation: &Representation,
-    epoch: &Epoch,
-    now: DateTime<Utc>,
-) -> Option<NumberingReset> {
-    let numbered = epoch.fingerprint.timeline
-        && epoch.fingerprint.addressing == AddressingKind::Number
-        && representation.uses_segment_timeline()
-        && representation.addressing_kind() == AddressingKind::Number;
-    if !numbered {
-        return None;
-    }
-    let newest = representation.listed_last(now)?;
-    let (first, _) = representation.listed_from(0, now)?;
-    let listed = newest.number.saturating_sub(first).saturating_add(1);
-    let timescale = u128::from(representation.timescale().max(1));
-    let buffered = manifest
-        .time_shift_buffer_depth
-        .filter(|_| newest.duration > 0)
-        .map(|depth| {
-            let ticks = depth.as_nanos().saturating_mul(timescale);
-            let per_segment = u128::from(newest.duration).saturating_mul(1_000_000_000);
-            u64::try_from(ticks.div_ceil(per_segment)).unwrap_or(u64::MAX)
-        })
-        .unwrap_or(0);
-    let tolerance = listed.max(buffered).max(MIN_RESET_DISTANCE);
-    if newest.number.saturating_add(tolerance) >= epoch.last_locator {
-        return None;
-    }
-    Some(NumberingReset {
-        last_planned: epoch.last_locator,
-        newest_listed: newest.number,
-        tolerance,
-    })
 }
 
 /// Whether a dynamic MPD's `availabilityStartTime` differs from the one
@@ -471,9 +410,6 @@ pub(crate) struct DashPlanner {
     /// Withdraws every anchor issued under the current
     /// `availabilityStartTime`; replaced when it moves.
     presentation_withdrawal: AnchorWithdrawal,
-    /// Whether the stream restarted its numbering (see
-    /// [`Self::note_restart`]); nothing is planned after that.
-    restarted: bool,
     /// `availabilityStartTime` and Periods of the last dynamic MPD planned.
     last_anchor: Option<(Option<DateTime<Utc>>, Vec<PeriodKey>)>,
     /// How far behind the live edge recording starts; also where a new
@@ -512,7 +448,6 @@ impl DashPlanner {
             periods: VecDeque::new(),
             presentation_withdrawal: AnchorWithdrawal::default(),
             last_anchor: None,
-            restarted: false,
             live_start: params.live_start,
         }
     }
@@ -629,10 +564,8 @@ impl DashPlanner {
     /// Notes every epoch of a `$Number$` timeline whose own Representation
     /// `manifest` describes at contradicting media times, compared by
     /// number, before anything is reissued or planned, so the clock may be
-    /// overruled for this very MPD. A listing that restarted the numbering
-    /// ([`numbering_reset`]) lists nothing from the newest planned number
-    /// on, so it is never compared.
-    fn note_rewritten_times(&mut self, manifest: &Manifest, now: DateTime<Utc>) {
+    /// overruled for this very MPD.
+    fn note_rewritten_times(&mut self, manifest: &Manifest) {
         for index in 0..self.epochs.len() {
             let epoch = &self.epochs[index];
             if !(epoch.fingerprint.timeline
@@ -657,7 +590,7 @@ impl DashPlanner {
             else {
                 continue;
             };
-            let Some(rewritten) = rewritten_time(representation, epoch, now) else {
+            let Some(rewritten) = rewritten_time(representation, epoch) else {
                 continue;
             };
             let period = epoch.period.clone();
@@ -665,43 +598,6 @@ impl DashPlanner {
             self.report_rewritten(&id, &rewritten);
             self.record_contradiction(&period);
         }
-    }
-
-    /// Whether the newest epoch's own Representation restarted its
-    /// numbering ([`numbering_reset`]). A restart is a recording boundary:
-    /// once seen, nothing more is planned, and the snapshot ends the stream
-    /// ([`TerminalCause::Restarted`]) after the work planned before it has
-    /// been delivered. Recovering inside the session would need media times
-    /// that may restart with an unchanged anchor, and output the muxer
-    /// would have to separate from the old sequence's queued tail.
-    fn note_restart(&mut self, manifest: &Manifest, now: DateTime<Utc>) -> bool {
-        if self.restarted {
-            return true;
-        }
-        let Some(epoch) = self.epochs.back() else {
-            return false;
-        };
-        let Some(reset) = manifest
-            .periods
-            .iter()
-            .find(|period| PeriodKey::of(period).same(&epoch.period))
-            .and_then(|period| selection::find(period, self.track, &epoch.representation_id))
-            .and_then(|representation| numbering_reset(manifest, representation, epoch, now))
-        else {
-            return false;
-        };
-        let representation = Arc::clone(&epoch.representation_id);
-        self.restarted = true;
-        if self.first_conflict(TimingConflict::NumbersReset) {
-            warn!(
-                representation = %representation,
-                last_planned = reset.last_planned,
-                newest_listed = reset.newest_listed,
-                tolerance = reset.tolerance,
-                "the DASH stream restarted its segment numbering; ending this recording once what came before is written"
-            );
-        }
-        true
     }
 
     fn plan_snapshot(
@@ -722,12 +618,8 @@ impl DashPlanner {
 
         let frontier = self.frontier.get().min(self.next_ordinal);
         self.forget_consumed(frontier);
-        if self.note_restart(manifest, now) {
-            outcome.terminal = Some(TerminalCause::Restarted);
-            return Ok(());
-        }
         self.note_moved_anchor(manifest);
-        self.note_rewritten_times(manifest, now);
+        self.note_rewritten_times(manifest);
         if self.manifest_generation != Some(snapshot.manifest_generation) {
             self.manifest_generation = Some(snapshot.manifest_generation);
             self.reissue(snapshot, now, outcome)?;
@@ -1133,11 +1025,9 @@ impl DashPlanner {
     ///
     /// While the timing is trusted, after the newest planned presentation
     /// time. Otherwise, within one numbering sequence (the same
-    /// Representation as `$Number$` timelines on both sides; a restarted
-    /// numbering ends the recording before this, see
-    /// [`Self::note_restart`]), after the newest planned number, whatever
-    /// changed in its URLs, initialization or CDN; else like a recording
-    /// starts
+    /// Representation as `$Number$` timelines on both sides), after the
+    /// newest planned number, whatever changed in its URLs, initialization
+    /// or CDN; else like a recording starts
     /// ([`live_start_target`]). A continued number that the switching MPD
     /// describes at another media time was already noted
     /// ([`Self::note_rewritten_times`]), so it makes the timing untrusted
@@ -1544,13 +1434,9 @@ struct RewrittenTime {
 /// everything far ahead is compared too. Within one MPD the timeline is
 /// validated to increase, so these are the only places an update can
 /// contradict the media times planned from earlier ones.
-fn rewritten_time(
-    representation: &Representation,
-    epoch: &Epoch,
-    now: DateTime<Utc>,
-) -> Option<RewrittenTime> {
+fn rewritten_time(representation: &Representation, epoch: &Epoch) -> Option<RewrittenTime> {
     let (planned_number, planned_time) = (epoch.last_locator, epoch.last_time);
-    let (number, time) = representation.listed_from(planned_number, now)?;
+    let (number, time) = representation.listed_from(planned_number)?;
     // Presentation times `(t − PTO) / timescale`, compared exactly by
     // cross-multiplying: the epochs may use different timescales.
     let offset = |time: u64, pto: u64| i128::from(time) - i128::from(pto);
@@ -3714,8 +3600,8 @@ mod tests {
             4,
             "up to #53"
         );
-        // Cached copies, their newest number 5 and 10 behind: more than
-        // they list or the time-shift buffer keeps, but no restart.
+        // Cached copies, their newest number 5 and 10 behind: nothing is
+        // planned again and no epoch opens.
         for (start_number, times) in [
             (46, [992_000, 994_000, 996_000]),
             (41, [982_000, 984_000, 986_000]),
@@ -3726,64 +3612,6 @@ mod tests {
             scopes.extend(init_scopes(&stale));
         }
         assert_eq!(scopes.len(), 1, "no new epoch");
-        assert_eq!(
-            fixture.planner.as_ref().unwrap().reported_conflicts
-                & TimingConflict::NumbersReset as u8,
-            0
-        );
-    }
-
-    #[test]
-    fn a_restarted_numbering_ends_the_recording_whatever_its_urls() {
-        // (initialization, media directory) after the restart.
-        let restarts = [
-            ("v/init.mp4", "r"),
-            ("r/init.mp4", "v"),
-            ("v/init.mp4", "v"),
-            ("r/init.mp4", "r"),
-        ];
-        for (init, media_dir) in restarts {
-            let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::default(), 100);
-            set_clock(&fixture, 100_500);
-            let first = fixture.plan(&number_timeline(100, 1319, &[0]));
-            assert_eq!(planned_numbers(&first), [(0, 1319)]);
-            // #1319 is still to be delivered when the numbering restarts
-            // under a new anchor.
-            set_clock(&fixture, 101_500);
-            let restarted = relocated_timeline(101, 1, &[0], init, media_dir, "v");
-            let outcome = fixture.plan(&restarted);
-            assert_eq!(
-                outcome.terminal,
-                Some(TerminalCause::Restarted),
-                "{init} {media_dir}"
-            );
-            assert!(outcome.descriptors.is_empty(), "nothing after the restart");
-            // It stays ended.
-            set_clock(&fixture, 103_500);
-            let again = fixture.plan(&relocated_timeline(103, 2, &[0], init, media_dir, "v"));
-            assert_eq!(again.terminal, Some(TerminalCause::Restarted));
-            assert!(again.descriptors.is_empty());
-        }
-    }
-
-    #[test]
-    fn a_restart_under_a_fixed_anchor_ends_the_recording() {
-        // Media times that move on, and media times starting over.
-        for times in [[10_000], [0]] {
-            let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
-            set_clock(&fixture, 10_500);
-            let first = fixture.plan(&steady_timeline(1318, &[6000, 8000], "v/init.mp4", "v"));
-            assert_eq!(planned_numbers(&first), [(0, 1319)]);
-            fixture.consume_all();
-            set_clock(&fixture, 12_500);
-            let outcome = fixture.plan(&steady_timeline(1, &times, "v/init.mp4", "v"));
-            assert_eq!(
-                outcome.terminal,
-                Some(TerminalCause::Restarted),
-                "{times:?}"
-            );
-            assert!(media(&outcome).is_empty());
-        }
     }
 
     /// [`number_timeline`] as one open `S@r=-1` run from `t="0"` with a
@@ -3798,7 +3626,7 @@ mod tests {
     }
 
     #[test]
-    fn an_open_timeline_refreshed_for_minutes_never_restarts() {
+    fn an_open_timeline_refreshed_for_minutes_plans_each_segment_once() {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 100);
         let mpd = open_timeline(0, 1, 0);
         let mut numbers = Vec::new();
@@ -3809,18 +3637,12 @@ mod tests {
             fixture.consume_all();
             fixture.advance(2);
         }
-        // The open run lists #1 only, yet describes every repetition the
-        // clock reached: one new segment per 2 s, each once.
+        // One new segment per 2 s, each once.
         assert_eq!(numbers, (50..=139).collect::<Vec<_>>());
-        assert_eq!(
-            fixture.planner.as_ref().unwrap().reported_conflicts
-                & TimingConflict::NumbersReset as u8,
-            0
-        );
     }
 
     #[test]
-    fn open_timelines_in_contradicting_descriptions_never_restart() {
+    fn open_timelines_in_contradicting_descriptions_are_followed_by_number() {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::default(), 100);
         let mut numbers = Vec::new();
         for step in 0..20_u64 {
