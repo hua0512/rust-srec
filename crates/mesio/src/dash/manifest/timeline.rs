@@ -75,9 +75,12 @@ pub struct InitSegment {
 
 /// How a Representation's segments are addressed.
 ///
-/// This determines a segment's stable identity across MPD updates: with a
-/// `SegmentTimeline` (see [`super::Representation::uses_segment_timeline`]),
-/// [`Segment::time`]; otherwise [`Segment::number`].
+/// This determines a segment's stable identity across MPD updates: what its
+/// URL is built from. That is [`Segment::number`] for `$Number$` templates
+/// (with or without a `SegmentTimeline`) and for any `@duration`
+/// addressing, and [`Segment::time`] for every other `SegmentTimeline`
+/// addressing: `$Time$` templates, timed `SegmentList`s and indexed
+/// subsegments (see [`Segment`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressingKind {
     /// `SegmentTemplate@media` with `$Number$`.
@@ -93,11 +96,13 @@ pub enum AddressingKind {
 
 /// A media segment.
 ///
-/// Identity across MPD updates: for `SegmentTimeline` addressing it is
-/// [`Self::time`], because numbers are positions in the listed timeline and
-/// shift when expired `S` entries are removed; for `@duration` addressing
-/// (`$Number$` templates and lists) it is [`Self::number`], from which the
-/// time is derived.
+/// Identity across MPD updates: under `SegmentTimeline` addressing it is
+/// [`Self::time`] unless the URL is a `$Number$` template, because numbers
+/// are positions in the listed timeline and shift when expired `S` entries
+/// are removed. A `$Number$` URL pins the number to the resource, so there
+/// the number is the identity, and the times are what an update may
+/// rewrite. Under `@duration` addressing (`$Number$` templates and lists) it
+/// is [`Self::number`], from which the time is derived.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     /// Segment number (`$Number$`): `startNumber` + position in the
@@ -124,6 +129,16 @@ impl Segment {
     pub fn duration_secs(&self) -> f64 {
         self.duration as f64 / self.timescale as f64
     }
+}
+
+/// How far a `SegmentTimeline` runs ahead of the availability window (see
+/// [`super::Representation::timeline_lead`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimelineLead {
+    /// Time until the newest described segment becomes available.
+    pub lead: Duration,
+    /// That segment's duration.
+    pub segment_duration: Duration,
 }
 
 /// A run of equal-duration segments: one `S` element, or the whole
@@ -409,6 +424,68 @@ impl Addressing {
             return Ok(0..0);
         };
         Ok(first..end)
+    }
+
+    /// How far the newest segment the `SegmentTimeline` explicitly describes
+    /// lies beyond the availability window at `now`: the time until its end
+    /// reaches `x + A`. `None` when it is already available, and without a
+    /// timeline, for static presentations or with an infinite availability
+    /// time offset.
+    ///
+    /// For a trailing `S@r=-1` that segment is the run's first: later
+    /// repetitions are only extrapolated, so they say nothing about what the
+    /// server has produced.
+    pub(crate) fn timeline_lead(
+        &self,
+        timing: &PeriodTiming,
+        offset: AvailabilityTimeOffset,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TimelineLead>, ManifestError> {
+        let overflow = || ManifestError::overflow("timeline lead");
+        if !self.has_timeline || timing.presentation_type == PresentationType::Static {
+            return Ok(None);
+        }
+        let AvailabilityTimeOffset::Finite(offset) = offset else {
+            return Ok(None);
+        };
+        let Some(run) = self.runs.last() else {
+            return Ok(None);
+        };
+        let Some(ast) = timing.availability_start else {
+            return Err(ManifestError::MissingAttribute {
+                element: "MPD",
+                attribute: "availabilityStartTime",
+            });
+        };
+        let timescale = i128::from(self.timescale.max(1));
+        let repetition = i128::from(run.count.map_or(0, |count| count.saturating_sub(1)));
+        let duration = i128::from(run.duration);
+        let end_ticks = repetition
+            .checked_add(1)
+            .and_then(|count| count.checked_mul(duration))
+            .and_then(|length| length.checked_add(i128::from(run.start)))
+            .map(|end| end - i128::from(self.presentation_time_offset))
+            .ok_or_else(overflow)?;
+        // Rounded up so that evaluating availability `lead` later makes the
+        // segment available exactly: the window compares unrounded ticks.
+        let end = end_ticks
+            .checked_mul(NANOS_PER_SEC)
+            .and_then(|scaled| ceil_div(scaled, timescale))
+            .and_then(|end| end.checked_add(timing.period_start))
+            .ok_or_else(overflow)?;
+        let edge = xs::instant_nanos(now)
+            .checked_sub(ast)
+            .and_then(|elapsed| elapsed.checked_add(xs::duration_nanos(offset)))
+            .ok_or_else(overflow)?;
+        let lead = end.checked_sub(edge).ok_or_else(overflow)?;
+        if lead <= 0 {
+            return Ok(None);
+        }
+        let nanos = |value: i128| Duration::from_nanos(u64::try_from(value).unwrap_or(u64::MAX));
+        Ok(Some(TimelineLead {
+            lead: nanos(lead),
+            segment_duration: nanos(duration.saturating_mul(NANOS_PER_SEC) / timescale),
+        }))
     }
 
     /// The window available at `now`, with its segment numbers validated.
@@ -1175,5 +1252,74 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn timeline_lead_reaches_the_newest_described_segment_exactly() {
+        // 12288 ticks/s, so segment ends are not whole nanoseconds. The
+        // newest entry ends at 12 312 577 / 12288 s ≈ 1002.0000814 s.
+        const T: u64 = 12288;
+        let runs =
+            Addressing::timeline_runs(&[s(Some(1000 * T), T, 0), s(None, T + 1, 0)]).unwrap();
+        let mut addressing = addressing(runs, T, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        let timing = dynamic(0, Some(5 * SEC));
+        let now = at(10, 0);
+        let lead = addressing
+            .timeline_lead(&timing, finite(1), now)
+            .unwrap()
+            .expect("far ahead of x + A = 11 s");
+        assert_eq!(lead.segment_duration, Duration::from_nanos(1_000_081_380));
+        assert_eq!(lead.lead, Duration::from_nanos(991_000_081_381));
+
+        let reached = now + chrono::TimeDelta::from_std(lead.lead).unwrap();
+        assert_eq!(
+            addressing.window(&timing, finite(1), reached).unwrap(),
+            0..2
+        );
+        let before = reached - chrono::TimeDelta::nanoseconds(1);
+        assert_eq!(addressing.window(&timing, finite(1), before).unwrap(), 0..1);
+        assert_eq!(
+            addressing
+                .timeline_lead(&timing, finite(1), reached)
+                .unwrap(),
+            None
+        );
+
+        assert_eq!(
+            addressing
+                .timeline_lead(&timing, AvailabilityTimeOffset::Infinite, now)
+                .unwrap(),
+            None
+        );
+        let static_timing = PeriodTiming {
+            presentation_type: PresentationType::Static,
+            ..timing
+        };
+        assert_eq!(
+            addressing
+                .timeline_lead(&static_timing, finite(1), now)
+                .unwrap(),
+            None
+        );
+        addressing.has_timeline = false;
+        assert_eq!(
+            addressing.timeline_lead(&timing, finite(1), now).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn timeline_lead_of_an_open_run_counts_only_its_described_segment() {
+        let runs = Addressing::timeline_runs(&[s(Some(100), 2, -1)]).unwrap();
+        let mut addressing = addressing(runs, 1, 0, "$Number$.m4s");
+        addressing.has_timeline = true;
+        // The first repetition ends at 102 s; the edge is at 10 + 0 s.
+        let lead = addressing
+            .timeline_lead(&dynamic(0, None), finite(0), at(10, 0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(lead.lead, Duration::from_secs(92));
+        assert_eq!(lead.segment_duration, Duration::from_secs(2));
     }
 }

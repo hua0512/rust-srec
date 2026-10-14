@@ -64,6 +64,10 @@ struct FileEntry {
 #[derive(Default)]
 struct OriginState {
     mpd: String,
+    /// Replaces `mpd` when the MPD is next requested, and sets `clock` to
+    /// the given server time then.
+    next_mpd: Option<(String, DateTime<Utc>)>,
+    clock: Option<Arc<ManualClock>>,
     mpd_serves: u32,
     /// After this many successful MPD serves, the MPD answers 500.
     mpd_fail_after: Option<u32>,
@@ -86,6 +90,19 @@ impl Origin {
 
     fn add_file(&self, path: &str, body: impl Into<Vec<u8>>) {
         self.add_file_failing(path, body, 0, 0);
+    }
+
+    /// Serves `body` from the next MPD request on, as if fetched at
+    /// `server_time`: the clock jumps there when it is served.
+    fn serve_next_mpd(
+        &self,
+        body: impl Into<String>,
+        server_time: DateTime<Utc>,
+        clock: &Arc<ManualClock>,
+    ) {
+        let mut state = self.0.lock().unwrap();
+        state.next_mpd = Some((body.into(), server_time));
+        state.clock = Some(Arc::clone(clock));
     }
 
     fn add_file_failing(&self, path: &str, body: impl Into<Vec<u8>>, status: u16, times: u32) {
@@ -174,6 +191,12 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     *state.hits.entry(path.clone()).or_default() += 1;
 
     if path.ends_with(".mpd") {
+        if let Some((body, server_time)) = state.next_mpd.take() {
+            state.mpd = body;
+            if let Some(clock) = &state.clock {
+                clock.set(server_time);
+            }
+        }
         if let Some(status) = state.mpd_status {
             return respond(StatusCode::from_u16(status).unwrap(), Vec::new());
         }
@@ -1820,4 +1843,157 @@ async fn rejected_subtitles_do_not_count_against_the_media_tracks() {
     assert!(error.is_none(), "{error:?}");
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
     assert_eq!(count_track(&items, 1), 2);
+}
+
+/// Consecutive live MPDs from a TikTok origin (sanitised: media paths
+/// rewritten for this origin; each carries its response `Date` in a
+/// `served` comment). Its edges alternate between describing the newest
+/// segment at `t="0"` with `availabilityStartTime` moved to the response
+/// time, and describing real media times that lie ~45 minutes past
+/// `availabilityStartTime`. Segment numbers agree throughout.
+const TIKTOK_LIVE: [&str; 18] = [
+    include_str!("fixtures/dash/tiktok-live/01.mpd"),
+    include_str!("fixtures/dash/tiktok-live/02.mpd"),
+    include_str!("fixtures/dash/tiktok-live/03.mpd"),
+    include_str!("fixtures/dash/tiktok-live/04.mpd"),
+    include_str!("fixtures/dash/tiktok-live/05.mpd"),
+    include_str!("fixtures/dash/tiktok-live/06.mpd"),
+    include_str!("fixtures/dash/tiktok-live/07.mpd"),
+    include_str!("fixtures/dash/tiktok-live/08.mpd"),
+    include_str!("fixtures/dash/tiktok-live/09.mpd"),
+    include_str!("fixtures/dash/tiktok-live/10.mpd"),
+    include_str!("fixtures/dash/tiktok-live/11.mpd"),
+    include_str!("fixtures/dash/tiktok-live/12.mpd"),
+    include_str!("fixtures/dash/tiktok-live/13.mpd"),
+    include_str!("fixtures/dash/tiktok-live/14.mpd"),
+    include_str!("fixtures/dash/tiktok-live/15.mpd"),
+    include_str!("fixtures/dash/tiktok-live/16.mpd"),
+    include_str!("fixtures/dash/tiktok-live/17.mpd"),
+    include_str!("fixtures/dash/tiktok-live/18.mpd"),
+];
+
+/// The server time a fixture MPD was served at.
+fn served(mpd: &str) -> DateTime<Utc> {
+    let (_, rest) = mpd.split_once("<!-- served: ").expect("served comment");
+    let (time, _) = rest.split_once(" -->").expect("served comment end");
+    DateTime::parse_from_rfc3339(time)
+        .expect("served time")
+        .with_timezone(&Utc)
+}
+
+/// The newest segment number a fixture MPD lists (both of its timelines
+/// list the same numbers).
+fn newest_listed(mpd: &str) -> u64 {
+    let (_, rest) = mpd.split_once(r#"startNumber=""#).expect("startNumber");
+    let (start, _) = rest.split_once('"').expect("startNumber end");
+    let entries = mpd.matches("<S ").count() as u64 / 2;
+    start.parse::<u64>().expect("numeric startNumber") + entries - 1
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoch() {
+    let origin = Origin::default();
+    origin.add_av();
+    let clock = Arc::new(ManualClock::new(ast()));
+    // Half a second into each response's second, as the `Date` header
+    // truncates; refreshed as often as this test steps through them.
+    let live = |mpd: &str| {
+        mpd.replace(
+            r#"minimumUpdatePeriod="PT1.000S""#,
+            r#"minimumUpdatePeriod="PT0.05S""#,
+        )
+    };
+    let at = |mpd: &str| served(mpd) + chrono::TimeDelta::milliseconds(500);
+    origin.serve_next_mpd(live(TIKTOK_LIVE[0]), at(TIKTOK_LIVE[0]), &clock);
+    let base = origin.clone().serve().await;
+    let session = start(
+        &format!("{base}/manifest.mpd"),
+        config(Some(Arc::clone(&clock))),
+    )
+    .await
+    .expect("session starts");
+    let DownloadSession {
+        mut items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
+    let reader = tokio::spawn(async move {
+        let mut out = Vec::new();
+        let error = read_until(&mut items, &mut out, |_| false).await;
+        (out, error)
+    });
+
+    // One description per refresh. Each step waits until the newest
+    // number listed so far has been requested, so no description is
+    // coalesced away before it was planned.
+    let mut newest = 0;
+    for (index, mpd) in TIKTOK_LIVE.iter().enumerate() {
+        if index > 0 {
+            let serves = origin.hits("manifest.mpd");
+            origin.serve_next_mpd(live(mpd), at(mpd), &clock);
+            tokio::time::timeout(TEST_TIMEOUT, async {
+                while origin.hits("manifest.mpd") <= serves {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("the MPD is refreshed");
+        }
+        newest = newest.max(newest_listed(mpd));
+        wait_for_hit(&origin, &format!("v/{newest}.m4s")).await;
+        wait_for_hit(&origin, &format!("a/{newest}.m4s")).await;
+    }
+    // The stream ends with the last description, now static.
+    let last = TIKTOK_LIVE[TIKTOK_LIVE.len() - 1];
+    let ended = live(last)
+        .replace(r#"type="dynamic""#, r#"type="static""#)
+        .replace(r#" minimumUpdatePeriod="PT0.05S""#, "")
+        .replace(r#" timeShiftBufferDepth="PT12.000S""#, "");
+    origin.serve_next_mpd(ended, at(last), &clock);
+
+    let (out, error) = tokio::time::timeout(TEST_TIMEOUT, reader)
+        .await
+        .expect("the stream ends")
+        .expect("reader joins");
+    assert!(error.is_none(), "{error:?}");
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert!(ends_with_end_of_stream(&out), "{}", describe(&out));
+    assert_eq!(inits(&out).len(), 1, "one epoch: {}", describe(&out));
+    assert!(
+        !out.iter().any(|item| matches!(
+            item,
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        )),
+        "{}",
+        describe(&out)
+    );
+    assert_two_track_stream(&out);
+    let video: Vec<u64> = media(&out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .filter(|(_, track, _)| *track == 1)
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE + 1)
+        .collect();
+    assert_eq!(video, (1319..=1331).collect::<Vec<_>>());
+
+    let events = log.finish().await;
+    for number in 1319..=1331 {
+        for track in ["v", "a"] {
+            assert_eq!(
+                downloads(&events, &format!("{track}/{number}.m4s")),
+                1,
+                "{track}/{number}"
+            );
+        }
+    }
+    assert_eq!(downloads(&events, "v/init.mp4"), 1);
+    assert_eq!(downloads(&events, "a/init.mp4"), 1);
+    assert_eq!(origin.hits("v/1318.m4s"), 0);
+    assert_eq!(origin.hits("v/1332.m4s"), 0);
 }

@@ -177,7 +177,9 @@ pub struct DashSegmentMeta {
     /// `@presentationTimeOffset` in `timescale` units.
     pub presentation_time_offset: u64,
     /// `MPD@availabilityStartTime`, the wall-clock anchor of a dynamic
-    /// presentation's timeline.
+    /// presentation's timeline. For media, the one the segment's epoch
+    /// opened with, and `None` once an MPD update contradicted that
+    /// epoch's timing.
     pub availability_start_time: Option<DateTime<Utc>>,
 }
 

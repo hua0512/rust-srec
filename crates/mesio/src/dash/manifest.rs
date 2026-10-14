@@ -41,5 +41,5 @@ pub use resolve::{
 };
 pub use timeline::{
     AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, Segment, SegmentIter,
-    SegmentWindow,
+    SegmentWindow, TimelineLead,
 };

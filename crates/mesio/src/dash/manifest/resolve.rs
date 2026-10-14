@@ -22,7 +22,7 @@ use super::parse::{
 use super::template::{Template, TemplateKind};
 use super::timeline::{
     Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, PeriodTiming, Run,
-    SegmentUrls, SegmentWindow,
+    SegmentUrls, SegmentWindow, TimelineLead,
 };
 use super::xs::{self, RawOffset};
 
@@ -238,9 +238,9 @@ impl Representation {
         self.addressing.kind()
     }
 
-    /// Whether segment timing comes from a `SegmentTimeline`. If so, a
-    /// segment's stable identity across MPD updates is its
-    /// [`super::Segment::time`]; otherwise its [`super::Segment::number`].
+    /// Whether segment timing comes from a `SegmentTimeline`. Together with
+    /// [`Self::addressing_kind`] it decides a segment's stable identity
+    /// across MPD updates (see [`super::AddressingKind`]).
     pub fn uses_segment_timeline(&self) -> bool {
         self.addressing.has_timeline
     }
@@ -265,6 +265,23 @@ impl Representation {
             AvailabilityTimeOffset::ZERO
         };
         self.addressing.segments(&self.timing, offset, now)
+    }
+
+    /// How far the newest segment this Representation's `SegmentTimeline`
+    /// describes lies ahead of the segments available at `now`; `None` when
+    /// it is available already or nothing is described ahead (see
+    /// [`Self::segments`] for the availability rules).
+    ///
+    /// A server lists the segments it has produced, so a lead much longer
+    /// than one segment means the MPD's timing anchor and its timeline
+    /// disagree; whether to trust the timeline is the caller's decision.
+    pub fn timeline_lead(&self, now: DateTime<Utc>) -> Result<Option<TimelineLead>, ManifestError> {
+        let offset = if self.availability_time_complete {
+            self.availability_time_offset
+        } else {
+            AvailabilityTimeOffset::ZERO
+        };
+        self.addressing.timeline_lead(&self.timing, offset, now)
     }
 
     /// Where this `SegmentBase` Representation's Segment Index is, while it

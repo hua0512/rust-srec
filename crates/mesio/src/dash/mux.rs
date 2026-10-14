@@ -1829,8 +1829,8 @@ fn init_media_segment(descriptor: &SegmentDescriptor) -> m3u8_rs::MediaSegment {
 }
 
 /// The synthetic playlist entry describing an output item: leader coverage
-/// as duration and, for dynamic presentations, the wall-clock time of its
-/// start.
+/// as duration and, for dynamic presentations whose timing anchor the
+/// planner still trusts, the wall-clock time of its start.
 fn media_segment(
     descriptor: &SegmentDescriptor,
     start: i128,
