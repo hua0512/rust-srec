@@ -393,12 +393,13 @@ struct PendingOutput {
     continued: bool,
 }
 
-/// What an output item holds of one track: media under `init` from
-/// `start` to `end` on the presentation timeline, in its timescale.
+/// What an output item holds of one track: fragments under `init`, each
+/// `(start, end)` on the presentation timeline in its timescale, in order.
+/// Each is recorded as written on its own, so a hole between two (a
+/// segment that failed or arrived late) is never taken for written media.
 struct TrackSpan {
     init: Arc<TrackInit>,
-    start: i128,
-    end: i128,
+    fragments: Vec<(i128, i128)>,
 }
 
 /// Follower fragments chosen for one slice: a run of `count` fragments
@@ -408,10 +409,10 @@ struct FollowerPart {
     data: Bytes,
     first: usize,
     count: usize,
-    /// Presentation start of the first fragment and end of the last, in
-    /// the follower timescale.
+    /// Presentation start of the first fragment, in the follower timescale.
     start: i128,
-    end: i128,
+    /// `(start, end)` of each fragment, in the follower timescale.
+    fragments: Vec<(i128, i128)>,
 }
 
 enum Collect {
@@ -1298,7 +1299,7 @@ impl MuxState {
                 first: media.consumed,
                 count,
                 start: media.fragments[media.consumed].0,
-                end: media.fragments[media.consumed + count - 1].1,
+                fragments: media.fragments[media.consumed..media.consumed + count].to_vec(),
             });
             media.consumed += count;
             picks -= count;
@@ -1446,8 +1447,10 @@ impl MuxState {
                 self.written_of(span.init.track).is_some_and(|written| {
                     !Arc::ptr_eq(&written.init, &span.init)
                         && written.in_file
-                        && to_nanos(span.start, span.init.timescale)
-                            .is_none_or(|start| start < written.end)
+                        && span.fragments.first().is_none_or(|&(start, _)| {
+                            to_nanos(start, span.init.timescale)
+                                .is_none_or(|start| start < written.end)
+                        })
                 })
             })
             .map(|span| span.init.track);
@@ -1487,12 +1490,6 @@ impl MuxState {
         }
         for span in spans {
             let timescale = span.init.timescale;
-            let (Some(start), Some(end)) = (
-                to_nanos(span.start, timescale),
-                to_nanos(span.end, timescale),
-            ) else {
-                continue;
-            };
             let track = span.init.track;
             let index = match self.written.iter().position(|(known, _)| *known == track) {
                 Some(index) => index,
@@ -1502,7 +1499,13 @@ impl MuxState {
                     self.written.len() - 1
                 }
             };
-            self.written[index].1.record(&span.init, start, end);
+            for &(start, end) in &span.fragments {
+                if let (Some(start), Some(end)) =
+                    (to_nanos(start, timescale), to_nanos(end, timescale))
+                {
+                    self.written[index].1.record(&span.init, start, end);
+                }
+            }
         }
         group.push(item);
         self.out.push(group);
@@ -1599,13 +1602,11 @@ impl MuxState {
         // Every part counts, as one rejected midway may be partly written.
         let spans: Vec<TrackSpan> = std::iter::once(TrackSpan {
             init: Arc::clone(&media.init),
-            start,
-            end,
+            fragments: media.fragments[media.consumed..].to_vec(),
         })
         .chain(parts.iter().map(|part| TrackSpan {
             init: Arc::clone(&part.init),
-            start: part.start,
-            end: part.end,
+            fragments: part.fragments.clone(),
         }))
         .collect();
         let segment = media_segment(&media.descriptor, start, end, timescale);
@@ -1814,8 +1815,7 @@ impl MuxState {
             })),
             &[TrackSpan {
                 init: Arc::clone(&media.init),
-                start,
-                end,
+                fragments: media.fragments[media.consumed..].to_vec(),
             }],
         );
     }
@@ -1918,7 +1918,7 @@ impl MuxState {
         let mut previous = self.written_of(run_init.track).cloned();
         let mut data = Vec::new();
         let mut last = None;
-        let mut covered: Option<(i128, i128)> = None;
+        let mut written_fragments: Vec<(i128, i128)> = Vec::new();
         let mut late_fragments = 0u64;
         for mut media in run {
             let repeated = media.repeated_prefix(previous.as_ref());
@@ -1955,12 +1955,7 @@ impl MuxState {
             if !kept.is_empty() {
                 previous = None;
             }
-            covered = kept
-                .into_iter()
-                .fold(covered, |covered, (start, end)| match covered {
-                    Some((first, last)) => Some((first.min(start), last.max(end))),
-                    None => Some((start, end)),
-                });
+            written_fragments.extend(kept);
             last = Some(Arc::clone(&media.descriptor));
         }
         self.stats.late_fragments += late_fragments;
@@ -1969,21 +1964,16 @@ impl MuxState {
         {
             let mut segment = init_media_segment(&descriptor);
             segment.duration = 0.0;
-            let spans: Vec<TrackSpan> = covered
-                .map(|(start, end)| TrackSpan {
-                    init: Arc::clone(&run_init),
-                    start,
-                    end,
-                })
-                .into_iter()
-                .collect();
             self.emit_media(
                 pending,
                 HlsData::M4sData(M4sData::Segment(M4sSegmentData {
                     segment,
                     data: Bytes::from(data),
                 })),
-                &spans,
+                &[TrackSpan {
+                    init: Arc::clone(&run_init),
+                    fragments: written_fragments,
+                }],
             );
         }
     }
@@ -2964,6 +2954,44 @@ mod tests {
                     (1, 3000),
                     (2, 3000)
                 ]
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_hole_in_an_audio_tail_is_filled_by_the_next_period() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let a = MediaTrack::Audio;
+        send_inits(&h, "p0", 0).await;
+        send_second(&h, "p0", 0, 0, 1).await;
+        // p0's audio runs past its last video: 1–2 s and 3–4 s, written
+        // together as its tail; 2–3 s failed.
+        h.audio(media(a, Some("p0"), 0, 2, with_tfdt(AUDIO_1, 48_000)))
+            .await;
+        h.audio(Ok(AssembledItem::GapSkipped {
+            from_sequence: 3,
+            to_sequence: 4,
+            reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
+        }))
+        .await;
+        h.audio(media(a, Some("p0"), 0, 4, with_tfdt(AUDIO_1, 3 * 48_000)))
+            .await;
+        // p1 starts at 2 s, at the hole.
+        send_inits(&h, "p1", 2).await;
+        for second in 2..4 {
+            send_second(&h, "p1", 2, second, second - 1).await;
+        }
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        // p1's 2–3 s audio fills the hole, in a new file as the old one
+        // already reaches 4 s.
+        assert_eq!(
+            written_ms(&items),
+            [
+                vec![(1, 0), (2, 0), (2, 1000), (2, 3000)],
+                vec![(1, 2000), (2, 2000), (1, 3000), (2, 3000)]
             ]
         );
     }
