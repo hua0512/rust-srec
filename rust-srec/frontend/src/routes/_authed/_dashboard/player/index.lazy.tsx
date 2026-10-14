@@ -32,7 +32,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import {
-  extractStreams,
+  selectInitialStream,
   renewalNeedsNewParse,
   selectRefreshedStream,
 } from '@/components/player/stream-source';
@@ -109,8 +109,7 @@ function PlayerPage() {
       }
 
       if (response.success && parsedMedia(response)) {
-        // Extract first available stream
-        const firstStream = extractStreams(parsedMedia(response))[0];
+        const firstStream = selectInitialStream(parsedMedia(response));
         if (firstStream) {
           const newPlayer: PlayerInstance = {
             id: Date.now().toString(),
@@ -175,7 +174,7 @@ function PlayerPage() {
         }
 
         if (response.success && parsedMedia(response)) {
-          const firstStream = extractStreams(parsedMedia(response))[0];
+          const firstStream = selectInitialStream(parsedMedia(response));
           if (firstStream) {
             newPlayers.push({
               id: `${Date.now()}-${index}`,

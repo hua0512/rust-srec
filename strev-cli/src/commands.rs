@@ -27,6 +27,7 @@ use tokio::{
 // Type alias for complex type to satisfy clippy
 type BatchResult = Result<(MediaInfo, StreamInfo)>;
 type BatchResultTuple = (usize, String, BatchResult);
+type TextMatcher = Box<dyn Fn(&str) -> bool>;
 
 pub struct CommandExecutor {
     config: AppConfig,
@@ -137,26 +138,30 @@ impl CommandExecutor {
                     if matches!(output_format, OutputFormat::Pretty | OutputFormat::Table) {
                         if media_info.streams.is_empty() {
                             None
-                        } else if auto_select {
-                            let streams = std::mem::take(&mut media_info.streams);
-                            Some(self.auto_select_stream(streams)?)
-                        } else if media_info.streams.len() == 1 {
-                            media_info.streams.drain(..).next()
                         } else {
-                            let streams = std::mem::take(&mut media_info.streams);
-                            Some(self.interactive_select_stream(streams)?)
+                            // Filter before choosing, so `--format` also opts in
+                            // to streams that are never picked automatically.
+                            let streams = Self::apply_filters(
+                                std::mem::take(&mut media_info.streams),
+                                quality,
+                                format,
+                            )?;
+                            if auto_select {
+                                Some(Self::auto_select_stream(streams, format)?)
+                            } else if streams.len() == 1 {
+                                Some(Self::first_selectable_stream(streams, format)?)
+                            } else {
+                                Some(self.interactive_select_stream(streams, format)?)
+                            }
                         }
                     } else {
                         None
                     };
 
-                let final_stream = if let Some(stream) = selected_stream {
-                    let filtered_stream = self.apply_filters(stream, quality, format)?;
-
+                let final_stream = if let Some(mut final_stream) = selected_stream {
                     // Get the true URL
                     let pb_get_url =
                         self.create_progress_bar("Getting stream URL...", &output_format);
-                    let mut final_stream = filtered_stream;
                     extractor.get_url(&mut final_stream).await?;
                     pb_get_url.finish_and_clear();
                     Some(final_stream)
@@ -261,11 +266,14 @@ impl CommandExecutor {
                         return Err(CliError::no_streams_found());
                     }
 
+                    // Batch mode has no format filter, so opt-in-only
+                    // streams are never chosen here.
                     let stream_index = if auto_select {
-                        Self::best_stream_index(&media_info.streams).unwrap_or(0)
+                        Self::best_stream_index(&media_info.streams, None)
                     } else {
-                        0
-                    };
+                        Self::first_selectable_index(&media_info.streams, None)
+                    }
+                    .ok_or_else(|| Self::nothing_selectable(&media_info.streams))?;
 
                     let mut selected_stream = media_info.streams.swap_remove(stream_index);
                     extractor.get_url(&mut selected_stream).await?;
@@ -444,15 +452,39 @@ impl CommandExecutor {
         Err(last_error.unwrap_or_else(CliError::timeout))
     }
 
-    fn auto_select_stream(&self, mut streams: Vec<StreamInfo>) -> Result<StreamInfo> {
-        let index = Self::best_stream_index(&streams).ok_or_else(CliError::no_streams_found)?;
+    /// Whether `stream` may be picked without the user choosing it from a
+    /// list. A stream marked `StreamInfo::format_opt_in` qualifies only when
+    /// `--format` names exactly its format (e.g. `--format dash`).
+    fn is_auto_selectable(stream: &StreamInfo, format: Option<&str>) -> bool {
+        !stream.format_opt_in
+            || format.is_some_and(|f| f.trim().eq_ignore_ascii_case(stream.stream_format.as_str()))
+    }
+
+    fn auto_select_stream(
+        mut streams: Vec<StreamInfo>,
+        format: Option<&str>,
+    ) -> Result<StreamInfo> {
+        let index = Self::best_stream_index(&streams, format)
+            .ok_or_else(|| Self::nothing_selectable(&streams))?;
         Ok(streams.swap_remove(index))
     }
 
-    fn best_stream_index(streams: &[StreamInfo]) -> Option<usize> {
+    fn first_selectable_stream(
+        mut streams: Vec<StreamInfo>,
+        format: Option<&str>,
+    ) -> Result<StreamInfo> {
+        let index = Self::first_selectable_index(&streams, format)
+            .ok_or_else(|| Self::nothing_selectable(&streams))?;
+        Ok(streams.swap_remove(index))
+    }
+
+    /// Lowest priority, then highest bitrate, among automatically selectable
+    /// streams.
+    fn best_stream_index(streams: &[StreamInfo], format: Option<&str>) -> Option<usize> {
         streams
             .iter()
             .enumerate()
+            .filter(|(_, s)| Self::is_auto_selectable(s, format))
             .min_by(|(_, a), (_, b)| {
                 a.priority
                     .cmp(&b.priority)
@@ -461,7 +493,36 @@ impl CommandExecutor {
             .map(|(index, _)| index)
     }
 
-    fn interactive_select_stream(&self, streams: Vec<StreamInfo>) -> Result<StreamInfo> {
+    fn first_selectable_index(streams: &[StreamInfo], format: Option<&str>) -> Option<usize> {
+        streams
+            .iter()
+            .position(|s| Self::is_auto_selectable(s, format))
+    }
+
+    /// The error for a stream list with nothing automatically selectable.
+    fn nothing_selectable(streams: &[StreamInfo]) -> CliError {
+        let mut formats: Vec<&str> = streams
+            .iter()
+            .filter(|s| s.format_opt_in)
+            .map(|s| s.stream_format.as_str())
+            .collect();
+        formats.sort_unstable();
+        formats.dedup();
+        match formats.first() {
+            Some(example) => CliError::OptInRequired {
+                formats: formats.join(", "),
+                example: (*example).to_owned(),
+            },
+            None => CliError::no_streams_found(),
+        }
+    }
+
+    #[cfg_attr(feature = "interactive", expect(unused_variables))]
+    fn interactive_select_stream(
+        &self,
+        streams: Vec<StreamInfo>,
+        format: Option<&str>,
+    ) -> Result<StreamInfo> {
         if streams.is_empty() {
             return Err(CliError::no_streams_found());
         }
@@ -529,63 +590,50 @@ impl CommandExecutor {
 
         #[cfg(not(feature = "interactive"))]
         {
-            // Fallback: auto-select the first stream if interactive feature is disabled
-            streams
-                .into_iter()
-                .next()
-                .ok_or_else(|| CliError::no_streams_found())
+            // Without prompts, take the first stream that may be picked
+            // automatically.
+            Self::first_selectable_stream(streams, format)
         }
     }
 
+    /// Keeps the streams matching the quality and format filters.
     fn apply_filters(
-        &self,
-        stream: StreamInfo,
+        streams: Vec<StreamInfo>,
         quality: Option<&str>,
         format: Option<&str>,
-    ) -> Result<StreamInfo> {
-        // Quality filter
-        if let Some(quality_filter) = quality {
-            #[cfg(feature = "regex-filters")]
-            {
-                let quality_regex = Regex::new(quality_filter)
-                    .map_err(|e| CliError::invalid_filter(format!("Invalid quality regex: {e}")))?;
+    ) -> Result<Vec<StreamInfo>> {
+        let quality_matches = Self::filter_matcher(quality, "quality")?;
+        let format_matches = Self::filter_matcher(format, "format")?;
+        let matched: Vec<StreamInfo> = streams
+            .into_iter()
+            .filter(|s| quality_matches(&s.quality) && format_matches(s.stream_format.as_str()))
+            .collect();
+        if matched.is_empty() {
+            return Err(CliError::no_matching_stream());
+        }
+        Ok(matched)
+    }
 
-                if !quality_regex.is_match(&stream.quality) {
-                    return Err(CliError::no_matching_stream());
-                }
-            }
+    /// A regex matcher for `filter`, or a substring matcher in builds
+    /// without `regex-filters`. No filter matches everything.
+    #[cfg_attr(not(feature = "regex-filters"), expect(unused_variables))]
+    fn filter_matcher(filter: Option<&str>, what: &str) -> Result<TextMatcher> {
+        let Some(filter) = filter else {
+            return Ok(Box::new(|_| true));
+        };
 
-            #[cfg(not(feature = "regex-filters"))]
-            {
-                // Fallback: simple substring matching
-                if !stream.quality.contains(quality_filter) {
-                    return Err(CliError::no_matching_stream());
-                }
-            }
+        #[cfg(feature = "regex-filters")]
+        {
+            let regex = Regex::new(filter)
+                .map_err(|e| CliError::invalid_filter(format!("Invalid {what} regex: {e}")))?;
+            Ok(Box::new(move |text| regex.is_match(text)))
         }
 
-        // Format filter
-        if let Some(format_filter) = format {
-            #[cfg(feature = "regex-filters")]
-            {
-                let format_regex = Regex::new(format_filter)
-                    .map_err(|e| CliError::invalid_filter(format!("Invalid format regex: {e}")))?;
-
-                if !format_regex.is_match(&stream.stream_format.to_string()) {
-                    return Err(CliError::no_matching_stream());
-                }
-            }
-
-            #[cfg(not(feature = "regex-filters"))]
-            {
-                // Fallback: simple substring matching
-                if !stream.stream_format.to_string().contains(format_filter) {
-                    return Err(CliError::no_matching_stream());
-                }
-            }
+        #[cfg(not(feature = "regex-filters"))]
+        {
+            let filter = filter.to_owned();
+            Ok(Box::new(move |text| text.contains(filter.as_str())))
         }
-
-        Ok(stream)
     }
 
     async fn output_batch_json(
@@ -663,6 +711,7 @@ mod tests {
     use platforms_parser::media::{StreamFormat, StreamInfo, formats::MediaFormat};
 
     use super::CommandExecutor;
+    use crate::error::CliError;
 
     fn stream(priority: u32, bitrate: u64) -> StreamInfo {
         StreamInfo::builder("", StreamFormat::Hls, MediaFormat::Ts)
@@ -674,17 +723,90 @@ mod tests {
     #[test]
     fn best_stream_uses_lowest_priority() {
         let streams = vec![stream(3, 8_000_000), stream(0, 1_000_000)];
-        assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+        assert_eq!(CommandExecutor::best_stream_index(&streams, None), Some(1));
     }
 
     #[test]
     fn best_stream_uses_bitrate_to_break_priority_ties() {
         let streams = vec![stream(0, 1_000_000), stream(0, 8_000_000)];
-        assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+        assert_eq!(CommandExecutor::best_stream_index(&streams, None), Some(1));
+    }
+
+    fn opt_in_dash(priority: u32, bitrate: u64) -> StreamInfo {
+        StreamInfo::builder("", StreamFormat::Dash, MediaFormat::Fmp4)
+            .priority(priority)
+            .bitrate(bitrate)
+            .format_opt_in(true)
+            .build()
+    }
+
+    #[test]
+    fn opt_in_streams_are_never_auto_selected_without_format() {
+        let streams = vec![opt_in_dash(0, 8_000_000), stream(5, 1_000_000)];
+        assert_eq!(CommandExecutor::best_stream_index(&streams, None), Some(1));
+        assert_eq!(
+            CommandExecutor::first_selectable_index(&streams, None),
+            Some(1)
+        );
+
+        let only_dash = vec![opt_in_dash(0, 8_000_000)];
+        assert_eq!(CommandExecutor::best_stream_index(&only_dash, None), None);
+        // A format filter that merely matches, rather than names, DASH does
+        // not opt in.
+        assert_eq!(
+            CommandExecutor::best_stream_index(&only_dash, Some("da")),
+            None
+        );
+        for error in [
+            CommandExecutor::auto_select_stream(only_dash.clone(), None).unwrap_err(),
+            CommandExecutor::first_selectable_stream(only_dash.clone(), Some("hls")).unwrap_err(),
+        ] {
+            assert!(
+                matches!(&error, CliError::OptInRequired { formats, example } if formats == "dash" && example == "dash"),
+                "{error}"
+            );
+            assert!(error.to_string().contains("--format dash"));
+        }
+    }
+
+    #[test]
+    fn format_naming_the_opt_in_format_selects_it() {
+        let streams = vec![stream(5, 1_000_000), opt_in_dash(0, 8_000_000)];
+        assert_eq!(
+            CommandExecutor::best_stream_index(&streams, Some("DASH")),
+            Some(1)
+        );
+        let filtered = CommandExecutor::apply_filters(streams, None, Some("dash")).unwrap();
+        let picked = CommandExecutor::auto_select_stream(filtered, Some("dash")).unwrap();
+        assert_eq!(picked.stream_format, StreamFormat::Dash);
+    }
+
+    #[test]
+    fn filters_narrow_candidates_before_selection() {
+        let streams = vec![stream(0, 8_000_000), opt_in_dash(1, 1_000_000)];
+        assert!(matches!(
+            CommandExecutor::apply_filters(streams.clone(), None, Some("flv")),
+            Err(CliError::InvalidFilter(_))
+        ));
+        let hls = CommandExecutor::apply_filters(streams, None, Some("hls")).unwrap();
+        assert_eq!(hls.len(), 1);
+        assert_eq!(hls[0].stream_format, StreamFormat::Hls);
+    }
+
+    #[test]
+    fn batch_without_selectable_streams_reports_how_to_opt_in() {
+        assert!(matches!(
+            CommandExecutor::nothing_selectable(&[opt_in_dash(0, 0)]),
+            CliError::OptInRequired { .. }
+        ));
+        assert!(matches!(
+            CommandExecutor::nothing_selectable(&[]),
+            CliError::NoStreamsAvailable
+        ));
     }
 
     #[test]
     fn best_stream_rejects_empty_input() {
-        assert_eq!(CommandExecutor::best_stream_index(&[]), None);
+        assert_eq!(CommandExecutor::best_stream_index(&[], None), None);
     }
 }

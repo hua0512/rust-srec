@@ -70,6 +70,14 @@ pub struct StreamInfo {
     /// Indicates if this stream contains only audio (no video)
     #[serde(default)]
     pub is_audio_only: bool,
+    /// Only chosen automatically when the user's first preferred format is
+    /// this stream's `stream_format`. Platforms set it on variants that most
+    /// recordings should not switch to unasked, such as a format that only
+    /// some download engines record, so adding them leaves default
+    /// selection unchanged. Selection code must drop such a stream before
+    /// ranking by quality, CDN or priority.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub format_opt_in: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +93,7 @@ pub struct StreamInfoBuilder {
     fps: f64,
     is_headers_needed: bool,
     is_audio_only: bool,
+    format_opt_in: bool,
 }
 
 impl StreamInfo {
@@ -220,6 +229,7 @@ impl StreamInfoBuilder {
             fps: 0.0,
             is_headers_needed: false,
             is_audio_only: false,
+            format_opt_in: false,
         }
     }
 
@@ -273,6 +283,12 @@ impl StreamInfoBuilder {
         self
     }
 
+    /// See [`StreamInfo::format_opt_in`].
+    pub fn format_opt_in(mut self, format_opt_in: bool) -> Self {
+        self.format_opt_in = format_opt_in;
+        self
+    }
+
     pub fn build(self) -> StreamInfo {
         StreamInfo {
             url: self.url,
@@ -286,6 +302,7 @@ impl StreamInfoBuilder {
             fps: self.fps,
             is_headers_needed: self.is_headers_needed,
             is_audio_only: self.is_audio_only,
+            format_opt_in: self.format_opt_in,
         }
     }
 }

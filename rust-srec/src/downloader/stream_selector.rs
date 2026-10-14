@@ -133,19 +133,19 @@ impl StreamSelector {
             return Vec::new();
         }
 
-        // First, filter out blacklisted CDNs (hard exclude, always applied)
-        let non_blacklisted: Vec<&StreamInfo> = streams
+        // Hard excludes, applied before any preference is scored: blacklisted
+        // CDNs and opt-in-only streams the format preference does not select.
+        let eligible: Vec<&StreamInfo> = streams
             .iter()
-            .filter(|s| !self.is_cdn_blacklisted(s))
+            .filter(|s| self.admits(s) && !self.is_cdn_blacklisted(s))
             .collect();
 
-        // If all streams are blacklisted, return empty
-        if non_blacklisted.is_empty() {
+        if eligible.is_empty() {
             return Vec::new();
         }
 
         // Filter streams based on criteria (bitrate, etc.)
-        let filtered: Vec<&StreamInfo> = non_blacklisted
+        let filtered: Vec<&StreamInfo> = eligible
             .iter()
             .filter(|s| self.matches_criteria(s))
             .copied()
@@ -154,12 +154,12 @@ impl StreamSelector {
         // If no streams match criteria, fall back to non-blacklisted streams
         let candidates = if filtered.is_empty() {
             debug!(
-                available = non_blacklisted.len(),
+                available = eligible.len(),
                 min_bitrate = self.config.min_bitrate,
                 max_bitrate = self.config.max_bitrate,
                 "stream selection fallback (no candidates matched criteria)"
             );
-            non_blacklisted
+            eligible
         } else {
             filtered
         };
@@ -169,6 +169,21 @@ impl StreamSelector {
         sorted.sort_by(|a, b| self.compare_streams(a, b));
 
         sorted
+    }
+
+    /// Whether `stream` may be chosen at all. A stream marked
+    /// [`StreamInfo::format_opt_in`] is admitted only when its format is the
+    /// first preferred format; ranking it below other formats would not be
+    /// enough, because quality and CDN preferences are scored before format.
+    #[must_use]
+    pub fn admits(&self, stream: &StreamInfo) -> bool {
+        !stream.format_opt_in
+            || self
+                .config
+                .preferred_formats
+                .as_deref()
+                .and_then(<[StreamFormat]>::first)
+                == Some(&stream.stream_format)
     }
 
     /// Check if a stream matches the selection criteria.
@@ -327,6 +342,7 @@ mod tests {
             fps: 30.0,
             is_headers_needed: false,
             is_audio_only: false,
+            format_opt_in: false,
         }
     }
 
@@ -491,6 +507,190 @@ mod tests {
         ];
 
         let best = selector.select_best(&streams).unwrap();
+        assert_eq!(best.stream_format, StreamFormat::Dash);
+    }
+
+    /// A TikTok-shaped room: FLV/HLS plus opt-in DASH variants, where
+    /// "Original" exists only as DASH.
+    fn rooms_with_opt_in_dash() -> Vec<StreamInfo> {
+        let stream = |url: &str, format, media, quality: &str, bitrate, priority| {
+            StreamInfo::builder(url, format, media)
+                .quality(quality)
+                .bitrate(bitrate)
+                .priority(priority)
+                .format_opt_in(format == StreamFormat::Dash)
+                .build()
+        };
+        vec![
+            stream(
+                "https://pull-flv.example.com/hd.flv",
+                StreamFormat::Flv,
+                MediaFormat::Flv,
+                "720p",
+                1_800_000,
+                97,
+            ),
+            stream(
+                "https://pull-hls.example.com/hd/index.m3u8",
+                StreamFormat::Hls,
+                MediaFormat::Ts,
+                "720p",
+                1_800_000,
+                97,
+            ),
+            stream(
+                "https://pull-flv.example.com/sd.flv",
+                StreamFormat::Flv,
+                MediaFormat::Flv,
+                "540p",
+                1_000_000,
+                98,
+            ),
+            stream(
+                "https://pull-cmaf.example.com/origin/index.mpd",
+                StreamFormat::Dash,
+                MediaFormat::Fmp4,
+                "Original",
+                4_000_000,
+                90,
+            ),
+            stream(
+                "https://pull-cmaf.example.com/hd/index.mpd",
+                StreamFormat::Dash,
+                MediaFormat::Fmp4,
+                "720p",
+                1_800_000,
+                97,
+            ),
+        ]
+    }
+
+    fn pick(config: StreamSelectionConfig) -> (StreamFormat, String) {
+        let streams = rooms_with_opt_in_dash();
+        let best = StreamSelector::with_config(config)
+            .select_best(&streams)
+            .cloned()
+            .unwrap();
+        (best.stream_format, best.quality)
+    }
+
+    fn formats(formats: &[StreamFormat]) -> Option<Vec<StreamFormat>> {
+        Some(formats.to_vec())
+    }
+
+    #[test]
+    fn opt_in_dash_never_wins_without_dash_first() {
+        let flv_720 = (StreamFormat::Flv, "720p".to_string());
+        let cases = [
+            StreamSelectionConfig::default(),
+            // "Original" exists only as DASH: quality is scored before
+            // format, but DASH is excluded before any scoring.
+            StreamSelectionConfig {
+                preferred_qualities: vec!["Original".into()],
+                ..Default::default()
+            },
+            StreamSelectionConfig {
+                preferred_cdns: vec!["pull-cmaf".into()],
+                ..Default::default()
+            },
+            StreamSelectionConfig {
+                preferred_formats: formats(&[StreamFormat::Flv]),
+                preferred_qualities: vec!["Original".into()],
+                ..Default::default()
+            },
+            // DASH listed, but not first: FLV still wins.
+            StreamSelectionConfig {
+                preferred_formats: formats(&[StreamFormat::Flv, StreamFormat::Dash]),
+                preferred_qualities: vec!["Original".into()],
+                ..Default::default()
+            },
+            // Only the DASH Original meets the bitrate floor; the fallback
+            // to streams outside the criteria still excludes DASH.
+            StreamSelectionConfig {
+                min_bitrate: 3_000_000,
+                ..Default::default()
+            },
+        ];
+        for config in cases {
+            assert_eq!(pick(config.clone()), flv_720, "{config:?}");
+            let streams = rooms_with_opt_in_dash();
+            assert!(
+                StreamSelector::with_config(config)
+                    .sort_candidates(&streams)
+                    .iter()
+                    .all(|s| s.stream_format != StreamFormat::Dash)
+            );
+        }
+
+        let hls_first = StreamSelectionConfig {
+            preferred_formats: formats(&[StreamFormat::Hls, StreamFormat::Dash]),
+            preferred_qualities: vec!["Original".into()],
+            ..Default::default()
+        };
+        assert_eq!(pick(hls_first), (StreamFormat::Hls, "720p".to_string()));
+    }
+
+    #[test]
+    fn opt_in_dash_is_chosen_when_dash_is_the_first_preferred_format() {
+        let dash_first = StreamSelectionConfig {
+            preferred_formats: formats(&[StreamFormat::Dash]),
+            ..Default::default()
+        };
+        assert_eq!(
+            pick(dash_first.clone()),
+            (StreamFormat::Dash, "Original".to_string())
+        );
+        // A tie on quality is broken by the format preference.
+        assert_eq!(
+            pick(StreamSelectionConfig {
+                preferred_formats: formats(&[StreamFormat::Dash, StreamFormat::Flv]),
+                preferred_qualities: vec!["720p".into()],
+                ..Default::default()
+            }),
+            (StreamFormat::Dash, "720p".to_string())
+        );
+        // Quality is still scored before format.
+        assert_eq!(
+            pick(StreamSelectionConfig {
+                preferred_qualities: vec!["540p".into()],
+                ..dash_first
+            }),
+            (StreamFormat::Flv, "540p".to_string())
+        );
+    }
+
+    #[test]
+    fn only_opt_in_streams_and_no_preference_selects_nothing() {
+        let dash: Vec<StreamInfo> = rooms_with_opt_in_dash()
+            .into_iter()
+            .filter(|s| s.format_opt_in)
+            .collect();
+        let selector = StreamSelector::new();
+        assert!(selector.select_best(&dash).is_none());
+        assert!(!selector.admits(&dash[0]));
+    }
+
+    #[test]
+    fn dash_without_opt_in_competes_normally() {
+        // Streamlink's DASH streams are not opt-in and keep being ranked by
+        // priority like any other format.
+        let streams = vec![
+            create_test_stream(
+                "http://example.com/stream.flv",
+                StreamFormat::Flv,
+                "1080p",
+                5000000,
+                2,
+            ),
+            create_test_stream(
+                "http://example.com/stream.mpd",
+                StreamFormat::Dash,
+                "1080p",
+                5000000,
+                1,
+            ),
+        ];
+        let best = StreamSelector::new().select_best(&streams).unwrap();
         assert_eq!(best.stream_format, StreamFormat::Dash);
     }
 

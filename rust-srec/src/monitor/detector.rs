@@ -509,13 +509,28 @@ impl StreamDetector {
             let selected_stream = if let Some(stream) = candidates.first() {
                 debug!(quality = %stream.quality, "selected stream candidate");
                 (*stream).clone()
-            } else if let Some(stream) = media_info.streams.first() {
-                // Fallback: if no candidates match selection criteria, take the first available stream
+            } else if let Some(stream) = media_info.streams.iter().find(|s| selector.admits(s)) {
+                // Fallback: if no candidates match selection criteria, take the
+                // first stream the selector may choose at all.
                 debug!(
                     streams = media_info.streams.len(),
                     "stream selection fallback (no candidates matched criteria)"
                 );
                 stream.clone()
+            } else if !media_info.streams.is_empty() {
+                let mut formats: Vec<&str> = media_info
+                    .streams
+                    .iter()
+                    .map(|s| s.stream_format.as_str())
+                    .collect();
+                formats.sort_unstable();
+                formats.dedup();
+                warn!(
+                    streamer = %streamer.name,
+                    formats = %formats.join(", "),
+                    "Streamer is live but only offers formats that are never selected automatically; put the format first in Preferred Formats (e.g. `dash` first) to record it. Treating as OFFLINE."
+                );
+                return Ok(LiveStatus::Offline);
             } else {
                 // No streams available at all - treat as offline
                 warn!(
@@ -900,6 +915,65 @@ mod tests {
         assert_eq!(extractor.urls.lock().unwrap().len(), 1);
     }
 
+    #[tokio::test]
+    async fn opt_in_streams_are_skipped_by_the_selection_fallback() {
+        let streamer =
+            StreamerMetadata::from_db_model(&crate::database::models::StreamerDbModel::new(
+                "fixture",
+                "https://example.com/channel",
+                "fixture-platform",
+            ));
+        let dash = StreamInfo::builder(
+            "https://cdn-a.example.com/origin/index.mpd",
+            StreamFormat::Dash,
+            MediaFormat::Fmp4,
+        )
+        .quality("Original")
+        .format_opt_in(true)
+        .build();
+        let flv = StreamInfo::builder(
+            "https://cdn-b.example.com/hd.flv",
+            StreamFormat::Flv,
+            MediaFormat::Flv,
+        )
+        .quality("720p")
+        .build();
+        let live = |streams: Vec<StreamInfo>| {
+            FakeExtractor::new(
+                Ok(platforms_parser::media::MediaInfo::builder(
+                    "https://example.com/channel",
+                    "fixture",
+                    "fixture",
+                )
+                .is_live(true)
+                .streams(streams)
+                .build()),
+                vec![Ok(())],
+            )
+        };
+        // Every stream blacklisted: the fallback takes the first stream the
+        // selector may choose, never the opt-in DASH listed before it.
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["example.com".to_string()],
+            ..Default::default()
+        };
+        let status = StreamDetector::new()
+            .check_status_with_extractor(&streamer, Some(&config), &live(vec![dash.clone(), flv]))
+            .await
+            .unwrap();
+        let LiveStatus::Live { streams, .. } = status else {
+            panic!("expected live, got {status:?}");
+        };
+        assert_eq!(streams[0].stream_format, StreamFormat::Flv);
+
+        // Only opt-in streams and no preference for them: nothing to record.
+        let status = StreamDetector::new()
+            .check_status_with_extractor(&streamer, None, &live(vec![dash]))
+            .await
+            .unwrap();
+        assert!(matches!(status, LiveStatus::Offline));
+    }
+
     fn create_test_stream() -> StreamInfo {
         StreamInfo {
             url: "https://example.com/stream.flv".to_string(),
@@ -913,6 +987,7 @@ mod tests {
             fps: 30.0,
             is_headers_needed: false,
             is_audio_only: false,
+            format_opt_in: false,
         }
     }
 

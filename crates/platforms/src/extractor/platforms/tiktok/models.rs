@@ -174,15 +174,24 @@ pub struct StreamQualityInfo {
     pub main_stream: StreamUrlInfo,
 }
 
-/// Contains the URLs for different streaming protocols (FLV, HLS).
+/// Contains the URLs for different streaming protocols (FLV, HLS, DASH).
 #[derive(Debug, Deserialize)]
 pub struct StreamUrlInfo {
     /// The FLV stream URL.
     #[serde(default)]
     pub flv: String,
-    /// The HLS stream URL.
+    /// The HLS stream URL (MPEG-TS segments).
     #[serde(default)]
     pub hls: String,
+    /// Fragmented-MP4 stream URL. TikTok serves an MPEG-DASH manifest
+    /// (`.mpd`) here; it is the only fMP4 source and, unlike `hls`, is also
+    /// offered for the audio-only quality.
+    #[serde(default)]
+    pub cmaf: String,
+    /// MPEG-DASH manifest URL. Part of the shared ByteDance schema but empty
+    /// on TikTok so far; read in case it starts carrying the manifest.
+    #[serde(default)]
+    pub dash: String,
     /// Additional SDK parameters, often as a JSON string.
     #[serde(default)]
     pub sdk_params: String,

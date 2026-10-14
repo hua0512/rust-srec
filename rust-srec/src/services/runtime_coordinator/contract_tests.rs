@@ -1232,6 +1232,7 @@ fn streams(label: &str) -> Vec<crate::monitor::StreamInfo> {
         fps: 30.0,
         is_headers_needed: false,
         is_audio_only: false,
+        format_opt_in: false,
     }]
 }
 

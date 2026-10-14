@@ -1,0 +1,94 @@
+{
+  "data": {
+    "user": {
+      "id": "1",
+      "nickname": "Tester",
+      "uniqueId": "tester",
+      "roomId": "7000000000000000001",
+      "status": 2,
+      "avatarLarger": "https://avatar.example.com/tester.webp"
+    },
+    "liveRoom": {
+      "title": "Testing",
+      "coverUrl": "https://cover.example.com/tester.webp",
+      "startTime": 1800000000,
+      "status": 2,
+      "streamData": {
+        "pull_data": {
+          "options": {
+            "default_quality": {
+              "icon_type": 0,
+              "level": 0,
+              "name": "720p",
+              "resolution": "",
+              "sdk_key": "hd",
+              "v_codec": ""
+            },
+            "qualities": [
+              {
+                "icon_type": 0,
+                "level": 3,
+                "name": "720p",
+                "resolution": "",
+                "sdk_key": "hd",
+                "v_codec": ""
+              }
+            ]
+          },
+          "stream_data": "{\"common\":{\"room_id\":\"7000000000000000001\",\"session_id\":\"SESSION\"},\"data\":{\"hd\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001_hd.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"https://pull-hls.example.com/stage/stream-1000000000000000001_hd/index.m3u8?expire=1800000000&sign=SIGNATURE\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_hd/index.mpd?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":1000000,\\\"resolution\\\":\\\"720x1280\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"hd\\\"}\"}},\"ao\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_ao/index.mpd?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":0,\\\"resolution\\\":\\\"\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"ao\\\"}\"}}}}"
+        }
+      },
+      "hevcStreamData": {
+        "pull_data": {
+          "options": {
+            "default_quality": {
+              "icon_type": 0,
+              "level": 0,
+              "name": "720p",
+              "resolution": "",
+              "sdk_key": "hd",
+              "v_codec": ""
+            },
+            "qualities": [
+              {
+                "icon_type": 0,
+                "level": 10,
+                "name": "Original",
+                "resolution": "",
+                "sdk_key": "origin",
+                "v_codec": ""
+              },
+              {
+                "icon_type": 0,
+                "level": 3,
+                "name": "720p",
+                "resolution": "",
+                "sdk_key": "hd",
+                "v_codec": ""
+              },
+              {
+                "icon_type": 0,
+                "level": 2,
+                "name": "540p",
+                "resolution": "",
+                "sdk_key": "sd",
+                "v_codec": ""
+              },
+              {
+                "icon_type": 0,
+                "level": 1,
+                "name": "360p",
+                "resolution": "",
+                "sdk_key": "ld",
+                "v_codec": ""
+              }
+            ]
+          },
+          "stream_data": "{\"common\":{\"room_id\":\"7000000000000000001\",\"session_id\":\"SESSION\"},\"data\":{\"origin\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001_or5.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"https://pull-hls.example.com/stage/stream-1000000000000000001_or5/index.m3u8?expire=1800000000&sign=SIGNATURE\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_or5/index.mpd?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h265\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":1514000,\\\"resolution\\\":\\\"1080x1920\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"or5\\\"}\"}},\"hd\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001_hd5.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_hd5/index.mpd?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h265\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":1350000,\\\"resolution\\\":\\\"720x1280\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"hd5\\\"}\"}},\"sd\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001_sd5.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"https://pull-hls.example.com/stage/stream-1000000000000000001_sd5/index.m3u8?expire=1800000000&sign=SIGNATURE\",\"cmaf\":\"\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h265\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":800000,\\\"resolution\\\":\\\"576x1024\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"sd5\\\"}\"}},\"ld\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001_ld5.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"https://pull-hls.example.com/stage/stream-1000000000000000001_ld5/index.m3u8?expire=1800000000&sign=SIGNATURE\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_ld5/index.m3u8?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h265\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":400000,\\\"resolution\\\":\\\"480x853\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"ld5\\\"}\"}},\"ao\":{\"main\":{\"flv\":\"https://pull-flv.example.com/stage/stream-1000000000000000001.flv?expire=1800000000&sign=SIGNATURE\",\"hls\":\"\",\"cmaf\":\"https://pull-cmaf.example.com/stage/stream-1000000000000000001_ao/index.mpd?auth_mode=2&expire=1800000000&sign=SIGNATURE\",\"dash\":\"\",\"lls\":\"\",\"tsl\":\"\",\"tile\":\"\",\"rtc\":\"\",\"sdk_params\":\"{\\\"VCodec\\\":\\\"h264\\\",\\\"cmaf_auth\\\":\\\"auth_mode=2&expire=1800000000&sign=SIGNATURE\\\",\\\"vbitrate\\\":0,\\\"resolution\\\":\\\"\\\",\\\"gop\\\":4,\\\"cdn_name\\\":\\\"example\\\",\\\"stream_suffix\\\":\\\"ao\\\"}\"}}}}"
+        }
+      }
+    }
+  },
+  "message": "",
+  "statusCode": 0
+}

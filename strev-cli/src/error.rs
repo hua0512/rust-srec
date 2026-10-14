@@ -38,6 +38,11 @@ pub enum CliError {
     #[error("Invalid stream filter: {0}")]
     InvalidFilter(String),
 
+    #[error(
+        "Only {formats} streams are available, and they are never selected automatically; choose one with `--format {example}` (single extraction) or from the stream list"
+    )]
+    OptInRequired { formats: String, example: String },
+
     #[error("Timeout error: Operation timed out after {seconds} seconds")]
     Timeout { seconds: u64 },
 }

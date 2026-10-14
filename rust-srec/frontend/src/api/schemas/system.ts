@@ -294,6 +294,7 @@ export const ManagedPlaybackSchema = z.object({
       codec: z.string().nullable().optional(),
       bitrate: z.number().nullable().optional(),
       fps: z.number().nullable().optional(),
+      format_opt_in: z.boolean().optional(),
     }),
   ),
 });
