@@ -40,6 +40,13 @@
 //! when the video moves to a new Period is written first, under the old
 //! init.
 //!
+//! A segment that names earlier segments covering its whole time
+//! (`DashSegmentMeta::covered_by`: a Period revealed inside media planned
+//! from the previous, still open one) is dropped on arrival when all of
+//! those were delivered. They precede it in the track's ordinal order, so
+//! their fate is settled by then: exactly one copy of that time is kept,
+//! whether the earlier ones were written, failed or skipped.
+//!
 //! A Period without video (an audio-only interlude, or audio carried past
 //! the last video Period) is recorded as its own audio-only epoch: one item
 //! per audio segment under the audio track's own init, its duration the
@@ -70,7 +77,7 @@ use tracing::{debug, info, warn};
 
 use crate::DownloadError;
 use crate::dash::config::DashMuxConfig;
-use crate::dash::planner::{ConsumedFrontier, PeriodKey};
+use crate::dash::planner::{ConsumedFrontier, PLANNING_LOOKAHEAD, PeriodKey};
 use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
 use crate::segment_engine::control::EngineNotice;
@@ -87,6 +94,11 @@ const MAX_CONSECUTIVE_LEADER_REJECTIONS: u32 = 3;
 
 /// Leader-less Periods remembered; only the newest few can still matter.
 const MAX_ABSENT_PERIODS: usize = 16;
+
+/// How far below the newest delivered ordinal a track remembers delivered
+/// ones. A segment's covering segments are planned at most a planning
+/// window before it.
+const DELIVERED_WINDOW: u64 = 2 * PLANNING_LOOKAHEAD;
 
 pub(crate) type TrackItem = Result<AssembledItem, DownloadError>;
 
@@ -156,6 +168,7 @@ struct MuxStats {
     stale_fragments: u64,
     slices_without_waiting: u64,
     rejected_leader_segments: u64,
+    redundant_segments: u64,
 }
 
 /// A track's initialization segment and what is derived from it.
@@ -236,6 +249,9 @@ struct TrackState {
     latest_init: Option<Arc<TrackInit>>,
     /// Follower only: the newest init the slice logic has moved past.
     current_init: Option<Arc<TrackInit>>,
+    /// Ordinals of the media segments delivered and queued, ascending,
+    /// within [`DELIVERED_WINDOW`] of the newest.
+    delivered: VecDeque<u64>,
 }
 
 impl TrackState {
@@ -249,7 +265,30 @@ impl TrackState {
             queued_bytes: 0,
             latest_init: None,
             current_init: None,
+            delivered: VecDeque::new(),
         }
+    }
+
+    fn note_delivered(&mut self, msn: u64) {
+        self.delivered.push_back(msn);
+        while self
+            .delivered
+            .front()
+            .is_some_and(|&oldest| oldest.saturating_add(DELIVERED_WINDOW) < msn)
+        {
+            self.delivered.pop_front();
+        }
+    }
+
+    /// Whether `descriptor` names covering segments, all of them delivered:
+    /// it holds nothing the output lacks.
+    fn redundant(&self, descriptor: &SegmentDescriptor) -> Option<(u64, u64)> {
+        let SegmentMeta::Dash(meta) = &descriptor.meta else {
+            return None;
+        };
+        let (from, to) = meta.covered_by?;
+        (from <= to && (from..=to).all(|msn| self.delivered.binary_search(&msn).is_ok()))
+            .then_some((from, to))
     }
 
     fn pop_front(&mut self) -> Option<Queued> {
@@ -496,6 +535,7 @@ pub(crate) async fn run_muxer(
         stale_audio_fragments = stats.stale_fragments,
         slices_without_waiting = stats.slices_without_waiting,
         rejected_segments = stats.rejected_leader_segments,
+        redundant_segments = stats.redundant_segments,
         ?outcome,
         "DASH muxer finished"
     );
@@ -645,6 +685,17 @@ impl MuxState {
                 self.leader_next_sequence = self
                     .leader_next_sequence
                     .max(descriptor.msn.saturating_add(1));
+                if let Some((from, to)) = self.leader.redundant(&descriptor) {
+                    self.stats.redundant_segments += 1;
+                    debug!(
+                        track = %self.leader.track,
+                        msn = descriptor.msn,
+                        from,
+                        to,
+                        "segment already delivered from the previous Period; dropped"
+                    );
+                    return Ok(());
+                }
                 let Some(init) = self.leader.latest_init.clone() else {
                     warn!(track = %self.leader.track, "media segment without an initialization segment; dropped");
                     return Ok(());
@@ -652,6 +703,7 @@ impl MuxState {
                 match probe_fragments(&init, &data) {
                     Ok(fragments) => {
                         self.leader_rejections = 0;
+                        self.leader.note_delivered(descriptor.msn);
                         self.leader.queued_bytes += data.len();
                         self.leader.queue.push_back(Queued::Media(QueuedMedia {
                             init,
@@ -758,12 +810,24 @@ impl MuxState {
                 }
             }
             AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor }) => {
+                if let Some((from, to)) = follower.redundant(&descriptor) {
+                    self.stats.redundant_segments += 1;
+                    debug!(
+                        track = %follower.track,
+                        msn = descriptor.msn,
+                        from,
+                        to,
+                        "segment already delivered from the previous Period; dropped"
+                    );
+                    return;
+                }
                 let Some(init) = follower.latest_init.clone() else {
                     warn!(track = %follower.track, "media segment without an initialization segment; dropped");
                     return;
                 };
                 match probe_fragments(&init, &data) {
                     Ok(fragments) => {
+                        follower.note_delivered(descriptor.msn);
                         follower.queued_bytes += data.len();
                         follower.queue.push_back(Queued::Media(QueuedMedia {
                             init,
@@ -2116,6 +2180,7 @@ mod tests {
                 timescale: 1000,
                 presentation_time_offset: pto_ms,
                 availability_start_time: None,
+                covered_by: None,
             })),
         })
     }
@@ -2612,6 +2677,101 @@ mod tests {
             kinds,
             ["init", "media", "epoch", "init", "media", "media", "end"]
         );
+    }
+
+    /// `item`, a media payload, naming segments `from..=to` as covering it.
+    fn covered(item: TrackItem, from: u64, to: u64) -> TrackItem {
+        let Ok(AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor })) = item else {
+            panic!("a media payload");
+        };
+        let mut descriptor = descriptor.as_ref().clone();
+        let SegmentMeta::Dash(meta) = &descriptor.meta else {
+            panic!("DASH meta");
+        };
+        let mut meta = meta.as_ref().clone();
+        meta.covered_by = Some((from, to));
+        descriptor.meta = SegmentMeta::Dash(Arc::new(meta));
+        Ok(AssembledItem::Payload(SegmentPayload::Mp4Media {
+            data,
+            descriptor: Arc::new(descriptor),
+        }))
+    }
+
+    #[tokio::test]
+    async fn a_segment_whose_covering_segments_were_delivered_is_dropped() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.audio(init(a, Some("p0"), 0, AUDIO_INIT)).await;
+        // p0's overhang: 1–2 s, already delivered.
+        for (number, video, audio) in [
+            (1, Bytes::from_static(VIDEO_1), Bytes::from_static(AUDIO_1)),
+            (2, with_tfdt(VIDEO_1, 12_288), with_tfdt(AUDIO_1, 48_000)),
+        ] {
+            h.video(media(v, Some("p0"), 0, number, video)).await;
+            h.audio(media(a, Some("p0"), 0, number, audio)).await;
+        }
+        // p1 starts at 1 s; its first segments repeat p0's 1–2 s.
+        h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
+        h.audio(init(a, Some("p1"), 1, AUDIO_INIT)).await;
+        h.video(covered(
+            media(v, Some("p1"), 1, 3, Bytes::from_static(VIDEO_1)),
+            2,
+            2,
+        ))
+        .await;
+        h.audio(covered(
+            media(a, Some("p1"), 1, 3, Bytes::from_static(AUDIO_1)),
+            2,
+            2,
+        ))
+        .await;
+        h.video(media(v, Some("p1"), 1, 4, with_tfdt(VIDEO_1, 12_288)))
+            .await;
+        h.audio(media(a, Some("p1"), 1, 4, with_tfdt(AUDIO_1, 48_000)))
+            .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let kinds: Vec<&str> = items.iter().map(kind).collect();
+        assert_eq!(kinds, ["init", "media", "media", "media", "end"]);
+        let tracks: Vec<u32> = media_data(&items)
+            .iter()
+            .flat_map(|data| fragments(data))
+            .map(|(_, track)| track)
+            .collect();
+        assert_eq!(tracks, [1, 2, 1, 2, 1, 2], "each second once");
+    }
+
+    #[tokio::test]
+    async fn a_segment_whose_covering_segment_was_skipped_is_kept() {
+        let h = start(MediaTrack::Video, false, lag(WAIT));
+        let v = MediaTrack::Video;
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        // p0's overhang segment 2 (1–2 s) never arrives.
+        h.video(Ok(AssembledItem::GapSkipped {
+            from_sequence: 2,
+            to_sequence: 3,
+            reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
+        }))
+        .await;
+        h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
+        h.video(covered(
+            media(v, Some("p1"), 1, 3, Bytes::from_static(VIDEO_1)),
+            2,
+            2,
+        ))
+        .await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let kinds: Vec<&str> = items.iter().map(kind).collect();
+        assert_eq!(kinds, ["init", "media", "media", "end"], "p1 fills 1–2 s");
     }
 
     #[tokio::test]

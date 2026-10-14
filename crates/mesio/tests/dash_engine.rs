@@ -1138,8 +1138,22 @@ fn shared_init_periods(periods: &[(&str, u64, u64)], end_secs: Option<u64>) -> S
     )
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_period_revealed_inside_recorded_media_continues_the_same_file() {
+/// What happens to p0's overhang video segment 12 (11–12 s) in
+/// [`record_revealed_overhang`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Overhang {
+    /// Written before p1 is revealed.
+    Delivered,
+    /// Still downloading when p1 is revealed.
+    InFlight,
+    /// Never produced by the server: it fails.
+    Missing,
+}
+
+/// Records an open p0 planned through 12 s (its segments 11 and 12 reach
+/// past 10 s), then p1 revealed from 10 s with the same inits, then the
+/// end at 13 s. Returns the output and the origin.
+async fn record_revealed_overhang(overhang: Overhang) -> (Vec<HlsData>, Origin) {
     let origin = Origin::default();
     origin.add_file("v/init.mp4", VIDEO_INIT);
     origin.add_file("a/init.mp4", AUDIO_INIT);
@@ -1147,11 +1161,21 @@ async fn a_period_revealed_inside_recorded_media_continues_the_same_file() {
         origin.add_numbered(&format!("{period}/v"), VIDEO_1, VIDEO_TIMESCALE);
         origin.add_numbered(&format!("{period}/a"), AUDIO_1, AUDIO_TIMESCALE);
     }
+    let gate = match overhang {
+        Overhang::InFlight => Some(origin.gate("p0/v/12.m4s")),
+        Overhang::Missing => {
+            origin.add_file_failing("p0/v/12.m4s", VIDEO_1, 404, u32::MAX);
+            None
+        }
+        Overhang::Delivered => None,
+    };
     origin.set_mpd(shared_init_periods(&[("p0", 0, 0)], None));
     let base = origin.clone().serve().await;
     let clock = live_clock(10);
     let mut config = config(Some(Arc::clone(&clock)));
     config.live_start = LiveStartPolicy::LiveEdge;
+    // The newest video item waits for the audio after it only briefly.
+    config.mux.max_audio_lag = Duration::from_millis(200);
 
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
@@ -1161,16 +1185,27 @@ async fn a_period_revealed_inside_recorded_media_continues_the_same_file() {
     } = session;
     let mut out = Vec::new();
     wait_for_hit(&origin, "p0/v/10.m4s").await;
-    // While p0 is open, its segments 11 and 12 cover 10–12 s.
     clock.advance(Duration::from_secs(2));
-    wait_for_hit(&origin, "p0/v/12.m4s").await;
+    wait_for_hit(&origin, "p0/v/11.m4s").await;
     wait_for_hit(&origin, "p0/a/12.m4s").await;
+    match overhang {
+        Overhang::Delivered => {
+            let error = read_until(&mut items, &mut out, |out| media(out).len() >= 3).await;
+            assert!(error.is_none(), "{error:?}");
+        }
+        Overhang::Missing => wait_for_hit(&origin, "p0/v/12.m4s").await,
+        Overhang::InFlight => {}
+    }
     // p1 starts at 10 s and offers its third segment (12–13 s) a second
     // early. The clock stays at 12 s, so only a planner that consumed this
     // MPD can request it.
     origin.set_mpd(shared_init_periods(&[("p0", 0, 0), ("p1", 10, 1)], None));
     wait_for_hit(&origin, "p1/v/3.m4s").await;
     wait_for_hit(&origin, "p1/a/3.m4s").await;
+    if let Some(gate) = gate {
+        assert_eq!(origin.hits("p0/v/12.m4s"), 0, "still held");
+        gate.send(true).expect("gate open");
+    }
     origin.set_mpd(shared_init_periods(
         &[("p0", 0, 0), ("p1", 10, 0)],
         Some(13),
@@ -1182,29 +1217,54 @@ async fn a_period_revealed_inside_recorded_media_continues_the_same_file() {
         .unwrap()
         .unwrap()
         .unwrap();
-
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
-    // One file: identical inits announce no epoch change.
-    assert_eq!(inits(&out).len(), 1, "{}", describe(&out));
+    (out, origin)
+}
+
+/// The output is one file holding each second of video from 9 s to 13 s
+/// exactly once.
+fn assert_one_file_each_second_once(out: &[HlsData]) {
+    assert_eq!(inits(out).len(), 1, "{}", describe(out));
     assert!(
         !out.iter().any(|item| matches!(
             item,
             HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
         )),
         "{}",
-        describe(&out)
+        describe(out)
     );
-    assert_two_track_stream(&out);
-    // Each second once: p0's 9–12 s, then p1 from 12 s.
-    let video: Vec<u64> = media(&out)
+    assert_two_track_stream(out);
+    let video: Vec<u64> = media(out)
         .iter()
         .flat_map(|segment| fragments(&segment.data))
         .filter(|(_, track, _)| *track == 1)
         .map(|(_, _, time)| time / VIDEO_TIMESCALE)
         .collect();
-    assert_eq!(video, [9, 10, 11, 12], "{}", describe(&out));
-    assert_eq!(origin.hits("p1/v/1.m4s"), 0);
-    assert_eq!(origin.hits("p1/v/2.m4s"), 0);
+    assert_eq!(video, [9, 10, 11, 12], "{}", describe(out));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_period_revealed_inside_delivered_media_continues_the_same_file() {
+    let (out, origin) = record_revealed_overhang(Overhang::Delivered).await;
+    assert_one_file_each_second_once(&out);
+    // p1's copy of 11–12 s was fetched in case p0's had failed.
+    assert_eq!(origin.hits("p1/v/2.m4s"), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overhang_downloading_when_a_period_is_revealed_is_recorded_once() {
+    let (out, origin) = record_revealed_overhang(Overhang::InFlight).await;
+    assert_one_file_each_second_once(&out);
+    assert_eq!(origin.hits("p0/v/12.m4s"), 1);
+    assert_eq!(origin.hits("p1/v/2.m4s"), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn overhang_the_server_never_produced_is_recorded_from_the_new_period() {
+    let (out, origin) = record_revealed_overhang(Overhang::Missing).await;
+    // 11–12 s comes from p1's segment 2.
+    assert_one_file_each_second_once(&out);
+    assert!(origin.hits("p0/v/12.m4s") >= 1);
 }
 
 /// A/V `$Number$` presentation whose video path names the Representation;

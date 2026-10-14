@@ -40,10 +40,11 @@
 //! the assembler's live stall watchdog ends the session with
 //! `DownloadError::Timeout`, and a new recording starts from scratch.
 //!
-//! A Period's first epoch continues after the presentation time already
-//! planned from the previous Period, which may reach past the Period start
-//! when the previous Period was open while it was planned
-//! (`DashPlanner::period_change_index`).
+//! A Period's segments may cover presentation time already planned from the
+//! previous Period, which reaches past the Period start when the previous
+//! Period was open while it was planned. They are planned anyway, each
+//! naming the earlier segments that cover it, and the muxer keeps one only
+//! where those were not delivered (`DashPlanner::overhang`).
 //!
 //! An *epoch* is one run of segments sharing one initialization segment and
 //! timing: a Period and Representation, until the Representation's
@@ -212,6 +213,17 @@ struct Planned {
     locator: u64,
     ordinal: u64,
     key: SegmentKey,
+    /// See [`DashSegmentMeta::covered_by`].
+    covered_by: Option<(u64, u64)>,
+}
+
+/// A planned media segment's ordinal and presentation bounds, in
+/// nanoseconds on the MPD timeline.
+#[derive(Debug, Clone, Copy)]
+struct Span {
+    ordinal: u64,
+    start: i128,
+    end: i128,
 }
 
 #[derive(Debug)]
@@ -230,6 +242,12 @@ struct Epoch {
     last_time: u64,
     /// Presentation end of the newest planned segment, in nanoseconds.
     last_end: i128,
+    /// The newest planned media segments, at most [`PLANNING_LOOKAHEAD`]:
+    /// what a later Period revealed inside them may duplicate.
+    spans: VecDeque<Span>,
+    /// Segments of the previous Period's newest epoch that reach past this
+    /// epoch's Period start, when their times compare with this Period's.
+    overhang: Vec<Span>,
     /// `MPD@availabilityStartTime` when the epoch opened.
     availability_start: Option<DateTime<Utc>>,
     /// `availability_start` as the wall-clock anchor every descriptor of
@@ -246,11 +264,6 @@ struct PeriodTrust {
     contradicted: bool,
     /// Withdraws the wall-clock anchor of every epoch of the Period.
     withdrawal: AnchorWithdrawal,
-    /// Whether every segment of the Period was found within media planned
-    /// from an earlier Period ([`PeriodPlan::Covered`]). Kept because the
-    /// fact cannot be seen again once its segments leave the availability
-    /// window, and the Period never gets an epoch that would show it.
-    covered: bool,
 }
 
 /// A segment's stable identity within its Representation (see the module
@@ -389,10 +402,6 @@ impl PeriodScope<'_> {
 enum PeriodPlan {
     /// Every currently available segment is planned.
     Complete,
-    /// Every segment of the Period, through its last one, lies within media
-    /// already planned from an earlier Period, so it never gets an epoch
-    /// (see [`DashPlanner::period_change_index`]); nothing of it remains.
-    Covered,
     /// A window bound was reached; more will be planned later.
     Blocked,
 }
@@ -418,8 +427,8 @@ pub(crate) struct DashPlanner {
     reported_absence: bool,
     /// The [`TimingConflict`]s reported so far, as a bit set.
     reported_conflicts: u8,
-    /// What is known about the Periods that may still be planned or still
-    /// have epochs; pruned as planning moves past them.
+    /// Timing trust of the Periods that may still be planned or still have
+    /// epochs; pruned as planning moves past them.
     periods: VecDeque<PeriodTrust>,
     /// Withdraws every anchor issued under the current
     /// `availabilityStartTime`; replaced when it moves.
@@ -486,7 +495,6 @@ impl DashPlanner {
                     period: period.clone(),
                     contradicted: false,
                     withdrawal: AnchorWithdrawal::default(),
-                    covered: false,
                 });
                 self.periods.len() - 1
             }
@@ -513,16 +521,8 @@ impl DashPlanner {
             .any(|trust| trust.contradicted && trust.period.same(period))
     }
 
-    /// Whether every segment of `period` was found within media planned from
-    /// an earlier Period, in this snapshot or an earlier one.
-    fn known_covered(&self, period: &PeriodKey) -> bool {
-        self.periods
-            .iter()
-            .any(|trust| trust.covered && trust.period.same(period))
-    }
-
-    /// Forgets what is known about Periods planning has moved past and that
-    /// no retained epoch belongs to.
+    /// Forgets the trust of Periods planning has moved past and that no
+    /// retained epoch belongs to.
     fn prune_periods(&mut self, lower: &PeriodKey) {
         let epochs = &self.epochs;
         self.periods.retain(|trust| {
@@ -716,26 +716,16 @@ impl DashPlanner {
                 at,
                 lead,
             };
-            let covered = match self.plan_period(
-                scope,
-                &window,
-                &mut budget,
-                &mut target_duration,
-                outcome,
-            )? {
-                PeriodPlan::Complete => self.known_covered(&key),
-                PeriodPlan::Covered => {
-                    self.trust_mut(&key).covered = true;
-                    true
-                }
+            match self.plan_period(scope, &window, &mut budget, &mut target_duration, outcome)? {
+                PeriodPlan::Complete => {}
                 PeriodPlan::Blocked => {
                     blocked = true;
                     break;
                 }
-            };
+            }
             let nothing_to_plan =
                 window.is_empty() && manifest.presentation_type == PresentationType::Static;
-            earlier_complete &= covered || self.period_fully_planned(period, &key, nothing_to_plan);
+            earlier_complete &= self.period_fully_planned(period, &key, nothing_to_plan);
         }
 
         let planned = self.next_ordinal - first_new;
@@ -886,7 +876,7 @@ impl DashPlanner {
                     scope,
                     epoch,
                     &segment,
-                    planned.ordinal,
+                    (planned.ordinal, planned.covered_by),
                     planned.key.clone(),
                 ));
             }
@@ -921,6 +911,7 @@ impl DashPlanner {
             })
             .map(|epoch| epoch.last_locator);
         let same_period = newest.map(|epoch| epoch.period.same(key));
+        let mut overhang = Vec::new();
         let first_index = match continuing {
             Some(last) => {
                 let first = first_index(window, |segment| locate(segment, locator) > last)?;
@@ -938,7 +929,10 @@ impl DashPlanner {
             }
             None => match same_period {
                 Some(true) => self.switch_index(scope, window, &fingerprint)?,
-                Some(false) => self.period_change_index(scope, window)?,
+                Some(false) => {
+                    overhang = self.overhang(scope);
+                    0
+                }
                 None if self.start.period.same(key) => match self.start.after_nanos {
                     Some(after) => first_index(window, |segment| scope.bounds(segment).1 > after)?,
                     None => 0,
@@ -949,17 +943,6 @@ impl DashPlanner {
         let continuing = continuing.is_some();
         self.note_lead(scope);
         if first_index >= window.len() {
-            // A later Period's segments are skipped only up to what was
-            // already planned; once its last segment, reaching the Period
-            // end, is among them, the Period is done without an epoch.
-            if same_period == Some(false)
-                && first_index > 0
-                && let Some(end) = period_end(scope.period)
-                && let Some(last) = window.last().transpose()?
-                && scope.bounds(&last).1 >= end
-            {
-                return Ok(PeriodPlan::Covered);
-            }
             return Ok(PeriodPlan::Complete);
         }
         if *budget == 0 {
@@ -979,7 +962,7 @@ impl DashPlanner {
             let first = window
                 .get(first_index)
                 .ok_or(ManifestError::overflow("segment window"))??;
-            let init = self.open_epoch(scope, fingerprint, init_url, &first);
+            let init = self.open_epoch(scope, fingerprint, init_url, &first, overhang);
             outcome.descriptors.push(init);
         }
 
@@ -997,9 +980,10 @@ impl DashPlanner {
                 .ok_or(ManifestError::overflow("segment window"))??;
             index += 1;
             let position = locate(&segment, locator);
+            let (start, end) = scope.bounds(&segment);
             epoch.last_locator = position;
             epoch.last_time = segment.time;
-            epoch.last_end = scope.bounds(&segment).1;
+            epoch.last_end = end;
             let Some(key) = media_key(&self.identity, scope, epoch, &segment) else {
                 warn!(
                     number = segment.number,
@@ -1008,18 +992,28 @@ impl DashPlanner {
                 continue;
             };
             let ordinal = self.next_ordinal;
+            let covered_by = covering(&epoch.overhang, start, end);
             outcome.descriptors.push(media_descriptor(
                 track,
                 scope,
                 epoch,
                 &segment,
-                ordinal,
+                (ordinal, covered_by),
                 key.clone(),
             ));
             epoch.planned.push_back(Planned {
                 locator: position,
                 ordinal,
                 key,
+                covered_by,
+            });
+            if epoch.spans.len() == PLANNING_LOOKAHEAD as usize {
+                epoch.spans.pop_front();
+            }
+            epoch.spans.push_back(Span {
+                ordinal,
+                start,
+                end,
             });
             self.next_ordinal = ordinal
                 .checked_add(1)
@@ -1112,46 +1106,44 @@ impl DashPlanner {
         self.live_start_index(scope, window)
     }
 
-    /// Where the first epoch of a Period after the newest epoch's starts in
-    /// `window`: after the presentation time the newest epoch covers.
+    /// The newest epoch's segments that a later Period's first epoch may
+    /// duplicate: those reaching past the later Period's start.
     ///
     /// A Period ends where the next one starts (ISO/IEC 23009-1 §5.3.2.1),
     /// but while a dynamic MPD's last Period has no end yet, its segments
     /// are planned past a Period start that only a later update reveals.
-    /// Those segments hold consecutive ordinals and may already be written,
-    /// so they cannot be withdrawn; the new Period continues after them
-    /// instead, so that output time neither overlaps nor leaves a gap.
-    /// Segments are skipped only when they end within the covered time: one
-    /// reaching past it is planned, like a segment overlapping a Period
-    /// boundary.
+    /// That *overhang* cannot be withdrawn: its ordinals may be emitted,
+    /// buffered or downloading, and the assembler emits in ordinal order.
+    /// Nor can the new Period skip it: an overhang segment the server never
+    /// produced (it was planned from a stale MPD) fails, and the new
+    /// Period's segment would be the only copy of that time. So the new
+    /// Period is planned from its start, and each of its segments within the
+    /// overhang names the overhang ordinals covering it
+    /// ([`DashSegmentMeta::covered_by`]). Those precede it in ordinal order,
+    /// so by the time it is delivered, the muxer knows whether they all
+    /// were and keeps exactly one copy, whatever their downloads did. The
+    /// cost is downloading the overhang's time twice.
     ///
     /// Bounds of two Periods lie on one MPD timeline only while neither
     /// Period's timing was contradicted and the anchor has not moved; else
-    /// the new Period is recorded from its start.
-    fn period_change_index(
-        &self,
-        scope: PeriodScope<'_>,
-        window: &SegmentWindow<'_>,
-    ) -> Result<u64, ManifestError> {
+    /// there is no overhang to compare with. An overhang longer than
+    /// [`Epoch::spans`] retains is not compared before its retained part;
+    /// that much MPD staleness duplicates rather than loses media, and the
+    /// muxer never continues a file backwards in time.
+    fn overhang(&self, scope: PeriodScope<'_>) -> Vec<Span> {
         let Some(previous) = self.epochs.back() else {
-            return Ok(0);
+            return Vec::new();
         };
         if !self.timing_trusted(scope, previous) || self.contradicted(&previous.period) {
-            return Ok(0);
+            return Vec::new();
         }
-        let covered = previous.last_end;
-        let index = first_index(window, |segment| scope.bounds(segment).1 > covered)?;
-        // Logged once the epoch can open; until then every republish of the
-        // MPD finds the same covered window.
-        if index > 0 && index < window.len() {
-            info!(
-                period = %scope.key.label(),
-                skipped = index,
-                covered_secs = (covered as f64) / (NANOS_PER_SEC as f64),
-                "a new Period starts inside media already planned from the previous one; continuing after it"
-            );
-        }
-        Ok(index)
+        let period_start = i128::try_from(scope.period.start.as_nanos()).unwrap_or(i128::MAX);
+        previous
+            .spans
+            .iter()
+            .filter(|span| span.end > period_start)
+            .copied()
+            .collect()
     }
 
     /// Where a recording would start in `window` (see
@@ -1239,6 +1231,7 @@ impl DashPlanner {
         fingerprint: Fingerprint,
         init_url: Url,
         first: &Segment,
+        overhang: Vec<Span>,
     ) -> SegmentDescriptor {
         let PeriodScope {
             key,
@@ -1268,7 +1261,13 @@ impl DashPlanner {
         let anchor = availability_start.filter(|_| trusted).map(|time| {
             WallClockAnchor::new(time, &self.presentation_withdrawal, &period_withdrawal)
         });
-        let init_meta = Arc::new(segment_meta(self.track, scope, first, 0, anchor.clone()));
+        let init_meta = Arc::new(segment_meta(
+            self.track,
+            scope,
+            first,
+            (0, None),
+            anchor.clone(),
+        ));
         let init = init_descriptor(
             init_key.clone(),
             init_url,
@@ -1288,6 +1287,14 @@ impl DashPlanner {
                 representation = %representation.id,
                 "DASH track starts"
             ),
+        }
+        if let (Some(first), Some(last)) = (overhang.first(), overhang.last()) {
+            info!(
+                period = %key.label(),
+                from = first.ordinal,
+                to = last.ordinal,
+                "a new Period starts inside media planned from the previous one; its segments there are recorded only where that media is not delivered"
+            );
         }
         if representation
             .start_with_sap
@@ -1318,6 +1325,8 @@ impl DashPlanner {
             last_locator: locate(first, fingerprint.locator()),
             last_time: first.time,
             last_end: scope.bounds(first).0,
+            spans: VecDeque::new(),
+            overhang,
             availability_start,
             anchor,
             fingerprint,
@@ -1558,6 +1567,26 @@ fn rewritten_time(representation: &Representation, epoch: &Epoch) -> Option<Rewr
     })
 }
 
+/// The first and last ordinal of the `overhang` segments that together
+/// cover `[start, end)` without a hole, if they do.
+fn covering(overhang: &[Span], start: i128, end: i128) -> Option<(u64, u64)> {
+    let mut overlapping = overhang
+        .iter()
+        .filter(|span| span.start < end && span.end > start);
+    let first = overlapping.next()?;
+    if first.start > start {
+        return None;
+    }
+    let mut last = first;
+    for span in overlapping {
+        if span.start > last.end {
+            return None;
+        }
+        last = span;
+    }
+    (last.end >= end).then_some((first.ordinal, last.ordinal))
+}
+
 /// The first window index whose segment satisfies `pred`, which must be
 /// false for a prefix of the window and true for the rest. `window.len()`
 /// when none does. Binary search keeps long windows cheap.
@@ -1641,11 +1670,12 @@ fn fingerprint(scope: PeriodScope<'_>) -> Result<(Fingerprint, Url), ManifestErr
     ))
 }
 
+/// `(duration, covered_by)` are the meta's fields of those names.
 fn segment_meta(
     track: MediaTrack,
     scope: PeriodScope<'_>,
     segment: &Segment,
-    duration: u64,
+    (duration, covered_by): (u64, Option<(u64, u64)>),
     availability_start_time: Option<WallClockAnchor>,
 ) -> DashSegmentMeta {
     let PeriodScope {
@@ -1664,6 +1694,7 @@ fn segment_meta(
         timescale: segment.timescale,
         presentation_time_offset: representation.presentation_time_offset(),
         availability_start_time,
+        covered_by,
     }
 }
 
@@ -1711,19 +1742,21 @@ fn media_key(
     })
 }
 
+/// `(ordinal, covered_by)`: the segment's ordinal and the earlier ones
+/// covering it (see [`DashSegmentMeta::covered_by`]).
 fn media_descriptor(
     track: MediaTrack,
     scope: PeriodScope<'_>,
     epoch: &Epoch,
     segment: &Segment,
-    ordinal: u64,
+    (ordinal, covered_by): (u64, Option<(u64, u64)>),
     key: SegmentKey,
 ) -> SegmentDescriptor {
     let meta = segment_meta(
         track,
         scope,
         segment,
-        segment.duration,
+        (segment.duration, covered_by),
         epoch.anchor.clone(),
     );
     SegmentDescriptor {
@@ -2090,29 +2123,110 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn a_period_revealed_inside_planned_media_continues_after_it() {
-        const AST: &str = "2024-01-01T00:00:00Z";
-        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
-        let open = duration_periods(AST, &[("p0", 0)]);
+    /// `(msn, Period, number, covered_by)` of each planned media segment.
+    type Covering<'a> = (u64, Option<&'a str>, u64, Option<(u64, u64)>);
+
+    fn planned_covering(outcome: &PlanOutcome) -> Vec<Covering<'_>> {
+        media(outcome)
+            .iter()
+            .map(|(msn, meta, _)| {
+                (
+                    *msn,
+                    meta.period_id.as_deref(),
+                    meta.number,
+                    meta.covered_by,
+                )
+            })
+            .collect()
+    }
+
+    fn absent_periods(outcome: &PlanOutcome) -> Vec<(Option<&str>, u64)> {
+        outcome
+            .notices
+            .iter()
+            .filter_map(|notice| match notice {
+                EngineNotice::TrackAbsent {
+                    section_id,
+                    after_sequence,
+                    ..
+                } => Some((section_id.as_deref(), *after_sequence)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Plans the open p0 of `duration_periods` from 8 s through 14 s:
+    /// ordinals 0–3 are its segments 4–7, the last two (10–14 s) past
+    /// where p1 will start.
+    fn plan_open_p0_through_14s(fixture: &mut Fixture) {
+        let open = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0)]);
         assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 4)]);
         fixture.consume_all();
-        // The open Period's template runs past 10 s, where p1 will start.
         fixture.advance(6);
         assert_eq!(
             planned_periods(&fixture.plan(&open)),
             [(1, Some("p0"), 5), (2, Some("p0"), 6), (3, Some("p0"), 7)]
         );
+    }
+
+    #[test]
+    fn a_period_revealed_inside_planned_media_names_what_covers_it() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        plan_open_p0_through_14s(&mut fixture);
+        // Nothing of p0's overhang is consumed yet: whether it arrives is
+        // settled downstream.
+        let revealed = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0), ("p1", 10)]);
+        let outcome = fixture.plan(&revealed);
+        // p0's unconsumed work is reissued too; p1's segments are new.
+        assert_eq!(
+            planned_covering(&outcome)
+                .into_iter()
+                .filter(|(_, period, ..)| *period == Some("p1"))
+                .collect::<Vec<_>>(),
+            [
+                (4, Some("p1"), 1, Some((2, 2))),
+                (5, Some("p1"), 2, Some((3, 3)))
+            ]
+        );
+        assert!(
+            outcome
+                .descriptors
+                .iter()
+                .any(|descriptor| descriptor.key.kind == SegmentKind::Init && descriptor.msn == 4),
+            "p1 opens its own epoch"
+        );
+        // Reissued with fresh URLs, they still name what covers them.
+        let reissued = fixture.plan(&format!("{revealed} "));
+        assert_eq!(
+            planned_covering(&reissued)
+                .into_iter()
+                .filter(|(_, period, ..)| *period == Some("p1"))
+                .collect::<Vec<_>>(),
+            [
+                (4, Some("p1"), 1, Some((2, 2))),
+                (5, Some("p1"), 2, Some((3, 3)))
+            ]
+        );
         fixture.consume_all();
-        // p1's first two segments cover 10–14 s, already planned from p0.
-        let revealed = duration_periods(AST, &[("p0", 0), ("p1", 10)]);
-        let covered = fixture.plan(&revealed);
-        assert!(planned_periods(&covered).is_empty());
         fixture.advance(2);
         let next = fixture.plan(&revealed);
-        assert_eq!(planned_periods(&next), [(4, Some("p1"), 3)]);
-        let p1_init = init(&next);
-        assert_eq!(p1_init.msn, 4, "p1 opens its own epoch");
+        assert_eq!(planned_covering(&next), [(6, Some("p1"), 3, None)]);
+    }
+
+    #[test]
+    fn covering_needs_the_whole_interval_without_holes() {
+        let span = |ordinal, start, end| Span {
+            ordinal,
+            start,
+            end,
+        };
+        let overhang = [span(2, 10, 12), span(3, 12, 14), span(5, 16, 18)];
+        assert_eq!(covering(&overhang, 10, 12), Some((2, 2)));
+        assert_eq!(covering(&overhang, 11, 13), Some((2, 3)));
+        assert_eq!(covering(&overhang, 9, 11), None, "starts before");
+        assert_eq!(covering(&overhang, 13, 17), None, "a hole");
+        assert_eq!(covering(&overhang, 17, 19), None, "ends after");
+        assert_eq!(covering(&[], 10, 12), None);
     }
 
     #[test]
@@ -2127,46 +2241,28 @@ mod tests {
     }
 
     #[test]
-    fn a_period_covered_by_planned_media_lets_later_gaps_be_announced() {
-        const AST: &str = "2024-01-01T00:00:00Z";
+    fn a_period_inside_planned_media_lets_later_gaps_be_announced() {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
-        let open = duration_periods(AST, &[("p0", 0)]);
-        assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 4)]);
+        plan_open_p0_through_14s(&mut fixture);
         fixture.consume_all();
-        fixture.advance(6);
-        assert_eq!(planned_periods(&fixture.plan(&open)).len(), 3);
-        fixture.consume_all();
-        // p1 (10–12 s) lies within the 14 s planned from p0; p2 carries no
-        // video.
-        let revealed = duration_periods(AST, &[("p0", 0), ("p1", 10)]).replace(
-            "</MPD>",
-            r#"<Period id="p2" start="PT12S">
+        // p1 (10–12 s) lies within p0's overhang; p2 carries no video.
+        let revealed = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0), ("p1", 10)])
+            .replace("</MPD>", &format!("{}\n</MPD>", r#"<Period id="p2" start="PT12S">
     <AdaptationSet mimeType="audio/mp4">
       <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
       <Representation id="a" bandwidth="1000"/>
     </AdaptationSet>
-  </Period>
-</MPD>"#,
-        );
+  </Period>"#));
         let outcome = fixture.plan(&revealed);
-        assert!(planned_periods(&outcome).is_empty());
-        let absent: Vec<(Option<&str>, u64)> = outcome
-            .notices
-            .iter()
-            .filter_map(|notice| match notice {
-                EngineNotice::TrackAbsent {
-                    section_id,
-                    after_sequence,
-                    ..
-                } => Some((section_id.as_deref(), *after_sequence)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(absent, [(Some("p2"), 4)]);
+        assert_eq!(
+            planned_covering(&outcome),
+            [(4, Some("p1"), 1, Some((2, 2)))]
+        );
+        assert_eq!(absent_periods(&outcome), [(Some("p2"), 5)]);
     }
 
     #[test]
-    fn a_covered_period_stays_complete_after_its_segments_expire() {
+    fn a_period_inside_planned_media_stays_complete_after_its_segments_expire() {
         let mpd = |periods: &str| {
             format!(
                 r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
@@ -2193,16 +2289,6 @@ mod tests {
       <Representation id="a" bandwidth="1000"/>
     </AdaptationSet>
   </Period>"#;
-        let absent = |outcome: &PlanOutcome| -> Vec<Option<Arc<str>>> {
-            outcome
-                .notices
-                .iter()
-                .filter_map(|notice| match notice {
-                    EngineNotice::TrackAbsent { section_id, .. } => Some(section_id.clone()),
-                    _ => None,
-                })
-                .collect()
-        };
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
         // The open p0 is planned through 14 s.
         for step in 0..4 {
@@ -2212,19 +2298,17 @@ mod tests {
             assert_eq!(planned_periods(&fixture.plan(&mpd(""))).len(), 1);
             fixture.consume_all();
         }
-        // At 14 s p1 (10–12 s) is revealed while its segment is available,
-        // and found covered.
-        let covered = fixture.plan(&mpd(p1));
-        assert!(planned_periods(&covered).is_empty());
-        let planner = fixture.planner.as_ref().unwrap();
-        assert!(planner.known_covered(&PeriodKey {
-            id: Some(Arc::from("p1")),
-            start: Duration::from_secs(10),
-        }));
+        // At 14 s p1 (10–12 s) is revealed while its segment is available.
+        let revealed = fixture.plan(&mpd(p1));
+        assert_eq!(
+            planned_covering(&revealed),
+            [(4, Some("p1"), 1, Some((2, 2)))]
+        );
+        fixture.consume_all();
         // At 16 s p1's segment has left the window; p2 has no video.
         fixture.advance(2);
         let later = fixture.plan(&mpd(&format!("{p1}{p2}")));
-        assert_eq!(absent(&later), [Some(Arc::from("p2"))]);
+        assert_eq!(absent_periods(&later), [(Some("p2"), 5)]);
     }
 
     #[test]
