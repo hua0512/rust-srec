@@ -484,9 +484,27 @@ fn infinite_offset_is_bounded_by_finite_addressing() {
         "",
         r#"<SegmentList duration="2" availabilityTimeOffset="INF"><SegmentURL media="a"/><SegmentURL media="b"/></SegmentList>"#,
     );
+    let list_window = representation(&list, 0, "v").segments(now).unwrap();
+    assert_eq!(list_window.len(), 2);
     assert_eq!(
-        representation(&list, 0, "v").segments(now).unwrap().len(),
-        2
+        list_window.last().unwrap().unwrap().url.as_str(),
+        "https://live.example.com/b"
+    );
+    // A static presentation without any duration but with a finite timeline.
+    let static_timeline = parse(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
+  <Period id="0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4"><SegmentTemplate media="$Time$"><SegmentTimeline><S t="0" d="2" r="4"/></SegmentTimeline></SegmentTemplate><Representation id="v" bandwidth="1"/></AdaptationSet>
+  </Period>
+</MPD>"#,
+        "https://live.example.com/manifest.mpd",
+    );
+    assert_eq!(
+        representation(&static_timeline, 0, "v")
+            .segments(now)
+            .unwrap()
+            .numbers(),
+        1..6
     );
     let open = dynamic(
         "",

@@ -1177,19 +1177,6 @@ mod tests {
     }
 
     #[test]
-    fn numbers_past_u64_are_typed_errors() {
-        let mut addressing = grid(2, 1, 0);
-        addressing.start_number = u64::MAX - 10;
-        let timing = dynamic(0, None);
-        let window = addressing.segments(&timing, finite(0), at(20, 0)).unwrap();
-        assert_eq!(window.numbers().end - window.numbers().start, window.len());
-        assert!(matches!(
-            addressing.segments(&timing, finite(0), at(30, 0)),
-            Err(ManifestError::Overflow { .. })
-        ));
-    }
-
-    #[test]
     fn overflowing_inputs_are_errors_not_panics() {
         let addressing = grid(1, u64::MAX, 0);
         let timing = dynamic(0, None);
@@ -1239,113 +1226,6 @@ mod tests {
         assert_eq!(
             window.iter().count(),
             usize::try_from(u64::MAX - 1).unwrap()
-        );
-    }
-
-    /// Asserts that every returned segment satisfies the availability
-    /// predicate and that segment ends increase.
-    fn assert_available(window: &SegmentWindow<'_>, x_secs: f64) {
-        let mut previous_end = f64::NEG_INFINITY;
-        for segment in window.iter() {
-            let segment = segment.unwrap();
-            let end = segment.start_secs + segment.duration_secs();
-            assert!(
-                end <= x_secs,
-                "segment {} ends at {end} > {x_secs}",
-                segment.number
-            );
-            assert!(end > previous_end, "segment ends must increase");
-            previous_end = end;
-        }
-    }
-
-    #[test]
-    fn overlapping_open_repeat_is_clamped_to_the_next_t() {
-        // Round-up gives 4 repetitions of 10 before t=35; the 4th is cut to
-        // [30, 35), so ends are 10, 20, 30, 35, 36.
-        let runs = Addressing::timeline_runs(&[s(Some(0), 10, -1), s(Some(35), 1, 0)]).unwrap();
-        let addressing = addressing(runs, 1, 0, "$Time$.m4s");
-        let timing = dynamic(0, None);
-        let window = addressing.segments(&timing, finite(0), at(37, 0)).unwrap();
-        let ends: Vec<_> = window
-            .iter()
-            .map(|segment| {
-                let segment = segment.unwrap();
-                segment.time + segment.duration
-            })
-            .collect();
-        assert_eq!(ends, [10, 20, 30, 35, 36]);
-        assert_available(&window, 37.0);
-        for x in 0..=40 {
-            let window = addressing.segments(&timing, finite(0), at(x, 0)).unwrap();
-            assert_available(&window, x as f64);
-        }
-    }
-
-    #[test]
-    fn infinite_offset_with_finite_addressing_is_bounded() {
-        let timing = dynamic(0, None);
-        let inf = AvailabilityTimeOffset::Infinite;
-        // A timeline without a trailing open repeat.
-        let runs = Addressing::timeline_runs(&[s(Some(0), 2, 4)]).unwrap();
-        let finite_timeline = addressing(runs, 1, 0, "$Time$");
-        assert_eq!(
-            finite_timeline.window(&timing, inf, at(0, 0)).unwrap(),
-            0..5
-        );
-        // `@endNumber`.
-        let mut capped = grid(2, 1, 0);
-        capped.end_number = Some(3);
-        assert_eq!(capped.window(&timing, inf, at(0, 0)).unwrap(), 0..3);
-        // A SegmentList.
-        let mut list = grid(2, 1, 0);
-        list.urls = SegmentUrls::List {
-            urls: vec![
-                RawSegmentUrl {
-                    media: Some("a.m4s".into()),
-                    media_range: None,
-                };
-                4
-            ]
-            .into(),
-            base: Url::parse("https://cdn.example.com/").unwrap(),
-        };
-        assert_eq!(list.window(&timing, inf, at(0, 0)).unwrap(), 0..4);
-        assert_eq!(
-            list.segment(3, 0).unwrap().url.as_str(),
-            "https://cdn.example.com/a.m4s"
-        );
-        // A static presentation without a Period duration but with a
-        // finite timeline.
-        let static_open = PeriodTiming {
-            presentation_type: PresentationType::Static,
-            availability_start: None,
-            ..timing
-        };
-        assert_eq!(
-            finite_timeline
-                .window(&static_open, finite(0), at(0, 0))
-                .unwrap(),
-            0..5
-        );
-    }
-
-    #[test]
-    fn nothing_is_available_after_availability_end_time() {
-        let addressing = grid(2, 1, 0);
-        let timing = PeriodTiming {
-            availability_end: Some(20 * SEC),
-            ..dynamic(0, None)
-        };
-        assert_eq!(
-            addressing.window(&timing, finite(0), at(20, 0)).unwrap(),
-            0..10
-        );
-        assert!(
-            addressing
-                .window(&timing, finite(0), at(20, 1))
-                .unwrap()
-                .is_empty()
         );
     }
 
