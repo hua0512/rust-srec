@@ -1221,8 +1221,8 @@ async fn record_revealed_overhang(overhang: Overhang) -> (Vec<HlsData>, Origin) 
     (out, origin)
 }
 
-/// The output is one file holding each second of video from 9 s to 13 s
-/// exactly once.
+/// The output is one file holding each second of video and audio from 9 s
+/// to 13 s exactly once.
 fn assert_one_file_each_second_once(out: &[HlsData]) {
     assert_eq!(inits(out).len(), 1, "{}", describe(out));
     assert!(
@@ -1241,6 +1241,13 @@ fn assert_one_file_each_second_once(out: &[HlsData]) {
         .map(|(_, _, time)| time / VIDEO_TIMESCALE)
         .collect();
     assert_eq!(video, [9, 10, 11, 12], "{}", describe(out));
+    let audio: Vec<u64> = media(out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .filter(|(_, track, _)| *track == 2)
+        .map(|(_, _, time)| time / AUDIO_TIMESCALE)
+        .collect();
+    assert_eq!(audio, [9, 10, 11, 12], "{}", describe(out));
 }
 
 #[tokio::test(flavor = "multi_thread")]

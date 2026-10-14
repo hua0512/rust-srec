@@ -180,12 +180,6 @@ pub struct DashSegmentMeta {
     /// `MPD@availabilityStartTime`, the wall-clock anchor of a dynamic
     /// presentation's timeline: the one the segment's epoch opened with.
     pub availability_start_time: Option<WallClockAnchor>,
-    /// Inclusive ordinals of earlier segments of the same track that cover
-    /// this segment's whole presentation interval: segments of a Period
-    /// planned while it was open, past the start of a Period revealed
-    /// later. The segment is planned in case those are not delivered and
-    /// is redundant when all of them are.
-    pub covered_by: Option<(u64, u64)>,
 }
 
 /// A shared switch that withdraws every [`WallClockAnchor`] holding it.

@@ -32,20 +32,25 @@
 //! init is byte-identical to the one in effect: then output continues
 //! without either, as Periods that only split the timeline (ad markers,
 //! packager-inserted boundaries) commonly repeat the same initialization.
-//! A continued file only goes forward in time: the first media of each
-//! track in such an epoch, whenever it arrives, starts a new file (under
-//! the same init) if it begins before what the file holds of that track.
 //! Fragments are never written under an init other than their own or a
 //! byte-identical one. Audio of the old epoch that is still queued
 //! when the video moves to a new Period is written first, under the old
 //! init.
 //!
-//! A segment that names earlier segments covering its whole time
-//! (`DashSegmentMeta::covered_by`: a Period revealed inside media planned
-//! from the previous, still open one) is dropped on arrival when all of
-//! those were delivered. They precede it in the track's ordinal order, so
-//! their fate is settled by then: exactly one copy of that time is kept,
-//! whether the earlier ones were written, failed or skipped.
+//! A new epoch may begin inside media already written: while a dynamic
+//! MPD's last Period is open, its segments are planned past the start of a
+//! Period that a later update reveals, and that Period is planned from its
+//! start. Each track remembers the end of the media it last wrote. Until a
+//! track writes media of its new epoch, fragments that end by that written
+//! end, starting at most [`MAX_REPEATED_SEGMENTS`] of their segment's
+//! duration before it, are dropped as already written; written media, not
+//! downloads, decides, so exactly one copy is kept whether the earlier
+//! Period's segments were written, failed or skipped. The first fragment
+//! kept, if it still starts before the written end (straddling it, or
+//! further back: a timeline reset), starts a new file and is written
+//! whole, so decode times never go back within a file and nothing beyond
+//! a repeat is dropped. A file continues across a byte-identical init
+//! only when every track's first media of the new epoch follows on.
 //!
 //! A Period without video (an audio-only interlude, or audio carried past
 //! the last video Period) is recorded as its own audio-only epoch: one item
@@ -77,7 +82,7 @@ use tracing::{debug, info, warn};
 
 use crate::DownloadError;
 use crate::dash::config::DashMuxConfig;
-use crate::dash::planner::{ConsumedFrontier, PLANNING_LOOKAHEAD, PeriodKey};
+use crate::dash::planner::{ConsumedFrontier, PeriodKey};
 use crate::redact::redact_url;
 use crate::segment_engine::assembler::{AssembledItem, AssemblerSink, SinkClosed};
 use crate::segment_engine::control::EngineNotice;
@@ -95,10 +100,13 @@ const MAX_CONSECUTIVE_LEADER_REJECTIONS: u32 = 3;
 /// Leader-less Periods remembered; only the newest few can still matter.
 const MAX_ABSENT_PERIODS: usize = 16;
 
-/// How far below the newest delivered ordinal a track remembers delivered
-/// ones. A segment's covering segments are planned at most a planning
-/// window before it.
-const DELIVERED_WINDOW: u64 = 2 * PLANNING_LOOKAHEAD;
+/// How far behind a track's written end a new epoch's fragment may start,
+/// in durations of its segment, and still be dropped as a repeat. A repeat
+/// is what an open Period's template planned past the start of the Period
+/// an update reveals, so the MPD's staleness bounds it: refreshed at the
+/// MPD's update period, about one or two segments. Media further back is
+/// a timeline reset, which must never be dropped: it starts a new file.
+const MAX_REPEATED_SEGMENTS: i128 = 3;
 
 pub(crate) type TrackItem = Result<AssembledItem, DownloadError>;
 
@@ -168,7 +176,7 @@ struct MuxStats {
     stale_fragments: u64,
     slices_without_waiting: u64,
     rejected_leader_segments: u64,
-    redundant_segments: u64,
+    repeated_fragments: u64,
 }
 
 /// A track's initialization segment and what is derived from it.
@@ -215,11 +223,54 @@ struct QueuedMedia {
 }
 
 impl QueuedMedia {
+    /// The span of the fragments not yet written or dropped.
     fn span(&self) -> Option<(i128, i128)> {
-        let start = self.fragments.iter().map(|&(start, _)| start).min()?;
-        let end = self.fragments.iter().map(|&(_, end)| end).max()?;
+        let fragments = self.fragments.get(self.consumed..)?;
+        let start = fragments.iter().map(|&(start, _)| start).min()?;
+        let end = fragments.iter().map(|&(_, end)| end).max()?;
         Some((start, end))
     }
+
+    /// How many fragments, from the first not yet written or dropped,
+    /// repeat media the track already wrote (see the module documentation).
+    fn repeated_prefix(&self, written: Option<&Written>) -> usize {
+        let Some(written) = written.filter(|written| !Arc::ptr_eq(&written.init, &self.init))
+        else {
+            return 0;
+        };
+        let timescale = self.init.timescale;
+        let segment_start = self.fragments.iter().map(|&(start, _)| start).min();
+        let segment_end = self.fragments.iter().map(|&(_, end)| end).max();
+        let Some(window) = segment_start
+            .zip(segment_end)
+            .and_then(|(start, end)| to_nanos(end - start, timescale))
+            .map(|duration| duration.saturating_mul(MAX_REPEATED_SEGMENTS))
+        else {
+            return 0;
+        };
+        self.fragments
+            .get(self.consumed..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|&&(start, end)| {
+                matches!(
+                    (to_nanos(start, timescale), to_nanos(end, timescale)),
+                    (Some(start), Some(end)) if end <= written.end && written.end - start <= window
+                )
+            })
+            .count()
+    }
+}
+
+/// What a track last wrote to the output.
+#[derive(Debug, Clone)]
+struct Written {
+    /// End of that media, in nanoseconds on the presentation timeline.
+    end: i128,
+    /// Its init: media under another one is a new epoch of the track.
+    init: Arc<TrackInit>,
+    /// Whether the current file holds media of the track.
+    in_file: bool,
 }
 
 #[derive(Debug)]
@@ -249,9 +300,6 @@ struct TrackState {
     latest_init: Option<Arc<TrackInit>>,
     /// Follower only: the newest init the slice logic has moved past.
     current_init: Option<Arc<TrackInit>>,
-    /// Ordinals of the media segments delivered and queued, ascending,
-    /// within [`DELIVERED_WINDOW`] of the newest.
-    delivered: VecDeque<u64>,
 }
 
 impl TrackState {
@@ -265,30 +313,7 @@ impl TrackState {
             queued_bytes: 0,
             latest_init: None,
             current_init: None,
-            delivered: VecDeque::new(),
         }
-    }
-
-    fn note_delivered(&mut self, msn: u64) {
-        self.delivered.push_back(msn);
-        while self
-            .delivered
-            .front()
-            .is_some_and(|&oldest| oldest.saturating_add(DELIVERED_WINDOW) < msn)
-        {
-            self.delivered.pop_front();
-        }
-    }
-
-    /// Whether `descriptor` names covering segments, all of them delivered:
-    /// it holds nothing the output lacks.
-    fn redundant(&self, descriptor: &SegmentDescriptor) -> Option<(u64, u64)> {
-        let SegmentMeta::Dash(meta) = &descriptor.meta else {
-            return None;
-        };
-        let (from, to) = meta.covered_by?;
-        (from <= to && (from..=to).all(|msn| self.delivered.binary_search(&msn).is_ok()))
-            .then_some((from, to))
     }
 
     fn pop_front(&mut self) -> Option<Queued> {
@@ -319,9 +344,13 @@ struct PendingOutput {
     continued: bool,
 }
 
-/// What an output item holds of one track: `(track, start, end,
-/// timescale)` on the presentation timeline.
-type TrackSpan = (MediaTrack, i128, i128, u32);
+/// What an output item holds of one track: media under `init` from
+/// `start` to `end` on the presentation timeline, in its timescale.
+struct TrackSpan {
+    init: Arc<TrackInit>,
+    start: i128,
+    end: i128,
+}
 
 /// Follower fragments chosen for one slice: a run of `count` fragments
 /// starting at `first` of one queued segment.
@@ -383,11 +412,8 @@ struct MuxState {
     /// Added to every presentation time written, in nanoseconds; chosen with
     /// the first item.
     origin_nanos: Option<i128>,
-    /// Presentation end of the media written to the current file, per
-    /// track, in nanoseconds on the MPD timeline.
-    written_ends: Vec<(MediaTrack, i128)>,
-    /// Tracks of a continued epoch none of whose media is written yet.
-    unchecked: Vec<MediaTrack>,
+    /// What each track last wrote.
+    written: Vec<(MediaTrack, Written)>,
     /// Whether the follower's tail of the current output epoch was written
     /// ahead of a Period change.
     tail_flushed: bool,
@@ -436,8 +462,7 @@ pub(crate) async fn run_muxer(
         leader_absent: VecDeque::new(),
         leader_next_sequence: 0,
         leader_end: None,
-        written_ends: Vec::new(),
-        unchecked: Vec::new(),
+        written: Vec::new(),
         origin_nanos: None,
         tail_flushed: false,
         leader_rejections: 0,
@@ -535,7 +560,7 @@ pub(crate) async fn run_muxer(
         stale_audio_fragments = stats.stale_fragments,
         slices_without_waiting = stats.slices_without_waiting,
         rejected_segments = stats.rejected_leader_segments,
-        redundant_segments = stats.redundant_segments,
+        repeated_fragments = stats.repeated_fragments,
         ?outcome,
         "DASH muxer finished"
     );
@@ -685,17 +710,6 @@ impl MuxState {
                 self.leader_next_sequence = self
                     .leader_next_sequence
                     .max(descriptor.msn.saturating_add(1));
-                if let Some((from, to)) = self.leader.redundant(&descriptor) {
-                    self.stats.redundant_segments += 1;
-                    debug!(
-                        track = %self.leader.track,
-                        msn = descriptor.msn,
-                        from,
-                        to,
-                        "segment already delivered from the previous Period; dropped"
-                    );
-                    return Ok(());
-                }
                 let Some(init) = self.leader.latest_init.clone() else {
                     warn!(track = %self.leader.track, "media segment without an initialization segment; dropped");
                     return Ok(());
@@ -703,7 +717,6 @@ impl MuxState {
                 match probe_fragments(&init, &data) {
                     Ok(fragments) => {
                         self.leader_rejections = 0;
-                        self.leader.note_delivered(descriptor.msn);
                         self.leader.queued_bytes += data.len();
                         self.leader.queue.push_back(Queued::Media(QueuedMedia {
                             init,
@@ -810,24 +823,12 @@ impl MuxState {
                 }
             }
             AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor }) => {
-                if let Some((from, to)) = follower.redundant(&descriptor) {
-                    self.stats.redundant_segments += 1;
-                    debug!(
-                        track = %follower.track,
-                        msn = descriptor.msn,
-                        from,
-                        to,
-                        "segment already delivered from the previous Period; dropped"
-                    );
-                    return;
-                }
                 let Some(init) = follower.latest_init.clone() else {
                     warn!(track = %follower.track, "media segment without an initialization segment; dropped");
                     return;
                 };
                 match probe_fragments(&init, &data) {
                     Ok(fragments) => {
-                        follower.note_delivered(descriptor.msn);
                         follower.queued_bytes += data.len();
                         follower.queue.push_back(Queued::Media(QueuedMedia {
                             init,
@@ -1026,6 +1027,9 @@ impl MuxState {
         if self.emit_gap_audio(head_period.as_ref()) {
             return Ok(Step::Continue);
         }
+        if self.drop_repeated_leader() {
+            return Ok(Step::Continue);
+        }
         let Some(Queued::Media(head)) = self.leader.queue.front() else {
             return Ok(self.leader_drained(now));
         };
@@ -1137,6 +1141,11 @@ impl MuxState {
         timescale: u32,
         may_wait: bool,
     ) -> Collect {
+        let follower_written = self
+            .follower
+            .as_ref()
+            .and_then(|follower| self.written_of(follower.track))
+            .cloned();
         let Some(follower) = self.follower.as_mut() else {
             return Collect::Ready(0);
         };
@@ -1181,6 +1190,11 @@ impl MuxState {
                         return Collect::Ready(picks);
                     }
                     let follower_timescale = media.init.timescale;
+                    if picks == 0 {
+                        let repeated = media.repeated_prefix(follower_written.as_ref());
+                        media.consumed += repeated;
+                        self.stats.repeated_fragments += repeated as u64;
+                    }
                     // Fragments of this segment picked so far; picks begin at
                     // the queue head, so only the head can have dropped ones.
                     let mut taken = 0usize;
@@ -1266,10 +1280,11 @@ impl MuxState {
     }
 
     /// The output epoch `(leader, follower)` when it differs from the
-    /// current one, with the end marker and merged init that announce it,
-    /// or none when its merged init repeats the current one. Nothing is
-    /// emitted or committed here: the caller sends the header with the
-    /// epoch's first media item, or drops it with that item.
+    /// current one, with the end marker and merged init that announce it;
+    /// without either when its merged init repeats the current one, which
+    /// continues the file. Nothing is emitted or committed here: the caller
+    /// sends the header with the epoch's first media item, or drops it with
+    /// that item.
     fn prepare_output(
         &mut self,
         leader: &Arc<TrackInit>,
@@ -1334,58 +1349,63 @@ impl MuxState {
         })
     }
 
-    /// Whether `track`'s media starting at `start` (ticks of `timescale`)
-    /// comes no earlier than what the current file holds of that track.
-    fn follows_written(&self, track: MediaTrack, start: i128, timescale: u32) -> bool {
-        let written = self
-            .written_ends
+    fn written_of(&self, track: MediaTrack) -> Option<&Written> {
+        self.written
             .iter()
             .find(|(written, _)| *written == track)
-            .map(|&(_, end)| end);
-        match (written, to_nanos(start, timescale)) {
-            (Some(end), Some(start)) => start >= end,
-            (None, Some(_)) => true,
-            (_, None) => false,
-        }
+            .map(|(_, written)| written)
     }
 
-    /// Records that `track`'s output reaches `end` (ticks of `timescale`).
-    fn note_written(&mut self, track: MediaTrack, end: i128, timescale: u32) {
-        let Some(end) = to_nanos(end, timescale) else {
-            return;
+    /// Drops the leader head's fragments that repeat written media (see the
+    /// module documentation); returns whether the whole segment went.
+    fn drop_repeated_leader(&mut self) -> bool {
+        let written = self.written_of(self.leader.track).cloned();
+        let Some(Queued::Media(head)) = self.leader.queue.front_mut() else {
+            return false;
         };
-        match self
-            .written_ends
-            .iter_mut()
-            .find(|(written, _)| *written == track)
-        {
-            Some((_, written)) => *written = (*written).max(end),
-            None => self.written_ends.push((track, end)),
+        let repeated = head.repeated_prefix(written.as_ref());
+        if repeated == 0 {
+            return false;
         }
+        head.consumed += repeated;
+        self.stats.repeated_fragments += repeated as u64;
+        debug!(
+            track = %self.leader.track,
+            msn = head.descriptor.msn,
+            fragments = repeated,
+            "media already written from the previous epoch; dropped"
+        );
+        if head.consumed < head.fragments.len() {
+            return false;
+        }
+        self.leader.pop_front();
+        true
     }
 
     /// Emits `item`, which holds `spans` of media, preceded by the header of
     /// `pending` when it opens a new output epoch, and commits that epoch.
     ///
-    /// An epoch whose merged init repeats the current one continues the
-    /// current file, which only ever goes forward in time: each track's
-    /// first media of such an epoch, in this item or a later one (inits
-    /// and media of the tracks arrive independently), must not start
-    /// before what the file holds of that track. Media that would starts a
-    /// new file under the same init instead, so nothing is dropped and
-    /// decode times never go back within a file.
+    /// A track's first media of a new epoch, in this item or a later one
+    /// (inits and media of the tracks arrive independently), that starts
+    /// before what the current file holds of the track starts a new file
+    /// under the same init, so decode times never go back within a file.
     fn emit_media(&mut self, pending: Option<PendingOutput>, item: HlsData, spans: &[TrackSpan]) {
         let continued = pending.as_ref().map(|pending| pending.continued);
         let overlapping = spans
             .iter()
-            .find(|&&(track, start, _, timescale)| {
-                let first = continued.unwrap_or_else(|| self.unchecked.contains(&track));
-                first && !self.follows_written(track, start, timescale)
+            .find(|span| {
+                self.written_of(span.init.track).is_some_and(|written| {
+                    !Arc::ptr_eq(&written.init, &span.init)
+                        && written.in_file
+                        && to_nanos(span.start, span.init.timescale)
+                            .is_none_or(|start| start < written.end)
+                })
             })
-            .map(|&(track, ..)| track);
+            .map(|span| span.init.track);
         let mut group = Vec::with_capacity(3);
         let mut split = continued == Some(false);
-        if let Some(track) = overlapping
+        if !split
+            && let Some(track) = overlapping
             && let Some(output) = pending
                 .as_ref()
                 .map(|pending| &pending.output)
@@ -1403,14 +1423,8 @@ impl MuxState {
         }
         if let Some(pending) = pending {
             group.extend(pending.header);
-            let tracks: Vec<MediaTrack> = std::iter::once(pending.output.leader.track)
-                .chain(pending.output.follower.as_ref().map(|init| init.track))
-                .collect();
             self.output = Some(pending.output);
             self.tail_flushed = false;
-            if !split {
-                self.unchecked = tracks;
-            }
         }
         if let Some(HlsData::EndMarker(Some(SplitReason::StreamStructureChange { description }))) =
             group.first()
@@ -1418,13 +1432,24 @@ impl MuxState {
             info!(%description, "DASH output epoch changes");
         }
         if split {
-            self.written_ends.clear();
-            self.unchecked.clear();
+            for (_, written) in &mut self.written {
+                written.in_file = false;
+            }
         }
-        self.unchecked
-            .retain(|track| !spans.iter().any(|&(spanned, ..)| spanned == *track));
-        for &(track, _, end, timescale) in spans {
-            self.note_written(track, end, timescale);
+        for span in spans {
+            let Some(end) = to_nanos(span.end, span.init.timescale) else {
+                continue;
+            };
+            let written = Written {
+                end,
+                init: Arc::clone(&span.init),
+                in_file: true,
+            };
+            let track = span.init.track;
+            match self.written.iter_mut().find(|(known, _)| *known == track) {
+                Some((_, known)) => *known = written,
+                None => self.written.push((track, written)),
+            }
         }
         group.push(item);
         self.out.push(group);
@@ -1484,6 +1509,7 @@ impl MuxState {
         let leader_written = leader_shift.and_then(|shift| {
             init.parse_media_segment(0, &media.data, 0)?
                 .into_iter()
+                .skip(media.consumed)
                 .try_for_each(|mut fragment| {
                     fragment.shift_decode_time(shift)?;
                     self.writer.write(fragment, &mut data)
@@ -1518,13 +1544,17 @@ impl MuxState {
         let timescale = media.init.timescale;
         self.leader_end = Some((end, timescale));
         // Every part counts, as one rejected midway may be partly written.
-        let spans: Vec<TrackSpan> = std::iter::once((media.init.track, start, end, timescale))
-            .chain(
-                parts
-                    .iter()
-                    .map(|part| (part.init.track, part.start, part.end, part.init.timescale)),
-            )
-            .collect();
+        let spans: Vec<TrackSpan> = std::iter::once(TrackSpan {
+            init: Arc::clone(&media.init),
+            start,
+            end,
+        })
+        .chain(parts.iter().map(|part| TrackSpan {
+            init: Arc::clone(&part.init),
+            start: part.start,
+            end: part.end,
+        }))
+        .collect();
         let segment = media_segment(&media.descriptor, start, end, timescale);
         self.emit_media(
             pending,
@@ -1552,8 +1582,11 @@ impl MuxState {
             duration,
             ..Default::default()
         };
-        // Passthrough epochs never continue a file, so their times, which
-        // are not parsed, are never compared.
+        // Passthrough media is not parsed, so what the track wrote is unknown:
+        // nothing later is judged a repeat of it. Passthrough epochs never
+        // continue a file.
+        let track = media.init.track;
+        self.written.retain(|(written, _)| *written != track);
         self.emit_media(
             pending,
             HlsData::M4sData(M4sData::Segment(M4sSegmentData {
@@ -1685,7 +1718,10 @@ impl MuxState {
 
     /// Writes one follower segment as an item of an audio-only epoch under
     /// the follower's own init.
-    fn write_audio_only(&mut self, media: QueuedMedia) {
+    fn write_audio_only(&mut self, mut media: QueuedMedia) {
+        let repeated = media.repeated_prefix(self.written_of(media.init.track));
+        media.consumed += repeated;
+        self.stats.repeated_fragments += repeated as u64;
         let Some(&(start, _)) = media.fragments.get(media.consumed) else {
             return;
         };
@@ -1723,7 +1759,11 @@ impl MuxState {
                 segment,
                 data: Bytes::from(data),
             })),
-            &[(media.init.track, start, end, timescale)],
+            &[TrackSpan {
+                init: Arc::clone(&media.init),
+                start,
+                end,
+            }],
         );
     }
 
@@ -1820,11 +1860,15 @@ impl MuxState {
                 ends_by(fragment_end, follower_timescale, end, timescale)
             })
         };
+        let written = self.written_of(run_init.track).cloned();
         let mut data = Vec::new();
         let mut last = None;
         let mut covered: Option<(i128, i128)> = None;
         let mut late_fragments = 0u64;
-        for media in &run {
+        for mut media in run {
+            let repeated = media.repeated_prefix(written.as_ref());
+            media.consumed += repeated;
+            self.stats.repeated_fragments += repeated as u64;
             let keep: Vec<bool> = media.fragments.iter().map(|span| !late(span)).collect();
             late_fragments += keep[media.consumed..].iter().filter(|keep| !**keep).count() as u64;
             let kept: Vec<(i128, i128)> = media
@@ -1868,7 +1912,11 @@ impl MuxState {
             let mut segment = init_media_segment(&descriptor);
             segment.duration = 0.0;
             let spans: Vec<TrackSpan> = covered
-                .map(|(start, end)| (run_init.track, start, end, follower_timescale))
+                .map(|(start, end)| TrackSpan {
+                    init: Arc::clone(&run_init),
+                    start,
+                    end,
+                })
                 .into_iter()
                 .collect();
             self.emit_media(
@@ -2180,7 +2228,6 @@ mod tests {
                 timescale: 1000,
                 presentation_time_offset: pto_ms,
                 availability_start_time: None,
-                covered_by: None,
             })),
         })
     }
@@ -2572,8 +2619,174 @@ mod tests {
         );
     }
 
+    /// `(track, decode time in ms)` of every fragment written, per file.
+    fn written_ms(items: &[HlsData]) -> Vec<Vec<(u32, u64)>> {
+        let mut files = vec![Vec::new()];
+        for item in items {
+            match item {
+                HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. })) => {
+                    files.push(Vec::new());
+                }
+                HlsData::M4sData(M4sData::Segment(segment)) => {
+                    let file = files.last_mut().expect("a file");
+                    for (fourcc, moof) in boxes(&segment.data) {
+                        if &fourcc != b"moof" {
+                            continue;
+                        }
+                        let traf = boxes(moof)
+                            .into_iter()
+                            .find(|(f, _)| f == b"traf")
+                            .unwrap()
+                            .1;
+                        let children = boxes(traf);
+                        let tfhd = children.iter().find(|(f, _)| f == b"tfhd").unwrap().1;
+                        let tfdt = children.iter().find(|(f, _)| f == b"tfdt").unwrap().1;
+                        let track = u32::from_be_bytes(tfhd[4..8].try_into().unwrap());
+                        let time = u64::from_be_bytes(tfdt[4..12].try_into().unwrap());
+                        let timescale = if track == 1 { 12_288 } else { 48_000 };
+                        file.push((track, time * 1000 / timescale));
+                    }
+                }
+                _ => {}
+            }
+        }
+        files
+    }
+
+    /// `p`'s video and audio from `second` (one second each), Period
+    /// starting at `start` seconds with media time 0 there.
+    async fn send_second(h: &Harness, period: &str, start: u64, second: u64, number: u64) {
+        let offset = second - start;
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        h.video(media(
+            v,
+            Some(period),
+            start,
+            number,
+            with_tfdt(VIDEO_1, offset * 12_288),
+        ))
+        .await;
+        h.audio(media(
+            a,
+            Some(period),
+            start,
+            number,
+            with_tfdt(AUDIO_1, offset * 48_000),
+        ))
+        .await;
+    }
+
+    async fn send_inits(h: &Harness, period: &str, start: u64) {
+        h.video(init(MediaTrack::Video, Some(period), start, VIDEO_INIT))
+            .await;
+        h.audio(init(MediaTrack::Audio, Some(period), start, AUDIO_INIT))
+            .await;
+    }
+
+    async fn end_both(h: &Harness) {
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+    }
+
     #[tokio::test]
-    async fn an_identical_init_whose_media_overlaps_the_output_splits_it() {
+    async fn a_period_repeating_written_media_is_written_once() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        send_inits(&h, "p0", 0).await;
+        for second in 0..2 {
+            send_second(&h, "p0", 0, second, second + 1).await;
+        }
+        // p1 starts at 1 s: its first second repeats p0's overhang.
+        send_inits(&h, "p1", 1).await;
+        for second in 1..3 {
+            send_second(&h, "p1", 1, second, second).await;
+        }
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            written_ms(&items),
+            [vec![
+                (1, 0),
+                (2, 0),
+                (1, 1000),
+                (2, 1000),
+                (1, 2000),
+                (2, 2000)
+            ]]
+        );
+    }
+
+    #[tokio::test]
+    async fn media_the_previous_period_did_not_write_is_kept() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        let v = MediaTrack::Video;
+        send_inits(&h, "p0", 0).await;
+        send_second(&h, "p0", 0, 0, 1).await;
+        // p0's overhang video (1–2 s) failed; its audio arrived. Whatever
+        // its MPD said, p1's segment holds 1–2 s.
+        h.video(Ok(AssembledItem::GapSkipped {
+            from_sequence: 2,
+            to_sequence: 3,
+            reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
+        }))
+        .await;
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            2,
+            with_tfdt(AUDIO_1, 48_000),
+        ))
+        .await;
+        send_inits(&h, "p1", 1).await;
+        send_second(&h, "p1", 1, 1, 1).await;
+        h.video(media(v, Some("p1"), 1, 2, with_tfdt(VIDEO_1, 12_288)))
+            .await;
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let files = written_ms(&items);
+        assert_eq!(files.len(), 1, "one file");
+        let track = |id: u32| -> Vec<u64> {
+            files[0]
+                .iter()
+                .filter(|(track, _)| *track == id)
+                .map(|&(_, ms)| ms)
+                .collect()
+        };
+        assert_eq!(track(1), [0, 1000, 2000], "p1 fills the video");
+        assert_eq!(track(2), [0, 1000], "p0's audio, once");
+    }
+
+    #[tokio::test]
+    async fn repeats_are_judged_across_an_intervening_period() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        send_inits(&h, "p0", 0).await;
+        for second in 0..3 {
+            send_second(&h, "p0", 0, second, second + 1).await;
+        }
+        // An update reveals p1 at 1 s and p2 at 2 s, both inside p0's
+        // written 0–3 s.
+        send_inits(&h, "p1", 1).await;
+        send_second(&h, "p1", 1, 1, 1).await;
+        send_inits(&h, "p2", 2).await;
+        for second in 2..4 {
+            send_second(&h, "p2", 2, second, second - 1).await;
+        }
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let expected: Vec<(u32, u64)> = (0..4)
+            .flat_map(|second| [(1, second * 1000), (2, second * 1000)])
+            .collect();
+        assert_eq!(written_ms(&items), [expected]);
+    }
+
+    #[tokio::test]
+    async fn only_the_repeated_fragments_of_a_segment_are_dropped() {
         let h = start(MediaTrack::Video, false, lag(WAIT));
         let v = MediaTrack::Video;
         h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
@@ -2581,18 +2794,99 @@ mod tests {
             .await;
         h.video(media(v, Some("p0"), 0, 2, with_tfdt(VIDEO_1, 12_288)))
             .await;
-        // p1 starts at 1 s, inside the 0–2 s already written.
+        // p0's 2–3 s failed; p1 (from 1 s) has one segment of two
+        // fragments, 1–2 s and 2–3 s.
+        h.video(Ok(AssembledItem::GapSkipped {
+            from_sequence: 3,
+            to_sequence: 4,
+            reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
+        }))
+        .await;
         h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
-        h.video(media(v, Some("p1"), 1, 1, Bytes::from_static(VIDEO_1)))
+        let mut two = VIDEO_1.to_vec();
+        two.extend_from_slice(&with_tfdt(VIDEO_1, 12_288));
+        h.video(media(v, Some("p1"), 1, 1, Bytes::from(two))).await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(written_ms(&items), [vec![(1, 0), (1, 1000), (1, 2000)]]);
+    }
+
+    #[tokio::test]
+    async fn a_new_epoch_straddling_the_written_end_starts_a_new_file() {
+        let h = start(MediaTrack::Video, false, lag(WAIT));
+        let v = MediaTrack::Video;
+        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
+        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        h.video(media(v, Some("p0"), 0, 2, with_tfdt(VIDEO_1, 12_288)))
+            .await;
+        // p1's first fragment, 1.5–2.5 s, reaches past the written 2 s.
+        h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
+        h.video(media(v, Some("p1"), 1, 1, with_tfdt(VIDEO_1, 6_144)))
             .await;
         h.video(Ok(AssembledItem::StreamEnded)).await;
 
         let (items, outcome, _) = h.finish().await;
         assert_eq!(outcome, MuxOutcome::Ended);
-        let kinds: Vec<&str> = items.iter().map(kind).collect();
         assert_eq!(
-            kinds,
-            ["init", "media", "media", "epoch", "init", "media", "end"]
+            written_ms(&items),
+            [vec![(1, 0), (1, 1000)], vec![(1, 1500)]],
+            "kept whole, in a new file"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_track_first_written_after_a_split_does_not_split_again() {
+        let h = start(MediaTrack::Video, true, lag(Duration::from_millis(50)));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        send_inits(&h, "p0", 100).await;
+        send_second(&h, "p0", 100, 100, 1).await;
+        // p1 restarts at 10 s; its video is written, in a new file, before
+        // its audio arrives.
+        send_inits(&h, "p1", 10).await;
+        h.video(media(v, Some("p1"), 10, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Its first audio, 10.5–11.5 s, lies far behind p0's audio, which
+        // is in the previous file only.
+        h.audio(media(a, Some("p1"), 10, 1, with_tfdt(AUDIO_1, 24_000)))
+            .await;
+        h.video(media(v, Some("p1"), 10, 2, with_tfdt(VIDEO_1, 12_288)))
+            .await;
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            written_ms(&items),
+            [
+                vec![(1, 100_000), (2, 100_000)],
+                vec![(1, 10_000), (1, 11_000), (2, 10_500)]
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_timestamp_reset_at_a_period_change_splits_and_drops_nothing() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        // p0 at 100 s; p1 restarts at 10 s: a new file, nothing dropped;
+        // p2 follows p1 exactly and continues that file.
+        for (period, start) in [("p0", 100), ("p1", 10), ("p2", 11)] {
+            send_inits(&h, period, start).await;
+            send_second(&h, period, start, start, 1).await;
+        }
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            written_ms(&items),
+            [
+                vec![(1, 100_000), (2, 100_000)],
+                vec![(1, 10_000), (2, 10_000), (1, 11_000), (2, 11_000)]
+            ]
         );
     }
 
@@ -2649,129 +2943,6 @@ mod tests {
             .map(|(_, track)| track)
             .collect();
         assert_eq!(after, [1, 2], "p1's audio opened a new file");
-    }
-
-    #[tokio::test]
-    async fn a_file_continues_after_a_split_that_reset_its_times() {
-        let h = start(MediaTrack::Video, false, lag(WAIT));
-        let v = MediaTrack::Video;
-        // p0 at 100 s; p1 restarts at 10 s, which needs a new file; p2
-        // follows p1 exactly and continues that file.
-        for (period, start) in [("p0", 100), ("p1", 10), ("p2", 11)] {
-            h.video(init(v, Some(period), start, VIDEO_INIT)).await;
-            h.video(media(
-                v,
-                Some(period),
-                start,
-                1,
-                Bytes::from_static(VIDEO_1),
-            ))
-            .await;
-        }
-        h.video(Ok(AssembledItem::StreamEnded)).await;
-
-        let (items, outcome, _) = h.finish().await;
-        assert_eq!(outcome, MuxOutcome::Ended);
-        let kinds: Vec<&str> = items.iter().map(kind).collect();
-        assert_eq!(
-            kinds,
-            ["init", "media", "epoch", "init", "media", "media", "end"]
-        );
-    }
-
-    /// `item`, a media payload, naming segments `from..=to` as covering it.
-    fn covered(item: TrackItem, from: u64, to: u64) -> TrackItem {
-        let Ok(AssembledItem::Payload(SegmentPayload::Mp4Media { data, descriptor })) = item else {
-            panic!("a media payload");
-        };
-        let mut descriptor = descriptor.as_ref().clone();
-        let SegmentMeta::Dash(meta) = &descriptor.meta else {
-            panic!("DASH meta");
-        };
-        let mut meta = meta.as_ref().clone();
-        meta.covered_by = Some((from, to));
-        descriptor.meta = SegmentMeta::Dash(Arc::new(meta));
-        Ok(AssembledItem::Payload(SegmentPayload::Mp4Media {
-            data,
-            descriptor: Arc::new(descriptor),
-        }))
-    }
-
-    #[tokio::test]
-    async fn a_segment_whose_covering_segments_were_delivered_is_dropped() {
-        let h = start(MediaTrack::Video, true, lag(WAIT));
-        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
-        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
-        h.audio(init(a, Some("p0"), 0, AUDIO_INIT)).await;
-        // p0's overhang: 1–2 s, already delivered.
-        for (number, video, audio) in [
-            (1, Bytes::from_static(VIDEO_1), Bytes::from_static(AUDIO_1)),
-            (2, with_tfdt(VIDEO_1, 12_288), with_tfdt(AUDIO_1, 48_000)),
-        ] {
-            h.video(media(v, Some("p0"), 0, number, video)).await;
-            h.audio(media(a, Some("p0"), 0, number, audio)).await;
-        }
-        // p1 starts at 1 s; its first segments repeat p0's 1–2 s.
-        h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
-        h.audio(init(a, Some("p1"), 1, AUDIO_INIT)).await;
-        h.video(covered(
-            media(v, Some("p1"), 1, 3, Bytes::from_static(VIDEO_1)),
-            2,
-            2,
-        ))
-        .await;
-        h.audio(covered(
-            media(a, Some("p1"), 1, 3, Bytes::from_static(AUDIO_1)),
-            2,
-            2,
-        ))
-        .await;
-        h.video(media(v, Some("p1"), 1, 4, with_tfdt(VIDEO_1, 12_288)))
-            .await;
-        h.audio(media(a, Some("p1"), 1, 4, with_tfdt(AUDIO_1, 48_000)))
-            .await;
-        h.video(Ok(AssembledItem::StreamEnded)).await;
-        h.audio(Ok(AssembledItem::StreamEnded)).await;
-
-        let (items, outcome, _) = h.finish().await;
-        assert_eq!(outcome, MuxOutcome::Ended);
-        let kinds: Vec<&str> = items.iter().map(kind).collect();
-        assert_eq!(kinds, ["init", "media", "media", "media", "end"]);
-        let tracks: Vec<u32> = media_data(&items)
-            .iter()
-            .flat_map(|data| fragments(data))
-            .map(|(_, track)| track)
-            .collect();
-        assert_eq!(tracks, [1, 2, 1, 2, 1, 2], "each second once");
-    }
-
-    #[tokio::test]
-    async fn a_segment_whose_covering_segment_was_skipped_is_kept() {
-        let h = start(MediaTrack::Video, false, lag(WAIT));
-        let v = MediaTrack::Video;
-        h.video(init(v, Some("p0"), 0, VIDEO_INIT)).await;
-        h.video(media(v, Some("p0"), 0, 1, Bytes::from_static(VIDEO_1)))
-            .await;
-        // p0's overhang segment 2 (1–2 s) never arrives.
-        h.video(Ok(AssembledItem::GapSkipped {
-            from_sequence: 2,
-            to_sequence: 3,
-            reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
-        }))
-        .await;
-        h.video(init(v, Some("p1"), 1, VIDEO_INIT)).await;
-        h.video(covered(
-            media(v, Some("p1"), 1, 3, Bytes::from_static(VIDEO_1)),
-            2,
-            2,
-        ))
-        .await;
-        h.video(Ok(AssembledItem::StreamEnded)).await;
-
-        let (items, outcome, _) = h.finish().await;
-        assert_eq!(outcome, MuxOutcome::Ended);
-        let kinds: Vec<&str> = items.iter().map(kind).collect();
-        assert_eq!(kinds, ["init", "media", "media", "end"], "p1 fills 1–2 s");
     }
 
     #[tokio::test]
