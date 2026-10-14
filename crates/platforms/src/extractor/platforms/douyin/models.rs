@@ -50,6 +50,8 @@ pub(crate) struct DouyinPcData<'a> {
     #[serde(borrow)]
     pub cover: Option<DouyinCover<'a>>,
     #[serde(borrow)]
+    pub owner: Option<DouyinRoomOwner<'a>>,
+    #[serde(borrow)]
     pub stream_url: Option<DouyinStreamUrl<'a>>,
     /// Scene type information, contains is_union_live_room flag
     pub scene_type_info: Option<SceneTypeInfo>,
@@ -167,6 +169,14 @@ impl DouyinUserInfo<'_> {
                 .map(|url| url.contains("aweme_default_avatar.png"))
                 .unwrap_or(false)
     }
+}
+
+/// The streamer who owns a room.
+#[derive(Deserialize, Debug)]
+pub(crate) struct DouyinRoomOwner<'a> {
+    pub nickname: Option<String>,
+    #[serde(borrow)]
+    pub avatar_thumb: Option<DouyinAvatarThumb<'a>>,
 }
 
 #[derive(Deserialize, Debug)]

@@ -6,8 +6,8 @@ use crate::extractor::platforms::douyin::apis::{
     APP_REFLOW_URL, LIVE_DOUYIN_URL, WEBCAST_ENTER_URL,
 };
 use crate::extractor::platforms::douyin::models::{
-    DouyinAppResponse, DouyinPcData, DouyinPcResponse, DouyinQuality, DouyinStreamDataParsed,
-    DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
+    DouyinAppResponse, DouyinAvatarThumb, DouyinPcData, DouyinPcResponse, DouyinQuality,
+    DouyinStreamDataParsed, DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
 };
 use crate::extractor::platforms::douyin::sign::gen_verify_fp;
 use crate::extractor::platforms::douyin::utils::{
@@ -578,20 +578,14 @@ impl<'a> DouyinRequest<'a> {
                     .as_ref()
                     .map(|r| r.title.as_str())
                     .unwrap_or("");
-                let artist = user
-                    .map(|u| u.nickname.as_str())
-                    .unwrap_or("Douyin Streamer");
+                let (artist, avatar_url) = streamer_identity(user, response.data.room.as_ref());
+                let artist = artist.unwrap_or("Douyin Streamer");
                 let cover_url = response
                     .data
                     .room
                     .as_ref()
                     .and_then(|r| r.cover.as_ref())
                     .and_then(|cover| cover.url_list.first())
-                    .map(|url| url.to_string());
-                let avatar_url = user
-                    .as_ref()
-                    .and_then(|u| u.avatar_thumb.as_ref())
-                    .and_then(|avatar| avatar.url_list.first())
                     .map(|url| url.to_string());
 
                 return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
@@ -669,16 +663,12 @@ impl<'a> DouyinRequest<'a> {
         let is_live = data.status == 2 && !data.has_ended();
 
         let title = &data.title;
-        let artist = &user.nickname;
+        let (artist, avatar_url) = streamer_identity(Some(user), Some(data));
+        let artist = artist.unwrap_or_default();
         let cover_url = data
             .cover
             .as_ref()
             .and_then(|cover| cover.url_list.first())
-            .map(|url| url.to_string());
-        let avatar_url = user
-            .avatar_thumb
-            .as_ref()
-            .and_then(|avatar| avatar.url_list.first())
             .map(|url| url.to_string());
 
         if !is_live {
@@ -1145,6 +1135,33 @@ impl PlatformExtractor for Douyin {
     }
 }
 
+/// Returns the streamer's name and avatar URL, taking each from `user` when it is set
+/// and otherwise from the room owner. The reflow API reports the streamer only as the
+/// room owner and leaves `user` as an empty placeholder.
+fn streamer_identity<'d>(
+    user: Option<&'d DouyinUserInfo<'_>>,
+    room: Option<&'d DouyinPcData<'_>>,
+) -> (Option<&'d str>, Option<String>) {
+    let owner = room.and_then(|room| room.owner.as_ref());
+    let name = user
+        .map(|user| user.nickname.as_str())
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            owner
+                .and_then(|owner| owner.nickname.as_deref())
+                .filter(|name| !name.is_empty())
+        });
+    let first_url = |avatar: Option<&DouyinAvatarThumb<'_>>| {
+        avatar
+            .and_then(|avatar| avatar.url_list.first())
+            .filter(|url| !url.is_empty())
+            .map(|url| url.to_string())
+    };
+    let avatar = first_url(user.and_then(|user| user.avatar_thumb.as_ref()))
+        .or_else(|| first_url(owner.and_then(|owner| owner.avatar_thumb.as_ref())));
+    (name, avatar)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
@@ -1422,8 +1439,8 @@ mod tests {
 
     #[test]
     fn test_reflow_ended_room_with_stale_live_status_is_offline() {
-        // The reflow API can still report status=2 shortly after a broadcast ends;
-        // each end marker on its own must keep the room offline.
+        // A response that still says status=2 next to end markers is an ended room;
+        // each end marker on its own must keep it offline.
         let ended: Value = serde_json::from_str(REFLOW_ENDED_ROOM).unwrap();
         for (finish_reason, last_ping_time) in [(json!(1), json!(0)), (json!(0), json!(0))] {
             let mut body = ended.clone();
@@ -1434,6 +1451,58 @@ mod tests {
             let info = parse_app_body(&body.to_string());
             assert!(!info.is_live);
             assert!(info.streams.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_reflow_streamer_identity_comes_from_room_owner() {
+        for body in [REFLOW_LIVE_ROOM, REFLOW_ENDED_ROOM] {
+            let info = parse_app_body(body);
+            assert_eq!(info.artist, "Test User");
+            assert_eq!(
+                info.artist_url.as_deref(),
+                Some("https://p3-webcast.example.com/avatar.image")
+            );
+        }
+
+        // An ended room answered with a prompt also names the owner.
+        let mut body: Value = serde_json::from_str(REFLOW_ENDED_ROOM).unwrap();
+        body["data"]["prompts"] = json!("直播已结束");
+        let info = parse_app_body(&body.to_string());
+        assert!(!info.is_live);
+        assert_eq!(info.artist, "Test User");
+    }
+
+    #[test]
+    fn test_reflow_streamer_identity_without_owner_stays_empty() {
+        for owner in [
+            Value::Null,
+            json!({}),
+            json!({"nickname": "", "avatar_thumb": null}),
+        ] {
+            let mut body: Value = serde_json::from_str(REFLOW_LIVE_ROOM).unwrap();
+            body["data"]["room"]["owner"] = owner.clone();
+            let info = parse_app_body(&body.to_string());
+            assert!(info.is_live, "owner={owner}");
+            assert_eq!(info.artist, "", "owner={owner}");
+            assert_eq!(info.artist_url, None, "owner={owner}");
+        }
+    }
+
+    #[test]
+    fn test_user_identity_takes_precedence_over_room_owner() {
+        for mobile in [false, true] {
+            let mut room = room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS);
+            room["owner"] = json!({
+                "nickname": "Owner Name",
+                "avatar_thumb": {"url_list": ["https://example.com/owner.jpg"]}
+            });
+            let info = parse_room_fixture(room, mobile, StreamSource::Sdk);
+            assert_eq!(info.artist, "Test User");
+            assert_eq!(
+                info.artist_url.as_deref(),
+                Some("https://example.com/avatar.jpg")
+            );
         }
     }
 
