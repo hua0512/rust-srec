@@ -2073,6 +2073,53 @@ mod tests {
     }
 
     #[test]
+    fn a_gap_is_announced_after_an_inner_periods_media_expires() {
+        let mpd = |periods: &str| {
+            format!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p0/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  {periods}
+</MPD>"#
+            )
+        };
+        let p1 = r#"<Period id="p1" start="PT10S" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p1/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let p2 = r#"<Period id="p2" start="PT12S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        // The open p0 is planned through 14 s.
+        for step in 0..4 {
+            if step > 0 {
+                fixture.advance(2);
+            }
+            assert_eq!(planned_periods(&fixture.plan(&mpd(""))).len(), 1);
+            fixture.consume_all();
+        }
+        // At 14 s p1 (10–12 s) is revealed while its segment is available.
+        let revealed = fixture.plan(&mpd(p1));
+        assert_eq!(planned_periods(&revealed), [(4, Some("p1"), 1)]);
+        fixture.consume_all();
+        // At 16 s p1's segment has left the window; p2 has no video.
+        fixture.advance(2);
+        let later = fixture.plan(&mpd(&format!("{p1}{p2}")));
+        assert_eq!(absent_periods(&later), [(Some("p2"), 5)]);
+    }
+
+    #[test]
     fn a_vanished_representation_is_replaced_by_a_new_epoch() {
         let with = |id: &str| {
             format!(
