@@ -21,7 +21,7 @@ use super::parse::{
 };
 use super::template::{Template, TemplateKind};
 use super::timeline::{
-    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, MediaLocation,
+    Addressing, AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, ListedSegment,
     PeriodTiming, Run, SegmentUrls, SegmentWindow, TimelineLead,
 };
 use super::xs::{self, RawOffset};
@@ -287,17 +287,17 @@ impl Representation {
         self.addressing.timeline_ahead(&self.timing, offset, now)
     }
 
-    /// Where this Representation's template media segments are; `None`
-    /// for lists and indexed segments.
-    pub fn media_location(&self) -> Option<MediaLocation> {
-        self.addressing.media_location()
-    }
-
     /// The first segment this Representation's `SegmentTimeline` lists
     /// from segment `number` on, as `(number, media time)`, regardless of
     /// availability; `None` without a timeline or past its end.
     pub fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
         self.addressing.listed_from(number)
+    }
+
+    /// The newest segment this Representation's `SegmentTimeline` lists,
+    /// regardless of availability; `None` without a timeline.
+    pub fn listed_last(&self) -> Option<ListedSegment> {
+        self.addressing.listed_last()
     }
 
     /// Where this `SegmentBase` Representation's Segment Index is, while it

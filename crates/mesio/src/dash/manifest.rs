@@ -40,6 +40,6 @@ pub use resolve::{
     Representation,
 };
 pub use timeline::{
-    AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, MediaLocation, Segment,
+    AddressingKind, AvailabilityTimeOffset, ByteRange, InitSegment, ListedSegment, Segment,
     SegmentIter, SegmentWindow, TimelineLead,
 };

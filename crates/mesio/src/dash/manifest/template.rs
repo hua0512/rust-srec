@@ -165,22 +165,6 @@ impl Template {
     /// Substitutes the segment number and media time (`$Time$` is the raw
     /// media time in timescale units; `@presentationTimeOffset` is not
     /// subtracted).
-    /// The template up to its query or fragment, for comparing where its
-    /// resources are; not for expansion.
-    pub(crate) fn without_query(&self) -> Self {
-        let mut parts = Vec::with_capacity(self.parts.len());
-        for part in &self.parts {
-            if let Part::Literal(text) = part
-                && let Some(end) = text.find(['?', '#'])
-            {
-                parts.push(Part::Literal(text[..end].to_owned()));
-                break;
-            }
-            parts.push(part.clone());
-        }
-        Self { parts, max_len: 0 }
-    }
-
     pub(crate) fn expand(&self, number: u64, time: u64) -> String {
         let mut out = String::with_capacity(self.max_len);
         for part in &self.parts {

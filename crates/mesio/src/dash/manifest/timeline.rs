@@ -145,14 +145,15 @@ pub struct TimelineLead {
     pub segment_duration: Duration,
 }
 
-/// Where a `SegmentTemplate`'s media segments are: the template and the
-/// URL it resolves against, both without query or fragment (rotating
-/// access tokens do not change the resources). Equal locations address the
-/// same resources by number or time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MediaLocation {
-    base: Url,
-    template: Template,
+/// A segment a `SegmentTimeline` lists (see
+/// [`super::Representation::listed_last`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListedSegment {
+    pub number: u64,
+    /// Media time in timescale units.
+    pub time: u64,
+    /// Duration in timescale units.
+    pub duration: u64,
 }
 
 /// A run of equal-duration segments: one `S` element, or the whole
@@ -557,25 +558,32 @@ impl Addressing {
         }))
     }
 
-    /// Where the media segments of a template are; `None` for lists and
-    /// indexed segments.
-    pub(crate) fn media_location(&self) -> Option<MediaLocation> {
-        let SegmentUrls::Template { media, base } = &self.urls else {
-            return None;
-        };
-        let mut base = base.clone();
-        base.set_query(None);
-        base.set_fragment(None);
-        Some(MediaLocation {
-            base,
-            template: media.without_query(),
-        })
-    }
-
     /// The first segment the `SegmentTimeline` lists from `number` on, as
     /// `(number, media time)`, whatever the clock says. A trailing
     /// `S@r=-1` lists only its first segment; `@endNumber` is respected.
     pub(crate) fn listed_from(&self, number: u64) -> Option<(u64, u64)> {
+        let index = number.saturating_sub(self.start_number);
+        if index >= self.listed_len()? {
+            return None;
+        }
+        let (time, _) = self.run_timing(index)?;
+        Some((self.start_number.checked_add(index)?, time))
+    }
+
+    /// The newest segment the `SegmentTimeline` lists, whatever the clock
+    /// says (see [`Self::listed_from`]).
+    pub(crate) fn listed_last(&self) -> Option<ListedSegment> {
+        let index = self.listed_len()?.checked_sub(1)?;
+        let (time, duration) = self.run_timing(index)?;
+        Some(ListedSegment {
+            number: self.start_number.checked_add(index)?,
+            time,
+            duration,
+        })
+    }
+
+    /// How many segments the `SegmentTimeline` lists from `startNumber`.
+    fn listed_len(&self) -> Option<u64> {
         if !self.has_timeline {
             return None;
         }
@@ -585,12 +593,7 @@ impl Addressing {
             let allowed = end_number.checked_sub(self.start_number)?.checked_add(1)?;
             listed = listed.min(allowed);
         }
-        let index = number.saturating_sub(self.start_number);
-        if index >= listed {
-            return None;
-        }
-        let (time, _) = self.run_timing(index)?;
-        Some((self.start_number.checked_add(index)?, time))
+        Some(listed)
     }
 
     /// Media time and duration of the segment at sequence position
@@ -1567,8 +1570,17 @@ mod tests {
             None,
             "only the open run's first"
         );
+        assert_eq!(
+            addressing.listed_last(),
+            Some(ListedSegment {
+                number: 13,
+                time: 1006,
+                duration: 3
+            })
+        );
         addressing.end_number = Some(11);
         assert_eq!(addressing.listed_from(12), None);
+        assert_eq!(addressing.listed_last().map(|last| last.number), Some(11));
         addressing.has_timeline = false;
         assert_eq!(addressing.listed_from(10), None);
     }
