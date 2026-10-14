@@ -40,17 +40,20 @@
 //! A new epoch may begin inside media already written: while a dynamic
 //! MPD's last Period is open, its segments are planned past the start of a
 //! Period that a later update reveals, and that Period is planned from its
-//! start. Each track remembers the end of the media it last wrote. Until a
-//! track writes media of its new epoch, fragments that end by that written
-//! end, starting at most [`MAX_REPEATED_SEGMENTS`] of their segment's
-//! duration before it, are dropped as already written; written media, not
-//! downloads, decides, so exactly one copy is kept whether the earlier
-//! Period's segments were written, failed or skipped. The first fragment
-//! kept, if it still starts before the written end (straddling it, or
+//! start. Each track remembers the intervals of media it recently wrote
+//! and where its newest media ends. Until a track writes a fragment of its
+//! new epoch, fragments lying within one written interval, starting at
+//! most [`MAX_REPEATED_SEGMENTS`] of their segment's duration before that
+//! end, are dropped as already written; from its first fragment written,
+//! the epoch's media is never judged against earlier epochs. Written media,
+//! not downloads, decides, so exactly one copy is kept whether the earlier
+//! Period's segments were written, failed or skipped, and a hole the
+//! earlier Period left is filled. The first fragment kept, if it still
+//! starts before the written end (filling a hole, straddling the end, or
 //! further back: a timeline reset), starts a new file and is written
-//! whole, so decode times never go back within a file and nothing beyond
-//! a repeat is dropped. A file continues across a byte-identical init
-//! only when every track's first media of the new epoch follows on.
+//! whole, so decode times never go back within a file and nothing beyond a
+//! repeat is dropped. A file continues across a byte-identical init only
+//! when every track's first media of the new epoch follows on.
 //!
 //! A Period without video (an audio-only interlude, or audio carried past
 //! the last video Period) is recorded as its own audio-only epoch: one item
@@ -255,22 +258,68 @@ impl QueuedMedia {
             .take_while(|&&(start, end)| {
                 matches!(
                     (to_nanos(start, timescale), to_nanos(end, timescale)),
-                    (Some(start), Some(end)) if end <= written.end && written.end - start <= window
+                    (Some(start), Some(end))
+                        if written.end - start <= window && written.contains(start, end)
                 )
             })
             .count()
     }
 }
 
-/// What a track last wrote to the output.
+/// Written intervals a track remembers. Gaps between them (segments that
+/// failed or were skipped) are what keeps intervals apart, so a few cover
+/// any repeat window.
+const MAX_WRITTEN_INTERVALS: usize = 16;
+
+/// What a track wrote to the output.
 #[derive(Debug, Clone)]
 struct Written {
-    /// End of that media, in nanoseconds on the presentation timeline.
+    /// End of the media it last wrote, in nanoseconds on the presentation
+    /// timeline.
     end: i128,
     /// Its init: media under another one is a new epoch of the track.
     init: Arc<TrackInit>,
     /// Whether the current file holds media of the track.
     in_file: bool,
+    /// The newest written intervals, in nanoseconds, ascending and
+    /// coalesced where they touch; restarted when written media goes back
+    /// in time, as what lies ahead then belongs to an earlier timeline.
+    intervals: VecDeque<(i128, i128)>,
+}
+
+impl Written {
+    fn new(init: Arc<TrackInit>) -> Self {
+        Self {
+            end: i128::MIN,
+            init,
+            in_file: false,
+            intervals: VecDeque::new(),
+        }
+    }
+
+    /// Whether `[start, end)` lies within one written interval.
+    fn contains(&self, start: i128, end: i128) -> bool {
+        self.intervals
+            .iter()
+            .any(|&(from, to)| from <= start && end <= to)
+    }
+
+    /// Records media of `init` written over `[start, end)`.
+    fn record(&mut self, init: &Arc<TrackInit>, start: i128, end: i128) {
+        if start < self.end {
+            self.intervals.clear();
+        }
+        match self.intervals.back_mut() {
+            Some(last) if last.1 >= start => last.1 = last.1.max(end),
+            _ => self.intervals.push_back((start, end)),
+        }
+        while self.intervals.len() > MAX_WRITTEN_INTERVALS {
+            self.intervals.pop_front();
+        }
+        self.end = end;
+        self.init = Arc::clone(init);
+        self.in_file = true;
+    }
 }
 
 #[derive(Debug)]
@@ -1437,19 +1486,23 @@ impl MuxState {
             }
         }
         for span in spans {
-            let Some(end) = to_nanos(span.end, span.init.timescale) else {
+            let timescale = span.init.timescale;
+            let (Some(start), Some(end)) = (
+                to_nanos(span.start, timescale),
+                to_nanos(span.end, timescale),
+            ) else {
                 continue;
             };
-            let written = Written {
-                end,
-                init: Arc::clone(&span.init),
-                in_file: true,
-            };
             let track = span.init.track;
-            match self.written.iter_mut().find(|(known, _)| *known == track) {
-                Some((_, known)) => *known = written,
-                None => self.written.push((track, written)),
-            }
+            let index = match self.written.iter().position(|(known, _)| *known == track) {
+                Some(index) => index,
+                None => {
+                    self.written
+                        .push((track, Written::new(Arc::clone(&span.init))));
+                    self.written.len() - 1
+                }
+            };
+            self.written[index].1.record(&span.init, start, end);
         }
         group.push(item);
         self.out.push(group);
@@ -1860,13 +1913,15 @@ impl MuxState {
                 ends_by(fragment_end, follower_timescale, end, timescale)
             })
         };
-        let written = self.written_of(run_init.track).cloned();
+        // Repeats are judged only until the run writes media: from then on
+        // the track has written media of this epoch.
+        let mut previous = self.written_of(run_init.track).cloned();
         let mut data = Vec::new();
         let mut last = None;
         let mut covered: Option<(i128, i128)> = None;
         let mut late_fragments = 0u64;
         for mut media in run {
-            let repeated = media.repeated_prefix(written.as_ref());
+            let repeated = media.repeated_prefix(previous.as_ref());
             media.consumed += repeated;
             self.stats.repeated_fragments += repeated as u64;
             let keep: Vec<bool> = media.fragments.iter().map(|span| !late(span)).collect();
@@ -1896,6 +1951,9 @@ impl MuxState {
             if let Err(error) = written {
                 warn!(%error, "trailing audio rejected by the merger; dropped");
                 break;
+            }
+            if !kept.is_empty() {
+                previous = None;
             }
             covered = kept
                 .into_iter()
@@ -2864,6 +2922,121 @@ mod tests {
             [
                 vec![(1, 100_000), (2, 100_000)],
                 vec![(1, 10_000), (1, 11_000), (2, 10_500)]
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_hole_in_written_media_is_filled_by_the_next_period() {
+        let h = start(MediaTrack::Video, true, lag(WAIT));
+        send_inits(&h, "p0", 0).await;
+        send_second(&h, "p0", 0, 0, 1).await;
+        // p0's 1–2 s failed on both tracks; 2–3 s was written.
+        let skipped = || {
+            Ok(AssembledItem::GapSkipped {
+                from_sequence: 2,
+                to_sequence: 3,
+                reason: crate::segment_engine::assembler::GapSkipReason::Upstream,
+            })
+        };
+        h.video(skipped()).await;
+        h.audio(skipped()).await;
+        send_second(&h, "p0", 0, 2, 3).await;
+        // p1, revealed at 1 s, holds the missing second: it needs a new
+        // file, as the old one already reaches 3 s.
+        send_inits(&h, "p1", 1).await;
+        for second in 1..4 {
+            send_second(&h, "p1", 1, second, second).await;
+        }
+        end_both(&h).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            written_ms(&items),
+            [
+                vec![(1, 0), (2, 0), (1, 2000), (2, 2000)],
+                vec![
+                    (1, 1000),
+                    (2, 1000),
+                    (1, 2000),
+                    (2, 2000),
+                    (1, 3000),
+                    (2, 3000)
+                ]
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reset_audio_tail_is_written_whole() {
+        let h = start(MediaTrack::Video, true, lag(Duration::from_millis(50)));
+        let (v, a) = (MediaTrack::Video, MediaTrack::Audio);
+        send_inits(&h, "p0", 17).await;
+        for second in 17..20 {
+            send_second(&h, "p0", 17, second, second - 16).await;
+        }
+        // p1 resets to 14 s. Its video is written, in a new file, before
+        // its audio arrives, and then ends: its audio, 14–21 s, is the
+        // tail, partly at times p0's audio was written at.
+        send_inits(&h, "p1", 14).await;
+        h.video(media(v, Some("p1"), 14, 1, Bytes::from_static(VIDEO_1)))
+            .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        for second in 14..21 {
+            h.audio(media(
+                a,
+                Some("p1"),
+                14,
+                second - 13,
+                with_tfdt(AUDIO_1, (second - 14) * 48_000),
+            ))
+            .await;
+        }
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let files = written_ms(&items);
+        assert_eq!(files.len(), 2);
+        // 14–15 s arrived after its video was written: late, as ever.
+        let audio: Vec<u64> = files[1]
+            .iter()
+            .filter(|(track, _)| *track == 2)
+            .map(|&(_, ms)| ms)
+            .collect();
+        assert_eq!(audio, [15_000, 16_000, 17_000, 18_000, 19_000, 20_000]);
+    }
+
+    #[tokio::test]
+    async fn media_written_before_a_reset_is_not_a_repeat_after_it() {
+        let h = start(MediaTrack::Video, false, lag(WAIT));
+        let v = MediaTrack::Video;
+        // p0 writes 3–4 s; p1 resets to 1 s and runs to 3 s; p2 then
+        // reaches 3–4 s again, which the new timeline never wrote.
+        for (period, start, seconds) in [("p0", 3, 3..4), ("p1", 1, 1..3), ("p2", 3, 3..5)] {
+            h.video(init(v, Some(period), start, VIDEO_INIT)).await;
+            for second in seconds {
+                h.video(media(
+                    v,
+                    Some(period),
+                    start,
+                    second,
+                    with_tfdt(VIDEO_1, (second - start) * 12_288),
+                ))
+                .await;
+            }
+        }
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            written_ms(&items),
+            [
+                vec![(1, 3000)],
+                vec![(1, 1000), (1, 2000), (1, 3000), (1, 4000)]
             ]
         );
     }
