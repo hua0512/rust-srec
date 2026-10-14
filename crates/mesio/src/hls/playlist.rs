@@ -93,18 +93,31 @@ impl PlaylistEngine {
                 content_length: None,
             },
         );
+        // Startup is not retried here: a cooling server fails it at once,
+        // and the requests that follow honour a cool-down this answer starts.
+        let admission = self
+            .clients
+            .rate_limiter()
+            .try_admit(&playlist_url)
+            .map_err(|throttled| throttled.error(&playlist_url, "initial playlist fetch"))?;
         let response = client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(HlsDownloaderError::from)?;
-        // Startup is not retried here, but the requests that follow honour a
-        // cool-down this answer starts.
-        self.clients
-            .rate_limiter()
-            .observe(&playlist_url, response.status(), response.headers());
+            .map_err(|error| crate::rate_limit::request_error(error, "initial playlist fetch"))?;
+        if let Some(retry_in) =
+            admission.observe(response.url(), response.status(), response.headers())
+        {
+            return Err(HlsDownloaderError::rate_limited(
+                response.status(),
+                response.url().as_str(),
+                "initial playlist fetch",
+                retry_in,
+            ));
+        }
+        drop(admission);
         if !response.status().is_success() {
             return Err(HlsDownloaderError::http_status(
                 response.status(),
@@ -223,20 +236,31 @@ impl PlaylistEngine {
                 content_length: None,
             },
         );
+        // Startup is not retried here: a cooling server fails it at once,
+        // and the requests that follow honour a cool-down this answer starts.
+        let admission = self
+            .clients
+            .rate_limiter()
+            .try_admit(&media_playlist_url)
+            .map_err(|throttled| throttled.error(&media_playlist_url, "media playlist fetch"))?;
         let response = client
             .get(media_playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(HlsDownloaderError::from)?;
-        // Startup is not retried here, but the requests that follow honour a
-        // cool-down this answer starts.
-        self.clients.rate_limiter().observe(
-            &media_playlist_url,
-            response.status(),
-            response.headers(),
-        );
+            .map_err(|error| crate::rate_limit::request_error(error, "media playlist fetch"))?;
+        if let Some(retry_in) =
+            admission.observe(response.url(), response.status(), response.headers())
+        {
+            return Err(HlsDownloaderError::rate_limited(
+                response.status(),
+                response.url().as_str(),
+                "media playlist fetch",
+                retry_in,
+            ));
+        }
+        drop(admission);
         if !response.status().is_success() {
             return Err(HlsDownloaderError::http_status(
                 response.status(),

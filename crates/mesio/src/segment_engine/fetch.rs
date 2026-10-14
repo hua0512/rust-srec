@@ -391,14 +391,20 @@ async fn download_once(
         request = request.header(RANGE, format!("bytes={}-{end}", range.offset));
     }
 
-    // Held until the response has been observed: while the origin cools
-    // down after rate limiting, this waits, and a probe stays out until its
-    // answer is known.
-    let rate_limiter = ctx.clients.rate_limiter();
-    let _admission = rate_limiter
-        .admit(url, &ctx.cancel)
-        .await
-        .map_err(|_| (Failure::new(FailureClass::Network, "cancelled"), false))?;
+    let operation = match descriptor.key.kind {
+        SegmentKind::Init => "init segment download",
+        SegmentKind::Media => "segment download",
+    };
+    // A segment does not wait for a cooling origin here: it goes back to the
+    // store, which retries it when the cool-down ends, so its download slot
+    // and byte reservation serve other requests meanwhile. The admission is
+    // held until the answer has been observed, so a probe stays out until
+    // then.
+    let admission = ctx
+        .clients
+        .rate_limiter()
+        .try_admit(url)
+        .map_err(|throttled| (rate_limited_failure(throttled.error(url, operation)), false))?;
     let started = std::time::Instant::now();
     let response = tokio::select! {
         _ = ctx.cancel.cancelled() => {
@@ -407,6 +413,10 @@ async fn download_once(
         response = request.send() => response,
     }
     .map_err(|e| {
+        if crate::rate_limit::redirect_throttled(&e).is_some() {
+            let error = crate::rate_limit::request_error(e, operation);
+            return (rate_limited_failure(error), false);
+        }
         let class = classify_reqwest(&e);
         (
             Failure::new(class, crate::redact::redact_reqwest(e).to_string()),
@@ -415,28 +425,22 @@ async fn download_once(
     })?;
 
     let status = response.status();
-    let rate_limited = rate_limiter.observe(url, status, response.headers());
+    let rate_limited = admission.observe(response.url(), status, response.headers());
     if !status.is_success() {
-        let class = match rate_limited {
-            Some(delay) => FailureClass::RateLimited {
-                status: status.as_u16(),
-                delay,
-            },
-            None => FailureClass::Http(status.as_u16()),
-        };
-        let failure = Failure::new(class, format!("HTTP {status} for {}", Redacted(url)))
-            .with_error(DownloadError::http_status(
-                status,
-                url.as_str(),
-                match descriptor.key.kind {
-                    SegmentKind::Init => "init segment download",
-                    SegmentKind::Media => "segment download",
-                },
-            ));
-        // A plain 5xx gets one quick attempt-level retry; anything else goes
+        if let Some(retry_in) = rate_limited {
+            let error =
+                DownloadError::rate_limited(status, response.url().as_str(), operation, retry_in);
+            return Err((rate_limited_failure(error), false));
+        }
+        let failure = Failure::new(
+            FailureClass::Http(status.as_u16()),
+            format!("HTTP {status} for {}", Redacted(url)),
+        )
+        .with_error(DownloadError::http_status(status, url.as_str(), operation));
+        // A 5xx gets one quick attempt-level retry; anything else goes
         // straight to the store (it owns rate-limit and 404 pacing and the
         // 401/403 freshness rule).
-        return Err((failure, rate_limited.is_none() && status.is_server_error()));
+        return Err((failure, status.is_server_error()));
     }
     let range_mode =
         validate_range_response(status, response.headers(), byte_range).map_err(|e| (e, false))?;
@@ -608,6 +612,19 @@ async fn download_once(
     Ok(bytes)
 }
 
+/// Request settings of [`fetch_range`].
+#[derive(Clone, Copy)]
+pub(crate) struct RangeRequest<'a> {
+    /// Query parameters added to the URL.
+    pub params: &'a [(String, String)],
+    pub timeout: Duration,
+    pub cancel: &'a CancellationToken,
+    /// Names the request in errors.
+    pub operation: &'static str,
+    /// Until when the request waits for a cool-down after rate limiting.
+    pub throttle_deadline: tokio::time::Instant,
+}
+
 /// Fetches `range` of `url` outside the segment pipeline (no byte budget,
 /// cache or events), for small metadata such as a DASH Segment Index. The
 /// response is checked as for segments: a `206` must cover exactly the
@@ -615,12 +632,16 @@ async fn download_once(
 pub(crate) async fn fetch_range(
     clients: &ClientPool,
     url: &Url,
-    params: &[(String, String)],
     range: ByteRangeKey,
-    timeout: Duration,
-    cancel: &CancellationToken,
-    operation: &'static str,
+    settings: &RangeRequest<'_>,
 ) -> Result<Bytes, DownloadError> {
+    let RangeRequest {
+        params,
+        timeout,
+        cancel,
+        operation,
+        throttle_deadline,
+    } = *settings;
     let invalid = |reason: String| DownloadError::InvalidContent {
         protocol: "http",
         reason,
@@ -632,14 +653,25 @@ pub(crate) async fn fetch_range(
         .query(params)
         .header(RANGE, format!("bytes={}-{end}", range.offset))
         .timeout(timeout);
-    let rate_limiter = clients.rate_limiter();
-    let _admission = rate_limiter.admit(url, cancel).await?;
+    let admission = clients
+        .rate_limiter()
+        .admit(url, cancel, throttle_deadline, operation)
+        .await?;
     let response = tokio::select! {
         _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-        response = request.send() => response?,
+        response = request.send() => response
+            .map_err(|error| crate::rate_limit::request_error(error, operation))?,
     };
     let status = response.status();
-    rate_limiter.observe(url, status, response.headers());
+    if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
+        return Err(DownloadError::rate_limited(
+            status,
+            response.url().as_str(),
+            operation,
+            retry_in,
+        ));
+    }
+    drop(admission);
     if !status.is_success() {
         return Err(DownloadError::http_status(status, url.as_str(), operation));
     }
@@ -830,6 +862,20 @@ fn range_end(range: ByteRangeKey) -> Option<u64> {
         .and_then(|last| range.offset.checked_add(last))
 }
 
+/// The store's failure for a [`DownloadError::RateLimited`].
+pub(crate) fn rate_limited_failure(error: DownloadError) -> Failure {
+    let class = match &error {
+        DownloadError::RateLimited {
+            status, retry_in, ..
+        } => FailureClass::RateLimited {
+            status: status.as_u16(),
+            delay: *retry_in,
+        },
+        _ => FailureClass::Network,
+    };
+    Failure::new(class, error.to_string()).with_error(error)
+}
+
 fn classify_reqwest(e: &reqwest::Error) -> FailureClass {
     if e.is_timeout() {
         FailureClass::Timeout
@@ -945,5 +991,179 @@ mod tests {
             segment_cache_key(&key("p0/video")),
             segment_cache_key(&key("p1/video"))
         );
+    }
+
+    fn context(clients: Arc<ClientPool>) -> Arc<FetchContext> {
+        use super::super::config::{GapSkipStrategy, OutputConfig};
+        Arc::new(FetchContext {
+            clients,
+            config: Arc::new(SegmentCoreConfig {
+                fetch: super::super::config::FetchConfig {
+                    params: Vec::new(),
+                    segment_download_timeout: Duration::from_secs(5),
+                    max_segment_retries: 3,
+                    segment_retry_delay_base: Duration::from_millis(10),
+                    progress_emit_min_bytes: 0,
+                    progress_emit_min_interval: Duration::ZERO,
+                    processed_segment_ttl: Duration::from_secs(1),
+                    max_segment_size_bytes: 0,
+                },
+                output: OutputConfig {
+                    live_reorder_buffer_duration: Duration::ZERO,
+                    live_reorder_buffer_max_segments: 0,
+                    gap_evaluation_interval: Duration::from_millis(10),
+                    max_pending_init_segments: 0,
+                    live_max_overall_stall_duration: None,
+                    live_gap_strategy: GapSkipStrategy::default(),
+                    vod_gap_strategy: GapSkipStrategy::WaitIndefinitely,
+                    vod_segment_timeout: None,
+                    buffer_limits: Default::default(),
+                },
+            }),
+            budget: Arc::new(ByteBudget::new(1024 * 1024, 0)),
+            decryptor: None,
+            cache_manager: None,
+            metrics: None,
+            cancel: CancellationToken::new(),
+            events: None,
+        })
+    }
+
+    fn job(ctx: &FetchContext, uri: &str) -> ReadyJob {
+        ReadyJob {
+            descriptor: descriptor(uri, SegmentKind::Media, None),
+            attempt: 1,
+            reservation: ctx.budget.download.try_reserve(1024).expect("budget"),
+        }
+    }
+
+    fn rate_limited(clients: &ClientPool, url: &str, retry_after: &str) {
+        let url = Url::parse(url).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            HeaderValue::from_str(retry_after).unwrap(),
+        );
+        let admission = clients.rate_limiter().try_admit(&url).unwrap();
+        admission.observe(&url, StatusCode::TOO_MANY_REQUESTS, &headers);
+    }
+
+    #[tokio::test]
+    async fn a_segment_of_a_cooling_origin_goes_back_to_the_store_at_once() {
+        let clients = Arc::new(ClientPool::new(&Default::default()).unwrap());
+        // Nothing listens on the discard port: a request would fail as a
+        // network error rather than as rate limiting.
+        let uri = "http://127.0.0.1:9/live/1.ts";
+        rate_limited(&clients, uri, "30");
+        let ctx = context(Arc::clone(&clients));
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(1),
+            fetch_and_process(job(&ctx, uri), Arc::clone(&ctx)),
+        )
+        .await
+        .expect("does not wait for the cool-down");
+
+        let SegmentOutcome::Failed { class, error, .. } = outcome else {
+            panic!("{outcome:?}");
+        };
+        let FailureClass::RateLimited { status: 429, delay } = class else {
+            panic!("{class:?}");
+        };
+        assert!(delay > Duration::from_secs(29) && delay <= Duration::from_secs(30));
+        assert!(matches!(error, Some(DownloadError::RateLimited { .. })));
+        assert_eq!(
+            ctx.budget.download.available(),
+            ctx.budget.download.capacity(),
+            "the byte reservation is given back"
+        );
+    }
+
+    /// Serves `answer` at every path and counts the requests.
+    async fn serve(
+        answer: impl Fn() -> axum::response::Response + Clone + Send + Sync + 'static,
+    ) -> (String, Arc<std::sync::atomic::AtomicU32>) {
+        let hits = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = Arc::clone(&hits);
+        let app = axum::Router::new().fallback(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let response = answer();
+            async move { response }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{addr}"), hits)
+    }
+
+    #[tokio::test]
+    async fn redirected_refusals_cool_down_the_server_that_refused() {
+        let (cdn, cdn_hits) = serve(|| {
+            axum::response::Response::builder()
+                .status(429)
+                .header("retry-after", "30")
+                .body(axum::body::Body::empty())
+                .unwrap()
+        })
+        .await;
+        let target = format!("{cdn}/index.mp4");
+        let (origin, _) = serve(move || {
+            axum::response::Response::builder()
+                .status(302)
+                .header("location", target.as_str())
+                .body(axum::body::Body::empty())
+                .unwrap()
+        })
+        .await;
+        let clients = ClientPool::new(&Default::default()).unwrap();
+        let cancel = CancellationToken::new();
+        let origin_url = Url::parse(&format!("{origin}/index.mp4")).unwrap();
+        let cdn_url = Url::parse(&format!("{cdn}/index.mp4")).unwrap();
+        let range = ByteRangeKey {
+            offset: 0,
+            length: 8,
+        };
+        let fetch = || async {
+            fetch_range(
+                &clients,
+                &origin_url,
+                range,
+                &RangeRequest {
+                    params: &[],
+                    timeout: Duration::from_secs(5),
+                    cancel: &cancel,
+                    operation: "test",
+                    throttle_deadline: tokio::time::Instant::now(),
+                },
+            )
+            .await
+        };
+
+        let refused = tokio::time::timeout(Duration::from_secs(5), fetch())
+            .await
+            .unwrap();
+        assert!(
+            matches!(&refused, Err(DownloadError::RateLimited { url, .. }) if url.starts_with(&cdn)),
+            "{refused:?}"
+        );
+        assert!(
+            clients.rate_limiter().try_admit(&origin_url).is_ok(),
+            "the redirecting server did not refuse anything"
+        );
+        assert!(clients.rate_limiter().try_admit(&cdn_url).is_err());
+
+        // The next request is redirected into the cooling server, and the
+        // hop is held back like a direct request would be.
+        let held = tokio::time::timeout(Duration::from_secs(5), fetch())
+            .await
+            .unwrap();
+        assert!(
+            matches!(&held, Err(DownloadError::RateLimited { url, retry_in, .. })
+                if url.starts_with(&cdn) && *retry_in > Duration::from_secs(25)),
+            "{held:?}"
+        );
+        assert_eq!(cdn_hits.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

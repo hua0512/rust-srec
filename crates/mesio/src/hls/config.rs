@@ -169,14 +169,15 @@ pub struct HlsFetcherConfig {
     /// attempt, network errors and 5xx responses are also retried up to twice
     /// quickly, since the attempt holds a download slot. Rate limiting (429,
     /// or 503 with `Retry-After`) is not counted: the segment waits for the
-    /// server instead, for at most five minutes in total.
+    /// server instead, until five minutes after it was first held back.
     pub max_segment_retries: u32,
     /// Base delay of the exponential backoff between segment reschedules.
     pub segment_retry_delay_base: Duration,
     /// Cap on the segment reschedule backoff.
     pub max_segment_retry_delay: Duration,
     pub key_download_timeout: Duration,
-    /// Retries of a failed key fetch (network errors, timeouts, 5xx, 429).
+    /// Retries of a failed key fetch (network errors, timeouts, 5xx). Rate
+    /// limiting is waited out by the segment instead, like its own download.
     pub max_key_retries: u32,
     /// Base delay of the exponential backoff between key fetch retries.
     pub key_retry_delay_base: Duration,

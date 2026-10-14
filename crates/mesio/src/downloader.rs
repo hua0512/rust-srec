@@ -186,20 +186,21 @@ pub struct ClientPool {
 
 impl ClientPool {
     pub fn new(config: &DownloaderConfig) -> Result<Self, DownloadError> {
-        let rustls = create_client_with_backend(config, TlsBackend::Rustls)?;
+        let rate_limiter = Arc::new(RateLimiter::default());
+        let rustls = create_client_with_backend(config, TlsBackend::Rustls, &rate_limiter)?;
 
         let mut native_hosts = default_native_tls_hosts();
         native_hosts.extend(native_tls_hosts_from_env());
 
         #[cfg(feature = "tls-native-fallback")]
-        let native = create_client_with_backend(config, TlsBackend::NativeTls)?;
+        let native = create_client_with_backend(config, TlsBackend::NativeTls, &rate_limiter)?;
 
         Ok(Self {
             rustls,
             #[cfg(feature = "tls-native-fallback")]
             native,
             native_hosts,
-            rate_limiter: Arc::new(RateLimiter::default()),
+            rate_limiter,
         })
     }
 
@@ -248,9 +249,35 @@ enum TlsBackend {
     NativeTls,
 }
 
+/// Redirects followed per request, as with `reqwest::redirect::Policy::limited`.
+const MAX_REDIRECTS: usize = 10;
+
+/// Follows redirects like `Policy::limited(MAX_REDIRECTS)`, except into an
+/// origin that is cooling down after rate limiting: requests are admitted
+/// by the origin they are sent to, so without this a redirect would carry
+/// them past the cool-down of the server they end up at. The hop fails
+/// with an error that [`crate::rate_limit::request_error`] turns into
+/// [`DownloadError::RateLimited`] for that server.
+fn redirect_policy(rate_limiter: &Arc<RateLimiter>) -> reqwest::redirect::Policy {
+    let rate_limiter = Arc::clone(rate_limiter);
+    reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() > MAX_REDIRECTS {
+            return attempt.error("too many redirects");
+        }
+        match rate_limiter.redirect_gate(attempt.url()) {
+            Some(throttled) => {
+                let error = RateLimiter::redirect_error(attempt.url(), throttled);
+                attempt.error(error)
+            }
+            None => attempt.follow(),
+        }
+    })
+}
+
 fn create_client_with_backend(
     config: &DownloaderConfig,
     backend: TlsBackend,
+    rate_limiter: &Arc<RateLimiter>,
 ) -> Result<Client, DownloadError> {
     use crate::config::HttpVersionPreference;
 
@@ -262,7 +289,7 @@ fn create_client_with_backend(
         .user_agent(&config.user_agent)
         .default_headers(config.headers.clone())
         .redirect(if config.follow_redirects {
-            reqwest::redirect::Policy::limited(10)
+            redirect_policy(rate_limiter)
         } else {
             reqwest::redirect::Policy::none()
         });

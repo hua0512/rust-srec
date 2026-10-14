@@ -40,7 +40,7 @@ use crate::dash::selection;
 use crate::downloader::ClientPool;
 use crate::error::{DownloadError, SharedError};
 use crate::segment_engine::descriptor::{MediaTrack, inherit_query_params};
-use crate::segment_engine::fetch::fetch_range;
+use crate::segment_engine::fetch::{RangeRequest, fetch_range};
 use crate::segment_engine::identity::ByteRangeKey;
 
 /// Bytes read first at a nested `sidx`, whose size is not known before its
@@ -68,6 +68,9 @@ pub(crate) struct HttpRangeReader<'a> {
     /// Query parameters of the MPD URL, inherited as by segment URLs.
     pub parent_params: &'a [(String, String)],
     pub cancel: &'a CancellationToken,
+    /// Until when requests may wait out rate limiting (see
+    /// `crate::rate_limit`); rate limiting does not spend the retry budget.
+    pub throttle_deadline: Instant,
 }
 
 impl RangeReader for HttpRangeReader<'_> {
@@ -79,29 +82,29 @@ impl RangeReader for HttpRangeReader<'_> {
             length: range_len(range)?,
         };
         let manifest = &self.config.manifest;
-        let rate_limiter = self.clients.rate_limiter();
         let mut failures: u32 = 0;
-        let mut throttled_since: Option<Instant> = None;
         loop {
             let error = match fetch_range(
                 self.clients,
                 &url,
-                &self.config.base.params,
                 key,
-                manifest.fetch_timeout,
-                self.cancel,
-                "Segment Index fetch",
+                &RangeRequest {
+                    params: &self.config.base.params,
+                    timeout: manifest.fetch_timeout,
+                    cancel: self.cancel,
+                    operation: "Segment Index fetch",
+                    throttle_deadline: self.throttle_deadline,
+                },
             )
             .await
             {
                 Ok(bytes) => return Ok(bytes),
                 Err(error) => error,
             };
-            // The next request waits out the cool-down itself (see
-            // `fetch_range`); rate limiting is bounded by time, not tries.
-            if rate_limiter.throttled(&url, &error).is_some() {
-                let since = *throttled_since.get_or_insert_with(Instant::now);
-                if since.elapsed() >= rate_limiter.policy().max_throttled {
+            // The next request waits out the cool-down itself, up to the
+            // deadline (see `fetch_range`).
+            if matches!(error, DownloadError::RateLimited { .. }) {
+                if Instant::now() >= self.throttle_deadline {
                     return Err(error);
                 }
                 debug!(error = %error, "Segment Index request rate limited; retrying");

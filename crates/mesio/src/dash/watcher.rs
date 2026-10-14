@@ -135,12 +135,6 @@ impl MpdFetcher {
         }
     }
 
-    /// The rest of the cool-down when `error` is the answer of a server
-    /// rate limiting requests to `url`.
-    pub(crate) fn throttled(&self, url: &Url, error: &DownloadError) -> Option<Duration> {
-        self.clients.rate_limiter().throttled(url, error)
-    }
-
     /// How long refreshes ride out rate limiting before the stream fails.
     pub(crate) fn max_throttled(&self) -> Duration {
         self.clients.rate_limiter().policy().max_throttled
@@ -163,6 +157,7 @@ impl MpdFetcher {
         manifest: &mut Manifest,
         url: &Url,
         on_failure: OnIndexFailure,
+        throttle_deadline: Instant,
     ) -> Result<(), DownloadError> {
         let Some(tracks) = self.tracks.get() else {
             return Ok(());
@@ -173,6 +168,7 @@ impl MpdFetcher {
             config: &self.config,
             parent_params: &parent_params,
             cancel: &self.cancel,
+            throttle_deadline,
         };
         segment_index::read_selected(
             manifest,
@@ -186,12 +182,14 @@ impl MpdFetcher {
 
     /// Fetch and resolve the MPD at `url`. `previous` lets an unchanged body
     /// skip parsing and keeps a recent `UTCTiming` offset;
-    /// `utc_timing_due` forces a new `UTCTiming` measurement.
+    /// `utc_timing_due` forces a new `UTCTiming` measurement. Requests wait
+    /// out a cool-down after rate limiting until `throttle_deadline`.
     pub(crate) async fn fetch(
         &self,
         url: &Url,
         previous: Option<&FetchedMpd>,
         utc_timing_due: bool,
+        throttle_deadline: Instant,
     ) -> Result<FetchedMpd, DownloadError> {
         let resource = ResourceId::DashManifest {
             url: Arc::from(url.as_str()),
@@ -206,16 +204,26 @@ impl MpdFetcher {
             .get(url.clone())
             .timeout(self.config.manifest.fetch_timeout)
             .query(&self.config.base.params);
-        let rate_limiter = self.clients.rate_limiter();
-        let admission = rate_limiter.admit(url, &self.cancel).await?;
+        let admission = self
+            .clients
+            .rate_limiter()
+            .admit(url, &self.cancel, throttle_deadline, "MPD fetch")
+            .await?;
         let sent = self.config.clock.now();
         let response = tokio::select! {
             _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
             response = request.send() => response,
         }
-        .map_err(DownloadError::from)?;
+        .map_err(|error| crate::rate_limit::request_error(error, "MPD fetch"))?;
         let status = response.status();
-        rate_limiter.observe(url, status, response.headers());
+        if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
+            return Err(DownloadError::rate_limited(
+                status,
+                response.url().as_str(),
+                "MPD fetch",
+                retry_in,
+            ));
+        }
         drop(admission);
         if !status.is_success() {
             return Err(DownloadError::http_status(
@@ -266,8 +274,13 @@ impl MpdFetcher {
                         })??;
                 // Recording is under way: a planner keeps its Representation
                 // while it stays usable, so it may not need a failed index.
-                self.read_segment_indexes(&mut parsed, url, OnIndexFailure::Skip)
-                    .await?;
+                self.read_segment_indexes(
+                    &mut parsed,
+                    url,
+                    OnIndexFailure::Skip,
+                    throttle_deadline,
+                )
+                .await?;
                 Arc::new(parsed)
             }
         };
@@ -442,10 +455,13 @@ pub(crate) fn snapshot(
     }
 }
 
-type Refresh = Pin<Box<dyn Future<Output = (Result<FetchedMpd, DownloadError>, bool)> + Send>>;
+/// A refresh's result, whether it measured `UTCTiming`, and when it began.
+type RefreshOutput = (Result<FetchedMpd, DownloadError>, bool, Instant);
+
+type Refresh = Pin<Box<dyn Future<Output = RefreshOutput> + Send>>;
 
 /// The in-flight refresh, or never when there is none.
-async fn refresh_done(refresh: &mut Option<Refresh>) -> (Result<FetchedMpd, DownloadError>, bool) {
+async fn refresh_done(refresh: &mut Option<Refresh>) -> RefreshOutput {
     match refresh {
         Some(refresh) => refresh.await,
         None => std::future::pending().await,
@@ -515,8 +531,16 @@ impl MpdWatcher {
                 let url = self.url.clone();
                 let previous = Arc::clone(&current);
                 let utc_due = last_utc_sync.elapsed() >= UTC_TIMING_RESYNC;
+                let started = Instant::now();
+                // Waiting for a cooling server counts towards the bound on
+                // rate limiting like refused refreshes do.
+                let throttle_deadline =
+                    throttled_since.unwrap_or(started) + self.fetcher.max_throttled();
                 refresh = Some(Box::pin(async move {
-                    (fetcher.fetch(&url, Some(&previous), utc_due).await, utc_due)
+                    let result = fetcher
+                        .fetch(&url, Some(&previous), utc_due, throttle_deadline)
+                        .await;
+                    (result, utc_due, started)
                 }));
             }
             let wake = next_fetch.map_or(next_republish, |fetch| fetch.min(next_republish));
@@ -530,7 +554,7 @@ impl MpdWatcher {
                     debug!("MPD snapshot receivers dropped; watcher exiting");
                     return;
                 }
-                (result, utc_due) = refresh_done(&mut refresh) => {
+                (result, utc_due, started) = refresh_done(&mut refresh) => {
                     refresh = None;
                     match result {
                         Ok(fetched) => {
@@ -564,10 +588,8 @@ impl MpdWatcher {
                             // the current MPD keeps being republished, so
                             // planning goes on, and the stream fails only
                             // once the throttling has lasted its bound.
-                            let delay = if let Some(cool_down) =
-                                self.fetcher.throttled(&self.url, &error)
-                            {
-                                let since = *throttled_since.get_or_insert_with(Instant::now);
+                            let delay = if let DownloadError::RateLimited { retry_in, .. } = &error {
+                                let since = *throttled_since.get_or_insert(started);
                                 warn!(
                                     url = %Redacted(&self.url),
                                     throttled_secs = since.elapsed().as_secs(),
@@ -575,7 +597,7 @@ impl MpdWatcher {
                                     "MPD refresh rate limited"
                                 );
                                 (since.elapsed() < self.fetcher.max_throttled())
-                                    .then_some(cool_down)
+                                    .then_some(*retry_in)
                             } else {
                                 retries += 1;
                                 warn!(

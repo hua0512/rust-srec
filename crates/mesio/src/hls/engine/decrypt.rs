@@ -14,7 +14,7 @@ use crate::redact::Redacted;
 use crate::segment_engine::budget::ByteReservation;
 use crate::segment_engine::crypto::{CryptoExecutor, KeyCache, validate_key_bytes};
 use crate::segment_engine::descriptor::{EffectiveIv, EncryptionDescriptor};
-use crate::segment_engine::fetch::{Failure, FetchContext, SegmentDecryptor};
+use crate::segment_engine::fetch::{Failure, FetchContext, SegmentDecryptor, rate_limited_failure};
 use crate::segment_engine::store::FailureClass;
 use crate::session::{DownloadEvent, ResourceId};
 
@@ -153,23 +153,37 @@ async fn fetch_key(
                 let mut retries = 0;
                 loop {
                     let attempt = async {
-                        let rate_limiter = ctx_clients.rate_limiter();
-                        let admission = rate_limiter.admit(&fetch_url, &cancel).await?;
+                        // Like a segment, the key does not wait for a
+                        // cooling server here: the segment goes back to the
+                        // store, which retries it when the cool-down ends.
+                        let admission = ctx_clients
+                            .rate_limiter()
+                            .try_admit(&fetch_url)
+                            .map_err(|throttled| throttled.error(&fetch_url, KEY_FETCH))?;
                         let response = client
                             .get(fetch_url.as_ref().clone())
                             .query(&params)
                             .timeout(fetcher.key_download_timeout)
                             .send()
                             .await
-                            .map_err(HlsDownloaderError::from)?;
+                            .map_err(|error| crate::rate_limit::request_error(error, KEY_FETCH))?;
                         let status = response.status();
-                        rate_limiter.observe(&fetch_url, status, response.headers());
+                        if let Some(retry_in) =
+                            admission.observe(response.url(), status, response.headers())
+                        {
+                            return Err(HlsDownloaderError::rate_limited(
+                                status,
+                                response.url().as_str(),
+                                KEY_FETCH,
+                                retry_in,
+                            ));
+                        }
                         drop(admission);
                         if !status.is_success() {
                             return Err(HlsDownloaderError::http_status(
                                 status,
                                 fetch_url.as_str(),
-                                "hls key fetch",
+                                KEY_FETCH,
                             ));
                         }
                         let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
@@ -215,23 +229,24 @@ async fn fetch_key(
                 url,
                 operation,
             } => Failure::new(
-                match ctx
-                    .clients
-                    .rate_limiter()
-                    .throttled(&enc.key_fetch_url, e.as_ref())
-                {
-                    Some(delay) => FailureClass::RateLimited {
-                        status: status.as_u16(),
-                        delay,
-                    },
-                    None => FailureClass::Http(status.as_u16()),
-                },
+                FailureClass::Http(status.as_u16()),
                 format!("key fetch failed: {e}"),
             )
             .with_error(HlsDownloaderError::HttpStatus {
                 status: *status,
                 url: url.clone(),
                 operation,
+            }),
+            HlsDownloaderError::RateLimited {
+                status,
+                url,
+                operation,
+                retry_in,
+            } => rate_limited_failure(HlsDownloaderError::RateLimited {
+                status: *status,
+                url: url.clone(),
+                operation,
+                retry_in: *retry_in,
             }),
             HlsDownloaderError::Network { source } if source.is_timeout() => {
                 Failure::new(FailureClass::Timeout, format!("key fetch timed out: {e}"))
@@ -248,16 +263,17 @@ async fn fetch_key(
     }
 }
 
-/// Key fetch failures worth retrying: transport errors, timeouts, and
-/// server-side or rate-limit statuses. A 4xx or an invalid key would fail the
-/// same way again.
+const KEY_FETCH: &str = "hls key fetch";
+
+/// Key fetch failures worth retrying within one fetch: transport errors,
+/// timeouts, and server-side statuses. A 4xx or an invalid key would fail
+/// the same way again; rate limiting is left to the segment's lifecycle
+/// retry, which waits for the cool-down without holding a download slot.
 fn is_retryable_key_error(error: &HlsDownloaderError) -> bool {
     match error {
         HlsDownloaderError::Network { .. } => true,
         HlsDownloaderError::HttpStatus { status, .. } => {
-            status.is_server_error()
-                || *status == reqwest::StatusCode::REQUEST_TIMEOUT
-                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            status.is_server_error() || *status == reqwest::StatusCode::REQUEST_TIMEOUT
         }
         _ => false,
     }

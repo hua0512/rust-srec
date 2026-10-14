@@ -168,8 +168,13 @@ impl PlaylistWatcher {
 
             // A refresh nobody will read is abandoned, so the session settles
             // as soon as its pipeline has.
+            let started = Instant::now();
+            // Waiting for a cooling server counts towards the bound on rate
+            // limiting like refused refreshes do.
+            let throttle_deadline = throttled_since.unwrap_or(started)
+                + self.clients.rate_limiter().policy().max_throttled;
             let fetched = tokio::select! {
-                fetched = self.fetch_and_parse(&last_playlist_bytes, &base_url) => fetched,
+                fetched = self.fetch_and_parse(&last_playlist_bytes, &base_url, throttle_deadline) => fetched,
                 _ = tx.closed() => {
                     debug!("Playlist snapshot receiver dropped; watcher exiting");
                     return;
@@ -233,17 +238,15 @@ impl PlaylistWatcher {
                     let rate_limiter = self.clients.rate_limiter();
                     // Rate limiting does not spend the retry budget; it
                     // fails the stream only once it has lasted its bound.
-                    let delay = if let Some(cool_down) =
-                        rate_limiter.throttled(&self.playlist_url, &e)
-                    {
-                        let since = *throttled_since.get_or_insert_with(Instant::now);
+                    let delay = if let HlsDownloaderError::RateLimited { retry_in, .. } = &e {
+                        let since = *throttled_since.get_or_insert(started);
                         warn!(
                             url = %Redacted(&self.playlist_url),
                             throttled_secs = since.elapsed().as_secs(),
                             error = %crate::redact::redact_diagnostic(&e),
                             "playlist refresh rate limited"
                         );
-                        (since.elapsed() < rate_limiter.policy().max_throttled).then_some(cool_down)
+                        (since.elapsed() < rate_limiter.policy().max_throttled).then_some(*retry_in)
                     } else {
                         error!(
                             "Error refreshing playlist {}: {}",
@@ -279,6 +282,7 @@ impl PlaylistWatcher {
         &self,
         last_playlist_bytes: &Option<bytes::Bytes>,
         last_base_url: &Arc<str>,
+        throttle_deadline: Instant,
     ) -> Result<Option<RefreshedPlaylist>, HlsDownloaderError> {
         if self.cancel.is_cancelled() {
             return Err(HlsDownloaderError::Cancelled);
@@ -301,14 +305,31 @@ impl PlaylistWatcher {
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params);
 
-        let rate_limiter = self.clients.rate_limiter();
-        let admission = rate_limiter.admit(&self.playlist_url, &self.cancel).await?;
+        let admission = self
+            .clients
+            .rate_limiter()
+            .admit(
+                &self.playlist_url,
+                &self.cancel,
+                throttle_deadline,
+                "playlist refresh",
+            )
+            .await?;
         let response = tokio::select! {
             _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
             response = request.send() => response,
         }
-        .map_err(HlsDownloaderError::from)?;
-        rate_limiter.observe(&self.playlist_url, response.status(), response.headers());
+        .map_err(|error| crate::rate_limit::request_error(error, "playlist refresh"))?;
+        if let Some(retry_in) =
+            admission.observe(response.url(), response.status(), response.headers())
+        {
+            return Err(HlsDownloaderError::rate_limited(
+                response.status(),
+                response.url().as_str(),
+                "playlist refresh",
+                retry_in,
+            ));
+        }
         drop(admission);
 
         if !response.status().is_success() {

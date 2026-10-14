@@ -52,6 +52,9 @@ use reqwest::StatusCode;
 pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKind {
     match err {
         DownloadError::HttpStatus { status, .. } => classify_http_status(*status),
+        // Mesio already waited the server's rate limiting out as long as it
+        // allows; a 503 with Retry-After is rate limiting too.
+        DownloadError::RateLimited { .. } => DownloadFailureKind::RateLimited,
         DownloadError::Network { .. }
         | DownloadError::StreamNetwork { .. }
         | DownloadError::Timeout { .. } => DownloadFailureKind::Network,
@@ -123,6 +126,24 @@ mod tests {
         let kind = classify_download_error(&manifest);
         assert_eq!(kind, classify_download_error(&playlist));
         assert!(kind.is_recoverable());
+    }
+
+    #[test]
+    fn rate_limiting_classifies_as_recoverable_rate_limited() {
+        for status in [
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::SERVICE_UNAVAILABLE,
+        ] {
+            let err = DownloadError::rate_limited(
+                status,
+                "https://cdn.example/live.m3u8",
+                "playlist refresh",
+                std::time::Duration::from_secs(30),
+            );
+            let kind = classify_download_error(&err);
+            assert_eq!(kind, DownloadFailureKind::RateLimited, "{status}");
+            assert!(kind.is_recoverable());
+        }
     }
 
     #[test]
