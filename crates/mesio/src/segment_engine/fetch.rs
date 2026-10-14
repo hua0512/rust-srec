@@ -169,7 +169,14 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     let raw = match download_body(&ctx, &descriptor, &mut reservation).await {
         Ok(bytes) => bytes,
         Err(failure) => {
-            if let Some(metrics) = &ctx.metrics {
+            if !matches!(
+                failure.class,
+                FailureClass::RateLimited {
+                    held_back: true,
+                    ..
+                }
+            ) && let Some(metrics) = &ctx.metrics
+            {
                 metrics.record_download_error();
             }
             return SegmentOutcome::Failed {
@@ -404,7 +411,7 @@ async fn download_once(
         .clients
         .rate_limiter()
         .try_admit(url)
-        .map_err(|throttled| (rate_limited_failure(throttled.error(url, operation)), false))?;
+        .map_err(|throttled| (held_back_failure(throttled.error(url, operation)), false))?;
     let started = std::time::Instant::now();
     let response = tokio::select! {
         _ = ctx.cancel.cancelled() => {
@@ -415,7 +422,7 @@ async fn download_once(
     .map_err(|e| {
         if crate::rate_limit::redirect_throttled(&e).is_some() {
             let error = crate::rate_limit::request_error(e, operation);
-            return (rate_limited_failure(error), false);
+            return (held_back_failure(error), false);
         }
         let class = classify_reqwest(&e);
         (
@@ -862,6 +869,15 @@ fn range_end(range: ByteRangeKey) -> Option<u64> {
         .and_then(|last| range.offset.checked_add(last))
 }
 
+/// A request held back by a cooling server before it was sent.
+fn held_back_failure(error: DownloadError) -> Failure {
+    let mut failure = rate_limited_failure(error);
+    if let FailureClass::RateLimited { held_back, .. } = &mut failure.class {
+        *held_back = true;
+    }
+    failure
+}
+
 /// The store's failure for a [`DownloadError::RateLimited`].
 pub(crate) fn rate_limited_failure(error: DownloadError) -> Failure {
     let class = match &error {
@@ -870,6 +886,7 @@ pub(crate) fn rate_limited_failure(error: DownloadError) -> Failure {
         } => FailureClass::RateLimited {
             status: status.as_u16(),
             delay: *retry_in,
+            held_back: false,
         },
         _ => FailureClass::Network,
     };
@@ -1023,7 +1040,7 @@ mod tests {
             budget: Arc::new(ByteBudget::new(1024 * 1024, 0)),
             decryptor: None,
             cache_manager: None,
-            metrics: None,
+            metrics: Some(Arc::new(PerformanceMetrics::new())),
             cancel: CancellationToken::new(),
             events: None,
         })
@@ -1067,7 +1084,12 @@ mod tests {
         let SegmentOutcome::Failed { class, error, .. } = outcome else {
             panic!("{outcome:?}");
         };
-        let FailureClass::RateLimited { status: 429, delay } = class else {
+        let FailureClass::RateLimited {
+            status: 429,
+            delay,
+            held_back: true,
+        } = class
+        else {
             panic!("{class:?}");
         };
         assert!(delay > Duration::from_secs(29) && delay <= Duration::from_secs(30));
@@ -1076,6 +1098,14 @@ mod tests {
             ctx.budget.download.available(),
             ctx.budget.download.capacity(),
             "the byte reservation is given back"
+        );
+        let metrics = ctx.metrics.as_ref().unwrap();
+        assert_eq!(
+            metrics
+                .download_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "nothing was downloaded, so nothing failed to download"
         );
     }
 

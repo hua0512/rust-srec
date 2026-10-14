@@ -38,6 +38,8 @@ pub enum FailureClass {
     RateLimited {
         status: u16,
         delay: Duration,
+        /// Held back before any request was sent: not a failed download.
+        held_back: bool,
     },
     Network,
     Timeout,
@@ -2183,6 +2185,7 @@ mod tests {
         let limited = FailureClass::RateLimited {
             status: 429,
             delay: Duration::from_secs(20),
+            held_back: false,
         };
 
         // Three cool-downs of 20 s fit the 60 s bound; the budget of one
@@ -2253,6 +2256,7 @@ mod tests {
         let refused = FailureClass::RateLimited {
             status: 429,
             delay: Duration::ZERO,
+            held_back: false,
         };
         let start = Instant::now();
         let mut now = start;
@@ -2286,6 +2290,7 @@ mod tests {
         let refused = FailureClass::RateLimited {
             status: 429,
             delay: Duration::from_secs(45),
+            held_back: false,
         };
         assert!(
             fail_at(&mut s, &b, refused, now)
@@ -2337,6 +2342,7 @@ mod tests {
         let refused = FailureClass::RateLimited {
             status: 429,
             delay: Duration::from_secs(1),
+            held_back: false,
         };
         fail_at(&mut s, &b, refused, now);
         let now = now + Duration::from_secs(1);
