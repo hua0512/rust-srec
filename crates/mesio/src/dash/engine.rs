@@ -26,7 +26,7 @@ use url::Url;
 use crate::CacheManager;
 use crate::DownloadError;
 use crate::dash::config::DashConfig;
-use crate::dash::manifest::{Manifest, PresentationType, Representation};
+use crate::dash::manifest::{Manifest, PresentationType, RejectedContent, Representation};
 use crate::dash::mux::{MuxOutcome, MuxTrack, TrackSink, run_muxer};
 use crate::dash::planner::{
     ConsumedFrontier, DashPlanner, PeriodKey, PlannerParams, StartPosition, decide_start,
@@ -311,12 +311,32 @@ fn select_tracks(
         });
     };
     period.ensure_usable()?;
+    // Text, image and metadata tracks are never recorded, so offering them
+    // is expected and their rejections are summarized; any other rejection
+    // may cost the recording a track or a rendition and is warned about.
+    let mut not_audio_video = 0_usize;
     for rejected in &period.rejected {
+        if rejected.content == RejectedContent::Other {
+            not_audio_video += 1;
+            debug!(
+                adaptation_set = rejected.adaptation_set_id.as_deref(),
+                representation = rejected.representation_id.as_deref(),
+                feature = %rejected.feature,
+                "DASH text, image or metadata Representation not recorded"
+            );
+            continue;
+        }
         warn!(
             adaptation_set = rejected.adaptation_set_id.as_deref(),
             representation = rejected.representation_id.as_deref(),
             feature = %rejected.feature,
             "DASH Representation skipped as unsupported"
+        );
+    }
+    if not_audio_video > 0 {
+        info!(
+            representations = not_audio_video,
+            "DASH text, image and metadata tracks (subtitles, thumbnails) are not recorded"
         );
     }
     let selection = &config.selection;

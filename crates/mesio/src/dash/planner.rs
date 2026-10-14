@@ -40,6 +40,11 @@
 //! the assembler's live stall watchdog ends the session with
 //! `DownloadError::Timeout`, and a new recording starts from scratch.
 //!
+//! A Period's first epoch continues after the presentation time already
+//! planned from the previous Period, which may reach past the Period start
+//! when the previous Period was open while it was planned
+//! (`DashPlanner::period_change_index`).
+//!
 //! An *epoch* is one run of segments sharing one initialization segment and
 //! timing: a Period and Representation, until the Representation's
 //! initialization URL, byte range, timescale, presentation time offset or
@@ -907,7 +912,7 @@ impl DashPlanner {
             }
             None => match same_period {
                 Some(true) => self.switch_index(scope, window, &fingerprint)?,
-                Some(false) => 0,
+                Some(false) => self.period_change_index(scope, window)?,
                 None if self.start.period.same(key) => match self.start.after_nanos {
                     Some(after) => first_index(window, |segment| scope.bounds(segment).1 > after)?,
                     None => 0,
@@ -1068,6 +1073,48 @@ impl DashPlanner {
             return first_index(window, |segment| scope.bounds(segment).1 > last_end);
         }
         self.live_start_index(scope, window)
+    }
+
+    /// Where the first epoch of a Period after the newest epoch's starts in
+    /// `window`: after the presentation time the newest epoch covers.
+    ///
+    /// A Period ends where the next one starts (ISO/IEC 23009-1 §5.3.2.1),
+    /// but while a dynamic MPD's last Period has no end yet, its segments
+    /// are planned past a Period start that only a later update reveals.
+    /// Those segments hold consecutive ordinals and may already be written,
+    /// so they cannot be withdrawn; the new Period continues after them
+    /// instead, so that output time neither overlaps nor leaves a gap.
+    /// Segments are skipped only when they end within the covered time: one
+    /// reaching past it is planned, like a segment overlapping a Period
+    /// boundary.
+    ///
+    /// Bounds of two Periods lie on one MPD timeline only while neither
+    /// Period's timing was contradicted and the anchor has not moved; else
+    /// the new Period is recorded from its start.
+    fn period_change_index(
+        &self,
+        scope: PeriodScope<'_>,
+        window: &SegmentWindow<'_>,
+    ) -> Result<u64, ManifestError> {
+        let Some(previous) = self.epochs.back() else {
+            return Ok(0);
+        };
+        if !self.timing_trusted(scope, previous) || self.contradicted(&previous.period) {
+            return Ok(0);
+        }
+        let covered = previous.last_end;
+        let index = first_index(window, |segment| scope.bounds(segment).1 > covered)?;
+        // Logged once the epoch can open; until then every republish of the
+        // MPD finds the same covered window.
+        if index > 0 && index < window.len() {
+            info!(
+                period = %scope.key.label(),
+                skipped = index,
+                covered_secs = (covered as f64) / (NANOS_PER_SEC as f64),
+                "a new Period starts inside media already planned from the previous one; continuing after it"
+            );
+        }
+        Ok(index)
     }
 
     /// Where a recording would start in `window` (see
@@ -1968,6 +2015,73 @@ mod tests {
         assert_ne!(second_init, first_init, "but a distinct resource");
     }
 
+    /// `@duration` Periods of 2 s segments: `(id, start)`, the last one
+    /// open, each numbered from 1 under its own URLs.
+    fn duration_periods(ast: &str, periods: &[(&str, u64)]) -> String {
+        let periods: String = periods
+            .iter()
+            .map(|(id, start)| {
+                format!(
+                    r#"<Period id="{id}" start="PT{start}S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="{id}/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#
+                )
+            })
+            .collect();
+        format!(
+            r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="{ast}" minimumUpdatePeriod="PT2S">
+  {periods}
+</MPD>"#
+        )
+    }
+
+    fn planned_periods(outcome: &PlanOutcome) -> Vec<(u64, Option<&str>, u64)> {
+        media(outcome)
+            .iter()
+            .map(|(msn, meta, _)| (*msn, meta.period_id.as_deref(), meta.number))
+            .collect()
+    }
+
+    #[test]
+    fn a_period_revealed_inside_planned_media_continues_after_it() {
+        const AST: &str = "2024-01-01T00:00:00Z";
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        let open = duration_periods(AST, &[("p0", 0)]);
+        assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 4)]);
+        fixture.consume_all();
+        // The open Period's template runs past 10 s, where p1 will start.
+        fixture.advance(6);
+        assert_eq!(
+            planned_periods(&fixture.plan(&open)),
+            [(1, Some("p0"), 5), (2, Some("p0"), 6), (3, Some("p0"), 7)]
+        );
+        fixture.consume_all();
+        // p1's first two segments cover 10–14 s, already planned from p0.
+        let revealed = duration_periods(AST, &[("p0", 0), ("p1", 10)]);
+        let covered = fixture.plan(&revealed);
+        assert!(planned_periods(&covered).is_empty());
+        fixture.advance(2);
+        let next = fixture.plan(&revealed);
+        assert_eq!(planned_periods(&next), [(4, Some("p1"), 3)]);
+        let p1_init = init(&next);
+        assert_eq!(p1_init.msn, 4, "p1 opens its own epoch");
+    }
+
+    #[test]
+    fn a_period_after_a_moved_anchor_is_recorded_from_its_start() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 14);
+        let open = duration_periods("2024-01-01T00:00:00Z", &[("p0", 0)]);
+        assert_eq!(planned_periods(&fixture.plan(&open)), [(0, Some("p0"), 7)]);
+        fixture.consume_all();
+        // Times of the two MPDs cannot be compared: p1 starts at its start.
+        let moved = duration_periods("2024-01-01T00:00:01Z", &[("p0", 0), ("p1", 10)]);
+        assert_eq!(planned_periods(&fixture.plan(&moved)), [(1, Some("p1"), 1)]);
+    }
+
     #[test]
     fn a_vanished_representation_is_replaced_by_a_new_epoch() {
         let with = |id: &str| {
@@ -2643,6 +2757,21 @@ mod tests {
                 RejectedContent::Other,
                 RejectedContent::Other,
                 RejectedContent::Unknown
+            ]
+        );
+        // ISO BMFF text is rejected as text, not for its container.
+        let features: Vec<&UnsupportedFeature> = manifest.periods[0]
+            .rejected
+            .iter()
+            .map(|rejected| &rejected.feature)
+            .collect();
+        assert_eq!(
+            features,
+            [
+                &UnsupportedFeature::NotAudioVideo("text/vtt".into()),
+                &UnsupportedFeature::NotAudioVideo("application/mp4".into()),
+                &UnsupportedFeature::NotAudioVideo("image/jpeg".into()),
+                &UnsupportedFeature::MimeType("application/x-unknown".into()),
             ]
         );
         let known = static_periods(&[&format!("{CLEAR_VIDEO}{}", sets[..3].concat())]);
@@ -3516,6 +3645,43 @@ mod tests {
             .map(|(_, number)| *number)
             .collect();
         assert_eq!(numbers, [6, 7]);
+    }
+
+    #[test]
+    fn a_period_after_a_contradicted_one_is_recorded_from_its_start() {
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
+        set_clock(&fixture, 6_000);
+        let first = fixture.plan(&periods_mpd(&[(
+            "p0",
+            0,
+            "v",
+            1,
+            r#"<S t="0" d="2" r="2"/>"#,
+        )]));
+        assert_eq!(planned_numbers(&first), [(0, 3)]);
+        fixture.consume_all();
+        // p0 re-describes #3 at 100 s and is followed by number to #4,
+        // which it places at 102–104 s.
+        set_clock(&fixture, 7_000);
+        let rewritten = fixture.plan(&periods_mpd(&[(
+            "p0",
+            0,
+            "v",
+            3,
+            r#"<S t="100" d="2" r="1"/>"#,
+        )]));
+        assert_eq!(planned_numbers(&rewritten), [(1, 4)]);
+        fixture.consume_all();
+        // p1's own times cannot be compared with p0's.
+        set_clock(&fixture, 14_000);
+        let p1 = fixture.plan(&periods_mpd(&[(
+            "p1",
+            10,
+            "v",
+            1,
+            r#"<S t="0" d="2" r="4"/>"#,
+        )]));
+        assert_eq!(planned_numbers(&p1), [(2, 1), (3, 2)]);
     }
 
     #[test]

@@ -290,6 +290,20 @@ fn with_tfdt(segment: &[u8], decode_time: u64) -> Vec<u8> {
     data
 }
 
+/// `init` as another encoder configuration would produce it: equal in all
+/// but its `mdhd` modification time (`seed`), so the merged init differs.
+fn changed_init(init: &[u8], seed: u32) -> Vec<u8> {
+    let mut data = init.to_vec();
+    let at = data
+        .windows(4)
+        .position(|window| window == b"mdhd")
+        .expect("init has an mdhd");
+    // Version 0: creation, then modification time, 32 bits each.
+    assert_eq!(data[at + 4], 0, "fixture mdhd is version 0");
+    data[at + 12..at + 16].copy_from_slice(&seed.to_be_bytes());
+    data
+}
+
 // --- MPDs ---
 
 fn ast() -> DateTime<Utc> {
@@ -1017,8 +1031,10 @@ async fn mpd_refresh_failures_end_the_stream_after_the_retry_budget() {
 #[tokio::test(flavor = "multi_thread")]
 async fn period_change_starts_a_new_file_epoch_without_cross_epoch_merging() {
     let origin = Origin::default();
-    origin.add_file("v/init.mp4", VIDEO_INIT);
     origin.add_file("a/init.mp4", AUDIO_INIT);
+    // p1's video comes with another configuration.
+    origin.add_file("p0/v/init.mp4", VIDEO_INIT);
+    origin.add_file("p1/v/init.mp4", changed_init(VIDEO_INIT, 1));
     for period in ["p0", "p1"] {
         origin.add_numbered(&format!("{period}/v"), VIDEO_1, VIDEO_TIMESCALE);
         origin.add_numbered(&format!("{period}/a"), AUDIO_1, AUDIO_TIMESCALE);
@@ -1027,7 +1043,7 @@ async fn period_change_starts_a_new_file_epoch_without_cross_epoch_merging() {
         format!(
             r#"<Period id="{id}" start="PT{start}S">
     <AdaptationSet mimeType="video/mp4">
-      <SegmentTemplate media="{id}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <SegmentTemplate media="{id}/v/$Number$.m4s" initialization="{id}/v/init.mp4" duration="1" timescale="1"/>
       <Representation id="v" bandwidth="40000"/>
     </AdaptationSet>
     <AdaptationSet mimeType="audio/mp4">
@@ -1090,6 +1106,107 @@ async fn period_change_starts_a_new_file_epoch_without_cross_epoch_merging() {
     assert_two_track_stream(&items[barrier + 1..]);
 }
 
+/// A/V Periods of one-second `$Number$` segments sharing their inits:
+/// `(id, start, availabilityTimeOffset)`, the last one open unless the MPD
+/// is static and ends at `end_secs`.
+fn shared_init_periods(periods: &[(&str, u64, u64)], end_secs: Option<u64>) -> String {
+    let presentation = match end_secs {
+        Some(end) => format!(r#"type="static" mediaPresentationDuration="PT{end}S""#),
+        None => r#"type="dynamic" minimumUpdatePeriod="PT0.1S""#.to_owned(),
+    };
+    let periods: String = periods
+        .iter()
+        .map(|(id, start, offset)| {
+            format!(
+                r#"<Period id="{id}" start="PT{start}S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="{id}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1" availabilityTimeOffset="{offset}"/>
+      <Representation id="v" bandwidth="40000"/>
+    </AdaptationSet>
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="{id}/a/$Number$.m4s" initialization="a/init.mp4" duration="1" timescale="1" availabilityTimeOffset="{offset}"/>
+      <Representation id="a" bandwidth="24000"/>
+    </AdaptationSet>
+  </Period>"#
+            )
+        })
+        .collect();
+    format!(
+        r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" {presentation} availabilityStartTime="2024-01-01T00:00:00Z">
+  {periods}
+</MPD>"#
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_period_revealed_inside_recorded_media_continues_the_same_file() {
+    let origin = Origin::default();
+    origin.add_file("v/init.mp4", VIDEO_INIT);
+    origin.add_file("a/init.mp4", AUDIO_INIT);
+    for period in ["p0", "p1"] {
+        origin.add_numbered(&format!("{period}/v"), VIDEO_1, VIDEO_TIMESCALE);
+        origin.add_numbered(&format!("{period}/a"), AUDIO_1, AUDIO_TIMESCALE);
+    }
+    origin.set_mpd(shared_init_periods(&[("p0", 0, 0)], None));
+    let base = origin.clone().serve().await;
+    let clock = live_clock(10);
+    let mut config = config(Some(Arc::clone(&clock)));
+    config.live_start = LiveStartPolicy::LiveEdge;
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        mut items, handle, ..
+    } = session;
+    let mut out = Vec::new();
+    wait_for_hit(&origin, "p0/v/10.m4s").await;
+    // While p0 is open, its segments 11 and 12 cover 10–12 s.
+    clock.advance(Duration::from_secs(2));
+    wait_for_hit(&origin, "p0/v/12.m4s").await;
+    wait_for_hit(&origin, "p0/a/12.m4s").await;
+    // p1 starts at 10 s and offers its third segment (12–13 s) a second
+    // early. The clock stays at 12 s, so only a planner that consumed this
+    // MPD can request it.
+    origin.set_mpd(shared_init_periods(&[("p0", 0, 0), ("p1", 10, 1)], None));
+    wait_for_hit(&origin, "p1/v/3.m4s").await;
+    wait_for_hit(&origin, "p1/a/3.m4s").await;
+    origin.set_mpd(shared_init_periods(
+        &[("p0", 0, 0), ("p1", 10, 0)],
+        Some(13),
+    ));
+    let error = read_until(&mut items, &mut out, |_| false).await;
+    assert!(error.is_none(), "{error:?}");
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    // One file: identical inits announce no epoch change.
+    assert_eq!(inits(&out).len(), 1, "{}", describe(&out));
+    assert!(
+        !out.iter().any(|item| matches!(
+            item,
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        )),
+        "{}",
+        describe(&out)
+    );
+    assert_two_track_stream(&out);
+    // Each second once: p0's 9–12 s, then p1 from 12 s.
+    let video: Vec<u64> = media(&out)
+        .iter()
+        .flat_map(|segment| fragments(&segment.data))
+        .filter(|(_, track, _)| *track == 1)
+        .map(|(_, _, time)| time / VIDEO_TIMESCALE)
+        .collect();
+    assert_eq!(video, [9, 10, 11, 12], "{}", describe(&out));
+    assert_eq!(origin.hits("p1/v/1.m4s"), 0);
+    assert_eq!(origin.hits("p1/v/2.m4s"), 0);
+}
+
 /// A/V `$Number$` presentation whose video path names the Representation;
 /// `early` makes video segments available a second ahead of the clock.
 fn switch_mpd(dynamic: bool, video_id: &str, early: bool) -> String {
@@ -1107,7 +1224,7 @@ fn switch_mpd(dynamic: bool, video_id: &str, early: bool) -> String {
         r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" {presentation} availabilityStartTime="2024-01-01T00:00:00Z">
   <Period id="p0" start="PT0S">
     <AdaptationSet mimeType="video/mp4">
-      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"{offset}/>
+      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" initialization="$RepresentationID$/init.mp4" duration="1" timescale="1"{offset}/>
       <Representation id="{video_id}" bandwidth="40000"/>
     </AdaptationSet>
     <AdaptationSet mimeType="audio/mp4">
@@ -1123,6 +1240,8 @@ fn switch_mpd(dynamic: bool, video_id: &str, early: bool) -> String {
 async fn representation_switch_is_an_epoch_change() {
     let origin = Origin::default();
     origin.add_av();
+    origin.add_file("v-hd/init.mp4", VIDEO_INIT);
+    origin.add_file("v-sd/init.mp4", changed_init(VIDEO_INIT, 1));
     origin.add_numbered("v-hd", VIDEO_1, VIDEO_TIMESCALE);
     origin.add_numbered("v-sd", VIDEO_1, VIDEO_TIMESCALE);
     origin.set_mpd(switch_mpd(true, "v-hd", false));
@@ -1501,16 +1620,21 @@ async fn cancelling_a_failover_session_whose_consumer_stopped_reading_finishes()
 #[tokio::test(flavor = "multi_thread")]
 async fn many_short_periods_keep_every_init_until_its_media_is_written() {
     let origin = Origin::default();
-    origin.add_file("v/init.mp4", VIDEO_INIT);
     origin.add_file("a/init.mp4", AUDIO_INIT);
     let periods: String = (0..10)
         .map(|index| {
+            // Every Period has its own video configuration, so every init
+            // is needed for its own media.
+            origin.add_file(
+                &format!("p{index}/v/init.mp4"),
+                changed_init(VIDEO_INIT, index),
+            );
             origin.add_numbered(&format!("p{index}/v"), VIDEO_1, VIDEO_TIMESCALE);
             origin.add_numbered(&format!("p{index}/a"), AUDIO_1, AUDIO_TIMESCALE);
             format!(
                 r#"<Period id="p{index}" duration="PT1S">
     <AdaptationSet mimeType="video/mp4">
-      <SegmentTemplate media="p{index}/v/$Number$.m4s" initialization="v/init.mp4" duration="1" timescale="1"/>
+      <SegmentTemplate media="p{index}/v/$Number$.m4s" initialization="p{index}/v/init.mp4" duration="1" timescale="1"/>
       <Representation id="v" bandwidth="40000"/>
     </AdaptationSet>
     <AdaptationSet mimeType="audio/mp4">

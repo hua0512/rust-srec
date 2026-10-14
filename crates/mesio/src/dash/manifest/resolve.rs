@@ -651,7 +651,13 @@ impl Resolver {
         let content_type = match container.as_str() {
             "video/mp4" => ContentType::Video,
             "audio/mp4" => ContentType::Audio,
-            _ => return Err(UnsupportedFeature::MimeType(mime_type.clone()).into()),
+            _ => {
+                let feature = match declared_content(set, Some(common)) {
+                    RejectedContent::Other => UnsupportedFeature::NotAudioVideo(mime_type.clone()),
+                    _ => UnsupportedFeature::MimeType(mime_type.clone()),
+                };
+                return Err(feature.into());
+            }
         };
         let declared = match set.content_type.as_deref() {
             None => None,
