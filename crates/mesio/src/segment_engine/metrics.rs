@@ -1,42 +1,6 @@
-use parking_lot::Mutex;
-use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
+
 use tracing::info;
-
-/// Bounded set to prevent unbounded memory growth from tracking distinct hosts.
-///
-/// Used for observability heuristics (connection reuse estimation), so it is
-/// acceptable for older entries to be evicted.
-#[derive(Debug, Default)]
-struct BoundedHostSet {
-    order: VecDeque<String>,
-    set: HashSet<String>,
-}
-
-impl BoundedHostSet {
-    const MAX_TRACKED_HOSTS: usize = 256;
-
-    fn contains(&self, host: &str) -> bool {
-        self.set.contains(host)
-    }
-
-    fn insert(&mut self, host: &str) -> bool {
-        if self.set.contains(host) {
-            return false;
-        }
-
-        let host_string = host.to_string();
-        self.set.insert(host_string.clone());
-        self.order.push_back(host_string);
-
-        while self.order.len() > Self::MAX_TRACKED_HOSTS {
-            if let Some(oldest) = self.order.pop_front() {
-                self.set.remove(&oldest);
-            }
-        }
-        true
-    }
-}
 
 /// Performance metrics for the segment download pipeline
 ///
@@ -63,14 +27,6 @@ pub struct PerformanceMetrics {
     pub http2_bytes: AtomicU64,
     /// Total bytes downloaded via HTTP/1.x
     pub http1_bytes: AtomicU64,
-
-    // Connection reuse tracking
-    /// Number of connections reused (estimated via HTTP/2 multiplexing)
-    pub connections_reused: AtomicU64,
-    /// Number of new connections established
-    pub connections_new: AtomicU64,
-    /// Track hosts seen for connection reuse estimation
-    hosts_seen: Mutex<BoundedHostSet>,
 
     // Decryption metrics
     /// Total number of decryption operations
@@ -124,39 +80,22 @@ impl PerformanceMetrics {
         }
     }
 
-    /// Record an HTTP request with version, bytes, and connection reuse tracking.
-    ///
-    /// For HTTP/2, multiple requests to the same host share a connection. This
-    /// method tracks whether a host has been seen before to estimate reuse.
-    pub fn record_request_with_host(&self, version: reqwest::Version, bytes: u64, host: &str) {
-        let is_http2 = version == reqwest::Version::HTTP_2;
-        self.record_http_version(is_http2);
-
-        if is_http2 {
-            self.http2_bytes.fetch_add(bytes, Ordering::Relaxed);
-            let mut hosts = self.hosts_seen.lock();
-            if hosts.contains(host) {
-                self.connections_reused.fetch_add(1, Ordering::Relaxed);
-            } else {
-                self.connections_new.fetch_add(1, Ordering::Relaxed);
-                hosts.insert(host);
+    /// Record a segment response by the HTTP version it was served over
+    /// (`Response::version`) and its body size. Connection reuse is not
+    /// tracked: the HTTP client does not report whether a request reused a
+    /// pooled connection.
+    pub fn record_response(&self, version: reqwest::Version, bytes: u64) {
+        let (requests, total) = match version {
+            reqwest::Version::HTTP_2 => (&self.http2_requests, &self.http2_bytes),
+            reqwest::Version::HTTP_09 | reqwest::Version::HTTP_10 | reqwest::Version::HTTP_11 => {
+                (&self.http1_requests, &self.http1_bytes)
             }
-        } else {
-            self.http1_bytes.fetch_add(bytes, Ordering::Relaxed);
-            self.connections_new.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    /// Get connection reuse rate as a percentage (0.0 to 1.0)
-    pub fn connection_reuse_rate(&self) -> f64 {
-        let reused = self.connections_reused.load(Ordering::Relaxed);
-        let new_conns = self.connections_new.load(Ordering::Relaxed);
-        let total = reused + new_conns;
-        if total == 0 {
-            0.0
-        } else {
-            reused as f64 / total as f64
-        }
+            // HTTP/3 is not enabled in the client; anything else would be
+            // miscounted as one of the two.
+            _ => return,
+        };
+        requests.fetch_add(1, Ordering::Relaxed);
+        total.fetch_add(bytes, Ordering::Relaxed);
     }
 
     // --- Decryption metrics recording ---
@@ -299,9 +238,6 @@ impl PerformanceMetrics {
         let cache_rate = self.cache_hit_rate() * 100.0;
         let prefetch_rate = self.prefetch_effectiveness() * 100.0;
         let http2_rate = self.http2_rate() * 100.0;
-        let conn_reuse_rate = self.connection_reuse_rate() * 100.0;
-        let conn_reused = self.connections_reused.load(Ordering::Relaxed);
-        let conn_new = self.connections_new.load(Ordering::Relaxed);
         let h2_bytes = self.http2_bytes.load(Ordering::Relaxed);
         let h1_bytes = self.http1_bytes.load(Ordering::Relaxed);
 
@@ -317,9 +253,6 @@ impl PerformanceMetrics {
             http2_rate = format!("{:.1}%", http2_rate),
             http2_bytes = h2_bytes,
             http1_bytes = h1_bytes,
-            connections_reused = conn_reused,
-            connections_new = conn_new,
-            connection_reuse_rate = format!("{:.1}%", conn_reuse_rate),
             decryptions = decryptions,
             decryption_bytes = decryption_bytes,
             cache_hits = cache_hits,
@@ -459,6 +392,20 @@ mod tests {
         // Verify raw counts
         assert_eq!(metrics.http2_requests.load(Ordering::Relaxed), 3);
         assert_eq!(metrics.http1_requests.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn responses_are_counted_by_their_http_version() {
+        let metrics = PerformanceMetrics::new();
+        metrics.record_response(reqwest::Version::HTTP_11, 100);
+        metrics.record_response(reqwest::Version::HTTP_10, 10);
+        metrics.record_response(reqwest::Version::HTTP_2, 1000);
+        metrics.record_response(reqwest::Version::HTTP_3, 1);
+
+        assert_eq!(metrics.http1_requests.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.http1_bytes.load(Ordering::Relaxed), 110);
+        assert_eq!(metrics.http2_requests.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.http2_bytes.load(Ordering::Relaxed), 1000);
     }
 
     #[test]

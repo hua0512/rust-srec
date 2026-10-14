@@ -22,6 +22,7 @@ use std::time::Duration;
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use mp4::sidx::{BoxExtent, ReferenceKind, SegmentIndex, SegmentReference, locate};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -39,7 +40,7 @@ use crate::dash::selection;
 use crate::downloader::ClientPool;
 use crate::error::{DownloadError, SharedError};
 use crate::segment_engine::descriptor::{MediaTrack, inherit_query_params};
-use crate::segment_engine::fetch::fetch_range;
+use crate::segment_engine::fetch::{RangeRequest, fetch_range};
 use crate::segment_engine::identity::ByteRangeKey;
 
 /// Bytes read first at a nested `sidx`, whose size is not known before its
@@ -67,6 +68,9 @@ pub(crate) struct HttpRangeReader<'a> {
     /// Query parameters of the MPD URL, inherited as by segment URLs.
     pub parent_params: &'a [(String, String)],
     pub cancel: &'a CancellationToken,
+    /// Until when requests may wait out rate limiting (see
+    /// `crate::rate_limit`); rate limiting does not spend the retry budget.
+    pub throttle_deadline: Instant,
 }
 
 impl RangeReader for HttpRangeReader<'_> {
@@ -83,17 +87,35 @@ impl RangeReader for HttpRangeReader<'_> {
             let error = match fetch_range(
                 self.clients,
                 &url,
-                &self.config.base.params,
                 key,
-                manifest.fetch_timeout,
-                self.cancel,
-                "Segment Index fetch",
+                &RangeRequest {
+                    params: &self.config.base.params,
+                    timeout: manifest.fetch_timeout,
+                    cancel: self.cancel,
+                    operation: "Segment Index fetch",
+                    throttle_deadline: self.throttle_deadline,
+                },
             )
             .await
             {
                 Ok(bytes) => return Ok(bytes),
                 Err(error) => error,
             };
+            // Rate limiting does not spend the retry budget; it is retried
+            // after the reported pause, up to the deadline.
+            if let DownloadError::RateLimited { retry_in, .. } = &error {
+                let now = Instant::now();
+                if now >= self.throttle_deadline {
+                    return Err(error);
+                }
+                debug!(error = %error, "Segment Index request rate limited; retrying");
+                let wake_at = (now + *retry_in).min(self.throttle_deadline);
+                tokio::select! {
+                    _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
+                    _ = tokio::time::sleep_until(wake_at) => {}
+                }
+                continue;
+            }
             failures += 1;
             if matches!(error, DownloadError::Cancelled)
                 || error.is_non_recoverable_source_error()
@@ -1068,5 +1090,77 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(pending(&manifest), ["low"]);
+    }
+
+    #[tokio::test]
+    async fn a_redirected_rate_limited_index_read_is_paced_and_recovers() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let cdn_hits = Arc::new(AtomicU32::new(0));
+        let counter = Arc::clone(&cdn_hits);
+        let cdn = axum::Router::new().fallback(move || {
+            let hit = counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                let builder = axum::response::Response::builder();
+                if hit == 0 {
+                    builder.status(429).header("retry-after", "1")
+                } else {
+                    builder.status(200)
+                }
+                .body(axum::body::Body::from(vec![1_u8; 16]))
+                .unwrap()
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let cdn_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, cdn).await;
+        });
+        let origin_hits = Arc::new(AtomicU32::new(0));
+        let counter = Arc::clone(&origin_hits);
+        let origin = axum::Router::new().fallback(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                axum::response::Response::builder()
+                    .status(302)
+                    .header("location", format!("http://{cdn_addr}/video.mp4"))
+                    .body(axum::body::Body::empty())
+                    .unwrap()
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, origin).await;
+        });
+
+        let clients = ClientPool::new(&Default::default()).unwrap();
+        let config = DashConfig::default();
+        let cancel = CancellationToken::new();
+        let reader = HttpRangeReader {
+            clients: &clients,
+            config: &config,
+            parent_params: &[],
+            cancel: &cancel,
+            throttle_deadline: Instant::now() + Duration::from_secs(10),
+        };
+        let url = Url::parse(&format!("http://{origin_addr}/video.mp4")).unwrap();
+        let started = Instant::now();
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(10),
+            reader.read(&url, ByteRange { first: 0, last: 7 }),
+        )
+        .await
+        .expect("bounded")
+        .expect("recovers");
+
+        assert_eq!(bytes.len(), 8);
+        assert!(started.elapsed() >= Duration::from_millis(900), "paced");
+        assert_eq!(
+            origin_hits.load(Ordering::SeqCst),
+            2,
+            "no request during the pause"
+        );
+        assert_eq!(cdn_hits.load(Ordering::SeqCst), 2);
     }
 }

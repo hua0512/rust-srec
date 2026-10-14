@@ -93,7 +93,12 @@ pub struct HlsConfig {
 pub struct HlsPlaylistConfig {
     pub initial_playlist_fetch_timeout: Duration,
     pub live_refresh_interval: Duration, // Minimum interval for refreshing live playlists
+    /// Consecutive failed refreshes of a live playlist before the stream
+    /// fails. Rate limiting (429, or 503 with `Retry-After`) is not
+    /// counted; the stream fails once it has lasted five minutes.
     pub live_max_refresh_retries: u32,
+    /// Delay after a failed refresh, multiplied by the consecutive failure
+    /// count. A rate-limited refresh waits for the server instead.
     pub live_refresh_retry_delay: Duration,
     pub variant_selection_policy: HlsVariantSelectionPolicy,
     pub segment_lifecycle_max_entries: usize,
@@ -162,14 +167,17 @@ pub struct HlsFetcherConfig {
     /// How many times a failed segment is rescheduled before it is skipped
     /// as a gap. Each reschedule re-reads the latest playlist URL. Within one
     /// attempt, network errors and 5xx responses are also retried up to twice
-    /// quickly, since the attempt holds a download slot.
+    /// quickly, since the attempt holds a download slot. Rate limiting (429,
+    /// or 503 with `Retry-After`) is not counted: the segment waits for the
+    /// server instead, until five minutes after it was first held back.
     pub max_segment_retries: u32,
     /// Base delay of the exponential backoff between segment reschedules.
     pub segment_retry_delay_base: Duration,
     /// Cap on the segment reschedule backoff.
     pub max_segment_retry_delay: Duration,
     pub key_download_timeout: Duration,
-    /// Retries of a failed key fetch (network errors, timeouts, 5xx, 429).
+    /// Retries of a failed key fetch (network errors, timeouts, 5xx). Rate
+    /// limiting is waited out by the segment instead, like its own download.
     pub max_key_retries: u32,
     /// Base delay of the exponential backoff between key fetch retries.
     pub key_retry_delay_base: Duration,

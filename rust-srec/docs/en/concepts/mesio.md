@@ -55,6 +55,12 @@ For HLS, all download state lives in one place — the **Scheduler Reactor**. It
 
 Decryption runs on a separate **crypto pool**, off the scheduling loop, so decryption does not block scheduling when many encrypted segments arrive at once. The **SequenceAssembler** then guarantees ordered output, writes fMP4 init segments before the media that depends on them (avoiding codec-mismatch corruption), and emits explicit gaps instead of silently stalling when segments drop out of the live window.
 
+### Rate limiting {#rate-limiting}
+
+When a server answers HLS or DASH requests with HTTP 429 (Too Many Requests), or 503 with a `Retry-After` header, Mesio pauses every request to that server for as long as `Retry-After` asks, from a quarter of a second up to one minute, or else for a backoff that starts at about one second and doubles up to 30 seconds while the server keeps refusing. When a request was redirected, both the server it was sent to and the server that refused it pause. When the pause ends, one request goes first; the others follow once it is answered, so the server does not receive the whole backlog at once.
+
+These answers do not use up the segment or playlist/manifest retry counts. A segment is given up five minutes after it was first held back, and a live segment that leaves the playlist window meanwhile is skipped as a gap. If a segment address that carries a signature is refused as unauthorized right after such a pause, Mesio waits up to 10 seconds for the next playlist or manifest to bring a fresh address before giving the segment up. The recording fails when the playlist or manifest has not been fetched for five minutes because of rate limiting, or sooner when no media at all arrives for the **Max Stall Duration**, as happens while an HLS playlist is refused.
+
 ## MPEG-DASH engine {#mpeg-dash-engine}
 
 Mesio records MPEG-DASH (`.mpd`) streams, both live and finished (on-demand) presentations. Streams that a platform labels as DASH, and addresses ending in `.mpd`, use this engine.

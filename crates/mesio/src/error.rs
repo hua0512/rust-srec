@@ -36,6 +36,17 @@ pub enum DownloadError {
         operation: &'static str,
     },
 
+    /// The server asked for fewer requests (a 429, or a 503 with
+    /// `Retry-After`), and requests to it pause for `retry_in`. `url` is
+    /// the URL that answered, redacted (see [`crate::redact`]).
+    #[error("rate limited with HTTP {status} during {operation} for {url}")]
+    RateLimited {
+        status: StatusCode,
+        url: String,
+        operation: &'static str,
+        retry_in: std::time::Duration,
+    },
+
     #[error("I/O error: {source}")]
     Io {
         #[from]
@@ -128,6 +139,20 @@ impl DownloadError {
         }
     }
 
+    pub fn rate_limited(
+        status: StatusCode,
+        url: impl Into<String>,
+        operation: &'static str,
+        retry_in: std::time::Duration,
+    ) -> Self {
+        Self::RateLimited {
+            status,
+            url: crate::redact::redact_url_str(&url.into()),
+            operation,
+            retry_in,
+        }
+    }
+
     pub fn source_exhausted(reason: impl Into<String>) -> Self {
         Self::SourceExhausted {
             reason: reason.into(),
@@ -198,6 +223,17 @@ impl SharedError {
                 status: *status,
                 url: url.clone(),
                 operation,
+            },
+            E::RateLimited {
+                status,
+                url,
+                operation,
+                retry_in,
+            } => E::RateLimited {
+                status: *status,
+                url: url.clone(),
+                operation,
+                retry_in: *retry_in,
             },
             E::Io { source } => E::Io {
                 source: std::io::Error::new(source.kind(), source.to_string()),

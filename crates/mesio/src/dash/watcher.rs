@@ -15,8 +15,9 @@
 //! A static MPD (from the start, or after a dynamic MPD turned static) is
 //! not fetched again; it keeps being republished so the planners can page
 //! through it, and they end the stream once everything is planned. Refresh
-//! failures beyond the retry budget are published as a failure cause on the
-//! snapshot, as with HLS.
+//! failures beyond the retry budget, or rate limiting beyond its bound (see
+//! `crate::rate_limit`), are published as a failure cause on the snapshot,
+//! as with HLS.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -134,6 +135,17 @@ impl MpdFetcher {
         }
     }
 
+    /// How long refreshes ride out rate limiting before the stream fails.
+    pub(crate) fn max_throttled(&self) -> Duration {
+        self.clients.rate_limiter().policy().max_throttled
+    }
+
+    /// What is left of the allowance for rate limiting that began at
+    /// `since`.
+    pub(crate) fn allowance_left(&self, since: Instant) -> Option<Duration> {
+        self.clients.rate_limiter().policy().allowance_left(since)
+    }
+
     /// Sets the tracks the session records; later fetches read the Segment
     /// Indexes those tracks select.
     pub(crate) fn record_tracks(&self, tracks: Vec<MediaTrack>) {
@@ -151,6 +163,7 @@ impl MpdFetcher {
         manifest: &mut Manifest,
         url: &Url,
         on_failure: OnIndexFailure,
+        throttle_deadline: Instant,
     ) -> Result<(), DownloadError> {
         let Some(tracks) = self.tracks.get() else {
             return Ok(());
@@ -161,6 +174,7 @@ impl MpdFetcher {
             config: &self.config,
             parent_params: &parent_params,
             cancel: &self.cancel,
+            throttle_deadline,
         };
         segment_index::read_selected(
             manifest,
@@ -174,12 +188,14 @@ impl MpdFetcher {
 
     /// Fetch and resolve the MPD at `url`. `previous` lets an unchanged body
     /// skip parsing and keeps a recent `UTCTiming` offset;
-    /// `utc_timing_due` forces a new `UTCTiming` measurement.
+    /// `utc_timing_due` forces a new `UTCTiming` measurement. Requests wait
+    /// out a cool-down after rate limiting until `throttle_deadline`.
     pub(crate) async fn fetch(
         &self,
         url: &Url,
         previous: Option<&FetchedMpd>,
         utc_timing_due: bool,
+        throttle_deadline: Instant,
     ) -> Result<FetchedMpd, DownloadError> {
         let resource = ResourceId::DashManifest {
             url: Arc::from(url.as_str()),
@@ -194,6 +210,11 @@ impl MpdFetcher {
             .get(url.clone())
             .timeout(self.config.manifest.fetch_timeout)
             .query(&self.config.base.params);
+        let admission = self
+            .clients
+            .rate_limiter()
+            .admit(url, &self.cancel, throttle_deadline, "MPD fetch")
+            .await?;
         let sent = self.config.clock.now();
         let response = tokio::select! {
             _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
@@ -201,6 +222,15 @@ impl MpdFetcher {
         }
         .map_err(DownloadError::from)?;
         let status = response.status();
+        if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
+            return Err(DownloadError::rate_limited(
+                status,
+                response.url().as_str(),
+                "MPD fetch",
+                retry_in,
+            ));
+        }
+        drop(admission);
         if !status.is_success() {
             return Err(DownloadError::http_status(
                 status,
@@ -250,8 +280,13 @@ impl MpdFetcher {
                         })??;
                 // Recording is under way: a planner keeps its Representation
                 // while it stays usable, so it may not need a failed index.
-                self.read_segment_indexes(&mut parsed, url, OnIndexFailure::Skip)
-                    .await?;
+                self.read_segment_indexes(
+                    &mut parsed,
+                    url,
+                    OnIndexFailure::Skip,
+                    throttle_deadline,
+                )
+                .await?;
                 Arc::new(parsed)
             }
         };
@@ -426,10 +461,13 @@ pub(crate) fn snapshot(
     }
 }
 
-type Refresh = Pin<Box<dyn Future<Output = (Result<FetchedMpd, DownloadError>, bool)> + Send>>;
+/// A refresh's result, whether it measured `UTCTiming`, and when it began.
+type RefreshOutput = (Result<FetchedMpd, DownloadError>, bool, Instant);
+
+type Refresh = Pin<Box<dyn Future<Output = RefreshOutput> + Send>>;
 
 /// The in-flight refresh, or never when there is none.
-async fn refresh_done(refresh: &mut Option<Refresh>) -> (Result<FetchedMpd, DownloadError>, bool) {
+async fn refresh_done(refresh: &mut Option<Refresh>) -> RefreshOutput {
     match refresh {
         Some(refresh) => refresh.await,
         None => std::future::pending().await,
@@ -482,6 +520,8 @@ impl MpdWatcher {
         let mut generation: u64 = 0;
         let mut manifest_generation: u64 = 0;
         let mut retries: u32 = 0;
+        // When the refreshes started being rate limited, while they are.
+        let mut throttled_since: Option<Instant> = None;
         let mut last_utc_sync = Instant::now();
         if let Some(location) = &current.manifest.location {
             self.url = location.clone();
@@ -497,8 +537,16 @@ impl MpdWatcher {
                 let url = self.url.clone();
                 let previous = Arc::clone(&current);
                 let utc_due = last_utc_sync.elapsed() >= UTC_TIMING_RESYNC;
+                let started = Instant::now();
+                // Waiting for a cooling server counts towards the bound on
+                // rate limiting like refused refreshes do.
+                let throttle_deadline =
+                    throttled_since.unwrap_or(started) + self.fetcher.max_throttled();
                 refresh = Some(Box::pin(async move {
-                    (fetcher.fetch(&url, Some(&previous), utc_due).await, utc_due)
+                    let result = fetcher
+                        .fetch(&url, Some(&previous), utc_due, throttle_deadline)
+                        .await;
+                    (result, utc_due, started)
                 }));
             }
             let wake = next_fetch.map_or(next_republish, |fetch| fetch.min(next_republish));
@@ -512,11 +560,12 @@ impl MpdWatcher {
                     debug!("MPD snapshot receivers dropped; watcher exiting");
                     return;
                 }
-                (result, utc_due) = refresh_done(&mut refresh) => {
+                (result, utc_due, started) = refresh_done(&mut refresh) => {
                     refresh = None;
                     match result {
                         Ok(fetched) => {
                             retries = 0;
+                            throttled_since = None;
                             if fetched.utc_synced && utc_due {
                                 last_utc_sync = Instant::now();
                             }
@@ -541,24 +590,42 @@ impl MpdWatcher {
                         }
                         Err(DownloadError::Cancelled) => return,
                         Err(error) => {
-                            retries += 1;
-                            warn!(
-                                url = %Redacted(&self.url),
-                                retries,
-                                error = %crate::redact::redact_diagnostic(&error),
-                                "MPD refresh failed"
-                            );
-                            if retries > self.config.manifest.max_refresh_retries {
+                            // Rate limiting does not spend the retry budget:
+                            // the current MPD keeps being republished, so
+                            // planning goes on, and the stream fails only
+                            // once the throttling has lasted its bound.
+                            let delay = if let DownloadError::RateLimited { retry_in, .. } = &error {
+                                let since = *throttled_since.get_or_insert(started);
+                                warn!(
+                                    url = %Redacted(&self.url),
+                                    throttled_secs = since.elapsed().as_secs(),
+                                    error = %crate::redact::redact_diagnostic(&error),
+                                    "MPD refresh rate limited"
+                                );
+                                self.fetcher
+                                    .allowance_left(since)
+                                    .map(|left| (*retry_in).min(left))
+                            } else {
+                                retries += 1;
+                                warn!(
+                                    url = %Redacted(&self.url),
+                                    retries,
+                                    error = %crate::redact::redact_diagnostic(&error),
+                                    "MPD refresh failed"
+                                );
+                                (retries <= self.config.manifest.max_refresh_retries).then(|| {
+                                    self.config.manifest.retry_delay.saturating_mul(retries)
+                                })
+                            };
+                            let Some(delay) = delay else {
                                 let cause = TerminalCause::Failed(SharedError::new(error));
                                 tx.send_modify(|snapshot| {
                                     snapshot.generation = generation + 1;
                                     snapshot.terminal = Some(cause);
                                 });
                                 return;
-                            }
-                            next_fetch = Some(deadline(
-                                self.config.manifest.retry_delay.saturating_mul(retries),
-                            ));
+                            };
+                            next_fetch = Some(deadline(delay));
                         }
                     }
                     continue;

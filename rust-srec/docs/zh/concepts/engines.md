@@ -107,10 +107,10 @@ Mesio 可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的流。D
 | 直播录制起点 | `dash.live_start` | `{"type": "auto"}` | 直播从哪里开始录制：`auto` 采用流建议的延迟，否则落后直播边缘三个分段；`live_edge` 从最新分段开始；`{"type": "delay", "delay_ms": 6000}` 从落后直播边缘该时长处开始。已结束的流始终从头录制。 |
 | 下载并发数 | `dash.download_concurrency` | `5` | 每个轨道同时下载的分段数。 |
 | 分段超时（毫秒） | `dash.segment_timeout_ms` | `10000` | 单个分段下载的时限。 |
-| 分段重试次数 | `dash.max_segment_retries` | `3` | 分段下载失败后的重试次数。 |
+| 分段重试次数 | `dash.max_segment_retries` | `3` | 分段下载失败后的重试次数。因[限流](./mesio.md#rate-limiting)被拒绝的请求不计入。 |
 | 清单超时 (ms) | `dash.manifest_timeout_ms` | `15000` | 单次清单请求，或单次读取流索引的时限（参见 [DASH 引擎的工作方式](./mesio.md#mpeg-dash-engine)中的 `SegmentBase`）。 |
 | 最小刷新间隔 (ms) | `dash.min_refresh_interval_ms` | `1000` | 两次直播清单刷新之间的最短间隔；清单自身的更新周期更长时以其为准。 |
-| 刷新重试次数 | `dash.max_refresh_retries` | `5` | 清单连续刷新失败多少次后录制失败。读取流索引失败时也按此次数重试。 |
+| 刷新重试次数 | `dash.max_refresh_retries` | `5` | 清单连续刷新失败多少次后录制失败。读取流索引失败时也按此次数重试。因[限流](./mesio.md#rate-limiting)被拒绝的请求不计入。 |
 
 数量和时限必须为正数，重试次数和直播起点延迟可以为 `0`。引擎无法使用的设置会使录制以配置错误失败。在模板的[引擎覆盖](../reference/configuration-overrides.md#engines-override-仅模板层)中，每项 DASH 设置都可以使用引擎设置（不写该字段）、默认值（`null`）或自定义值；保存为 `"dash": null` 的覆盖会将所有 DASH 设置恢复为默认值。如果模板与引擎设置合并后既不录制视频也不录制音频，模板将无法保存。
 

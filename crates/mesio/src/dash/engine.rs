@@ -94,7 +94,9 @@ pub(crate) async fn start(
         events.clone(),
         cancel.clone(),
     );
-    let mut initial = fetcher.fetch(&url, None, true).await?;
+    let throttle_deadline =
+        tokio::time::Instant::now() + clients.rate_limiter().policy().max_throttled;
+    let mut initial = fetcher.fetch(&url, None, true, throttle_deadline).await?;
     let now = initial.clock_offset.apply(config.clock.now());
     let start = decide_start(&initial.manifest, now, config.live_start, &config.selection)?;
     let (start, selected) = select_tracks(&initial.manifest, &config, start)?;
@@ -123,6 +125,7 @@ pub(crate) async fn start(
             Arc::make_mut(&mut initial.manifest),
             &url,
             OnIndexFailure::Fail,
+            throttle_deadline,
         )
         .await?;
     if let Some(period) = initial
@@ -218,6 +221,7 @@ pub(crate) async fn start(
                 retry_budget: config.fetcher.max_segment_retries,
                 retry_delay_base: config.fetcher.segment_retry_delay_base,
                 retry_delay_max: config.fetcher.max_segment_retry_delay,
+                max_throttled: clients.rate_limiter().policy().max_throttled,
                 fallback_size_estimate: engine.initial_segment_size_estimate,
                 max_segment_size: engine.max_segment_size_bytes,
                 max_retained_inits: engine.max_retained_inits,

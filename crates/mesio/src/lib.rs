@@ -26,6 +26,7 @@ pub mod flv;
 pub mod hls;
 pub mod protocol_builder;
 pub mod proxy;
+pub(crate) mod rate_limit;
 pub mod redact;
 pub mod segment_engine;
 pub mod session;

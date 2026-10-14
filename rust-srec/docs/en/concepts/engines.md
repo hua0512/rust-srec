@@ -107,10 +107,10 @@ The other settings are on the **DASH** tab of a Mesio engine and are stored in i
 | Live Start Position | `dash.live_start` | `{"type": "auto"}` | Where a live recording starts: `auto` uses the delay the stream suggests, else three segments behind the live edge; `live_edge` starts at the newest segment; `{"type": "delay", "delay_ms": 6000}` starts that far behind the live edge. Finished streams always start at the beginning. |
 | Download Concurrency | `dash.download_concurrency` | `5` | Segments downloaded at once, per track. |
 | Segment Timeout (ms) | `dash.segment_timeout_ms` | `10000` | Time limit for one segment download. |
-| Segment Retries | `dash.max_segment_retries` | `3` | Retries of a failed segment download. |
+| Segment Retries | `dash.max_segment_retries` | `3` | Retries of a failed segment download. Refusals because of [rate limiting](./mesio.md#rate-limiting) are not counted. |
 | Manifest Timeout (ms) | `dash.manifest_timeout_ms` | `15000` | Time limit for one manifest request, or for one read of a stream's index (see `SegmentBase` under [how the DASH engine works](./mesio.md#mpeg-dash-engine)). |
 | Minimum Refresh Interval (ms) | `dash.min_refresh_interval_ms` | `1000` | Shortest time between live manifest refreshes; the manifest's own update period applies when longer. |
-| Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. Also how many times a failed read of a stream's index is retried. |
+| Refresh Retries | `dash.max_refresh_retries` | `5` | Failed manifest refreshes in a row before the recording fails. Also how many times a failed read of a stream's index is retried. Refusals because of [rate limiting](./mesio.md#rate-limiting) are not counted. |
 
 Counts and timeouts must be positive, except the retry counts and the live start delay, which may be `0`. A setting the engine cannot use fails the recording with a configuration error. In a template's [engine override](../reference/configuration-overrides.md#engines-override-template-only), each DASH setting can use the engine's setting (the field is left out), the default (`null`), or a custom value. An override storing `"dash": null` resets every DASH setting to its default. A template cannot be saved if, together with the engine's settings, it would record neither video nor audio.
 

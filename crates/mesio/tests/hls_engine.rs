@@ -35,6 +35,8 @@ struct FileEntry {
     body: Vec<u8>,
     fail_status: u16,
     fail_times: u32,
+    /// `Retry-After` sent with the failures.
+    retry_after: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -43,6 +45,10 @@ struct OriginState {
     playlist_idx: usize,
     playlist_serves: u32,
     playlist_failures_remaining: u32,
+    /// Status and `Retry-After` of those failures; 500 without one if unset.
+    playlist_failure: Option<(u16, Option<&'static str>)>,
+    /// Those failures start once this many playlists have been served.
+    playlist_failures_after: u32,
     /// After this many successful playlist serves, refreshes fail with 500.
     playlist_fail_after: Option<u32>,
     /// After this many successful playlist serves, refreshes never answer.
@@ -77,6 +83,7 @@ impl Origin {
                 body: body.into(),
                 fail_status: 0,
                 fail_times: 0,
+                retry_after: None,
             },
         );
     }
@@ -88,6 +95,28 @@ impl Origin {
                 body: body.into(),
                 fail_status: status,
                 fail_times: times,
+                retry_after: None,
+            },
+        );
+    }
+
+    /// Answers `path` with `status` and `Retry-After: retry_after` `times`
+    /// times before serving it.
+    fn rate_limit_file(
+        &self,
+        path: &str,
+        body: impl Into<Vec<u8>>,
+        status: u16,
+        retry_after: Option<&'static str>,
+        times: u32,
+    ) {
+        self.0.lock().unwrap().files.insert(
+            path.to_string(),
+            FileEntry {
+                body: body.into(),
+                fail_status: status,
+                fail_times: times,
+                retry_after,
             },
         );
     }
@@ -118,6 +147,21 @@ impl Origin {
 
     fn fail_playlist_times(&self, failures: u32) {
         self.0.lock().unwrap().playlist_failures_remaining = failures;
+    }
+
+    /// After `successful_serves`, the next `failures` playlist requests
+    /// answer `status` with `Retry-After: retry_after`.
+    fn rate_limit_playlist(
+        &self,
+        successful_serves: u32,
+        failures: u32,
+        status: u16,
+        retry_after: Option<&'static str>,
+    ) {
+        let mut state = self.0.lock().unwrap();
+        state.playlist_failures_after = successful_serves;
+        state.playlist_failures_remaining = failures;
+        state.playlist_failure = Some((status, retry_after));
     }
 
     fn hits(&self, path: &str) -> u64 {
@@ -169,6 +213,14 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
             .body(Body::from(body))
             .expect("response builds")
     };
+    let fail = |status: u16, retry_after: Option<&str>| {
+        let mut response = Response::builder()
+            .status(StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND));
+        if let Some(retry_after) = retry_after {
+            response = response.header("retry-after", retry_after);
+        }
+        response.body(Body::empty()).expect("response builds")
+    };
 
     if let Some(location) = state.redirects.get(&path) {
         return Response::builder()
@@ -179,9 +231,12 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
     }
 
     if path == state.playlist_path.as_deref().unwrap_or("live.m3u8") {
-        if state.playlist_failures_remaining > 0 {
+        if state.playlist_failures_remaining > 0
+            && state.playlist_serves >= state.playlist_failures_after
+        {
             state.playlist_failures_remaining -= 1;
-            return respond(StatusCode::INTERNAL_SERVER_ERROR, Vec::new());
+            let (status, retry_after) = state.playlist_failure.unwrap_or((500, None));
+            return fail(status, retry_after);
         }
         if let Some(after) = state.playlist_fail_after
             && state.playlist_serves >= after
@@ -201,9 +256,7 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
         Some(entry) => {
             if entry.fail_times > 0 {
                 entry.fail_times -= 1;
-                let status =
-                    StatusCode::from_u16(entry.fail_status).unwrap_or(StatusCode::NOT_FOUND);
-                return respond(status, Vec::new());
+                return fail(entry.fail_status, entry.retry_after);
             }
             let body = entry.body.clone();
             respond(StatusCode::OK, body)
@@ -921,6 +974,44 @@ async fn ignored_range_is_budgeted_by_the_range_not_the_whole_file() {
         .collect();
     assert_eq!(payloads, expected);
     assert!(ends_with_stream_ended(&events));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limiting_is_ridden_out_beyond_the_retry_budgets() {
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts", "seg1.ts"], false));
+    origin.push_playlist(playlist(0, &["seg0.ts", "seg1.ts", "seg2.ts"], true));
+    origin.add_file("seg0.ts", b"zero".to_vec());
+    // More rate-limited answers than the segment retry budget (3) and the
+    // playlist refresh retries (2) allow for other failures.
+    origin.rate_limit_file("seg1.ts", b"one".to_vec(), 429, Some("1"), 4);
+    origin.add_file("seg2.ts", b"two".to_vec());
+    // The initial load succeeds; the refreshes after it are rate limited.
+    origin.rate_limit_playlist(1, 3, 429, Some("1"));
+    let base = origin.clone().serve().await;
+    // The playlist and the segments share one origin, so its cool-downs
+    // add up to about 7 s without new input.
+    let mut config = fast_config();
+    config.output_config.live_max_overall_stall_duration = Some(Duration::from_secs(30));
+
+    let events = run_engine(&base, config).await;
+
+    let uris = data_uris(&events);
+    assert_eq!(
+        uris,
+        vec![
+            format!("{base}/seg0.ts"),
+            format!("{base}/seg1.ts"),
+            format!("{base}/seg2.ts"),
+        ],
+        "every segment is recorded once the server stops rate limiting"
+    );
+    assert!(ends_with_stream_ended(&events), "{events:?}");
+    assert_eq!(
+        origin.hits("seg1.ts"),
+        5,
+        "one request per cool-down, then the success"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

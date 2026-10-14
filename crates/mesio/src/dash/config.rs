@@ -108,10 +108,13 @@ pub struct DashManifestConfig {
     pub min_refresh_interval: Duration,
     /// Consecutive failed refreshes (network, HTTP or invalid MPD) tolerated
     /// before the stream fails. Also the retries of a Segment Index request
-    /// that failed with a network or server error.
+    /// that failed with a network or server error. Rate limiting (429, or
+    /// 503 with `Retry-After`) is not counted; the stream fails once it has
+    /// lasted five minutes.
     pub max_refresh_retries: u32,
     /// Delay after a failed refresh or Segment Index request, multiplied by
-    /// the consecutive failure count.
+    /// the consecutive failure count. A rate-limited request waits for the
+    /// server instead.
     pub retry_delay: Duration,
     /// Correct the local clock with the server's: the MPD's `UTCTiming`
     /// sources, else the MPD response's `Date` header. Disable only when the

@@ -31,6 +31,16 @@ use super::payload::SegmentPayload;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureClass {
     Http(u16),
+    /// The server is rate limiting (a 429, or a 503 with `Retry-After`);
+    /// `delay` is the rest of the cool-down. Retried after it without
+    /// spending the retry budget, until [`StoreConfig::max_throttled`] has
+    /// passed since the segment was first held back.
+    RateLimited {
+        status: u16,
+        delay: Duration,
+        /// Held back before any request was sent: not a failed download.
+        held_back: bool,
+    },
     Network,
     Timeout,
     Decode,
@@ -59,10 +69,12 @@ impl FailureClass {
                 retryable: !StatusCode::from_u16(status)
                     .is_ok_and(crate::error::is_permanent_client_error),
             },
-            Self::Network | Self::OverBudget => DownloadError::SegmentFetch {
-                reason,
-                retryable: true,
-            },
+            Self::Network | Self::OverBudget | Self::RateLimited { .. } => {
+                DownloadError::SegmentFetch {
+                    reason,
+                    retryable: true,
+                }
+            }
             Self::Timeout => DownloadError::Timeout { reason },
             Self::Decode => DownloadError::Decryption { reason },
             Self::UnsupportedCrypto => DownloadError::Unsupported {
@@ -202,6 +214,9 @@ pub struct StoreConfig {
     pub retry_budget: u32,
     pub retry_delay_base: Duration,
     pub retry_delay_max: Duration,
+    /// How long after it was first held back by rate limiting a segment
+    /// fails; rate-limited attempts do not spend `retry_budget`.
+    pub max_throttled: Duration,
     /// Size estimate used before any segment has completed; afterwards an EMA
     /// of actual completed sizes takes over.
     pub fallback_size_estimate: u64,
@@ -219,12 +234,21 @@ impl Default for StoreConfig {
             retry_budget: 3,
             retry_delay_base: Duration::from_millis(500),
             retry_delay_max: Duration::from_secs(10),
+            max_throttled: crate::rate_limit::RateLimitPolicy::default().max_throttled,
             fallback_size_estimate: 2 * 1024 * 1024,
             max_segment_size: 0,
             max_retained_inits: 8,
         }
     }
 }
+
+/// Shortest wait before retrying a rate-limited segment, should the
+/// configured retry base be zero.
+const MIN_RATE_LIMITED_RETRY: Duration = Duration::from_millis(100);
+
+/// Longest a segment refused with 401/403 after rate limiting waits for
+/// re-discovery to publish a fresh URL.
+const REFRESH_WAIT: Duration = Duration::from_secs(10);
 
 /// How far past the emit cursor media is admitted, for a stream that waits
 /// for every segment. The assembler skips the segment it waits for once its
@@ -256,6 +280,13 @@ struct SegmentRecord {
     descriptor: Arc<SegmentDescriptor>,
     state: SegmentState,
     reschedules: u32,
+    /// When rate limiting first held this segment back.
+    throttled_since: Option<Instant>,
+    /// Waiting for re-discovery to refresh a URL that was refused with
+    /// 401/403 after rate limiting; re-discovery then retries at once.
+    awaiting_refresh: bool,
+    /// The one such wait was taken.
+    refresh_wait_used: bool,
     /// Bumped whenever re-discovery refreshes the fetch metadata. Compared
     /// against `attempt_generation` for the 401/403 stale-signed-URL rule.
     generation: u64,
@@ -393,6 +424,7 @@ impl SegmentStateStore {
         let mut stats = IngestStats::default();
         for descriptor in descriptors {
             let key = descriptor.key.clone();
+            let mut promote = false;
             if let Some(record) = self.records.get_mut(&key) {
                 let stale_entry = match record.state {
                     SegmentState::Completed { .. } | SegmentState::TerminalFailed { .. } => {
@@ -424,6 +456,16 @@ impl SegmentStateStore {
                         }
                         stats.refreshed += 1;
                         self.dedup_hits += 1;
+                        if url_changed
+                            && record.awaiting_refresh
+                            && matches!(record.state, SegmentState::RetryAt { .. })
+                        {
+                            // The fresh URL it was waiting for: retry now.
+                            // The retry heap entry goes stale with the state.
+                            record.awaiting_refresh = false;
+                            record.state = SegmentState::Queued;
+                            promote = true;
+                        }
                         if class_changed {
                             record.ready_entry.take()
                         } else {
@@ -436,6 +478,8 @@ impl SegmentStateStore {
                     // ready entry under its new priority class.
                     self.remove_ready_entry(&entry);
                     self.insert_ready(&key);
+                } else if promote {
+                    self.insert_ready(&key);
                 }
             } else {
                 self.records.insert(
@@ -444,6 +488,9 @@ impl SegmentStateStore {
                         descriptor: Arc::new(descriptor),
                         state: SegmentState::Discovered,
                         reschedules: 0,
+                        throttled_since: None,
+                        awaiting_refresh: false,
+                        refresh_wait_used: false,
                         generation: 0,
                         attempt_generation: 0,
                         ready_entry: None,
@@ -668,6 +715,7 @@ impl SegmentStateStore {
             let record = self.records.get_mut(&key).expect("validated above");
             record.ready_entry = None;
             let attempt = record.reschedules + 1;
+            record.awaiting_refresh = false;
             record.state = SegmentState::InFlight {
                 attempt,
                 started_at: now,
@@ -745,45 +793,95 @@ impl SegmentStateStore {
                     return OutcomeEffects::default();
                 };
 
-                let retryable = match class {
-                    // 425 Too Early: an origin that enforces live availability
-                    // (DASH) rejects a request that lands before the segment is
-                    // published on its clock; it is published moments later.
-                    FailureClass::Http(404 | 425 | 429) | FailureClass::Http(500..=599) => true,
-                    FailureClass::Network
-                    | FailureClass::Timeout
-                    | FailureClass::Decode
-                    | FailureClass::OverBudget => true,
-                    // Auth failures are conditionally retryable: a signed URL
-                    // can expire mid-flight while a newer playlist already
-                    // refreshed it. Retry only when re-discovery advanced the
-                    // generation past the one this attempt fetched with —
-                    // otherwise the denial is real.
-                    FailureClass::Http(401 | 403) => record.generation > record.attempt_generation,
-                    FailureClass::Http(_)
-                    | FailureClass::UnsupportedCrypto
-                    | FailureClass::InvalidFormat
-                    | FailureClass::Oversize => false,
-                };
-
-                // Budget contention says nothing about the segment: it only
-                // means other downloads hold the budget right now, so it does
-                // not spend the retry budget. It still ends: a size that can
-                // never fit is terminal at the fetch, contention clears as
-                // siblings finish, and a live backlog is bounded.
-                let spends_budget = class != FailureClass::OverBudget;
-                if retryable && (!spends_budget || record.reschedules < self.config.retry_budget) {
-                    if spends_budget {
-                        record.reschedules += 1;
-                    }
-                    let reschedules = record.reschedules;
+                let backoff = |reschedules: u32| {
                     let exp = reschedules.saturating_sub(1).min(16);
-                    let delay = self
-                        .config
+                    self.config
                         .retry_delay_base
                         .checked_mul(1u32 << exp)
                         .unwrap_or(self.config.retry_delay_max)
-                        .min(self.config.retry_delay_max);
+                        .min(self.config.retry_delay_max)
+                };
+                let retry_delay = match class {
+                    // Rate limiting says the server is busy, not that the
+                    // segment is bad: it is retried once the cool-down ends,
+                    // for as long as the throttling bound allows. A live
+                    // segment that leaves the window meanwhile is dropped
+                    // with the backlog and skipped (see `prune_below`).
+                    // The bound is wall-clock time since the first refusal, so
+                    // it also covers short cool-downs and time spent queued.
+                    // The retry is clamped to the rest of the allowance, so a
+                    // long cool-down near its end cannot carry it past it.
+                    FailureClass::RateLimited { delay, .. } => {
+                        let since = *record.throttled_since.get_or_insert(now);
+                        self.config
+                            .max_throttled
+                            .checked_sub(now.saturating_duration_since(since))
+                            .filter(|left| !left.is_zero())
+                            .map(|left| {
+                                delay
+                                    .max(self.config.retry_delay_base)
+                                    .max(MIN_RATE_LIMITED_RETRY)
+                                    .min(left)
+                            })
+                    }
+                    // A signed URL can expire while its segment waits out
+                    // rate limiting, and the playlist that would refresh it
+                    // may not have been published yet when the cool-down
+                    // ends. So once per segment, a denial after rate
+                    // limiting waits for re-discovery (see `ingest`), for
+                    // at most `REFRESH_WAIT`.
+                    FailureClass::Http(401 | 403)
+                        if record.generation <= record.attempt_generation
+                            && record.throttled_since.is_some()
+                            && !record.refresh_wait_used =>
+                    {
+                        record.refresh_wait_used = true;
+                        record.awaiting_refresh = true;
+                        Some(REFRESH_WAIT)
+                    }
+                    // Budget contention says nothing about the segment: it
+                    // only means other downloads hold the budget right now,
+                    // so it does not spend the retry budget. It still ends:
+                    // a size that can never fit is terminal at the fetch,
+                    // contention clears as siblings finish, and a live
+                    // backlog is bounded.
+                    FailureClass::OverBudget => Some(backoff(record.reschedules)),
+                    _ => {
+                        let retryable = match class {
+                            // 425 Too Early: an origin that enforces live
+                            // availability (DASH) rejects a request that
+                            // lands before the segment is published on its
+                            // clock; it is published moments later.
+                            FailureClass::Http(404 | 425 | 429)
+                            | FailureClass::Http(500..=599)
+                            | FailureClass::Network
+                            | FailureClass::Timeout
+                            | FailureClass::Decode => true,
+                            // Auth failures are conditionally retryable: a
+                            // signed URL can expire mid-flight while a newer
+                            // playlist already refreshed it. Retry only when
+                            // re-discovery advanced the generation past the
+                            // one this attempt fetched with — otherwise the
+                            // denial is real.
+                            FailureClass::Http(401 | 403) => {
+                                record.generation > record.attempt_generation
+                            }
+                            FailureClass::Http(_)
+                            | FailureClass::UnsupportedCrypto
+                            | FailureClass::InvalidFormat
+                            | FailureClass::Oversize
+                            | FailureClass::RateLimited { .. }
+                            | FailureClass::OverBudget => false,
+                        };
+                        (retryable && record.reschedules < self.config.retry_budget).then(|| {
+                            record.reschedules += 1;
+                            backoff(record.reschedules)
+                        })
+                    }
+                };
+
+                if let Some(delay) = retry_delay {
+                    let reschedules = record.reschedules;
                     let retry_at = now + delay;
                     record.state = SegmentState::RetryAt {
                         attempt: reschedules,
@@ -2056,6 +2154,247 @@ mod tests {
             fail(&mut s, FailureClass::Timeout)
                 .assembler_inputs
                 .as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
+    }
+
+    #[test]
+    fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_budget: 1,
+            retry_delay_base: Duration::from_millis(10),
+            max_throttled: Duration::from_secs(60),
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let mut now = Instant::now();
+        let fail = |s: &mut SegmentStateStore, class, now: Instant| {
+            let (mut jobs, inputs) = s.next_ready_jobs(1, now, &b);
+            assert!(inputs.is_empty());
+            let job = jobs.pop().expect("admitted once due");
+            s.apply_outcome(
+                SegmentOutcome::Failed {
+                    key: job.descriptor.key.clone(),
+                    msn: 1,
+                    class,
+                    reason: Arc::from("HTTP 429"),
+                    error: None,
+                },
+                now,
+            )
+        };
+        let limited = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(20),
+            held_back: false,
+        };
+
+        // Three cool-downs of 20 s fit the 60 s bound; the budget of one
+        // ordinary retry is untouched.
+        for _ in 0..3 {
+            let effects = fail(&mut s, limited, now);
+            assert!(effects.assembler_inputs.is_empty(), "still waiting");
+            let notice = effects.retry_notice.expect("retry scheduled");
+            assert_eq!(notice.delay, Duration::from_secs(20));
+            assert_eq!(
+                s.next_retry_deadline(),
+                Some(now + Duration::from_secs(20)),
+                "retried when the cool-down ends, not before"
+            );
+            assert!(s.next_ready_jobs(1, now, &b).0.is_empty());
+            now += Duration::from_secs(20);
+        }
+        assert!(
+            fail(&mut s, FailureClass::Timeout, now)
+                .assembler_inputs
+                .is_empty(),
+            "the ordinary retry is still available"
+        );
+        now += Duration::from_secs(1);
+        // A fourth cool-down would exceed the bound: the segment ends.
+        let effects = fail(&mut s, limited, now);
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, error, .. }]
+                if matches!(error.get(), DownloadError::SegmentFetch { retryable: true, .. })
+        ));
+    }
+
+    fn fail_at(
+        s: &mut SegmentStateStore,
+        b: &ByteBudget,
+        class: FailureClass,
+        now: Instant,
+    ) -> OutcomeEffects {
+        let (mut jobs, inputs) = s.next_ready_jobs(1, now, b);
+        assert!(inputs.is_empty());
+        let job = jobs.pop().expect("admitted once due");
+        s.apply_outcome(
+            SegmentOutcome::Failed {
+                key: job.descriptor.key.clone(),
+                msn: job.descriptor.msn,
+                class,
+                reason: Arc::from("refused"),
+                error: None,
+            },
+            now,
+        )
+    }
+
+    #[test]
+    fn immediate_rate_limit_retries_still_end_at_the_bound() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            retry_delay_base: Duration::ZERO,
+            max_throttled: Duration::from_secs(60),
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        // A server that keeps asking for an immediate retry.
+        let refused = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::ZERO,
+            held_back: false,
+        };
+        let start = Instant::now();
+        let mut now = start;
+        let mut retries = 0;
+        loop {
+            let effects = fail_at(&mut s, &b, refused, now);
+            if !effects.assembler_inputs.is_empty() {
+                break;
+            }
+            let delay = effects.retry_notice.expect("retry scheduled").delay;
+            assert!(delay >= MIN_RATE_LIMITED_RETRY, "never a tight loop");
+            now += delay;
+            retries += 1;
+            assert!(retries < 10_000, "rate limiting must end");
+        }
+        assert!(now.duration_since(start) >= Duration::from_secs(60));
+        assert!(now.duration_since(start) < Duration::from_secs(61));
+    }
+
+    #[test]
+    fn a_rate_limit_retry_never_lands_past_the_bound() {
+        let mut s = SegmentStateStore::new(StoreConfig {
+            max_throttled: Duration::from_secs(300),
+            ..StoreConfig::default()
+        });
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let refused = |seconds| FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(seconds),
+            held_back: false,
+        };
+        let start = Instant::now();
+        fail_at(&mut s, &b, refused(1), start);
+        // A minute-long cool-down one second before the bound.
+        let now = start + Duration::from_secs(299);
+        let effects = fail_at(&mut s, &b, refused(60), now);
+        assert_eq!(
+            effects.retry_notice.expect("one more try").delay,
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            s.next_retry_deadline(),
+            Some(start + Duration::from_secs(300))
+        );
+        let effects = fail_at(&mut s, &b, refused(60), start + Duration::from_secs(300));
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
+    }
+
+    #[test]
+    fn a_url_denied_after_rate_limiting_waits_once_for_a_refresh() {
+        let mut s = store();
+        let b = budget_unlimited();
+        let signed = |token: &str| {
+            let mut d = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+            d.parsed_url = Arc::new(Url::parse(&format!("https://e.com/1.ts?t={token}")).unwrap());
+            d
+        };
+        s.ingest(vec![signed("a")], Instant::now());
+        let mut now = Instant::now();
+        let refused = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(45),
+            held_back: false,
+        };
+        assert!(
+            fail_at(&mut s, &b, refused, now)
+                .assembler_inputs
+                .is_empty()
+        );
+        now += Duration::from_secs(45);
+
+        // The token expired while the segment waited, and the playlist with
+        // the fresh one has not been published yet.
+        let effects = fail_at(&mut s, &b, FailureClass::Http(403), now);
+        assert!(effects.assembler_inputs.is_empty(), "not terminal yet");
+        assert_eq!(effects.retry_notice.expect("waits").delay, REFRESH_WAIT);
+        assert!(s.next_ready_jobs(1, now, &b).0.is_empty());
+
+        // Re-discovery publishes the fresh URL: the segment is retried at
+        // once rather than after the wait.
+        s.ingest(vec![signed("b")], now);
+        let (jobs, _) = s.next_ready_jobs(1, now, &b);
+        assert_eq!(jobs.len(), 1, "retried as soon as the URL is fresh");
+        assert!(jobs[0].descriptor.parsed_url.as_str().ends_with("t=b"));
+        // Denied again with the fresh URL and nothing newer: that denial is
+        // real, and the one wait was used.
+        let effects = s.apply_outcome(
+            SegmentOutcome::Failed {
+                key: jobs[0].descriptor.key.clone(),
+                msn: 1,
+                class: FailureClass::Http(403),
+                reason: Arc::from("403"),
+                error: None,
+            },
+            now,
+        );
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
+        ));
+    }
+
+    #[test]
+    fn a_refresh_wait_that_sees_no_fresh_url_ends_in_the_denial() {
+        let mut s = store();
+        let b = budget_unlimited();
+        s.ingest(
+            vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
+            Instant::now(),
+        );
+        let now = Instant::now();
+        let refused = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(1),
+            held_back: false,
+        };
+        fail_at(&mut s, &b, refused, now);
+        let now = now + Duration::from_secs(1);
+        assert!(
+            fail_at(&mut s, &b, FailureClass::Http(401), now)
+                .assembler_inputs
+                .is_empty()
+        );
+        let effects = fail_at(&mut s, &b, FailureClass::Http(401), now + REFRESH_WAIT);
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, .. }]
         ));
     }
