@@ -666,7 +666,7 @@ impl<'a> DouyinRequest<'a> {
         user: &DouyinUserInfo,
     ) -> Result<MediaInfo, ExtractorError> {
         // Reflow rooms can keep status=2 and playable streams after the broadcast ends.
-        let is_live = data.status == 2 && !data.finish_time.is_some_and(|time| time > 0);
+        let is_live = data.status == 2 && !data.has_ended();
 
         let title = &data.title;
         let artist = &user.nickname;
@@ -697,15 +697,9 @@ impl<'a> DouyinRequest<'a> {
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
         let mut streams = self.extract_streams(stream_url)?;
         let had_streams = !streams.is_empty();
-        // Filter after extraction so SDK, double-screen, origin, and legacy URLs
-        // all pass the same replay guard, even when finish_time is absent.
-        streams.retain(|stream| {
-            !stream.url.is_empty()
-                && !url::Url::parse(&stream.url).is_ok_and(|url| {
-                    url.query_pairs()
-                        .any(|(key, value)| key == "rtm_expr_tag" && value == "reflow_room_info")
-                })
-        });
+        // Every URL from the reflow API carries `rtm_expr_tag=reflow_room_info`, live or
+        // not, so the URL says nothing about liveness; only unusable empty URLs are dropped.
+        streams.retain(|stream| !stream.url.is_empty());
         if had_streams && streams.is_empty() {
             return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
         }
@@ -1169,8 +1163,8 @@ mod tests {
 
     const LIVE_FLV: &str = "https://example.com/stream_or4.flv?token=test";
     const LIVE_HLS: &str = "https://example.com/stream.m3u8?token=test";
-    const REPLAY_FLV: &str = "https://example.com/stream_or4.flv?rtm_expr_tag=reflow_room_info";
-    const REPLAY_HLS: &str = "https://example.com/stream.m3u8?rtm_expr_tag=reflow_room_info";
+    const REFLOW_FLV: &str = "https://example.com/stream_or4.flv?rtm_expr_tag=reflow_room_info";
+    const REFLOW_HLS: &str = "https://example.com/stream.m3u8?rtm_expr_tag=reflow_room_info";
 
     #[derive(Clone, Copy, Debug)]
     enum StreamSource {
@@ -1269,6 +1263,23 @@ mod tests {
         }
     }
 
+    const REFLOW_LIVE_ROOM: &str = include_str!("fixtures/reflow_live_room.json");
+    const REFLOW_ENDED_ROOM: &str = include_str!("fixtures/reflow_ended_room.json");
+
+    fn parse_app_body(body: &str) -> MediaInfo {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        let mut request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
+        request.parse_app_response(body).unwrap()
+    }
+
+    fn has_reflow_tag(url: &str) -> bool {
+        url::Url::parse(url).is_ok_and(|url| {
+            url.query_pairs()
+                .any(|(key, value)| key == "rtm_expr_tag" && value == "reflow_room_info")
+        })
+    }
+
     #[test]
     fn test_finished_room_is_offline_despite_live_status_and_streams() {
         for mobile in [false, true] {
@@ -1312,89 +1323,117 @@ mod tests {
     }
 
     #[test]
-    fn test_replay_only_streams_are_offline_across_extraction_paths() {
+    fn test_live_room_with_heartbeat_finish_time_is_live() {
         for mobile in [false, true] {
             for source in STREAM_SOURCES {
-                for finish_time in [None, Some(json!(0))] {
-                    let mut room = room_fixture(source, REPLAY_FLV, REPLAY_HLS);
-                    if let Some(finish_time) = finish_time {
-                        room["finish_time"] = finish_time;
-                    }
-                    let info = parse_room_fixture(room, mobile, source);
-                    assert!(!info.is_live, "mobile={mobile}, source={source:?}");
-                    assert!(info.streams.is_empty());
-                    assert_eq!(info.title, "Test Room");
-                    assert_eq!(info.artist, "Test User");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_mixed_replay_and_live_streams_keep_only_live_candidates() {
-        for mobile in [false, true] {
-            for source in STREAM_SOURCES {
-                for (flv, hls, expected) in [
-                    (REPLAY_FLV, LIVE_HLS, LIVE_HLS),
-                    (LIVE_FLV, REPLAY_HLS, LIVE_FLV),
+                for (finish_time, last_ping_time) in [
+                    (1787737453_i64, 1787737453_i64),
+                    (1787737400_i64, 1787737453_i64),
                 ] {
-                    let info = parse_room_fixture(room_fixture(source, flv, hls), mobile, source);
+                    let mut room = room_fixture(source, LIVE_FLV, LIVE_HLS);
+                    room["finish_time"] = json!(finish_time);
+                    room["last_ping_time"] = json!(last_ping_time);
+                    room["finish_reason"] = json!(0);
+                    let info = parse_room_fixture(room, mobile, source);
                     assert!(info.is_live, "mobile={mobile}, source={source:?}");
-                    assert!(!info.streams.is_empty());
-                    assert!(info.streams.iter().all(|stream| {
-                        stream.url == expected || stream.url == format!("{expected}&only_audio=1")
-                    }));
+                    assert!(info.streams.iter().any(|stream| stream.url == LIVE_FLV));
                 }
             }
         }
     }
 
     #[test]
-    fn test_empty_legacy_urls_do_not_keep_replay_room_live() {
+    fn test_end_markers_make_live_status_room_offline() {
         for mobile in [false, true] {
-            for (flv, hls) in [(REPLAY_FLV, ""), ("", REPLAY_HLS)] {
+            for (finish_time, last_ping_time, finish_reason) in [
+                (json!(1787737453_i64), json!(1787737453_i64), json!(1)),
+                (json!(0), json!(0), json!(5)),
+                (json!(1787737453_i64), json!(0), json!(0)),
+                (json!(1787737453_i64), Value::Null, json!(0)),
+                (json!(1787737453_i64), json!(1787737400_i64), json!(0)),
+            ] {
+                let mut room = room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS);
+                room["finish_time"] = finish_time.clone();
+                room["last_ping_time"] = last_ping_time.clone();
+                room["finish_reason"] = finish_reason.clone();
+                let info = parse_room_fixture(room, mobile, StreamSource::Sdk);
+                assert!(
+                    !info.is_live,
+                    "mobile={mobile}, finish_time={finish_time}, last_ping_time={last_ping_time}, finish_reason={finish_reason}"
+                );
+                assert!(info.streams.is_empty());
+                assert_eq!(info.title, "Test Room");
+            }
+        }
+    }
+
+    #[test]
+    fn test_reflow_tagged_streams_stay_live_across_extraction_paths() {
+        for mobile in [false, true] {
+            for source in STREAM_SOURCES {
+                let info = parse_room_fixture(
+                    room_fixture(source, REFLOW_FLV, REFLOW_HLS),
+                    mobile,
+                    source,
+                );
+                assert!(info.is_live, "mobile={mobile}, source={source:?}");
+                assert!(info.streams.iter().any(|stream| stream.url == REFLOW_FLV));
+                assert!(info.streams.iter().any(|stream| stream.url == REFLOW_HLS));
+            }
+        }
+    }
+
+    #[test]
+    fn test_empty_legacy_urls_are_dropped() {
+        for mobile in [false, true] {
+            for (flv, hls, expected) in [(LIVE_FLV, "", LIVE_FLV), ("", LIVE_HLS, LIVE_HLS)] {
                 let info = parse_room_fixture(
                     room_fixture(StreamSource::Legacy, flv, hls),
                     mobile,
                     StreamSource::Legacy,
                 );
-                assert!(!info.is_live);
-                assert!(info.streams.is_empty());
+                assert!(info.is_live);
+                assert!(!info.streams.is_empty());
+                assert!(info.streams.iter().all(|stream| stream.url == expected));
             }
         }
     }
 
     #[test]
-    fn test_replay_marker_matches_decoded_query_parameter() {
-        for (url, expected_live) in [
-            (
-                "https://example.com/stream.flv?rtm_expr_tag=reflow%5Froom%5Finfo",
-                false,
-            ),
-            (
-                "https://example.com/stream.flv?rtm_expr_tag=live&rtm_expr_tag=reflow_room_info",
-                false,
-            ),
-            (
-                "https://example.com/stream.flv?rtm_expr_tag=reflow_room_info_extra",
-                true,
-            ),
-            (
-                "https://example.com/stream.flv?other_rtm_expr_tag=reflow_room_info",
-                true,
-            ),
-            (
-                "https://example.com/stream.flv?note=rtm_expr_tag%3Dreflow_room_info",
-                true,
-            ),
-        ] {
-            let info = parse_room_fixture(
-                room_fixture(StreamSource::Legacy, url, url),
-                true,
-                StreamSource::Legacy,
-            );
-            assert_eq!(info.is_live, expected_live, "{url}");
-            assert_eq!(info.streams.is_empty(), !expected_live, "{url}");
+    fn test_reflow_live_room_is_live() {
+        let info = parse_app_body(REFLOW_LIVE_ROOM);
+        assert!(info.is_live);
+        assert!(!info.streams.is_empty());
+        assert!(
+            info.streams
+                .iter()
+                .all(|stream| has_reflow_tag(&stream.url))
+        );
+        assert_eq!(info.title, "Test Room");
+    }
+
+    #[test]
+    fn test_reflow_ended_room_is_offline() {
+        let info = parse_app_body(REFLOW_ENDED_ROOM);
+        assert!(!info.is_live);
+        assert!(info.streams.is_empty());
+        assert_eq!(info.title, "Test Room");
+    }
+
+    #[test]
+    fn test_reflow_ended_room_with_stale_live_status_is_offline() {
+        // The reflow API can still report status=2 shortly after a broadcast ends;
+        // each end marker on its own must keep the room offline.
+        let ended: Value = serde_json::from_str(REFLOW_ENDED_ROOM).unwrap();
+        for (finish_reason, last_ping_time) in [(json!(1), json!(0)), (json!(0), json!(0))] {
+            let mut body = ended.clone();
+            let room = &mut body["data"]["room"];
+            room["status"] = json!(2);
+            room["finish_reason"] = finish_reason;
+            room["last_ping_time"] = last_ping_time;
+            let info = parse_app_body(&body.to_string());
+            assert!(!info.is_live);
+            assert!(info.streams.is_empty());
         }
     }
 
