@@ -554,8 +554,8 @@ impl DashPlanner {
     /// retained epoch. Every epoch opens under the value of the MPD that
     /// last passed here, so one opened under an older value has seen such a
     /// move, and its Period stays contradicted while the epoch is retained.
-    /// An epoch still queued from before the move must not withdraw anchors
-    /// issued under the new value; its own Period's withdrawal covers it.
+    /// Later MPDs under the new value leave the anchors issued under it in
+    /// place, even while an epoch from before the move is still queued.
     fn note_moved_anchor(&mut self, manifest: &Manifest) {
         if manifest.presentation_type != PresentationType::Dynamic {
             return;
