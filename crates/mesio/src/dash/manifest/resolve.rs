@@ -88,6 +88,9 @@ pub struct Manifest {
     /// Trailing Periods of a dynamic MPD whose start is not yet known
     /// ("early available", ISO/IEC 23009-1 §5.3.2.1); not part of `periods`.
     pub early_available_periods: usize,
+    /// Alternative `BaseURL`s (sibling ones after the first, at any level)
+    /// that are not used: only the first `BaseURL` at each level is.
+    pub ignored_base_urls: usize,
 }
 
 /// A resolved Period.
@@ -518,6 +521,7 @@ impl Resolver {
             utc_timings,
             periods,
             early_available_periods,
+            ignored_base_urls: raw.ignored_base_urls,
         })
     }
 

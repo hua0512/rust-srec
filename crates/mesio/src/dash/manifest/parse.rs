@@ -36,6 +36,9 @@ pub(crate) struct RawMpd {
     pub suggested_presentation_delay: Option<Duration>,
     pub max_segment_duration: Option<Duration>,
     pub base_url: Option<RawBaseUrl>,
+    /// Sibling `BaseURL`s after the first, at every level: only the first
+    /// is used.
+    pub ignored_base_urls: usize,
     pub location: Option<String>,
     pub utc_timings: Vec<RawUtcTiming>,
     pub properties: Vec<RawProperty>,
@@ -283,6 +286,7 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
         )?,
         max_segment_duration: attr(node, E, "maxSegmentDuration", xs::parse_duration)?,
         base_url: None,
+        ignored_base_urls: 0,
         location: None,
         utc_timings: Vec::new(),
         properties: Vec::new(),
@@ -291,7 +295,12 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
 
     for child in dash_children(node) {
         match child.tag_name().name() {
-            "BaseURL" => first(&mut mpd.base_url, child, parse_base_url)?,
+            "BaseURL" => first(
+                &mut mpd.base_url,
+                &mut mpd.ignored_base_urls,
+                child,
+                parse_base_url,
+            )?,
             "Location" => {
                 if mpd.location.is_none() {
                     mpd.location = Some(element_text(child, "Location", MAX_URL_BYTES)?);
@@ -313,7 +322,8 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
                         limit: MAX_PERIODS,
                     });
                 }
-                mpd.periods.push(parse_period(child)?);
+                mpd.periods
+                    .push(parse_period(child, &mut mpd.ignored_base_urls)?);
             }
             name => parse_property(&mut mpd.properties, child, name)?,
         }
@@ -321,7 +331,7 @@ fn parse_mpd_element(node: Node<'_, '_>) -> Result<RawMpd, ManifestError> {
     Ok(mpd)
 }
 
-fn parse_period(node: Node<'_, '_>) -> Result<RawPeriod, ManifestError> {
+fn parse_period(node: Node<'_, '_>, ignored: &mut usize) -> Result<RawPeriod, ManifestError> {
     const E: &str = "Period";
     let mut period = RawPeriod {
         id: text_attr(node, "id", MAX_ATTRIBUTE_BYTES)?,
@@ -335,8 +345,10 @@ fn parse_period(node: Node<'_, '_>) -> Result<RawPeriod, ManifestError> {
     };
     for child in dash_children(node) {
         match child.tag_name().name() {
-            "BaseURL" => first(&mut period.base_url, child, parse_base_url)?,
-            "AdaptationSet" => period.adaptation_sets.push(parse_adaptation_set(child)?),
+            "BaseURL" => first(&mut period.base_url, ignored, child, parse_base_url)?,
+            "AdaptationSet" => period
+                .adaptation_sets
+                .push(parse_adaptation_set(child, ignored)?),
             name => {
                 parse_property(&mut period.properties, child, name)?;
                 parse_segment_info(&mut period.segment_info, child)?;
@@ -347,7 +359,10 @@ fn parse_period(node: Node<'_, '_>) -> Result<RawPeriod, ManifestError> {
     Ok(period)
 }
 
-fn parse_adaptation_set(node: Node<'_, '_>) -> Result<RawAdaptationSet, ManifestError> {
+fn parse_adaptation_set(
+    node: Node<'_, '_>,
+    ignored: &mut usize,
+) -> Result<RawAdaptationSet, ManifestError> {
     const E: &str = "AdaptationSet";
     let mut set = RawAdaptationSet {
         id: text_attr(node, "id", MAX_ATTRIBUTE_BYTES)?,
@@ -363,8 +378,10 @@ fn parse_adaptation_set(node: Node<'_, '_>) -> Result<RawAdaptationSet, Manifest
     };
     for child in dash_children(node) {
         match child.tag_name().name() {
-            "BaseURL" => first(&mut set.base_url, child, parse_base_url)?,
-            "Representation" => set.representations.push(parse_representation(child)?),
+            "BaseURL" => first(&mut set.base_url, ignored, child, parse_base_url)?,
+            "Representation" => set
+                .representations
+                .push(parse_representation(child, ignored)?),
             name => {
                 parse_descriptor(&mut set.common, child, name)?;
                 parse_segment_info(&mut set.segment_info, child)?;
@@ -375,7 +392,10 @@ fn parse_adaptation_set(node: Node<'_, '_>) -> Result<RawAdaptationSet, Manifest
     Ok(set)
 }
 
-fn parse_representation(node: Node<'_, '_>) -> Result<RawRepresentation, ManifestError> {
+fn parse_representation(
+    node: Node<'_, '_>,
+    ignored: &mut usize,
+) -> Result<RawRepresentation, ManifestError> {
     const E: &str = "Representation";
     let mut representation = RawRepresentation {
         id: required_text(node, E, "id", MAX_ATTRIBUTE_BYTES)?,
@@ -386,7 +406,7 @@ fn parse_representation(node: Node<'_, '_>) -> Result<RawRepresentation, Manifes
     };
     for child in dash_children(node) {
         match child.tag_name().name() {
-            "BaseURL" => first(&mut representation.base_url, child, parse_base_url)?,
+            "BaseURL" => first(&mut representation.base_url, ignored, child, parse_base_url)?,
             name => {
                 parse_descriptor(&mut representation.common, child, name)?;
                 parse_segment_info(&mut representation.segment_info, child)?;
@@ -752,15 +772,18 @@ fn bounded(value: &str, what: &'static str, limit: usize) -> Result<String, Mani
     Ok(value.to_owned())
 }
 
-/// Keeps the first occurrence of a repeatable element (v1 uses the first
-/// `BaseURL` at each level).
+/// Keeps the first occurrence of a repeatable element and counts the
+/// others in `ignored`: alternative `BaseURL`s (other CDNs) are not used,
+/// only the first at each level.
 fn first<T>(
     slot: &mut Option<T>,
+    ignored: &mut usize,
     node: Node<'_, '_>,
     parse: impl FnOnce(Node<'_, '_>) -> Result<T, ManifestError>,
 ) -> Result<(), ManifestError> {
-    if slot.is_none() {
-        *slot = Some(parse(node)?);
+    match slot {
+        Some(_) => *ignored = ignored.saturating_add(1),
+        None => *slot = Some(parse(node)?),
     }
     Ok(())
 }
@@ -976,6 +999,55 @@ mod tests {
             parse_mpd(&[0xff, 0xfe, b'<']),
             Err(ManifestError::Encoding)
         ));
+    }
+
+    #[test]
+    fn sibling_base_urls_after_the_first_are_counted_and_ignored() {
+        let xml = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT2S">
+  <BaseURL>https://cdn-a.example.com/</BaseURL>
+  <BaseURL>https://cdn-b.example.com/</BaseURL>
+  <Period>
+    <BaseURL>p/</BaseURL>
+    <AdaptationSet mimeType="video/mp4">
+      <BaseURL>v/</BaseURL>
+      <BaseURL>v-alt/</BaseURL>
+      <BaseURL>v-alt2/</BaseURL>
+      <SegmentTemplate media="$Number$.m4s" initialization="init.mp4" duration="1" timescale="1"/>
+      <Representation id="v" bandwidth="1">
+        <BaseURL>r/</BaseURL>
+        <BaseURL>r-alt/</BaseURL>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>"#;
+        let mpd = parse(xml).unwrap();
+        assert_eq!(mpd.ignored_base_urls, 4);
+        assert_eq!(
+            mpd.base_url.as_ref().map(|base| base.url.as_str()),
+            Some("https://cdn-a.example.com/")
+        );
+        let set = &mpd.periods[0].adaptation_sets[0];
+        assert_eq!(
+            set.base_url.as_ref().map(|base| base.url.as_str()),
+            Some("v/")
+        );
+        assert_eq!(
+            set.representations[0]
+                .base_url
+                .as_ref()
+                .map(|base| base.url.as_str()),
+            Some("r/")
+        );
+
+        let url = url::Url::parse("https://origin.example.com/live.mpd").unwrap();
+        let manifest = super::super::Manifest::parse(xml.as_bytes(), &url).unwrap();
+        assert_eq!(manifest.ignored_base_urls, 4);
+        let representation = &manifest.periods[0].adaptation_sets[0].representations[0];
+        let init = representation.initialization.as_ref().unwrap();
+        assert_eq!(
+            init.url.as_str(),
+            "https://cdn-a.example.com/p/v/r/init.mp4"
+        );
     }
 
     #[test]
