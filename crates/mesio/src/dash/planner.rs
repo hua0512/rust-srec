@@ -246,6 +246,11 @@ struct PeriodTrust {
     contradicted: bool,
     /// Withdraws the wall-clock anchor of every epoch of the Period.
     withdrawal: AnchorWithdrawal,
+    /// Whether every segment of the Period was found within media planned
+    /// from an earlier Period ([`PeriodPlan::Covered`]). Kept because the
+    /// fact cannot be seen again once its segments leave the availability
+    /// window, and the Period never gets an epoch that would show it.
+    covered: bool,
 }
 
 /// A segment's stable identity within its Representation (see the module
@@ -413,8 +418,8 @@ pub(crate) struct DashPlanner {
     reported_absence: bool,
     /// The [`TimingConflict`]s reported so far, as a bit set.
     reported_conflicts: u8,
-    /// Timing trust of the Periods that may still be planned or still have
-    /// epochs; pruned as planning moves past them.
+    /// What is known about the Periods that may still be planned or still
+    /// have epochs; pruned as planning moves past them.
     periods: VecDeque<PeriodTrust>,
     /// Withdraws every anchor issued under the current
     /// `availabilityStartTime`; replaced when it moves.
@@ -481,6 +486,7 @@ impl DashPlanner {
                     period: period.clone(),
                     contradicted: false,
                     withdrawal: AnchorWithdrawal::default(),
+                    covered: false,
                 });
                 self.periods.len() - 1
             }
@@ -507,8 +513,16 @@ impl DashPlanner {
             .any(|trust| trust.contradicted && trust.period.same(period))
     }
 
-    /// Forgets the trust of Periods planning has moved past and that no
-    /// retained epoch belongs to.
+    /// Whether every segment of `period` was found within media planned from
+    /// an earlier Period, in this snapshot or an earlier one.
+    fn known_covered(&self, period: &PeriodKey) -> bool {
+        self.periods
+            .iter()
+            .any(|trust| trust.covered && trust.period.same(period))
+    }
+
+    /// Forgets what is known about Periods planning has moved past and that
+    /// no retained epoch belongs to.
     fn prune_periods(&mut self, lower: &PeriodKey) {
         let epochs = &self.epochs;
         self.periods.retain(|trust| {
@@ -709,8 +723,11 @@ impl DashPlanner {
                 &mut target_duration,
                 outcome,
             )? {
-                PeriodPlan::Complete => false,
-                PeriodPlan::Covered => true,
+                PeriodPlan::Complete => self.known_covered(&key),
+                PeriodPlan::Covered => {
+                    self.trust_mut(&key).covered = true;
+                    true
+                }
                 PeriodPlan::Blocked => {
                     blocked = true;
                     break;
@@ -2146,6 +2163,68 @@ mod tests {
             })
             .collect();
         assert_eq!(absent, [(Some("p2"), 4)]);
+    }
+
+    #[test]
+    fn a_covered_period_stays_complete_after_its_segments_expire() {
+        let mpd = |periods: &str| {
+            format!(
+                r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"
+     availabilityStartTime="2024-01-01T00:00:00Z" minimumUpdatePeriod="PT2S" timeShiftBufferDepth="PT2S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p0/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>
+  {periods}
+</MPD>"#
+            )
+        };
+        let p1 = r#"<Period id="p1" start="PT10S" duration="PT2S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="p1/$Number$.m4s" initialization="init.mp4" duration="2" timescale="1"/>
+      <Representation id="v" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let p2 = r#"<Period id="p2" start="PT12S">
+    <AdaptationSet mimeType="audio/mp4">
+      <SegmentTemplate media="p2/a/$Number$.m4s" initialization="a/init.mp4" duration="2" timescale="1"/>
+      <Representation id="a" bandwidth="1000"/>
+    </AdaptationSet>
+  </Period>"#;
+        let absent = |outcome: &PlanOutcome| -> Vec<Option<Arc<str>>> {
+            outcome
+                .notices
+                .iter()
+                .filter_map(|notice| match notice {
+                    EngineNotice::TrackAbsent { section_id, .. } => Some(section_id.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 8);
+        // The open p0 is planned through 14 s.
+        for step in 0..4 {
+            if step > 0 {
+                fixture.advance(2);
+            }
+            assert_eq!(planned_periods(&fixture.plan(&mpd(""))).len(), 1);
+            fixture.consume_all();
+        }
+        // At 14 s p1 (10–12 s) is revealed while its segment is available,
+        // and found covered.
+        let covered = fixture.plan(&mpd(p1));
+        assert!(planned_periods(&covered).is_empty());
+        let planner = fixture.planner.as_ref().unwrap();
+        assert!(planner.known_covered(&PeriodKey {
+            id: Some(Arc::from("p1")),
+            start: Duration::from_secs(10),
+        }));
+        // At 16 s p1's segment has left the window; p2 has no video.
+        fixture.advance(2);
+        let later = fixture.plan(&mpd(&format!("{p1}{p2}")));
+        assert_eq!(absent(&later), [Some(Arc::from("p2"))]);
     }
 
     #[test]
