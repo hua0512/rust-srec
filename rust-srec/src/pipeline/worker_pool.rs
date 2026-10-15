@@ -876,7 +876,7 @@ impl JobRunner {
     /// Run one job through its processor and record the terminal state it reached.
     async fn execute_job(&self, mut job: Job, processor: &Arc<dyn Processor>) {
         let _output_lease = self.job_queue.output_files_gate.read().await;
-        let Some(job_token) = self.job_queue.get_cancellation_token(&job.id).await else {
+        let Some(job_token) = self.job_queue.attempt_token(&job.id) else {
             info!(job_id = %job.id, "Skipping withdrawn job");
             return;
         };
@@ -895,7 +895,7 @@ impl JobRunner {
             let reason = format!("Failed to persist execution start: {e}");
             error!(job_id = %job.id, error = %e, "Skipping processor without durable attempt metadata");
             if job_token.is_cancelled() {
-                self.job_queue.finalize_cancelled_job(&job.id);
+                self.job_queue.finalize_attempt(&job.id, &job_token);
                 return;
             }
             let job_id = job.id.clone();
@@ -1022,6 +1022,28 @@ impl JobRunner {
         // Drop ctx to close the log channel
         drop(ctx);
 
+        // Blocking work that a deadline cannot interrupt may still own a log sender. The
+        // timeout is recorded at the deadline; this worker keeps its slot and output lease
+        // until the collector drains, then finalizes only this attempt, because a scheduled
+        // or manual retry can start a successor under the same job ID in the meantime.
+        let timeout_recorded = matches!(outcome, JobOutcome::TimedOut) && !job_token.is_cancelled();
+        if timeout_recorded {
+            let progress = match self.job_queue.get_job_progress(&facts.id).await {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    warn!(
+                        job_id = %facts.id,
+                        %error,
+                        "Failed to read last progress for timed-out job"
+                    );
+                    None
+                }
+            };
+            let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
+            self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[])
+                .await;
+        }
+
         // Wait for log collector to finish draining
         if let Err(join_error) = log_collector.await {
             error!(
@@ -1059,32 +1081,17 @@ impl JobRunner {
                 self.finish_failed(&facts, &e.to_string(), StepFailureKind::ProcessorError, &[])
                     .await;
             }
-            JobOutcome::TimedOut if cancelled => {
+            JobOutcome::TimedOut if timeout_recorded => {}
+            JobOutcome::TimedOut => {
                 info!(
                     job_id = %facts.id,
                     "Job timed out after cancellation; skipping timeout handling"
                 );
             }
-            JobOutcome::TimedOut => {
-                let progress = match self.job_queue.get_job_progress(&facts.id).await {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        warn!(
-                            job_id = %facts.id,
-                            %error,
-                            "Failed to read last progress for timed-out job"
-                        );
-                        None
-                    }
-                };
-                let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
-                self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[])
-                    .await;
-            }
         }
 
         if processor_token.is_cancelled() {
-            self.job_queue.finalize_cancelled_job(&facts.id);
+            self.job_queue.finalize_attempt(&facts.id, &job_token);
         }
 
         update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
@@ -2436,12 +2443,12 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn timeout_cancels_processor_before_waiting_for_retained_log_sink() {
+    async fn timeout_is_recorded_before_waiting_for_retained_log_sink() {
         assert_timeout_with_retained_sink(false).await;
     }
 
     #[tokio::test(start_paused = true)]
-    async fn user_cancellation_during_timeout_log_drain_remains_terminal() {
+    async fn user_cancellation_during_timeout_log_drain_keeps_the_recorded_timeout() {
         assert_timeout_with_retained_sink(true).await;
     }
 
@@ -2467,41 +2474,36 @@ mod tests {
             retained.cancellation_token.is_cancelled(),
             "processor helpers must see timeout before the worker waits for their log sender"
         );
+        // The deadline is durable while the retained sender still holds the worker.
+        let stored = queue.get_job(&id).await.unwrap().unwrap();
+        assert_eq!(stored.status, JobStatus::Failed);
+        assert!(
+            stored
+                .error
+                .as_deref()
+                .is_some_and(|error| error.starts_with(TIMED_OUT_ERROR)),
+            "unexpected stored error: {:?}",
+            stored.error
+        );
+        assert_eq!(runner.active_workers.load(Ordering::SeqCst), 1);
         if cancel_during_drain {
-            queue.cancel_job(&id).await.unwrap();
+            assert!(queue.cancel_job(&id).await.is_err());
         }
         drop(retained);
         tokio::time::timeout(Duration::from_secs(1), execution)
             .await
             .unwrap();
-        let stored = queue.get_job(&id).await.unwrap().unwrap();
         assert_eq!(
-            stored.status,
-            if cancel_during_drain {
-                JobStatus::Cancelled
-            } else {
-                JobStatus::Failed
-            }
+            queue.get_job(&id).await.unwrap().unwrap().status,
+            JobStatus::Failed
         );
-        if !cancel_during_drain {
-            assert!(
-                stored
-                    .error
-                    .as_deref()
-                    .is_some_and(|error| error.starts_with(TIMED_OUT_ERROR)),
-                "unexpected stored error: {:?}",
-                stored.error
-            );
-        }
         assert!(matches!(
             event_rx.try_recv(),
             Ok(PipelineEvent::JobStarted { .. })
         ));
-        if !cancel_during_drain {
-            assert!(
-                matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error.starts_with(TIMED_OUT_ERROR))
-            );
-        }
+        assert!(
+            matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error.starts_with(TIMED_OUT_ERROR))
+        );
         assert!(event_rx.try_recv().is_err());
         assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
     }

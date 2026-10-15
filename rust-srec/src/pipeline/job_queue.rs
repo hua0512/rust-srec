@@ -8,7 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -85,7 +85,7 @@ fn upload_started_event(job: &Job) -> Option<UploadStatusEvent> {
 /// inventing new numbers.
 fn upload_heartbeat_events(
     jobs_cache: &DashMap<String, Job>,
-    cancellation_tokens: &DashMap<String, CancellationToken>,
+    cancellation_tokens: &DashMap<String, AttemptToken>,
     progress_cache: &DashMap<String, JobProgressSnapshot>,
 ) -> Vec<UploadStatusEvent> {
     let mut events = Vec::new();
@@ -174,6 +174,33 @@ impl Drop for LogCursorCleanup<'_> {
         {
             self.queue.persisted_log_cursor.remove(self.job_id);
         }
+    }
+}
+
+/// Cancellation for one execution attempt. A retry dequeues a new attempt under
+/// the same job ID, so a worker still finishing an older attempt identifies its
+/// own tracking by attempt rather than by job ID.
+#[derive(Clone)]
+pub(crate) struct AttemptToken {
+    token: CancellationToken,
+    attempt: u64,
+}
+
+impl Default for AttemptToken {
+    fn default() -> Self {
+        static NEXT_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+        Self {
+            token: CancellationToken::new(),
+            attempt: NEXT_ATTEMPT.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+}
+
+impl std::ops::Deref for AttemptToken {
+    type Target = CancellationToken;
+
+    fn deref(&self) -> &CancellationToken {
+        &self.token
     }
 }
 
@@ -752,7 +779,7 @@ pub struct JobQueue {
     jobs_cache: Arc<DashMap<String, Job>>,
     /// Cancellation tokens for processing jobs. `Arc`-shared with the
     /// progress aggregator, whose liveness check reads it (see `jobs_cache`).
-    cancellation_tokens: Arc<DashMap<String, CancellationToken>>,
+    cancellation_tokens: Arc<DashMap<String, AttemptToken>>,
     /// Latest progress snapshot per job (in-memory). `Arc`-shared with the
     /// progress aggregator, which writes it (see `jobs_cache`).
     progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
@@ -790,7 +817,7 @@ impl JobQueue {
         // deep-copies contents, so a bare clone would permanently detach the
         // aggregator's view from the queue's.
         let jobs_cache: Arc<DashMap<String, Job>> = Arc::new(DashMap::new());
-        let cancellation_tokens: Arc<DashMap<String, CancellationToken>> = Arc::new(DashMap::new());
+        let cancellation_tokens: Arc<DashMap<String, AttemptToken>> = Arc::new(DashMap::new());
         let progress_cache: Arc<DashMap<String, JobProgressSnapshot>> = Arc::new(DashMap::new());
         let upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>> =
             Arc::new(std::sync::OnceLock::new());
@@ -2058,6 +2085,9 @@ impl JobQueue {
         cached_job.retry_count += 1;
         let updated_job = cached_job.clone();
         drop(cached_job);
+        let _ = self.cancellation_tokens.remove(id);
+        let _ = self.persisted_log_cursor.remove(id);
+        self.progress_cache.remove(id);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
         self.wake_workers();
@@ -2305,6 +2335,14 @@ impl JobQueue {
 
     /// Get the cancellation token for a job.
     pub async fn get_cancellation_token(&self, job_id: &str) -> Option<CancellationToken> {
+        self.cancellation_tokens
+            .get(job_id)
+            .map(|t| t.token.clone())
+    }
+
+    /// The current attempt of a dequeued job, for the worker that must later
+    /// finalize exactly that attempt.
+    pub(crate) fn attempt_token(&self, job_id: &str) -> Option<AttemptToken> {
         self.cancellation_tokens.get(job_id).map(|t| t.clone())
     }
 
@@ -2339,6 +2377,23 @@ impl JobQueue {
 
     pub fn finalize_cancelled_job(&self, job_id: &str) {
         let _ = self.cancellation_tokens.remove(job_id);
+        self.clear_attempt_tracking(job_id);
+    }
+
+    /// Finalize `attempt` unless a retry has already dequeued a successor under
+    /// the same job ID. The successor then owns the job's token, log cursor,
+    /// progress and cache entry, which a late cleanup must not remove.
+    pub(crate) fn finalize_attempt(&self, job_id: &str, attempt: &AttemptToken) {
+        let removed = self
+            .cancellation_tokens
+            .remove_if(job_id, |_, current| current.attempt == attempt.attempt);
+        if removed.is_none() && self.cancellation_tokens.contains_key(job_id) {
+            return;
+        }
+        self.clear_attempt_tracking(job_id);
+    }
+
+    fn clear_attempt_tracking(&self, job_id: &str) {
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
 
@@ -2946,7 +3001,7 @@ fn spawn_progress_aggregator(
     repo: Option<Arc<dyn JobRepository>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
     jobs_cache: Arc<DashMap<String, Job>>,
-    cancellation_tokens: Arc<DashMap<String, CancellationToken>>,
+    cancellation_tokens: Arc<DashMap<String, AttemptToken>>,
     progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
     upload_broadcaster: Arc<std::sync::OnceLock<UploadStatusBroadcaster>>,
     shutdown: CancellationToken,
@@ -3079,7 +3134,7 @@ fn spawn_progress_aggregator(
                     // late progress messages (after completion/cancellation) from reintroducing
                     // entries into the in-memory cache. The token is also checked for
                     // cancellation: cancel_job cancels it but leaves it in the map until the
-                    // worker calls finalize_cancelled_job.
+                    // worker calls finalize_attempt.
                     let job_is_live = cancellation_tokens
                         .get(&update.job_id)
                         .is_some_and(|token| !token.is_cancelled());
@@ -3506,7 +3561,7 @@ mod tests {
         // liveness check reads.
         queue
             .cancellation_tokens
-            .insert("job-1".to_string(), CancellationToken::new());
+            .insert("job-1".to_string(), AttemptToken::default());
 
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
         snapshot.percent = Some(42.0);
@@ -4212,6 +4267,31 @@ mod tests {
         assert!(retried.started_at.is_none());
         assert!(retried.completed_at.is_none());
         assert_eq!(queue.depth(), 1);
+    }
+
+    #[tokio::test]
+    async fn late_attempt_finalization_leaves_a_retried_successor_tracked() {
+        let queue = JobQueue::new();
+        let job_id = queue
+            .enqueue(Job::new("remux", vec![], vec![], "streamer-1", "session-1"))
+            .await
+            .unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        let stale = queue.attempt_token(&job_id).unwrap();
+        queue.cancel_job(&job_id).await.unwrap();
+        queue.retry_job(&job_id).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+
+        queue.finalize_attempt(&job_id, &stale);
+        let successor = queue
+            .attempt_token(&job_id)
+            .expect("the retried attempt keeps its own token");
+        assert!(!successor.is_cancelled());
+        queue.cancel_job(&job_id).await.unwrap();
+        assert!(successor.is_cancelled());
+
+        queue.finalize_attempt(&job_id, &successor);
+        assert!(queue.attempt_token(&job_id).is_none());
     }
 
     #[tokio::test]
