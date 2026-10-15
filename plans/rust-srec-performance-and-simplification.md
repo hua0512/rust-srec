@@ -13,7 +13,7 @@ Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evi
 | F01 | Cancellation returns a nonretryable compression error; bounded retry-loop regression added. | Implemented and validated. |
 | F02 | Native copies retain staged-output and worker-completion ownership until the blocking operation exits. Cancellation observed before publication rejects the staged copy; a copy cancelled inside its blocking task removes the temporary file there before releasing worker completion; final rename retains its existing semantics. Windows cleanup handles read-only private temps without changing hard-linked originals. | Partial: native mid-copy interruption remains open. Native copy acceleration and platform metadata are preserved. |
 | F04 | Staging uses indexed path/identity snapshots without retaining input handles; commit prepares fresh validation. | Implemented and validated. External path replacement can defer rejection from staging to commit. |
-| F05 | Unchanged feedback targets use a registry membership revision check; feedback retirement invalidates it. | Hot-path fix implemented and validated. Actual membership changes still copy the target map. |
+| F05 | Unchanged feedback targets use a registry membership revision check; feedback retirement invalidates it. Spawn and configuration call sites name the changed streamer, and a single revision step copies only that entry. | Implemented and validated. Unnamed or multi-step changes (loop-end sync, batched restarts, crash reaping, clear) still scan and copy the map once. |
 | F06 | Existing log worker batches up to 32 records / 64 KiB, sharing coordination and inventory while preserving per-record rotation/truncation. | Implemented and validated. Normal shutdown flushes; abrupt termination can lose the bounded worker buffer. |
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
@@ -63,6 +63,12 @@ cargo nextest run --locked -p rust-srec --lib --test literal_database_search --t
 ```
 
 For the attempt handoff fix, formatting and affected-package Clippy with all targets passed on Windows with default features. The focused queue, worker, DAG, processor, manager, and job API selection passed **253 tests**, with 2,348 outside the selection skipped. Existing tests now pause a real SQLite successor claim to check finalization ordering and preservation of progress, per-file failure records, and upload terminal events; the in-memory cancellation/retry case also checks fresh tokens and cancellation propagation.
+
+For the F05 startup follow-up, `SchedulerFeedback::update_registry_targets` takes the streamer a call site just changed. When feedback was synchronized one registry revision earlier, it copies that entry only if the entry differs and the resulting size matches the registry; otherwise it scans as before. The registry documents its one-step-per-membership-change revision. Formatting and affected-package Clippy with all targets passed on Windows with default features. The scheduler, streamer-retirement, and downloader selection passed **532 tests**, with 2,069 outside the selection skipped. The existing spawn/progress regression now starts 32 actors and expects one target scan; with the spawn site reverted to an unnamed sync it fails at 32. Existing registry-sync tests cover named replacement and removal, an unrelated name, and a multi-entry clear falling back to a scan. A retained lifecycle event is also delivered to a replacement added through the named path.
+
+```powershell
+cargo nextest run --locked -p rust-srec --lib --build-jobs 2 --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(scheduler::) | test(streamer_retirement_tests::) | test(downloader::)'
+```
 
 ## Recommended starting points
 

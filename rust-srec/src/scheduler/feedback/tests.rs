@@ -88,7 +88,7 @@ async fn registry_target_sync_reconciles_feedback_retirement_without_a_registry_
             Arc::new(NoOpStatusChecker),
         );
         let handle = registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         let mut scans = feedback.target_scan_count();
 
         for disposition in [
@@ -101,7 +101,7 @@ async fn registry_target_sync_reconciles_feedback_retirement_without_a_registry_
                 _ => unreachable!(),
             }
             assert!(!feedback.state.lock().targets.contains_key("one"));
-            feedback.update_registry_targets(&registry);
+            feedback.update_registry_targets(&registry, None);
             scans += 1;
             assert_eq!(feedback.target_scan_count(), scans);
             assert_eq!(
@@ -116,7 +116,7 @@ async fn registry_target_sync_reconciles_feedback_retirement_without_a_registry_
                 disposition
             );
             drop(end);
-            feedback.update_registry_targets(&registry);
+            feedback.update_registry_targets(&registry, None);
             assert_eq!(feedback.target_scan_count(), scans);
             feedback.activate("one");
         }
@@ -135,30 +135,31 @@ async fn registry_target_sync_tracks_replacements_current_completions_and_clear(
         let feedback = SchedulerFeedback::new();
         let cancel = CancellationToken::new();
         let mut registry = ActorRegistry::new(cancel.clone());
-        let spawn = || {
+        let spawn = |id: &str| {
             StreamerActor::new(
-                "one".to_owned(),
-                metadata("one"),
+                id.to_owned(),
+                metadata(id),
                 StreamerConfig::default(),
                 cancel.child_token(),
                 Arc::new(NoOpStatusChecker),
             )
         };
-        let (actor, handle) = spawn();
+        let (actor, handle) = spawn("one");
         let old = registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         let mut scans = feedback.target_scan_count();
 
+        // Naming a streamer the change did not touch falls back to a scan.
         registry.remove_streamer("one").unwrap();
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, Some("two"));
         scans += 1;
         assert_eq!(feedback.target_scan_count(), scans);
         assert!(feedback.state.lock().targets.is_empty());
 
-        let (actor, handle) = spawn();
+        let (actor, handle) = spawn("one");
         let replacement = registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_registry_targets(&registry);
-        scans += 1;
+        feedback.update_registry_targets(&registry, Some("one"));
+        assert_eq!(feedback.target_scan_count(), scans);
         assert_ne!(old.generation(), replacement.generation());
         assert_eq!(
             feedback.state.lock().targets["one"].generation(),
@@ -167,27 +168,31 @@ async fn registry_target_sync_tracks_replacements_current_completions_and_clear(
 
         let old_completion = registry.join_next().await.unwrap().unwrap();
         assert!(registry.handle_task_completion(old_completion).superseded);
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         assert_eq!(feedback.target_scan_count(), scans);
 
         replacement.cancel();
         let completion = registry.join_next().await.unwrap().unwrap();
         assert!(!registry.handle_task_completion(completion).superseded);
-        feedback.update_registry_targets(&registry);
-        scans += 1;
+        feedback.update_registry_targets(&registry, Some("one"));
         assert_eq!(feedback.target_scan_count(), scans);
         assert!(feedback.state.lock().targets.is_empty());
 
-        let (actor, handle) = spawn();
-        registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_registry_targets(&registry);
+        for id in ["one", "two"] {
+            let (actor, handle) = spawn(id);
+            registry.spawn_streamer(actor, handle).unwrap();
+            feedback.update_registry_targets(&registry, Some(id));
+        }
+        assert_eq!(feedback.target_scan_count(), scans);
+        assert_eq!(feedback.state.lock().targets.len(), 2);
+        // A clear also removes the named streamer, but not only it.
         registry.clear();
-        feedback.update_registry_targets(&registry);
-        scans += 2;
+        feedback.update_registry_targets(&registry, Some("one"));
+        scans += 1;
         assert_eq!(feedback.target_scan_count(), scans);
         assert!(feedback.state.lock().targets.is_empty());
         registry.clear();
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         assert_eq!(feedback.target_scan_count(), scans);
 
         feedback.shutdown().await;
@@ -476,7 +481,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         );
         handle.try_send(StreamerMessage::CheckStatus).unwrap();
         let old = registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         entered.notified().await;
         let (start, end) = feedback.reserve_attempt("one").unwrap();
         let receipt = feedback.publish_reserved(&started("one", "d", "s"), start);
@@ -484,7 +489,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         let finished = registry.join_next().await.unwrap().unwrap();
         assert!(finished.is_crash());
         registry.handle_task_completion(finished);
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, None);
         let (actor, handle) = StreamerActor::new(
             "one".to_owned(),
             metadata("one"),
@@ -494,7 +499,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         );
         let replacement = registry.spawn_streamer(actor, handle).unwrap();
         assert_ne!(old.generation(), replacement.generation());
-        feedback.update_registry_targets(&registry);
+        feedback.update_registry_targets(&registry, Some("one"));
         assert_eq!(applied(receipt).await, FeedbackDisposition::Applied);
         assert_eq!(
             state(&replacement).await.streamer_state,

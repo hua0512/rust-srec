@@ -80,7 +80,9 @@ impl ActorTaskResult {
 pub struct ActorRegistry {
     /// Streamer actors by ID.
     streamers: HashMap<String, ActorHandle<StreamerMessage>>,
-    /// Changes only when a registered streamer handle changes.
+    /// Advances by exactly one per streamer membership change (insert, remove,
+    /// or clear) and never otherwise. Scheduler feedback relies on the
+    /// single step to apply one named change without rescanning the map.
     streamer_revision: u64,
     /// Platform actors by platform ID.
     platforms: HashMap<String, ActorHandle<PlatformMessage>>,
