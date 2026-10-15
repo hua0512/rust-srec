@@ -1142,6 +1142,10 @@ async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
     let mut config = config(Some(Arc::clone(&clock)));
     config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(3)));
 
+    // MPD and media share one origin: four exponential cool-downs can
+    // pause all input for up to 15 s, beyond the harness's 10 s stall limit.
+    config.output.live_max_overall_stall_duration = Some(Duration::from_secs(30));
+
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
         .expect("session starts");
