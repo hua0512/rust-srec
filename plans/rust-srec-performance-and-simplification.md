@@ -18,7 +18,7 @@ Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evi
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
 
-F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
+F07, F12, F13, F15, and F16 remain investigated and unimplemented; F14 was measured and closed without a code change. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
 
 S04 and S06–S08 are implemented and validated in the next local follow-up: notification construction is shared while entrypoint policies stay explicit, SQL predicates and binds are built together, job-list conversion/enrichment is shared, and `CommandOutput` owns diagnostic formatting. Existing tests were extended for combined/empty filters, both job-list endpoints and response ordering, and diagnostic levels/text; no new test functions or generic abstractions were added.
 
@@ -168,6 +168,33 @@ FIFO admission per platform could avoid repeated wakeups, but changes ordering/f
 
 Measure pool waits during poll bursts and lifecycle writes. Moving the query to readers or a lifecycle-owned snapshot requires evidence that binding freshness and operation ordering remain correct; changing pools alone is not yet a proven safe optimization.
 
+**Follow-up (2026-10-16, revision `a75561df`): measured; no code change.**
+
+The read cannot move after in-flight deduplication. The dedup key is built from its result: the active session ID and the binding's epoch and revision ([service.rs#L681](../rust-srec/src/monitor/service.rs#L681), [`CredentialCheckKey::new`](../rust-srec/src/monitor/service.rs#L203)). Without them, a bound poll could share a result with a check under a different binding.
+
+A reader connection appears to give equally valid results. This analysis is not exhaustive:
+
+- Every writer of the binding commits through the single writer. Session rows are inserted and ended by [session_tx/writes.rs](../rust-srec/src/database/repositories/session_tx/writes.rs#L8), and rebinding uses [`commit_session_binding`](../rust-srec/src/database/repositories/credential_profiles.rs#L987) (`UPDATE ... credential_binding`, L1077). Both pools use WAL ([database.rs#L104](../rust-srec/src/database.rs#L104)). A read that starts after COMMIT returns sees the commit, so a caller that awaited its own write keeps read-your-writes.
+- The writer read adds one ordering guarantee. It cannot run between a [`CommittedWriter`](../rust-srec/src/database/committed_writer.rs#L250) COMMIT and that writer's synchronous `publish`, so it never sees a commit before the in-memory publication. `check_streamer_for` reads memory first anyway: the disabled guard (L652) and the config context (L672) come before the binding read. A database view newer than memory is therefore already possible today. [`commit_credential_binding`](../rust-srec/src/session/lifecycle.rs#L658) also updates the lifecycle session map after its writer lease is released. Stale bindings are caught later: the policy-generation recheck (L798), the compare-and-set in `commit_session_binding`, and lifecycle operations serialized on the per-streamer stripe.
+
+The probe was a scratch Rust 1.98.1 release binary using sqlx 0.9.0 from the workspace lockfile. Its pool options and per-connection pragmas were copied from `database.rs`: one writer connection, 10 readers, WAL, `synchronous=NORMAL`. It ran on a temporary-file database with `auto_vacuum`, `VACUUM`, and every migration applied. The fixture had 1,064 streamers and 5,320 ended sessions with JSON bindings. Half of the 1,000 checked streamers had an active bound session. Each lifecycle write was a `BEGIN IMMEDIATE` transaction that toggled a session start or end, added a `session_events` row, and updated `streamers`. The writes targeted 64 other streamers. The probe measured how long each write waited to acquire the writer. Each configuration ran 15 rounds per mode, with modes interleaved, on an 8-thread Tokio runtime. It was run twice on a Windows host that other builds were loading, so the numbers vary between runs.
+
+| Workload (write acquire wait p50 / p99 unless noted) | No binding reads | Reads on writer (current) | Reads on readers |
+| --- | --- | --- | --- |
+| Sequential cost per read | — | 32–52 µs | 28–37 µs |
+| 200 simultaneous checks, 32 writes over 10 ms | 3.1 / 13–19 ms | 5.1–5.7 / 19 ms | 3.9–4.7 / 18–29 ms |
+| 1,000 simultaneous checks, 64 writes over 20 ms | 6.5 / 26–47 ms | 37–79 / 79–132 ms | 8.5–11 / 45–58 ms |
+| 1,000 simultaneous checks, 64 writes at once | 14–18 / 35–39 ms | 38–86 / 96–142 ms | 17–29 / 37–74 ms |
+| 1,000 checks spread over 1 s, 64 writes over 1 s | 0.04 / 0.39–0.46 ms | 0.47–0.59 / 1.5–1.7 ms | 0.04–0.05 / 0.30–0.34 ms |
+
+Interpretation:
+
+- **Simultaneous bursts:** the extra acquisition adds tens of milliseconds of writer queueing when about 1,000 checks start at once. Schedulers create such a burst only at startup, when each actor's first check is due immediately ([messages.rs#L646](../rust-srec/src/scheduler/actor/messages.rs#L646)). Later polls are spread by ±10% jitter.
+- **Spread checks:** a check holds the writer for roughly 0.5 ms of wall time, including the sqlx worker-thread wakeup. Even at 1,000 checks per second, writes wait under 2 ms at p99. A realistic installation of 1,000 streamers on 60-second intervals makes about 17 checks per second, so a write rarely meets a read.
+- **Offline polls already write:** each offline poll runs a `BEGIN IMMEDIATE` lifecycle end through [`on_offline_detected`](../rust-srec/src/session/lifecycle.rs#L784) and [`SessionLifecycleRepository::end`](../rust-srec/src/database/repositories/session_lifecycle.rs#L949). A no-op version measured 42–65 µs per transaction. Moving the read would remove less than half of each poll's writer time.
+
+Conclusion: the contention is real but not material outside a one-time startup burst on large installations. No code change was made. Moving the read would need either a reader pool on `StreamMonitor` (constructor changes) or a new `SessionRepository` method, because `get_active_session_for_streamer` returns no binding. `session_credential_binding` and `retiring_credential_session` (L443, L457) read the writer in the same way. Revisit if production traces show lifecycle writes queueing behind startup checks. If the read moves, add a regression test that a check started after a binding commit uses the new epoch.
+
 ### F15. Some diagnostics and historical IDs remain resident — lower-priority retention leads
 
 [Danmu collection failures](../rust-srec/src/danmu/service.rs#L1002) accumulate strings until shutdown. Per-streamer start-serialization entries also have no removal path. Scheduler revision/retirement and some heartbeat/feedback maps retain historical streamer IDs after deletion. These grow with errors or owner churn, rather than active recordings alone; large practical impact was not measured.
@@ -192,6 +219,7 @@ Scratch probes were not committed as a benchmark suite. Reproduce measurements a
 | Retention candidate query | Python SQLite 3.50.4, fresh in-memory database with every migration applied; 500 old outputs and 20,000 old unrelated completed jobs with JSON-array inputs; literal eligibility SQL | Candidate selection: 0.917 s current vs 0.0010 s experimental indexed protection. Five hundred individual final eligibility queries: 0.940 s vs 0.0047 s. Same candidates; transaction setup, deletion, filesystem, SQLx, and Rust overhead excluded. |
 | DAG list projection | Same SQLite setup; 24 completed DAGs, each with an actual-shaped 1,000-segment manifest of 217,986 bytes; warm median of 15 queries | Full rows returned 5,234,448 text bytes in 1.629 ms; an exploratory SQL-name summary returned 744 bytes in 0.027 ms. The conservative parser-preserving projection removes 5,231,664 manifest bytes but was not separately timed. |
 | DAG aggregates | Same SQLite setup; 50,000 DAGs, 2,126-byte definitions, 49,960 completed and 40 active; warm median of nine queries | Counts: 19.091 ms current vs 3.155 ms split terminal/active aggregate. Duration average: 16.921 ms current vs 1.843 ms with a covering `(status, completed_at, created_at)` index. Same results on this fixture; index maintenance cost excluded. |
+| Monitor binding read pool (F14) | Scratch sqlx 0.9.0 release binary; temp-file WAL database with every migration and the `database.rs` pool options (1 writer, 10 readers); 1,064 streamers, 5,320 ended plus 500 active bound sessions; lifecycle-shaped `BEGIN IMMEDIATE` writes; 15 interleaved rounds per mode, two runs on a loaded Windows host | 1,000 simultaneous checks: lifecycle write acquire wait p50 6.5 ms without reads, 37–79 ms with reads on the writer, 8.5–11 ms with reads on readers. 1,000 checks spread over 1 s: p99 0.39–0.46 ms, 1.5–1.7 ms, 0.30–0.34 ms. Not material outside startup bursts; see F14. |
 
 The retention prototype materialized a union of IDs selected by active status, non-null retry time, or recent update, then kept the original protection predicate with an additional ID restriction. Its `PENDING`/`PROCESSING` branch matches today's five-value status CHECK constraint. A production implementation must retain protection for future nonterminal statuses, for example by retaining the original negative terminal classification with a suitable index.
 
