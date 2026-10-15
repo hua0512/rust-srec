@@ -410,7 +410,7 @@ msgstr "0，不超时"
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:146
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:145
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
@@ -6819,7 +6819,7 @@ msgstr "未使用"
 msgid "Not used anywhere"
 msgstr "未被任何设置使用"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:117
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:116
 msgid "Not used at native resolution"
 msgstr "原始分辨率下不使用"
 
@@ -8032,7 +8032,7 @@ msgstr "二维码已过期"
 msgid "Quality"
 msgstr "质量"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:133
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
@@ -11481,7 +11481,7 @@ msgstr "以先达到的历史上限为准。0 表示不保留历史。"
 msgid "Width"
 msgstr "宽度"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:118
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 

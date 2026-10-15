@@ -410,7 +410,7 @@ msgstr "0, no timeout"
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:146
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:145
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
@@ -6819,7 +6819,7 @@ msgstr "not used"
 msgid "Not used anywhere"
 msgstr "Not used anywhere"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:117
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:116
 msgid "Not used at native resolution"
 msgstr "Not used at native resolution"
 
@@ -8032,7 +8032,7 @@ msgstr "QR code expired"
 msgid "Quality"
 msgstr "Quality"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:133
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Quality (qscale)"
 msgstr "Quality (qscale)"
 
@@ -11481,7 +11481,7 @@ msgstr "Whichever history limit is reached first applies. 0 keeps no history."
 msgid "Width"
 msgstr "Width"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:118
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
 

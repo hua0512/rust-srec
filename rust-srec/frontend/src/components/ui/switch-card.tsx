@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { FormControl, FormItem, FormLabel } from './form';
+import { FormControl, FormDescription, FormItem, FormLabel } from './form';
 import { Switch } from './switch';
 import { cn } from '@/lib/utils';
 
@@ -32,7 +32,7 @@ const SwitchCard = React.forwardRef<HTMLDivElement, SwitchCardProps>(
             {label}
           </FormLabel>
           {description && (
-            <p className="text-xs text-muted-foreground">{description}</p>
+            <FormDescription className="text-xs">{description}</FormDescription>
           )}
         </div>
         <FormControl>

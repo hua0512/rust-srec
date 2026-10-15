@@ -109,7 +109,6 @@ export function ThumbnailConfigForm({
                     min={1}
                     step={1}
                     placeholder="320"
-                    disabled={preserveResolution}
                   />
                 </FormControl>
                 <FormDescription className="text-[11px] ml-1">

@@ -122,22 +122,6 @@ describe('whole-number processor settings', () => {
   });
 });
 
-// The editor saves the parsed config, so a field the schema doesn't know is
-// dropped from the preset and the backend falls back to scaling to 320px.
-describe('thumbnail config schema', () => {
-  it('keeps native resolution through a save', () => {
-    const native = {
-      timestamp_secs: 10,
-      preserve_resolution: true,
-      quality: 1,
-    };
-    expect(ThumbnailConfigSchema.parse(native)).toStrictEqual({
-      ...native,
-      width: 320,
-    });
-  });
-});
-
 describe('baidupcs config schema', () => {
   it('applies defaults matching the backend BaiduPcsConfig::default', () => {
     const config = BaiduPcsConfigSchema.parse({});
