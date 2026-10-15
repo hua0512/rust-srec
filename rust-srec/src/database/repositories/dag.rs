@@ -3,7 +3,7 @@
 mod writes;
 
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::database::begin_immediate;
@@ -488,60 +488,53 @@ pub struct DagListFilter<'a> {
     pub search: Option<&'a str>,
 }
 
-impl DagListFilter<'_> {
-    fn search_pattern(&self) -> Option<String> {
-        self.search
-            .map(str::trim)
-            .filter(|search| !search.is_empty())
-            .map(super::literal_substring_pattern)
-    }
-}
-
-/// Number of `?` placeholders in [`DAG_SEARCH_CONDITION`].
-const DAG_SEARCH_BINDS: usize = 5;
-const DAG_SEARCH_CONDITION: &str = r"(dag.id LIKE ? ESCAPE '\'
-    OR json_extract(dag.dag_definition, '$.name') LIKE ? ESCAPE '\'
-    OR dag.session_id LIKE ? ESCAPE '\'
-    OR dag.streamer_id LIKE ? ESCAPE '\'
-    OR EXISTS (
-        SELECT 1 FROM streamers
-        WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ? ESCAPE '\'
-    ))";
-
-/// `WHERE` clause for `filter`. Bind its values with `bind_dag_list_filter!`.
-fn dag_list_where_clause(filter: &DagListFilter<'_>) -> String {
-    let mut conditions: Vec<&str> = Vec::new();
+/// Append display-list predicates and their binds in the same operation.
+fn push_dag_list_filter(query: &mut QueryBuilder<Sqlite>, filter: &DagListFilter<'_>) {
+    let mut separator = " WHERE ";
+    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
     if let Some(status) = filter.status {
-        conditions.push(dag_display_status_condition(status));
+        query
+            .push(next_separator())
+            .push(dag_display_status_condition(status));
     }
-    if filter.session_id.is_some() {
-        conditions.push("dag.session_id = ?");
+    if let Some(session_id) = filter.session_id {
+        query
+            .push(next_separator())
+            .push("dag.session_id = ")
+            .push_bind(session_id);
     }
-    if filter.search_pattern().is_some() {
-        conditions.push(DAG_SEARCH_CONDITION);
-    }
-    if conditions.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", conditions.join(" AND "))
+    if let Some(search) = filter
+        .search
+        .map(str::trim)
+        .filter(|search| !search.is_empty())
+    {
+        let pattern = super::literal_substring_pattern(search);
+        query.push(next_separator())
+            .push("(dag.id LIKE ").push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR json_extract(dag.dag_definition, '$.name') LIKE ").push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR dag.session_id LIKE ").push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR dag.streamer_id LIKE ").push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR EXISTS (SELECT 1 FROM streamers WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ").push_bind(pattern)
+            .push(r" ESCAPE '\'))");
     }
 }
 
-/// Bind `filter`'s values in the order [`dag_list_where_clause`] places them.
-/// A macro so it serves both `query_as` and `query_scalar` builders.
-macro_rules! bind_dag_list_filter {
-    ($query:expr, $filter:expr) => {{
-        let mut query = $query;
-        if let Some(session_id) = $filter.session_id {
-            query = query.bind(session_id);
-        }
-        if let Some(pattern) = $filter.search_pattern() {
-            for _ in 0..DAG_SEARCH_BINDS {
-                query = query.bind(pattern.clone());
-            }
-        }
+fn push_dag_execution_filters(
+    query: &mut QueryBuilder<Sqlite>,
+    status: Option<&str>,
+    session_id: Option<&str>,
+) {
+    let mut separator = " WHERE ";
+    if let Some(status) = status {
+        query.push(separator).push("status = ").push_bind(status);
+        separator = " AND ";
+    }
+    if let Some(session_id) = session_id {
         query
-    }};
+            .push(separator)
+            .push("session_id = ")
+            .push_bind(session_id);
+    }
 }
 
 fn parse_display_status(dag_id: &str, status: &str) -> Result<DagExecutionStatus> {
@@ -685,66 +678,26 @@ impl DagRepository for SqlxDagRepository {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>> {
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
-        if status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        let sql = format!(
-            "SELECT * FROM dag_execution {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            where_clause
-        );
-
-        let mut query = sqlx::query_as::<_, DagExecutionDbModel>(sqlx::AssertSqlSafe(sql));
-        if let Some(status) = status {
-            query = query.bind(status);
-        }
-        if let Some(session_id) = session_id {
-            query = query.bind(session_id);
-        }
-        query = query.bind(limit).bind(offset);
-
-        let dags = query.fetch_all(&self.pool).await?;
-        Ok(dags)
+        let mut query = QueryBuilder::new("SELECT * FROM dag_execution");
+        push_dag_execution_filters(&mut query, status, session_id);
+        query
+            .push(" ORDER BY created_at DESC LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
+        Ok(query
+            .build_query_as::<DagExecutionDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
-        if status.is_some() {
-            conditions.push("status = ?".to_string());
-        }
-        if session_id.is_some() {
-            conditions.push("session_id = ?".to_string());
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        let sql = format!("SELECT COUNT(*) FROM dag_execution {}", where_clause);
-
-        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
-        if let Some(status) = status {
-            query = query.bind(status);
-        }
-        if let Some(session_id) = session_id {
-            query = query.bind(session_id);
-        }
-
-        let count = query.fetch_one(&self.pool).await?;
+        let mut query = QueryBuilder::new("SELECT COUNT(*) FROM dag_execution");
+        push_dag_execution_filters(&mut query, status, session_id);
+        let count = query
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await?;
         Ok(count as u64)
     }
 
@@ -754,19 +707,22 @@ impl DagRepository for SqlxDagRepository {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionListSummary>> {
-        let sql = format!(
+        let mut query = QueryBuilder::new(format!(
             "SELECT dag.id, dag.dag_definition, {DAG_DISPLAY_STATUS_SQL} AS display_status, \
              dag.streamer_id, dag.session_id, dag.total_steps, dag.completed_steps, \
              dag.failed_steps, dag.created_at, dag.updated_at \
-             FROM dag_execution AS dag {} \
-             ORDER BY dag.created_at DESC LIMIT ? OFFSET ?",
-            dag_list_where_clause(filter)
-        );
-        let query = bind_dag_list_filter!(
-            sqlx::query_as::<_, DagSummaryRow>(sqlx::AssertSqlSafe(sql)),
-            filter
-        );
-        let rows = query.bind(limit).bind(offset).fetch_all(&self.pool).await?;
+             FROM dag_execution AS dag"
+        ));
+        push_dag_list_filter(&mut query, filter);
+        query
+            .push(" ORDER BY dag.created_at DESC LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
+        let rows = query
+            .build_query_as::<DagSummaryRow>()
+            .fetch_all(&self.pool)
+            .await?;
 
         rows.into_iter()
             .map(|row| {
@@ -788,16 +744,12 @@ impl DagRepository for SqlxDagRepository {
     }
 
     async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64> {
-        let sql = format!(
-            "SELECT COUNT(*) FROM dag_execution AS dag {}",
-            dag_list_where_clause(filter)
-        );
-
-        let query = bind_dag_list_filter!(
-            sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql)),
-            filter
-        );
-        let count = query.fetch_one(&self.pool).await?;
+        let mut query = QueryBuilder::new("SELECT COUNT(*) FROM dag_execution AS dag");
+        push_dag_list_filter(&mut query, filter);
+        let count = query
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await?;
         Ok(count as u64)
     }
 
@@ -1618,6 +1570,18 @@ mod tests {
         let listed = repo.list_dags(None, Some("session"), 10, 0).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].input_manifest, stored.input_manifest);
+        assert_eq!(
+            repo.count_dags(Some("PROCESSING"), Some("session"))
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(
+            repo.list_dags(Some("COMPLETED"), Some("session"), 10, 0)
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
         let mut plain = DagExecutionDbModel::new(&dag_def, None, None);
         plain.status = DagExecutionStatus::Processing.as_str().to_string();
@@ -1845,7 +1809,7 @@ mod tests {
                 vec![DagStep::new("A", PipelineStep::preset("remux"))],
             ),
             None,
-            None,
+            Some("search-session".to_owned()),
         );
         let mut remux = DagExecutionDbModel::new(
             &DagPipelineDefinition::new(
@@ -1876,6 +1840,15 @@ mod tests {
             vec![remux.id.clone()]
         );
         assert!(search_dag_ids(&repo, "missing", None).await.is_empty());
+        let filter = DagListFilter {
+            status: Some(DagExecutionStatus::Pending),
+            session_id: Some("search-session"),
+            search: Some("  d_b  "),
+        };
+        let rows = repo.list_dag_summaries(&filter, 10, 0).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, upload.id);
+        assert_eq!(repo.count_dags_by_display_status(&filter).await.unwrap(), 1);
     }
 
     /// The no-job completion transitions only a ready step that has no job in a

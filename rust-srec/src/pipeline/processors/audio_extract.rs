@@ -382,14 +382,7 @@ impl AudioExtractProcessor {
         .await?;
 
         if !command_output.status.success() {
-            // Reconstruct stderr for error analysis
-            let stderr_output = command_output
-                .logs
-                .iter()
-                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info) // Assuming warnings/errors are interested
-                .map(|l| l.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let stderr_output = command_output.diagnostic_text();
 
             // Check for no audio stream error - pass through instead of failing
             if stderr_output.contains("does not contain any stream")

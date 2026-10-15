@@ -271,14 +271,7 @@ impl MetadataProcessor {
         .await?;
 
         if !command_output.status.success() {
-            // Reconstruct stderr for error analysis
-            let stderr_output = command_output
-                .logs
-                .iter()
-                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
-                .map(|l| l.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let stderr_output = command_output.diagnostic_text();
 
             // Check for common error patterns
             let error_msg = if stderr_output.contains("Invalid data found")

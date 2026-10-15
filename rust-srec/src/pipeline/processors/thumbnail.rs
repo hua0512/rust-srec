@@ -192,14 +192,7 @@ impl ThumbnailProcessor {
                     continue;
                 }
 
-                // Reconstruct stderr for error analysis
-                let stderr = command_output
-                    .logs
-                    .iter()
-                    .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
-                    .map(|l| l.message.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let stderr = command_output.diagnostic_text();
 
                 ctx.error(format!("ffmpeg failed: {}", stderr));
                 logs.extend(command_output.logs);

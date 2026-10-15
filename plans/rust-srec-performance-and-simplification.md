@@ -18,7 +18,9 @@ Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evi
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
 
-F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S03 are implemented and validated in this follow-up: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08; S04 and S06–S08 remain recommendations.
+F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
+
+S04 and S06–S08 are implemented and validated in the next local follow-up: notification construction is shared while entrypoint policies stay explicit, SQL predicates and binds are built together, job-list conversion/enrichment is shared, and `CommandOutput` owns diagnostic formatting. Existing tests were extended for combined/empty filters, both job-list endpoints and response ordering, and diagnostic levels/text; no new test functions or generic abstractions were added.
 
 Performance batch validation on Windows with Rust 1.98.1 and default features:
 
@@ -44,9 +46,15 @@ For S01–S03, formatting and affected-package Clippy with all targets passed on
 cargo nextest run --locked -p rust-srec --lib --run-ignored all --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(scheduler::) | test(streamer_retirement_tests::) | test(pipeline::processors::remux::) | test(pipeline::processors::audio_extract::) | test(pipeline::processors::metadata::) | test(pipeline::processors::thumbnail::) | test(pipeline::processors::outputs::) | test(pipeline::processors::paths::) | test(pipeline::processors::output_tests::)'
 ```
 
+For S04 and S06–S08, formatting and affected-package Clippy with all targets also passed on Windows with default features. The following selection passed **304 tests**, including the literal-search and index-budget integration tests and FFmpeg thumbnail fallback, with 2,303 outside the selection skipped. It covers notification delivery/reload/listeners, job/DAG filter combinations, API responses, lookup fallback, pipeline consumers, and command diagnostics. Unfiltered counts still emit plain `COUNT(*)` queries. Deferred F03/F10 source files and the F09 statistics implementation are unchanged; the platform and workspace limitations above still apply.
+
+```powershell
+cargo nextest run --locked -p rust-srec --lib --test literal_database_search --test database_index_budget --run-ignored all --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(notification::service::) | test(database::repositories::job::) | test(database::repositories::dag::) | test(pipeline::manager::) | test(pipeline::job_queue::) | test(api::routes::pipeline::) | test(api::batch_lookup::) | test(pipeline::processors::utils::) | test(pipeline::processors::audio_extract::) | test(pipeline::processors::metadata::) | test(pipeline::processors::thumbnail::) | test(pipeline::processors::output_tests::) | binary(literal_database_search) | binary(database_index_budget)'
+```
+
 ## Recommended starting points
 
-**F01 (ZIP cancellation)** and **S05 (DAG summary projection, implemented with F08)** are complete. **S01 (publication abstraction)**, **S02 (unused scheduler state)**, and **S03 (remux result handling)** form the current simplification batch. Evaluate S04 and S06–S08 individually, keeping changes only when the removed duplication outweighs any added interface. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
+**F01 (ZIP cancellation)** and **S01–S08** are implemented and validated. The remaining performance findings and conditional simplifications need separate contract reviews. Keep changes only when the removed duplication outweighs any added interface. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
 
 Here, preserving behavior includes response shapes, validation and error handling, ordering, retries, cancellation ownership, filesystem safety, and public Rust interfaces. A candidate marked behavior-preserving still needs implementation and regression verification.
 

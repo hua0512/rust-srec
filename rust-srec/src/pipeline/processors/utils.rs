@@ -129,6 +129,16 @@ pub struct CommandOutput {
 }
 
 impl CommandOutput {
+    /// Captured non-Info messages joined with newlines, in their original order.
+    pub(super) fn diagnostic_text(&self) -> String {
+        self.logs
+            .iter()
+            .filter(|entry| entry.level != LogLevel::Info)
+            .map(|entry| entry.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Last captured error, excluding later warnings or informational output.
     /// Callers choose their own fallback when no error line was captured.
     pub fn last_error_message(&self) -> Option<&str> {
@@ -949,21 +959,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn last_error_ignores_trailing_non_error_output_and_preserves_fallback_choice() {
+    fn command_diagnostics_preserve_levels_order_and_fallback_choice() {
         let mut output = CommandOutput {
             status: super::super::test_utils::test_exit_status(false),
             duration: 0.0,
             logs: vec![JobLogEntry::warn("warning only")],
         };
         assert_eq!(output.last_error_message(), None);
+        assert_eq!(output.diagnostic_text(), "warning only");
         output.logs.extend([
             JobLogEntry::error("first failure"),
             JobLogEntry::error("final failure"),
             JobLogEntry::info("closing output"),
+            JobLogEntry::debug("debug context"),
         ]);
         assert_eq!(output.last_error_message(), Some("final failure"));
+        assert_eq!(
+            output.diagnostic_text(),
+            "warning only\nfirst failure\nfinal failure\ndebug context"
+        );
         output.logs.push(JobLogEntry::error(""));
         assert_eq!(output.last_error_message(), Some(""));
+        assert!(output.diagnostic_text().ends_with("debug context\n"));
+        output.logs.clear();
+        assert_eq!(output.diagnostic_text(), "");
+        output.logs.push(JobLogEntry::info("info only"));
+        assert_eq!(output.diagnostic_text(), "");
     }
 
     #[test]

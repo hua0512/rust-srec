@@ -53,13 +53,7 @@ impl NotificationService {
         let mut used_keys: HashSet<String> = HashSet::new();
 
         for (idx, channel_config) in self.config.channels.iter().enumerate() {
-            let channel: Arc<dyn NotificationChannel> = match channel_config {
-                ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
-                ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
-                ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
-                ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
-                ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
-            };
+            let channel = channel_from_config(channel_config);
 
             if channel.is_enabled() {
                 let base_key = match channel_config.instance_id() {
@@ -110,13 +104,7 @@ impl NotificationService {
 
     /// Add a channel dynamically.
     pub fn add_channel(&self, config: ChannelConfig) {
-        let channel: Arc<dyn NotificationChannel> = match &config {
-            ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
-            ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
-            ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
-            ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
-            ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
-        };
+        let channel = channel_from_config(&config);
 
         if channel.is_enabled() {
             let key = format!("dynamic:{}", Uuid::new_v4());
@@ -419,6 +407,16 @@ impl NotificationService {
                 id: key.to_string(),
             })?;
         channel.channel.test().await
+    }
+}
+
+fn channel_from_config(config: &ChannelConfig) -> Arc<dyn NotificationChannel> {
+    match config {
+        ChannelConfig::Discord(config) => Arc::new(DiscordChannel::new(config.clone())),
+        ChannelConfig::Email(config) => Arc::new(EmailChannel::new(config.clone())),
+        ChannelConfig::Gotify(config) => Arc::new(GotifyChannel::new(config.clone())),
+        ChannelConfig::Telegram(config) => Arc::new(TelegramChannel::new(config.clone())),
+        ChannelConfig::Webhook(config) => Arc::new(WebhookChannel::new(config.clone())),
     }
 }
 
