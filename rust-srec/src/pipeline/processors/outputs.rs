@@ -35,8 +35,9 @@ pub(super) fn accumulate_media_output(
 pub(super) struct TempOutputGuard {
     path: PathBuf,
     cleanup: bool,
-    /// Set only once ownership has moved into a blocking commit/promotion closure.
-    cleanup_on_current_thread: bool,
+    /// Set only while a blocking closure owns the guard; async owners must not
+    /// run filesystem cleanup on their runtime thread.
+    pub(super) cleanup_on_current_thread: bool,
     /// A hard-linked backup shares permissions with the original file.
     cleanup_readonly: bool,
 }

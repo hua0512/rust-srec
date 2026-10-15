@@ -165,7 +165,10 @@ impl CopyMoveProcessor {
         let completion = ctx.log_sink.clone();
         let result = tokio::task::spawn_blocking(move || {
             let _completion = completion;
-            let staged_output = temp;
+            let mut staged_output = temp;
+            // Error returns drop the guard before `_completion`, so a partial
+            // copy is removed before the worker can release its I/O admission.
+            staged_output.cleanup_on_current_thread = true;
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
@@ -174,6 +177,7 @@ impl CopyMoveProcessor {
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
+            staged_output.cleanup_on_current_thread = false;
             Ok::<_, std::io::Error>((copied, staged_output))
         })
         .await
