@@ -26,9 +26,10 @@ A post-implementation review of F01–F11 and S01–S08 found no correctness reg
 
 - A copy that stalls after timeout keeps its job `PROCESSING`, its worker permit, and the output-file gate until the native copy returns; previously the job failed at the deadline.
 - The async-side copy cancellation checks cannot fire under the worker pool, which stops polling a cancelled or timed-out processor; the in-closure checks are the effective ones, and the post-copy check lets a copy cancelled mid-operation clean up before releasing its slot.
-- The read-only temporary cleanup test passes on NTFS without the attribute-reset branch, which only runs where POSIX delete is unavailable (for example FAT/exFAT or some SMB shares).
-- Pre-existing duplicates remain in touched files: `CopyMoveProcessor::format_bytes` (`utils::text::format_bytes` prints `B` instead of `bytes`), `CancelOnDrop` (`CancellationToken::drop_guard`), and copy/move `AlreadyExists` overwrite branches that current Windows `rename` no longer reaches.
-- After S01 the four `MediaItem` adapters only forward to `process_one`; async closures could replace them if the processor future stays `Send`.
+
+A follow-up replaced the copy processor's duplicate byte formatter, disk-full classifier, and the compression drop guard with the shared `utils::text::format_bytes`, `ErrorKind::StorageFull`, and `CancellationToken::drop_guard`; renamed the Windows read-only cleanup test after the contract it can verify on NTFS; and corrected the copy/move rename comments. Copy/move `AlreadyExists` overwrite branches remain as a fallback for filesystems that report a collision instead of replacing. Small-file disk-full messages now print `B` rather than `bytes`.
+
+Replacing the four `MediaItem` adapters with an `AsyncFn` parameter was tried and rejected: Rust 1.98.1 cannot prove the borrowed closure futures `Send` for every lifetime, which `async_trait` processor futures require, and boxed higher-ranked futures would add more ceremony than the adapters remove.
 
 Performance batch validation on Windows with Rust 1.98.1 and default features:
 

@@ -27,6 +27,7 @@ use super::traits::{
 use super::utils::create_log_entry;
 use crate::Result;
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
+use crate::utils::text::format_bytes;
 
 /// Default value for create_dirs option.
 fn default_true() -> bool {
@@ -109,34 +110,6 @@ impl CopyMoveProcessor {
         Self
     }
 
-    fn is_disk_full_error(error: &std::io::Error) -> bool {
-        // Unix: ENOSPC = 28
-        // Windows: ERROR_DISK_FULL = 112
-        if matches!(error.raw_os_error(), Some(28) | Some(112)) {
-            return true;
-        }
-
-        let msg = error.to_string().to_lowercase();
-        msg.contains("no space left") || msg.contains("disk full")
-    }
-
-    /// Format bytes as human-readable string.
-    fn format_bytes(bytes: u64) -> String {
-        const KB: u64 = 1024;
-        const MB: u64 = KB * 1024;
-        const GB: u64 = MB * 1024;
-
-        if bytes >= GB {
-            format!("{:.2} GB", bytes as f64 / GB as f64)
-        } else if bytes >= MB {
-            format!("{:.2} MB", bytes as f64 / MB as f64)
-        } else if bytes >= KB {
-            format!("{:.2} KB", bytes as f64 / KB as f64)
-        } else {
-            format!("{} bytes", bytes)
-        }
-    }
-
     /// Copy `source` to `dest` through a temporary sibling, verify the byte
     /// count, and rename the copy into place. Cancellation therefore leaves at
     /// most a `.tmp-*` file, never a partial file under the final destination
@@ -187,10 +160,10 @@ impl CopyMoveProcessor {
         let (bytes_copied, _temp) = match result {
             Ok(result) => result,
             Err(e) => {
-                return Err(if Self::is_disk_full_error(&e) {
+                return Err(if e.kind() == ErrorKind::StorageFull {
                     format!(
                         "Insufficient disk space while copying. Required: {}",
-                        Self::format_bytes(source_size)
+                        format_bytes(source_size)
                     )
                 } else {
                     format!("Failed to copy file: {}", e)
@@ -210,8 +183,9 @@ impl CopyMoveProcessor {
         }
 
         if let Err(e) = fs::rename(&tmp_dest, dest).await {
-            // Windows refuses to rename over an existing file; honor
-            // `overwrite` the same way the direct-rename move path does.
+            // `rename` replaces an existing file on supported platforms; a
+            // filesystem that reports a collision instead gets the same
+            // `overwrite` handling as the direct-rename move path.
             let renamed = if e.kind() == ErrorKind::AlreadyExists && config.overwrite {
                 match fs::remove_file(dest).await {
                     Ok(()) => fs::rename(&tmp_dest, dest).await,
@@ -668,7 +642,7 @@ impl Processor for CopyMoveProcessor {
                     match fs::rename(source, &dest).await {
                         Ok(()) => source_size,
                         Err(e) if e.kind() == ErrorKind::AlreadyExists && config.overwrite => {
-                            // Windows doesn't overwrite on rename; remove then retry.
+                            // A filesystem that reports a collision instead of replacing.
                             if let Err(e) = fs::remove_file(&dest).await {
                                 let error_msg = format!(
                                     "Failed to remove destination file for overwrite: {}",
@@ -980,15 +954,6 @@ mod tests {
             message.contains("unknown variant"),
             "unexpected error: {message}"
         );
-    }
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(CopyMoveProcessor::format_bytes(500), "500 bytes");
-        assert_eq!(CopyMoveProcessor::format_bytes(1024), "1.00 KB");
-        assert_eq!(CopyMoveProcessor::format_bytes(1536), "1.50 KB");
-        assert_eq!(CopyMoveProcessor::format_bytes(1048576), "1.00 MB");
-        assert_eq!(CopyMoveProcessor::format_bytes(1073741824), "1.00 GB");
     }
 
     #[tokio::test]

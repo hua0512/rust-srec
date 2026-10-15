@@ -582,9 +582,11 @@ mod tests {
         assert_eq!(std::fs::read(output).unwrap(), b"replacement");
     }
 
+    /// NTFS deletes read-only files directly, so this checks the cleanup
+    /// contract; the attribute reset runs only without POSIX delete support.
     #[cfg(windows)]
     #[tokio::test]
-    async fn readonly_temporary_cleanup_preserves_source_and_destination_permissions() {
+    async fn readonly_temporary_output_is_removed_without_touching_other_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source.mp4");
         let output = dir.path().join("output.mp4");
