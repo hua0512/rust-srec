@@ -895,7 +895,7 @@ impl JobRunner {
             let reason = format!("Failed to persist execution start: {e}");
             error!(job_id = %job.id, error = %e, "Skipping processor without durable attempt metadata");
             if job_token.is_cancelled() {
-                self.job_queue.finalize_attempt(&job.id, &job_token);
+                self.job_queue.finalize_attempt(&job.id, &job_token).await;
                 return;
             }
             let job_id = job.id.clone();
@@ -1091,7 +1091,7 @@ impl JobRunner {
         }
 
         if processor_token.is_cancelled() {
-            self.job_queue.finalize_attempt(&facts.id, &job_token);
+            self.job_queue.finalize_attempt(&facts.id, &job_token).await;
         }
 
         update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);

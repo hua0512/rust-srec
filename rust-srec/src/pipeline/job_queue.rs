@@ -753,6 +753,9 @@ pub enum JobFailureOutcome {
 pub struct JobQueue {
     /// Workers hold a read lease through execution and cleanup. Retention takes an exclusive lease.
     pub(crate) output_files_gate: Arc<tokio::sync::RwLock<()>>,
+    /// Dequeues share a lease through claiming and publishing tracking. Retry and
+    /// attempt finalization take an exclusive lease so cleanup cannot cross that handoff.
+    attempt_gate: tokio::sync::RwLock<()>,
     /// Configuration.
     config: JobQueueConfig,
     /// Current queue depth (approximate).
@@ -835,6 +838,7 @@ impl JobQueue {
         Self {
             config,
             output_files_gate: Arc::new(tokio::sync::RwLock::new(())),
+            attempt_gate: tokio::sync::RwLock::new(()),
             depth: AtomicUsize::new(0),
             notify: Arc::new(Notify::new()),
             job_repository: repository,
@@ -1410,6 +1414,7 @@ impl JobQueue {
 
     /// Dequeue a job for processing.
     pub async fn dequeue(&self, job_types: Option<&[String]>) -> Result<Option<Job>> {
+        let _attempt_lease = self.attempt_gate.read().await;
         // Note: This is called frequently by worker pools, so we use trace level
         // to avoid log spam. Use debug level only when a job is actually dequeued.
 
@@ -2050,6 +2055,7 @@ impl JobQueue {
     }
 
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
+        let attempt_lease = self.attempt_gate.write().await;
         if let Some(repo) = &self.job_repository {
             repo.reset_job_for_retry(id).await?;
 
@@ -2059,6 +2065,7 @@ impl JobQueue {
             self.jobs_cache.remove(id);
 
             self.depth.fetch_add(1, Ordering::SeqCst);
+            drop(attempt_lease);
             self.wake_workers();
 
             let updated_job = db_model_to_job(&repo.get_job(id).await?);
@@ -2090,6 +2097,7 @@ impl JobQueue {
         self.progress_cache.remove(id);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
+        drop(attempt_lease);
         self.wake_workers();
 
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
@@ -2383,7 +2391,8 @@ impl JobQueue {
     /// Finalize `attempt` unless a retry has already dequeued a successor under
     /// the same job ID. The successor then owns the job's token, log cursor,
     /// progress and cache entry, which a late cleanup must not remove.
-    pub(crate) fn finalize_attempt(&self, job_id: &str, attempt: &AttemptToken) {
+    pub(crate) async fn finalize_attempt(&self, job_id: &str, attempt: &AttemptToken) {
+        let _attempt_lease = self.attempt_gate.write().await;
         let removed = self
             .cancellation_tokens
             .remove_if(job_id, |_, current| current.attempt == attempt.attempt);
@@ -4253,6 +4262,8 @@ mod tests {
         );
         let job_id = job.id.clone();
         queue.enqueue(job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        let previous = queue.attempt_token(&job_id).unwrap();
 
         queue.cancel_job(&job_id).await.unwrap();
         assert_eq!(queue.depth(), 0);
@@ -4267,31 +4278,98 @@ mod tests {
         assert!(retried.started_at.is_none());
         assert!(retried.completed_at.is_none());
         assert_eq!(queue.depth(), 1);
+
+        queue.dequeue(None).await.unwrap().unwrap();
+        let successor = queue.attempt_token(&job_id).unwrap();
+        assert_ne!(successor.attempt, previous.attempt);
+        assert!(!successor.is_cancelled());
+        queue.finalize_attempt(&job_id, &previous).await;
+        queue.cancel_job(&job_id).await.unwrap();
+        assert!(successor.is_cancelled());
+        queue.finalize_attempt(&job_id, &successor).await;
+        assert!(queue.attempt_token(&job_id).is_none());
     }
 
     #[tokio::test]
-    async fn late_attempt_finalization_leaves_a_retried_successor_tracked() {
-        let queue = JobQueue::new();
+    async fn late_attempt_finalization_waits_for_successor_claim_and_keeps_its_tracking() {
+        use std::time::Duration;
+
+        use crate::database::repositories::{SqlxJobRepository, SqlxUploadRecordRepository};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let queue = JobQueue::with_repository(
+            JobQueueConfig::default(),
+            Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
+        );
+        queue.stop_progress_aggregator().await;
+        let uploads = Arc::new(SqlxUploadRecordRepository::new(pool.clone(), pool.clone()));
+        queue.set_upload_repo(uploads.clone());
+        let broadcaster =
+            UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
+        queue.set_upload_broadcaster(broadcaster.clone());
         let job_id = queue
-            .enqueue(Job::new("remux", vec![], vec![], "streamer-1", "session-1"))
+            .enqueue(Job::new(
+                "rclone",
+                vec!["/input.mp4".to_string()],
+                vec![],
+                "",
+                "",
+            ))
             .await
             .unwrap();
         queue.dequeue(None).await.unwrap().unwrap();
         let stale = queue.attempt_token(&job_id).unwrap();
         queue.cancel_job(&job_id).await.unwrap();
         queue.retry_job(&job_id).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
 
-        queue.finalize_attempt(&job_id, &stale);
-        let successor = queue
-            .attempt_token(&job_id)
-            .expect("the retried attempt keeps its own token");
-        assert!(!successor.is_cancelled());
-        queue.cancel_job(&job_id).await.unwrap();
-        assert!(successor.is_cancelled());
+        // Pause a real claim before its cache/token publication. A late finalizer
+        // must wait for that whole handoff rather than observe partially installed tracking.
+        let connection = pool.acquire().await.unwrap();
+        let mut dequeue = std::pin::pin!(queue.dequeue(None));
+        assert!(futures::poll!(dequeue.as_mut()).is_pending());
+        let mut finalization = std::pin::pin!(queue.finalize_attempt(&job_id, &stale));
+        assert!(futures::poll!(finalization.as_mut()).is_pending());
+        drop(connection);
 
-        queue.finalize_attempt(&job_id, &successor);
-        assert!(queue.attempt_token(&job_id).is_none());
+        let successor = tokio::time::timeout(Duration::from_secs(3), dequeue)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(successor.id, job_id);
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+        snapshot.percent = Some(42.0);
+        queue.progress_cache.insert(job_id.clone(), snapshot);
+        tokio::time::timeout(Duration::from_secs(3), finalization)
+            .await
+            .unwrap();
+        assert!(!queue.attempt_token(&job_id).unwrap().is_cancelled());
+        assert_eq!(
+            queue
+                .get_job_progress(&job_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .percent,
+            Some(42.0)
+        );
+
+        let mut events = broadcaster.subscribe();
+        queue.fail(&job_id, "successor failed").await.unwrap();
+        let rows = uploads.list_by_job(&job_id).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].error.as_deref(), Some("successor failed"));
+        assert!(matches!(
+            events.try_recv().unwrap().event.as_ref(),
+            UploadStatusEvent::Terminal {
+                status: UploadTerminalStatus::Failed,
+                files_failed: 1,
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
