@@ -80,6 +80,8 @@ impl ActorTaskResult {
 pub struct ActorRegistry {
     /// Streamer actors by ID.
     streamers: HashMap<String, ActorHandle<StreamerMessage>>,
+    /// Changes only when a registered streamer handle changes.
+    streamer_revision: u64,
     /// Platform actors by platform ID.
     platforms: HashMap<String, ActorHandle<PlatformMessage>>,
     /// JoinSet for actor tasks.
@@ -117,6 +119,7 @@ impl ActorRegistry {
     pub fn new(cancellation_token: CancellationToken) -> Self {
         Self {
             streamers: HashMap::new(),
+            streamer_revision: 0,
             platforms: HashMap::new(),
             task_set: JoinSet::new(),
             cancellation_token,
@@ -187,6 +190,10 @@ impl ActorRegistry {
         &self.streamers
     }
 
+    pub(crate) fn streamer_revision(&self) -> u64 {
+        self.streamer_revision
+    }
+
     /// Get all platform handles.
     pub fn platform_handles(
         &self,
@@ -235,6 +242,7 @@ impl ActorRegistry {
 
         // Store handle
         self.streamers.insert(id.clone(), handle);
+        self.streamer_revision += 1;
 
         // Spawn actor task. `catch_unwind` turns a panic inside `run` into a
         // recoverable `ActorError` so `Supervisor::handle_task_completion` sees
@@ -317,6 +325,7 @@ impl ActorRegistry {
     /// `unreaped_streamers` so such a call can be made afterwards.
     pub fn remove_streamer(&mut self, id: &str) -> Option<ActorHandle<StreamerMessage>> {
         if let Some(handle) = self.streamers.remove(id) {
+            self.streamer_revision += 1;
             debug!("Removing streamer actor: {}", id);
             handle.cancel();
             let entries = self.unreaped_streamers.entry(id.to_string()).or_default();
@@ -445,6 +454,9 @@ impl ActorRegistry {
     ///
     /// This removes all handles but does not cancel or abort tasks.
     pub fn clear(&mut self) {
+        if !self.streamers.is_empty() {
+            self.streamer_revision += 1;
+        }
         self.streamers.clear();
         self.platforms.clear();
         // `Supervisor::shutdown` calls this after draining `task_set`, and
@@ -465,7 +477,12 @@ impl ActorRegistry {
         let superseded = match result.actor_type.as_str() {
             "streamer" => {
                 self.forget_unreaped_streamer(&result.actor_id, result.generation);
-                remove_if_current(&mut self.streamers, &result.actor_id, result.generation)
+                let superseded =
+                    remove_if_current(&mut self.streamers, &result.actor_id, result.generation);
+                if !superseded {
+                    self.streamer_revision += 1;
+                }
+                superseded
             }
             "platform" => {
                 remove_if_current(&mut self.platforms, &result.actor_id, result.generation)

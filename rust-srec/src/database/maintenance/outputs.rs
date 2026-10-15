@@ -15,23 +15,33 @@ use crate::{Error, Result};
 // history also protects recently finished work, including manually retried jobs.
 // Unscoped work conservatively protects every session because its inputs may be
 // arbitrary paths. Scheduled retries remain live even while their job is FAILED.
+// Materialize the indexed protection set once per statement before evaluating
+// input paths; the transactional per-file check rebuilds it after writer admission.
+// Suffixes also use numbered parameters: SQLx does not advance anonymous bind
+// positions past a numbered parameter, so mixing the two binds the wrong values.
 const ELIGIBLE: &str = "
+    WITH protected_job_ids AS MATERIALIZED (
+        SELECT id FROM job WHERE status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+        UNION
+        SELECT id FROM job WHERE retry_after IS NOT NULL
+        UNION
+        SELECT id FROM job WHERE updated_at >= ?1
+    )
     SELECT m.* FROM media_outputs m
     JOIN live_sessions s ON s.id = m.session_id
-    WHERE m.created_at < ? AND s.end_time IS NOT NULL AND s.end_time < ?
+    WHERE m.created_at < ?1 AND s.end_time IS NOT NULL AND s.end_time < ?1
       AND NOT EXISTS (
         SELECT 1 FROM job j
-        WHERE (j.session_id = s.id OR j.session_id IS NULL
+        WHERE j.id IN (SELECT id FROM protected_job_ids)
+          AND (j.session_id = s.id OR j.session_id IS NULL
           OR j.input = m.file_path
           OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(j.input) THEN j.input ELSE '[]' END)
                      WHERE value = m.file_path))
-          AND (j.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
-               OR j.retry_after IS NOT NULL OR j.updated_at >= ?)
       )
       AND NOT EXISTS (
         SELECT 1 FROM dag_execution d
         WHERE (d.session_id = s.id OR d.session_id IS NULL)
-          AND (d.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') OR d.updated_at >= ?)
+          AND (d.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') OR d.updated_at >= ?1)
       )";
 
 impl MaintenanceScheduler {
@@ -50,12 +60,9 @@ impl MaintenanceScheduler {
                 return;
             }
             let sql = format!(
-                "{ELIGIBLE} AND (m.created_at, m.id) > (?, ?) ORDER BY m.created_at, m.id LIMIT ?"
+                "{ELIGIBLE} AND (m.created_at, m.id) > (?2, ?3) ORDER BY m.created_at, m.id LIMIT ?4"
             );
             let candidates = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(sql))
-                .bind(cutoff)
-                .bind(cutoff)
-                .bind(cutoff)
                 .bind(cutoff)
                 .bind(cursor.0)
                 .bind(&cursor.1)
@@ -135,11 +142,8 @@ impl MaintenanceScheduler {
         // against job admission/retry and session mutations. Keep it to ONE file;
         // never hold this transaction across a whole batch or a retry sleep.
         let mut tx = begin_immediate(&self.write_pool).await?;
-        let sql = format!("{ELIGIBLE} AND m.id = ?");
+        let sql = format!("{ELIGIBLE} AND m.id = ?2");
         let Some(output) = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(sql))
-            .bind(cutoff)
-            .bind(cutoff)
-            .bind(cutoff)
             .bind(cutoff)
             .bind(id)
             .fetch_optional(&mut *tx)
@@ -216,5 +220,175 @@ async fn remove_expired_file(path: &Path, cutoff: i64) -> Result<Option<bool>> {
         Ok(()) => Ok(Some(true)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Some(false)),
         Err(error) => Err(Error::io_path("delete expired output", &absolute, error)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::{MaintenanceConfig, init_pool_with_size, run_migrations};
+
+    const FILE_PATH: &str = "/archive/video.mp4";
+    const CUTOFF: i64 = 100;
+
+    async fn fixture() -> (sqlx::SqlitePool, MaintenanceScheduler) {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        sqlx::raw_sql(
+            "INSERT INTO live_sessions(id, start_time, end_time, total_size_bytes) \
+             VALUES ('session', 0, 1, 5), ('other', 0, 1, 0); \
+             INSERT INTO media_outputs(id, session_id, file_path, file_type, size_bytes, created_at) \
+             VALUES ('output', 'session', '/archive/video.mp4', 'VIDEO', 5, 1);",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let scheduler =
+            MaintenanceScheduler::new(pool.clone(), pool.clone(), MaintenanceConfig::default());
+        (pool, scheduler)
+    }
+
+    #[tokio::test]
+    async fn output_retention_protection_includes_future_statuses_and_path_inputs() {
+        let (pool, _) = fixture().await;
+        let json_input = serde_json::to_string(&[FILE_PATH]).unwrap();
+        let scalar_input = serde_json::to_string(FILE_PATH).unwrap();
+        for (status, session, input, updated_at, retry_after, protected) in [
+            ("PENDING", Some("session"), None, 1, None, true),
+            ("PROCESSING", Some("session"), None, 1, None, true),
+            ("SUSPENDED", Some("session"), None, 1, None, true),
+            ("COMPLETED", Some("session"), None, CUTOFF, None, true),
+            ("FAILED", Some("session"), None, 1, Some(200_i64), true),
+            ("CANCELLED", Some("session"), None, 1, None, false),
+            ("PENDING", Some("other"), Some(FILE_PATH), 1, None, true),
+            (
+                "PENDING",
+                Some("other"),
+                Some(json_input.as_str()),
+                1,
+                None,
+                true,
+            ),
+            (
+                "PENDING",
+                Some("other"),
+                Some(scalar_input.as_str()),
+                1,
+                None,
+                true,
+            ),
+            ("PENDING", Some("other"), Some("{invalid"), 1, None, false),
+            ("PENDING", Some("other"), None, 1, None, false),
+            ("PENDING", None, None, 1, None, true),
+            ("COMPLETED", None, None, 1, None, false),
+            (
+                "FAILED",
+                Some("other"),
+                Some(json_input.as_str()),
+                1,
+                None,
+                false,
+            ),
+        ] {
+            let mut connection = pool.acquire().await.unwrap();
+            sqlx::query("DELETE FROM job")
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+            // Exercise a future schema's nonterminal value without rebuilding the fixture.
+            sqlx::query("PRAGMA ignore_check_constraints = ON")
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+            sqlx::query(
+                "INSERT INTO job(id, job_type, status, config, state, created_at, updated_at, \
+                 session_id, input, retry_after) VALUES ('protector', 'remux', ?, '{}', '{}', 1, ?, ?, ?, ?)",
+            )
+            .bind(status).bind(updated_at).bind(session).bind(input).bind(retry_after)
+            .execute(&mut *connection).await.unwrap();
+            sqlx::query("PRAGMA ignore_check_constraints = OFF")
+                .execute(&mut *connection)
+                .await
+                .unwrap();
+            drop(connection);
+
+            let eligible = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(format!(
+                "{ELIGIBLE} AND m.id = ?2"
+            )))
+            .bind(CUTOFF)
+            .bind("output")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                eligible.is_none(),
+                protected,
+                "{status}, {session:?}, {input:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn output_retention_final_recheck_observes_new_job_protection() {
+        let (pool, scheduler) = fixture().await;
+        let candidates = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(ELIGIBLE))
+            .bind(CUTOFF)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(candidates.len(), 1);
+        sqlx::query(
+            "INSERT INTO job(id, job_type, status, config, state, created_at, updated_at, session_id) \
+             VALUES ('new-job', 'remux', 'PENDING', '{}', '{}', 1, 1, 'session')",
+        )
+        .execute(&pool).await.unwrap();
+        assert_eq!(
+            scheduler
+                .prune_output("output", CUTOFF, false, None)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media_outputs")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn output_retention_plan_uses_indexed_protection_instead_of_correlated_history_scans() {
+        use sqlx::Row;
+
+        let (pool, _) = fixture().await;
+        sqlx::raw_sql(
+            "WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<2000) \
+             INSERT INTO job(id, job_type, status, config, state, created_at, updated_at, session_id) \
+             SELECT 'old-' || i, 'remux', 'COMPLETED', '{}', '{}', 1, 1, 'other' FROM n;",
+        ).execute(&pool).await.unwrap();
+        let plan = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "EXPLAIN QUERY PLAN {ELIGIBLE}"
+        )))
+        .bind(CUTOFF)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let details: Vec<String> = plan.iter().map(|row| row.get("detail")).collect();
+        let plan = details.join("\n");
+        for index in [
+            "idx_job_nonterminal_id",
+            "idx_job_retry_after",
+            "idx_job_updated_at",
+        ] {
+            assert!(plan.contains(index), "{plan}");
+        }
+        assert!(
+            !details
+                .iter()
+                .any(|detail| detail == "SCAN j" || detail.starts_with("SCAN j USING")),
+            "{plan}"
+        );
     }
 }

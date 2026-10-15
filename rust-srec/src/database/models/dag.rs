@@ -89,21 +89,6 @@ impl DagExecutionDbModel {
         }
     }
 
-    /// Read only the `name` field of `dag_definition`.
-    ///
-    /// List views need the name alone; deserialising every step and its
-    /// processor config through `get_dag_definition` is wasted work there.
-    pub fn dag_definition_name(&self) -> Option<String> {
-        #[derive(Deserialize)]
-        struct DagDefinitionName {
-            name: String,
-        }
-
-        serde_json::from_str::<DagDefinitionName>(&self.dag_definition)
-            .ok()
-            .map(|definition| definition.name)
-    }
-
     /// Get the DAG pipeline definition.
     pub fn get_dag_definition(&self) -> Option<DagPipelineDefinition> {
         json::parse_optional(
@@ -168,11 +153,51 @@ impl DagExecutionDbModel {
 
     /// Get the progress as a percentage (0-100).
     pub fn progress_percent(&self) -> f64 {
-        if self.total_steps == 0 {
-            return 100.0;
-        }
-        ((self.completed_steps + self.failed_steps) as f64 / self.total_steps as f64) * 100.0
+        progress_percent(self.total_steps, self.completed_steps, self.failed_steps)
     }
+}
+
+/// Display fields for an execution list, without its input manifest or error payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DagExecutionListSummary {
+    pub id: String,
+    pub name: Option<String>,
+    pub display_status: DagExecutionStatus,
+    pub streamer_id: Option<String>,
+    pub session_id: Option<String>,
+    pub total_steps: i32,
+    pub completed_steps: i32,
+    pub failed_steps: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl DagExecutionListSummary {
+    pub fn progress_percent(&self) -> f64 {
+        progress_percent(self.total_steps, self.completed_steps, self.failed_steps)
+    }
+}
+
+/// Read only the `name` field of a DAG definition.
+///
+/// List views need the name alone; deserialising every step and its
+/// processor config through `get_dag_definition` is wasted work there.
+pub(crate) fn dag_definition_name(definition: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct DagDefinitionName {
+        name: String,
+    }
+
+    serde_json::from_str::<DagDefinitionName>(definition)
+        .ok()
+        .map(|definition| definition.name)
+}
+
+fn progress_percent(total_steps: i32, completed_steps: i32, failed_steps: i32) -> f64 {
+    if total_steps == 0 {
+        return 100.0;
+    }
+    ((completed_steps + failed_steps) as f64 / total_steps as f64) * 100.0
 }
 
 // ============================================================================

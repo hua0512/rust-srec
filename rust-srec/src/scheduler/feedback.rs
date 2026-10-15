@@ -18,7 +18,9 @@ use tokio_util::sync::CancellationToken;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::utils::task_supervisor::TaskSupervisor;
 
-use super::actor::{ActorHandle, PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
+use super::actor::{
+    ActorHandle, ActorRegistry, PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FeedbackDisposition {
@@ -84,6 +86,7 @@ struct FeedbackState {
     capacity_limit: usize,
     sequence: u64,
     targets: HashMap<String, ActorHandle<StreamerMessage>>,
+    targets_revision: Option<u64>,
     queues: HashMap<String, StreamQueue>,
     retired: HashMap<String, FeedbackDisposition>,
     active_downloads: HashMap<String, (String, String)>,
@@ -101,6 +104,8 @@ pub(crate) struct SchedulerFeedback {
     capacity: Arc<Semaphore>,
     failure_tx: watch::Sender<Option<String>>,
     shutdown_gate: tokio::sync::Mutex<()>,
+    #[cfg(test)]
+    target_scans: AtomicU64,
 }
 
 impl SchedulerFeedback {
@@ -119,6 +124,8 @@ impl SchedulerFeedback {
             tasks: TaskSupervisor::with_cancellation(stop.clone()),
             stop,
             capacity: Arc::new(Semaphore::new(MAX_FEEDBACK_ENVELOPES)),
+            #[cfg(test)]
+            target_scans: AtomicU64::new(0),
         })
     }
 
@@ -332,8 +339,30 @@ impl SchedulerFeedback {
         self.state.lock().queues.keys().cloned().collect()
     }
 
+    pub(crate) fn update_registry_targets(&self, registry: &ActorRegistry) {
+        let mut state = self.state.lock();
+        let revision = registry.streamer_revision();
+        if state.targets_revision == Some(revision) {
+            return;
+        }
+        self.update_targets_locked(&mut state, registry.streamer_handles_map());
+        state.targets_revision = Some(revision);
+    }
+
+    #[cfg(test)]
     pub(crate) fn update_targets(&self, targets: &HashMap<String, ActorHandle<StreamerMessage>>) {
         let mut state = self.state.lock();
+        self.update_targets_locked(&mut state, targets);
+        state.targets_revision = None;
+    }
+
+    fn update_targets_locked(
+        &self,
+        state: &mut FeedbackState,
+        targets: &HashMap<String, ActorHandle<StreamerMessage>>,
+    ) {
+        #[cfg(test)]
+        self.target_scans.fetch_add(1, Ordering::Relaxed);
         let changed = targets.len() != state.targets.len()
             || targets.iter().any(|(id, handle)| {
                 state
@@ -346,6 +375,11 @@ impl SchedulerFeedback {
             self.targets_changed
                 .send_modify(|revision| *revision = revision.wrapping_add(1));
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn target_scan_count(&self) -> u64 {
+        self.target_scans.load(Ordering::Relaxed)
     }
 
     pub(crate) fn activate(&self, id: &str) {
@@ -372,7 +406,11 @@ impl SchedulerFeedback {
     fn stop_streamer(&self, id: &str, disposition: FeedbackDisposition) {
         let mut state = self.state.lock();
         state.retired.insert(id.to_owned(), disposition);
-        state.targets.remove(id);
+        if state.targets.remove(id).is_some() {
+            // Feedback can remove a target before the registry changes. The
+            // next synchronization must reconcile even an unchanged revision.
+            state.targets_revision = None;
+        }
         if let Some(queue) = state.queues.remove(id) {
             queue.retired.cancel();
         }

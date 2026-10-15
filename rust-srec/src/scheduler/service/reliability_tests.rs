@@ -109,6 +109,39 @@ fn terminal(id: &str) -> DownloadManagerEvent {
 }
 
 #[tokio::test]
+async fn download_progress_does_not_rescan_unchanged_feedback_targets() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut scheduler = scheduler(&["one", "two"]).await;
+        for metadata in scheduler.streamer_manager.get_all() {
+            scheduler.add_streamer(metadata).await.unwrap();
+        }
+        let scans = scheduler.feedback.target_scan_count();
+
+        for _ in 0..256 {
+            scheduler.process_download_event(DownloadManagerEvent::Progress(
+                DownloadProgressEvent::Progress {
+                    download_id: "d".to_owned(),
+                    streamer_id: "one".to_owned(),
+                    streamer_name: "one".to_owned(),
+                    session_id: "s".to_owned(),
+                    status: DownloadStatus::Downloading,
+                    progress: DownloadProgress::default(),
+                },
+            ));
+            scheduler
+                .feedback
+                .update_registry_targets(scheduler.supervisor.registry());
+        }
+
+        assert_eq!(scheduler.feedback.target_scan_count(), scans);
+        scheduler.feedback.shutdown().await;
+        scheduler.shutdown().await;
+    })
+    .await
+    .expect("progress must not trigger unchanged target scans");
+}
+
+#[tokio::test]
 async fn stopped_and_cancelled_generations_settle_retained_feedback_without_restarting() {
     tokio::time::timeout(Duration::from_secs(5), async {
         for cancelled in [false, true] {
@@ -147,7 +180,7 @@ async fn stopped_and_cancelled_generations_settle_retained_feedback_without_rest
             let receipt = feedback.publish_reserved(&terminal("one"), end);
             let action = scheduler.supervisor.handle_task_completion(completion);
             scheduler.handle_task_completion_action(action, true);
-            feedback.update_targets(scheduler.supervisor.registry().streamer_handles_map());
+            feedback.update_registry_targets(scheduler.supervisor.registry());
             assert_eq!(
                 receipt.await.unwrap().unwrap(),
                 FeedbackDisposition::Retired
@@ -359,7 +392,7 @@ async fn replacement_seeds_the_recording_identity_even_when_metadata_has_not_cau
             .spawn_streamer("one", StreamerConfig::default(), None)
             .unwrap();
         assert_ne!(replacement.generation(), old_generation);
-        feedback.update_targets(scheduler.supervisor.registry().streamer_handles_map());
+        feedback.update_registry_targets(scheduler.supervisor.registry());
         let (reply, state) = tokio::sync::oneshot::channel();
         replacement
             .send_reliable(StreamerMessage::GetState(reply))

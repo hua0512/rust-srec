@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
+use super::paths::{StagedPath, StagedPathIndex};
 use crate::{Error, Result};
 
 /// Accumulate successful or skipped media results in input order. Batch callers
@@ -37,6 +38,8 @@ pub(super) struct TempOutputGuard {
     cleanup: bool,
     /// Set only once ownership has moved into a blocking commit/promotion closure.
     cleanup_on_current_thread: bool,
+    /// A hard-linked backup shares permissions with the original file.
+    cleanup_readonly: bool,
 }
 
 impl TempOutputGuard {
@@ -54,6 +57,7 @@ impl TempOutputGuard {
             path: output_path.with_file_name(name),
             cleanup: true,
             cleanup_on_current_thread: false,
+            cleanup_readonly: true,
         }
     }
 
@@ -68,8 +72,9 @@ impl Drop for TempOutputGuard {
             return;
         }
         let path = self.path.clone();
+        let cleanup_readonly = self.cleanup_readonly;
         dispatch_cleanup(self.cleanup_on_current_thread, move || {
-            remove_temp_output(&path)
+            remove_temp_output(&path, cleanup_readonly)
         });
     }
 }
@@ -82,7 +87,9 @@ fn dispatch_cleanup(in_blocking_commit: bool, cleanup: impl FnOnce() + Send + 's
     }
 }
 
-fn remove_temp_output(path: &Path) {
+fn remove_temp_output(path: &Path, cleanup_readonly: bool) {
+    #[cfg(not(windows))]
+    let _ = cleanup_readonly;
     for attempt in 0..=20 {
         if attempt > 0 {
             // Windows may briefly retain a file handle after process-tree termination.
@@ -93,6 +100,29 @@ fn remove_temp_output(path: &Path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
             Err(error) if attempt == 20 => {
                 warn!(%error, path = %path.display(), "Failed to remove temporary processor output");
+            }
+            #[cfg(windows)]
+            Err(error)
+                if cleanup_readonly && error.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
+                // Copying a read-only source preserves that attribute on its
+                // private temp. Clear only that temp's attribute; hard-linked
+                // backups must leave surviving originals' permissions alone.
+                let reset = std::fs::metadata(path).and_then(|metadata| {
+                    let mut permissions = metadata.permissions();
+                    if metadata.is_file() && permissions.readonly() {
+                        #[allow(
+                            clippy::permissions_set_readonly_false,
+                            reason = "Windows-only attribute reset; Unix permission bits are unchanged"
+                        )]
+                        permissions.set_readonly(false);
+                        std::fs::set_permissions(path, permissions)?;
+                    }
+                    Ok(())
+                });
+                if let Err(error) = reset {
+                    tracing::debug!(%error, path = %path.display(), "Could not clear temporary output's read-only attribute; cleanup will retry");
+                }
             }
             Err(_) => {}
         }
@@ -142,28 +172,36 @@ fn promote(temp: &Path, output: &Path, overwrite: bool) -> Result<()> {
     }
 }
 
-fn validate_destination(
-    output: &Path,
-    sources: &[PathBuf],
-    other_outputs: &[PathBuf],
-) -> Result<()> {
-    for source in sources {
-        if super::paths::staged_aliases(output, source)? {
+#[derive(Default)]
+struct OutputValidation {
+    sources: StagedPathIndex,
+    outputs: StagedPathIndex,
+}
+
+impl OutputValidation {
+    fn protect(&mut self, sources: impl IntoIterator<Item = PathBuf>) {
+        for source in sources {
+            self.sources.insert(StagedPath::prepare(source));
+        }
+    }
+
+    fn stage(&mut self, output: &Path) -> Result<()> {
+        let prepared = StagedPath::prepare(output.to_owned());
+        if self.sources.aliases(&prepared)? {
             return Err(Error::PipelineError(format!(
                 "Output path aliases an input file: {}",
                 output.display()
             )));
         }
-    }
-    for other in other_outputs {
-        if super::paths::staged_aliases(output, other)? {
+        if self.outputs.aliases(&prepared)? {
             return Err(Error::PipelineError(format!(
                 "Multiple outputs name the same file: {}",
                 output.display()
             )));
         }
+        self.outputs.insert(prepared);
+        Ok(())
     }
-    Ok(())
 }
 
 struct PendingOutput {
@@ -177,6 +215,7 @@ struct PendingOutput {
 pub(super) struct OutputBatch {
     sources: Vec<PathBuf>,
     pending: Vec<PendingOutput>,
+    staging_validation: Option<OutputValidation>,
     committed: bool,
 }
 
@@ -185,6 +224,7 @@ impl OutputBatch {
         Self {
             sources: inputs.iter().map(PathBuf::from).collect(),
             pending: Vec::new(),
+            staging_validation: None,
             committed: false,
         }
     }
@@ -195,24 +235,32 @@ impl OutputBatch {
 
     pub(super) fn discard(&mut self, temp: &Path) {
         self.pending.retain(|entry| entry.temp.path() != temp);
+        // Rebuild without the discarded destination on the next staging call.
+        self.staging_validation = None;
     }
 
     pub(super) async fn stage(&mut self, output: &Path, overwrite: bool) -> Result<PathBuf> {
-        let sources = self.sources.clone();
-        let other_outputs: Vec<_> = self
-            .pending
+        let mut validation = self.staging_validation.take().unwrap_or_default();
+        let sources = self.sources[validation.sources.len()..].to_vec();
+        let other_outputs: Vec<_> = self.pending[validation.outputs.len()..]
             .iter()
             .map(|entry| entry.output.clone())
             .collect();
         let output = output.to_owned();
         let checked_output = output.clone();
-        tokio::task::spawn_blocking(move || {
-            validate_destination(&checked_output, &sources, &other_outputs)
+        let validation = tokio::task::spawn_blocking(move || {
+            validation.protect(sources);
+            for previous in other_outputs {
+                validation.outputs.insert(StagedPath::prepare(previous));
+            }
+            validation.stage(&checked_output)?;
+            Ok::<_, Error>(validation)
         })
         .await
         .map_err(|error| {
             Error::PipelineError(format!("Output path validation failed: {error}"))
         })??;
+        self.staging_validation = Some(validation);
         let temp = TempOutputGuard::new(&output);
         let path = temp.path().to_owned();
         self.pending.push(PendingOutput {
@@ -237,11 +285,14 @@ impl OutputBatch {
         for entry in &mut self.pending {
             entry.temp.cleanup_on_current_thread = true;
         }
-        let mut outputs = Vec::new();
+        // Never reuse staging snapshots: sources, destinations, or symlink
+        // parents may have been replaced while processors produced their files.
+        self.staging_validation = None;
+        let mut validation = OutputValidation::default();
+        validation.protect(self.sources.iter().cloned());
         for entry in &self.pending {
             verified_size(entry.temp.path())?;
-            validate_destination(&entry.output, &self.sources, &outputs)?;
-            outputs.push(entry.output.clone());
+            validation.stage(&entry.output)?;
         }
         for entry in &mut self.pending {
             let identity = same_file::Handle::from_path(entry.temp.path()).map_err(|error| {
@@ -258,7 +309,9 @@ impl OutputBatch {
                         }
                         let mut backup = TempOutputGuard::new(&entry.output);
                         backup.cleanup_on_current_thread = true;
-                        if std::fs::hard_link(&entry.output, backup.path()).is_err() {
+                        if std::fs::hard_link(&entry.output, backup.path()).is_ok() {
+                            backup.cleanup_readonly = false;
+                        } else {
                             // Filesystems without hard links still support replacement.
                             std::fs::copy(&entry.output, backup.path()).map_err(|error| {
                                 Error::io_path("preserve existing output", &entry.output, error)
@@ -503,6 +556,138 @@ mod tests {
                 .is_err()
         );
         assert_eq!(std::fs::read(input).unwrap(), b"source");
+    }
+
+    #[tokio::test]
+    async fn source_added_after_staging_is_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let first = dir.path().join("first.mp4");
+        std::fs::write(&source, b"source").unwrap();
+        let mut batch = OutputBatch::new(&[]);
+        staged(&mut batch, &first, true, b"first").await;
+        batch.protect(&source);
+        assert!(batch.stage(&source, true).await.is_err());
+        assert_eq!(std::fs::read(source).unwrap(), b"source");
+    }
+
+    #[tokio::test]
+    async fn discarded_destination_can_be_staged_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output.mp4");
+        let mut batch = OutputBatch::new(&[]);
+        let discarded = batch.stage(&output, true).await.unwrap();
+        batch.discard(&discarded);
+        staged(&mut batch, &output, true, b"replacement").await;
+        batch.commit().await.unwrap();
+        assert_eq!(std::fs::read(output).unwrap(), b"replacement");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn readonly_temporary_cleanup_preserves_source_and_destination_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let output = dir.path().join("output.mp4");
+        let guard = TempOutputGuard::new(&output);
+        let temp = guard.path().to_owned();
+        for (path, bytes) in [
+            (&source, b"source".as_slice()),
+            (&output, b"existing".as_slice()),
+            (&temp, b"partial".as_slice()),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            permissions.set_readonly(true);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+        drop(guard);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match tokio::fs::try_exists(&temp).await {
+                    Ok(false) => break,
+                    Ok(true) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {}
+                    Err(error) => panic!("failed to inspect staged output during cleanup: {error}"),
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(&source).unwrap(), b"source");
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing");
+        for path in [&source, &output] {
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            assert!(permissions.readonly());
+            #[allow(
+                clippy::permissions_set_readonly_false,
+                reason = "Windows-only cleanup of test-owned files"
+            )]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rechecks_sources_and_destinations_after_staging() {
+        for replace_source in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("source.mp4");
+            let output = dir.path().join("output.mp4");
+            std::fs::write(&source, b"source").unwrap();
+            std::fs::write(&output, b"existing").unwrap();
+            let mut batch = OutputBatch::new(&[source.to_string_lossy().into_owned()]);
+            staged(&mut batch, &output, true, b"replacement").await;
+            if replace_source {
+                std::fs::remove_file(&source).unwrap();
+                std::fs::hard_link(&output, &source).unwrap();
+            } else {
+                std::fs::remove_file(&output).unwrap();
+                std::fs::hard_link(&source, &output).unwrap();
+            }
+            let expected = std::fs::read(&source).unwrap();
+            assert!(batch.commit().await.is_err());
+            assert_eq!(std::fs::read(&source).unwrap(), expected);
+            assert_eq!(std::fs::read(&output).unwrap(), expected);
+            assert_no_temps(dir.path());
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_rechecks_destinations_that_become_hardlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.mp4");
+        let second = dir.path().join("second.mp4");
+        let mut batch = OutputBatch::new(&[]);
+        staged(&mut batch, &first, true, b"first replacement").await;
+        staged(&mut batch, &second, true, b"second replacement").await;
+        std::fs::write(&first, b"existing").unwrap();
+        std::fs::hard_link(&first, &second).unwrap();
+        assert!(batch.commit().await.is_err());
+        assert_eq!(std::fs::read(&first).unwrap(), b"existing");
+        assert_eq!(std::fs::read(&second).unwrap(), b"existing");
+        assert_no_temps(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn commit_rechecks_source_symlink_retargeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp4");
+        let link = dir.path().join("source-link.mp4");
+        let output = dir.path().join("output.mp4");
+        std::fs::write(&source, b"source").unwrap();
+        std::fs::write(&output, b"existing").unwrap();
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        let mut batch = OutputBatch::new(&[link.to_string_lossy().into_owned()]);
+        staged(&mut batch, &output, true, b"replacement").await;
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&output, &link).unwrap();
+        assert!(batch.commit().await.is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), b"source");
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing");
+        assert_no_temps(dir.path());
     }
 
     #[cfg(windows)]

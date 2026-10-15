@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    DagDisplayCounts, DagExecutionDbModel, DagExecutionStats, DagExecutionStatus,
-    DagStepExecutionDbModel, DagStepStatus, JobDbModel, ReadyStep,
+    DagDisplayCounts, DagExecutionDbModel, DagExecutionListSummary, DagExecutionStats,
+    DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus, JobDbModel, ReadyStep,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -59,14 +59,14 @@ pub trait DagRepository: Send + Sync {
     /// Count DAG executions with optional status and session_id filters.
     async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
 
-    /// List DAG executions matching `filter`, newest first, each paired with
-    /// its display status (see [`DagDisplayCounts`]).
-    async fn list_dags_by_display_status(
+    /// List DAG summaries matching `filter`, newest first, each with its
+    /// display status (see [`DagDisplayCounts`]).
+    async fn list_dag_summaries(
         &self,
         filter: &DagListFilter<'_>,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>>;
+    ) -> Result<Vec<DagExecutionListSummary>>;
 
     /// Count DAG executions matching `filter`.
     async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64>;
@@ -550,10 +550,17 @@ fn parse_display_status(dag_id: &str, status: &str) -> Result<DagExecutionStatus
 }
 
 #[derive(sqlx::FromRow)]
-struct DagDisplayRow {
-    #[sqlx(flatten)]
-    dag: DagExecutionDbModel,
+struct DagSummaryRow {
+    id: String,
+    dag_definition: String,
     display_status: String,
+    streamer_id: Option<String>,
+    session_id: Option<String>,
+    total_steps: i32,
+    completed_steps: i32,
+    failed_steps: i32,
+    created_at: i64,
+    updated_at: i64,
 }
 
 #[async_trait]
@@ -741,29 +748,41 @@ impl DagRepository for SqlxDagRepository {
         Ok(count as u64)
     }
 
-    async fn list_dags_by_display_status(
+    async fn list_dag_summaries(
         &self,
         filter: &DagListFilter<'_>,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+    ) -> Result<Vec<DagExecutionListSummary>> {
         let sql = format!(
-            "SELECT dag.*, {DAG_DISPLAY_STATUS_SQL} AS display_status \
+            "SELECT dag.id, dag.dag_definition, {DAG_DISPLAY_STATUS_SQL} AS display_status, \
+             dag.streamer_id, dag.session_id, dag.total_steps, dag.completed_steps, \
+             dag.failed_steps, dag.created_at, dag.updated_at \
              FROM dag_execution AS dag {} \
              ORDER BY dag.created_at DESC LIMIT ? OFFSET ?",
             dag_list_where_clause(filter)
         );
-
         let query = bind_dag_list_filter!(
-            sqlx::query_as::<_, DagDisplayRow>(sqlx::AssertSqlSafe(sql)),
+            sqlx::query_as::<_, DagSummaryRow>(sqlx::AssertSqlSafe(sql)),
             filter
         );
         let rows = query.bind(limit).bind(offset).fetch_all(&self.pool).await?;
 
         rows.into_iter()
             .map(|row| {
-                let display_status = parse_display_status(&row.dag.id, &row.display_status)?;
-                Ok((row.dag, display_status))
+                let display_status = parse_display_status(&row.id, &row.display_status)?;
+                Ok(DagExecutionListSummary {
+                    name: crate::database::models::dag::dag_definition_name(&row.dag_definition),
+                    id: row.id,
+                    display_status,
+                    streamer_id: row.streamer_id,
+                    session_id: row.session_id,
+                    total_steps: row.total_steps,
+                    completed_steps: row.completed_steps,
+                    failed_steps: row.failed_steps,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
             })
             .collect()
     }
@@ -1643,12 +1662,12 @@ mod tests {
         }
 
         let listed = repo
-            .list_dags_by_display_status(&DagListFilter::default(), 10, 0)
+            .list_dag_summaries(&DagListFilter::default(), 10, 0)
             .await
             .unwrap();
         let listed: Vec<_> = listed
             .iter()
-            .map(|(dag, status)| (dag.id.as_str(), *status))
+            .map(|dag| (dag.id.as_str(), dag.display_status))
             .collect();
         assert_eq!(
             listed,
@@ -1668,12 +1687,9 @@ mod tests {
                 status: Some(status),
                 ..Default::default()
             };
-            let filtered = repo
-                .list_dags_by_display_status(&filter, 10, 0)
-                .await
-                .unwrap();
+            let filtered = repo.list_dag_summaries(&filter, 10, 0).await.unwrap();
             assert_eq!(filtered.len(), 1, "{status}");
-            assert_eq!(filtered[0].0.id, expected.id, "{status}");
+            assert_eq!(filtered[0].id, expected.id, "{status}");
             assert_eq!(
                 repo.count_dags_by_display_status(&filter).await.unwrap(),
                 1,
@@ -1698,6 +1714,100 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn dag_summaries_parse_names_and_keep_list_order_and_filters() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
+        let jobs = SqlxJobRepository::new(pool.clone(), pool.clone());
+        let definitions = [
+            (
+                r#"{"name":"Archive_Backup%\\","steps":[]}"#,
+                Some("Archive_Backup%\\"),
+            ),
+            (r#"{"steps":[]}"#, None),
+            (r#"{"name":42}"#, None),
+            ("{invalid", None),
+            (r#"{"name":"first","name":"second"}"#, None),
+            (r#"{"name":"Finished"}"#, Some("Finished")),
+        ];
+        let mut expected = Vec::new();
+        for (index, (definition, name)) in definitions.iter().enumerate() {
+            let mut dag = DagExecutionDbModel::new(
+                &DagPipelineDefinition::new("placeholder", vec![]),
+                Some(format!("streamer-{index}")),
+                Some(format!("session-{}", index % 2)),
+            );
+            dag.id = format!("summary-{index}");
+            dag.dag_definition = (*definition).to_owned();
+            dag.created_at = index as i64;
+            dag.updated_at = index as i64 + 10;
+            dag.status = [
+                "PENDING",
+                "PROCESSING",
+                "COMPLETED",
+                "FAILED",
+                "CANCELLED",
+                "COMPLETED",
+            ][index]
+                .to_owned();
+            dag.total_steps = index as i32;
+            dag.completed_steps = index as i32 / 2;
+            dag.failed_steps = index as i32 % 2;
+            dag.input_manifest = Some("unused manifest payload".to_owned());
+            dag.error = Some("unused error payload".to_owned());
+            repo.create_dag(&dag).await.unwrap();
+            if index == 1 {
+                let mut job = JobDbModel::new("remux", "{}");
+                job.status = "PROCESSING".to_owned();
+                job.pipeline_id = Some(dag.id.clone());
+                jobs.create_job(&job).await.unwrap();
+            }
+            expected.push(DagExecutionListSummary {
+                display_status: repo.get_dag_display_status(&dag.id).await.unwrap(),
+                id: dag.id,
+                name: name.map(str::to_owned),
+                streamer_id: dag.streamer_id,
+                session_id: dag.session_id,
+                total_steps: dag.total_steps,
+                completed_steps: dag.completed_steps,
+                failed_steps: dag.failed_steps,
+                created_at: dag.created_at,
+                updated_at: dag.updated_at,
+            });
+        }
+        expected.reverse();
+
+        let all = DagListFilter::default();
+        assert_eq!(
+            repo.list_dag_summaries(&all, 10, 0).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            repo.list_dag_summaries(&all, 2, 1).await.unwrap(),
+            expected[1..3]
+        );
+        let session = DagListFilter {
+            session_id: Some("session-1"),
+            ..Default::default()
+        };
+        let in_session: Vec<_> = expected
+            .iter()
+            .filter(|dag| dag.session_id.as_deref() == Some("session-1"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            repo.list_dag_summaries(&session, 10, 0).await.unwrap(),
+            in_session
+        );
+        // Search uses SQLite JSON extraction; malformed definitions keep its
+        // query error rather than being silently repaired.
+        let search = DagListFilter {
+            search: Some("missing"),
+            ..Default::default()
+        };
+        assert!(repo.list_dag_summaries(&search, 10, 0).await.is_err());
+    }
+
     async fn search_dag_ids(
         repo: &SqlxDagRepository,
         search: &str,
@@ -1709,11 +1819,11 @@ mod tests {
             ..Default::default()
         };
         let mut ids: Vec<String> = repo
-            .list_dags_by_display_status(&filter, 10, 0)
+            .list_dag_summaries(&filter, 10, 0)
             .await
             .unwrap()
             .into_iter()
-            .map(|(dag, _)| dag.id)
+            .map(|dag| dag.id)
             .collect();
         ids.sort();
         assert_eq!(

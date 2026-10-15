@@ -293,7 +293,7 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
 
     // File coordination and rotation run on the nonblocking writer's worker.
     let file_appender = build_file_appender(&log_path)?;
-    let store = file_appender.0.clone();
+    let store = file_appender.store.clone();
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Create reloadable filter
@@ -345,7 +345,7 @@ fn build_file_appender(log_path: &Path) -> crate::Result<LogWriter> {
     store
         .initialize()
         .map_err(|error| crate::Error::io_path("opening rotating log file", log_path, error))?;
-    Ok(LogWriter(store))
+    Ok(LogWriter::new(store))
 }
 
 /// Available logging modules for documentation/API responses.
