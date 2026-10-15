@@ -77,11 +77,11 @@ export const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
 export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
 
 export const RcloneConfigSchema = z.object({
-  rclone_path: z.string().default('rclone'),
-  max_retries: z.number().int().default(3),
+  // Attempts per transfer and destination `mkdir`; see `RcloneConfig` in
+  // `src/pipeline/processors/rclone.rs`.
+  max_retries: z.number().int().min(1).default(3),
   destination_root: z.string().optional(),
   config_path: z.string().optional(),
-  remote_path: z.string().optional(), // Legacy support or direct override
   operation: RcloneOperationSchema.default('copy'),
   time_anchor: TimeAnchorSchema.default('job_created'),
   args: z.array(z.string()).default([]),
