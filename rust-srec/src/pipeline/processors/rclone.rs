@@ -1,9 +1,12 @@
 //! Rclone processor for cloud storage operations.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -155,6 +158,54 @@ fn sanitize_extra_args(args: &[String]) -> (Vec<String>, usize) {
     (kept, stripped)
 }
 
+/// How long a successful `mkdir` is trusted, so jobs uploading into the same
+/// directory moments apart skip a redundant one. Kept short because a
+/// directory deleted on the remote within this window would be recreated by
+/// racing transfers instead of under the lock.
+const ENSURED_DIR_TTL: Duration = Duration::from_secs(60);
+
+/// Upper bound on waiting for other jobs' `mkdir`s on the same remote. Leaves
+/// room for a few jobs ahead to exhaust every [`MKDIR_TIMEOUT`] attempt
+/// (about 3 minutes each with backoff) without failing the jobs queued behind.
+const DIR_LOCK_WAIT: Duration = Duration::from_secs(600);
+
+/// Upper bound on one `rclone mkdir` attempt, which retries throttled
+/// requests itself.
+const MKDIR_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A directory a `mkdir` created. The config file and backend arguments
+/// decide which directory a path names, so they are part of its identity.
+#[derive(PartialEq, Eq, Hash)]
+struct EnsuredDir {
+    config_path: Option<String>,
+    extra_args: Vec<String>,
+    path: String,
+}
+
+/// Remote directories created within [`ENSURED_DIR_TTL`].
+type EnsuredDirs = HashMap<EnsuredDir, tokio::time::Instant>;
+
+/// A directory on an rclone remote that a transfer writes into.
+struct RemoteDir {
+    /// Remote name without connection-string parameters; selects the lock.
+    remote: String,
+    /// Full rclone path, parameters included; what `mkdir` creates.
+    path: String,
+}
+
+/// One lock per rclone remote that serializes its directory creation; the
+/// lock guards the directories it has recently ensured.
+#[derive(Default)]
+struct RemoteDirGate {
+    remotes: DashMap<String, Arc<tokio::sync::Mutex<EnsuredDirs>>>,
+}
+
+impl RemoteDirGate {
+    fn remote(&self, name: &str) -> Arc<tokio::sync::Mutex<EnsuredDirs>> {
+        self.remotes.entry(name.to_owned()).or_default().clone()
+    }
+}
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
@@ -164,6 +215,8 @@ pub struct RcloneProcessor {
     /// Runs assembled rclone commands; a seam so tests can observe and
     /// stub invocations without spawning a real process.
     command_runner: Arc<dyn RcloneCommandRunner>,
+    /// Serializes destination directory creation across concurrent jobs.
+    dir_gate: RemoteDirGate,
 }
 
 #[async_trait]
@@ -202,23 +255,12 @@ struct RcloneExecution<'a> {
 impl RcloneProcessor {
     /// Create a new rclone processor.
     pub fn new() -> Self {
-        Self {
-            rclone_path: std::env::var("RCLONE_PATH").unwrap_or_else(|_| "rclone".to_string()),
-            max_retries: 3,
-            command_runner: Arc::new(ProcessRcloneCommandRunner),
-        }
+        Self::with_command_runner(
+            std::env::var("RCLONE_PATH").unwrap_or_else(|_| "rclone".to_string()),
+            Arc::new(ProcessRcloneCommandRunner),
+        )
     }
 
-    /// Create with a custom rclone path.
-    pub fn with_rclone_path(path: impl Into<String>) -> Self {
-        Self {
-            rclone_path: path.into(),
-            max_retries: 3,
-            command_runner: Arc::new(ProcessRcloneCommandRunner),
-        }
-    }
-
-    #[cfg(test)]
     fn with_command_runner(
         path: impl Into<String>,
         command_runner: Arc<dyn RcloneCommandRunner>,
@@ -227,6 +269,7 @@ impl RcloneProcessor {
             rclone_path: path.into(),
             max_retries: 3,
             command_runner,
+            dir_gate: RemoteDirGate::default(),
         }
     }
 
@@ -321,15 +364,57 @@ impl RcloneProcessor {
     /// credentials in its parameters, which are elided; a plain `remote:path`
     /// or local path is unchanged.
     fn loggable_destination(destination: &str) -> String {
-        let backend_prefix = usize::from(destination.starts_with(':'));
-        let Some(colon) = destination[backend_prefix..].find(':') else {
-            return destination.to_owned();
-        };
-        let (remote_spec, path) = destination.split_at(backend_prefix + colon);
-        match remote_spec.split_once(',') {
-            Some((name, _parameters)) => format!("{name},…{path}"),
+        match Self::split_remote(destination)
+            .and_then(|(spec, path)| Some((spec.split_once(',')?.0, path)))
+        {
+            Some((name, path)) => format!("{name},…:{path}"),
             None => destination.to_owned(),
         }
+    }
+
+    /// Splits an rclone destination into its remote spec — the remote name
+    /// plus any connection-string parameters (`drive,token=…`, `:backend,…`)
+    /// — and the path on that remote, or `None` for a local path.
+    fn split_remote(destination: &str) -> Option<(&str, &str)> {
+        let backend_prefix = usize::from(destination.starts_with(':'));
+        let bytes = destination.as_bytes();
+        let name_end = backend_prefix + destination[backend_prefix..].find([',', ':'])?;
+        // Remote names never contain a path separator, and rclone on Windows
+        // reads a single letter before the colon as a drive. Parameter values
+        // may contain either, so only the name is checked.
+        let name = &destination[backend_prefix..name_end];
+        if name.is_empty()
+            || name.contains(['/', '\\'])
+            || (cfg!(windows) && backend_prefix == 0 && name.len() == 1)
+        {
+            return None;
+        }
+        // A value holding `,` or `:` is quoted with `"` or `'` from its first
+        // character; a doubled quote inside stands for the quote itself.
+        let mut quote = None;
+        let mut index = name_end;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            match quote {
+                Some(open) if byte == open => {
+                    if bytes.get(index + 1) == Some(&open) {
+                        index += 1;
+                    } else {
+                        quote = None;
+                    }
+                }
+                Some(_) => {}
+                None if byte == b':' => {
+                    return Some((&destination[..index], &destination[index + 1..]));
+                }
+                None if matches!(byte, b'"' | b'\'') && bytes[index - 1] == b'=' => {
+                    quote = Some(byte);
+                }
+                None => {}
+            }
+            index += 1;
+        }
+        None
     }
 
     /// Remote path of one batch input: `remote_root` + the input's path
@@ -344,6 +429,167 @@ impl RcloneProcessor {
             remote_root.trim_end_matches('/'),
             relative
         ))
+    }
+
+    /// The rclone remote a destination is on, or `None` for a local path.
+    /// Connection-string parameters are dropped, so `drive,token=…:a` and
+    /// `drive:b` share a remote.
+    fn remote_name(destination: &str) -> Option<&str> {
+        let (spec, _path) = Self::split_remote(destination)?;
+        Some(
+            spec.split_once(',')
+                .map_or(spec, |(name, _parameters)| name),
+        )
+    }
+
+    /// The directory holding `destination` on its remote, or `None` when
+    /// that is the remote's root, which always exists.
+    fn remote_parent(destination: &str) -> Option<&str> {
+        let (spec, path) = Self::split_remote(destination)?;
+        let slash = path.trim_end_matches('/').rfind('/')?;
+        (!path[..slash].trim_matches('/').is_empty())
+            .then(|| &destination[..spec.len() + 1 + slash])
+    }
+
+    /// Remote directories a transfer writes into, deduplicated in input order.
+    ///
+    /// With `batch_base_dir`, `destination` is the root that inputs keep their
+    /// paths relative to; without it, `destination` is the single input's
+    /// file path. Inputs a resumed move already consumed write nothing, and
+    /// local destinations need no coordination.
+    async fn mkdir_targets(
+        inputs: &[String],
+        destination: &str,
+        batch_base_dir: Option<&Path>,
+        skip_absent_inputs: bool,
+    ) -> Vec<RemoteDir> {
+        let Some(remote) = Self::remote_name(destination) else {
+            return Vec::new();
+        };
+        let mut targets: Vec<RemoteDir> = Vec::new();
+        for input in inputs {
+            if skip_absent_inputs && super::inputs::is_confirmed_absent(Path::new(input)).await {
+                continue;
+            }
+            let file_destination = match batch_base_dir {
+                Some(base_dir) => Self::batch_remote_path(base_dir, destination, input),
+                None => Some(destination.to_owned()),
+            };
+            if let Some(parent) = file_destination.as_deref().and_then(Self::remote_parent)
+                && !targets.iter().any(|target| target.path == parent)
+            {
+                targets.push(RemoteDir {
+                    remote: remote.to_owned(),
+                    path: parent.to_owned(),
+                });
+            }
+        }
+        targets
+    }
+
+    /// Create each target directory before a transfer writes into it.
+    ///
+    /// Each rclone process resolves a destination with its own directory
+    /// cache, so concurrent transfers into a missing directory each create
+    /// it, and remotes that allow same-name siblings (Google Drive) keep
+    /// every copy, splitting the files between them. Running `mkdir` here,
+    /// one at a time per remote, lets the transfers find the one existing
+    /// directory. The lock covers a whole remote rather than a path because
+    /// sibling destinations share missing ancestors; differently named
+    /// remotes are not coordinated, even when they reach the same account.
+    ///
+    /// A `mkdir` is retried like a transfer; one that keeps failing fails the
+    /// job, because transferring anyway could race another job's `mkdir` of
+    /// the same directory. Retries keep the lock for the same reason.
+    async fn ensure_remote_dirs(
+        &self,
+        targets: &[RemoteDir],
+        execution: &RcloneExecution<'_>,
+    ) -> Result<()> {
+        for RemoteDir { remote, path } in targets {
+            let loggable = Self::loggable_destination(path);
+            let remote_dirs = self.dir_gate.remote(remote);
+            let mut ensured = tokio::time::timeout(DIR_LOCK_WAIT, remote_dirs.lock())
+                .await
+                .map_err(|_| {
+                    crate::Error::Other(format!(
+                        "Timed out waiting to create remote directory {loggable}"
+                    ))
+                })?;
+            ensured.retain(|_, ensured_at| ensured_at.elapsed() < ENSURED_DIR_TTL);
+            let ensured_dir = EnsuredDir {
+                config_path: execution.config_path.map(str::to_owned),
+                extra_args: execution.extra_args.to_vec(),
+                path: path.clone(),
+            };
+            if ensured.contains_key(&ensured_dir) {
+                execution.context.info(format!(
+                    "Remote directory {loggable} was created moments ago; skipping mkdir"
+                ));
+                continue;
+            }
+
+            let mut attempt = 1;
+            while let Err(error) = self.run_mkdir(path, &loggable, execution).await {
+                execution.context.warn(format!(
+                    "rclone mkdir attempt {attempt} of {} failed: {error}",
+                    self.max_retries
+                ));
+                if attempt >= self.max_retries {
+                    return Err(error);
+                }
+                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
+                attempt += 1;
+            }
+            execution
+                .context
+                .info(format!("Ensured remote directory {loggable}"));
+            ensured.insert(ensured_dir, tokio::time::Instant::now());
+        }
+        Ok(())
+    }
+
+    /// One `rclone mkdir` of `target`, bounded by [`MKDIR_TIMEOUT`].
+    async fn run_mkdir(
+        &self,
+        target: &str,
+        loggable: &str,
+        execution: &RcloneExecution<'_>,
+    ) -> Result<()> {
+        let mut cmd = Command::new(&self.rclone_path);
+        if let Some(cfg) = execution.config_path {
+            cmd.arg("--config").arg(cfg);
+        }
+        cmd.args(["--use-json-log", "--log-level", "NOTICE", "mkdir", target]);
+        // Extra args can carry backend flags (e.g. a root folder ID) that
+        // change which directory the path names, so they apply here too.
+        cmd.args(execution.throughput);
+        cmd.args(execution.extra_args);
+
+        let command_output = tokio::time::timeout(
+            MKDIR_TIMEOUT,
+            self.command_runner.run(&mut cmd, execution.context),
+        )
+        .await
+        .map_err(|_| {
+            crate::Error::Other(format!(
+                "rclone mkdir {loggable} timed out after {}s",
+                MKDIR_TIMEOUT.as_secs()
+            ))
+        })?
+        .map_err(|e| {
+            crate::Error::Other(format!("Failed to execute rclone mkdir {loggable}: {e}"))
+        })?;
+        if !command_output.status.success() {
+            return Err(crate::Error::Other(format!(
+                "rclone mkdir {loggable} failed with exit code {}: {}",
+                command_output.status.code().unwrap_or(-1),
+                command_output
+                    .last_error_message()
+                    .unwrap_or("Unknown error")
+            )));
+        }
+        Ok(())
     }
 
     /// Execute a single-file rclone operation.
@@ -960,6 +1206,9 @@ impl Processor for RcloneProcessor {
             ));
         }
 
+        // Only a retried move can find inputs already consumed and uploaded.
+        let skip_absent_inputs = matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;
+
         // Choose single or batch mode based on input count
         if input.inputs.len() == 1 {
             // Single file mode - append filename to destination
@@ -975,34 +1224,47 @@ impl Processor for RcloneProcessor {
                     remote_destination.clone()
                 };
 
-            self.process_single(
-                input_path,
-                &RcloneExecution {
-                    remote_destination: &full_destination,
-                    operation: config.operation,
-                    config_path: config.config_path.as_deref(),
-                    throughput: &throughput,
-                    extra_args: &extra_args,
-                    context: ctx,
-                },
-            )
-            .await
+            let execution = RcloneExecution {
+                remote_destination: &full_destination,
+                operation: config.operation,
+                config_path: config.config_path.as_deref(),
+                throughput: &throughput,
+                extra_args: &extra_args,
+                context: ctx,
+            };
+            let targets =
+                Self::mkdir_targets(&input.inputs, &full_destination, None, skip_absent_inputs)
+                    .await;
+            self.ensure_remote_dirs(&targets, &execution).await?;
+            self.process_single(input_path, &execution).await
         } else {
             // Batch mode - use --files-from
             info!("Using batch mode for {} files", input.inputs.len());
 
-            self.process_batch(
-                &input.inputs,
-                &RcloneExecution {
-                    remote_destination: &remote_destination,
-                    operation: config.operation,
-                    config_path: config.config_path.as_deref(),
-                    throughput: &throughput,
-                    extra_args: &extra_args,
-                    context: ctx,
-                },
-            )
-            .await
+            let execution = RcloneExecution {
+                remote_destination: &remote_destination,
+                operation: config.operation,
+                config_path: config.config_path.as_deref(),
+                throughput: &throughput,
+                extra_args: &extra_args,
+                context: ctx,
+            };
+            // Same base directory `process_batch` lays the inputs out from;
+            // without one it rejects the batch before any transfer.
+            let targets = match Self::find_common_base_dir(&input.inputs) {
+                Some(base_dir) => {
+                    Self::mkdir_targets(
+                        &input.inputs,
+                        &remote_destination,
+                        Some(&base_dir),
+                        skip_absent_inputs,
+                    )
+                    .await
+                }
+                None => Vec::new(),
+            };
+            self.ensure_remote_dirs(&targets, &execution).await?;
+            self.process_batch(&input.inputs, &execution).await
         }
     }
 }
@@ -1011,6 +1273,7 @@ impl Processor for RcloneProcessor {
 mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::super::test_utils::{test_exit_status, utc_datetime};
     use super::*;
@@ -1020,10 +1283,118 @@ mod tests {
         succeeds: bool,
     }
 
+    #[derive(Clone, Copy)]
+    enum MkdirOutcome {
+        Succeed,
+        Fail,
+        /// Never completes, like an rclone stuck retrying a throttled remote.
+        Hang,
+    }
+
+    /// How long an armed [`FakeRemote`] holds a resolver between finding a
+    /// directory missing and creating it, waiting for a second resolver.
+    /// Race tests run on paused time, where this elapses only once every
+    /// other task is blocked (blocking file IO holds the clock), so a second
+    /// resolver that can still arrive always does. Shorter than
+    /// [`MKDIR_TIMEOUT`], so a lone `mkdir` waits it out instead of failing.
+    const RACE_WINDOW: Duration = Duration::from_secs(10);
+
+    /// Bound on a test's jobs; on paused time a deadlock reaches it at once.
+    const TEST_DEADLINE: Duration = Duration::from_secs(3600);
+
+    struct FakeFolder {
+        remote: String,
+        parent: Option<usize>,
+        name: String,
+    }
+
+    /// Remote filesystem that, like Google Drive, keeps same-name sibling
+    /// folders. Every resolver (mkdir or transfer) looks a path segment up
+    /// and creates it when missing, with no re-check in between — the gap
+    /// separate rclone processes race in. Once armed, the first two
+    /// creations wait in that gap for each other, so two unsynchronized
+    /// resolvers of one missing directory deterministically both create it.
+    struct FakeRemote {
+        /// Folder IDs are indices; a `None` parent is the remote's root.
+        folders: Mutex<Vec<FakeFolder>>,
+        race_armed: AtomicBool,
+        race_slots: AtomicUsize,
+        race_barrier: tokio::sync::Barrier,
+    }
+
+    impl FakeRemote {
+        fn new() -> Self {
+            Self {
+                folders: Mutex::default(),
+                race_armed: AtomicBool::new(false),
+                race_slots: AtomicUsize::new(0),
+                race_barrier: tokio::sync::Barrier::new(2),
+            }
+        }
+
+        fn arm_race(&self) {
+            self.race_armed.store(true, Ordering::SeqCst);
+        }
+
+        async fn create_dir_all(&self, dir: &str) {
+            let (remote, path) = dir.split_once(':').expect("fake paths name a remote");
+            let mut parent = None;
+            for name in path.split('/').filter(|segment| !segment.is_empty()) {
+                let existing = self.folders.lock().unwrap().iter().position(|folder| {
+                    folder.remote == remote && folder.parent == parent && folder.name == name
+                });
+                let id = match existing {
+                    Some(id) => id,
+                    None => {
+                        if self.race_armed.load(Ordering::SeqCst)
+                            && self.race_slots.fetch_add(1, Ordering::SeqCst) < 2
+                        {
+                            // A lone resolver times out and proceeds.
+                            let _ =
+                                tokio::time::timeout(RACE_WINDOW, self.race_barrier.wait()).await;
+                        }
+                        let mut folders = self.folders.lock().unwrap();
+                        folders.push(FakeFolder {
+                            remote: remote.to_owned(),
+                            parent,
+                            name: name.to_owned(),
+                        });
+                        folders.len() - 1
+                    }
+                };
+                parent = Some(id);
+            }
+        }
+
+        fn folder_path(folders: &[FakeFolder], id: usize) -> String {
+            let folder = &folders[id];
+            match folder.parent {
+                Some(parent) => format!("{}/{}", Self::folder_path(folders, parent), folder.name),
+                None => format!("{}:{}", folder.remote, folder.name),
+            }
+        }
+
+        /// Every folder's path, sorted; duplicate folders repeat a path.
+        fn dir_paths(&self) -> Vec<String> {
+            let folders = self.folders.lock().unwrap();
+            let mut paths: Vec<String> = (0..folders.len())
+                .map(|id| Self::folder_path(&folders, id))
+                .collect();
+            paths.sort();
+            paths
+        }
+    }
+
     struct MockRcloneCommandRunner {
         attempts: Mutex<VecDeque<MockAttempt>>,
         manifests: Mutex<Vec<Vec<String>>>,
         commands: Mutex<Vec<Vec<String>>>,
+        /// `mkdir` invocations, kept apart from `commands` and answered from
+        /// `mkdir_outcomes` (default: succeed) rather than `attempts`.
+        mkdirs: Mutex<Vec<Vec<String>>>,
+        mkdir_outcomes: Mutex<VecDeque<MkdirOutcome>>,
+        mkdir_started: tokio::sync::Notify,
+        remote: FakeRemote,
     }
 
     impl MockRcloneCommandRunner {
@@ -1032,7 +1403,16 @@ mod tests {
                 attempts: Mutex::new(attempts.into()),
                 manifests: Mutex::new(Vec::new()),
                 commands: Mutex::new(Vec::new()),
+                mkdirs: Mutex::new(Vec::new()),
+                mkdir_outcomes: Mutex::new(VecDeque::new()),
+                mkdir_started: tokio::sync::Notify::new(),
+                remote: FakeRemote::new(),
             }
+        }
+
+        fn with_mkdir_outcomes(self, outcomes: Vec<MkdirOutcome>) -> Self {
+            *self.mkdir_outcomes.lock().unwrap() = outcomes.into();
+            self
         }
 
         fn manifests(&self) -> Vec<Vec<String>> {
@@ -1041,6 +1421,51 @@ mod tests {
 
         fn commands(&self) -> Vec<Vec<String>> {
             self.commands.lock().unwrap().clone()
+        }
+
+        fn mkdirs(&self) -> Vec<Vec<String>> {
+            self.mkdirs.lock().unwrap().clone()
+        }
+
+        /// The directory each recorded `mkdir` targeted.
+        fn mkdir_targets(&self) -> Vec<String> {
+            self.mkdirs()
+                .iter()
+                .map(|args| {
+                    let index = args.iter().position(|arg| arg == "mkdir").unwrap();
+                    args[index + 1].clone()
+                })
+                .collect()
+        }
+
+        async fn run_mkdir(&self, target: &str) -> CommandOutput {
+            self.mkdir_started.notify_one();
+
+            let outcome = self
+                .mkdir_outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(MkdirOutcome::Succeed);
+            let succeeds = match outcome {
+                MkdirOutcome::Succeed => {
+                    self.remote.create_dir_all(target).await;
+                    true
+                }
+                MkdirOutcome::Fail => false,
+                MkdirOutcome::Hang => std::future::pending().await,
+            };
+            CommandOutput {
+                status: test_exit_status(succeeds),
+                duration: 0.0,
+                logs: if succeeds {
+                    Vec::new()
+                } else {
+                    vec![crate::pipeline::job_queue::JobLogEntry::error(
+                        "simulated mkdir failure",
+                    )]
+                },
+            }
         }
     }
 
@@ -1056,14 +1481,21 @@ mod tests {
                 .get_args()
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect();
+            if let Some(index) = args.iter().position(|arg| arg == "mkdir") {
+                let target = args[index + 1].clone();
+                self.mkdirs.lock().unwrap().push(args);
+                return Ok(self.run_mkdir(&target).await);
+            }
+
             // Single-file commands (copyto/moveto) carry no --files-from;
             // only batch commands record a manifest.
+            let mut file_destinations = Vec::new();
             if let Some(manifest_index) = args.iter().position(|arg| arg == "--files-from") {
                 let manifest_path =
                     PathBuf::from(args.get(manifest_index + 1).ok_or_else(|| {
                         crate::Error::Other("missing files-from path".to_string())
                     })?);
-                let manifest = tokio::fs::read_to_string(&manifest_path)
+                let manifest: Vec<String> = tokio::fs::read_to_string(&manifest_path)
                     .await
                     .map_err(|e| {
                         crate::Error::io_path("reading test rclone manifest", &manifest_path, e)
@@ -1071,9 +1503,24 @@ mod tests {
                     .lines()
                     .map(str::to_string)
                     .collect();
+                // `--files-from <manifest> <op> <base_dir> <destination>`
+                let root = args[manifest_index + 4].trim_end_matches('/');
+                file_destinations.extend(manifest.iter().map(|line| format!("{root}/{line}")));
                 self.manifests.lock().unwrap().push(manifest);
+            } else if let Some(index) = args
+                .iter()
+                .position(|arg| arg == "copyto" || arg == "moveto")
+            {
+                // `<op> <source> <destination>`
+                file_destinations.push(args[index + 2].clone());
             }
             self.commands.lock().unwrap().push(args);
+            // A transfer resolves each file's directory the same way.
+            for destination in &file_destinations {
+                if let Some(dir) = RcloneProcessor::remote_parent(destination) {
+                    self.remote.create_dir_all(dir).await;
+                }
+            }
 
             let attempt = self
                 .attempts
@@ -1375,6 +1822,7 @@ mod tests {
                 .all(|upload| upload.status == UploadItemStatus::Completed)
         );
         assert!(runner.commands().is_empty());
+        assert!(runner.mkdirs().is_empty(), "nothing left to upload");
         let metadata: serde_json::Value =
             serde_json::from_str(output.metadata.as_deref().unwrap()).unwrap();
         assert_eq!(metadata["resumed_inputs"], 2);
@@ -1410,6 +1858,380 @@ mod tests {
         assert!(!source.exists());
         assert_eq!(runner.commands().len(), 1);
         assert!(runner.commands()[0].iter().any(|arg| arg == "moveto"));
+    }
+
+    fn succeeding_attempts(count: usize) -> Vec<MockAttempt> {
+        (0..count)
+            .map(|_| MockAttempt {
+                moved_inputs: vec![],
+                succeeds: true,
+            })
+            .collect()
+    }
+
+    /// Writes `names` into `dir` and returns their paths as job inputs.
+    async fn write_inputs(dir: &Path, names: &[&str]) -> Vec<String> {
+        let mut inputs = Vec::new();
+        for name in names {
+            let path = dir.join(name);
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent).await.unwrap();
+            }
+            tokio::fs::write(&path, b"data").await.unwrap();
+            inputs.push(path.to_string_lossy().into_owned());
+        }
+        inputs
+    }
+
+    fn upload_input(inputs: Vec<String>, destination_root: &str) -> ProcessorInput {
+        ProcessorInput {
+            inputs,
+            config: Some(
+                serde_json::json!({ "operation": "copy", "destination_root": destination_root })
+                    .to_string(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    /// The incident: a single-file upload and a batch upload from one
+    /// session start together into a day directory that does not exist yet.
+    /// Without coordinated directory creation each rclone process creates
+    /// `14` and the files split between two same-name folders.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_uploads_into_a_new_directory_share_one_remote_folder() {
+        const DESTINATION: &str = "remote:records/Streamer/2026/10/14";
+        let runner = Arc::new(MockRcloneCommandRunner::new(succeeding_attempts(2)));
+        runner
+            .remote
+            .create_dir_all("remote:records/Streamer/2026/10")
+            .await;
+        runner.remote.arm_race();
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let xml_dir = tempfile::tempdir().unwrap();
+        let video_dir = tempfile::tempdir().unwrap();
+        let xml_upload = upload_input(
+            write_inputs(xml_dir.path(), &["danmu.xml"]).await,
+            DESTINATION,
+        );
+        let video_upload = upload_input(
+            write_inputs(video_dir.path(), &["video.mp4", "cover.jpg"]).await,
+            DESTINATION,
+        );
+        let xml_context = ProcessorContext::noop("xml-upload");
+        let video_context = ProcessorContext::noop("video-upload");
+
+        let (xml_result, video_result) = tokio::time::timeout(TEST_DEADLINE, async {
+            tokio::join!(
+                processor.process(&xml_upload, &xml_context),
+                processor.process(&video_upload, &video_context),
+            )
+        })
+        .await
+        .expect("uploads finish");
+        xml_result.unwrap();
+        video_result.unwrap();
+
+        assert_eq!(
+            runner.remote.dir_paths(),
+            [
+                "remote:records",
+                "remote:records/Streamer",
+                "remote:records/Streamer/2026",
+                "remote:records/Streamer/2026/10",
+                "remote:records/Streamer/2026/10/14",
+            ]
+        );
+    }
+
+    /// Different day directories still share a missing month directory, so
+    /// creation is serialized per remote, not per destination path.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_uploads_to_sibling_directories_share_a_new_parent() {
+        let runner = Arc::new(MockRcloneCommandRunner::new(succeeding_attempts(2)));
+        runner
+            .remote
+            .create_dir_all("remote:records/Streamer/2026")
+            .await;
+        runner.remote.arm_race();
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = upload_input(
+            write_inputs(temp_dir.path(), &["first.mp4"]).await,
+            "remote:records/Streamer/2026/10/14",
+        );
+        let second = upload_input(
+            write_inputs(temp_dir.path(), &["second.mp4"]).await,
+            "remote:records/Streamer/2026/10/15",
+        );
+        let first_context = ProcessorContext::noop("first");
+        let second_context = ProcessorContext::noop("second");
+
+        let (first_result, second_result) = tokio::time::timeout(TEST_DEADLINE, async {
+            tokio::join!(
+                processor.process(&first, &first_context),
+                processor.process(&second, &second_context),
+            )
+        })
+        .await
+        .expect("uploads finish");
+        first_result.unwrap();
+        second_result.unwrap();
+
+        assert_eq!(
+            runner.remote.dir_paths(),
+            [
+                "remote:records",
+                "remote:records/Streamer",
+                "remote:records/Streamer/2026",
+                "remote:records/Streamer/2026/10",
+                "remote:records/Streamer/2026/10/14",
+                "remote:records/Streamer/2026/10/15",
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn recent_mkdir_is_reused_until_its_ttl_expires() {
+        const DESTINATION: &str = "remote:records/Streamer/2026/10/14";
+        let runner = Arc::new(MockRcloneCommandRunner::new(succeeding_attempts(3)));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = upload_input(
+            write_inputs(temp_dir.path(), &["video.mp4"]).await,
+            DESTINATION,
+        );
+        let context = ProcessorContext::noop("upload");
+
+        processor.process(&input, &context).await.unwrap();
+        processor.process(&input, &context).await.unwrap();
+        assert_eq!(runner.mkdir_targets(), [DESTINATION]);
+
+        tokio::time::advance(ENSURED_DIR_TTL + Duration::from_secs(1)).await;
+        processor.process(&input, &context).await.unwrap();
+        assert_eq!(runner.mkdir_targets(), [DESTINATION, DESTINATION]);
+        assert_eq!(runner.commands().len(), 3);
+    }
+
+    /// The same path under another root folder is another directory, so a
+    /// recent `mkdir` under one root does not stand in for the other.
+    #[tokio::test]
+    async fn recent_mkdir_is_not_reused_under_other_backend_args() {
+        let runner = Arc::new(MockRcloneCommandRunner::new(succeeding_attempts(2)));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let inputs = write_inputs(temp_dir.path(), &["video.mp4"]).await;
+        let under_root = |root: &str| ProcessorInput {
+            inputs: inputs.clone(),
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination_root": "remote:records/day",
+                    "args": ["--drive-root-folder-id", root],
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+        let context = ProcessorContext::noop("upload");
+
+        processor.process(&under_root("a"), &context).await.unwrap();
+        processor.process(&under_root("b"), &context).await.unwrap();
+
+        assert_eq!(runner.mkdirs().len(), 2);
+    }
+
+    /// A throttled or hung `mkdir` is retried before the job gives up, like
+    /// a transfer: failed jobs are only retried by hand.
+    #[tokio::test(start_paused = true)]
+    async fn transient_mkdir_failures_are_retried() {
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(succeeding_attempts(1))
+                .with_mkdir_outcomes(vec![MkdirOutcome::Fail, MkdirOutcome::Hang]),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = upload_input(
+            write_inputs(temp_dir.path(), &["video.mp4"]).await,
+            "remote:records/day",
+        );
+
+        processor
+            .process(&input, &ProcessorContext::noop("upload"))
+            .await
+            .unwrap();
+
+        assert_eq!(runner.mkdirs().len(), 3);
+        assert_eq!(runner.commands().len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_mkdir_fails_the_job_before_any_transfer() {
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(succeeding_attempts(1))
+                .with_mkdir_outcomes(vec![MkdirOutcome::Fail; 3]),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = upload_input(
+            write_inputs(temp_dir.path(), &["video.mp4"]).await,
+            "remote:records/day",
+        );
+        let context = ProcessorContext::noop("upload");
+
+        let error = processor.process(&input, &context).await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("rclone mkdir remote:records/day failed")
+        );
+        assert!(runner.commands().is_empty());
+
+        assert_eq!(runner.mkdirs().len(), 3, "every attempt was used");
+
+        // The failure is not remembered: the next job creates the directory.
+        processor.process(&input, &context).await.unwrap();
+        assert_eq!(runner.mkdirs().len(), 4);
+        assert_eq!(runner.commands().len(), 1);
+    }
+
+    /// Cancelling a job while its `mkdir` holds the remote's lock must not
+    /// keep later jobs out.
+    #[tokio::test]
+    async fn cancelled_mkdir_releases_the_remote_lock() {
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(succeeding_attempts(1))
+                .with_mkdir_outcomes(vec![MkdirOutcome::Hang]),
+        );
+        let processor = Arc::new(RcloneProcessor::with_command_runner(
+            "rclone",
+            runner.clone(),
+        ));
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = upload_input(
+            write_inputs(temp_dir.path(), &["video.mp4"]).await,
+            "remote:records/day",
+        );
+
+        let holder = tokio::spawn({
+            let processor = processor.clone();
+            let input = input.clone();
+            async move {
+                processor
+                    .process(&input, &ProcessorContext::noop("holder"))
+                    .await
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(10), runner.mkdir_started.notified())
+            .await
+            .expect("holder runs mkdir");
+        let lock = processor.dir_gate.remote("remote");
+        assert!(lock.try_lock().is_err(), "the hung mkdir holds the lock");
+
+        holder.abort();
+        assert!(holder.await.unwrap_err().is_cancelled());
+        assert!(lock.try_lock().is_ok(), "cancellation released the lock");
+
+        processor
+            .process(&input, &ProcessorContext::noop("next"))
+            .await
+            .unwrap();
+        assert_eq!(runner.mkdirs().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn mkdir_uses_transfer_flags_and_covers_nested_batch_directories() {
+        let runner = Arc::new(MockRcloneCommandRunner::new(succeeding_attempts(1)));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = ProcessorInput {
+            inputs: write_inputs(temp_dir.path(), &["a.mp4", "nested/b.mp4", "c.jpg"]).await,
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination_root": "remote:records/day",
+                    "config_path": "/config/rclone.conf",
+                    "transfers": 2,
+                    "args": ["--drive-root-folder-id", "folder-id"],
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        processor
+            .process(&input, &ProcessorContext::noop("batch"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            runner.mkdirs()[0],
+            [
+                "--config",
+                "/config/rclone.conf",
+                "--use-json-log",
+                "--log-level",
+                "NOTICE",
+                "mkdir",
+                "remote:records/day",
+                "--transfers",
+                "2",
+                "--drive-root-folder-id",
+                "folder-id",
+            ]
+        );
+        assert_eq!(
+            runner.mkdir_targets(),
+            ["remote:records/day", "remote:records/day/nested"]
+        );
+    }
+
+    #[test]
+    fn remote_name_and_parent_parse_destinations() {
+        assert_eq!(RcloneProcessor::remote_name("gdrive:a/b"), Some("gdrive"));
+        assert_eq!(
+            RcloneProcessor::remote_name("gdrive,token=secret:a/b"),
+            Some("gdrive")
+        );
+        assert_eq!(RcloneProcessor::remote_name(":drive,k=v:a"), Some(":drive"));
+        assert_eq!(RcloneProcessor::remote_name("/local/a:b"), None);
+        assert_eq!(RcloneProcessor::remote_name("relative/path"), None);
+        if cfg!(windows) {
+            assert_eq!(RcloneProcessor::remote_name(r"C:\records"), None);
+        }
+
+        assert_eq!(
+            RcloneProcessor::remote_parent("gdrive:records/day/a.mp4"),
+            Some("gdrive:records/day")
+        );
+        assert_eq!(
+            RcloneProcessor::remote_parent("gdrive,k=v:records/a.mp4"),
+            Some("gdrive,k=v:records")
+        );
+        assert_eq!(
+            RcloneProcessor::remote_parent("gdrive:/records/a.mp4"),
+            Some("gdrive:/records")
+        );
+        assert_eq!(
+            RcloneProcessor::remote_parent(":drive,k=v:records/a.mp4"),
+            Some(":drive,k=v:records")
+        );
+        // Parameter values may hold `/`, and quoted ones `:` and `,`.
+        assert_eq!(
+            RcloneProcessor::remote_parent(":s3,secret_access_key=a/b:bucket/day/a.mp4"),
+            Some(":s3,secret_access_key=a/b:bucket/day")
+        );
+        assert_eq!(
+            RcloneProcessor::split_remote(r#"drive,root='a:b,c''d',x="e:f":records/a.mp4"#),
+            Some((r#"drive,root='a:b,c''d',x="e:f""#, "records/a.mp4"))
+        );
+        assert_eq!(
+            RcloneProcessor::remote_name("drive,root='a:b':records"),
+            Some("drive")
+        );
+        assert_eq!(RcloneProcessor::remote_parent("gdrive:/records"), None);
+        assert_eq!(RcloneProcessor::remote_parent("gdrive:a.mp4"), None);
+        assert_eq!(RcloneProcessor::remote_parent("/local/dir/a.mp4"), None);
     }
 
     /// `plain.txt/child.mp4` makes `try_exists` fail with `NotADirectory`
@@ -1801,6 +2623,20 @@ mod tests {
         assert_eq!(
             RcloneProcessor::loggable_destination("/local/records"),
             "/local/records"
+        );
+        // A local path is never read as a connection string.
+        assert_eq!(
+            RcloneProcessor::loggable_destination("/local/a,b/c:d.mp4"),
+            "/local/a,b/c:d.mp4"
+        );
+        // Secrets holding `/` or quoted `:` are still elided.
+        assert_eq!(
+            RcloneProcessor::loggable_destination(":s3,secret_access_key=a/b:bucket/a.mp4"),
+            ":s3,…:bucket/a.mp4"
+        );
+        assert_eq!(
+            RcloneProcessor::loggable_destination("drive,pass='x:y':videos"),
+            "drive,…:videos"
         );
     }
 
