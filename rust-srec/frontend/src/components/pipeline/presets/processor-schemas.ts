@@ -118,11 +118,14 @@ export const BaiduPcsConfigSchema = z.object({
 });
 
 // --- Thumbnail Processor ---
+// Mirrors `ThumbnailConfig` in `src/pipeline/processors/thumbnail.rs`. A field
+// missing here is stripped on save, and the backend then falls back to its
+// default for it.
 export const ThumbnailConfigSchema = z.object({
   timestamp_secs: z.number().min(0).default(10),
   width: z.number().int().positive().default(320), // Match backend default
   quality: z.number().int().min(1).max(31).default(2), // 1-31 for qscale
-  output_pattern: z.string().optional(),
+  preserve_resolution: z.boolean().default(false),
 });
 
 // --- Audio Extract Processor ---

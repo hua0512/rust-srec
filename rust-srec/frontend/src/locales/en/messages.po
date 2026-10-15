@@ -410,7 +410,7 @@ msgstr "0, no timeout"
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:146
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
@@ -1668,7 +1668,7 @@ msgstr "Capture real-time comments and chat messages if available."
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:44
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:48
 msgid "Capture Settings"
 msgstr "Capture Settings"
 
@@ -4399,10 +4399,6 @@ msgstr "File path copied to clipboard"
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "File size threshold (--multi-thread-cutoff)."
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:153
-msgid "Filename pattern (e.g., thumb.jpg)"
-msgstr "Filename pattern (e.g., thumb.jpg)"
-
 #: src/components/config/global/file-config-card.tsx:73
 #: src/components/config/shared/output-settings-card.tsx:98
 msgid "Filename Template"
@@ -5461,6 +5457,10 @@ msgstr "Keep directory structure"
 msgid "Keep Running"
 msgstr "Keep Running"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:61
+msgid "Keep the original frame size instead of scaling to a width"
+msgstr "Keep the original frame size instead of scaling to a width"
+
 #: src/components/upload-status-indicator.tsx:545
 msgid "Keep uploading"
 msgstr "Keep uploading"
@@ -6324,6 +6324,10 @@ msgstr "name@example.com"
 msgid "Native"
 msgstr "Native"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:59
+msgid "Native resolution"
+msgstr "Native resolution"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:12
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
@@ -6815,6 +6819,10 @@ msgstr "not used"
 msgid "Not used anywhere"
 msgstr "Not used anywhere"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:117
+msgid "Not used at native resolution"
+msgstr "Not used at native resolution"
+
 #: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "Not used while disabled"
@@ -7079,7 +7087,6 @@ msgstr "Out of Space"
 #: src/components/config/platforms/platform-card.tsx:115
 #: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:140
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
 msgstr "Output"
 
@@ -7136,10 +7143,6 @@ msgstr "Output Path"
 #: src/components/config/global/file-config-card.tsx:21
 msgid "Output paths, templates, and formats."
 msgstr "Output paths, templates, and formats."
-
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:143
-msgid "Output Pattern (Optional)"
-msgstr "Output Pattern (Optional)"
 
 #: src/components/config/global/output-retention-fields.tsx:35
 #: src/components/config/global/output-retention-fields.tsx:38
@@ -8029,7 +8032,7 @@ msgstr "QR code expired"
 msgid "Quality"
 msgstr "Quality"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:106
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:133
 msgid "Quality (qscale)"
 msgstr "Quality (qscale)"
 
@@ -10541,7 +10544,7 @@ msgstr "Thursday"
 msgid "Time Based"
 msgstr "Time Based"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:68
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:90
 msgid "Time offset to take screenshot from"
 msgstr "Time offset to take screenshot from"
 
@@ -10600,7 +10603,7 @@ msgstr "Timeout before cancelling IO-bound processors."
 msgid "Timeouts"
 msgstr "Timeouts"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:55
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:77
 msgid "Timestamp"
 msgstr "Timestamp"
 
@@ -11474,11 +11477,11 @@ msgid "Whichever history limit is reached first applies. 0 keeps no history."
 msgstr "Whichever history limit is reached first applies. 0 keeps no history."
 
 #: src/components/config/engines/forms/mesio-sections.tsx:235
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:81
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:103
 msgid "Width"
 msgstr "Width"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:93
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "Width in pixels (keeps aspect ratio)"
 

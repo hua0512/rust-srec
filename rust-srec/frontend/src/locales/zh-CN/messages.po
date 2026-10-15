@@ -410,7 +410,7 @@ msgstr "0，不超时"
 msgid "0:v:0"
 msgstr "0:v:0"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:146
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
@@ -1668,7 +1668,7 @@ msgstr "如果可用，采集实时评论和聊天消息。"
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:44
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:48
 msgid "Capture Settings"
 msgstr "采集设置"
 
@@ -4399,10 +4399,6 @@ msgstr "文件路径已复制到剪贴板"
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "文件大小阈值（--multi-thread-cutoff）。"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:153
-msgid "Filename pattern (e.g., thumb.jpg)"
-msgstr "文件名模式（例如 thumb.jpg）"
-
 #: src/components/config/global/file-config-card.tsx:73
 #: src/components/config/shared/output-settings-card.tsx:98
 msgid "Filename Template"
@@ -5461,6 +5457,10 @@ msgstr "保留目录结构"
 msgid "Keep Running"
 msgstr "保持运行"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:61
+msgid "Keep the original frame size instead of scaling to a width"
+msgstr "保留原始画面尺寸，不缩放到指定宽度"
+
 #: src/components/upload-status-indicator.tsx:545
 msgid "Keep uploading"
 msgstr "继续上传"
@@ -6324,6 +6324,10 @@ msgstr "name@example.com"
 msgid "Native"
 msgstr "原生"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:59
+msgid "Native resolution"
+msgstr "原始分辨率"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:12
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
@@ -6815,6 +6819,10 @@ msgstr "未使用"
 msgid "Not used anywhere"
 msgstr "未被任何设置使用"
 
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:117
+msgid "Not used at native resolution"
+msgstr "原始分辨率下不使用"
+
 #: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "已禁用，不会使用"
@@ -7079,7 +7087,6 @@ msgstr "空间不足"
 #: src/components/config/platforms/platform-card.tsx:115
 #: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:140
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:132
 msgid "Output"
 msgstr "输出"
 
@@ -7136,10 +7143,6 @@ msgstr "输出路径"
 #: src/components/config/global/file-config-card.tsx:21
 msgid "Output paths, templates, and formats."
 msgstr "输出路径、模板与格式。"
-
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:143
-msgid "Output Pattern (Optional)"
-msgstr "输出文件名模式（可选）"
 
 #: src/components/config/global/output-retention-fields.tsx:35
 #: src/components/config/global/output-retention-fields.tsx:38
@@ -8029,7 +8032,7 @@ msgstr "二维码已过期"
 msgid "Quality"
 msgstr "质量"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:106
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:133
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
@@ -10541,7 +10544,7 @@ msgstr "星期四"
 msgid "Time Based"
 msgstr "基于时间"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:68
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:90
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
@@ -10600,7 +10603,7 @@ msgstr "取消 IO 密集型处理器前的超时时间。"
 msgid "Timeouts"
 msgstr "超时"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:55
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:77
 msgid "Timestamp"
 msgstr "时间戳"
 
@@ -11474,11 +11477,11 @@ msgid "Whichever history limit is reached first applies. 0 keeps no history."
 msgstr "以先达到的历史上限为准。0 表示不保留历史。"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:235
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:81
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:103
 msgid "Width"
 msgstr "宽度"
 
-#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:93
+#: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:119
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
