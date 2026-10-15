@@ -326,7 +326,7 @@ pub async fn list_dags(
     };
 
     let dags = dag_scheduler
-        .list_dags_by_display_status(&filter, effective_limit, pagination.offset)
+        .list_dag_summaries(&filter, effective_limit, pagination.offset)
         .await
         .map_err(ApiError::from)?;
 
@@ -339,7 +339,7 @@ pub async fn list_dags(
     // lookup only blanks the display names.
     let streamer_ids: Vec<String> = dags
         .iter()
-        .filter_map(|(d, _)| d.streamer_id.clone())
+        .filter_map(|dag| dag.streamer_id.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
@@ -358,12 +358,8 @@ pub async fn list_dags(
     // Convert to response format
     let dag_items: Vec<DagListItem> = dags
         .into_iter()
-        .map(|(dag, display_status)| {
+        .map(|dag| {
             let progress_percent = dag.progress_percent();
-
-            let name = dag
-                .dag_definition_name()
-                .unwrap_or_else(|| "Unknown".to_string());
 
             let streamer_name = dag
                 .streamer_id
@@ -372,8 +368,8 @@ pub async fn list_dags(
 
             DagListItem {
                 id: dag.id,
-                name,
-                status: display_status.as_str().to_string(),
+                name: dag.name.unwrap_or_else(|| "Unknown".to_string()),
+                status: dag.display_status.as_str().to_string(),
                 streamer_id: dag.streamer_id,
                 streamer_name,
                 session_id: dag.session_id,

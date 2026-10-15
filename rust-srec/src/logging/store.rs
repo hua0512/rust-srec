@@ -12,6 +12,8 @@ const PREFIX: &str = "rust-srec.log.";
 const LOCK_NAME: &str = ".rust-srec.log.lock";
 const TRUNCATED: &[u8] = b"\n[log record truncated by byte limit]\n";
 const RETENTION_DAYS: i64 = 7;
+const BATCH_RECORDS: usize = 32;
+const BATCH_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct LogPolicy {
@@ -128,6 +130,11 @@ struct LogFile {
     bytes: u64,
 }
 
+struct OpenLogFile {
+    path: PathBuf,
+    file: File,
+}
+
 pub(crate) struct LogStore {
     directory: PathBuf,
     policy: LogPolicy,
@@ -137,6 +144,8 @@ pub(crate) struct LogStore {
     fail_removal: std::sync::atomic::AtomicBool,
     #[cfg(test)]
     reconcile_started: std::sync::atomic::AtomicBool,
+    #[cfg(test)]
+    inventory_reads: AtomicU64,
 }
 
 impl LogStore {
@@ -150,6 +159,8 @@ impl LogStore {
             fail_removal: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             reconcile_started: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            inventory_reads: AtomicU64::new(0),
         }
     }
 
@@ -190,7 +201,10 @@ impl LogStore {
 
     fn inventory(&self) -> io::Result<Vec<LogFile>> {
         let mut files = Vec::new();
-        for entry in std::fs::read_dir(&self.directory)? {
+        let entries = std::fs::read_dir(&self.directory)?;
+        #[cfg(test)]
+        self.inventory_reads.fetch_add(1, Ordering::Relaxed);
+        for entry in entries {
             let entry = entry?;
             if !entry.file_type()?.is_file() {
                 continue;
@@ -309,10 +323,39 @@ impl LogStore {
     }
 
     fn append(&self, bytes: &[u8], now: DateTime<Utc>, nonblocking: bool) -> io::Result<()> {
+        self.append_batch(&mut std::iter::once((bytes, now)), nonblocking)
+    }
+
+    /// A failed record is consumed, while unattempted records stay in the
+    /// iterator so the worker can continue without replaying successful writes.
+    fn append_batch<'a>(
+        &self,
+        records: &mut impl Iterator<Item = (&'a [u8], DateTime<Utc>)>,
+        nonblocking: bool,
+    ) -> io::Result<()> {
+        let Some(first) = records.next() else {
+            return Ok(());
+        };
         let mut lock = self.lock(nonblocking)?;
         let mut files = self.inventory()?;
         let highest_seen = files.iter().map(|file| file.index).max().unwrap_or(0);
         Self::preserve_index_floor(&mut lock, highest_seen)?;
+        // Data handles close before the coordination lock, including errors.
+        let mut active = None;
+        for (bytes, now) in std::iter::once(first).chain(records) {
+            self.append_record(bytes, now, &mut lock, &mut files, &mut active)?;
+        }
+        Ok(())
+    }
+
+    fn append_record(
+        &self,
+        bytes: &[u8],
+        now: DateTime<Utc>,
+        lock: &mut File,
+        files: &mut Vec<LogFile>,
+        active: &mut Option<OpenLogFile>,
+    ) -> io::Result<()> {
         let record = if bytes.len() as u64 > self.policy.max_file_bytes {
             let count = self.truncated_records.fetch_add(1, Ordering::Relaxed) + 1;
             if count.is_power_of_two() {
@@ -340,17 +383,29 @@ impl LogStore {
         } else {
             self.policy.max_files - 1
         };
-        self.prune(&mut files, now, append_path.as_deref(), limit)?;
-        let mut file = if let Some(path) = append_path {
+        if active
+            .as_ref()
+            .is_some_and(|open| Some(open.path.as_path()) != append_path.as_deref())
+        {
+            *active = None;
+        }
+        self.prune(files, now, append_path.as_deref(), limit)?;
+        if let Some(path) = append_path {
             // The shared lock prevents replacement by cooperating writers; reject
             // preexisting links rather than writing through them.
             if !std::fs::symlink_metadata(&path)?.file_type().is_file() {
                 return Err(io::Error::other("active log path is not a regular file"));
             }
-            OpenOptions::new().append(true).open(path)?
+            if active.is_none() {
+                *active = Some(OpenLogFile {
+                    file: OpenOptions::new().append(true).open(&path)?,
+                    path,
+                });
+            }
         } else {
+            let highest_seen = files.iter().map(|file| file.index).max().unwrap_or(0);
             loop {
-                let index = Self::reserve_index(&mut lock, highest_seen)?;
+                let index = Self::reserve_index(lock, highest_seen)?;
                 let path = self.directory.join(filename(date, index));
                 match std::fs::symlink_metadata(&path) {
                     Ok(_) => continue,
@@ -358,7 +413,21 @@ impl LogStore {
                     Err(error) => return Err(error),
                 }
                 match OpenOptions::new().create_new(true).write(true).open(&path) {
-                    Ok(file) => break file,
+                    Ok(file) => {
+                        let position = files
+                            .partition_point(|entry| (entry.date, entry.index) < (date, index));
+                        files.insert(
+                            position,
+                            LogFile {
+                                path: path.clone(),
+                                date,
+                                index,
+                                bytes: 0,
+                            },
+                        );
+                        *active = Some(OpenLogFile { path, file });
+                        break;
+                    }
                     Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                     // Windows reports an occupied directory as PermissionDenied.
                     // Recheck without following links to distinguish that race
@@ -369,9 +438,18 @@ impl LogStore {
                     Err(error) => return Err(error),
                 }
             }
-        };
-        file.write_all(&record)?;
-        file.flush()
+        }
+        let open = active
+            .as_mut()
+            .ok_or_else(|| io::Error::other("log append has no active file"))?;
+        open.file.write_all(&record)?;
+        open.file.flush()?;
+        let entry = files
+            .iter_mut()
+            .find(|entry| entry.path == open.path)
+            .ok_or_else(|| io::Error::other("active log file is absent from inventory"))?;
+        entry.bytes += record.len() as u64;
+        Ok(())
     }
 
     /// Panic-path ownership must never wait behind the logging worker or another
@@ -381,23 +459,85 @@ impl LogStore {
     }
 }
 
-pub(super) struct LogWriter(pub(super) Arc<LogStore>);
+struct BufferedRecord {
+    bytes: Vec<u8>,
+    now: DateTime<Utc>,
+}
+
+/// Batches only the existing nonblocking worker's current queue drain. Its
+/// flush at idle/shutdown keeps quiet logs visible without another timer/task.
+pub(super) struct LogWriter {
+    pub(super) store: Arc<LogStore>,
+    records: Vec<BufferedRecord>,
+    buffered_bytes: usize,
+}
+
+impl LogWriter {
+    pub(super) fn new(store: Arc<LogStore>) -> Self {
+        Self {
+            store,
+            records: Vec::with_capacity(BATCH_RECORDS),
+            buffered_bytes: 0,
+        }
+    }
+
+    fn record_failure(&self, error: &io::Error) {
+        let count = self.store.failed_writes.fetch_add(1, Ordering::Relaxed) + 1;
+        if count.is_power_of_two() {
+            eprintln!("File log writes failed: {count}; {error}");
+        }
+    }
+
+    fn flush_records(&mut self) {
+        let mut records = self
+            .records
+            .iter()
+            .map(|record| (record.bytes.as_slice(), record.now))
+            .peekable();
+        while records.peek().is_some() {
+            if let Err(error) = self.store.append_batch(&mut records, false) {
+                self.record_failure(&error);
+            }
+        }
+        self.records.clear();
+        self.buffered_bytes = 0;
+    }
+
+    fn write_at(&mut self, bytes: &[u8], now: DateTime<Utc>) -> io::Result<usize> {
+        if bytes.len() > BATCH_BYTES {
+            self.flush_records();
+            if let Err(error) = self.store.append(bytes, now, false) {
+                self.record_failure(&error);
+                return Err(error);
+            }
+        } else {
+            if self.buffered_bytes + bytes.len() > BATCH_BYTES {
+                self.flush_records();
+            }
+            self.records.push(BufferedRecord {
+                bytes: bytes.to_vec(),
+                now,
+            });
+            self.buffered_bytes += bytes.len();
+            if self.records.len() >= BATCH_RECORDS || self.buffered_bytes >= BATCH_BYTES {
+                self.flush_records();
+            }
+        }
+
+        Ok(bytes.len())
+    }
+}
 
 impl Write for LogWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if let Err(error) = self.0.append(bytes, Utc::now(), false) {
-            let count = self.0.failed_writes.fetch_add(1, Ordering::Relaxed) + 1;
-            if count.is_power_of_two() {
-                eprintln!("File log writes failed: {count}; {error}");
-            }
-            return Err(error);
-        }
-        // Oversized records deliberately consume the original input after writing
-        // a bounded prefix/marker, rather than retrying its discarded tail.
-        Ok(bytes.len())
+        self.write_at(bytes, Utc::now())
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        // The upstream worker consumes Shutdown before flushing. Returning an
+        // error would discard that signal and leave it waiting for another
+        // message. Each failed record is counted/reported before being dropped.
+        self.flush_records();
         Ok(())
     }
 }

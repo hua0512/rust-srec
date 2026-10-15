@@ -138,11 +138,9 @@ impl CopyMoveProcessor {
     }
 
     /// Copy `source` to `dest` through a temporary sibling, verify the byte
-    /// count, and rename the copy into place. A crash or cancellation mid-copy
-    /// therefore leaves at most a `.tmp-*` file, which the guard removes when
-    /// this future is dropped — never a partial file under the final
-    /// destination name, which would block a retried move when `overwrite` is
-    /// disabled.
+    /// count, and rename the copy into place. A cancelled native copy retains
+    /// its temporary-file guard until the blocking operation exits, keeping
+    /// partial data out of the final destination.
     ///
     /// Returns the bytes copied, or a user-facing error message.
     async fn copy_via_tmp(
@@ -150,14 +148,39 @@ impl CopyMoveProcessor {
         dest: &Path,
         source_size: u64,
         config: &CopyMoveConfig,
+        ctx: &ProcessorContext,
     ) -> std::result::Result<u64, String> {
-        // Dropped on every exit; after a successful rename there is nothing
-        // left under its path to remove.
+        if ctx.cancellation_token.is_cancelled() {
+            return Err("Copy cancelled".into());
+        }
         let temp = TempOutputGuard::new(dest);
         let tmp_dest = temp.path().to_path_buf();
+        let source = source.to_owned();
+        let cancel = ctx.cancellation_token.child_token();
+        let _cancel_on_drop = cancel.clone().drop_guard();
+        // Workers drain the log collector before releasing their I/O admission.
+        // Retaining its sender contains a cancelled native copy until it exits,
+        // so a retry cannot exceed the configured number of I/O workers.
+        let completion = ctx.log_sink.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let _completion = completion;
+            let staged_output = temp;
+            if cancel.is_cancelled() {
+                return Err(std::io::Error::other("Copy cancelled"));
+            }
+            // Preserve native copy acceleration and platform metadata/streams.
+            let copied = std::fs::copy(source, staged_output.path())?;
+            if cancel.is_cancelled() {
+                return Err(std::io::Error::other("Copy cancelled"));
+            }
+            Ok::<_, std::io::Error>((copied, staged_output))
+        })
+        .await
+        .map_err(|error| format!("Copy worker failed: {error}"))?;
 
-        let bytes_copied = match fs::copy(source, &tmp_dest).await {
-            Ok(bytes) => bytes,
+        // Keep the staged output owned through verification and publication.
+        let (bytes_copied, _temp) = match result {
+            Ok(result) => result,
             Err(e) => {
                 return Err(if Self::is_disk_full_error(&e) {
                     format!(
@@ -169,6 +192,10 @@ impl CopyMoveProcessor {
                 });
             }
         };
+
+        if ctx.cancellation_token.is_cancelled() {
+            return Err("Copy cancelled".into());
+        }
 
         if config.verify_integrity && bytes_copied != source_size {
             return Err(format!(
@@ -618,7 +645,7 @@ impl Processor for CopyMoveProcessor {
 
             let dest_size = match config.operation {
                 CopyMoveOperation::Copy => {
-                    match Self::copy_via_tmp(source, &dest, source_size, &config).await {
+                    match Self::copy_via_tmp(source, &dest, source_size, &config, ctx).await {
                         Ok(bytes) => bytes,
                         Err(error_msg) => {
                             error!("{}", error_msg);
@@ -668,7 +695,8 @@ impl Processor for CopyMoveProcessor {
                             // Cross-filesystem move: fall back to copy + verify,
                             // then remove the source.
                             let bytes_copied =
-                                match Self::copy_via_tmp(source, &dest, source_size, &config).await
+                                match Self::copy_via_tmp(source, &dest, source_size, &config, ctx)
+                                    .await
                                 {
                                     Ok(bytes) => bytes,
                                     Err(error_msg) => {
@@ -779,6 +807,101 @@ mod tests {
     use super::super::test_utils::utc_datetime;
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn cancelled_copy_retains_worker_completion_until_blocking_work_exits() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        std::fs::write(&source, b"contents").unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
+            let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+            let blocker = tokio::task::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                // Bound the helper even if an assertion fails before release.
+                release_rx.recv_timeout(std::time::Duration::from_secs(5))
+            });
+            started_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(1);
+            let ctx = ProcessorContext::new(
+                "copy-completion",
+                crate::pipeline::ProgressReporter::noop("copy-completion"),
+                crate::pipeline::processors::JobLogSink::new(
+                    log_tx,
+                    std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                ),
+                tokio_util::sync::CancellationToken::new(),
+            );
+            let config = CopyMoveConfig::default();
+            let mut copying = Box::pin(CopyMoveProcessor::copy_via_tmp(
+                &source,
+                &destination,
+                8,
+                &config,
+                &ctx,
+            ));
+            assert!(futures::poll!(&mut copying).is_pending());
+            drop(copying);
+            drop(ctx);
+
+            // The worker's collector must still wait for the queued copy, even
+            // though the processor future and its context have been dropped.
+            assert!(matches!(
+                log_rx.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ));
+            release_tx.send(()).unwrap();
+            blocker.await.unwrap().unwrap();
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(5), log_rx.recv())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(!destination.exists());
+            assert_eq!(std::fs::read(&source).unwrap(), b"contents");
+        });
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_copy_does_not_create_or_replace_a_destination() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        fs::write(&source, b"new contents").await.unwrap();
+        fs::write(&destination, b"original contents").await.unwrap();
+        let ctx = ProcessorContext::noop("cancelled-copy");
+        ctx.cancellation_token.cancel();
+
+        let result = CopyMoveProcessor::copy_via_tmp(
+            &source,
+            &destination,
+            12,
+            &CopyMoveConfig {
+                overwrite: true,
+                ..Default::default()
+            },
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), "Copy cancelled");
+        assert_eq!(fs::read(&destination).await.unwrap(), b"original contents");
+        assert_eq!(fs::read(&source).await.unwrap(), b"new contents");
+        let mut entries = fs::read_dir(directory.path()).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            assert!(!entry.file_name().to_string_lossy().contains(".tmp-"));
+        }
+    }
 
     #[test]
     fn test_copy_move_processor_type() {
@@ -1730,9 +1853,15 @@ mod tests {
         let dest = temp_dir.path().join("dest.txt");
         fs::write(&source, "content").await.unwrap();
 
-        let bytes = CopyMoveProcessor::copy_via_tmp(&source, &dest, 7, &CopyMoveConfig::default())
-            .await
-            .unwrap();
+        let bytes = CopyMoveProcessor::copy_via_tmp(
+            &source,
+            &dest,
+            7,
+            &CopyMoveConfig::default(),
+            &ProcessorContext::noop("copy"),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(bytes, 7);
         assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");

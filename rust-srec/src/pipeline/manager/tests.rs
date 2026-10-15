@@ -784,12 +784,12 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn list_dags_by_display_status(
+    async fn list_dag_summaries(
         &self,
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+    ) -> Result<Vec<crate::database::models::DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1031,12 +1031,12 @@ impl DagRepository for TestDagRepository {
             .count() as u64)
     }
 
-    async fn list_dags_by_display_status(
+    async fn list_dag_summaries(
         &self,
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
+    ) -> Result<Vec<crate::database::models::DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 

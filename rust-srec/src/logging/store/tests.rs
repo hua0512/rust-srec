@@ -33,6 +33,165 @@ fn assert_bounds(store: &LogStore) {
     }
 }
 
+fn contents(store: &LogStore) -> Vec<(String, Vec<u8>)> {
+    store
+        .inventory()
+        .unwrap()
+        .into_iter()
+        .map(|file| {
+            (
+                file.path.file_name().unwrap().to_str().unwrap().to_owned(),
+                std::fs::read(file.path).unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn batched_records_match_individual_rotation_retention_truncation_and_dates() {
+    let individual_dir = tempfile::tempdir().unwrap();
+    let batch_dir = tempfile::tempdir().unwrap();
+    let individual = store(&individual_dir);
+    let batched = Arc::new(store(&batch_dir));
+    let mut writer = LogWriter::new(batched.clone());
+    let records = [
+        (vec![b'a'; 127], instant(8)),
+        (b"\n".to_vec(), instant(8)),
+        ("大😀".repeat(100).into_bytes(), instant(8)),
+        (vec![b'b'; 256], instant(9)),
+        (b"future\n".to_vec(), instant(16)),
+        (b"clock rollback\n".to_vec(), instant(8)),
+        (vec![b'c'; 128], instant(16)),
+        (b"last\n".to_vec(), instant(16)),
+    ];
+
+    for (bytes, now) in &records {
+        individual.append(bytes, *now, false).unwrap();
+        assert_eq!(writer.write_at(bytes, *now).unwrap(), bytes.len());
+    }
+    writer.flush().unwrap();
+
+    assert_eq!(contents(&individual), contents(&batched));
+    assert_eq!(batched.truncated_records.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        individual.truncated_records.load(Ordering::Relaxed),
+        batched.truncated_records.load(Ordering::Relaxed)
+    );
+    assert_bounds(&batched);
+}
+
+#[test]
+fn batching_reduces_directory_inventories_and_bounds_record_and_byte_buffers() {
+    let individual_dir = tempfile::tempdir().unwrap();
+    let batch_dir = tempfile::tempdir().unwrap();
+    let policy = LogPolicy {
+        max_file_bytes: 1024 * 1024,
+        max_files: 3,
+    };
+    let individual = LogStore::new(individual_dir.path().to_owned(), policy);
+    let batched = Arc::new(LogStore::new(batch_dir.path().to_owned(), policy));
+    let mut writer = LogWriter::new(batched.clone());
+
+    for _ in 0..BATCH_RECORDS {
+        individual.append(b"record\n", instant(8), false).unwrap();
+        writer.write_at(b"record\n", instant(8)).unwrap();
+    }
+    assert_eq!(individual.inventory_reads.load(Ordering::Relaxed), 32);
+    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), 1);
+    assert!(writer.records.is_empty());
+    assert_eq!(writer.buffered_bytes, 0);
+    writer.flush().unwrap();
+    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(contents(&individual), contents(&batched));
+
+    let reads = batched.inventory_reads.load(Ordering::Relaxed);
+    let half = vec![b'x'; BATCH_BYTES / 2];
+    writer.write_at(&half, instant(8)).unwrap();
+    assert_eq!(writer.buffered_bytes, BATCH_BYTES / 2);
+    writer.write_at(&half, instant(8)).unwrap();
+    assert!(writer.records.is_empty());
+    assert_eq!(writer.buffered_bytes, 0);
+    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), reads + 1);
+
+    writer
+        .write_at(b"before large record\n", instant(8))
+        .unwrap();
+    let oversized = vec![b'z'; BATCH_BYTES + 1];
+    writer.write_at(&oversized, instant(8)).unwrap();
+    assert!(writer.records.is_empty());
+    assert_eq!(writer.buffered_bytes, 0);
+    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), reads + 3);
+    assert_bounds(&batched);
+}
+
+#[test]
+fn batch_failure_does_not_replay_successes_or_drop_unattempted_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(store(&dir));
+    for bytes in [128, 128, 100] {
+        store.append(&vec![b'x'; bytes], instant(8), false).unwrap();
+    }
+    let mut writer = LogWriter::new(store.clone());
+    writer.write_at(b"before\n", instant(8)).unwrap();
+    writer.write_at(&[b'b'; 40], instant(8)).unwrap();
+    writer.write_at(b"after\n", instant(8)).unwrap();
+    store.fail_removal.store(true, Ordering::Relaxed);
+    writer.flush().unwrap();
+
+    let files = contents(&store);
+    assert_eq!(files.len(), 3);
+    assert_eq!(
+        files[2].1,
+        [vec![b'x'; 100], b"before\nafter\n".to_vec()].concat()
+    );
+    assert_eq!(store.failed_writes.load(Ordering::Relaxed), 1);
+    assert!(writer.records.is_empty());
+    writer.flush().unwrap();
+    assert_eq!(store.failed_writes.load(Ordering::Relaxed), 1);
+    assert_bounds(&store);
+}
+
+#[test]
+fn emergency_append_remains_immediate_while_worker_records_are_buffered() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(store(&dir));
+    let mut writer = LogWriter::new(store.clone());
+    writer.write_all(b"buffered normal record\n").unwrap();
+    store.try_append_emergency("emergency\n").unwrap();
+    assert_eq!(contents(&store)[0].1, b"emergency\n");
+    assert_eq!(writer.records.len(), 1);
+    writer.flush().unwrap();
+    let files = contents(&store);
+    let mut lines: Vec<_> = files
+        .iter()
+        .flat_map(|(_, bytes)| std::str::from_utf8(bytes).unwrap().lines())
+        .collect();
+    lines.sort_unstable();
+    assert_eq!(lines, ["buffered normal record", "emergency"]);
+}
+
+#[test]
+fn worker_guard_finishes_when_shutdown_flush_cannot_reclaim_capacity() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(store(&dir));
+    let now = Utc::now();
+    for _ in 0..3 {
+        store.append(&[b'x'; 128], now, false).unwrap();
+    }
+    store.fail_removal.store(true, Ordering::Relaxed);
+    let (mut writer, guard) = tracing_appender::non_blocking(LogWriter::new(store.clone()));
+    writer.write_all(b"blocked record\n").unwrap();
+    let (sent, received) = std::sync::mpsc::channel();
+    let shutdown = std::thread::spawn(move || {
+        drop(guard);
+        sent.send(()).unwrap();
+    });
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    shutdown.join().unwrap();
+    assert_eq!(store.failed_writes.load(Ordering::Relaxed), 1);
+    assert_bounds(&store);
+}
+
 #[test]
 fn policy_rejects_unbounded_invalid_and_extreme_settings() {
     for (bytes, files) in [
@@ -244,7 +403,7 @@ fn nonblocking_queue_accepts_while_another_writer_holds_ownership_and_guard_flus
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(store(&dir));
     let lock = store.lock(false).unwrap();
-    let (mut writer, guard) = tracing_appender::non_blocking(LogWriter(store.clone()));
+    let (mut writer, guard) = tracing_appender::non_blocking(LogWriter::new(store.clone()));
     let (sent, received) = std::sync::mpsc::channel();
     let producer = std::thread::spawn(move || {
         writer.write_all(b"queued record\n").unwrap();
@@ -271,14 +430,27 @@ fn concurrent_writer_child() {
             max_files: 3,
         },
     );
-    for sequence in 0..40 {
-        store
-            .append(
-                format!("writer-{identity}:{sequence:02}\n").as_bytes(),
-                instant(8),
-                false,
-            )
-            .unwrap();
+    if identity.parse::<u32>().unwrap().is_multiple_of(2) {
+        let mut writer = LogWriter::new(Arc::new(store));
+        for sequence in 0..40 {
+            writer
+                .write_at(
+                    format!("writer-{identity}:{sequence:02}\n").as_bytes(),
+                    instant(8),
+                )
+                .unwrap();
+        }
+        writer.flush().unwrap();
+    } else {
+        for sequence in 0..40 {
+            store
+                .append(
+                    format!("writer-{identity}:{sequence:02}\n").as_bytes(),
+                    instant(8),
+                    false,
+                )
+                .unwrap();
+        }
     }
 }
 

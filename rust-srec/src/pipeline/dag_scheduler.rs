@@ -13,8 +13,8 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 use crate::database::models::{
-    DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
-    DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
+    DagExecutionDbModel, DagExecutionListSummary, DagExecutionStatus, DagPipelineDefinition,
+    DagStepExecutionDbModel, DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagListFilter, DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
@@ -1618,22 +1618,22 @@ impl DagScheduler {
         self.dag_repository.count_dags(status, session_id).await
     }
 
-    /// List DAG executions matching `filter`, each paired with its display status.
-    pub async fn list_dags_by_display_status(
-        &self,
-        filter: &DagListFilter<'_>,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<(DagExecutionDbModel, DagExecutionStatus)>> {
-        self.dag_repository
-            .list_dags_by_display_status(filter, limit, offset)
-            .await
-    }
-
     /// Count DAG executions matching `filter`.
     pub async fn count_dags_by_display_status(&self, filter: &DagListFilter<'_>) -> Result<u64> {
         self.dag_repository
             .count_dags_by_display_status(filter)
+            .await
+    }
+
+    /// List display summaries without loading execution manifests.
+    pub async fn list_dag_summaries(
+        &self,
+        filter: &DagListFilter<'_>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<DagExecutionListSummary>> {
+        self.dag_repository
+            .list_dag_summaries(filter, limit, offset)
             .await
     }
 

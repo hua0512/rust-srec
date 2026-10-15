@@ -75,6 +75,130 @@ async fn state(handle: &ActorHandle<StreamerMessage>) -> super::super::actor::St
 }
 
 #[tokio::test]
+async fn registry_target_sync_reconciles_feedback_retirement_without_a_registry_change() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let feedback = SchedulerFeedback::new();
+        let cancel = CancellationToken::new();
+        let mut registry = ActorRegistry::new(cancel.clone());
+        let (actor, handle) = StreamerActor::new(
+            "one".to_owned(),
+            metadata("one"),
+            StreamerConfig::default(),
+            cancel.child_token(),
+            Arc::new(NoOpStatusChecker),
+        );
+        let handle = registry.spawn_streamer(actor, handle).unwrap();
+        feedback.update_registry_targets(&registry);
+        let mut scans = feedback.target_scan_count();
+
+        for disposition in [
+            FeedbackDisposition::Retired,
+            FeedbackDisposition::ActorUnavailable,
+        ] {
+            match disposition {
+                FeedbackDisposition::Retired => feedback.retire("one"),
+                FeedbackDisposition::ActorUnavailable => feedback.unavailable("one"),
+                _ => unreachable!(),
+            }
+            assert!(!feedback.state.lock().targets.contains_key("one"));
+            feedback.update_registry_targets(&registry);
+            scans += 1;
+            assert_eq!(feedback.target_scan_count(), scans);
+            assert_eq!(
+                feedback.state.lock().targets["one"].generation(),
+                handle.generation()
+            );
+
+            // Restoring the registry target must not undo retirement policy.
+            let (start, end) = feedback.reserve_attempt("one").unwrap();
+            assert_eq!(
+                applied(feedback.publish_reserved(&started("one", "d", "s"), start)).await,
+                disposition
+            );
+            drop(end);
+            feedback.update_registry_targets(&registry);
+            assert_eq!(feedback.target_scan_count(), scans);
+            feedback.activate("one");
+        }
+
+        feedback.shutdown().await;
+        cancel.cancel();
+        registry.abort_all().await;
+    })
+    .await
+    .expect("feedback invalidation must reconcile unchanged registry targets");
+}
+
+#[tokio::test]
+async fn registry_target_sync_tracks_replacements_current_completions_and_clear() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let feedback = SchedulerFeedback::new();
+        let cancel = CancellationToken::new();
+        let mut registry = ActorRegistry::new(cancel.clone());
+        let spawn = || {
+            StreamerActor::new(
+                "one".to_owned(),
+                metadata("one"),
+                StreamerConfig::default(),
+                cancel.child_token(),
+                Arc::new(NoOpStatusChecker),
+            )
+        };
+        let (actor, handle) = spawn();
+        let old = registry.spawn_streamer(actor, handle).unwrap();
+        feedback.update_registry_targets(&registry);
+        let mut scans = feedback.target_scan_count();
+
+        registry.remove_streamer("one").unwrap();
+        feedback.update_registry_targets(&registry);
+        scans += 1;
+        assert_eq!(feedback.target_scan_count(), scans);
+        assert!(feedback.state.lock().targets.is_empty());
+
+        let (actor, handle) = spawn();
+        let replacement = registry.spawn_streamer(actor, handle).unwrap();
+        feedback.update_registry_targets(&registry);
+        scans += 1;
+        assert_ne!(old.generation(), replacement.generation());
+        assert_eq!(
+            feedback.state.lock().targets["one"].generation(),
+            replacement.generation()
+        );
+
+        let old_completion = registry.join_next().await.unwrap().unwrap();
+        assert!(registry.handle_task_completion(old_completion).superseded);
+        feedback.update_registry_targets(&registry);
+        assert_eq!(feedback.target_scan_count(), scans);
+
+        replacement.cancel();
+        let completion = registry.join_next().await.unwrap().unwrap();
+        assert!(!registry.handle_task_completion(completion).superseded);
+        feedback.update_registry_targets(&registry);
+        scans += 1;
+        assert_eq!(feedback.target_scan_count(), scans);
+        assert!(feedback.state.lock().targets.is_empty());
+
+        let (actor, handle) = spawn();
+        registry.spawn_streamer(actor, handle).unwrap();
+        feedback.update_registry_targets(&registry);
+        registry.clear();
+        feedback.update_registry_targets(&registry);
+        scans += 2;
+        assert_eq!(feedback.target_scan_count(), scans);
+        assert!(feedback.state.lock().targets.is_empty());
+        registry.clear();
+        feedback.update_registry_targets(&registry);
+        assert_eq!(feedback.target_scan_count(), scans);
+
+        feedback.shutdown().await;
+        cancel.cancel();
+        registry.abort_all().await;
+    })
+    .await
+    .expect("registry revisions must follow only current membership changes");
+}
+
+#[tokio::test]
 async fn saturated_mailbox_retains_lifecycle_and_does_not_block_another_streamer() {
     tokio::time::timeout(Duration::from_secs(5), async {
         let feedback = SchedulerFeedback::new();
@@ -352,7 +476,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         );
         handle.try_send(StreamerMessage::CheckStatus).unwrap();
         let old = registry.spawn_streamer(actor, handle).unwrap();
-        feedback.update_targets(registry.streamer_handles_map());
+        feedback.update_registry_targets(&registry);
         entered.notified().await;
         let (start, end) = feedback.reserve_attempt("one").unwrap();
         let receipt = feedback.publish_reserved(&started("one", "d", "s"), start);
@@ -360,7 +484,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         let finished = registry.join_next().await.unwrap().unwrap();
         assert!(finished.is_crash());
         registry.handle_task_completion(finished);
-        feedback.update_targets(registry.streamer_handles_map());
+        feedback.update_registry_targets(&registry);
         let (actor, handle) = StreamerActor::new(
             "one".to_owned(),
             metadata("one"),
@@ -370,7 +494,7 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
         );
         let replacement = registry.spawn_streamer(actor, handle).unwrap();
         assert_ne!(old.generation(), replacement.generation());
-        feedback.update_targets(registry.streamer_handles_map());
+        feedback.update_registry_targets(&registry);
         assert_eq!(applied(receipt).await, FeedbackDisposition::Applied);
         assert_eq!(
             state(&replacement).await.streamer_state,

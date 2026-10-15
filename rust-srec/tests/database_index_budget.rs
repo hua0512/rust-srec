@@ -85,6 +85,12 @@ async fn index_upgrade_removes_page_sorts_and_preserves_cleanup_and_statistics()
             .contains("USE TEMP B-TREE FOR ORDER BY")
     );
     let before = cleanup_rows(&pool, false).await;
+    let nonterminal_before: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM job WHERE status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
     assert!(
         cleanup_rows(&pool, true)
             .await
@@ -94,6 +100,15 @@ async fn index_upgrade_removes_page_sorts_and_preserves_cleanup_and_statistics()
 
     MIGRATOR.run(&pool).await.unwrap();
     MIGRATOR.run(&pool).await.unwrap();
+    let nonterminal_after: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM job INDEXED BY idx_job_nonterminal_id \
+         WHERE status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(!nonterminal_before.is_empty());
+    assert_eq!(nonterminal_after, nonterminal_before);
     sqlx::query("ANALYZE").execute(&pool).await.unwrap();
     for (query, index) in [
         (DAG_PAGE, "idx_dag_execution_created_at"),

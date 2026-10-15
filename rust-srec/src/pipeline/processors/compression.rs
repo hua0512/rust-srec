@@ -155,10 +155,8 @@ impl<R> CancelProgressReader<R> {
 impl<R: Read> Read for CancelProgressReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.cancel.is_cancelled() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                "compression cancelled",
-            ));
+            // Copying consumers retry Interrupted; cancellation must terminate them.
+            return Err(std::io::Error::other("compression cancelled"));
         }
         let n = self.inner.read(buf)?;
         if n > 0 {
@@ -758,8 +756,69 @@ impl Processor for CompressionProcessor {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn cancellation_stops_copy_without_retrying_interrupted_reads() {
+        struct BoundedReads<R> {
+            inner: R,
+            remaining: usize,
+        }
+
+        impl<R: Read> Read for BoundedReads<R> {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                assert!(self.remaining > 0, "copy kept retrying cancellation");
+                self.remaining -= 1;
+                self.inner.read(bytes)
+            }
+        }
+
+        struct CancelAfterWrite {
+            cancel: CancellationToken,
+            written: usize,
+        }
+
+        impl Write for CancelAfterWrite {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.written += bytes.len();
+                self.cancel.cancel();
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let input_size = 1024 * 1024;
+        let mut reader = BoundedReads {
+            inner: CancelProgressReader::new(
+                std::io::Cursor::new(vec![42; input_size]),
+                CompressionProgressContext {
+                    cancel: cancel.clone(),
+                    progress: ProgressReporter::noop("cancel-copy"),
+                    bytes_total: input_size as u64,
+                    bytes_done: 0,
+                    file_index: 1,
+                    file_count: 1,
+                    current_file: "input".into(),
+                },
+            ),
+            remaining: 8,
+        };
+        let mut writer = CancelAfterWrite { cancel, written: 0 };
+
+        let error = std::io::copy(&mut reader, &mut writer).unwrap_err();
+
+        assert_eq!(error.to_string(), "compression cancelled");
+        assert_ne!(error.kind(), std::io::ErrorKind::Interrupted);
+        assert!(writer.written > 0 && writer.written < input_size);
+        assert_eq!(reader.inner.bytes_done, writer.written as u64);
+    }
 
     #[test]
     fn test_compression_processor_type() {
