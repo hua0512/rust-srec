@@ -260,47 +260,26 @@ export function RcloneConfigForm({
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={control}
-                name={`${prefix}config_path` as any}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Config Path (Optional)</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(msg`/path/to/rclone.conf`)}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="bg-background/50"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={control}
-                name={`${prefix}rclone_path` as any}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Rclone Executable</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value ?? ''}
-                        className="bg-background/50"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <FormField
+              control={control}
+              name={`${prefix}config_path` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Config Path (Optional)</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={i18n._(msg`/path/to/rclone.conf`)}
+                      {...field}
+                      value={field.value ?? ''}
+                      className="bg-background/50"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </CardContent>
         </Card>
       </TabsContent>
@@ -327,7 +306,7 @@ export function RcloneConfigForm({
                   <FormControl>
                     <NumberInput
                       field={field}
-                      min={0}
+                      min={1}
                       step={1}
                       placeholder="3"
                       className="bg-background/50"

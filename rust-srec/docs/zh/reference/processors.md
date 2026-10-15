@@ -14,7 +14,7 @@
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate` |
 | `compression` | 将文件打包为 ZIP 或 tar.gz 归档 | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `args` |
+| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
 | `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
 | `metadata` | 写入元数据（nfo, json） | - |

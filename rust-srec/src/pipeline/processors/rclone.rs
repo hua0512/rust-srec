@@ -56,6 +56,10 @@ pub struct RcloneConfig {
     /// Timestamp source for time placeholder expansion.
     pub time_anchor: TimeAnchor,
 
+    /// Attempts per transfer and per destination `mkdir`, at least one.
+    /// Defaults to [`DEFAULT_ATTEMPTS`].
+    pub max_retries: Option<u32>,
+
     /// Free-form extra CLI arguments appended verbatim after the
     /// throughput flags. Provided as a power-user escape hatch; prefer
     /// the dedicated fields below when possible.
@@ -206,12 +210,12 @@ impl RemoteDirGate {
     }
 }
 
+const DEFAULT_ATTEMPTS: u32 = 3;
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
     rclone_path: String,
-    /// Maximum retry attempts.
-    max_retries: u32,
     /// Runs assembled rclone commands; a seam so tests can observe and
     /// stub invocations without spawning a real process.
     command_runner: Arc<dyn RcloneCommandRunner>,
@@ -249,6 +253,7 @@ struct RcloneExecution<'a> {
     config_path: Option<&'a str>,
     throughput: &'a [String],
     extra_args: &'a [String],
+    attempts: u32,
     context: &'a ProcessorContext,
 }
 
@@ -267,7 +272,6 @@ impl RcloneProcessor {
     ) -> Self {
         Self {
             rclone_path: path.into(),
-            max_retries: 3,
             command_runner,
             dir_gate: RemoteDirGate::default(),
         }
@@ -533,9 +537,9 @@ impl RcloneProcessor {
             while let Err(error) = self.run_mkdir(path, &loggable, execution).await {
                 execution.context.warn(format!(
                     "rclone mkdir attempt {attempt} of {} failed: {error}",
-                    self.max_retries
+                    execution.attempts
                 ));
-                if attempt >= self.max_retries {
+                if attempt >= execution.attempts {
                     return Err(error);
                 }
                 tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
@@ -604,6 +608,7 @@ impl RcloneProcessor {
             config_path,
             throughput,
             extra_args,
+            attempts,
             context,
         } = execution;
         let start = std::time::Instant::now();
@@ -657,7 +662,7 @@ impl RcloneProcessor {
             logs,
         };
 
-        for attempt in 0..self.max_retries {
+        for attempt in 0..*attempts {
             if matches!(*operation, RcloneOperation::Move)
                 && (context.is_retry || attempt > 0)
                 && super::inputs::is_confirmed_absent(Path::new(input_path)).await
@@ -756,10 +761,7 @@ impl RcloneProcessor {
             }
         }
 
-        error!(
-            "Rclone {} failed after {} attempts",
-            cmd_op, self.max_retries
-        );
+        error!("Rclone {} failed after {} attempts", cmd_op, attempts);
         Err(crate::Error::Other(
             last_error.unwrap_or_else(|| "Rclone failed".to_string()),
         ))
@@ -777,6 +779,7 @@ impl RcloneProcessor {
             config_path,
             throughput,
             extra_args,
+            attempts,
             context,
         } = execution;
         let start = std::time::Instant::now();
@@ -877,7 +880,7 @@ impl RcloneProcessor {
         let mut last_error = None;
         let mut logs = Vec::new();
 
-        for attempt in 0..self.max_retries {
+        for attempt in 0..*attempts {
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {} batch", attempt + 1, cmd_op);
                 tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
@@ -998,10 +1001,7 @@ impl RcloneProcessor {
 
         error!(
             pending_inputs = pending_inputs.len(),
-            completed_inputs,
-            attempts = self.max_retries,
-            "Rclone {} batch failed",
-            cmd_op
+            completed_inputs, attempts, "Rclone {} batch failed", cmd_op
         );
         let error = last_error.unwrap_or_else(|| "Rclone batch failed".to_string());
 
@@ -1024,7 +1024,7 @@ impl RcloneProcessor {
                         "batch_size": inputs.len(),
                         "base_dir": base_dir_str,
                         "operation": cmd_op,
-                        "attempts": self.max_retries,
+                        "attempts": attempts,
                         "resumed_inputs": resumed_inputs,
                         "moved_inputs": moved.len(),
                         "failed_inputs": pending_inputs.len(),
@@ -1206,6 +1206,8 @@ impl Processor for RcloneProcessor {
             ));
         }
 
+        let attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
+
         // Only a retried move can find inputs already consumed and uploaded.
         let skip_absent_inputs = matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;
 
@@ -1230,6 +1232,7 @@ impl Processor for RcloneProcessor {
                 config_path: config.config_path.as_deref(),
                 throughput: &throughput,
                 extra_args: &extra_args,
+                attempts,
                 context: ctx,
             };
             let targets =
@@ -1247,6 +1250,7 @@ impl Processor for RcloneProcessor {
                 config_path: config.config_path.as_deref(),
                 throughput: &throughput,
                 extra_args: &extra_args,
+                attempts,
                 context: ctx,
             };
             // Same base directory `process_batch` lays the inputs out from;
@@ -2093,6 +2097,46 @@ mod tests {
         processor.process(&input, &context).await.unwrap();
         assert_eq!(runner.mkdirs().len(), 4);
         assert_eq!(runner.commands().len(), 1);
+    }
+
+    /// The preset's `max_retries` bounds both `mkdir` and transfer attempts.
+    #[tokio::test(start_paused = true)]
+    async fn configured_attempts_bound_mkdir_and_transfer_retries() {
+        let failing = || MockAttempt {
+            moved_inputs: vec![],
+            succeeds: false,
+        };
+        let runner = Arc::new(
+            MockRcloneCommandRunner::new(vec![failing(), failing(), failing()])
+                .with_mkdir_outcomes(vec![MkdirOutcome::Fail]),
+        );
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let temp_dir = tempfile::tempdir().unwrap();
+        let inputs = write_inputs(temp_dir.path(), &["video.mp4"]).await;
+        let input = |max_retries: u32| ProcessorInput {
+            inputs: inputs.clone(),
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination_root": "remote:records/day",
+                    "max_retries": max_retries,
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+        let context = ProcessorContext::noop("upload");
+
+        processor.process(&input(1), &context).await.unwrap_err();
+        assert_eq!(runner.mkdirs().len(), 1);
+        assert!(runner.commands().is_empty());
+
+        processor.process(&input(2), &context).await.unwrap_err();
+        assert_eq!(runner.commands().len(), 2);
+
+        // Zero still makes one attempt.
+        processor.process(&input(0), &context).await.unwrap_err();
+        assert_eq!(runner.commands().len(), 3);
     }
 
     /// Cancelling a job while its `mkdir` holds the remote's lock must not

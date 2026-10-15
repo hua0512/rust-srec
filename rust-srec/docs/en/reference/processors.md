@@ -14,7 +14,7 @@ Each pipeline step is executed by a specialized processor:
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
 | `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
+| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
 | `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
 | `copy_move` | Copies or moves local files | Destination and operation settings |
 | `metadata` | Writes metadata (nfo, json) | - |
