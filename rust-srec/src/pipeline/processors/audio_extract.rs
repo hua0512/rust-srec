@@ -467,15 +467,14 @@ struct AudioExtractProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for AudioExtractProcessorItem<'_> {
-    type Publication = super::media_driver::StagedPublication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        publication: &mut Self::Publication,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         self.processor
-            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .process_one(input, output, self.config, self.ctx, batch)
             .await
     }
 }
@@ -526,7 +525,7 @@ impl Processor for AudioExtractProcessor {
         let is_batch = plan.is_batch();
         let mut output = super::media_driver::run_media(
             plan,
-            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            OutputBatch::new(&input.inputs),
             &AudioExtractProcessorItem {
                 processor: self,
                 config: &config,

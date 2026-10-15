@@ -286,6 +286,32 @@ async fn processor_driver_child() {
                                 fixture.input.outputs[2].clone()
                             ]
                         );
+                        assert_eq!(
+                            serde_json::from_str::<serde_json::Value>(
+                                result.metadata.as_deref().unwrap()
+                            )
+                            .unwrap(),
+                            serde_json::json!({
+                                "batch": true,
+                                "inputs": 3,
+                                "input_removed": true,
+                                "video_codec": "Copy",
+                                "audio_codec": "Copy",
+                            })
+                        );
+                        let removal_logs: Vec<_> = result
+                            .logs
+                            .iter()
+                            .filter(|entry| entry.message.starts_with("Removed input file: "))
+                            .map(|entry| entry.message.as_str())
+                            .collect();
+                        assert_eq!(
+                            removal_logs,
+                            [
+                                format!("Removed input file: {}", fixture.input.inputs[0]),
+                                format!("Removed input file: {}", fixture.input.inputs[2]),
+                            ]
+                        );
                         assert!(!Path::new(&fixture.input.inputs[0]).exists());
                         assert!(!Path::new(&fixture.input.inputs[2]).exists());
                         assert!(Path::new(&skipped).exists());

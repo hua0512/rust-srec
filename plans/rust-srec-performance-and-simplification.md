@@ -2,13 +2,13 @@
 
 Recorded: 2026-10-15. Reviewed revision: `c314be4a7180fa03a3898f319ec0bb9985f6ea75`.
 
-Status: the first implementation batch is implemented and validated in the current worktree. The findings below retain the investigation record at the reviewed revision. Scope is the recorder backend, with frontend callers inspected to establish polling workloads. No live database or recording data was opened or modified. Measurements below are isolated probes, not application-wide benchmarks, and do not establish production speedups. Source line anchors describe the reviewed revision; implementations can move those lines.
+Status: the first performance batch was merged in [PR #1122](https://github.com/hua0512/rust-srec/pull/1122). The findings below retain the investigation record at the reviewed revision. Scope is the recorder backend, with frontend callers inspected to establish polling workloads. No live database or recording data was opened or modified. Measurements below are isolated probes, not application-wide benchmarks, and do not establish production speedups. Source line anchors describe the reviewed revision; implementations can move those lines.
 
 Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evidence and recommendations remain recorded, but these items are excluded from the current implementation scope until explicitly reopened.
 
 ## Implementation progress
 
-| Finding | Current worktree change | Status |
+| Finding | Implemented change | Status |
 | --- | --- | --- |
 | F01 | Cancellation returns a nonretryable compression error; bounded retry-loop regression added. | Implemented and validated. |
 | F02 | Native copies retain staged-output and worker-completion ownership until the blocking operation exits. Cancellation observed before publication rejects the staged copy; final rename retains its existing semantics. Windows cleanup handles read-only private temps without changing hard-linked originals. | Partial: native mid-copy interruption remains open. Native copy acceleration and platform metadata are preserved. |
@@ -18,9 +18,9 @@ Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evi
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
 
-F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. The separate simplification workstream has not been started beyond the summary projection needed for F08.
+F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S03 are implemented and validated in this follow-up: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08; S04 and S06–S08 remain recommendations.
 
-Validation on Windows with Rust 1.98.1 and default features:
+Performance batch validation on Windows with Rust 1.98.1 and default features:
 
 - `cargo fmt --all -- --check`: passed.
 - `cargo clippy --locked -p rust-srec --all-targets -- -D warnings`: passed.
@@ -38,9 +38,15 @@ An isolated comparison of the original pairwise validation helpers against the i
 
 Unix-only symlink cases do not execute on Windows; platform coverage remains with CI. The full package/workspace test suites were not run. The first retention run exposed SQLx's handling of mixed numbered/anonymous placeholders; all eligibility suffixes now use explicit numbering and the existing/new retention tests pass.
 
+For S01–S03, formatting and affected-package Clippy with all targets passed on Windows with the same toolchain/default features. The focused suite below passed **327 tests**, including the existing FFmpeg thumbnail fallback test, and skipped 2,274 outside the selection. Coverage includes processor publication, failure/cancellation cleanup, remux skip/deletion behavior, scheduler configuration scopes, and streamer retirement. The existing remux contract now also checks metadata and removal-log order; no new tests or helpers were added. The platform and workspace limitations above still apply.
+
+```powershell
+cargo nextest run --locked -p rust-srec --lib --run-ignored all --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(scheduler::) | test(streamer_retirement_tests::) | test(pipeline::processors::remux::) | test(pipeline::processors::audio_extract::) | test(pipeline::processors::metadata::) | test(pipeline::processors::thumbnail::) | test(pipeline::processors::outputs::) | test(pipeline::processors::paths::) | test(pipeline::processors::output_tests::)'
+```
+
 ## Recommended starting points
 
-**F01 (ZIP cancellation)** and **S05 (DAG summary projection, implemented with F08)** are complete. For the remaining simplifications with current behavior preserved, start with **S01 (publication abstraction)**, **S02 (unused scheduler state)**, and **S03 (remux result handling)**. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
+**F01 (ZIP cancellation)** and **S05 (DAG summary projection, implemented with F08)** are complete. **S01 (publication abstraction)**, **S02 (unused scheduler state)**, and **S03 (remux result handling)** form the current simplification batch. Evaluate S04 and S06–S08 individually, keeping changes only when the removed duplication outweighs any added interface. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
 
 Here, preserving behavior includes response shapes, validation and error handling, ordering, retries, cancellation ownership, filesystem safety, and public Rust interfaces. A candidate marked behavior-preserving still needs implementation and regression verification.
 

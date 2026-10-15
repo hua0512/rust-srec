@@ -683,15 +683,14 @@ struct RemuxProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for RemuxProcessorItem<'_> {
-    type Publication = super::media_driver::StagedPublication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        publication: &mut Self::Publication,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         self.processor
-            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .process_one(input, output, self.config, self.ctx, batch)
             .await
     }
 }
@@ -737,9 +736,9 @@ impl Processor for RemuxProcessor {
         let plan = super::planning::OutputPlan::unary_or_mapped(&input.inputs, &input.outputs)
             .map_err(|_| crate::Error::PipelineError(format!("Remux batch job requires outputs to be empty or have the same length as inputs (inputs={}, outputs={})", input.inputs.len(), input.outputs.len())))?;
         let is_batch = plan.is_batch();
-        let output = super::media_driver::run_media(
+        let mut output = super::media_driver::run_media(
             plan,
-            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            OutputBatch::new(&input.inputs),
             &RemuxProcessorItem {
                 processor: self,
                 config: &config,
@@ -751,30 +750,18 @@ impl Processor for RemuxProcessor {
             // A single unsupported input keeps the shared skip result unchanged.
             return Ok(output);
         }
-        let ProcessorOutput {
-            outputs,
-            duration_secs,
-            items_produced,
-            succeeded_inputs,
-            skipped_inputs,
-            input_size_bytes,
-            output_size_bytes,
-            mut logs,
-            ..
-        } = output;
-
         // Sources are deleted only after every output of the job has been published.
         let mut removed_inputs = 0usize;
         if config.remove_input_on_success {
             // An input the remux wrote back over (see the identity check in process_one) is now the
             // output itself, so removing it would delete the result.
-            let mut output_keys = Vec::with_capacity(outputs.len());
-            for output in &outputs {
-                output_keys.push(comparison_key(output).await);
+            let mut output_keys = Vec::with_capacity(output.outputs.len());
+            for output_path in &output.outputs {
+                output_keys.push(comparison_key(output_path).await);
             }
 
             // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
-            for input_path in &succeeded_inputs {
+            for input_path in &output.succeeded_inputs {
                 let input_key = comparison_key(input_path).await;
                 if output_keys.iter().any(|output_key| {
                     super::paths::spelling_equal(
@@ -787,7 +774,7 @@ impl Processor for RemuxProcessor {
                         "Not removing input {input_path}: it is the same file as a remux output"
                     );
                     warn!("{msg}");
-                    logs.push(create_log_entry(
+                    output.logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         msg,
                     ));
@@ -799,14 +786,14 @@ impl Processor for RemuxProcessor {
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
                     warn!(path = input_path, error = %e, "Failed to remove remux input");
                     ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
-                    logs.push(create_log_entry(
+                    output.logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),
                     ));
                 } else {
                     removed_inputs += 1;
                     info!("Removed input file after successful remux: {}", input_path);
-                    logs.push(create_log_entry(
+                    output.logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Info,
                         format!("Removed input file: {}", input_path),
                     ));
@@ -830,19 +817,8 @@ impl Processor for RemuxProcessor {
             })
         };
 
-        Ok(ProcessorOutput {
-            outputs,
-            duration_secs,
-            metadata: Some(metadata.to_string()),
-            items_produced,
-            input_size_bytes,
-            output_size_bytes,
-            failed_inputs: vec![],
-            succeeded_inputs,
-            skipped_inputs,
-            uploads: vec![],
-            logs,
-        })
+        output.metadata = Some(metadata.to_string());
+        Ok(output)
     }
 }
 

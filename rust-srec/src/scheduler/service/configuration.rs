@@ -179,8 +179,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             return;
         };
         self.feedback.activate(id);
-        self.platform_mapping
-            .register(id, &metadata.platform_config_id);
         if self.is_batch_capable_platform(&metadata.platform_config_id)
             && let Err(error) = self.spawn_platform_actor(&metadata.platform_config_id)
         {

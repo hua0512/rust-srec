@@ -11,7 +11,6 @@
 //! - The Scheduler acts as a supervisor, spawning and monitoring actors
 //! - Owned configuration work resolves revisions and retains updates for actor delivery
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -33,9 +32,9 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ActorRemoval, DownloadEndPolicy, MonitorBatchChecker, MonitorStatusChecker,
-    PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport, StreamerConfig,
-    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
+    ActorRemoval, DownloadEndPolicy, MonitorBatchChecker, MonitorStatusChecker, PlatformConfig,
+    ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
+    TaskCompletionAction,
 };
 
 /// Work only the scheduler's event loop can do, requested from another task.
@@ -201,10 +200,6 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     command_rx: Option<mpsc::Receiver<SchedulerCommand>>,
     /// Shared with every `SchedulerHandle`; see `SchedulerHandle::loop_running`.
     loop_running: Arc<AtomicBool>,
-    /// Platform mapping for config routing.
-    platform_mapping: PlatformMapping,
-    /// Platform actor handles for batch coordination.
-    platform_handles: HashMap<String, ActorHandle<PlatformMessage>>,
     /// Broadcast receiver for download events (direct subscription).
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
     feedback: Arc<super::feedback::SchedulerFeedback>,
@@ -307,8 +302,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             command_tx,
             command_rx: Some(command_rx),
             loop_running: Arc::new(AtomicBool::new(false)),
-            platform_mapping: PlatformMapping::new(),
-            platform_handles: HashMap::new(),
             download_event_rx: None,
             feedback: super::feedback::SchedulerFeedback::new(),
             reliable_feedback: false,
@@ -448,8 +441,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             command_tx,
             command_rx: Some(command_rx),
             loop_running: Arc::new(AtomicBool::new(false)),
-            platform_mapping: PlatformMapping::new(),
-            platform_handles: HashMap::new(),
             download_event_rx: None,
             feedback: super::feedback::SchedulerFeedback::new(),
             reliable_feedback: false,
@@ -785,9 +776,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         let config = self.create_platform_config(platform_id);
         match self.supervisor.spawn_platform(platform_id, config) {
-            Ok(handle) => {
-                self.platform_handles
-                    .insert(platform_id.to_string(), handle);
+            Ok(_) => {
                 info!("Spawned platform actor: {}", platform_id);
                 Ok(())
             }
@@ -820,30 +809,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         config: StreamerConfig,
     ) -> Result<()> {
         let streamer_id = metadata.id.clone();
-        let platform_id = metadata.platform_config_id.clone();
-
-        // Get platform actor sender if on batch-capable platform
-        let platform_sender = if config.batch_capable {
-            self.platform_handles
-                .get(&platform_id)
-                .map(|h| h.metadata.id.clone())
-                .and_then(|_| {
-                    // Get the underlying sender from the supervisor's registry
-                    // For now, we'll pass None and let the actor handle it
-                    None
-                })
-        } else {
-            None
-        };
-
-        // Register platform mapping
-        self.platform_mapping.register(&streamer_id, &platform_id);
 
         // Spawn with streamer_id - actor fetches metadata from shared store
-        match self
-            .supervisor
-            .spawn_streamer(&streamer_id, config, platform_sender)
-        {
+        match self.supervisor.spawn_streamer(&streamer_id, config, None) {
             Ok(_handle) => {
                 self.feedback.activate(&streamer_id);
                 self.feedback
@@ -852,7 +820,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 Ok(())
             }
             Err(e) => {
-                self.platform_mapping.unregister(&streamer_id);
                 error!("Failed to spawn streamer actor {}: {}", streamer_id, e);
                 Err(crate::error::Error::Other(format!(
                     "Failed to spawn streamer actor: {}",
@@ -1050,7 +1017,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     pub fn remove_streamer(&mut self, streamer_id: &str) -> bool {
         self.invalidate_configuration(streamer_id);
         self.feedback.retire(streamer_id);
-        self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer(streamer_id)
     }
 
@@ -1070,7 +1036,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     pub fn remove_streamer_awaitable(&mut self, streamer_id: &str) -> ActorRemoval {
         self.invalidate_configuration(streamer_id);
         self.feedback.retire(streamer_id);
-        self.platform_mapping.unregister(streamer_id);
         self.supervisor.remove_streamer_awaitable(streamer_id)
     }
 
