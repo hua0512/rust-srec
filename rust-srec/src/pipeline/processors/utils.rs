@@ -981,9 +981,7 @@ mod tests {
         output.logs.push(JobLogEntry::error(""));
         assert_eq!(output.last_error_message(), Some(""));
         assert!(output.diagnostic_text().ends_with("debug context\n"));
-        output.logs.clear();
-        assert_eq!(output.diagnostic_text(), "");
-        output.logs.push(JobLogEntry::info("info only"));
+        output.logs = vec![JobLogEntry::info("info only")];
         assert_eq!(output.diagnostic_text(), "");
     }
 

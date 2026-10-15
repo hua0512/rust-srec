@@ -22,6 +22,14 @@ F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S0
 
 S04 and S06–S08 are implemented and validated in the next local follow-up: notification construction is shared while entrypoint policies stay explicit, SQL predicates and binds are built together, job-list conversion/enrichment is shared, and `CommandOutput` owns diagnostic formatting. Existing tests were extended for combined/empty filters, both job-list endpoints and response ordering, and diagnostic levels/text; no new test functions or generic abstractions were added.
 
+A post-implementation review of F01–F11 and S01–S08 found no correctness regressions. Its cleanup removed redundant test assertions and a dead commit-time assignment, narrowed `staged_aliases` to `paths.rs`, corrected stale or self-contradicting comments (including the restored reason `copy_via_tmp` stages through a temporary file), and aligned DAG filter construction with the job repository. Open review notes, not yet changed:
+
+- A copy that stalls after timeout keeps its job `PROCESSING`, its worker permit, and the output-file gate until the native copy returns; previously the job failed at the deadline.
+- The async-side copy cancellation checks cannot fire under the worker pool, which stops polling a cancelled or timed-out processor; the in-closure pre-copy check is the effective one.
+- The read-only temporary cleanup test passes on NTFS without the attribute-reset branch, which only runs where POSIX delete is unavailable (for example FAT/exFAT or some SMB shares).
+- Pre-existing duplicates remain in touched files: `CopyMoveProcessor::format_bytes` (`utils::text::format_bytes` prints `B` instead of `bytes`), `CancelOnDrop` (`CancellationToken::drop_guard`), and copy/move `AlreadyExists` overwrite branches that current Windows `rename` no longer reaches.
+- After S01 the four `MediaItem` adapters only forward to `process_one`; async closures could replace them if the processor future stays `Send`.
+
 Performance batch validation on Windows with Rust 1.98.1 and default features:
 
 - `cargo fmt --all -- --check`: passed.

@@ -1109,26 +1109,23 @@ mod batch_tests {
                 ),
             ),
         };
-        let owners = (0..=1000)
+        let owners: Vec<_> = (0..=1000)
             .rev()
             .map(|i| format!("owner-{i:04}"))
-            .chain(["missing".to_owned(), "owner-0000".to_owned()]);
+            .chain(["missing".to_owned(), "owner-0000".to_owned()])
+            .collect();
         let jobs: Vec<_> = owners
+            .iter()
             .map(|owner| Job::new("remux", vec![], vec![], owner, "session"))
             .collect();
         let responses = jobs_to_responses(&state, jobs).await;
         assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
-        assert_eq!(responses.len(), 1003);
         assert_eq!(
             responses
                 .iter()
                 .map(|job| job.streamer_id.as_str())
                 .collect::<Vec<_>>(),
-            (0..=1000)
-                .rev()
-                .map(|i| format!("owner-{i:04}"))
-                .chain(["missing".to_owned(), "owner-0000".to_owned()])
-                .collect::<Vec<_>>()
+            owners
         );
         for job in &responses {
             let expected = job

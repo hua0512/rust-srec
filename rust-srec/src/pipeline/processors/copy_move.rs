@@ -138,9 +138,10 @@ impl CopyMoveProcessor {
     }
 
     /// Copy `source` to `dest` through a temporary sibling, verify the byte
-    /// count, and rename the copy into place. A cancelled native copy retains
-    /// its temporary-file guard until the blocking operation exits, keeping
-    /// partial data out of the final destination.
+    /// count, and rename the copy into place. Cancellation therefore leaves at
+    /// most a `.tmp-*` file, never a partial file under the final destination
+    /// name, which would block a retried move when `overwrite` is disabled. The
+    /// blocking copy owns the temporary-file guard, so cleanup never races it.
     ///
     /// Returns the bytes copied, or a user-facing error message.
     async fn copy_via_tmp(

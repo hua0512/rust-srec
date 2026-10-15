@@ -815,7 +815,6 @@ mod tests {
         let error = std::io::copy(&mut reader, &mut writer).unwrap_err();
 
         assert_eq!(error.to_string(), "compression cancelled");
-        assert_ne!(error.kind(), std::io::ErrorKind::Interrupted);
         assert!(writer.written > 0 && writer.written < input_size);
         assert_eq!(reader.inner.bytes_done, writer.written as u64);
     }

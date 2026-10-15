@@ -7,12 +7,11 @@ use tracing::warn;
 use super::paths::{StagedPath, StagedPathIndex};
 use crate::{Error, Result};
 
-/// Accumulate successful or skipped media results in input order. Batch callers
-/// own metadata, size metrics, commit/rollback and post-publication source deletion.
-/// Transfer results and partial-failure drivers use their own aggregation policy.
-/// Fold one item's result into the batch result. Size metrics are summed so a
-/// batch reports its total input and output bytes; an item without a size
-/// (a skipped input) leaves the totals untouched.
+/// Fold one successful or skipped media result into the batch result, in input
+/// order. Size metrics are summed; an item without a size (a skipped input)
+/// leaves the totals untouched. Batch callers own metadata, commit/rollback and
+/// post-publication source deletion. Transfer results and partial-failure
+/// drivers use their own aggregation policy.
 pub(super) fn accumulate_media_output(
     batch: &mut super::ProcessorOutput,
     one: super::ProcessorOutput,
@@ -287,7 +286,6 @@ impl OutputBatch {
         }
         // Never reuse staging snapshots: sources, destinations, or symlink
         // parents may have been replaced while processors produced their files.
-        self.staging_validation = None;
         let mut validation = OutputValidation::default();
         validation.protect(self.sources.iter().cloned());
         for entry in &self.pending {

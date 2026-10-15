@@ -1,7 +1,7 @@
 use super::*;
 use crate::database::models::{
-    DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
-    JobExecutionLogDbModel, LiveSessionDbModel, MediaOutputTypeSummary, OutputFilters,
+    DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DanmuStatisticsDbModel,
+    JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel, MediaOutputTypeSummary, OutputFilters,
     PipelinePreset, ReadyStep, SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
@@ -789,7 +789,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<crate::database::models::DagExecutionListSummary>> {
+    ) -> Result<Vec<DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1036,7 +1036,7 @@ impl DagRepository for TestDagRepository {
         _filter: &crate::database::repositories::DagListFilter<'_>,
         _limit: u32,
         _offset: u32,
-    ) -> Result<Vec<crate::database::models::DagExecutionListSummary>> {
+    ) -> Result<Vec<DagExecutionListSummary>> {
         unimplemented!("not needed for these tests")
     }
 

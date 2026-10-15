@@ -7,6 +7,7 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::database::begin_immediate;
+use crate::database::models::dag::dag_definition_name;
 use crate::database::models::{
     DagDisplayCounts, DagExecutionDbModel, DagExecutionListSummary, DagExecutionStats,
     DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus, JobDbModel, ReadyStep,
@@ -509,12 +510,19 @@ fn push_dag_list_filter(query: &mut QueryBuilder<Sqlite>, filter: &DagListFilter
         .filter(|search| !search.is_empty())
     {
         let pattern = super::literal_substring_pattern(search);
-        query.push(next_separator())
-            .push("(dag.id LIKE ").push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR json_extract(dag.dag_definition, '$.name') LIKE ").push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR dag.session_id LIKE ").push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR dag.streamer_id LIKE ").push_bind(pattern.clone())
-            .push(r" ESCAPE '\' OR EXISTS (SELECT 1 FROM streamers WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ").push_bind(pattern)
+        query
+            .push(next_separator())
+            .push("(dag.id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR json_extract(dag.dag_definition, '$.name') LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR dag.session_id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR dag.streamer_id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR EXISTS (SELECT 1 FROM streamers")
+            .push(" WHERE streamers.id = dag.streamer_id AND streamers.name LIKE ")
+            .push_bind(pattern)
             .push(r" ESCAPE '\'))");
     }
 }
@@ -525,13 +533,16 @@ fn push_dag_execution_filters(
     session_id: Option<&str>,
 ) {
     let mut separator = " WHERE ";
+    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
     if let Some(status) = status {
-        query.push(separator).push("status = ").push_bind(status);
-        separator = " AND ";
+        query
+            .push(next_separator())
+            .push("status = ")
+            .push_bind(status);
     }
     if let Some(session_id) = session_id {
         query
-            .push(separator)
+            .push(next_separator())
             .push("session_id = ")
             .push_bind(session_id);
     }
@@ -728,7 +739,7 @@ impl DagRepository for SqlxDagRepository {
             .map(|row| {
                 let display_status = parse_display_status(&row.id, &row.display_status)?;
                 Ok(DagExecutionListSummary {
-                    name: crate::database::models::dag::dag_definition_name(&row.dag_definition),
+                    name: dag_definition_name(&row.dag_definition),
                     id: row.id,
                     display_status,
                     streamer_id: row.streamer_id,

@@ -808,7 +808,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         metadata: StreamerMetadata,
         config: StreamerConfig,
     ) -> Result<()> {
-        let streamer_id = metadata.id.clone();
+        let streamer_id = metadata.id;
 
         // Spawn with streamer_id - actor fetches metadata from shared store
         match self.supervisor.spawn_streamer(&streamer_id, config, None) {
