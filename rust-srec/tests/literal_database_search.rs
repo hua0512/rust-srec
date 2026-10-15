@@ -94,6 +94,19 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
             models.push(model);
         }
         let ids: Vec<_> = models.iter().map(|model| model.id.clone()).collect();
+        let (unfiltered, total) = repo
+            .list_jobs_filtered(
+                &JobFilters {
+                    statuses: Some(Vec::new()),
+                    job_types: Some(Vec::new()),
+                    ..Default::default()
+                },
+                &Pagination::new(100, 0),
+            )
+            .await
+            .unwrap();
+        assert_eq!(total as usize, models.len());
+        assert_eq!(unfiltered.len(), models.len());
         for &(search, expected) in CASES {
             let filters = JobFilters::new().with_search(search);
             let (rows, total) = repo

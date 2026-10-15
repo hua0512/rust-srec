@@ -102,7 +102,7 @@ fn staged_comparison_key(path: &Path) -> Result<PathBuf> {
 
 /// Native identity catches existing hardlinks and symlinks; missing leaves use
 /// resolved parents. Non-NotFound I/O errors must not establish distinct files.
-pub(super) fn staged_aliases(left: &Path, right: &Path) -> Result<bool> {
+fn staged_aliases(left: &Path, right: &Path) -> Result<bool> {
     match same_file::is_same_file(left, right) {
         Ok(true) => return Ok(true),
         Ok(false) => {}
@@ -165,8 +165,8 @@ impl StagedPath {
 
 /// A snapshot of paths for one validation phase. Fingerprints avoid retaining
 /// one open file per input; matching buckets are confirmed with native identity
-/// checks, so a hash collision never establishes an alias. Failed probes also
-/// use the original pair check, which retains its error and short-circuit rules.
+/// checks, so a hash collision never establishes an alias. Failed probes fall
+/// back to the pairwise `staged_aliases` check and its error and short-circuit rules.
 #[derive(Default)]
 pub(super) struct StagedPathIndex {
     paths: Vec<PathBuf>,
@@ -216,7 +216,7 @@ impl StagedPathIndex {
                 candidates.extend(matches);
             }
         }
-        // Error/alias precedence follows source order even when a candidate was
+        // Error/alias precedence follows insertion order even when a candidate was
         // selected by both its spelling and native identity.
         candidates.sort_unstable();
         candidates.dedup();

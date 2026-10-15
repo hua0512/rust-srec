@@ -191,6 +191,34 @@ struct PendingNotification {
     next_retry_at: Option<DateTime<Utc>>,
 }
 
+impl PendingNotification {
+    fn new(id: u64, event: NotificationEvent, targets: Vec<Arc<RuntimeChannel>>) -> Self {
+        let mut channel_state = HashMap::new();
+        for channel in &targets {
+            channel_state
+                .entry(channel.key.clone())
+                .or_insert(ChannelDeliveryState {
+                    status: DeliveryStatus::Pending,
+                    attempts: 0,
+                    last_attempt: None,
+                    last_error: None,
+                });
+        }
+
+        Self {
+            _id: id,
+            event,
+            created_at: Utc::now(),
+            channel_state,
+            targets,
+            delivery_lock: Default::default(),
+            retry_generation: 0,
+            retry_cancel: CancellationToken::new(),
+            next_retry_at: None,
+        }
+    }
+}
+
 /// Dead letter entry for failed notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeadLetterEntry {
@@ -373,29 +401,7 @@ impl NotificationService {
             return Ok(());
         }
 
-        let mut channel_state = HashMap::new();
-        for channel in &target_channels {
-            channel_state
-                .entry(channel.key.clone())
-                .or_insert(ChannelDeliveryState {
-                    status: DeliveryStatus::Pending,
-                    attempts: 0,
-                    last_attempt: None,
-                    last_error: None,
-                });
-        }
-
-        let pending = PendingNotification {
-            _id: id,
-            event,
-            created_at: Utc::now(),
-            channel_state,
-            targets: target_channels,
-            delivery_lock: Default::default(),
-            retry_generation: 0,
-            retry_cancel: CancellationToken::new(),
-            next_retry_at: None,
-        };
+        let pending = PendingNotification::new(id, event, target_channels);
 
         if self.enqueue_pending(id, pending) {
             self.process_notification(id).await;
@@ -485,29 +491,7 @@ impl NotificationService {
             return Ok(());
         }
 
-        let mut channel_state = HashMap::new();
-        for channel in &target_channels {
-            channel_state
-                .entry(channel.key.clone())
-                .or_insert(ChannelDeliveryState {
-                    status: DeliveryStatus::Pending,
-                    attempts: 0,
-                    last_attempt: None,
-                    last_error: None,
-                });
-        }
-
-        let pending = PendingNotification {
-            _id: id,
-            event: event.clone(),
-            created_at: Utc::now(),
-            channel_state,
-            targets: target_channels,
-            delivery_lock: Default::default(),
-            retry_generation: 0,
-            retry_cancel: CancellationToken::new(),
-            next_retry_at: None,
-        };
+        let pending = PendingNotification::new(id, event, target_channels);
 
         if self.enqueue_pending(id, pending) {
             self.process_notification(id).await;

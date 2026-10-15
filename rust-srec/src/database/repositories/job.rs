@@ -10,109 +10,91 @@ use crate::database::models::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use super::literal_substring_pattern;
 
-/// Build the `WHERE ...` clause (empty string when no filter is set) shared by
-/// `list_jobs_filtered` and `list_jobs_page_filtered`. The placeholder order here must match the
-/// bind order in `bind_job_filters!` exactly.
-fn job_filter_where_clause(filters: &JobFilters) -> String {
-    let mut conditions: Vec<String> = Vec::new();
+/// Append each optional predicate with its bound value for count and page queries.
+fn push_job_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobFilters) {
+    let mut separator = " WHERE ";
+    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
 
-    if filters.status.is_some() {
-        conditions.push("status = ?".to_string());
+    if let Some(status) = filters.status {
+        query
+            .push(next_separator())
+            .push("status = ")
+            .push_bind(status.as_str());
     }
     if let Some(statuses) = &filters.statuses
         && !statuses.is_empty()
     {
-        let placeholders = statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        conditions.push(format!("status IN ({})", placeholders));
+        query.push(next_separator()).push("status IN (");
+        let mut values = query.separated(", ");
+        for status in statuses {
+            values.push_bind(status.as_str());
+        }
+        values.push_unseparated(")");
     }
-    if filters.streamer_id.is_some() {
-        conditions.push("streamer_id = ?".to_string());
+    if let Some(streamer_id) = &filters.streamer_id {
+        query
+            .push(next_separator())
+            .push("streamer_id = ")
+            .push_bind(streamer_id);
     }
-    if filters.session_id.is_some() {
-        conditions.push("session_id = ?".to_string());
+    if let Some(session_id) = &filters.session_id {
+        query
+            .push(next_separator())
+            .push("session_id = ")
+            .push_bind(session_id);
     }
-    if filters.pipeline_id.is_some() {
-        conditions.push("pipeline_id = ?".to_string());
+    if let Some(pipeline_id) = &filters.pipeline_id {
+        query
+            .push(next_separator())
+            .push("pipeline_id = ")
+            .push_bind(pipeline_id);
     }
-    if filters.from_date.is_some() {
-        conditions.push("created_at >= ?".to_string());
+    if let Some(from_date) = filters.from_date {
+        query
+            .push(next_separator())
+            .push("created_at >= ")
+            .push_bind(from_date.timestamp_millis());
     }
-    if filters.to_date.is_some() {
-        conditions.push("created_at <= ?".to_string());
+    if let Some(to_date) = filters.to_date {
+        query
+            .push(next_separator())
+            .push("created_at <= ")
+            .push_bind(to_date.timestamp_millis());
     }
-    if filters.job_type.is_some() {
-        conditions.push("job_type = ?".to_string());
+    if let Some(job_type) = &filters.job_type {
+        query
+            .push(next_separator())
+            .push("job_type = ")
+            .push_bind(job_type);
     }
     if let Some(job_types) = &filters.job_types
         && !job_types.is_empty()
     {
-        let placeholders = job_types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        conditions.push(format!("job_type IN ({})", placeholders));
+        query.push(next_separator()).push("job_type IN (");
+        let mut values = query.separated(", ");
+        for job_type in job_types {
+            values.push_bind(job_type);
+        }
+        values.push_unseparated(")");
     }
-    if filters.search.is_some() {
-        conditions.push(
-            r"(id LIKE ? ESCAPE '\' OR session_id LIKE ? ESCAPE '\' OR streamer_id LIKE ? ESCAPE '\' OR job_type LIKE ? ESCAPE '\')".to_string(),
-        );
-    }
-
-    if conditions.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", conditions.join(" AND "))
-    }
-}
-
-/// Apply the `JobFilters` binds to a query builder in the exact order the placeholders appear in
-/// `job_filter_where_clause`. A macro (rather than a function) is used so it works for both
-/// `query_scalar` (count) and `query_as` (data) builders without a shared trait bound.
-macro_rules! bind_job_filters {
-    ($query:expr, $filters:expr) => {{
-        let mut query = $query;
-        if let Some(status) = &$filters.status {
-            query = query.bind(status.as_str());
-        }
-        if let Some(statuses) = &$filters.statuses {
-            for status in statuses {
-                query = query.bind(status.as_str());
-            }
-        }
-        if let Some(streamer_id) = &$filters.streamer_id {
-            query = query.bind(streamer_id);
-        }
-        if let Some(session_id) = &$filters.session_id {
-            query = query.bind(session_id);
-        }
-        if let Some(pipeline_id) = &$filters.pipeline_id {
-            query = query.bind(pipeline_id);
-        }
-        if let Some(from_date) = &$filters.from_date {
-            query = query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &$filters.to_date {
-            query = query.bind(to_date.timestamp_millis());
-        }
-        if let Some(job_type) = &$filters.job_type {
-            query = query.bind(job_type);
-        }
-        if let Some(job_types) = &$filters.job_types {
-            for jt in job_types {
-                query = query.bind(jt);
-            }
-        }
-        if let Some(search) = &$filters.search {
-            let pattern = literal_substring_pattern(search);
-            query = query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
+    if let Some(search) = &filters.search {
+        let pattern = literal_substring_pattern(search);
         query
-    }};
+            .push(next_separator())
+            .push("(id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR session_id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR streamer_id LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR job_type LIKE ")
+            .push_bind(pattern)
+            .push(r" ESCAPE '\')");
+    }
 }
 
 /// Job repository trait.
@@ -904,43 +886,18 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<JobDbModel>, u64)> {
-        let where_clause = job_filter_where_clause(filters);
-
-        // Count query
-        let count_sql = format!("SELECT COUNT(*) as count FROM job {}", where_clause);
-
-        // Data query with pagination, ordered by priority (desc) then created_at (desc)
-        let data_sql = format!(
-            "SELECT * FROM job {} ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?",
-            where_clause
-        );
-
-        // Execute count query
-        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-        let count_query = bind_job_filters!(count_query, filters);
-        let total_count = count_query.fetch_one(&self.pool).await? as u64;
-
-        // Execute data query
-        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-        let mut data_query = bind_job_filters!(data_query, filters);
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
-
-        let jobs = data_query.fetch_all(&self.pool).await?;
-
+        let total_count = self.count_jobs(filters).await?;
+        let jobs = self.list_jobs_page_filtered(filters, pagination).await?;
         Ok((jobs, total_count))
     }
 
     async fn count_jobs(&self, filters: &JobFilters) -> Result<u64> {
-        // Shares the clause/bind construction with list_jobs_filtered's count query.
-        let count_sql = format!(
-            "SELECT COUNT(*) as count FROM job {}",
-            job_filter_where_clause(filters)
-        );
-
-        let count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-        let count_query = bind_job_filters!(count_query, filters);
-        Ok(count_query.fetch_one(&self.pool).await? as u64)
+        let mut query = QueryBuilder::new("SELECT COUNT(*) as count FROM job");
+        push_job_filters(&mut query, filters);
+        Ok(query
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await? as u64)
     }
 
     async fn list_jobs_page_filtered(
@@ -948,21 +905,17 @@ impl JobRepository for SqlxJobRepository {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<JobDbModel>> {
-        // Shares the clause/bind construction with list_jobs_filtered's data query.
-        let where_clause = job_filter_where_clause(filters);
-
-        let data_sql = format!(
-            "SELECT * FROM job {} ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?",
-            where_clause
-        );
-
-        let data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
-        let mut data_query = bind_job_filters!(data_query, filters);
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
-
-        let jobs = data_query.fetch_all(&self.pool).await?;
-        Ok(jobs)
+        let mut query = QueryBuilder::new("SELECT * FROM job");
+        push_job_filters(&mut query, filters);
+        query
+            .push(" ORDER BY priority DESC, created_at DESC LIMIT ")
+            .push_bind(i64::from(pagination.limit))
+            .push(" OFFSET ")
+            .push_bind(i64::from(pagination.offset));
+        Ok(query
+            .build_query_as::<JobDbModel>()
+            .fetch_all(&self.pool)
+            .await?)
     }
 
     async fn get_job_counts_by_status(&self) -> Result<JobCounts> {

@@ -68,43 +68,18 @@ pub async fn list_jobs(
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<JobResponse>>> {
-    // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
-
-    // Convert API filter params to database filter types
-    let db_filters = JobFilters {
-        status: filters.status.map(api_status_to_job_status),
-        statuses: None,
-        streamer_id: filters.streamer_id,
-        session_id: filters.session_id,
-        pipeline_id: filters.pipeline_id,
-        from_date: filters.from_date,
-        to_date: filters.to_date,
-        job_type: None,
-        job_types: None,
-        search: filters.search,
-    };
+    let db_filters = job_filters(filters);
 
     let effective_limit = pagination.limit.min(100);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    // Call PipelineManager.list_jobs
     let (jobs, total) = pipeline_manager
         .list_jobs(&db_filters, &db_pagination)
         .await
         .map_err(ApiError::from)?;
 
-    // Batch-fetch streamer names
-    let streamer_names = fetch_streamer_names(&state, &jobs).await;
-
-    // Convert jobs to API response format
-    let job_responses: Vec<JobResponse> = jobs
-        .into_iter()
-        .map(|job| {
-            let name = streamer_names.get(&job.streamer_id).cloned();
-            job_to_response(job, name)
-        })
-        .collect();
+    let job_responses = jobs_to_responses(&state, jobs).await;
 
     let response = PaginatedResponse::new(job_responses, total, effective_limit, pagination.offset);
     Ok(Json(response))
@@ -127,18 +102,7 @@ pub async fn list_jobs_page(
 ) -> ApiResult<Json<PageResponse<JobResponse>>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let db_filters = JobFilters {
-        status: filters.status.map(api_status_to_job_status),
-        statuses: None,
-        streamer_id: filters.streamer_id,
-        session_id: filters.session_id,
-        pipeline_id: filters.pipeline_id,
-        from_date: filters.from_date,
-        to_date: filters.to_date,
-        job_type: None,
-        job_types: None,
-        search: filters.search,
-    };
+    let db_filters = job_filters(filters);
 
     let effective_limit = pagination.limit.min(100);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
@@ -148,16 +112,7 @@ pub async fn list_jobs_page(
         .await
         .map_err(ApiError::from)?;
 
-    // Batch-fetch streamer names
-    let streamer_names = fetch_streamer_names(&state, &jobs).await;
-
-    let job_responses: Vec<JobResponse> = jobs
-        .into_iter()
-        .map(|job| {
-            let name = streamer_names.get(&job.streamer_id).cloned();
-            job_to_response(job, name)
-        })
-        .collect();
+    let job_responses = jobs_to_responses(&state, jobs).await;
     Ok(Json(PageResponse::new(
         job_responses,
         effective_limit,
@@ -998,6 +953,21 @@ pub async fn create_pipeline(
 // Helper functions
 // ============================================================================
 
+fn job_filters(filters: JobFilterParams) -> JobFilters {
+    JobFilters {
+        status: filters.status.map(api_status_to_job_status),
+        statuses: None,
+        streamer_id: filters.streamer_id,
+        session_id: filters.session_id,
+        pipeline_id: filters.pipeline_id,
+        from_date: filters.from_date,
+        to_date: filters.to_date,
+        job_type: None,
+        job_types: None,
+        search: filters.search,
+    }
+}
+
 /// Convert API JobStatus to persisted job status.
 pub(super) fn api_status_to_job_status(status: ApiJobStatus) -> JobStatus {
     match status {
@@ -1085,10 +1055,9 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
     }
 }
 
-/// Helper to batch-fetch streamer names for a list of jobs.
-async fn fetch_streamer_names(state: &PipelineRouteState, jobs: &[Job]) -> HashMap<String, String> {
+async fn jobs_to_responses(state: &PipelineRouteState, jobs: Vec<Job>) -> Vec<JobResponse> {
     let repository = &state.streamer_repository;
-    crate::api::batch_lookup::collect(
+    let streamer_names = crate::api::batch_lookup::collect(
         jobs.iter().map(|job| job.streamer_id.clone()),
         |ids| async move {
             Ok(repository
@@ -1105,7 +1074,13 @@ async fn fetch_streamer_names(state: &PipelineRouteState, jobs: &[Job]) -> HashM
                 .map(|streamer| streamer.name)
         },
     )
-    .await
+    .await;
+    jobs.into_iter()
+        .map(|job| {
+            let name = streamer_names.get(&job.streamer_id).cloned();
+            job_to_response(job, name)
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -1118,7 +1093,7 @@ mod batch_tests {
     use std::sync::{Arc, atomic::Ordering};
 
     #[tokio::test]
-    async fn streamer_names_use_bounded_queries_and_tolerate_missing_or_retiring_owners() {
+    async fn job_responses_use_bounded_queries_and_keep_missing_or_retiring_owners() {
         let (pool, queries) = crate::api::batch_lookup::tests::fixture().await;
         sqlx::query("UPDATE streamers SET deleted_at = 1 WHERE id = 'owner-0002'")
             .execute(&pool)
@@ -1134,26 +1109,32 @@ mod batch_tests {
                 ),
             ),
         };
-        let owners = (0..=1000)
+        let owners: Vec<_> = (0..=1000)
             .rev()
             .map(|i| format!("owner-{i:04}"))
-            .chain(["missing".to_owned(), "owner-0000".to_owned()]);
+            .chain(["missing".to_owned(), "owner-0000".to_owned()])
+            .collect();
         let jobs: Vec<_> = owners
+            .iter()
             .map(|owner| Job::new("remux", vec![], vec![], owner, "session"))
             .collect();
-        let names = fetch_streamer_names(&state, &jobs).await;
+        let responses = jobs_to_responses(&state, jobs).await;
         assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
-        assert_eq!(names.len(), 1001);
-        assert_eq!(names["owner-0002"], "Name 2");
-        assert!(!names.contains_key("missing"));
-        for job in &jobs {
+        assert_eq!(
+            responses
+                .iter()
+                .map(|job| job.streamer_id.as_str())
+                .collect::<Vec<_>>(),
+            owners
+        );
+        for job in &responses {
             let expected = job
                 .streamer_id
                 .strip_prefix("owner-")
                 .map(|value| format!("Name {}", value.parse::<u32>().unwrap()));
-            assert_eq!(names.get(&job.streamer_id), expected.as_ref());
+            assert_eq!(job.streamer_name, expected);
         }
-        assert!(fetch_streamer_names(&state, &[]).await.is_empty());
+        assert!(jobs_to_responses(&state, Vec::new()).await.is_empty());
         assert_eq!(queries.load(Ordering::SeqCst), 0);
         pool.close().await;
     }

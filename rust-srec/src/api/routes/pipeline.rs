@@ -1002,7 +1002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_jobs_filters_cancelled_status() {
+    async fn test_job_list_endpoints_filter_cancelled_status_and_cap_limits() {
         let state = build_test_state();
         let manager = state.pipeline_manager.clone();
 
@@ -1027,7 +1027,10 @@ mod tests {
 
         let response = list_jobs(
             State(state.clone()),
-            Query(PaginationParams::default()),
+            Query(PaginationParams {
+                limit: 200,
+                offset: 0,
+            }),
             Query(JobFilterParams {
                 status: Some(ApiJobStatus::Cancelled),
                 ..JobFilterParams::default()
@@ -1037,9 +1040,28 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.0.total, 1);
+        assert_eq!(response.0.limit, 100);
         assert_eq!(response.0.items.len(), 1);
         assert_eq!(response.0.items[0].id, cancelled_job_id);
         assert_eq!(response.0.items[0].status, ApiJobStatus::Cancelled);
+
+        let page = list_jobs_page(
+            State(state),
+            Query(PaginationParams {
+                limit: 200,
+                offset: 0,
+            }),
+            Query(JobFilterParams {
+                status: Some(ApiJobStatus::Cancelled),
+                ..JobFilterParams::default()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.0.limit, 100);
+        assert_eq!(page.0.items.len(), 1);
+        assert_eq!(page.0.items[0].id, cancelled_job_id);
+        assert_eq!(page.0.items[0].status, ApiJobStatus::Cancelled);
 
         let pending = manager.get_job(&pending_job_id).await.unwrap().unwrap();
         assert_eq!(pending.status, JobStatus::Pending);

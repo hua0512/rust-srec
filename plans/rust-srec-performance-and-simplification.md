@@ -2,25 +2,37 @@
 
 Recorded: 2026-10-15. Reviewed revision: `c314be4a7180fa03a3898f319ec0bb9985f6ea75`.
 
-Status: the first implementation batch is implemented and validated in the current worktree. The findings below retain the investigation record at the reviewed revision. Scope is the recorder backend, with frontend callers inspected to establish polling workloads. No live database or recording data was opened or modified. Measurements below are isolated probes, not application-wide benchmarks, and do not establish production speedups. Source line anchors describe the reviewed revision; implementations can move those lines.
+Status: the first performance batch was merged in [PR #1122](https://github.com/hua0512/rust-srec/pull/1122). The findings below retain the investigation record at the reviewed revision. Scope is the recorder backend, with frontend callers inspected to establish polling workloads. No live database or recording data was opened or modified. Measurements below are isolated probes, not application-wide benchmarks, and do not establish production speedups. Source line anchors describe the reviewed revision; implementations can move those lines.
 
 Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evidence and recommendations remain recorded, but these items are excluded from the current implementation scope until explicitly reopened.
 
 ## Implementation progress
 
-| Finding | Current worktree change | Status |
+| Finding | Implemented change | Status |
 | --- | --- | --- |
 | F01 | Cancellation returns a nonretryable compression error; bounded retry-loop regression added. | Implemented and validated. |
-| F02 | Native copies retain staged-output and worker-completion ownership until the blocking operation exits. Cancellation observed before publication rejects the staged copy; final rename retains its existing semantics. Windows cleanup handles read-only private temps without changing hard-linked originals. | Partial: native mid-copy interruption remains open. Native copy acceleration and platform metadata are preserved. |
+| F02 | Native copies retain staged-output and worker-completion ownership until the blocking operation exits. Cancellation observed before publication rejects the staged copy; a copy cancelled inside its blocking task removes the temporary file there before releasing worker completion; final rename retains its existing semantics. Windows cleanup handles read-only private temps without changing hard-linked originals. | Partial: native mid-copy interruption remains open. Native copy acceleration and platform metadata are preserved. |
 | F04 | Staging uses indexed path/identity snapshots without retaining input handles; commit prepares fresh validation. | Implemented and validated. External path replacement can defer rejection from staging to commit. |
 | F05 | Unchanged feedback targets use a registry membership revision check; feedback retirement invalidates it. | Hot-path fix implemented and validated. Actual membership changes still copy the target map. |
 | F06 | Existing log worker batches up to 32 records / 64 KiB, sharing coordination and inventory while preserving per-record rotation/truncation. | Implemented and validated. Normal shutdown flushes; abrupt termination can lose the bounded worker buffer. |
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
 
-F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. The separate simplification workstream has not been started beyond the summary projection needed for F08.
+F07, F12, F13, F14, F15, and F16 remain investigated and unimplemented. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
 
-Validation on Windows with Rust 1.98.1 and default features:
+S04 and S06–S08 are implemented and validated in the next local follow-up: notification construction is shared while entrypoint policies stay explicit, SQL predicates and binds are built together, job-list conversion/enrichment is shared, and `CommandOutput` owns diagnostic formatting. Existing tests were extended for combined/empty filters, both job-list endpoints and response ordering, and diagnostic levels/text; no new test functions or generic abstractions were added.
+
+A post-implementation review of F01–F11 and S01–S08 found no correctness regressions. Its cleanup removed redundant test assertions and a dead commit-time assignment, narrowed `staged_aliases` to `paths.rs`, corrected stale or self-contradicting comments (including the restored reason `copy_via_tmp` stages through a temporary file), and aligned DAG filter construction with the job repository. Open review notes, not yet changed:
+
+- The async-side copy cancellation checks cannot fire under the worker pool, which stops polling a cancelled or timed-out processor; the in-closure checks are the effective ones, and the post-copy check lets a copy cancelled mid-operation clean up before releasing its slot.
+
+A follow-up replaced the copy processor's duplicate byte formatter, disk-full classifier, and the compression drop guard with the shared `utils::text::format_bytes`, `ErrorKind::StorageFull`, and `CancellationToken::drop_guard`; renamed the Windows read-only cleanup test after the contract it can verify on NTFS; and corrected the copy/move rename comments. Copy/move `AlreadyExists` overwrite branches remain as a fallback for filesystems that report a collision instead of replacing. Small-file disk-full messages now print `B` rather than `bytes`.
+
+A timed-out job is now recorded `FAILED` at its deadline even when uninterruptible blocking work (for example a stalled native copy) still owns its log sender; the worker keeps its permit and output-file lease until that work exits. Because a scheduled or manual retry can dequeue a successor under the same job ID meanwhile, workers now finalize by attempt (`AttemptToken`) rather than by job ID. Dequeues share a queue gate through claiming and publishing tracking; retry and attempt finalization take the gate exclusively so cleanup cannot cross that handoff. Both retry paths retire the previous attempt's token before another dequeue can proceed. Late log lines from the old attempt still land in the job's history with their original timestamps. Cancellation is rejected while the job remains failed; a retried successor can be cancelled even while the old attempt's log drain continues.
+
+Replacing the four `MediaItem` adapters with an `AsyncFn` parameter was tried and rejected: Rust 1.98.1 cannot prove the borrowed closure futures `Send` for every lifetime, which `async_trait` processor futures require, and boxed higher-ranked futures would add more ceremony than the adapters remove.
+
+Performance batch validation on Windows with Rust 1.98.1 and default features:
 
 - `cargo fmt --all -- --check`: passed.
 - `cargo clippy --locked -p rust-srec --all-targets -- -D warnings`: passed.
@@ -38,9 +50,23 @@ An isolated comparison of the original pairwise validation helpers against the i
 
 Unix-only symlink cases do not execute on Windows; platform coverage remains with CI. The full package/workspace test suites were not run. The first retention run exposed SQLx's handling of mixed numbered/anonymous placeholders; all eligibility suffixes now use explicit numbering and the existing/new retention tests pass.
 
+For S01–S03, formatting and affected-package Clippy with all targets passed on Windows with the same toolchain/default features. The focused suite below passed **327 tests**, including the existing FFmpeg thumbnail fallback test, and skipped 2,274 outside the selection. Coverage includes processor publication, failure/cancellation cleanup, remux skip/deletion behavior, scheduler configuration scopes, and streamer retirement. The existing remux contract now also checks metadata and removal-log order; no new tests or helpers were added. The platform and workspace limitations above still apply.
+
+```powershell
+cargo nextest run --locked -p rust-srec --lib --run-ignored all --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(scheduler::) | test(streamer_retirement_tests::) | test(pipeline::processors::remux::) | test(pipeline::processors::audio_extract::) | test(pipeline::processors::metadata::) | test(pipeline::processors::thumbnail::) | test(pipeline::processors::outputs::) | test(pipeline::processors::paths::) | test(pipeline::processors::output_tests::)'
+```
+
+For S04 and S06–S08, formatting and affected-package Clippy with all targets also passed on Windows with default features. The following selection passed **304 tests**, including the literal-search and index-budget integration tests and FFmpeg thumbnail fallback, with 2,303 outside the selection skipped. It covers notification delivery/reload/listeners, job/DAG filter combinations, API responses, lookup fallback, pipeline consumers, and command diagnostics. Unfiltered counts still emit plain `COUNT(*)` queries. Deferred F03/F10 source files and the F09 statistics implementation are unchanged; the platform and workspace limitations above still apply.
+
+```powershell
+cargo nextest run --locked -p rust-srec --lib --test literal_database_search --test database_index_budget --run-ignored all --no-fail-fast --test-threads 8 --status-level fail --final-status-level fail -E 'test(notification::service::) | test(database::repositories::job::) | test(database::repositories::dag::) | test(pipeline::manager::) | test(pipeline::job_queue::) | test(api::routes::pipeline::) | test(api::batch_lookup::) | test(pipeline::processors::utils::) | test(pipeline::processors::audio_extract::) | test(pipeline::processors::metadata::) | test(pipeline::processors::thumbnail::) | test(pipeline::processors::output_tests::) | binary(literal_database_search) | binary(database_index_budget)'
+```
+
+For the attempt handoff fix, formatting and affected-package Clippy with all targets passed on Windows with default features. The focused queue, worker, DAG, processor, manager, and job API selection passed **253 tests**, with 2,348 outside the selection skipped. Existing tests now pause a real SQLite successor claim to check finalization ordering and preservation of progress, per-file failure records, and upload terminal events; the in-memory cancellation/retry case also checks fresh tokens and cancellation propagation.
+
 ## Recommended starting points
 
-**F01 (ZIP cancellation)** and **S05 (DAG summary projection, implemented with F08)** are complete. For the remaining simplifications with current behavior preserved, start with **S01 (publication abstraction)**, **S02 (unused scheduler state)**, and **S03 (remux result handling)**. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
+**F01 (ZIP cancellation)** and **S01–S08** are implemented and validated. The remaining performance findings and conditional simplifications need separate contract reviews. Keep changes only when the removed duplication outweighs any added interface. Larger scheduling, caching, and resource-admission changes require explicit contract checks rather than being treated as routine cleanup.
 
 Here, preserving behavior includes response shapes, validation and error handling, ordering, retries, cancellation ownership, filesystem safety, and public Rust interfaces. A candidate marked behavior-preserving still needs implementation and regression verification.
 

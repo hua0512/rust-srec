@@ -8,38 +8,18 @@ use super::planning::OutputPlan;
 use crate::Result;
 
 #[async_trait]
-pub(super) trait Publication: Send + Sized {
-    async fn commit(self) -> Result<()>;
-    async fn rollback(&mut self, produced: &[String]);
-}
-
-pub(super) struct StagedPublication(pub(super) OutputBatch);
-
-#[async_trait]
-impl Publication for StagedPublication {
-    async fn commit(self) -> Result<()> {
-        self.0.commit().await
-    }
-    async fn rollback(&mut self, _produced: &[String]) {
-        // OutputBatch's guards clean staged files on drop. Published outputs
-        // exist only inside its cancellation-independent commit/rollback task.
-    }
-}
-
-#[async_trait]
 pub(super) trait MediaItem: Sync {
-    type Publication: Publication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        publication: &mut Self::Publication,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput>;
 }
 
 pub(super) async fn run_media<P: MediaItem>(
     plan: OutputPlan<'_>,
-    mut publication: P::Publication,
+    mut batch: OutputBatch,
     processor: &P,
 ) -> Result<ProcessorOutput> {
     let mut result = ProcessorOutput {
@@ -47,15 +27,13 @@ pub(super) async fn run_media<P: MediaItem>(
         ..Default::default()
     };
     for (input, output) in plan.items() {
-        match processor.process(input, output, &mut publication).await {
-            Ok(one) if !plan.is_batch() => result = one,
-            Ok(one) => accumulate_media_output(&mut result, one),
-            Err(error) => {
-                publication.rollback(&result.items_produced).await;
-                return Err(error);
-            }
+        let one = processor.process(input, output, &mut batch).await?;
+        if plan.is_batch() {
+            accumulate_media_output(&mut result, one);
+        } else {
+            result = one;
         }
     }
-    publication.commit().await?;
+    batch.commit().await?;
     Ok(result)
 }

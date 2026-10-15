@@ -192,14 +192,7 @@ impl ThumbnailProcessor {
                     continue;
                 }
 
-                // Reconstruct stderr for error analysis
-                let stderr = command_output
-                    .logs
-                    .iter()
-                    .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
-                    .map(|l| l.message.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let stderr = command_output.diagnostic_text();
 
                 ctx.error(format!("ffmpeg failed: {}", stderr));
                 logs.extend(command_output.logs);
@@ -360,15 +353,14 @@ struct ThumbnailProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for ThumbnailProcessorItem<'_> {
-    type Publication = super::media_driver::StagedPublication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        publication: &mut Self::Publication,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         self.processor
-            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .process_one(input, output, self.config, self.ctx, batch)
             .await
     }
 }
@@ -416,7 +408,7 @@ impl Processor for ThumbnailProcessor {
         let is_batch = plan.is_batch();
         let mut output = super::media_driver::run_media(
             plan,
-            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            OutputBatch::new(&input.inputs),
             &ThumbnailProcessorItem {
                 processor: self,
                 config: &config,

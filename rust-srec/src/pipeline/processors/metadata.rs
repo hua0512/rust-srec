@@ -271,14 +271,7 @@ impl MetadataProcessor {
         .await?;
 
         if !command_output.status.success() {
-            // Reconstruct stderr for error analysis
-            let stderr_output = command_output
-                .logs
-                .iter()
-                .filter(|l| l.level != crate::pipeline::job_queue::LogLevel::Info)
-                .map(|l| l.message.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let stderr_output = command_output.diagnostic_text();
 
             // Check for common error patterns
             let error_msg = if stderr_output.contains("Invalid data found")
@@ -349,15 +342,14 @@ struct MetadataProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for MetadataProcessorItem<'_> {
-    type Publication = super::media_driver::StagedPublication;
     async fn process(
         &self,
         input: &str,
         output: Option<&str>,
-        publication: &mut Self::Publication,
+        batch: &mut OutputBatch,
     ) -> Result<ProcessorOutput> {
         self.processor
-            .process_one(input, output, self.config, self.ctx, &mut publication.0)
+            .process_one(input, output, self.config, self.ctx, batch)
             .await
     }
 }
@@ -406,7 +398,7 @@ impl Processor for MetadataProcessor {
         let is_batch = plan.is_batch();
         let mut output = super::media_driver::run_media(
             plan,
-            super::media_driver::StagedPublication(OutputBatch::new(&input.inputs)),
+            OutputBatch::new(&input.inputs),
             &MetadataProcessorItem {
                 processor: self,
                 config: &config,

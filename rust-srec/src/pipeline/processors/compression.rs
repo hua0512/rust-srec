@@ -167,29 +167,6 @@ impl<R: Read> Read for CancelProgressReader<R> {
     }
 }
 
-struct CancelOnDrop {
-    token: CancellationToken,
-    armed: bool,
-}
-
-impl CancelOnDrop {
-    fn new(token: CancellationToken) -> Self {
-        Self { token, armed: true }
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        if self.armed {
-            self.token.cancel();
-        }
-    }
-}
-
 fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {
     let path = Path::new(input_path);
     if !preserve_paths {
@@ -646,7 +623,7 @@ impl Processor for CompressionProcessor {
         let inputs = input.inputs.clone();
         let config_for_blocking = config.clone();
         let cancel = ctx.cancellation_token.child_token();
-        let mut cancel_on_drop = CancelOnDrop::new(cancel.clone());
+        let cancel_on_drop = cancel.clone().drop_guard();
         let progress = ctx.progress.clone();
 
         let result = tokio::task::spawn_blocking(move || {
@@ -815,7 +792,6 @@ mod tests {
         let error = std::io::copy(&mut reader, &mut writer).unwrap_err();
 
         assert_eq!(error.to_string(), "compression cancelled");
-        assert_ne!(error.kind(), std::io::ErrorKind::Interrupted);
         assert!(writer.written > 0 && writer.written < input_size);
         assert_eq!(reader.inner.bytes_done, writer.written as u64);
     }

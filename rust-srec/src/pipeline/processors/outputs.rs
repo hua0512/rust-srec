@@ -7,12 +7,11 @@ use tracing::warn;
 use super::paths::{StagedPath, StagedPathIndex};
 use crate::{Error, Result};
 
-/// Accumulate successful or skipped media results in input order. Batch callers
-/// own metadata, size metrics, commit/rollback and post-publication source deletion.
-/// Transfer results and partial-failure drivers use their own aggregation policy.
-/// Fold one item's result into the batch result. Size metrics are summed so a
-/// batch reports its total input and output bytes; an item without a size
-/// (a skipped input) leaves the totals untouched.
+/// Fold one successful or skipped media result into the batch result, in input
+/// order. Size metrics are summed; an item without a size (a skipped input)
+/// leaves the totals untouched. Batch callers own metadata, commit/rollback and
+/// post-publication source deletion. Transfer results and partial-failure
+/// drivers use their own aggregation policy.
 pub(super) fn accumulate_media_output(
     batch: &mut super::ProcessorOutput,
     one: super::ProcessorOutput,
@@ -36,8 +35,9 @@ pub(super) fn accumulate_media_output(
 pub(super) struct TempOutputGuard {
     path: PathBuf,
     cleanup: bool,
-    /// Set only once ownership has moved into a blocking commit/promotion closure.
-    cleanup_on_current_thread: bool,
+    /// Set only while a blocking closure owns the guard; async owners must not
+    /// run filesystem cleanup on their runtime thread.
+    pub(super) cleanup_on_current_thread: bool,
     /// A hard-linked backup shares permissions with the original file.
     cleanup_readonly: bool,
 }
@@ -287,7 +287,6 @@ impl OutputBatch {
         }
         // Never reuse staging snapshots: sources, destinations, or symlink
         // parents may have been replaced while processors produced their files.
-        self.staging_validation = None;
         let mut validation = OutputValidation::default();
         validation.protect(self.sources.iter().cloned());
         for entry in &self.pending {
@@ -583,9 +582,11 @@ mod tests {
         assert_eq!(std::fs::read(output).unwrap(), b"replacement");
     }
 
+    /// NTFS deletes read-only files directly, so this checks the cleanup
+    /// contract; the attribute reset runs only without POSIX delete support.
     #[cfg(windows)]
     #[tokio::test]
-    async fn readonly_temporary_cleanup_preserves_source_and_destination_permissions() {
+    async fn readonly_temporary_output_is_removed_without_touching_other_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source.mp4");
         let output = dir.path().join("output.mp4");
