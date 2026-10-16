@@ -46,7 +46,7 @@ use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
 use super::metrics::PerformanceMetrics;
 use super::payload::SegmentPayload;
-use super::throttle::RateLimitHolds;
+use super::throttle::{RateLimitHolds, ThrottleClock};
 
 // --- Output ---
 
@@ -626,8 +626,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         let paused = self
             .rate_limit_holds
             .clock()
-            .paused_at(now)
-            .saturating_sub(gap_state.paused_at_detection);
+            .credited_pause(gap_state.paused_at_detection, now);
         let elapsed = now
             .saturating_duration_since(gap_state.detected_at)
             .saturating_sub(paused);
@@ -674,6 +673,15 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
     }
 
+    /// When a live stream that receives no input fails; `None` when it never
+    /// does.
+    fn stall_deadline(&self, clock: &ThrottleClock, now: Instant) -> Option<Instant> {
+        let timeout = self.config.output.live_max_overall_stall_duration?;
+        let since = self.last_input_received_time?;
+        self.is_live_stream
+            .then(|| clock.deadline(since, self.last_input_paused, timeout, now))
+    }
+
     async fn assemble(&mut self) {
         debug!(live = self.is_live_stream, "sequence assembler started");
 
@@ -691,14 +699,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             let now = Instant::now();
             self.refresh_rate_limit_scope(now);
             let clock = self.rate_limit_holds.clock();
-            let stall_deadline = if self.is_live_stream
-                && let Some(timeout) = self.config.output.live_max_overall_stall_duration
-                && let Some(since) = self.last_input_received_time
-            {
-                Some(clock.deadline(since, self.last_input_paused, timeout, now))
-            } else {
-                None
-            };
+            let stall_deadline = self.stall_deadline(&clock, now);
             let overall_stall_timeout = stall_deadline
                 .map_or(Duration::from_secs(u64::MAX / 2), |deadline| {
                     deadline.saturating_duration_since(now)
@@ -824,11 +825,9 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     // A producer can publish a pause after the watch arm was
                     // polled but before this ready timer wins the select.
                     let now = Instant::now();
-                    if let Some(timeout) = self.config.output.live_max_overall_stall_duration
-                        && let Some(since) = self.last_input_received_time
-                        && self.rate_limit_holds.clock().deadline(
-                            since, self.last_input_paused, timeout, now,
-                        ) > now
+                    if self
+                        .stall_deadline(&self.rate_limit_holds.clock(), now)
+                        .is_some_and(|deadline| deadline > now)
                     {
                         continue;
                     }

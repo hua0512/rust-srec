@@ -1437,9 +1437,10 @@ Streams with a skipping gap strategy keep the forced skip.
 held back by another request's origin cooldown, publishes a hold keyed by its
 media MSN or init identity. Its deadline is the first refusal plus
 `max_throttled`; further refusals do not extend it. The hold survives queued
-retries, probes and completed payload backpressure, and ends when the assembler
-consumes the payload, the attempt has an ordinary failure, upstream explicitly
-skips it, or the deadline expires. Revisions use a separate watch channel so
+retries, probes, completed payload backpressure and the one wait for a fresh
+URL after a 401/403, and ends when the assembler consumes the payload, the
+attempt has an ordinary failure, upstream explicitly skips it, or the deadline
+expires. Revisions use a separate watch channel so
 payload backpressure cannot hide the hold.
 
 The assembler identifies its blocked media or required init. Fetch transitions
@@ -1449,6 +1450,9 @@ watchdogs and DASH audio waits (including queued video slices and final audio
 tails) exclude only the time actually paused; they resume their remaining
 ordinary budget as soon as the hold ends. The five-minute retry cap bounds an
 active hold rather than granting five minutes of grace after a short refusal.
+One timeout excludes at most `max_throttled` of pauses in total, across
+successive holds, so a session whose origin refuses every next blocker still
+times out after its ordinary budget plus one allowance.
 The DASH media watchdog uses the union of both tracks' pauses, counting overlap
 once, and a stopped track removes its contribution. Unrelated buffered init
 holds do not suspend a known media blocker's watchdog. Buffer-pressure skips,

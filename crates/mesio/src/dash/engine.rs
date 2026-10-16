@@ -169,7 +169,9 @@ pub(crate) async fn start(
     let media_stall_timeout = live
         .then_some(config.output.live_max_overall_stall_duration)
         .flatten();
-    let throttle_session = media_stall_timeout.map(|_| Arc::new(ThrottleSession::new()));
+    let max_throttled = clients.rate_limiter().policy().max_throttled;
+    let throttle_session =
+        media_stall_timeout.map(|_| Arc::new(ThrottleSession::new(max_throttled)));
     for (track, wanted) in [
         (MediaTrack::Video, selected.video),
         (MediaTrack::Audio, selected.audio),
@@ -243,7 +245,7 @@ pub(crate) async fn start(
                 retry_budget: config.fetcher.max_segment_retries,
                 retry_delay_base: config.fetcher.segment_retry_delay_base,
                 retry_delay_max: config.fetcher.max_segment_retry_delay,
-                max_throttled: clients.rate_limiter().policy().max_throttled,
+                max_throttled,
                 fallback_size_estimate: engine.initial_segment_size_estimate,
                 max_segment_size: engine.max_segment_size_bytes,
                 max_retained_inits: engine.max_retained_inits,
