@@ -493,7 +493,7 @@ impl DownloadManager {
         // The attempt task folds these into its outcome after both siblings
         // settle, so a lost segment row still surfaces without ending the
         // recording that produced it.
-        let lifecycle_errors = Arc::new(Mutex::new(Vec::<String>::new()));
+        let lifecycle_errors = Arc::new(Mutex::new(FailureSamples::default()));
         let translator_lifecycle_errors = Arc::clone(&lifecycle_errors);
         let mut split_updates = handle.manual_split.updates();
         let translator_future = async move {
@@ -633,7 +633,7 @@ impl DownloadManager {
                                 %delivery_error,
                                 "Required segment completion could not be applied; recording continues"
                             );
-                            translator_lifecycle_errors.lock().push(format!(
+                            translator_lifecycle_errors.lock().push(&format!(
                                 "required segment completion could not be applied: {delivery_error}"
                             ));
                             if let Some(request_id) = manual_request {
@@ -982,7 +982,7 @@ impl DownloadManager {
                     (engine_result, translator_result)
                 }
             };
-            let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock());
+            let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock()).into_report();
             if let Err(payload) = engine_result {
                 let error = if let Some(message) = payload.downcast_ref::<&str>() {
                     (*message).to_string()

@@ -837,6 +837,7 @@ mod tests {
         dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
         event_logs: tokio::sync::Mutex<Vec<NotificationEventLogDbModel>>,
         event_log_gate: Option<Semaphore>,
+        dead_letter_gate: Option<Semaphore>,
         panic_next_event_log: AtomicBool,
         fail_dead_letter_insert: bool,
         pause_next_list: AtomicBool,
@@ -857,6 +858,7 @@ mod tests {
                 dead_letters: tokio::sync::Mutex::new(Vec::new()),
                 event_logs: tokio::sync::Mutex::new(Vec::new()),
                 event_log_gate: None,
+                dead_letter_gate: None,
                 panic_next_event_log: AtomicBool::new(false),
                 fail_dead_letter_insert: false,
                 pause_next_list: AtomicBool::new(false),
@@ -960,6 +962,9 @@ mod tests {
                 return Err(crate::Error::Other(
                     "forced dead letter insert failure".into(),
                 ));
+            }
+            if let Some(gate) = &self.dead_letter_gate {
+                gate.acquire().await.unwrap().forget();
             }
             self.dead_letters.lock().await.push(entry.clone());
             Ok(())

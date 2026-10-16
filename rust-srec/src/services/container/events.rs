@@ -28,6 +28,7 @@ use crate::pipeline::PipelineManager;
 use crate::services::runtime_coordinator::RuntimeCoordinator;
 use crate::session::SessionLifecycle;
 use crate::streamer::StreamerManager;
+use crate::utils::failure_samples::FailureSamples;
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamMonitor = StreamMonitor<
@@ -923,14 +924,14 @@ struct DanmuEventHandler {
 
 impl DanmuEventHandler {
     async fn run(self, mut receiver: DanmuCoordinationReceiver) -> std::result::Result<(), String> {
-        let mut failures = Vec::new();
+        let mut failures = FailureSamples::default();
         while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
             if let Err(error) = self.handle_event(event).await {
                 warn!(%error, "Required danmu event could not be applied");
-                failures.push(error);
+                failures.push(&error);
             }
         }
-        receiver.acknowledge_shutdown(failures);
+        receiver.acknowledge_shutdown(failures.into_report());
         debug!("Danmu event handler drained and shut down");
         Ok(())
     }
