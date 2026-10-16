@@ -460,6 +460,24 @@ const DAG_DISPLAY_STATUS_SQL: &str = concat!(
     " THEN 'PROCESSING' ELSE 'PENDING' END ELSE dag.status END"
 );
 
+/// Display-status counts, equivalent to grouping [`DAG_DISPLAY_STATUS_SQL`]
+/// over every DAG. One statement keeps both halves on the same snapshot.
+const DAG_DISPLAY_COUNTS_SQL: &str = concat!(
+    "SELECT status, COUNT(*) FROM dag_execution \
+     WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED') GROUP BY status \
+     UNION ALL \
+     SELECT CASE WHEN ",
+    dag_has_running_job_sql!(),
+    " THEN 'PROCESSING' ELSE 'PENDING' END AS display_status, COUNT(*) \
+     FROM dag_execution AS dag WHERE dag.status IN ('PENDING', 'PROCESSING') \
+     GROUP BY display_status"
+);
+
+/// Average completed duration in milliseconds, read from the covering status
+/// index rather than the DAG rows.
+const DAG_AVG_DURATION_SQL: &str = "SELECT AVG(completed_at - created_at) FROM dag_execution \
+     WHERE status = 'COMPLETED' AND completed_at IS NOT NULL";
+
 /// SQL predicate selecting DAGs whose display status is `status`. Terminal
 /// statuses compare the stored column directly so they can use its index.
 fn dag_display_status_condition(status: DagExecutionStatus) -> &'static str {
@@ -777,19 +795,15 @@ impl DagRepository for SqlxDagRepository {
     }
 
     async fn get_dag_display_counts(&self) -> Result<DagDisplayCounts> {
-        let rows: Vec<(String, i64)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {DAG_DISPLAY_STATUS_SQL} AS display_status, COUNT(*) \
-             FROM dag_execution AS dag GROUP BY display_status"
-        )))
-        .fetch_all(&self.pool)
-        .await?;
+        // Retained history is almost entirely terminal; its counts come from
+        // the status index, and only unfinished DAGs probe for a running job.
+        let rows: Vec<(String, i64)> = sqlx::query_as(DAG_DISPLAY_COUNTS_SQL)
+            .fetch_all(&self.pool)
+            .await?;
 
-        let avg_duration_ms: Option<f64> = sqlx::query_scalar(
-            "SELECT AVG(completed_at - created_at) FROM dag_execution \
-             WHERE status = 'COMPLETED' AND completed_at IS NOT NULL",
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let avg_duration_ms: Option<f64> = sqlx::query_scalar(DAG_AVG_DURATION_SQL)
+            .fetch_one(&self.pool)
+            .await?;
 
         let mut counts = DagDisplayCounts {
             avg_duration_secs: avg_duration_ms.map(|ms| ms / 1000.0),
@@ -1687,6 +1701,21 @@ mod tests {
                 avg_duration_secs: Some(4.0),
             }
         );
+
+        // Terminal history is counted and averaged from the status index alone.
+        for query in [DAG_DISPLAY_COUNTS_SQL, DAG_AVG_DURATION_SQL] {
+            let plan: Vec<(i64, i64, i64, String)> =
+                sqlx::query_as(sqlx::AssertSqlSafe(format!("EXPLAIN QUERY PLAN {query}")))
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            let plan: Vec<String> = plan.into_iter().map(|(.., detail)| detail).collect();
+            assert!(
+                plan.iter().any(|detail| detail
+                    .contains("USING COVERING INDEX idx_dag_execution_status_created_completed")),
+                "{query}: {plan:?}"
+            );
+        }
     }
 
     #[tokio::test]
