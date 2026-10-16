@@ -49,8 +49,8 @@ COPY --from=planner /app/recipe.json recipe.json
 COPY --from=planner /app/rust-srec/proto rust-srec/proto
 
 # Build only dependencies - this layer is cached if recipe.json unchanged.
-# We intentionally allow Cargo.lock updates here, then propagate the generated
-# lockfile into the builder stage to keep the final build consistent.
+# The recipe has a reduced workspace and lockfile; keep any lockfile updates
+# confined to this dependency cache rather than the final application build.
 RUN cargo chef cook --release --recipe-path recipe.json \
     --package rust-srec --bin rust-srec --features tls-native-fallback
 
@@ -82,16 +82,11 @@ COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-# Use the lockfile produced by the cacher stage (may include target/feature-specific deps).
-COPY --from=cacher /app/Cargo.lock Cargo.lock
-
 # Build the release binary (only compiles our code, deps are cached).
-# We first allow Cargo.lock to be updated (if needed for this target/feature set),
-# then immediately re-run with --locked to ensure it is stable.
+# Keep the repository lockfile: the recipe omits unrelated workspace members,
+# so its reduced lockfile would re-resolve dependencies in the full workspace.
 # Enable native-tls fallback for legacy TLS endpoints (e.g. Douyu CDN/danmu).
-RUN set -eux; \
-    cargo build --release --features tls-native-fallback -p rust-srec --bin rust-srec; \
-    cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
+RUN cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
 
 # Runtime stage
 FROM debian:bookworm-slim
