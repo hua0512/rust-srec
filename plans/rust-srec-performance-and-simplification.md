@@ -18,7 +18,7 @@ Deferred by user request on 2026-10-15: **F03**, **F09**, and **F10**. Their evi
 | F08 | DAG list summaries omit unused manifests and retain existing name parsing. The unused full-record list (`list_dags_by_display_status`) was removed from `DagRepository` and `DagScheduler`; no workspace consumer used it. | Implemented and validated. |
 | F11 | Indexed protected-job selection is materialized for candidate and transactional final checks; a new partial index covers nonterminal IDs. | Implemented and validated. New migration: `20261015120000_index_output_retention_protected_jobs.sql`. |
 
-F07, F12, F13, F15, and F16 remain investigated and unimplemented; the F14 investigation is closed without a code change on the measured workloads, with production impact and recurring synchronized bursts left unmeasured. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
+F12 and F13 are implemented in the current follow-up, and F15 has bounded historical failure diagnostics; validation is recorded below. F07 and F14 are closed without code changes on the measured evidence. F02 native mid-copy interruption, F15 historical-ID cleanup, and the optional F16 preset remain open; the deferred F03/F09/F10 scope is unchanged. S01–S03 are implemented and validated: the media driver uses `OutputBatch` directly, unused private scheduler state is removed, and remux updates its existing result. S05 was completed with F08.
 
 S04 and S06–S08 are implemented and validated in the next local follow-up: notification construction is shared while entrypoint policies stay explicit, SQL predicates and binds are built together, job-list conversion/enrichment is shared, and `CommandOutput` owns diagnostic formatting. Existing tests were extended for combined/empty filters, both job-list endpoints and response ordering, and diagnostic levels/text; no new test functions or generic abstractions were added.
 
@@ -132,6 +132,17 @@ Bounded batching could amortize this work. Preserve record truncation boundaries
 
 A shared revisioned result could remove duplicate work. Do not replace the fresh call with a cache lookup: it protects a publication race. A timing-only resolver must also preserve existing validation/failure behavior; currently a failed full resolution can preserve old settings or defer an actor restart.
 
+**Follow-up (2026-10-16): measured; no code change.** A scratch Linux probe used the current configuration service/resolver code, repository queries, all migrations on a temporary SQLite database, and the existing development dependency artifacts. Three rounds compared a cold metadata pass (16 concurrent resolutions) with the fresh scheduler pass (8 concurrent resolutions). These are diagnostic development-build timings, not release or production performance claims.
+
+| Fixture | Cold metadata pass, median | Duplicate fresh pass, median | Exploratory timing path retaining credential/route validation IO |
+| --- | --- | --- | --- |
+| 100 streamers, 10 connections | 52.5 ms | 47.3 ms | 44.6 ms |
+| 1,000 streamers, 10 connections | 540.1 ms | 475.0 ms | 448.3 ms |
+| 1,000 streamers, 1 connection | 1,245.3 ms | 1,234.0 ms | 1,315.2 ms |
+| 1,000 streamers with synthetic approximately 80 KiB layered JSON each, 10 connections | 1,967.7 ms | 2,042.5 ms | 654.8 ms |
+
+The full and validation-IO paths each made six repository acquisitions per streamer; skipping credential/route work reduced that to four but changes failure visibility. The timing probe is not a production-equivalent resolver. Normal configurations showed only about 27 ms/1,000 streamers of wall-time reduction in the exploratory path at 10 connections, and no improvement at one connection. The JSON-heavy fixture shows a possible larger CPU cost, without evidence that it represents real installations. Sharing a full result would remove more work but requires a revision/publication protocol. Keep the fresh validation path and reopen only with production profiles showing material reload cost.
+
 ### F08. DAG lists copy unused large JSON into Rust — projection candidate
 
 [list_dags_by_display_status](../rust-srec/src/database/repositories/dag.rs#L744) selects `dag.*`, including session-wide `input_manifest` data that [the response mapping](../rust-srec/src/api/routes/pipeline/dag.rs#L359) discards. A long-session page can copy megabytes unnecessarily. This is transfer/allocation between SQLite and Rust; HTTP responses already omit these manifests.
@@ -166,11 +177,21 @@ Output retention defaults to disabled. When enabled, first identify active/retry
 
 Bound ingress and total delivery work only with an explicit overload policy. Preserve event logging, web push independence, subscription/channel snapshots, retries, and shutdown ownership. Do not silently add drops or change ordering in a cleanup refactor. The duplicated construction itself can be simplified independently (S04).
 
+**Follow-up (2026-10-16): bounded dispatch and delivery.** A FIFO ingress queue holds at most 1,024 events. Async system-event listeners wait for room; their existing bounded source broadcasts can still lag and report lost source events. Synchronous credential/output/relogin failure callbacks cannot await: they reject the newest event when full, before internal broadcast or event-log persistence. `dispatch_dropped` counts rejected ingress events (including shutdown); warnings occur at powers of two. There is no fallback task or automatic replay.
+
+One supervised worker owns at most 16 concurrent event passes and returns its receiver when idle, avoiding a permanent service/worker ownership cycle. Direct `notify` calls share that pass limit. A panic in one dispatched event is contained so it cannot close ingress for later events. Every admitted event still takes the existing best-effort event-log path and separate web-push queue before ordinary channel admission; channel queue capacity zero still allows logging and push. Slow ordinary sends can delay later ingress processing. Web push retains its own existing best-effort overload/shutdown policy. Channel targets/subscriptions are selected at the same post-persistence point and retained across reloads.
+
+A shared semaphore limits ordinary channel sends to 16 across initial, direct and retry passes; each event still allows four independent targets. Pending-channel overflow still evicts the oldest event. Eviction now drops the whole delivery pass, including active sends and permit waiters, and cancels its retry. Shutdown fences ingress and keeps accepted dispatch work under the existing task supervisor; the worker drains accepted ingress. This is an explicit overload-policy change, not strict equivalence under sustained overload.
+
 ### F13. Rate-limit waiters repeatedly wake together — admission-policy change
 
 [RateLimiterManager::acquire](../rust-srec/src/monitor/rate_limiter.rs#L220) makes callers wait until the same next-token deadline, contend on a cross-platform mutex, and retry. [Initial actor checks](../rust-srec/src/scheduler/actor/messages.rs#L646) are immediate; recurring jitter does not spread startup. This matters for large restarts and forced-check bursts, not small idle installations.
 
 FIFO admission per platform could avoid repeated wakeups, but changes ordering/fairness. Preserve rate/burst limits, cancellation without consuming tokens, backoff, and deadlines. The operation-count argument is analytical; no scheduler load benchmark was run.
+
+**Follow-up (2026-10-16): per-platform FIFO admission.** Each existing token bucket now has one async mutex for blocking callers. Only the queue head checks/sleeps for a token; other platforms keep independent queues and the shared bucket-map lock is released before sleeping. Cancellation removes the caller or releases its turn without reserving a token. `try_acquire` remains opportunistic and may bypass queued blocking callers. Token rates/bursts, route backoff and outer operation deadlines are unchanged. Reported wait includes time in the new queue.
+
+The scratch harness included the actual manager code with instrumentation for bucket attempts, plus uninstrumented optimized runs. Both the virtual and accelerated real-time copies substituted Tokio time for the bucket clock. In the virtual model, 200 synchronized waiters required 19,901 bucket checks before the change versus 398 with FIFO; 1,000 required 499,501 versus 1,998. Admission timing was unchanged in that model, including 302 admissions / 698 deadline cancellations for 1,000 waiters under a 300-second deadline with burst two. An accelerated real-time optimized probe (four worker threads, 100 tokens/s, burst two, 1,000 synchronized waiters) consumed approximately 4.49 CPU seconds versus 69 ms, with a 9.982-second admission tail in both modes. This demonstrates isolated contention reduction, not production CPU savings at the default one token/s.
 
 ### F14. Status polling uses the single writer connection for a read — contention lead
 
@@ -211,11 +232,29 @@ Conclusion: the measured spread workload had low writer queueing, while simultan
 
 Consider bounded diagnostic samples plus total counts, and permanent-retirement cleanup only after old jobs, feedback envelopes, and permits settle. Capping diagnostics changes shutdown-report contents; dropping generation/retirement state too early can reintroduce stale work. Existing session cancellation handles already clean up their registry on drop and are not a missing-cleanup finding.
 
+**Follow-up (2026-10-16): historical failure details bounded; ID cleanup remains open.** Danmu collection failures and lazily reaped download-attempt failures now retain the latest 128 details, each limited to 2,048 UTF-8 bytes, plus total/omitted counts in the shutdown report. Active download-attempt shutdown failures retain their complete fatal reports. The shared sampler replaces the two unbounded vectors; it does not change cleanup ownership or fatal-shutdown classification.
+
+At an assumed 256-byte message size, 100,000 errors previously retained at least 28 MB per vector including 24-byte string headers on a 64-bit host, before spare capacity and allocator overhead. This is a growth model, not a production measurement. Retained message payload is now at most 256 KiB per sampler. Per-streamer serialization, revision/retirement, feedback and heartbeat history remains unchanged: deleting entries without proving all older owners have drained can split locks/capacity or admit stale work.
+
 ### F16. Full Processing adds metadata through another full media pass — opt-in workflow optimization
 
 The shipped [Full Processing preset](../rust-srec/migrations/20250920193717_initial_schema.sql#L1183) remuxes and then invokes a separate metadata processor. [Metadata embedding](../rust-srec/src/pipeline/processors/metadata.rs#L133) copies the complete input into a new file; [remux already accepts tags](../rust-srec/src/pipeline/processors/remux.rs#L456).
 
 An optimized preset could save one full recording read/write and one recording-sized intermediate. This changes named steps, intermediate files, and per-step retries. Offer an explicitly optimized workflow; do not silently rewrite custom workflows or edit shipped migrations. Savings are structural; no media benchmark was run.
+
+**Follow-up (2026-10-16): optional preset remains open.** The existing workflow UI already supports a new additive preset containing remux metadata, then thumbnail, with upload depending on both remux and thumbnail. No new API/editor abstraction is needed. A new migration/default-preset locale entry can offer it without changing `pipeline-full` or custom workflows. It would remove the `_meta` intermediate and the separate metadata retry boundary.
+
+Before shipping it, define recording-tag substitution: the shipped `add_metadata` preset contains `{title}`, `{streamer}` and `{date}`, but both metadata and remux currently send configured tag values literally to FFmpeg. DAG preset expansion copies those values unchanged. Copying these placeholders into a new preset would carry forward that defect; silently adding expansion to existing custom workflows is a separate behavior change. No preset or migration was added in this batch. Native mid-copy interruption (F02) also remains open: there is no measured operational case yet for replacing accelerated `std::fs::copy` and its platform metadata behavior.
+
+## Remaining-work follow-up validation
+
+Local Linux validation with Rust 1.98.1:
+
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- `cargo nextest run --locked -p rust-srec --lib --test-threads 8`: **2,614 passed**, six ignored tests skipped. This includes ingress overload/backpressure, logging drain, panic recovery/idle worker restart, per-event and global channel limits, eviction cancellation, FIFO/cancellation isolation, and historical/fatal shutdown diagnostic boundaries.
+- `cargo clippy --locked -p rust-srec --all-targets --features tls-native-fallback -- -D warnings`: passed.
+
+Integration-test binaries, ignored tests, and other operating systems were not run locally for this follow-up. Native TLS was checked by Clippy rather than a second runtime suite. The full workspace/platform matrix remains CI coverage. The probes use isolated temporary databases and local contention models; no production database or provider requests were used.
 
 ## Measurement record
 

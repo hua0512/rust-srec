@@ -49,7 +49,7 @@ impl NotificationService {
                                 let notification = monitor_notification(event);
 
                                 if let Some(notification) = notification {
-                                    service.dispatch_notification(notification);
+                                    service.dispatch_notification_wait(notification).await;
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -97,7 +97,7 @@ impl NotificationService {
                                 let notification = session_notification(transition);
 
                                 if let Some(notification) = notification {
-                                    service.dispatch_notification(notification);
+                                    service.dispatch_notification_wait(notification).await;
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -141,7 +141,7 @@ impl NotificationService {
                                 let notification = download_notification(event, Utc::now());
 
                                 if let Some(notification) = notification {
-                                    service.dispatch_notification(notification);
+                                    service.dispatch_notification_wait(notification).await;
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -186,7 +186,7 @@ impl NotificationService {
                                 let notification = mapper.map(event, Utc::now());
 
                                 if let Some(notification) = notification {
-                                    service.dispatch_notification(notification);
+                                    service.dispatch_notification_wait(notification).await;
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {

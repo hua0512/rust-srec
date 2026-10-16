@@ -25,6 +25,7 @@ use crate::downloader::engine::{
 use crate::downloader::output_root_gate::OutputRootGate;
 use crate::downloader::queue::SlotGuard;
 use crate::downloader::resilience::EngineKey;
+use crate::utils::failure_samples::FailureSamples;
 use crate::utils::task_supervisor::DrainedTasks;
 
 use super::{
@@ -74,7 +75,7 @@ pub(super) struct AttemptSupervisor {
     accepting: AtomicBool,
     tasks: Mutex<JoinSet<AttemptTaskReport>>,
     running: Arc<DashMap<String, ()>>,
-    failures: Mutex<Vec<String>>,
+    failures: Mutex<FailureSamples>,
 }
 
 struct AttemptTaskReport {
@@ -88,7 +89,8 @@ pub(super) struct AttemptShutdownReport {
     ///
     /// An attempt can end this way at any point in a long run while the process
     /// keeps recording, so these say nothing about whether shutdown itself
-    /// finalized cleanly. Callers report them and continue.
+    /// finalized cleanly. Callers report them and continue. Details are bounded;
+    /// an additional entry reports the total and omitted sample count.
     pub(super) runtime_failures: Vec<String>,
     /// Failures of the shutdown phase itself: an attempt task that could not be
     /// joined, or one whose outcome was `Err` while shutdown was draining it.
@@ -106,7 +108,7 @@ impl AttemptSupervisor {
             accepting: AtomicBool::new(true),
             tasks: Mutex::new(JoinSet::new()),
             running: Arc::new(DashMap::new()),
-            failures: Mutex::new(Vec::new()),
+            failures: Mutex::new(FailureSamples::default()),
         }
     }
 
@@ -125,7 +127,7 @@ impl AttemptSupervisor {
                 Ok(report) => {
                     debug!(download_id = %report.download_id, "Recording attempt reaped");
                     if let Err(error) = report.outcome {
-                        self.failures.lock().push(format!(
+                        self.failures.lock().push(&format!(
                             "download {} failed before shutdown: {error}",
                             report.download_id
                         ));
@@ -133,7 +135,7 @@ impl AttemptSupervisor {
                 }
                 Err(error) => {
                     warn!(%error, "Recording attempt failed before reap");
-                    self.failures.lock().push(error.to_string());
+                    self.failures.lock().push(&error.to_string());
                 }
             }
         }
@@ -167,7 +169,7 @@ impl AttemptSupervisor {
         // Attempts reaped lazily by `spawn` ended earlier in the run and
         // describe those recordings, not this shutdown, so they stay out of
         // `failures`.
-        let runtime_failures = std::mem::take(&mut *self.failures.lock());
+        let runtime_failures = std::mem::take(&mut *self.failures.lock()).into_report();
         let mut failures = Vec::new();
         let mut overruns = Vec::new();
         let mut deadline_exceeded_download_ids = Vec::new();
@@ -1146,5 +1148,48 @@ impl DownloadManager {
             "Starting download"
         );
         Ok(download_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn historical_failure_sampling_preserves_fatal_shutdown_failures() {
+        let supervisor = AttemptSupervisor::new();
+        for index in 0..256 {
+            let (finished, completion) = tokio::sync::oneshot::channel();
+            assert!(
+                supervisor.spawn(format!("historical-{index}"), || {}, async move {
+                    finished.send(()).unwrap();
+                    Err("historical error".to_owned())
+                },)
+            );
+            tokio::time::timeout(Duration::from_secs(5), completion)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        // Admission reaps every earlier task before shutdown starts. This
+        // last task is still owned by the shutdown join, so its complete
+        // failure remains fatal even if it exceeds the sampling byte cap.
+        let fatal = "fatal shutdown detail ".repeat(1024);
+        let active_error = fatal.clone();
+        assert!(supervisor.spawn("active".to_owned(), || {}, async move { Err(active_error) }));
+        let report = supervisor
+            .join_until(tokio::time::Instant::now() + Duration::from_secs(5))
+            .await;
+
+        assert_eq!(
+            report.runtime_failures[0],
+            "128 earlier runtime failures omitted (256 total; retaining the latest 128 samples)"
+        );
+        assert_eq!(report.runtime_failures.len(), 129);
+        assert!(report.runtime_failures[1].contains("historical-128 failed"));
+        assert_eq!(
+            report.failures,
+            [format!("download active failed during shutdown: {fatal}")]
+        );
     }
 }
