@@ -46,6 +46,7 @@ use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
 use super::metrics::PerformanceMetrics;
 use super::payload::SegmentPayload;
+use super::throttle::RateLimitHolds;
 
 // --- Output ---
 
@@ -325,14 +326,16 @@ impl ReorderBufferMetrics {
 struct GapState {
     missing_sequence: u64,
     detected_at: Instant,
+    paused_at_detection: Duration,
     segments_since_gap: u64,
 }
 
 impl GapState {
-    fn new(missing_sequence: u64) -> Self {
+    fn new(missing_sequence: u64, paused_at_detection: Duration) -> Self {
         Self {
             missing_sequence,
             detected_at: Instant::now(),
+            paused_at_detection,
             segments_since_gap: 0,
         }
     }
@@ -432,9 +435,11 @@ pub struct SequenceAssembler<S> {
     /// Publishes `expected_next_media_sequence` (see
     /// [`Self::subscribe_cursor`]).
     cursor: Option<watch::Sender<u64>>,
+    rate_limit_holds: Arc<RateLimitHolds>,
     gap_state: Option<GapState>,
     dead: DeadRanges,
     last_input_received_time: Option<Instant>,
+    last_input_paused: Duration,
     current_buffer_bytes: usize,
     metrics: Arc<ReorderBufferMetrics>,
     /// Session-wide download metrics and the protocol they are logged
@@ -455,7 +460,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         cancel: CancellationToken,
     ) -> Self {
         let max_retained_inits = config.output.max_pending_init_segments;
-        Self {
+        let assembler = Self {
             config,
             input_rx,
             sink,
@@ -473,14 +478,19 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             is_live_stream,
             expected_next_media_sequence: initial_cursor,
             cursor: None,
+            rate_limit_holds: Arc::new(RateLimitHolds::new()),
             gap_state: None,
             dead: DeadRanges::default(),
             last_input_received_time: is_live_stream.then(Instant::now),
+            last_input_paused: Duration::ZERO,
             current_buffer_bytes: 0,
             metrics: Arc::new(ReorderBufferMetrics::default()),
             performance_metrics: None,
             cancel,
-        }
+        };
+        // Fetches can report throttling before this task is first polled.
+        assembler.refresh_rate_limit_scope(Instant::now());
+        assembler
     }
 
     /// Logs `metrics` when the stream finishes. A session with several
@@ -501,6 +511,29 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         self.cursor
             .get_or_insert_with(|| watch::channel(self.expected_next_media_sequence).0)
             .subscribe()
+    }
+
+    pub fn rate_limit_holds(&self) -> Arc<RateLimitHolds> {
+        Arc::clone(&self.rate_limit_holds)
+    }
+
+    fn refresh_rate_limit_scope(&self, now: Instant) {
+        let init = if matches!(
+            self.init_state(self.expected_next_media_sequence),
+            InitState::Gated
+        ) {
+            self.reorder_buffer
+                .get(&self.expected_next_media_sequence)
+                .and_then(|buffered| buffered.payload.descriptor().init_key.as_ref())
+        } else {
+            None
+        };
+        self.rate_limit_holds.set_scope(
+            self.expected_next_media_sequence,
+            init,
+            self.reorder_buffer.is_empty() && !self.has_emitted_media_segment,
+            now,
+        );
     }
 
     fn publish_cursor(&self) {
@@ -589,7 +622,15 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
         let in_startup =
             self.is_live_stream && self.is_fmp4_stream && !self.has_emitted_media_segment;
-        let elapsed = gap_state.detected_at.elapsed();
+        let now = Instant::now();
+        let paused = self
+            .rate_limit_holds
+            .clock()
+            .paused_at(now)
+            .saturating_sub(gap_state.paused_at_detection);
+        let elapsed = now
+            .saturating_duration_since(gap_state.detected_at)
+            .saturating_sub(paused);
 
         match self.gap_strategy() {
             GapSkipStrategy::WaitIndefinitely => None,
@@ -626,6 +667,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     /// reason when the stream ended with an error (see [`AssemblerExit`]).
     pub async fn run(mut self) -> AssemblerExit {
         self.assemble().await;
+        self.rate_limit_holds.clear_scope(Instant::now());
         match self.failure {
             Some(reason) => AssemblerExit::Failed(reason),
             None => AssemblerExit::Done,
@@ -644,15 +686,23 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             }
         };
 
+        let mut hold_changes = self.rate_limit_holds.subscribe();
         loop {
-            let overall_stall_timeout = if self.is_live_stream
-                && let Some(max_stall) = self.config.output.live_max_overall_stall_duration
-                && let Some(last_input) = self.last_input_received_time
+            let now = Instant::now();
+            self.refresh_rate_limit_scope(now);
+            let clock = self.rate_limit_holds.clock();
+            let stall_deadline = if self.is_live_stream
+                && let Some(timeout) = self.config.output.live_max_overall_stall_duration
+                && let Some(since) = self.last_input_received_time
             {
-                max_stall.saturating_sub(last_input.elapsed())
+                Some(clock.deadline(since, self.last_input_paused, timeout, now))
             } else {
-                std::time::Duration::from_secs(u64::MAX / 2)
+                None
             };
+            let overall_stall_timeout = stall_deadline
+                .map_or(Duration::from_secs(u64::MAX / 2), |deadline| {
+                    deadline.saturating_duration_since(now)
+                });
 
             tokio::select! {
                 biased;
@@ -662,31 +712,19 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     return;
                 }
 
-                // Live stall watchdog: triggers regardless of gap strategy.
-                _ = sleep(overall_stall_timeout),
-                    if self.is_live_stream
-                        && self.config.output.live_max_overall_stall_duration.is_some() =>
-                {
-                    if let Some(last_input) = self.last_input_received_time
-                        && let Some(max_stall) =
-                            self.config.output.live_max_overall_stall_duration
-                        && last_input.elapsed() >= max_stall
+                changed = hold_changes.changed() => {
+                    if changed.is_ok()
+                        && matches!(self.try_emit().await, EmitOutcome::Finished)
                     {
-                        error!(
-                            "live stream stalled beyond {:?} with no input; terminating",
-                            max_stall
-                        );
-                        self.fail(DownloadError::Timeout {
-                            reason: "Stalled: No input received for max duration.".to_string(),
-                        })
-                        .await;
                         return;
                     }
                 }
 
                 input = self.input_rx.recv() => {
                     if self.is_live_stream {
-                        self.last_input_received_time = Some(Instant::now());
+                        let now = Instant::now();
+                        self.last_input_received_time = Some(now);
+                        self.last_input_paused = self.rate_limit_holds.clock().paused_at(now);
                     }
                     match input {
                         Some(AssemblerInput::Payload(payload)) => {
@@ -696,6 +734,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         }
                         Some(AssemblerInput::Skipped { from_msn, to_msn }) => {
                             trace!(from_msn, to_msn, "upstream skip range");
+                            self.rate_limit_holds.skip(from_msn, to_msn, Instant::now());
                             self.dead.insert(from_msn, to_msn);
                             if matches!(self.try_emit().await, EmitOutcome::Finished) {
                                 return;
@@ -707,6 +746,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             error,
                             init_failed,
                         }) => {
+                            self.rate_limit_holds.release(&key, msn, Instant::now());
                             if key.kind == SegmentKind::Init {
                                 // An init that will never arrive. Any media
                                 // depending on it (by init_key) can never be
@@ -778,9 +818,30 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     }
                 }
 
+                // Ready recovery payloads and hold updates take precedence
+                // over a timer that became due while their tasks were waking.
+                _ = sleep(overall_stall_timeout), if stall_deadline.is_some() => {
+                    // A producer can publish a pause after the watch arm was
+                    // polled but before this ready timer wins the select.
+                    let now = Instant::now();
+                    if let Some(timeout) = self.config.output.live_max_overall_stall_duration
+                        && let Some(since) = self.last_input_received_time
+                        && self.rate_limit_holds.clock().deadline(
+                            since, self.last_input_paused, timeout, now,
+                        ) > now
+                    {
+                        continue;
+                    }
+                    error!("live stream stalled beyond its recovery deadline with no input");
+                    self.fail(DownloadError::Timeout {
+                        reason: "Stalled: No input received for max duration.".to_string(),
+                    }).await;
+                    return;
+                }
+
                 // Periodic gap evaluation so duration-based skipping and VOD
                 // timeouts fire even when no new input arrives.
-                _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() => {
+                _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() || clock.active_until().is_some() => {
                     if matches!(self.try_emit().await, EmitOutcome::Finished) {
                         return;
                     }
@@ -791,6 +852,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
     async fn handle_payload(&mut self, payload: SegmentPayload) -> EmitOutcome {
         let msn = payload.msn();
+        self.rate_limit_holds
+            .release(&payload.descriptor().key, msn, Instant::now());
 
         if payload.is_fmp4() {
             self.is_fmp4_stream = true;
@@ -875,6 +938,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     /// it, and one the cursor passed (a dead range covering it) is removed
     /// as stale before the loop can stop.
     async fn try_emit(&mut self) -> EmitOutcome {
+        self.refresh_rate_limit_scope(Instant::now());
         loop {
             // Dead-range fast-forward: the cursor itself can be dead even with
             // an empty buffer (ads, window slide, terminal failure).
@@ -1002,7 +1066,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     .is_none_or(|g| g.missing_sequence != self.expected_next_media_sequence);
                 if is_new_gap {
                     self.metrics.gaps_detected.fetch_add(1, Ordering::Relaxed);
-                    let mut gap = GapState::new(self.expected_next_media_sequence);
+                    let mut gap = GapState::new(
+                        self.expected_next_media_sequence,
+                        self.rate_limit_holds.clock().paused_at(Instant::now()),
+                    );
                     gap.segments_since_gap = self
                         .reorder_buffer
                         .range(self.expected_next_media_sequence + 1..)
@@ -1040,20 +1107,37 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 }
 
                 if let Some(reason) = self.should_skip_gap() {
+                    // A skip can span several missing MSNs. Stop before the
+                    // first protected one, even when an earlier unprotected
+                    // gap has already exceeded its ordinary policy.
+                    let to = if matches!(reason, GapSkipReason::BufferPressure) {
+                        first_msn
+                    } else {
+                        self.rate_limit_holds
+                            .first_media_hold(
+                                self.expected_next_media_sequence,
+                                first_msn,
+                                Instant::now(),
+                            )
+                            .map_or(first_msn, |(msn, _)| msn)
+                    };
+                    if to == self.expected_next_media_sequence {
+                        break;
+                    }
                     warn!(
                         from = self.expected_next_media_sequence,
-                        to = first_msn,
+                        to,
                         ?reason,
                         "gap confirmed; skipping"
                     );
                     if self
-                        .emit_gap_skipped(self.expected_next_media_sequence, first_msn, reason)
+                        .emit_gap_skipped(self.expected_next_media_sequence, to, reason)
                         .await
                         .is_err()
                     {
                         return EmitOutcome::Finished;
                     }
-                    self.advance_to(first_msn);
+                    self.advance_to(to);
                     continue;
                 }
 
@@ -1083,9 +1167,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     /// Moves the emit cursor to `to`: everything below it was emitted or
     /// given up on.
     fn advance_to(&mut self, to: u64) {
+        if to > self.expected_next_media_sequence {
+            self.rate_limit_holds
+                .skip(self.expected_next_media_sequence, to - 1, Instant::now());
+        }
         self.expected_next_media_sequence = to;
         self.gap_state = None;
         self.dead.prune_below(to);
+        self.refresh_rate_limit_scope(Instant::now());
     }
 
     fn remove_buffered_payload(&mut self, msn: u64) -> Option<BufferedPayload> {
@@ -1405,6 +1494,7 @@ mod tests {
         event_rx: mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>,
         cancel: CancellationToken,
         join: tokio::task::JoinHandle<AssemblerExit>,
+        holds: Arc<RateLimitHolds>,
     }
 
     fn spawn_assembler(mut config: HlsConfig, live: bool, initial_msn: u64) -> Harness {
@@ -1420,12 +1510,14 @@ mod tests {
             initial_msn,
             cancel.clone(),
         );
+        let holds = assembler.rate_limit_holds();
         let join = tokio::spawn(assembler.run());
         Harness {
             input_tx,
             event_rx,
             cancel,
             join,
+            holds,
         }
     }
 
@@ -1449,6 +1541,165 @@ mod tests {
         .await
         .expect("timed out collecting data events");
         uris
+    }
+
+    #[tokio::test]
+    async fn rate_limited_gaps_do_not_skip_the_cursor_or_an_interior_held_segment() {
+        for initial_msn in [99, 100] {
+            let (_input_tx, input_rx) = mpsc::channel(16);
+            let (event_tx, mut event_rx) = mpsc::channel(16);
+            let mut assembler = SequenceAssembler::new(
+                Arc::new(SegmentCoreConfig::from(&HlsConfig::default())),
+                input_rx,
+                HlsEventSink::new(event_tx),
+                true,
+                initial_msn,
+                CancellationToken::new(),
+            );
+            let held = descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media);
+            assembler.rate_limit_holds.hold(
+                &held,
+                Instant::now() + Duration::from_secs(30),
+                Instant::now(),
+            );
+            let AssemblerInput::Payload(later) = ts_payload(101) else {
+                unreachable!()
+            };
+            assembler.handle_payload(later).await;
+            assembler.gap_state.as_mut().unwrap().detected_at =
+                Instant::now() - Duration::from_secs(6);
+            assembler.try_emit().await;
+            assert_eq!(assembler.expected_next_media_sequence, 100);
+            if initial_msn == 99 {
+                assert!(matches!(
+                    event_rx.try_recv(),
+                    Ok(Ok(HlsStreamEvent::GapSkipped {
+                        from_sequence: 99,
+                        to_sequence: 100,
+                        ..
+                    }))
+                ));
+            }
+            assert!(
+                event_rx.try_recv().is_err(),
+                "held media must still be pending"
+            );
+
+            let AssemblerInput::Payload(recovered) = ts_payload(100) else {
+                unreachable!()
+            };
+            assembler.handle_payload(recovered).await;
+            assert_eq!(assembler.expected_next_media_sequence, 102);
+            let mut uris = Vec::new();
+            while let Ok(Ok(event)) = event_rx.try_recv() {
+                match event {
+                    HlsStreamEvent::Data(data) => {
+                        uris.push(data.media_segment().unwrap().uri.clone());
+                    }
+                    HlsStreamEvent::GapSkipped { .. } => panic!("recovered media was skipped"),
+                    _ => {}
+                }
+            }
+            assert_eq!(uris, ["https://e.com/seg100.ts", "https://e.com/seg101.ts"]);
+            assert!(
+                assembler
+                    .rate_limit_holds
+                    .active_until(100, Instant::now())
+                    .is_none()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn init_rate_limit_holds_cover_startup_and_only_the_required_buffered_init() {
+        let (_input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, _event_rx) = mpsc::channel(16);
+        let mut assembler = SequenceAssembler::new(
+            Arc::new(SegmentCoreConfig::from(&HlsConfig::default())),
+            input_rx,
+            HlsEventSink::new(event_tx),
+            true,
+            100,
+            CancellationToken::new(),
+        );
+        let unused = descriptor("https://e.com/unused.mp4", 99, SegmentKind::Init);
+        let needed = descriptor("https://e.com/current.mp4", 100, SegmentKind::Init);
+        let now = Instant::now();
+        let until = now + Duration::from_secs(30);
+        assembler.rate_limit_holds.hold(&unused, until, now);
+        assembler.refresh_rate_limit_scope(now);
+        assert_eq!(
+            assembler.rate_limit_holds.clock().active_until(),
+            Some(until)
+        );
+        assembler.has_emitted_media_segment = true;
+        assembler.refresh_rate_limit_scope(now);
+        assert_eq!(assembler.rate_limit_holds.clock().active_until(), None);
+
+        let AssemblerInput::Payload(payload) = mp4_media_keyed(100, &needed.key) else {
+            unreachable!()
+        };
+        assembler.handle_payload(payload).await;
+        assembler.refresh_rate_limit_scope(now);
+        assert_eq!(assembler.rate_limit_holds.clock().active_until(), None);
+        assembler.rate_limit_holds.hold(&needed, until, now);
+        assembler.refresh_rate_limit_scope(now);
+        assert_eq!(
+            assembler.rate_limit_holds.clock().active_until(),
+            Some(until)
+        );
+        assembler.refresh_rate_limit_scope(until);
+        assert_eq!(assembler.rate_limit_holds.clock().active_until(), None);
+    }
+
+    #[tokio::test]
+    async fn a_live_rate_limit_hold_defers_the_watchdog_but_not_cancellation_or_expiry() {
+        for expired in [false, true] {
+            let mut config = HlsConfig::default();
+            config.output_config.live_max_overall_stall_duration = Some(Duration::from_millis(1));
+            let (_input_tx, input_rx) = mpsc::channel(16);
+            let (event_tx, mut event_rx) = mpsc::channel(16);
+            let cancel = CancellationToken::new();
+            let assembler = SequenceAssembler::new(
+                Arc::new(SegmentCoreConfig::from(&config)),
+                input_rx,
+                HlsEventSink::new(event_tx),
+                true,
+                100,
+                cancel.clone(),
+            );
+            let now = Instant::now();
+            assembler.rate_limit_holds.hold(
+                &descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media),
+                if expired {
+                    now
+                } else {
+                    now + Duration::from_secs(30)
+                },
+                now,
+            );
+            let join = tokio::spawn(assembler.run());
+            if expired {
+                assert!(matches!(
+                    tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+                        .await
+                        .unwrap(),
+                    Some(Err(HlsDownloaderError::Timeout { .. }))
+                ));
+            } else {
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), event_rx.recv())
+                        .await
+                        .is_err()
+                );
+                cancel.cancel();
+                assert!(event_rx.recv().await.is_none());
+            }
+            tokio::time::timeout(Duration::from_secs(2), join)
+                .await
+                .unwrap()
+                .unwrap();
+        }
     }
 
     #[tokio::test]
@@ -1639,6 +1890,11 @@ mod tests {
         config.output_config.buffer_limits.max_segments = 2;
         config.output_config.buffer_limits.max_bytes = 0;
         let mut h = spawn_assembler(config, true, 100);
+        h.holds.hold(
+            &descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media),
+            Instant::now() + Duration::from_secs(30),
+            Instant::now(),
+        );
 
         // 100 never arrives; the buffer fills to its cap with later segments.
         h.input_tx.send(ts_payload(101)).await.unwrap();

@@ -26,6 +26,7 @@ use super::control::{SegmentPlanner, SourceFailure, TerminalCause};
 use super::fetch::{FetchContext, fetch_and_process};
 use super::input::{AssemblerInput, PendingQueue};
 use super::store::{MediaWindow, SegmentOutcome, SegmentStateStore, StoreConfig};
+use super::throttle::RateLimitHolds;
 
 /// Why the reactor stopped. Reported to the runtime for logging; the
 /// consumer-visible effect (StreamEnded / nothing / `Err`) is delivered
@@ -59,8 +60,10 @@ pub struct ReactorConfig {
     pub max_concurrency: usize,
     pub max_pending_payload_bytes: u64,
     pub max_pending_items: usize,
-    /// The assembler's emit cursor, for a stream that waits for every
-    /// segment (VOD); `None` for a live stream, whose gap policy skips.
+    pub live: bool,
+    pub rate_limit_holds: Arc<RateLimitHolds>,
+    /// The assembler's emit cursor. Live admission is bounded while output
+    /// waits for known rate-limited media; VOD admission is always bounded.
     ///
     /// Media is then admitted only while the segments and bytes beyond the
     /// cursor stay inside the reorder buffer's limits
@@ -79,7 +82,9 @@ pub async fn run_reactor<P: SegmentPlanner>(
     config: ReactorConfig,
     cancel: CancellationToken,
 ) -> Terminal {
-    let mut store = SegmentStateStore::new(config.store.clone());
+    let mut store =
+        SegmentStateStore::new(config.store.clone(), Arc::clone(&config.rate_limit_holds));
+    let mut holds_changed = config.rate_limit_holds.subscribe();
     let mut pending = PendingQueue::new();
     let mut inflight: JoinSet<SegmentOutcome> = JoinSet::new();
     let budget = Arc::clone(&fetch_ctx.budget);
@@ -146,10 +151,19 @@ pub async fn run_reactor<P: SegmentPlanner>(
             && pending.len() < config.max_pending_items
         {
             let slots = max_concurrency - inflight.len();
-            let window = emit_cursor.as_mut().map(|cursor| MediaWindow {
-                cursor: *cursor.borrow_and_update(),
-                segments: window_segments,
-                bytes: window_bytes,
+            let window = emit_cursor.as_mut().map(|cursor| {
+                let cursor = *cursor.borrow_and_update();
+                let bounded = !config.live
+                    || config
+                        .rate_limit_holds
+                        .active_until(cursor, Instant::now())
+                        .is_some();
+                // A later live hold must account for bytes admitted before it.
+                MediaWindow {
+                    cursor,
+                    segments: if bounded { window_segments } else { 0 },
+                    bytes: if bounded { window_bytes } else { 0 },
+                }
             });
             let (jobs, admission_inputs) =
                 store.next_ready_jobs_within(slots, Instant::now(), &budget, window);
@@ -283,6 +297,8 @@ pub async fn run_reactor<P: SegmentPlanner>(
                     emit_cursor = None;
                 }
             }
+
+            Ok(()) = holds_changed.changed() => {}
         }
     };
 
