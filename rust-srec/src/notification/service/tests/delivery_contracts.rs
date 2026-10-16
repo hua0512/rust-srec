@@ -671,3 +671,17 @@ async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
     service.dispatch_notification(event());
     assert_eq!(service.stats().dispatch_dropped, 2);
 }
+
+#[tokio::test]
+async fn direct_notifications_after_stop_are_counted_as_dropped() {
+    let service = NotificationService::new();
+    let attempts = channel(&service, "one", 0);
+    service.stop().await;
+    service.notify(event()).await.unwrap();
+    service
+        .notify_channel_instance("one", event())
+        .await
+        .unwrap();
+    assert_eq!(service.stats().dispatch_dropped, 2);
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+}

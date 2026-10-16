@@ -68,7 +68,7 @@ impl NotificationService {
         }
     }
 
-    fn reject_dispatch(&self, event_type: &'static str, reason: &str) {
+    pub(super) fn reject_dispatch(&self, event_type: &'static str, reason: &str) {
         let dropped = self.dispatch_dropped.fetch_add(1, Ordering::Relaxed) + 1;
         if dropped.is_power_of_two() {
             warn!(

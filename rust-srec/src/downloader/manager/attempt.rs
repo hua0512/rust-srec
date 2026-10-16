@@ -127,7 +127,7 @@ impl AttemptSupervisor {
                 Ok(report) => {
                     debug!(download_id = %report.download_id, "Recording attempt reaped");
                     if let Err(error) = report.outcome {
-                        self.failures.lock().push(&format!(
+                        self.failures.lock().push(format!(
                             "download {} failed before shutdown: {error}",
                             report.download_id
                         ));
@@ -135,7 +135,7 @@ impl AttemptSupervisor {
                 }
                 Err(error) => {
                     warn!(%error, "Recording attempt failed before reap");
-                    self.failures.lock().push(&error.to_string());
+                    self.failures.lock().push(error.to_string());
                 }
             }
         }
@@ -633,7 +633,7 @@ impl DownloadManager {
                                 %delivery_error,
                                 "Required segment completion could not be applied; recording continues"
                             );
-                            translator_lifecycle_errors.lock().push(&format!(
+                            translator_lifecycle_errors.lock().push(format!(
                                 "required segment completion could not be applied: {delivery_error}"
                             ));
                             if let Some(request_id) = manual_request {

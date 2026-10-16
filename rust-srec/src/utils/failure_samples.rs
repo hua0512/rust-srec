@@ -16,15 +16,15 @@ pub(crate) struct FailureSamples {
 }
 
 impl FailureSamples {
-    pub(crate) fn push(&mut self, failure: &str) {
+    pub(crate) fn push(&mut self, failure: String) {
         self.total = self.total.saturating_add(1);
         if self.samples.len() == MAX_SAMPLES {
             self.samples.pop_front();
         }
         let sample = if failure.len() > MAX_SAMPLE_BYTES {
-            truncate_bytes(failure, MAX_SAMPLE_BYTES - '…'.len_utf8())
+            truncate_bytes(&failure, MAX_SAMPLE_BYTES - '…'.len_utf8())
         } else {
-            failure.to_owned()
+            failure
         };
         self.samples.push_back(sample);
     }
@@ -53,7 +53,7 @@ mod tests {
         let mut failures = FailureSamples::default();
         let detail = "弹幕".repeat(MAX_SAMPLE_BYTES);
         for index in 0..MAX_SAMPLES * 3 {
-            failures.push(&format!("failure {index}: {detail}"));
+            failures.push(format!("failure {index}: {detail}"));
         }
         let report = failures.into_report();
         assert_eq!(report.len(), MAX_SAMPLES + 1);
@@ -70,7 +70,7 @@ mod tests {
         );
 
         let mut one = FailureSamples::default();
-        one.push("one failure");
+        one.push("one failure".to_owned());
         assert_eq!(one.into_report(), ["one failure"]);
         assert!(FailureSamples::default().into_report().is_empty());
     }

@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Semaphore, broadcast, mpsc};
+use tokio::sync::{Semaphore, SemaphorePermit, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -415,10 +415,8 @@ impl NotificationService {
             return Ok(());
         }
 
-        let _permit = tokio::select! {
-            biased;
-            _ = self.cancellation_token.cancelled() => return Ok(()),
-            permit = self.dispatch_permits.acquire() => permit.map_err(|error| crate::Error::Other(error.to_string()))?,
+        let Some(_permit) = self.admit_pass(event.event_type()).await else {
+            return Ok(());
         };
         let pending = PendingNotification::new(id, event, target_channels);
 
@@ -457,12 +455,23 @@ impl NotificationService {
 
     /// Send a notification to all enabled channels.
     pub async fn notify(&self, event: NotificationEvent) -> Result<()> {
-        let _permit = tokio::select! {
-            biased;
-            _ = self.cancellation_token.cancelled() => return Ok(()),
-            permit = self.dispatch_permits.acquire() => permit.map_err(|error| crate::Error::Other(error.to_string()))?,
+        let Some(_permit) = self.admit_pass(event.event_type()).await else {
+            return Ok(());
         };
         self.notify_admitted(event).await
+    }
+
+    /// Direct callers share the dispatch worker's pass limit. Once the service
+    /// stops, their events are counted as dropped instead of delivered.
+    async fn admit_pass(&self, event_type: &'static str) -> Option<SemaphorePermit<'_>> {
+        tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => {
+                self.reject_dispatch(event_type, "shutdown");
+                None
+            }
+            permit = self.dispatch_permits.acquire() => permit.ok(),
+        }
     }
 
     async fn notify_admitted(&self, event: NotificationEvent) -> Result<()> {
@@ -594,7 +603,8 @@ impl Default for NotificationService {
 /// Statistics about the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationStats {
-    /// Dispatch events rejected before persistence; synchronous overflow drops newest.
+    /// Events rejected before event-log persistence: the newest event when a
+    /// synchronous reporter finds the queue full, and events refused during shutdown.
     #[serde(default)]
     pub dispatch_dropped: u64,
     /// Web-push events rejected by queue admission (all priorities). No automatic replay.

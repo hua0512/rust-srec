@@ -928,7 +928,7 @@ impl DanmuEventHandler {
         while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
             if let Err(error) = self.handle_event(event).await {
                 warn!(%error, "Required danmu event could not be applied");
-                failures.push(&error);
+                failures.push(error);
             }
         }
         receiver.acknowledge_shutdown(failures.into_report());
