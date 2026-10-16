@@ -1061,6 +1061,32 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
 
                 <FormField
                   control={control}
+                  name={`${prefix}include_recording_metadata` as any}
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10">
+                      <div className="space-y-1">
+                        <FormLabel className="text-sm font-medium">
+                          <Trans>Include Recording Metadata</Trans>
+                        </FormLabel>
+                        <FormDescription className="text-xs">
+                          <Trans>
+                            Add the recorded title, streamer, and UTC recording
+                            date during remux. Tags below override these values.
+                          </Trans>
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value ?? false}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={control}
                   name={`${prefix}metadata` as any}
                   render={({ field }) => (
                     <FormItem>

@@ -783,9 +783,13 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1082
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1108
 msgid "Add Tag"
 msgstr "添加自定义标签"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1072
+msgid "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
+msgstr "重封装时添加录制标题、主播和 UTC 录制日期。下方标签会覆盖这些值。"
 
 #: src/components/credentials/read-only-accounts-section.tsx:47
 msgid "Add them in the platform settings."
@@ -1429,7 +1433,7 @@ msgstr "此配置模板的基本信息。"
 msgid "Basic Information"
 msgstr "基本信息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:116
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
@@ -1997,7 +2001,7 @@ msgstr "命令模板参数。可使用 {INPUT_TOKEN} 和 {OUTPUT_TOKEN} 占位�
 msgid "Comment"
 msgstr "评论"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:122
+#: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
@@ -2031,7 +2035,7 @@ msgstr "组件状态"
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "与带宽限制叠加生效——可避免单个大文件占满整条链路，同时仍允许多个小文件并行传输。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:117
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
@@ -2840,7 +2844,7 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default proxy"
 msgstr "默认代理"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:127
+#: src/components/pipeline/presets/default-presets-i18n.ts:129
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
@@ -3369,7 +3373,7 @@ msgstr "丢弃重复的流头部"
 msgid "Dropped frames"
 msgstr "丢帧数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Dual Format"
 msgstr "双格式输出"
 
@@ -3931,7 +3935,7 @@ msgstr "提取 AAC（256kbps）音频轨道，质量高且兼容性好。"
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "提取 MP3（192kbps）音频轨道，适合播客与音乐。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:119
+#: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "提取高质量音频用于播客分发并上传。"
 
@@ -4310,7 +4314,7 @@ msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 msgid "Fast Compression"
 msgstr "快速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:120
+#: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "快速编码，便于在社交媒体或聊天中快速分享。"
 
@@ -4671,13 +4675,17 @@ msgstr "全天"
 msgid "Full HD Thumbnail"
 msgstr "全高清缩略图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:124
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和缩略图生成，然后上传所有文件。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Full Processing"
 msgstr "全流程处理"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
+msgid "Full Processing (Single Pass)"
+msgstr "全流程处理（单次封装）"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:428
 msgid "Gap Check Interval (ms)"
@@ -4729,7 +4737,7 @@ msgstr "以原始直播分辨率生成缩略图（不缩放）。质量最佳，
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:125
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
@@ -4804,11 +4812,11 @@ msgstr "GPU"
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:112
+#: src/components/pipeline/presets/default-presets-i18n.ts:113
 msgid "GPU HQ Archive"
 msgstr "GPU 高质量归档"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:111
+#: src/components/pipeline/presets/default-presets-i18n.ts:112
 msgid "GPU Standard"
 msgstr "GPU 标准"
 
@@ -4816,11 +4824,11 @@ msgstr "GPU 标准"
 msgid "GPU unavailable"
 msgstr "GPU 不可用"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:129
+#: src/components/pipeline/presets/default-presets-i18n.ts:131
 msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端上传。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:128
+#: src/components/pipeline/presets/default-presets-i18n.ts:130
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
@@ -5236,6 +5244,10 @@ msgstr "包含关键字"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:228
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1069
+msgid "Include Recording Metadata"
+msgstr "包含录制元数据"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
@@ -5707,7 +5719,7 @@ msgstr "正在加载工作流..."
 msgid "Loading…"
 msgstr "加载中…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Local Archive"
 msgstr "本地归档"
 
@@ -6020,7 +6032,7 @@ msgstr "最大尝试次数（1–10）"
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "元数据及 App 播放请求的最大尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:121
+#: src/components/pipeline/presets/default-presets-i18n.ts:122
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
@@ -6036,7 +6048,7 @@ msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:118
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
@@ -6099,7 +6111,7 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1069
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1095
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
@@ -6265,7 +6277,7 @@ msgstr "多线程流数帮助"
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销会超过其收益。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
@@ -7829,7 +7841,7 @@ msgstr "预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Preview Gallery"
 msgstr "预览图库"
 
@@ -7908,11 +7920,11 @@ msgstr "私有网络访问"
 msgid "Problems"
 msgstr "问题"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:123
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文件夹。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:126
+#: src/components/pipeline/presets/default-presets-i18n.ts:128
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
@@ -8468,6 +8480,10 @@ msgstr "无需重新编码，重封装为 MKV。Matroska 支持更多编码与�
 #: src/components/pipeline/presets/default-presets-i18n.ts:80
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "使用 faststart 标志重封装为 MP4，以优化网页播放。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
+msgid "Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass."
+msgstr "重封装为 MP4 时写入录制标题、主播和日期，生成缩略图并上传两者，无需单独写入元数据。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
@@ -9792,7 +9808,7 @@ msgstr "直播流"
 msgid "Stream and requests"
 msgstr "流与请求"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:110
+#: src/components/pipeline/presets/default-presets-i18n.ts:111
 msgid "Stream Archive"
 msgstr "直播归档"
 

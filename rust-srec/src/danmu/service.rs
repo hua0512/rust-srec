@@ -139,6 +139,7 @@ pub struct DanmuService {
     /// `STOP_TIMEOUT` while replacing that streamer's prior collector. A single
     /// shared mutex would hold every other streamer's `start_collection` behind
     /// that wait, leaving unrelated recordings with no collector.
+    /// Entries are removed after their final setup owner or waiter drops.
     start_serialization: DashMap<String, Arc<tokio::sync::Mutex<()>>>,
     accepting: AtomicBool,
     /// Owns collection tasks through final XML flush and terminal events.
@@ -147,6 +148,32 @@ pub struct DanmuService {
     collection_failures: Mutex<FailureSamples>,
     /// Session repository for persistence
     session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
+}
+
+/// Keeps one streamer's setup lock registered while it has owners or waiters.
+/// The mutex guard borrows this lease, so it is released before the last lease
+/// can remove the entry, including when a startup future is cancelled.
+struct StreamerStartLock<'a> {
+    // Struct fields drop in declaration order: release the strong owner
+    // before checking whether only the map's owner remains.
+    mutex: Arc<tokio::sync::Mutex<()>>,
+    _registration: StreamerStartRegistration<'a>,
+}
+
+struct StreamerStartRegistration<'a> {
+    registry: &'a DashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    streamer_id: &'a str,
+    mutex: std::sync::Weak<tokio::sync::Mutex<()>>,
+}
+
+impl Drop for StreamerStartRegistration<'_> {
+    fn drop(&mut self) {
+        self.registry.remove_if(self.streamer_id, |_, current| {
+            // Lookup clones under this same shard lock. A new caller either
+            // keeps this mutex alive or arrives after every prior owner left.
+            Arc::as_ptr(current) == self.mutex.as_ptr() && Arc::strong_count(current) == 1
+        });
+    }
 }
 
 #[derive(Debug, Default)]
@@ -256,6 +283,22 @@ impl DanmuService {
             .ok_or_else(|| Error::Other("danmu collection startup cancelled".to_owned()))
     }
 
+    fn start_lock<'a>(&'a self, streamer_id: &'a str) -> StreamerStartLock<'a> {
+        let mutex = self
+            .start_serialization
+            .entry(streamer_id.to_owned())
+            .or_default()
+            .clone();
+        StreamerStartLock {
+            _registration: StreamerStartRegistration {
+                registry: &self.start_serialization,
+                streamer_id,
+                mutex: Arc::downgrade(&mutex),
+            },
+            mutex,
+        }
+    }
+
     /// Cancellation before publication leaves no collection. After publication,
     /// cancel the owned task and await its cleanup before acknowledging startup
     /// cancellation; dropping a readiness waiter must not orphan that task.
@@ -286,16 +329,12 @@ impl DanmuService {
         // Only this short setup section may reserve collection ownership.
         // Expensive connection establishment happens in the owned task after
         // the registry entry and JoinSet slot are installed.
-        let streamer_setup_lock = self
-            .start_serialization
-            .entry(streamer_id.clone())
-            .or_default()
-            .clone();
+        let streamer_setup_lock = self.start_lock(&streamer_id);
         let handoff_deadline = tokio::time::Instant::now() + STOP_TIMEOUT;
         let setup = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Ok(None),
-            guard = tokio::time::timeout_at(handoff_deadline, streamer_setup_lock.lock()) => guard,
+            guard = tokio::time::timeout_at(handoff_deadline, streamer_setup_lock.mutex.lock()) => guard,
         };
         let setup_guard = setup
             .map_err(|_| Error::Other(format!(
@@ -544,6 +583,7 @@ impl DanmuService {
             tasks.spawn(collection);
         }
         drop(setup_guard);
+        drop(streamer_setup_lock);
         drop(_start_guard);
 
         let readiness = tokio::select! {
@@ -2165,11 +2205,96 @@ mod tests {
         let second = second.await.expect("second start task should join");
         assert_ne!(first.is_ok(), second.is_ok());
         assert_eq!(service.active_sessions(), vec!["session-1".to_string()]);
+        assert!(service.start_serialization.is_empty());
 
         service
             .shutdown()
             .await
             .expect("the winning collection should stop cleanly");
+    }
+
+    #[tokio::test]
+    async fn cancelled_setup_waiter_cannot_split_the_next_start_lock() {
+        let service = DanmuService::new();
+        let first = service.start_lock("streamer-1");
+        let first_guard = first.mutex.lock().await;
+        let mut cancelled = Box::pin(async {
+            let waiter = service.start_lock("streamer-1");
+            let _guard = waiter.mutex.lock().await;
+        });
+        assert!(futures::poll!(cancelled.as_mut()).is_pending());
+        drop(cancelled);
+
+        let next = service.start_lock("streamer-1");
+        assert!(Arc::ptr_eq(&first.mutex, &next.mutex));
+        let mut acquire = Box::pin(next.mutex.lock());
+        assert!(futures::poll!(acquire.as_mut()).is_pending());
+        drop(first_guard);
+        let next_guard = acquire.await;
+        drop(first);
+
+        let arriving = service.start_lock("streamer-1");
+        assert!(Arc::ptr_eq(&next.mutex, &arriving.mutex));
+        assert!(arriving.mutex.try_lock().is_err());
+        drop(arriving);
+        drop(next_guard);
+        drop(next);
+        assert!(service.start_serialization.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_starts_do_not_retain_historical_streamer_locks() {
+        let service = DanmuService::with_providers(ProviderRegistry::new());
+        let pending = service.start_lock("still-starting");
+        let _pending_guard = pending.mutex.lock().await;
+        for index in 0..2_000 {
+            let streamer_id = format!("historical-{index}");
+            assert!(
+                service
+                    .start_collection(collection_spec(
+                        "unsupported-session",
+                        &streamer_id,
+                        "https://unsupported.invalid/room",
+                    ))
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(service.start_serialization.len(), 1);
+        assert!(service.start_serialization.contains_key("still-starting"));
+    }
+
+    #[tokio::test]
+    async fn concurrent_final_setup_owners_release_before_registry_cleanup() {
+        let service = DanmuService::new();
+        let first = service.start_lock("streamer-1");
+        let second = service.start_lock("streamer-1");
+        let entry = service.start_serialization.get("streamer-1").unwrap();
+        let start = std::sync::Barrier::new(3);
+
+        std::thread::scope(|scope| {
+            let start = &start;
+            scope.spawn(move || {
+                start.wait();
+                drop(first);
+            });
+            scope.spawn(move || {
+                start.wait();
+                drop(second);
+            });
+            start.wait();
+            // Keep both registration cleanups blocked on this shard. Their
+            // strong owners must already be gone, so neither can miss the
+            // final cleanup by observing the other's not-yet-dropped Arc.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while Arc::strong_count(entry.value()) != 1 && std::time::Instant::now() < deadline {
+                std::thread::yield_now();
+            }
+            let owners = Arc::strong_count(entry.value());
+            drop(entry);
+            assert_eq!(owners, 1);
+        });
+        assert!(service.start_serialization.is_empty());
     }
 
     #[tokio::test]

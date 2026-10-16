@@ -560,6 +560,146 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn single_pass_workflow_migration_preserves_saved_workflows_and_name_conflicts() {
+        use crate::database::models::{DagPipelineDefinition, PipelineStep};
+
+        const NEW_PRESET_ID: &str = "pipeline-full-single-pass";
+        const NEW_PRESET_NAME: &str = "Full Processing (Single Pass)";
+        const MIGRATION_VERSION: i64 = 20_261_016_120_000;
+        const SAVED_DAG: &str = r#"{"name":"Customized Full Processing","steps":[{"id":"metadata","step":{"type":"inline","processor":"metadata","config":{"title":"{title}","artist":"Custom artist"}},"depends_on":[]}]}"#;
+
+        for conflict in [
+            None,
+            Some((NEW_PRESET_ID, "My workflow")),
+            Some(("custom-id", NEW_PRESET_NAME)),
+        ] {
+            let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+            let full = sqlx::migrate!("./migrations");
+            let mut prefix = sqlx::migrate!("./migrations");
+            prefix.migrations = full
+                .migrations
+                .iter()
+                .filter(|migration| migration.version < MIGRATION_VERSION)
+                .cloned()
+                .collect::<Vec<_>>()
+                .into();
+            assert!(prefix.migrations.len() < full.migrations.len());
+            prefix.run(&pool).await.unwrap();
+
+            sqlx::query(
+                "UPDATE pipeline_presets SET dag_definition = ? WHERE id = 'pipeline-full'",
+            )
+            .bind(SAVED_DAG)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "UPDATE job_presets SET config = ? WHERE name IN ('remux', 'add_metadata')",
+            )
+            .bind(r#"{"metadata":[["title","Literal {title} 100%"]]}"#)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO template_config (id, name, pipeline) VALUES ('saved', 'Saved', ?)",
+            )
+            .bind(SAVED_DAG)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO dag_execution (id, dag_definition, created_at, updated_at, total_steps) VALUES ('saved', ?, 1, 1, 1)")
+                .bind(SAVED_DAG)
+                .execute(&pool)
+                .await
+                .unwrap();
+            if let Some((id, name)) = conflict {
+                sqlx::query(
+                    "INSERT INTO pipeline_presets (id, name, dag_definition) VALUES (?, ?, ?)",
+                )
+                .bind(id)
+                .bind(name)
+                .bind(SAVED_DAG)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+
+            let before: Vec<(String, String, Option<String>)> =
+                sqlx::query_as("SELECT id, name, dag_definition FROM pipeline_presets ORDER BY id")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            let job_presets_before: Vec<(String, String)> =
+                sqlx::query_as("SELECT id, config FROM job_presets ORDER BY id")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+
+            full.run(&pool).await.unwrap();
+
+            let mut after: Vec<(String, String, Option<String>)> =
+                sqlx::query_as("SELECT id, name, dag_definition FROM pipeline_presets ORDER BY id")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            if conflict.is_none() {
+                let added =
+                    after.remove(after.iter().position(|row| row.0 == NEW_PRESET_ID).unwrap());
+                assert_eq!(added.1, NEW_PRESET_NAME);
+                let dag: DagPipelineDefinition =
+                    serde_json::from_str(added.2.as_deref().unwrap()).unwrap();
+                dag.validate().unwrap();
+                assert_eq!(
+                    dag.steps
+                        .iter()
+                        .map(|step| step.id.as_str())
+                        .collect::<Vec<_>>(),
+                    ["remux", "thumbnail", "upload"]
+                );
+                assert_eq!(
+                    dag.steps[0].step,
+                    PipelineStep::inline(
+                        "remux",
+                        serde_json::json!({
+                            "video_codec": "copy",
+                            "audio_codec": "copy",
+                            "format": "mp4",
+                            "faststart": true,
+                            "overwrite": true,
+                            "include_recording_metadata": true,
+                            "metadata": [],
+                        })
+                    )
+                );
+                assert!(dag.steps[0].depends_on.is_empty());
+                assert_eq!(dag.steps[1].step, PipelineStep::preset("thumbnail"));
+                assert_eq!(dag.steps[1].depends_on, ["remux"]);
+                assert_eq!(dag.steps[2].step, PipelineStep::preset("upload"));
+                assert_eq!(dag.steps[2].depends_on, ["remux", "thumbnail"]);
+            }
+            assert_eq!(after, before, "existing workflows changed for {conflict:?}");
+            let job_presets_after: Vec<(String, String)> =
+                sqlx::query_as("SELECT id, config FROM job_presets ORDER BY id")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(job_presets_after, job_presets_before);
+            for query in [
+                "SELECT pipeline FROM template_config WHERE id = 'saved'",
+                "SELECT dag_definition FROM dag_execution WHERE id = 'saved'",
+            ] {
+                let saved: String = sqlx::query_scalar(query).fetch_one(&pool).await.unwrap();
+                assert_eq!(saved, SAVED_DAG);
+            }
+            let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(integrity, "ok");
+        }
+    }
+
     /// A create-copy-drop-rename on `live_sessions` deletes every
     /// `media_outputs`, `danmu_statistics`, `session_segments`,
     /// `session_events` and `danmu_aggregator_state` row in the database unless

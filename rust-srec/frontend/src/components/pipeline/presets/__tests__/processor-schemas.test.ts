@@ -5,8 +5,26 @@ import {
   DeleteConfigSchema,
   ExecuteConfigSchema,
   RcloneConfigSchema,
+  RemuxConfigSchema,
   ThumbnailConfigSchema,
 } from '../processor-schemas';
+
+describe('remux recording metadata config', () => {
+  it('keeps recording metadata opt-in and preserves literal custom tags', () => {
+    const metadata = [
+      ['title', '{title}'],
+      ['comment', '100% literal {streamer}'],
+    ];
+    const legacy = RemuxConfigSchema.parse({ metadata });
+    expect(legacy.include_recording_metadata).toBe(false);
+    expect(legacy.metadata).toEqual(metadata);
+
+    const optedIn = { ...legacy, include_recording_metadata: true };
+    expect(
+      RemuxConfigSchema.parse(JSON.parse(JSON.stringify(optedIn))),
+    ).toEqual(optedIn);
+  });
+});
 
 describe('execute config schema', () => {
   it('preserves legacy commands and nullable output scanning', () => {

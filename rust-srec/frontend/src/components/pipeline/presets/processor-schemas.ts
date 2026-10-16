@@ -68,6 +68,7 @@ export const RemuxConfigSchema = z.object({
   faststart: z.boolean().default(true),
   overwrite: z.boolean().default(true),
   map_streams: z.array(z.string()).default([]),
+  include_recording_metadata: z.boolean().default(false),
   metadata: z.array(z.tuple([z.string(), z.string()])).default([]),
   remove_input_on_success: z.boolean().default(false).optional(),
 });
