@@ -1085,8 +1085,17 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     && let Some(vod_timeout) = self.config.output.vod_segment_timeout
                     && let Some(gap_state) = self.gap_state.as_ref()
                 {
-                    let elapsed = self.gap_elapsed(gap_state, Instant::now());
+                    let now = Instant::now();
+                    let elapsed = self.gap_elapsed(gap_state, now);
                     if elapsed >= vod_timeout {
+                        // Like the live skip, stop before held media.
+                        let to = self
+                            .rate_limit_holds
+                            .first_media_hold(self.expected_next_media_sequence, first_msn, now)
+                            .map_or(first_msn, |(msn, _)| msn);
+                        if to == self.expected_next_media_sequence {
+                            break;
+                        }
                         warn!(
                             msn = gap_state.missing_sequence,
                             ?elapsed,
@@ -1103,8 +1112,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         {
                             return EmitOutcome::Finished;
                         }
-                        self.record_gap_skip(first_msn);
-                        self.advance_to(first_msn);
+                        self.record_gap_skip(to);
+                        self.advance_to(to);
                         continue;
                     }
                 }
@@ -1668,6 +1677,44 @@ mod tests {
             }))
         ));
         assert_eq!(assembler.expected_next_media_sequence, 102);
+    }
+
+    #[tokio::test]
+    async fn a_vod_segment_timeout_stops_before_held_media_inside_the_gap() {
+        let mut config = HlsConfig::default();
+        config.output_config.vod_segment_timeout = Some(Duration::from_secs(5));
+        let (_input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let mut assembler = SequenceAssembler::new(
+            Arc::new(SegmentCoreConfig::from(&config)),
+            input_rx,
+            HlsEventSink::new(event_tx),
+            false,
+            100,
+            CancellationToken::new(),
+        );
+        let now = Instant::now();
+        let held = descriptor("https://e.com/seg102.ts", 102, SegmentKind::Media);
+        assembler
+            .rate_limit_holds
+            .hold(&held, now + Duration::from_secs(60), now);
+        let AssemblerInput::Payload(later) = ts_payload(103) else {
+            unreachable!()
+        };
+        assembler.handle_payload(later).await;
+
+        // The cursor itself is not held, so its timeout runs normally.
+        assembler.gap_state.as_mut().unwrap().detected_at = now - Duration::from_secs(6);
+        assembler.try_emit().await;
+        assert!(matches!(
+            event_rx.try_recv(),
+            Ok(Ok(HlsStreamEvent::SegmentTimeout {
+                sequence_number: 100,
+                ..
+            }))
+        ));
+        assert_eq!(assembler.expected_next_media_sequence, 102);
+        assert!(event_rx.try_recv().is_err());
     }
 
     #[tokio::test]
