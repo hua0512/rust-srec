@@ -82,7 +82,7 @@ Then open **Notifications**, enable Web Push for the current browser, grant brow
 
 Transient external-channel failures retry with backoff. Repeated failures temporarily pause a channel; exhausted deliveries are retained as failures. These mechanisms do not guarantee delivery. Test a channel after changing its settings and use a second destination for critical events.
 
-When the ordinary notification queue is full, the oldest pending notification and its retries are removed. A zero queue limit disables ordinary delivery. An already-running send can still finish. Notifications already accepted before a channel edit continue using the original destination; failed reloads retain the loaded configuration.
+When the ordinary notification queue is full, the oldest pending notification and its retries are removed. A zero queue limit disables ordinary delivery. Sends still in progress for the removed notification are cancelled. Internal alerts such as credential, platform-throttling and output-path events are dropped rather than delayed when the 1,024-event notification queue is full; `notification_stats.dispatch_dropped` counts them. Notifications already accepted before a channel edit continue using the original destination; failed reloads retain the loaded configuration.
 
 Web Push uses a separate 2,048-event queue. When full or unavailable, it drops new events at every priority, including critical. Drops are counted by `notification_stats.web_push_dropped` and are not replayed. Event history and external channels continue independently. Oversized push payloads fail before sending; shutdown attempts to send queued events within its time limit.
 

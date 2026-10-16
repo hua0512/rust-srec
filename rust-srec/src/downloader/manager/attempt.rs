@@ -127,7 +127,7 @@ impl AttemptSupervisor {
                 Ok(report) => {
                     debug!(download_id = %report.download_id, "Recording attempt reaped");
                     if let Err(error) = report.outcome {
-                        self.failures.lock().push(&format!(
+                        self.failures.lock().push(format!(
                             "download {} failed before shutdown: {error}",
                             report.download_id
                         ));
@@ -135,7 +135,7 @@ impl AttemptSupervisor {
                 }
                 Err(error) => {
                     warn!(%error, "Recording attempt failed before reap");
-                    self.failures.lock().push(&error.to_string());
+                    self.failures.lock().push(error.to_string());
                 }
             }
         }
@@ -493,7 +493,7 @@ impl DownloadManager {
         // The attempt task folds these into its outcome after both siblings
         // settle, so a lost segment row still surfaces without ending the
         // recording that produced it.
-        let lifecycle_errors = Arc::new(Mutex::new(Vec::<String>::new()));
+        let lifecycle_errors = Arc::new(Mutex::new(FailureSamples::default()));
         let translator_lifecycle_errors = Arc::clone(&lifecycle_errors);
         let mut split_updates = handle.manual_split.updates();
         let translator_future = async move {
@@ -982,7 +982,7 @@ impl DownloadManager {
                     (engine_result, translator_result)
                 }
             };
-            let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock());
+            let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock()).into_report();
             if let Err(payload) = engine_result {
                 let error = if let Some(message) = payload.downcast_ref::<&str>() {
                     (*message).to_string()

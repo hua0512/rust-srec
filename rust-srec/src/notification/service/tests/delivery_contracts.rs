@@ -575,6 +575,61 @@ async fn channel_send_limit_is_shared_across_events_and_eviction_releases_it() {
     service.stop().await;
 }
 
+#[tokio::test(start_paused = true)]
+async fn eviction_during_dead_letter_persistence_keeps_the_stored_row() {
+    let repo = Arc::new(MockNotificationRepo {
+        dead_letter_gate: Some(Semaphore::new(0)),
+        ..MockNotificationRepo::new()
+    });
+    let service = Arc::new(NotificationService::with_repository(
+        NotificationServiceConfig {
+            max_queue_size: 1,
+            max_retries: 1,
+            ..Default::default()
+        },
+        repo.clone(),
+    ));
+    service.registry.write().insert(Arc::new(RuntimeChannel {
+        breaker: service.new_breaker(),
+        key: "channel-1".into(),
+        db_channel_id: Some("channel-1".into()),
+        display_name: "channel-1".into(),
+        channel_type: "test".into(),
+        channel: Arc::new(TestChannel {
+            channel_type: "test",
+            fail_for_attempts: u32::MAX,
+            attempts: Arc::new(AtomicU32::new(0)),
+        }),
+    }));
+    service
+        .registry
+        .write()
+        .subscriptions_by_event
+        .insert("system_startup".into(), vec!["channel-1".into()]);
+    let notify = tokio::spawn({
+        let service = service.clone();
+        async move { service.notify(event()).await.unwrap() }
+    });
+    // The in-memory dead letter is recorded immediately before persistence,
+    // which then waits on the gate.
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while service.dead_letters.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(service.enqueue_pending(u64::MAX, pending(u64::MAX)));
+    repo.dead_letter_gate.as_ref().unwrap().add_permits(1);
+    tokio::time::timeout(Duration::from_secs(1), notify)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(repo.dead_letters.lock().await.len(), 1);
+    assert_eq!(service.dead_letters.len(), 1);
+    service.stop().await;
+}
+
 #[tokio::test]
 async fn dispatch_contains_event_panics_and_restarts_after_idle() {
     let repo = Arc::new(MockNotificationRepo {
@@ -604,4 +659,29 @@ async fn dispatch_contains_event_panics_and_restarts_after_idle() {
         .unwrap();
     assert_eq!(repo.event_logs.lock().await.len(), 3);
     assert_eq!(service.stats().dispatch_dropped, 0);
+}
+
+#[tokio::test]
+async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
+    let supervisor = Arc::new(TaskSupervisor::new());
+    let service = Arc::new(NotificationService::new().with_task_supervisor(supervisor.clone()));
+    assert!(supervisor.shutdown(Duration::ZERO).await);
+    service.dispatch_notification(event());
+    assert_eq!(service.stats().dispatch_dropped, 1);
+    service.dispatch_notification(event());
+    assert_eq!(service.stats().dispatch_dropped, 2);
+}
+
+#[tokio::test]
+async fn direct_notifications_after_stop_are_counted_as_dropped() {
+    let service = NotificationService::new();
+    let attempts = channel(&service, "one", 0);
+    service.stop().await;
+    service.notify(event()).await.unwrap();
+    service
+        .notify_channel_instance("one", event())
+        .await
+        .unwrap();
+    assert_eq!(service.stats().dispatch_dropped, 2);
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
 }

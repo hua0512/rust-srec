@@ -125,9 +125,6 @@ impl CopyMoveProcessor {
 
         const CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
-        if is_cancelled() {
-            return Err(std::io::Error::other("Copy cancelled"));
-        }
         let mut reader = File::open(source)?;
         let metadata = reader.metadata()?;
         if !metadata.is_file() {

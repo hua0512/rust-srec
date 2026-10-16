@@ -576,7 +576,7 @@ impl DanmuService {
                     Ok(report) => self.record_collection_report(report),
                     Err(error) => {
                         warn!(%error, "Danmu collection task failed before reap");
-                        self.collection_failures.lock().push(&error.to_string());
+                        self.collection_failures.lock().push(error.to_string());
                     }
                 }
             }
@@ -812,7 +812,7 @@ impl DanmuService {
     /// service that carries pre-shutdown failures into `shutdown_until`.
     #[cfg(test)]
     pub(crate) fn seed_runtime_failure_for_test(&self, failure: String) {
-        self.collection_failures.lock().push(&failure);
+        self.collection_failures.lock().push(failure);
     }
 
     /// Shutdown the service using its standalone timeout.
@@ -1049,12 +1049,12 @@ fn append_collection_report(runtime_failures: &mut FailureSamples, report: Colle
     } = report;
     if let Some(error) = runtime_error {
         warn!(%session_id, %error, "Danmu collection ended with an error");
-        runtime_failures.push(&format!("danmu collection {session_id} failed: {error}"));
+        runtime_failures.push(format!("danmu collection {session_id} failed: {error}"));
     } else {
         debug!(%session_id, "Danmu collection task reaped");
     }
     for error in cleanup_errors {
-        runtime_failures.push(&error);
+        runtime_failures.push(error);
     }
 }
 

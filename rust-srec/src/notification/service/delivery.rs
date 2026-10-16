@@ -123,15 +123,6 @@ impl NotificationService {
         ctx: Arc<DeliveryContext>,
         expected_generation: Option<u64>,
     ) {
-        let retry_cancel = ctx.retry_cancel.clone();
-        tokio::select! {
-            biased;
-            _ = retry_cancel.cancelled() => {},
-            _ = Self::deliver_notification(ctx, expected_generation) => {},
-        }
-    }
-
-    async fn deliver_notification(ctx: Arc<DeliveryContext>, expected_generation: Option<u64>) {
         // Borrow the context fields under their own names for the delivery
         // pass; the borrows end before `ctx` is moved into
         // `spawn_retry_detached` at the bottom.
@@ -168,7 +159,7 @@ impl NotificationService {
         let mut rendered = RenderCache::new();
 
         {
-            // The futures stay owned by this pass: cancellation drops in-flight
+            // The futures stay owned by this pass: eviction drops in-flight
             // sends, and retries are scheduled only after all admitted targets settle.
             let mut seen = std::collections::HashSet::new();
             let targets: Vec<_> = channels
@@ -210,7 +201,13 @@ impl NotificationService {
                 })
                 .buffer_unordered(4);
             tokio::pin!(deliveries);
-            while let Some((channel, result, blocked)) = deliveries.next().await {
+            // A settled outcome is not cancelled: its dead letter is already in
+            // memory, so its persistence must finish to keep the stores in step.
+            while let Some((channel, result, blocked)) = tokio::select! {
+                biased;
+                _ = ctx.retry_cancel.cancelled() => None,
+                next = deliveries.next() => next,
+            } {
                 circuit_blocked |= blocked;
                 let Some(result) = result else {
                     continue;

@@ -18,8 +18,8 @@ impl NotificationService {
         }
         match self.dispatch_tx.try_reserve() {
             Ok(permit) => self.admit_dispatch(permit, event),
-            Err(TrySendError::Full(_)) => self.reject_dispatch(&event, "full"),
-            Err(TrySendError::Closed(_)) => self.reject_dispatch(&event, "closed"),
+            Err(TrySendError::Full(_)) => self.reject_dispatch(event.event_type(), "full"),
+            Err(TrySendError::Closed(_)) => self.reject_dispatch(event.event_type(), "closed"),
         }
     }
 
@@ -31,10 +31,10 @@ impl NotificationService {
         }
         tokio::select! {
             biased;
-            _ = self.cancellation_token.cancelled() => self.reject_dispatch(&event, "shutdown"),
+            _ = self.cancellation_token.cancelled() => self.reject_dispatch(event.event_type(), "shutdown"),
             permit = self.dispatch_tx.reserve() => match permit {
                 Ok(permit) => self.admit_dispatch(permit, event),
-                Err(_) => self.reject_dispatch(&event, "closed"),
+                Err(_) => self.reject_dispatch(event.event_type(), "closed"),
             },
         }
     }
@@ -48,27 +48,32 @@ impl NotificationService {
         // stop. A racing enqueue either joins that worker or starts its successor.
         let mut receiver = self.dispatch_rx.lock();
         if self.cancellation_token.is_cancelled() {
-            self.reject_dispatch(&event, "shutdown");
+            self.reject_dispatch(event.event_type(), "shutdown");
             return;
         }
+        let event_type = event.event_type();
         permit.send(event);
         if let Some(rx) = receiver.take() {
             let service = self.clone();
-            self.task_supervisor
+            // A rejected worker drops the receiver and the event just queued;
+            // later senders then see a closed queue and are counted there.
+            if !self
+                .task_supervisor
                 .spawn("notification dispatch", async move {
                     service.run_dispatch(rx).await;
-                });
+                })
+            {
+                self.reject_dispatch(event_type, "shutdown");
+            }
         }
     }
 
-    fn reject_dispatch(&self, event: &NotificationEvent, reason: &str) {
+    pub(super) fn reject_dispatch(&self, event_type: &'static str, reason: &str) {
         let dropped = self.dispatch_dropped.fetch_add(1, Ordering::Relaxed) + 1;
         if dropped.is_power_of_two() {
             warn!(
                 reason,
-                event_type = event.event_type(),
-                dropped,
-                "Notification rejected before event-log persistence"
+                event_type, dropped, "Notification rejected before event-log persistence"
             );
         }
     }

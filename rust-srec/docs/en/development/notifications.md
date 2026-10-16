@@ -25,9 +25,19 @@ Web Push uses a 2,048-event FIFO queue and normal worker batches of up to 64 eve
 Ordinary channel delivery serializes queue admission and evicts the oldest pending
 notification at capacity, cancelling its scheduled retries. A zero queue limit
 disables ordinary channel admission; event logging and Web Push remain independent.
-An already-running send may finish after eviction. Open circuit breakers do not
-consume delivery attempts, and retries respect the cooldown even when the failure
-that opened the breaker has just occurred.
+Eviction also cancels the notification's active delivery pass and drops sends still
+in flight; a send that has already returned still records its outcome, including
+dead-letter persistence. Open circuit breakers do not consume delivery attempts, and
+retries respect the cooldown even when the failure that opened the breaker has just
+occurred.
+
+Notification ingress is a 1,024-event queue drained by at most 16 concurrent delivery
+passes; at most 16 channel sends run at once across all notifications. Synchronous
+reporters (credential, platform-throttling, output-path and BaiduPCS relogin events)
+cannot wait, so a full queue drops their newest event before event-history
+persistence. Source-event listeners wait for space instead; their bounded broadcasts
+report lag when producers outrun the queue. `notification_stats.dispatch_dropped`
+counts rejected events, including those refused during shutdown.
 
 Web Push clears persisted throttling state on successful delivery, including the
 first HTTP attempt. Stale-subscription deletion is reported only after SQLite
