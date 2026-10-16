@@ -339,14 +339,56 @@ impl SchedulerFeedback {
         self.state.lock().queues.keys().cloned().collect()
     }
 
-    pub(crate) fn update_registry_targets(&self, registry: &ActorRegistry) {
+    /// Synchronize delivery targets with registry membership. `changed` names
+    /// the streamer whose registry entry the caller just changed; when that is
+    /// the only membership change since the last synchronization, only its
+    /// entry is copied, so spawning N actors does not copy the map N times.
+    pub(crate) fn update_registry_targets(&self, registry: &ActorRegistry, changed: Option<&str>) {
         let mut state = self.state.lock();
         let revision = registry.streamer_revision();
         if state.targets_revision == Some(revision) {
             return;
         }
-        self.update_targets_locked(&mut state, registry.streamer_handles_map());
+        let one_change = state
+            .targets_revision
+            .is_some_and(|synced| synced.wrapping_add(1) == revision);
+        let applied = one_change
+            && changed.is_some_and(|id| self.replace_target_locked(&mut state, registry, id));
+        if !applied {
+            self.update_targets_locked(&mut state, registry.streamer_handles_map());
+        }
         state.targets_revision = Some(revision);
+    }
+
+    /// Copy `id`'s registry entry when that alone completes synchronization.
+    /// The caller guarantees `state.targets` matched the registry exactly one
+    /// membership change ago. A change to another streamer leaves `id`'s entry
+    /// equal, and a clear of other streamers leaves the sizes unequal, so an
+    /// entry that differs while the resulting sizes agree identifies the change.
+    /// Returns false without touching `state` otherwise.
+    fn replace_target_locked(
+        &self,
+        state: &mut FeedbackState,
+        registry: &ActorRegistry,
+        id: &str,
+    ) -> bool {
+        let current = registry.get_streamer(id);
+        let previous = state.targets.get(id);
+        if current.map(ActorHandle::generation) == previous.map(ActorHandle::generation) {
+            return false;
+        }
+        let size =
+            state.targets.len() + usize::from(current.is_some()) - usize::from(previous.is_some());
+        if size != registry.streamer_count() {
+            return false;
+        }
+        match current {
+            Some(handle) => state.targets.insert(id.to_owned(), handle.clone()),
+            None => state.targets.remove(id),
+        };
+        self.targets_changed
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
+        true
     }
 
     #[cfg(test)]

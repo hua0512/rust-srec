@@ -698,7 +698,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 }
             }
             self.feedback
-                .update_registry_targets(self.supervisor.registry());
+                .update_registry_targets(self.supervisor.registry(), None);
             self.pump_configuration();
             self.publish_stats();
         }
@@ -815,7 +815,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             Ok(_handle) => {
                 self.feedback.activate(&streamer_id);
                 self.feedback
-                    .update_registry_targets(self.supervisor.registry());
+                    .update_registry_targets(self.supervisor.registry(), Some(&streamer_id));
                 debug!("Spawned streamer actor: {}", streamer_id);
                 Ok(())
             }

@@ -216,7 +216,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // Platform restarts retain their existing supervisor policy.
         self.supervisor.process_pending_restarts_at(Instant::now());
         self.feedback
-            .update_registry_targets(self.supervisor.registry());
+            .update_registry_targets(self.supervisor.registry(), None);
         self.pump_configuration();
     }
 
@@ -398,7 +398,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                             self.supervisor
                                 .update_streamer_restart_config(&id, config.clone());
                             self.feedback
-                                .update_registry_targets(self.supervisor.registry());
+                                .update_registry_targets(self.supervisor.registry(), Some(&id));
                             if let Some(handle) = self.supervisor.registry().get_streamer(&id) {
                                 self.feedback.configure(
                                     &id,

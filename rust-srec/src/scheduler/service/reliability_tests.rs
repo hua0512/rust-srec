@@ -109,20 +109,25 @@ fn terminal(id: &str) -> DownloadManagerEvent {
 }
 
 #[tokio::test]
-async fn download_progress_does_not_rescan_unchanged_feedback_targets() {
+async fn actor_spawns_and_download_progress_do_not_rescan_feedback_targets() {
     tokio::time::timeout(Duration::from_secs(5), async {
-        let mut scheduler = scheduler(&["one", "two"]).await;
+        let ids: Vec<String> = (0..32).map(|index| format!("streamer-{index}")).collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let mut scheduler = scheduler(&ids).await;
         for metadata in scheduler.streamer_manager.get_all() {
             scheduler.add_streamer(metadata).await.unwrap();
         }
+        // Only the first spawn finds no synchronized revision; each later
+        // spawn copies its own entry instead of rescanning the growing map.
         let scans = scheduler.feedback.target_scan_count();
+        assert_eq!(scans, 1);
 
         for _ in 0..256 {
             scheduler.process_download_event(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::Progress {
                     download_id: "d".to_owned(),
-                    streamer_id: "one".to_owned(),
-                    streamer_name: "one".to_owned(),
+                    streamer_id: ids[0].to_owned(),
+                    streamer_name: ids[0].to_owned(),
                     session_id: "s".to_owned(),
                     status: DownloadStatus::Downloading,
                     progress: DownloadProgress::default(),
@@ -130,7 +135,7 @@ async fn download_progress_does_not_rescan_unchanged_feedback_targets() {
             ));
             scheduler
                 .feedback
-                .update_registry_targets(scheduler.supervisor.registry());
+                .update_registry_targets(scheduler.supervisor.registry(), None);
         }
 
         assert_eq!(scheduler.feedback.target_scan_count(), scans);
@@ -138,7 +143,7 @@ async fn download_progress_does_not_rescan_unchanged_feedback_targets() {
         scheduler.shutdown().await;
     })
     .await
-    .expect("progress must not trigger unchanged target scans");
+    .expect("spawns and progress must not rescan feedback targets");
 }
 
 #[tokio::test]
@@ -180,7 +185,7 @@ async fn stopped_and_cancelled_generations_settle_retained_feedback_without_rest
             let receipt = feedback.publish_reserved(&terminal("one"), end);
             let action = scheduler.supervisor.handle_task_completion(completion);
             scheduler.handle_task_completion_action(action, true);
-            feedback.update_registry_targets(scheduler.supervisor.registry());
+            feedback.update_registry_targets(scheduler.supervisor.registry(), None);
             assert_eq!(
                 receipt.await.unwrap().unwrap(),
                 FeedbackDisposition::Retired
@@ -392,7 +397,7 @@ async fn replacement_seeds_the_recording_identity_even_when_metadata_has_not_cau
             .spawn_streamer("one", StreamerConfig::default(), None)
             .unwrap();
         assert_ne!(replacement.generation(), old_generation);
-        feedback.update_registry_targets(scheduler.supervisor.registry());
+        feedback.update_registry_targets(scheduler.supervisor.registry(), None);
         let (reply, state) = tokio::sync::oneshot::channel();
         replacement
             .send_reliable(StreamerMessage::GetState(reply))
