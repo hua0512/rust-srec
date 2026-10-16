@@ -14,18 +14,46 @@ use tokio::sync::watch;
 use super::descriptor::{MediaTrack, SegmentDescriptor};
 use super::identity::{SegmentKey, SegmentKind};
 
+/// Longest timer a [`ThrottleClock::deadline`] arms. Callers recompute the
+/// deadline whenever they wake, so a later one only costs a spurious
+/// wake-up, while the clamp keeps the addition far from `Instant`'s range
+/// whatever timeout or allowance is configured.
+const MAX_WAIT: Duration = Duration::from_secs(24 * 3600);
+
 /// A coalescible snapshot of time spent waiting on rate-limited work.
 ///
 /// The fixed deadline bounds an active pause; only elapsed time is retained
 /// when work resumes, so a short refusal does not spend its full allowance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThrottleClock {
     paused: Duration,
     active: Option<(Instant, Instant)>,
     last_updated: Option<Instant>,
+    /// The most paused time one timeout may exclude. Each hold is bounded
+    /// by the throttling allowance, but an origin that refuses every
+    /// request holds each next blocker as soon as the previous one fails;
+    /// bounding the total lets such a session time out and reconnect.
+    max_pause: Duration,
+}
+
+impl Default for ThrottleClock {
+    fn default() -> Self {
+        Self::new(crate::rate_limit::RateLimitPolicy::default().max_throttled)
+    }
 }
 
 impl ThrottleClock {
+    /// `max_pause` is normally the throttling allowance, the longest one
+    /// segment may be held.
+    pub fn new(max_pause: Duration) -> Self {
+        Self {
+            paused: Duration::ZERO,
+            active: None,
+            last_updated: None,
+            max_pause,
+        }
+    }
+
     /// Updates the active pause and reports whether the snapshot changed.
     pub fn set_hold(&mut self, now: Instant, until: Option<Instant>) -> bool {
         // Concurrent producers can capture their timestamps before acquiring
@@ -55,10 +83,18 @@ impl ThrottleClock {
         self.active.map(|(_, until)| until)
     }
 
+    /// Paused time a timeout that began at `paused_baseline` (its
+    /// `paused_at` reading) may exclude from its elapsed time.
+    pub fn credited_pause(&self, paused_baseline: Duration, now: Instant) -> Duration {
+        self.paused_at(now)
+            .saturating_sub(paused_baseline)
+            .min(self.max_pause)
+    }
+
     /// Resumes the timeout's remaining budget after an active pause.
     /// Callers save `paused_at(since)` when their timeout begins and recompute
-    /// this deadline whenever the clock changes, so an early recovery does
-    /// not retain the unused part of the throttling allowance.
+    /// this deadline whenever they wake or the clock changes, so an early
+    /// recovery does not retain the unused part of the throttling allowance.
     pub fn deadline(
         &self,
         since: Instant,
@@ -66,17 +102,21 @@ impl ThrottleClock {
         timeout: Duration,
         now: Instant,
     ) -> Instant {
-        let paused = self.paused_at(now).saturating_sub(paused_baseline);
-        let elapsed = now.saturating_duration_since(since).saturating_sub(paused);
+        let credited = self.credited_pause(paused_baseline, now);
+        let elapsed = now
+            .saturating_duration_since(since)
+            .saturating_sub(credited);
         let remaining = timeout.saturating_sub(elapsed);
-        let resumes = if remaining.is_zero() {
-            now
+        // The active pause defers the deadline only while it is credited.
+        let paused_ahead = if remaining.is_zero() {
+            Duration::ZERO
         } else {
             self.active_until()
-                .filter(|until| *until > now)
-                .unwrap_or(now)
+                .map_or(Duration::ZERO, |until| until.saturating_duration_since(now))
+                .min(self.max_pause.saturating_sub(credited))
         };
-        resumes.checked_add(remaining).unwrap_or(resumes)
+        let wait = paused_ahead.saturating_add(remaining).min(MAX_WAIT);
+        now.checked_add(wait).unwrap_or(now)
     }
 }
 
@@ -88,17 +128,22 @@ pub struct ThrottleSession {
     clock: watch::Sender<ThrottleClock>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct SessionState {
     tracks: [Option<Instant>; 2],
     clock: ThrottleClock,
 }
 
 impl ThrottleSession {
-    pub fn new() -> Self {
+    /// `max_pause`: see [`ThrottleClock::new`].
+    pub fn new(max_pause: Duration) -> Self {
+        let clock = ThrottleClock::new(max_pause);
         Self {
-            state: Mutex::new(SessionState::default()),
-            clock: watch::channel(ThrottleClock::default()).0,
+            state: Mutex::new(SessionState {
+                tracks: [None; 2],
+                clock,
+            }),
+            clock: watch::channel(clock).0,
         }
     }
 
@@ -175,6 +220,16 @@ impl RateLimitHolds {
 
     pub fn clock(&self) -> ThrottleClock {
         *self.clock.borrow()
+    }
+
+    /// Bounds the paused time one timeout may exclude (see
+    /// [`ThrottleClock::new`]).
+    pub fn set_max_pause(&self, max_pause: Duration) {
+        let mut holds = self.holds.lock();
+        if holds.clock.max_pause != max_pause {
+            holds.clock.max_pause = max_pause;
+            self.clock.send_replace(holds.clock);
+        }
     }
 
     pub fn set_session(&self, session: Arc<ThrottleSession>, track: MediaTrack) {
@@ -349,11 +404,36 @@ impl RateLimitHolds {
 
 #[cfg(test)]
 mod tests {
+    use url::Url;
+
     use super::*;
+    use crate::segment_engine::descriptor::{SegmentMeta, SegmentSource};
+
+    fn descriptor(uri: &str, msn: u64, kind: SegmentKind) -> SegmentDescriptor {
+        SegmentDescriptor {
+            key: SegmentKey {
+                kind,
+                uri: Arc::from(uri),
+                byte_range: None,
+                scope: None,
+            },
+            msn,
+            source: SegmentSource::Playlist,
+            parsed_url: Arc::new(Url::parse(uri).expect("test url")),
+            discontinuity: false,
+            encryption: None,
+            init_key: None,
+            meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
+                uri: uri.to_string(),
+                duration: 2.0,
+                ..Default::default()
+            })),
+        }
+    }
 
     #[test]
     fn session_clock_counts_overlapping_short_holds_once_after_coalescing() {
-        let session = ThrottleSession::new();
+        let session = ThrottleSession::new(Duration::from_secs(300));
         let clock = session.subscribe();
         let start = Instant::now();
         session.set_hold(
@@ -395,8 +475,58 @@ mod tests {
     }
 
     #[test]
+    fn back_to_back_holds_credit_at_most_one_allowance_per_timeout() {
+        let allowance = Duration::from_secs(300);
+        let timeout = Duration::from_secs(10);
+        let mut clock = ThrottleClock::new(allowance);
+        let start = Instant::now();
+        let fires = start + allowance + timeout;
+        // An origin that refuses everything: each blocker fails at the end
+        // of its own allowance and the next one is held at once.
+        for cycle in 0..3 {
+            let at = start + allowance * cycle;
+            clock.set_hold(at, Some(at + allowance));
+            let now = at + Duration::from_secs(1);
+            assert_eq!(
+                clock.deadline(start, Duration::ZERO, timeout, now),
+                fires.max(now),
+                "cycle {cycle}"
+            );
+        }
+
+        // While credit remains, the active hold defers the deadline only by
+        // what is left of it, so the deadline holds still as the hold runs.
+        let mut clock = ThrottleClock::new(allowance);
+        clock.set_hold(start, Some(start + allowance));
+        clock.set_hold(
+            start + Duration::from_secs(200),
+            Some(start + Duration::from_secs(500)),
+        );
+        for at in [200, 250, 299, 305] {
+            let now = start + Duration::from_secs(at);
+            assert_eq!(
+                clock.deadline(start, Duration::ZERO, timeout, now),
+                fires,
+                "at {at} s"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unbounded_timeout_never_fires() {
+        let clock = ThrottleClock::new(Duration::MAX);
+        let start = Instant::now();
+        let now = start + Duration::from_secs(1);
+        assert!(clock.deadline(start, Duration::ZERO, Duration::MAX, now) > now);
+
+        let mut clock = ThrottleClock::new(Duration::MAX);
+        clock.set_hold(start, Some(start + Duration::from_secs(60)));
+        assert!(clock.deadline(start, Duration::ZERO, Duration::MAX, now) > now);
+    }
+
+    #[test]
     fn a_late_track_end_cannot_manufacture_extra_paused_time() {
-        let session = ThrottleSession::new();
+        let session = ThrottleSession::new(Duration::from_secs(300));
         let clock = session.subscribe();
         let start = Instant::now();
         session.set_hold(
@@ -417,5 +547,62 @@ mod tests {
             clock.borrow().paused_at(start + Duration::from_secs(20)),
             Duration::from_secs(20)
         );
+    }
+
+    #[test]
+    fn rate_limit_holds_bound_ranges_and_expire_without_further_outcomes() {
+        let holds = RateLimitHolds::new();
+        let start = Instant::now();
+        let until = start + Duration::from_secs(60);
+        let first = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+        let sibling = descriptor("https://e.com/1-new.ts", 1, SegmentKind::Media);
+        let next = descriptor("https://e.com/3.ts", 3, SegmentKind::Media);
+        let init = descriptor("https://e.com/init.mp4", 0, SegmentKind::Init);
+        holds.hold(&first, until, start);
+        holds.hold(&first, until + Duration::from_secs(60), start);
+        holds.hold(&sibling, until + Duration::from_secs(60), start);
+        holds.release(&first.key, first.msn, start);
+        assert_eq!(holds.first_media_hold(0, 2, start), Some((1, until)));
+        holds.hold(&next, until, start);
+        assert_eq!(holds.first_media_hold(2, 3, start), None);
+        assert_eq!(holds.first_media_hold(2, 4, start), Some((3, until)));
+        holds.skip(1, 3, start);
+        assert_eq!(holds.active_until(0, start), None);
+
+        holds.hold(&init, until, start);
+        assert_eq!(holds.active_until(99, start), Some(until));
+        assert_eq!(holds.active_until(0, until), None);
+    }
+
+    #[test]
+    fn producer_clock_retains_short_pauses_and_stops_after_track_teardown() {
+        let holds = RateLimitHolds::new();
+        let session = Arc::new(ThrottleSession::new(Duration::from_secs(300)));
+        let session_clock = session.subscribe();
+        holds.set_session(session, MediaTrack::Audio);
+        let clock = holds.subscribe_clock();
+        let start = Instant::now();
+        let media = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+        holds.set_scope(1, None, false, start);
+        let until = start + Duration::from_secs(300);
+        holds.hold(&media, until, start);
+        holds.release(&media.key, 1, start + Duration::from_secs(1));
+        // Reading after both transitions must still see the actual pause.
+        assert_eq!(
+            clock.borrow().paused_at(start + Duration::from_secs(2)),
+            Duration::from_secs(1)
+        );
+
+        holds.hold(&media, until, start + Duration::from_secs(2));
+        holds.clear_scope(start + Duration::from_secs(3));
+        holds.hold(&media, until, start + Duration::from_secs(4));
+        let now = start + Duration::from_secs(5);
+        assert_eq!(clock.borrow().active_until(), None);
+        assert_eq!(clock.borrow().paused_at(now), Duration::from_secs(2));
+        assert_eq!(
+            session_clock.borrow().paused_at(now),
+            Duration::from_secs(2)
+        );
+        assert_eq!(session_clock.borrow().active_until(), None);
     }
 }

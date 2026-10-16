@@ -339,6 +339,7 @@ pub struct SegmentStateStore {
 impl SegmentStateStore {
     pub fn new(config: StoreConfig, rate_limit_holds: Arc<RateLimitHolds>) -> Self {
         let size_estimate = config.fallback_size_estimate.max(1);
+        rate_limit_holds.set_max_pause(config.max_throttled);
         Self {
             config,
             records: HashMap::new(),
@@ -741,13 +742,16 @@ impl SegmentStateStore {
                 reason,
                 error,
             } => {
-                if !matches!(class, FailureClass::RateLimited { .. }) {
-                    self.rate_limit_holds.release(&key, msn, now);
-                }
+                // Rate limiting and the URL refresh wait below keep the
+                // hold; any other failure ends it.
+                let mut keeps_hold = matches!(class, FailureClass::RateLimited { .. });
                 if key.kind == SegmentKind::Media {
                     self.window_bytes.remove(&msn);
                 }
                 let Some(record) = self.records.get_mut(&key) else {
+                    if !keeps_hold {
+                        self.rate_limit_holds.release(&key, msn, now);
+                    }
                     return OutcomeEffects::default();
                 };
 
@@ -787,7 +791,9 @@ impl SegmentStateStore {
                     // may not have been published yet when the cool-down
                     // ends. So once per segment, a denial after rate
                     // limiting waits for re-discovery (see `ingest`), for
-                    // at most `REFRESH_WAIT`.
+                    // at most `REFRESH_WAIT`. Output keeps waiting for it
+                    // within the same throttling bound, so a live gap skip
+                    // does not drop it while the fresh URL is on its way.
                     FailureClass::Http(401 | 403)
                         if record.generation <= record.attempt_generation
                             && record.throttled_since.is_some()
@@ -795,6 +801,7 @@ impl SegmentStateStore {
                     {
                         record.refresh_wait_used = true;
                         record.awaiting_refresh = true;
+                        keeps_hold = true;
                         Some(REFRESH_WAIT)
                     }
                     // Budget contention says nothing about the segment: it
@@ -839,8 +846,9 @@ impl SegmentStateStore {
                 };
 
                 if let Some(delay) = retry_delay {
-                    if matches!(class, FailureClass::RateLimited { .. })
-                        && let Some(since) = record.throttled_since
+                    if !keeps_hold {
+                        self.rate_limit_holds.release(&key, msn, now);
+                    } else if let Some(since) = record.throttled_since
                         && let Some(until) = since.checked_add(self.config.max_throttled)
                     {
                         self.rate_limit_holds.hold(&record.descriptor, until, now);
@@ -2387,66 +2395,6 @@ mod tests {
     }
 
     #[test]
-    fn rate_limit_holds_bound_ranges_and_expire_without_further_outcomes() {
-        let holds = RateLimitHolds::new();
-        let start = Instant::now();
-        let until = start + Duration::from_secs(60);
-        let first = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
-        let sibling = descriptor("https://e.com/1-new.ts", 1, SegmentKind::Media);
-        let next = descriptor("https://e.com/3.ts", 3, SegmentKind::Media);
-        let init = descriptor("https://e.com/init.mp4", 0, SegmentKind::Init);
-        holds.hold(&first, until, start);
-        holds.hold(&first, until + Duration::from_secs(60), start);
-        holds.hold(&sibling, until + Duration::from_secs(60), start);
-        holds.release(&first.key, first.msn, start);
-        assert_eq!(holds.first_media_hold(0, 2, start), Some((1, until)));
-        holds.hold(&next, until, start);
-        assert_eq!(holds.first_media_hold(2, 3, start), None);
-        assert_eq!(holds.first_media_hold(2, 4, start), Some((3, until)));
-        holds.skip(1, 3, start);
-        assert_eq!(holds.active_until(0, start), None);
-
-        holds.hold(&init, until, start);
-        assert_eq!(holds.active_until(99, start), Some(until));
-        assert_eq!(holds.active_until(0, until), None);
-    }
-
-    #[test]
-    fn producer_clock_retains_short_pauses_and_stops_after_track_teardown() {
-        use super::super::descriptor::MediaTrack;
-        use super::super::throttle::ThrottleSession;
-
-        let holds = RateLimitHolds::new();
-        let session = Arc::new(ThrottleSession::new());
-        let session_clock = session.subscribe();
-        holds.set_session(session, MediaTrack::Audio);
-        let clock = holds.subscribe_clock();
-        let start = Instant::now();
-        let media = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
-        holds.set_scope(1, None, false, start);
-        let until = start + Duration::from_secs(300);
-        holds.hold(&media, until, start);
-        holds.release(&media.key, 1, start + Duration::from_secs(1));
-        // Reading after both transitions must still see the actual pause.
-        assert_eq!(
-            clock.borrow().paused_at(start + Duration::from_secs(2)),
-            Duration::from_secs(1)
-        );
-
-        holds.hold(&media, until, start + Duration::from_secs(2));
-        holds.clear_scope(start + Duration::from_secs(3));
-        holds.hold(&media, until, start + Duration::from_secs(4));
-        let now = start + Duration::from_secs(5);
-        assert_eq!(clock.borrow().active_until(), None);
-        assert_eq!(clock.borrow().paused_at(now), Duration::from_secs(2));
-        assert_eq!(
-            session_clock.borrow().paused_at(now),
-            Duration::from_secs(2)
-        );
-        assert_eq!(session_clock.borrow().active_until(), None);
-    }
-
-    #[test]
     fn immediate_rate_limit_retries_still_end_at_the_bound() {
         let mut s = SegmentStateStore::new(
             StoreConfig {
@@ -2604,6 +2552,42 @@ mod tests {
             effects.assembler_inputs.as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, .. }]
         ));
+    }
+
+    #[test]
+    fn a_refresh_wait_keeps_the_rate_limit_hold_within_its_bound() {
+        let holds = Arc::new(RateLimitHolds::new());
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_throttled: Duration::from_secs(60),
+                ..StoreConfig::default()
+            },
+            Arc::clone(&holds),
+        );
+        let b = budget_unlimited();
+        let start = Instant::now();
+        s.ingest(
+            vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
+            start,
+        );
+        let refused = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(1),
+            held_back: false,
+        };
+        fail_at(&mut s, &b, refused, start);
+        let until = start + Duration::from_secs(60);
+        let now = start + Duration::from_secs(1);
+        let effects = fail_at(&mut s, &b, FailureClass::Http(403), now);
+        assert_eq!(effects.retry_notice.expect("waits").delay, REFRESH_WAIT);
+        assert_eq!(
+            holds.first_media_hold(1, 2, now),
+            Some((1, until)),
+            "output keeps waiting for the fresh URL"
+        );
+        // A denial after the wait is real and ends the hold with the segment.
+        fail_at(&mut s, &b, FailureClass::Http(403), now + REFRESH_WAIT);
+        assert_eq!(holds.first_media_hold(1, 2, now + REFRESH_WAIT), None);
     }
 
     fn skipped_ranges(inputs: &[AssemblerInput]) -> Vec<(u64, u64)> {

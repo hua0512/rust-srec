@@ -600,14 +600,8 @@ pub(crate) async fn run_muxer(
                 .as_ref()
                 .is_some_and(|f| f.queued_bytes < state.config.max_buffered_bytes);
         let deadline = state.wait_deadline;
-        let stall_deadline = media_timeout.map(|timeout| {
-            Instant::from_std(state.media_clock.deadline(
-                state.last_media_at.into_std(),
-                state.media_paused_at,
-                timeout.min(Duration::from_secs(24 * 3600)),
-                Instant::now().into_std(),
-            ))
-        });
+        let stall_deadline =
+            media_timeout.map(|timeout| state.media_deadline(timeout, Instant::now()));
 
         tokio::select! {
             biased;
@@ -631,13 +625,8 @@ pub(crate) async fn run_muxer(
                 // before this timer became ready in the same select.
                 read_clock(&mut media_clock_rx, &mut state.media_clock);
                 let stalled_for = media_timeout.unwrap_or_default();
-                let now = Instant::now().into_std();
-                if state.media_clock.deadline(
-                    state.last_media_at.into_std(),
-                    state.media_paused_at,
-                    stalled_for.min(Duration::from_secs(24 * 3600)),
-                    now,
-                ) > now {
+                let now = Instant::now();
+                if state.media_deadline(stalled_for, now) > now {
                     continue;
                 }
                 warn!(
@@ -1119,16 +1108,22 @@ impl MuxState {
     }
 
     fn follower_deadline(&self, since: Instant, paused_at: Duration, now: Instant) -> Instant {
-        Instant::from_std(
-            self.follower_clock.deadline(
-                since.into_std(),
-                paused_at,
-                self.config
-                    .max_audio_lag
-                    .min(Duration::from_secs(24 * 3600)),
-                now.into_std(),
-            ),
-        )
+        Instant::from_std(self.follower_clock.deadline(
+            since.into_std(),
+            paused_at,
+            self.config.max_audio_lag,
+            now.into_std(),
+        ))
+    }
+
+    /// When the session fails for writing no media.
+    fn media_deadline(&self, timeout: Duration, now: Instant) -> Instant {
+        Instant::from_std(self.media_clock.deadline(
+            self.last_media_at.into_std(),
+            self.media_paused_at,
+            timeout,
+            now.into_std(),
+        ))
     }
 
     fn under_buffer_limit(&self) -> bool {
