@@ -1445,7 +1445,8 @@ payload backpressure cannot hide the hold.
 
 The assembler identifies its blocked media or required init. Fetch transitions
 update a clock for that scope at the producer, retaining elapsed pause time
-even if a consumer misses intermediate watch updates. Gap timers, live input
+even if a consumer misses intermediate watch updates. Gap timers (VOD segment
+timeouts included), live input
 watchdogs and DASH audio waits (including queued video slices and final audio
 tails) exclude only the time actually paused; they resume their remaining
 ordinary budget as soon as the hold ends. The five-minute retry cap bounds an

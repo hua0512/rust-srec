@@ -603,6 +603,17 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         }
     }
 
+    /// Time a gap has waited, excluding the credited rate-limit pause
+    /// since it was detected.
+    fn gap_elapsed(&self, gap_state: &GapState, now: Instant) -> Duration {
+        let paused = self
+            .rate_limit_holds
+            .clock()
+            .credited_pause(gap_state.paused_at_detection, now);
+        now.saturating_duration_since(gap_state.detected_at)
+            .saturating_sub(paused)
+    }
+
     fn should_skip_gap(&self) -> Option<GapSkipReason> {
         let gap_state = self.gap_state.as_ref()?;
 
@@ -622,14 +633,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
         let in_startup =
             self.is_live_stream && self.is_fmp4_stream && !self.has_emitted_media_segment;
-        let now = Instant::now();
-        let paused = self
-            .rate_limit_holds
-            .clock()
-            .credited_pause(gap_state.paused_at_detection, now);
-        let elapsed = now
-            .saturating_duration_since(gap_state.detected_at)
-            .saturating_sub(paused);
+        let elapsed = self.gap_elapsed(gap_state, Instant::now());
 
         match self.gap_strategy() {
             GapSkipStrategy::WaitIndefinitely => None,
@@ -1081,7 +1085,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     && let Some(vod_timeout) = self.config.output.vod_segment_timeout
                     && let Some(gap_state) = self.gap_state.as_ref()
                 {
-                    let elapsed = gap_state.detected_at.elapsed();
+                    let elapsed = self.gap_elapsed(gap_state, Instant::now());
                     if elapsed >= vod_timeout {
                         warn!(
                             msn = gap_state.missing_sequence,
@@ -1607,6 +1611,63 @@ mod tests {
                     .is_none()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_vod_segment_timeout_excludes_its_rate_limit_hold() {
+        let mut config = HlsConfig::default();
+        config.output_config.vod_segment_timeout = Some(Duration::from_secs(5));
+        let (_input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let mut assembler = SequenceAssembler::new(
+            Arc::new(SegmentCoreConfig::from(&config)),
+            input_rx,
+            HlsEventSink::new(event_tx),
+            false,
+            100,
+            CancellationToken::new(),
+        );
+        // A fresh registry lets the hold and its paused time begin in the
+        // past, before the assembler's construction-time scope update.
+        assembler.rate_limit_holds = Arc::new(RateLimitHolds::new());
+        let held_since = Instant::now() - Duration::from_secs(6);
+        let held = descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media);
+        assembler
+            .rate_limit_holds
+            .set_scope(100, None, false, held_since);
+        assembler
+            .rate_limit_holds
+            .hold(&held, held_since + Duration::from_secs(60), held_since);
+        let AssemblerInput::Payload(later) = ts_payload(101) else {
+            unreachable!()
+        };
+        assembler.handle_payload(later).await;
+
+        // Held since the gap opened six seconds ago: none of it counts.
+        let gap = assembler.gap_state.as_mut().unwrap();
+        gap.detected_at = held_since;
+        gap.paused_at_detection = Duration::ZERO;
+        assembler.try_emit().await;
+        assert_eq!(assembler.expected_next_media_sequence, 100);
+        assert!(
+            event_rx.try_recv().is_err(),
+            "held media must still be pending"
+        );
+
+        // Once the hold ends, the gap's unpaused wait reaches the timeout.
+        assembler
+            .rate_limit_holds
+            .release(&held.key, 100, Instant::now());
+        assembler.gap_state.as_mut().unwrap().detected_at = held_since - Duration::from_secs(5);
+        assembler.try_emit().await;
+        assert!(matches!(
+            event_rx.try_recv(),
+            Ok(Ok(HlsStreamEvent::SegmentTimeout {
+                sequence_number: 100,
+                ..
+            }))
+        ));
+        assert_eq!(assembler.expected_next_media_sequence, 102);
     }
 
     #[tokio::test]

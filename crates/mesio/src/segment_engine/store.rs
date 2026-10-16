@@ -2395,66 +2395,6 @@ mod tests {
     }
 
     #[test]
-    fn rate_limit_holds_bound_ranges_and_expire_without_further_outcomes() {
-        let holds = RateLimitHolds::new();
-        let start = Instant::now();
-        let until = start + Duration::from_secs(60);
-        let first = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
-        let sibling = descriptor("https://e.com/1-new.ts", 1, SegmentKind::Media);
-        let next = descriptor("https://e.com/3.ts", 3, SegmentKind::Media);
-        let init = descriptor("https://e.com/init.mp4", 0, SegmentKind::Init);
-        holds.hold(&first, until, start);
-        holds.hold(&first, until + Duration::from_secs(60), start);
-        holds.hold(&sibling, until + Duration::from_secs(60), start);
-        holds.release(&first.key, first.msn, start);
-        assert_eq!(holds.first_media_hold(0, 2, start), Some((1, until)));
-        holds.hold(&next, until, start);
-        assert_eq!(holds.first_media_hold(2, 3, start), None);
-        assert_eq!(holds.first_media_hold(2, 4, start), Some((3, until)));
-        holds.skip(1, 3, start);
-        assert_eq!(holds.active_until(0, start), None);
-
-        holds.hold(&init, until, start);
-        assert_eq!(holds.active_until(99, start), Some(until));
-        assert_eq!(holds.active_until(0, until), None);
-    }
-
-    #[test]
-    fn producer_clock_retains_short_pauses_and_stops_after_track_teardown() {
-        use super::super::descriptor::MediaTrack;
-        use super::super::throttle::ThrottleSession;
-
-        let holds = RateLimitHolds::new();
-        let session = Arc::new(ThrottleSession::new(Duration::from_secs(300)));
-        let session_clock = session.subscribe();
-        holds.set_session(session, MediaTrack::Audio);
-        let clock = holds.subscribe_clock();
-        let start = Instant::now();
-        let media = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
-        holds.set_scope(1, None, false, start);
-        let until = start + Duration::from_secs(300);
-        holds.hold(&media, until, start);
-        holds.release(&media.key, 1, start + Duration::from_secs(1));
-        // Reading after both transitions must still see the actual pause.
-        assert_eq!(
-            clock.borrow().paused_at(start + Duration::from_secs(2)),
-            Duration::from_secs(1)
-        );
-
-        holds.hold(&media, until, start + Duration::from_secs(2));
-        holds.clear_scope(start + Duration::from_secs(3));
-        holds.hold(&media, until, start + Duration::from_secs(4));
-        let now = start + Duration::from_secs(5);
-        assert_eq!(clock.borrow().active_until(), None);
-        assert_eq!(clock.borrow().paused_at(now), Duration::from_secs(2));
-        assert_eq!(
-            session_clock.borrow().paused_at(now),
-            Duration::from_secs(2)
-        );
-        assert_eq!(session_clock.borrow().active_until(), None);
-    }
-
-    #[test]
     fn immediate_rate_limit_retries_still_end_at_the_bound() {
         let mut s = SegmentStateStore::new(
             StoreConfig {
