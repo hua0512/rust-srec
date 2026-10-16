@@ -1247,7 +1247,14 @@ mod tests {
         assert_eq!(output.outputs, vec![output_path.to_string_lossy()]);
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&output_path).unwrap()).unwrap();
         let mut names: Vec<String> = (0..archive.len())
-            .map(|index| archive.by_index(index).unwrap().name().to_owned())
+            .map(|index| {
+                archive
+                    .by_index(index)
+                    .unwrap()
+                    .name()
+                    .unwrap()
+                    .into_owned()
+            })
             .collect();
         names.sort();
         assert!(names[0].ends_with("a/rec.mp4"), "{names:?}");

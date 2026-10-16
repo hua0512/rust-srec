@@ -19,7 +19,7 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
 pub(crate) const ENV_NATIVE_TLS_HOSTS: &str = "RUST_SREC_NATIVE_TLS_HOSTS";
 
 fn install_rustls_provider() {
-    // `reqwest` is configured with `rustls-tls-*-no-provider`; install one globally.
+    // Select the same provider before creating shared reqwest and rustls clients.
     static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
     PROVIDER_INSTALLED.get_or_init(|| {
         if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
@@ -219,11 +219,11 @@ fn create_client_with_backend(
 
     match backend {
         TlsBackend::Rustls => {
-            client_builder = client_builder.use_rustls_tls();
+            client_builder = client_builder.tls_backend_rustls();
         }
         #[cfg(feature = "tls-native-fallback")]
         TlsBackend::NativeTls => {
-            client_builder = client_builder.use_native_tls();
+            client_builder = client_builder.tls_backend_native();
         }
     }
 
@@ -252,7 +252,8 @@ fn create_client_with_backend(
         client_builder = client_builder.read_timeout(config.read_timeout);
     }
 
-    client_builder = client_builder.danger_accept_invalid_certs(config.danger_accept_invalid_certs);
+    client_builder =
+        client_builder.tls_danger_accept_invalid_certs(config.danger_accept_invalid_certs);
 
     if let Some(proxy_config) = &config.proxy {
         let proxy = match build_proxy_from_config(proxy_config) {

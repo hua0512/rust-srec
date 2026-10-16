@@ -69,7 +69,7 @@ md-5 = { workspace = true }
 aes = { workspace = true }
 cbc = { workspace = true }
 cipher = { workspace = true }
-percent-encoding = "2.3"
+percent-encoding = "2.3.2"
 base64 = { workspace = true }
 tokio-tungstenite = { workspace = true, default-features = false, features = ["connect"] }
 chrono = { workspace = true, features = ["serde"] }

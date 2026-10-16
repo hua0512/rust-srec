@@ -14,7 +14,7 @@ workspace = true
 bytes = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util"] }
 tokio-util = { workspace = true }
-tokio-stream = "0.1.18"
+tokio-stream = "0.1.19"
 futures = { workspace = true }
 reqwest = { workspace = true, features = [
   "json",
@@ -37,12 +37,12 @@ sha2 = { workspace = true }
 rand = { workspace = true }
 parking_lot = { workspace = true }
 rustls = { workspace = true }
-moka = { version = "0.12", features = ["future"] }
+moka = { version = "0.12.16", features = ["future"] }
 aes = { workspace = true }
 cbc = { workspace = true }
 cipher = { workspace = true }
 hex = { workspace = true }
-clap = { version = "4.6", features = ["derive"], optional = true }
+clap = { version = "4.6.7", features = ["derive"], optional = true }
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
@@ -53,7 +53,7 @@ hls = { path = "../hls" }
 mp4 = { path = "../mp4" }
 
 [dev-dependencies]
-tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "time", "test-util"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "test-util"] }
 axum = { workspace = true }
 tempfile = { workspace = true }
 hls-fix = { path = "../hls-fix", default-features = false }

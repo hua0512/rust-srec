@@ -118,7 +118,10 @@ async fn archive_route_preserves_headers_dates_names_and_single_use_tokens() {
     let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     assert_eq!(zip.len(), 1);
-    assert_eq!(zip.by_index(0).unwrap().name(), "rust-srec.log.2026-09-07");
+    assert_eq!(
+        zip.by_index(0).unwrap().name().unwrap(),
+        "rust-srec.log.2026-09-07"
+    );
     let reused = router
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await

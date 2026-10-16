@@ -20,7 +20,7 @@ reqwest = { workspace = true, features = ["json", "stream"] }
 crossterm = "0.29.0"
 
 # CLI dependencies
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 
 # Logging
 tracing = { workspace = true }
@@ -40,7 +40,7 @@ thiserror = { workspace = true }
 mimalloc = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2.190"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }

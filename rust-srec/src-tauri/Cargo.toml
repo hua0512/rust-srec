@@ -18,7 +18,7 @@ name = "rust_srec_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.6.0", features = [] }
+tauri-build = { version = "2.7.3", features = [] }
 
 [dependencies]
 serde_json = { workspace = true }
@@ -27,11 +27,11 @@ hex = { workspace = true }
 rand = { workspace = true }
 anyhow = { workspace = true }
 tracing-appender = { workspace = true }
-log = "0.4"
-tauri = { version = "2.11.0", features = ["tray-icon"] }
-tauri-plugin-single-instance = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-opener = "2"
+log = "0.4.34"
+tauri = { version = "2.12.4", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2.5.4"
+tauri-plugin-notification = "2.7.0"
+tauri-plugin-opener = "2.7.2"
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 rust-srec = { path = ".." }

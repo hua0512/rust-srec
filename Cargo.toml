@@ -52,84 +52,83 @@ undocumented_unsafe_blocks = "deny"
 
 [workspace.dependencies]
 arc-swap = "1"
-bytes = "1.11.1"
-tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
-tokio-util = { version = "0.7.18", features = ["codec", "io", "rt", "time"] }
-reqwest = { version = "0.12.26", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots-no-provider", "gzip", "deflate"] }
-serde = { version = "1.0.217", features = ["derive", "rc"] }
-serde_json = "1.0.149"
-thiserror = "2.0.18"
-tracing = "0.1.41"
+bytes = "1.12.1"
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
+tokio-util = { version = "0.7.20", features = ["codec", "io", "rt", "time"] }
+# Use platform certificate verification consistently with the extractor clients.
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "form", "stream", "rustls", "gzip", "deflate"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
-async-trait = "0.1.89"
-rand = "0.10.0"
-regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+async-trait = "0.1.92"
+rand = "0.10.3"
+regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 # Chinese/Japanese word segmentation for danmu word-frequency statistics.
 # `default-dict` (on by default) embeds the dictionary so no runtime file is
 # needed; `tfidf`/`textrank` stay off since only segmentation is used.
 jieba-rs = "0.11.0"
-futures = "0.3.32"
-chrono = { version = "0.4.44", features = ["serde"] }
-uuid = { version = "1.21.0", features = ["v4", "serde"] }
-prost = "0.14.3"
-prost-build = "0.14.3"
-parking_lot = "0.12.3"
-sha2 = "0.11.0"
+futures = "0.3.34"
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.28.0", features = ["v4", "serde"] }
+prost = "0.14.4"
+prost-build = "0.14.4"
+parking_lot = "0.12.5"
+sha2 = "0.11.1"
 hex = "0.4.3"
-flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
+flate2 = { version = "1.1.10", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
-anyhow = "1.0.102"
-tower-http = { version = "0.7.0", features = ["cors", "trace", "request-id", "fs"] }
+anyhow = "1.0.104"
+tower-http = { version = "0.7.1", features = ["cors", "trace", "request-id", "fs"] }
 tempfile = "3.27.0"
-axum = { version = "0.8.4", features = ["ws"] }
+axum = { version = "0.8.9", features = ["ws"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
 utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "10", features = ["axum"] }
-rmcp = { version = "3.1.2", features = ["transport-streamable-http-server"] }
-schemars = "1.1"
+rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
+schemars = "1.2.3"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
-lettre = { version = "0.11.22", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
-mimalloc = "0.1.50"
-# "std" enables password-hash's rand_core/getrandom, which auth_service::hash_password
-# needs for `SaltString::generate(&mut OsRng)`.
-argon2 = { version = "0.5", features = ["std"] }
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
-tar = "0.4"
-chrono-tz = "0.10"
+lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
+mimalloc = "0.1.52"
+argon2 = "0.6.0"
+zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
+tar = "0.4.46"
+chrono-tz = "0.10.4"
 cron = "0.17"
-dotenvy = "0.15"
+dotenvy = "0.15.7"
 # Health sampling and disk maintenance use only CPU/memory and disk inventory.
-sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
-tracing-appender = "0.2"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
+tracing-appender = "0.2.5"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect"] }
-m3u8-rs = "6.0.0"
+m3u8-rs = "6.0.1"
 md-5 = "0.11.0"
-base64 = "0.23.0"
+base64 = "0.23.1"
 byteorder = "1.5"
 brotli = "9.0"
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10.81", features = ["vendored"] }
 native-tls = "0.2.18"
-rustls = { version = "0.23.40", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
-rustls-platform-verifier = "0.7.0"
+rustls = { version = "0.23.46", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
+rustls-platform-verifier = "0.7.1"
 tokio-rustls = { version = "0.26.6", default-features = false }
-libsm = "0.6.0"
-rustc-hash = "2.1"
-memchr = "2.7.6"
-criterion = "0.8.1"
-zlib-rs = "0.6.3"
-aes = "0.9.1"
+libsm = "0.6.1"
+rustc-hash = "2.1.3"
+memchr = "2.8.3"
+criterion = "0.8.2"
+zlib-rs = "0.6.8"
+aes = "0.9.3"
 cbc = "0.2.1"
 cipher = "0.5.2"
-indicatif = "0.18"
-insta = "1.47"
-tracing-indicatif = "0.3"
-dashmap = "6.1"
+indicatif = "0.18.6"
+insta = "1.49.0"
+tracing-indicatif = "0.3.14"
+dashmap = "6.2.1"
 rust-i18n = "4"
-aes-gcm = "0.11"
+aes-gcm = "0.11.1"
 hkdf = "0.13"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh"] }
 tower = { version = "0.5.3", features = ["util"] }
-roxmltree = "0.21"
+roxmltree = "0.21.1"
 
 [profile.dev]
 incremental = true

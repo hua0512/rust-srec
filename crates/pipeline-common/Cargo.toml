@@ -14,7 +14,7 @@ media-types = { path = "../media-types" }
 thiserror = { workspace = true }
 zlib-rs = { workspace = true }
 tracing = { workspace = true }
-time = { version = "0.3.46", features = ["local-offset"] }
+time = { version = "0.3.55", features = ["local-offset"] }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tokio-util = { workspace = true }
 
@@ -23,7 +23,7 @@ tracing-subscriber = { workspace = true }
 tempfile = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 flume = "0.12.0"
-crossbeam-channel = "0.5.10"
+crossbeam-channel = "0.5.17"
 
 [[bench]]
 name = "cloning_benchmark"

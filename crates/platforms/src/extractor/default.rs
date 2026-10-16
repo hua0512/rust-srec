@@ -39,7 +39,7 @@ pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::Clie
         .with_no_client_auth();
 
     let mut builder = Client::builder()
-        .use_preconfigured_tls(tls_config)
+        .tls_backend_preconfigured(tls_config)
         // Reqwest auto-decompression is enabled by default when the corresponding
         // crate features are enabled (gzip/deflate/brotli).
         .timeout(std::time::Duration::from_secs(30));

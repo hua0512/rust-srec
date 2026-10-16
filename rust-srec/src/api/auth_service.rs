@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use argon2::{
     Argon2, Params,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
@@ -597,9 +597,8 @@ impl AuthService {
             .map_err(|e| AuthError::Internal(format!("Invalid Argon2 params: {}", e)))?;
         let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
 
-        let salt = SaltString::generate(&mut OsRng);
         let password_hash = argon2
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password(password.as_bytes())
             .map_err(|e| AuthError::Internal(format!("Password hashing failed: {}", e)))?
             .to_string();
 
@@ -1481,7 +1480,7 @@ mod tests {
         let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
         // Hash should be a valid Argon2id hash
-        assert!(hash.starts_with("$argon2id$"));
+        assert!(hash.starts_with("$argon2id$v=19$m=19456,t=2,p=1$"));
         // Hash should not equal the original password
         assert_ne!(hash, password);
     }
@@ -1494,6 +1493,18 @@ mod tests {
         let result =
             AuthService::verify_password(password, &hash).expect("Verification should succeed");
         assert!(result);
+    }
+
+    #[test]
+    fn test_verify_password_legacy_argon2id_hash() {
+        // Argon2 0.5's PHC test vector also checks that verification reads stored parameters.
+        let hash = concat!(
+            "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$",
+            "CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc"
+        );
+
+        assert!(AuthService::verify_password("password", hash).unwrap());
+        assert!(!AuthService::verify_password("wrong-password", hash).unwrap());
     }
 
     #[test]

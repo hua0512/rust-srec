@@ -27,18 +27,18 @@ tokio = { workspace = true, features = [
 ] }
 
 # CLI framework
-clap = { version = "4.6", features = ["derive", "env", "string"] }
-clap_complete = "4.6"
+clap = { version = "4.6.7", features = ["derive", "env", "string"] }
+clap_complete = "4.6.11"
 
 # UI and output (some made optional)
 colored = { version = "3.1.1", optional = true }
 indicatif = { workspace = true }
-inquire = { version = "0.9", optional = true }
+inquire = { version = "0.9.4", optional = true }
 tabled = { version = "0.22", optional = true }
 
 # Simplified configuration
 dirs = "7"
-toml = "1.1"
+toml = "1.1.8"
 
 # Logging
 tracing = { workspace = true }

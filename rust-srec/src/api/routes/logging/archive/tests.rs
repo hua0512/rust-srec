@@ -53,8 +53,8 @@ fn streaming_zip_is_readable_and_uses_zip64_local_headers() {
     .unwrap();
     let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
     let mut entry = archive.by_index(0).unwrap();
-    assert_eq!(entry.name(), file.filename);
-    assert!(entry.get_metadata().using_data_descriptor);
+    assert_eq!(entry.name().unwrap(), file.filename);
+    assert!(entry.get_metadata().is_using_data_descriptor());
     assert_eq!(entry.size(), file.size_bytes);
     let mut content = String::new();
     entry.read_to_string(&mut content).unwrap();

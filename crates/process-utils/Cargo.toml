@@ -14,7 +14,7 @@ tokio = { workspace = true, optional = true, features = ["io-util", "macros", "p
 tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2.190"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [

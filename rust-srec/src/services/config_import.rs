@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use argon2::password_hash::PasswordHash;
+use argon2::password_hash::phc::PasswordHash;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use tracing::warn;

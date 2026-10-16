@@ -6,3 +6,11 @@ allowBuilds:
 
 # mpegts.js depends on a pinned webworkify-webpack Git commit.
 blockExoticSubdeps: false
+
+# Dependency holds in package.json:
+# Keep React Hook Form at 7.89.0: 7.90.0 crashes when dirty tracking compares
+# an object default with null while clearing an inherited pipeline override.
+# Keep TanStack Start on 1.168.61 and its Router group compatible until the
+# session migration: start-server-core 1.169.41 removed useSession and its
+# cookie format. Start 1.168.61 still uses start-server-core 1.169.40.
+# https://github.com/TanStack/router/blob/main/packages/start-server-core/CHANGELOG.md
