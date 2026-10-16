@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::Utc;
 use dashmap::DashMap;
 use futures::StreamExt;
+use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
@@ -38,6 +39,7 @@ struct DeliveryContext {
     cancellation_token: CancellationToken,
     retry_cancel: CancellationToken,
     task_supervisor: Arc<TaskSupervisor>,
+    delivery_permits: Arc<Semaphore>,
 }
 
 impl NotificationService {
@@ -62,6 +64,7 @@ impl NotificationService {
                 cancellation_token: self.cancellation_token.clone(),
                 retry_cancel,
                 task_supervisor: self.task_supervisor.clone(),
+                delivery_permits: self.delivery_permits.clone(),
             }),
             None,
         )
@@ -120,6 +123,15 @@ impl NotificationService {
         ctx: Arc<DeliveryContext>,
         expected_generation: Option<u64>,
     ) {
+        let retry_cancel = ctx.retry_cancel.clone();
+        tokio::select! {
+            biased;
+            _ = retry_cancel.cancelled() => {},
+            _ = Self::deliver_notification(ctx, expected_generation) => {},
+        }
+    }
+
+    async fn deliver_notification(ctx: Arc<DeliveryContext>, expected_generation: Option<u64>) {
         // Borrow the context fields under their own names for the delivery
         // pass; the borrows end before `ctx` is moved into
         // `spawn_retry_detached` at the bottom.
@@ -174,7 +186,11 @@ impl NotificationService {
                 .map(|channel| {
                     let text = rendered.get(&pending_snapshot.event, channel.channel.locale());
                     let event = &pending_snapshot.event;
+                    let delivery_permits = &ctx.delivery_permits;
                     async move {
+                        let Ok(_permit) = delivery_permits.acquire().await else {
+                            return (channel, None, false);
+                        };
                         let is_pending = pending_queue.get(&id).and_then(|pending| {
                             pending
                                 .channel_state

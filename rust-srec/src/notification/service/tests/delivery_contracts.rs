@@ -458,3 +458,150 @@ async fn cancelling_a_delivery_pass_drops_sends_and_releases_the_pass_lock() {
     assert_eq!(service.stats().pending_count, 0);
     service.stop().await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn dispatch_bounds_slow_persistence_backpressures_and_drains_admitted_events() {
+    let repo = Arc::new(MockNotificationRepo {
+        event_log_gate: Some(Semaphore::new(0)),
+        ..MockNotificationRepo::new()
+    });
+    let service = Arc::new(NotificationService::with_repository(
+        NotificationServiceConfig::default(),
+        repo.clone(),
+    ));
+    for _ in 0..DISPATCH_QUEUE_CAPACITY + 5 {
+        service.dispatch_notification(event());
+    }
+    assert_eq!(service.stats().dispatch_dropped, 5);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while service.dispatch_permits.available_permits() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    for _ in 0..MAX_NOTIFICATION_PASSES {
+        service.dispatch_notification_wait(event()).await;
+    }
+    let mut waiting = Box::pin(service.dispatch_notification_wait(event()));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), &mut waiting)
+            .await
+            .is_err()
+    );
+    let admitted = DISPATCH_QUEUE_CAPACITY + MAX_NOTIFICATION_PASSES;
+    let stopping = tokio::spawn({
+        let service = service.clone();
+        async move { service.stop().await }
+    });
+    tokio::time::timeout(Duration::from_secs(1), &mut waiting)
+        .await
+        .unwrap();
+    assert_eq!(service.stats().dispatch_dropped, 6);
+    repo.event_log_gate.as_ref().unwrap().add_permits(admitted);
+    tokio::time::timeout(Duration::from_secs(1), stopping)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(repo.event_logs.lock().await.len(), admitted);
+    service.dispatch_notification(event());
+    assert_eq!(service.stats().dispatch_dropped, 7);
+}
+
+#[tokio::test(start_paused = true)]
+async fn channel_send_limit_is_shared_across_events_and_eviction_releases_it() {
+    let service = Arc::new(NotificationService::with_config(
+        NotificationServiceConfig {
+            max_queue_size: MAX_CHANNEL_SENDS / 2 + 1,
+            ..Default::default()
+        },
+    ));
+    let mut starts = controlled_targets(&service, &["a", "b"]);
+    let mut notifications = Vec::new();
+    let mut releases = Vec::new();
+    for _ in 0..MAX_CHANNEL_SENDS / 2 {
+        let service = service.clone();
+        notifications.push(tokio::spawn(async move {
+            service.notify(event()).await.unwrap()
+        }));
+        for _ in 0..2 {
+            releases.push(
+                tokio::time::timeout(Duration::from_secs(1), starts.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .1,
+            );
+        }
+    }
+    let extra = tokio::spawn({
+        let service = service.clone();
+        async move { service.notify(event()).await.unwrap() }
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), starts.recv())
+            .await
+            .is_err()
+    );
+    // Evict one live notification without admitting another delivery. Its two
+    // sends must be dropped, letting the event waiting on the global limit run.
+    assert!(service.enqueue_pending(u64::MAX, pending(u64::MAX)));
+    for _ in 0..2 {
+        let (_, release) = tokio::time::timeout(Duration::from_secs(1), starts.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        release.send(()).unwrap();
+    }
+    assert_eq!(
+        releases
+            .drain(..)
+            .map(|release| usize::from(release.send(()).is_err()))
+            .sum::<usize>(),
+        2
+    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        for notification in notifications {
+            notification.await.unwrap();
+        }
+        extra.await.unwrap();
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        service.delivery_permits.available_permits(),
+        MAX_CHANNEL_SENDS
+    );
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn dispatch_contains_event_panics_and_restarts_after_idle() {
+    let repo = Arc::new(MockNotificationRepo {
+        panic_next_event_log: AtomicBool::new(true),
+        ..MockNotificationRepo::new()
+    });
+    let service = Arc::new(NotificationService::with_repository(
+        NotificationServiceConfig::default(),
+        repo.clone(),
+    ));
+    for _ in 0..3 {
+        service.dispatch_notification(event());
+    }
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if repo.event_logs.lock().await.len() == 2 && service.dispatch_rx.lock().is_some() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    service.dispatch_notification(event());
+    tokio::time::timeout(Duration::from_secs(2), service.stop())
+        .await
+        .unwrap();
+    assert_eq!(repo.event_logs.lock().await.len(), 3);
+    assert_eq!(service.stats().dispatch_dropped, 0);
+}

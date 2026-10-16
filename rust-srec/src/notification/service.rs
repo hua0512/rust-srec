@@ -16,8 +16,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -41,6 +40,7 @@ use crate::utils::task_supervisor::TaskSupervisor;
 
 mod dead_letter;
 mod delivery;
+mod ingress;
 mod listeners;
 mod registry;
 
@@ -57,6 +57,9 @@ const DEAD_LETTER_CLEANUP_INTERVAL_SECS: u64 = 60 * 60;
 const WEB_PUSH_QUEUE_CAPACITY: usize = 2048;
 const WEB_PUSH_BATCH_SIZE: usize = 64;
 const WEB_PUSH_FLUSH_INTERVAL_MS: u64 = 250;
+const MAX_NOTIFICATION_PASSES: usize = 16;
+const DISPATCH_QUEUE_CAPACITY: usize = 1024;
+const MAX_CHANNEL_SENDS: usize = 16;
 
 /// Configuration for the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,6 +265,11 @@ pub struct NotificationService {
     reload_gate: tokio::sync::Mutex<()>,
     pending_queue: Arc<DashMap<u64, PendingNotification>>,
     queue_admission: parking_lot::Mutex<()>,
+    dispatch_permits: Semaphore,
+    dispatch_tx: mpsc::Sender<NotificationEvent>,
+    dispatch_rx: parking_lot::Mutex<Option<mpsc::Receiver<NotificationEvent>>>,
+    dispatch_dropped: AtomicU64,
+    delivery_permits: Arc<Semaphore>,
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     /// Last time we performed in-memory dead-letter retention cleanup (unix epoch seconds).
     dead_letter_cleanup_ts: Arc<AtomicU64>,
@@ -331,6 +339,7 @@ impl NotificationService {
     /// Create a new notification service with custom configuration.
     pub fn with_config(config: NotificationServiceConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
+        let (dispatch_tx, dispatch_rx) = mpsc::channel(DISPATCH_QUEUE_CAPACITY);
 
         let service = Self {
             notification_repo: None,
@@ -342,6 +351,11 @@ impl NotificationService {
             reload_gate: tokio::sync::Mutex::new(()),
             pending_queue: Arc::new(DashMap::new()),
             queue_admission: parking_lot::Mutex::new(()),
+            dispatch_permits: Semaphore::new(MAX_NOTIFICATION_PASSES),
+            dispatch_tx,
+            dispatch_rx: parking_lot::Mutex::new(Some(dispatch_rx)),
+            dispatch_dropped: AtomicU64::new(0),
+            delivery_permits: Arc::new(Semaphore::new(MAX_CHANNEL_SENDS)),
             dead_letters: Arc::new(DashMap::new()),
             dead_letter_cleanup_ts: Arc::new(AtomicU64::new(0)),
             next_id: AtomicU64::new(1),
@@ -401,6 +415,11 @@ impl NotificationService {
             return Ok(());
         }
 
+        let _permit = tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => return Ok(()),
+            permit = self.dispatch_permits.acquire() => permit.map_err(|error| crate::Error::Other(error.to_string()))?,
+        };
         let pending = PendingNotification::new(id, event, target_channels);
 
         if self.enqueue_pending(id, pending) {
@@ -438,6 +457,15 @@ impl NotificationService {
 
     /// Send a notification to all enabled channels.
     pub async fn notify(&self, event: NotificationEvent) -> Result<()> {
+        let _permit = tokio::select! {
+            biased;
+            _ = self.cancellation_token.cancelled() => return Ok(()),
+            permit = self.dispatch_permits.acquire() => permit.map_err(|error| crate::Error::Other(error.to_string()))?,
+        };
+        self.notify_admitted(event).await
+    }
+
+    async fn notify_admitted(&self, event: NotificationEvent) -> Result<()> {
         if !self.config.enabled {
             return Ok(());
         }
@@ -507,6 +535,7 @@ impl NotificationService {
             dead_letter_count: self.dead_letters.len(),
             channel_count: registry.channels.len(),
             web_push_dropped: self.web_push_dropped.load(Ordering::Relaxed),
+            dispatch_dropped: self.dispatch_dropped.load(Ordering::Relaxed),
             circuit_breakers: registry
                 .channels
                 .iter()
@@ -529,22 +558,13 @@ impl NotificationService {
         self.listen_for_session_transitions(session_rx);
     }
 
-    pub(crate) fn dispatch_notification(self: &Arc<Self>, notification: NotificationEvent) {
-        let service = self.clone();
-        self.task_supervisor
-            .spawn("notification dispatch", async move {
-                if let Err(error) = service.notify(notification).await {
-                    warn!(error = %error, "Failed to dispatch notification");
-                }
-            });
-    }
-
     /// Stop the notification service.
     pub async fn stop(&self) {
         info!("Stopping notification service");
         // Fence admission before waking the worker to drain. A sender that already
         // holds the read lock must publish before cancellation becomes visible.
         {
+            let _dispatch = self.dispatch_rx.lock();
             let mut sender = self.web_push_tx.write();
             self.cancellation_token.cancel();
             sender.take();
@@ -574,6 +594,9 @@ impl Default for NotificationService {
 /// Statistics about the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationStats {
+    /// Dispatch events rejected before persistence; synchronous overflow drops newest.
+    #[serde(default)]
+    pub dispatch_dropped: u64,
     /// Web-push events rejected by queue admission (all priorities). No automatic replay.
     #[serde(default)]
     pub web_push_dropped: u64,
@@ -812,6 +835,9 @@ mod tests {
         subscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
         unsubscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
         dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
+        event_logs: tokio::sync::Mutex<Vec<NotificationEventLogDbModel>>,
+        event_log_gate: Option<Semaphore>,
+        panic_next_event_log: AtomicBool,
         fail_dead_letter_insert: bool,
         pause_next_list: AtomicBool,
         list_entered: tokio::sync::Notify,
@@ -829,6 +855,9 @@ mod tests {
                 subscribe_calls: tokio::sync::Mutex::new(Vec::new()),
                 unsubscribe_calls: tokio::sync::Mutex::new(Vec::new()),
                 dead_letters: tokio::sync::Mutex::new(Vec::new()),
+                event_logs: tokio::sync::Mutex::new(Vec::new()),
+                event_log_gate: None,
+                panic_next_event_log: AtomicBool::new(false),
                 fail_dead_letter_insert: false,
                 pause_next_list: AtomicBool::new(false),
                 list_entered: tokio::sync::Notify::new(),
@@ -952,7 +981,15 @@ mod tests {
             unimplemented!()
         }
 
-        async fn add_event_log(&self, _entry: &NotificationEventLogDbModel) -> Result<()> {
+        async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
+            assert!(
+                !self.panic_next_event_log.swap(false, Ordering::SeqCst),
+                "injected event-log panic"
+            );
+            if let Some(gate) = &self.event_log_gate {
+                gate.acquire().await.unwrap().forget();
+            }
+            self.event_logs.lock().await.push(entry.clone());
             Ok(())
         }
 

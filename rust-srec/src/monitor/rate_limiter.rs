@@ -154,11 +154,19 @@ impl Default for RateLimiter {
 #[derive(Debug, Clone)]
 pub struct RateLimiterManager {
     /// Rate limiters by platform ID.
-    limiters: Arc<Mutex<HashMap<String, RateLimiter>>>,
+    limiters: Arc<Mutex<HashMap<String, PlatformLimiter>>>,
     /// Default configuration for new limiters.
     default_config: RateLimiterConfig,
     /// Platform-specific configurations.
     platform_configs: HashMap<String, RateLimiterConfig>,
+}
+
+#[derive(Debug)]
+struct PlatformLimiter {
+    bucket: RateLimiter,
+    /// Only the head blocking caller waits for the next token. The bucket
+    /// map remains unlocked during that wait, including for other platforms.
+    admission: Arc<Mutex<()>>,
 }
 
 impl RateLimiterManager {
@@ -190,6 +198,7 @@ impl RateLimiterManager {
     }
 
     /// Try to acquire a token for a platform.
+    /// This remains opportunistic: it does not join the blocking FIFO queue.
     ///
     /// # Cancel Safety
     ///
@@ -199,12 +208,14 @@ impl RateLimiterManager {
     pub async fn try_acquire(&self, platform_id: &str) -> bool {
         let mut limiters = self.limiters.lock().await;
         let limiter = self.get_or_create_limiter(&mut limiters, platform_id);
-        limiter.try_acquire()
+        limiter.bucket.try_acquire()
     }
 
     /// Acquire a token for a platform, waiting if necessary.
     ///
-    /// Returns the duration waited.
+    /// Blocking callers enter a FIFO queue for this platform. Only its head
+    /// waits for a token; callers for other platforms proceed independently.
+    /// Returns the duration waited, including time queued behind another caller.
     ///
     /// # Cancel Safety
     ///
@@ -213,12 +224,26 @@ impl RateLimiterManager {
     /// - The rate limiter state remains consistent
     /// - Subsequent calls will work correctly
     ///
-    /// The implementation uses a split operation pattern:
-    /// 1. Lock mutex, check availability, release mutex
-    /// 2. Sleep without holding the lock (cancel-safe point)
-    /// 3. Retry in a loop to handle race conditions
+    /// The per-platform queue holds no token reservation. Dropping its head
+    /// releases the next caller; dropping a queued caller removes it from the
+    /// queue. The shared bucket lock is always released before sleeping.
     pub async fn acquire(&self, platform_id: &str) -> Duration {
-        let mut total_wait = Duration::ZERO;
+        let admission = {
+            let mut limiters = self.limiters.lock().await;
+            Arc::clone(
+                &self
+                    .get_or_create_limiter(&mut limiters, platform_id)
+                    .admission,
+            )
+        };
+        let (_turn, mut total_wait) = match admission.try_lock() {
+            Ok(turn) => (turn, Duration::ZERO),
+            Err(_) => {
+                let started = Instant::now();
+                let turn = admission.lock().await;
+                (turn, started.elapsed())
+            }
+        };
         let platform_id = platform_id.to_string();
 
         loop {
@@ -228,12 +253,12 @@ impl RateLimiterManager {
                 let limiter = self.get_or_create_limiter(&mut limiters, &platform_id);
 
                 // Try to acquire immediately
-                if limiter.try_acquire() {
+                if limiter.bucket.try_acquire() {
                     return total_wait;
                 }
 
                 // Calculate wait time for next token
-                limiter.time_until_available()
+                limiter.bucket.time_until_available()
             }; // Lock released here - CANCEL SAFE POINT
 
             // Wait without holding the lock.
@@ -246,7 +271,7 @@ impl RateLimiterManager {
             tokio::time::sleep(wait_duration).await;
             total_wait += wait_duration;
 
-            // Another caller may have acquired the token, so we retry
+            // An opportunistic try_acquire may have taken the token.
         }
     }
 
@@ -254,15 +279,15 @@ impl RateLimiterManager {
     pub async fn available_tokens(&self, platform_id: &str) -> f64 {
         let mut limiters = self.limiters.lock().await;
         let limiter = self.get_or_create_limiter(&mut limiters, platform_id);
-        limiter.available_tokens()
+        limiter.bucket.available_tokens()
     }
 
     /// Get or create a rate limiter for a platform.
     fn get_or_create_limiter<'a>(
         &self,
-        limiters: &'a mut HashMap<String, RateLimiter>,
+        limiters: &'a mut HashMap<String, PlatformLimiter>,
         platform_id: &str,
-    ) -> &'a mut RateLimiter {
+    ) -> &'a mut PlatformLimiter {
         match limiters.entry(platform_id.to_string()) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
@@ -271,7 +296,10 @@ impl RateLimiterManager {
                     .get(platform_id)
                     .cloned()
                     .unwrap_or_else(|| self.default_config.clone());
-                entry.insert(RateLimiter::new(config))
+                entry.insert(PlatformLimiter {
+                    bucket: RateLimiter::new(config),
+                    admission: Arc::new(Mutex::new(())),
+                })
             }
         }
     }
@@ -379,6 +407,54 @@ mod tests {
         // Should be able to acquire after cancellation
         let wait = manager.acquire("test").await;
         assert!(wait <= Duration::from_millis(200)); // Should complete quickly
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn blocking_waiters_are_fifo_and_cancellation_spends_no_tokens() {
+        let mut manager = RateLimiterManager::with_config(RateLimiterConfig {
+            max_tokens: 1,
+            refill_rate: 1.0,
+            initial_tokens: 0,
+        });
+        manager.set_platform_config(
+            "other",
+            RateLimiterConfig {
+                max_tokens: 1,
+                refill_rate: 1.0,
+                initial_tokens: 1,
+            },
+        );
+        let mut first = Box::pin(manager.acquire("queued"));
+        let mut cancelled = Box::pin(manager.acquire("queued"));
+        let mut last = Box::pin(manager.acquire("queued"));
+        assert!(futures::poll!(first.as_mut()).is_pending());
+        assert!(futures::poll!(cancelled.as_mut()).is_pending());
+        assert!(futures::poll!(last.as_mut()).is_pending());
+        drop(cancelled);
+
+        // A sleeping queue head does not hold the shared bucket lock.
+        assert!(manager.try_acquire("other").await);
+        {
+            let mut limiters = manager.limiters.lock().await;
+            limiters.get_mut("queued").unwrap().bucket.tokens = 1.0;
+        }
+        assert!(futures::poll!(last.as_mut()).is_pending());
+        // Advance only the sleep clock; the manually supplied token avoids
+        // coupling FIFO/cancellation assertions to a real-time refill race.
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(futures::poll!(first.as_mut()).is_ready());
+        assert!(futures::poll!(last.as_mut()).is_pending());
+        assert!(!manager.try_acquire("queued").await);
+
+        // The remaining caller is now the sleeping head. Cancelling it must
+        // release the turn without reserving a future token.
+        drop(last);
+        {
+            let mut limiters = manager.limiters.lock().await;
+            limiters.get_mut("queued").unwrap().bucket.tokens = 1.0;
+        }
+        assert_eq!(manager.acquire("queued").await, Duration::ZERO);
+        assert!(!manager.try_acquire("queued").await);
     }
 
     #[tokio::test]

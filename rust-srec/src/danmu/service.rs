@@ -26,6 +26,7 @@ use tracing::{debug, info, warn};
 
 use crate::danmu::{DanmuStatistics, ProviderRegistry};
 use crate::error::{Error, Result};
+use crate::utils::failure_samples::FailureSamples;
 use crate::utils::task_supervisor::DrainedTasks;
 use platforms_parser::danmaku::ConnectionConfig;
 
@@ -142,8 +143,8 @@ pub struct DanmuService {
     accepting: AtomicBool,
     /// Owns collection tasks through final XML flush and terminal events.
     collection_tasks: Mutex<JoinSet<CollectionTaskReport>>,
-    /// Cleanup failures from tasks reaped before shutdown.
-    collection_failures: Mutex<Vec<String>>,
+    /// Recent cleanup failures from tasks reaped before shutdown, with a total count.
+    collection_failures: Mutex<FailureSamples>,
     /// Session repository for persistence
     session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
 }
@@ -153,7 +154,8 @@ pub(crate) struct DanmuShutdownReport {
     /// Errors reported by collections that had already ended when
     /// `shutdown_until` closed admission: connect failures, runner errors and
     /// per-session XML cleanup errors drained from `collection_failures`, plus
-    /// the reports of tasks joined during the graceful phase.
+    /// the reports of tasks joined during the graceful phase. Details are
+    /// bounded; an additional entry reports the total and omitted sample count.
     ///
     /// A collection can end this way at any point in a long run while the
     /// process keeps recording, so these say nothing about whether shutdown
@@ -221,7 +223,7 @@ impl DanmuService {
             start_serialization: DashMap::new(),
             accepting: AtomicBool::new(true),
             collection_tasks: Mutex::new(JoinSet::new()),
-            collection_failures: Mutex::new(Vec::new()),
+            collection_failures: Mutex::new(FailureSamples::default()),
             session_repo: None,
         }
     }
@@ -535,7 +537,7 @@ impl DanmuService {
                     Ok(report) => self.record_collection_report(report),
                     Err(error) => {
                         warn!(%error, "Danmu collection task failed before reap");
-                        self.collection_failures.lock().push(error.to_string());
+                        self.collection_failures.lock().push(&error.to_string());
                     }
                 }
             }
@@ -770,7 +772,7 @@ impl DanmuService {
     /// service that carries pre-shutdown failures into `shutdown_until`.
     #[cfg(test)]
     pub(crate) fn seed_runtime_failure_for_test(&self, failure: String) {
-        self.collection_failures.lock().push(failure);
+        self.collection_failures.lock().push(&failure);
     }
 
     /// Shutdown the service using its standalone timeout.
@@ -894,7 +896,7 @@ impl DanmuService {
         }
 
         DanmuShutdownReport {
-            runtime_failures,
+            runtime_failures: runtime_failures.into_report(),
             shutdown_failures,
             overruns,
             forced_session_ids,
@@ -999,7 +1001,7 @@ struct CollectionTaskReport {
 ///
 /// Everything appended here describes how a single collection ended, which
 /// `shutdown_until` returns as [`DanmuShutdownReport::runtime_failures`].
-fn append_collection_report(runtime_failures: &mut Vec<String>, report: CollectionTaskReport) {
+fn append_collection_report(runtime_failures: &mut FailureSamples, report: CollectionTaskReport) {
     let CollectionTaskReport {
         session_id,
         runtime_error,
@@ -1007,11 +1009,13 @@ fn append_collection_report(runtime_failures: &mut Vec<String>, report: Collecti
     } = report;
     if let Some(error) = runtime_error {
         warn!(%session_id, %error, "Danmu collection ended with an error");
-        runtime_failures.push(format!("danmu collection {session_id} failed: {error}"));
+        runtime_failures.push(&format!("danmu collection {session_id} failed: {error}"));
     } else {
         debug!(%session_id, "Danmu collection task reaped");
     }
-    runtime_failures.extend(cleanup_errors);
+    for error in cleanup_errors {
+        runtime_failures.push(&error);
+    }
 }
 
 /// One collection, from connect to terminal event.
@@ -1554,6 +1558,9 @@ mod tests {
         let mut registry = ProviderRegistry::new();
         registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
         let service = DanmuService::with_providers(registry);
+        for index in 0..256 {
+            service.seed_runtime_failure_for_test(format!("historical failure {index}: old error"));
+        }
         let mut events = service.subscribe();
         let handle = service
             .start_collection(collection_spec(
@@ -1605,6 +1612,14 @@ mod tests {
                 .iter()
                 .any(|failure| failure.contains("danmu collection runtime-failure-session failed")),
             "the runner's error must still be reported"
+        );
+        assert!(report.runtime_failures[0].contains("earlier runtime failures omitted"));
+        assert!(
+            report
+                .runtime_failures
+                .iter()
+                .all(|failure| !failure.starts_with("historical failure 0:")),
+            "older diagnostics must not remain resident indefinitely"
         );
         assert!(
             report.shutdown_failures.is_empty(),
