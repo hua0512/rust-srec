@@ -783,9 +783,13 @@ msgstr "Add Stream"
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1082
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1108
 msgid "Add Tag"
 msgstr "Add Tag"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1072
+msgid "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
+msgstr "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
 
 #: src/components/credentials/read-only-accounts-section.tsx:47
 msgid "Add them in the platform settings."
@@ -1429,7 +1433,7 @@ msgstr "Basic details for this configuration template."
 msgid "Basic Information"
 msgstr "Basic Information"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:116
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
@@ -1997,7 +2001,7 @@ msgstr "Command template args. Use {INPUT_TOKEN} and {OUTPUT_TOKEN} placeholders
 msgid "Comment"
 msgstr "Comment"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:122
+#: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
@@ -2031,7 +2035,7 @@ msgstr "Component Status"
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:117
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
 
@@ -2840,7 +2844,7 @@ msgstr "Default pipeline flow. Configure the sequence of processors for new jobs
 msgid "Default proxy"
 msgstr "Default proxy"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:127
+#: src/components/pipeline/presets/default-presets-i18n.ts:129
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 
@@ -3369,7 +3373,7 @@ msgstr "Drop Repeated Stream Headers"
 msgid "Dropped frames"
 msgstr "Dropped frames"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "Dual Format"
 msgstr "Dual Format"
 
@@ -3931,7 +3935,7 @@ msgstr "Extract audio track to AAC format (256kbps). High quality, widely compat
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:119
+#: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "Extract high-quality audio for podcast distribution and upload."
 
@@ -4310,7 +4314,7 @@ msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgid "Fast Compression"
 msgstr "Fast Compression"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:120
+#: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "Fast encoding for quick sharing on social media or messaging."
 
@@ -4671,13 +4675,17 @@ msgstr "Full Day"
 msgid "Full HD Thumbnail"
 msgstr "Full HD Thumbnail"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:124
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Full Processing"
 msgstr "Full Processing"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
+msgid "Full Processing (Single Pass)"
+msgstr "Full Processing (Single Pass)"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:428
 msgid "Gap Check Interval (ms)"
@@ -4729,7 +4737,7 @@ msgstr "Generate a thumbnail at native stream resolution (no scaling). Best qual
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:125
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "Generate multiple preview images at different timestamps for a gallery view."
 
@@ -4804,11 +4812,11 @@ msgstr "GPU"
 msgid "GPU Health Probe Interval"
 msgstr "GPU Health Probe Interval"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:112
+#: src/components/pipeline/presets/default-presets-i18n.ts:113
 msgid "GPU HQ Archive"
 msgstr "GPU HQ Archive"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:111
+#: src/components/pipeline/presets/default-presets-i18n.ts:112
 msgid "GPU Standard"
 msgstr "GPU Standard"
 
@@ -4816,11 +4824,11 @@ msgstr "GPU Standard"
 msgid "GPU unavailable"
 msgstr "GPU unavailable"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:129
+#: src/components/pipeline/presets/default-presets-i18n.ts:131
 msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:128
+#: src/components/pipeline/presets/default-presets-i18n.ts:130
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
@@ -5236,6 +5244,10 @@ msgstr "Include Keywords"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:228
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1069
+msgid "Include Recording Metadata"
+msgstr "Include Recording Metadata"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
@@ -5707,7 +5719,7 @@ msgstr "Loading workflows..."
 msgid "Loading…"
 msgstr "Loading…"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Local Archive"
 msgstr "Local Archive"
 
@@ -6020,7 +6032,7 @@ msgstr "Maximum attempts (1–10)"
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "Maximum attempts for metadata and App playback requests."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:121
+#: src/components/pipeline/presets/default-presets-i18n.ts:122
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "Maximum compression to minimize storage usage, then delete original."
 
@@ -6036,7 +6048,7 @@ msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgid "Maximum number of retry attempts."
 msgstr "Maximum number of retry attempts."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:118
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
@@ -6099,7 +6111,7 @@ msgstr "Metadata"
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1069
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1095
 msgid "Metadata Tags"
 msgstr "Metadata Tags"
 
@@ -6265,7 +6277,7 @@ msgstr "Multi-Thread Streams help"
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Multimedia Archive"
 msgstr "Multimedia Archive"
 
@@ -7829,7 +7841,7 @@ msgstr "Presets"
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Preview Gallery"
 msgstr "Preview Gallery"
 
@@ -7908,11 +7920,11 @@ msgstr "Private Network Access"
 msgid "Problems"
 msgstr "Problems"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:123
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:126
+#: src/components/pipeline/presets/default-presets-i18n.ts:128
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
@@ -8468,6 +8480,10 @@ msgstr "Remux to MKV without re-encoding. Matroska supports more codecs and feat
 #: src/components/pipeline/presets/default-presets-i18n.ts:80
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "Remux to MP4 with faststart flag for web streaming optimization."
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
+msgid "Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass."
+msgstr "Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
@@ -9792,7 +9808,7 @@ msgstr "Stream"
 msgid "Stream and requests"
 msgstr "Stream and requests"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:110
+#: src/components/pipeline/presets/default-presets-i18n.ts:111
 msgid "Stream Archive"
 msgstr "Stream Archive"
 

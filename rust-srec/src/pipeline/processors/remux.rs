@@ -7,7 +7,9 @@ use tokio::process::Command;
 use tracing::{debug, info, warn};
 
 use super::outputs::{OutputBatch, output_size};
-use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
+};
 use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
 use crate::Result;
 
@@ -274,6 +276,11 @@ pub struct RemuxConfig {
     #[serde(default)]
     pub metadata: Vec<(String, String)>,
 
+    /// Fill artist, title and date from the recording; explicit metadata wins.
+    /// Date uses the session start (or original job timestamp) in UTC.
+    #[serde(default)]
+    pub include_recording_metadata: bool,
+
     /// Whether to remove input file after successful remux.
     #[serde(default)]
     pub remove_input_on_success: bool,
@@ -311,7 +318,47 @@ impl Default for RemuxConfig {
             overwrite: true,
             map_streams: Vec::new(),
             metadata: Vec::new(),
+            include_recording_metadata: false,
             remove_input_on_success: false,
+        }
+    }
+}
+
+impl RemuxConfig {
+    fn resolve_recording_metadata(&mut self, input: &ProcessorInput) {
+        if !self.include_recording_metadata {
+            return;
+        }
+        let artist = input
+            .streamer_name
+            .as_deref()
+            .filter(|name| !name.is_empty())
+            .or_else(|| (!input.streamer_id.is_empty()).then_some(input.streamer_id.as_str()));
+        let date = TimeAnchor::SessionStart
+            .reference_time(input)
+            .format("%Y-%m-%d")
+            .to_string();
+        // These are tag values, not filename templates. Keep braces, percent
+        // signs and Unicode unchanged, and never expand literal custom tags.
+        for (key, value) in [
+            ("artist", artist),
+            (
+                "title",
+                input
+                    .session_title
+                    .as_deref()
+                    .filter(|title| !title.is_empty()),
+            ),
+            ("date", Some(date.as_str())),
+        ] {
+            if let Some(value) = value
+                && !self
+                    .metadata
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case(key))
+            {
+                self.metadata.push((key.to_owned(), value.to_owned()));
+            }
         }
     }
 }
@@ -724,8 +771,9 @@ impl Processor for RemuxProcessor {
         input: &ProcessorInput,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
-        let config: RemuxConfig =
+        let mut config: RemuxConfig =
             parse_config_or_default(input.config.as_deref(), ctx, "remux", None);
+        config.resolve_recording_metadata(input);
 
         if input.inputs.is_empty() {
             return Err(crate::Error::PipelineError(
@@ -923,6 +971,196 @@ mod tests {
         assert_eq!(config.video_bitrate, Some("5M".to_string()));
         assert_eq!(config.crf, Some(23));
         assert_eq!(config.fps, Some(30.0));
+        assert!(!config.include_recording_metadata);
+    }
+
+    #[test]
+    fn recording_tags_are_opt_in_literal_overridable_and_use_stable_dates() {
+        use super::super::test_utils::utc_datetime;
+
+        let input = ProcessorInput::default()
+            .with_streamer_name("主播 / {title}")
+            .with_session_title("A title with {artist}, %Y and 🦀")
+            .with_session_start(utc_datetime(2024, 1, 1, 23, 30, 0))
+            .with_created_at(utc_datetime(2024, 1, 3, 0, 0, 0));
+        let args = |mut config: RemuxConfig, input: &ProcessorInput| {
+            config.resolve_recording_metadata(input);
+            RemuxProcessor::new()
+                .build_args("in.mp4", &config, "out.mp4")
+                .windows(2)
+                .filter(|pair| pair[0] == "-metadata")
+                .map(|pair| pair[1].clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            args(
+                RemuxConfig {
+                    metadata: vec![("title".into(), "{title}".into())],
+                    ..Default::default()
+                },
+                &input
+            ),
+            ["title={title}"]
+        );
+        assert_eq!(
+            args(
+                RemuxConfig {
+                    include_recording_metadata: true,
+                    ..Default::default()
+                },
+                &input
+            ),
+            [
+                "artist=主播 / {title}",
+                "title=A title with {artist}, %Y and 🦀",
+                "date=2024-01-01"
+            ]
+        );
+        assert_eq!(
+            args(
+                RemuxConfig {
+                    include_recording_metadata: true,
+                    metadata: vec![
+                        ("TITLE".into(), "literal {title}".into()),
+                        ("date".into(), String::new())
+                    ],
+                    ..Default::default()
+                },
+                &input
+            ),
+            ["TITLE=literal {title}", "date=", "artist=主播 / {title}"]
+        );
+        let fallback = ProcessorInput {
+            streamer_id: "streamer-id".into(),
+            created_at: input.created_at,
+            ..Default::default()
+        };
+        assert_eq!(
+            args(
+                RemuxConfig {
+                    include_recording_metadata: true,
+                    ..Default::default()
+                },
+                &fallback
+            ),
+            ["artist=streamer-id", "date=2024-01-03"]
+        );
+        assert_eq!(
+            args(
+                RemuxConfig {
+                    include_recording_metadata: true,
+                    ..Default::default()
+                },
+                &ProcessorInput {
+                    streamer_name: Some(String::new()),
+                    session_title: Some(String::new()),
+                    created_at: input.created_at,
+                    ..Default::default()
+                }
+            ),
+            ["date=2024-01-03"]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires ffmpeg and ffprobe"]
+    async fn recording_tags_reach_the_remuxed_file_without_an_extra_metadata_pass() {
+        use super::super::test_utils::utc_datetime;
+        use std::time::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("source.mp4");
+        let generated = tokio::time::timeout(
+            Duration::from_secs(10),
+            Command::new("ffmpeg")
+                .kill_on_drop(true)
+                .args([
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=1000:duration=0.1",
+                    "-c:a",
+                    "aac",
+                    "-y",
+                ])
+                .arg(&source)
+                .output(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            generated.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        for include in [false, true] {
+            let output_path = dir
+                .path()
+                .join(if include { "tagged.mp4" } else { "literal.mp4" });
+            let input = ProcessorInput {
+                inputs: vec![source.to_string_lossy().into_owned()],
+                outputs: vec![output_path.to_string_lossy().into_owned()],
+                config: Some(
+                    serde_json::json!({
+                        "include_recording_metadata": include,
+                        "metadata": if include { vec![] } else { vec![("title", "{title}")] }
+                    })
+                    .to_string(),
+                ),
+                streamer_name: Some("主播 / {title}".into()),
+                session_title: Some("{artist} %Y 🦀".into()),
+                session_start: Some(utc_datetime(2024, 1, 1, 23, 30, 0)),
+                created_at: utc_datetime(2024, 1, 3, 0, 0, 0),
+                ..Default::default()
+            };
+            let output = tokio::time::timeout(
+                Duration::from_secs(10),
+                RemuxProcessor::with_ffmpeg_path("ffmpeg").process(
+                    &input,
+                    &ProcessorContext::noop("recording-tags").with_retry(true),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(output.outputs, input.outputs);
+            let probe = tokio::time::timeout(
+                Duration::from_secs(10),
+                Command::new("ffprobe")
+                    .kill_on_drop(true)
+                    .args([
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format_tags=artist,title,date",
+                        "-of",
+                        "json",
+                    ])
+                    .arg(&output_path)
+                    .output(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(
+                probe.status.success(),
+                "{}",
+                String::from_utf8_lossy(&probe.stderr)
+            );
+            let probe: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            assert_eq!(
+                probe["format"]["tags"],
+                if include {
+                    serde_json::json!({ "artist": "主播 / {title}", "title": "{artist} %Y 🦀", "date": "2024-01-01" })
+                } else {
+                    serde_json::json!({ "title": "{title}" })
+                }
+            );
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
     }
 
     #[test]
