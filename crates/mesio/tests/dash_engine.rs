@@ -24,6 +24,7 @@ use mp4::independent::IndependentFragmentCheck;
 
 use mesio_engine::dash::manifest::ManualClock;
 use mesio_engine::dash::{DashConfig, DashDownloader, LiveStartPolicy};
+use mesio_engine::hls::GapSkipStrategy;
 use mesio_engine::{
     ContentSource, DashRequestOptions, DownloadError, DownloadEvent, DownloadRequest,
     DownloadSession, DownloadTerminal, DownloaderSession, MediaEngine, MediaTrack, MesioConfig,
@@ -1142,9 +1143,18 @@ async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
     let mut config = config(Some(Arc::clone(&clock)));
     config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(3)));
 
-    // MPD and media share one origin: four exponential cool-downs can
-    // pause all input for up to 15 s, beyond the harness's 10 s stall limit.
-    config.output.live_max_overall_stall_duration = Some(Duration::from_secs(30));
+    // MPD and media share one origin, so the four exponential cool-downs
+    // hold segments back too, for up to 15 s in all. A later segment can get
+    // through as the probe that ends a cool-down while an earlier one waits
+    // out the next ones. By default, the live gap policy would skip the
+    // earlier one after 5 s, the muxer would stop waiting for its audio after
+    // 10 s, and the harness's 10 s stall limit would end the stream. Waiting
+    // for every held-back segment keeps the outcome independent of the
+    // backoff jitter and of which request probes.
+    let throttled = Duration::from_secs(30);
+    config.output.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
+    config.mux.max_audio_lag = throttled;
+    config.output.live_max_overall_stall_duration = Some(throttled);
 
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
@@ -1182,9 +1192,12 @@ async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
     assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
     assert_two_track_stream(&out);
     assert_eq!(media(&out).len(), 5, "{}", describe(&out));
+    assert_eq!(count_track(&out, 1), 5, "every video fragment");
+    assert_eq!(count_track(&out, 2), 5, "every audio fragment");
     let events = log.finish().await;
     for number in 8..=12 {
         assert_eq!(downloads(&events, &format!("v/{number}.m4s")), 1);
+        assert_eq!(downloads(&events, &format!("a/{number}.m4s")), 1);
     }
     // The initial fetch, four rate-limited refreshes, then successful ones.
     assert!(origin.hits("manifest.mpd") >= 6);
