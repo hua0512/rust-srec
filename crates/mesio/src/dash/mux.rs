@@ -70,10 +70,11 @@
 //! within up to `max_audio_lag`.
 //!
 //! Audio never fails a recording. A video segment waits for the audio it
-//! overlaps at most `max_audio_lag` after it arrived here (less under buffer
-//! pressure), then is written with what has arrived; a `TrackStalled` event
-//! reports each such episode, and the audio that comes later is dropped as
-//! late. An audio pipeline failure, protected audio, or audio the merger
+//! overlaps up to `max_audio_lag` after it arrived here, excluding time
+//! actually held by bounded rate limiting (less under buffer pressure).
+//! It is then written with what has arrived; a
+//! `TrackStalled` event reports each such episode, and audio arriving later
+//! is dropped as late. An audio pipeline failure, protected audio, or audio the merger
 //! rejects drops the audio track for the rest of the session with a
 //! `TrackDropped` event.
 
@@ -87,7 +88,7 @@ use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, SplitReason};
 use mp4::merge::{
     FragmentWriter, MergeError, MergedInit, SourceFragment, merge_init, validate_init,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -103,6 +104,7 @@ use crate::segment_engine::descriptor::{
     DashSegmentMeta, MediaTrack, SegmentDescriptor, SegmentMeta, WallClockAnchor,
 };
 use crate::segment_engine::payload::SegmentPayload;
+use crate::segment_engine::throttle::ThrottleClock;
 use crate::session::{DownloadEvent, EventSink};
 
 /// Consecutive leader segments the merger may reject before the stream
@@ -155,6 +157,8 @@ impl AssemblerSink for TrackSink {
 pub(crate) struct MuxTrack {
     pub track: MediaTrack,
     pub rx: mpsc::Receiver<TrackItem>,
+    /// Follower only: actual time held by rate limiting at its emit cursor.
+    pub rate_limit_clock: Option<watch::Receiver<ThrottleClock>>,
     /// Stops this track's pipeline when the muxer drops the track.
     pub cancel: CancellationToken,
 }
@@ -230,9 +234,10 @@ struct QueuedMedia {
     fragments: Vec<(i128, i128)>,
     /// Fragments at the front already written or dropped.
     consumed: usize,
-    /// When the muxer received it; a leader segment waits for its follower
-    /// data at most `max_audio_lag` from here.
+    /// When the muxer received it; the leader's ordinary audio wait starts here.
     arrived: Instant,
+    /// Leader only: follower pause counter when this slice arrived.
+    follower_paused_at: Duration,
 }
 
 impl QueuedMedia {
@@ -459,15 +464,18 @@ struct MuxState {
     out: Vec<Vec<HlsData>>,
     /// When the current wait for follower data gives up.
     wait_deadline: Option<Instant>,
+    follower_clock: ThrottleClock,
     /// Set when output stopped waiting for the follower; cleared by the next
     /// follower input. One stall event per episode.
     follower_stalled: bool,
     /// When the leader's authoritative end arrived.
-    leader_ended_at: Option<Instant>,
+    leader_ended_at: Option<(Instant, Duration)>,
     /// When the follower last delivered anything.
-    follower_input_at: Option<Instant>,
+    follower_input_at: Option<(Instant, Duration)>,
     /// When a media item was last written (or the muxer started).
     last_media_at: Instant,
+    media_clock: ThrottleClock,
+    media_paused_at: Duration,
     /// Periods the leader's planner reported without leader content, with
     /// the leader sequence number they follow.
     leader_absent: VecDeque<(PeriodKey, u64)>,
@@ -490,6 +498,12 @@ struct MuxState {
 /// A failure that ends the stream.
 struct Fatal(DownloadError);
 
+/// The session watchdog follows the union of both tracks' actual pauses.
+pub(crate) struct MediaStall {
+    pub timeout: Duration,
+    pub clock: watch::Receiver<ThrottleClock>,
+}
+
 /// `media_stall`: fail the session when no media item was written for this
 /// long. Track-level watchdogs cannot cover this: a track that is absent by
 /// design keeps reporting so, which would keep a session whose remaining
@@ -500,16 +514,23 @@ pub(crate) async fn run_muxer(
     out: mpsc::Sender<Result<HlsData, DownloadError>>,
     events: Option<EventSink>,
     config: DashMuxConfig,
-    media_stall: Option<Duration>,
+    media_stall: Option<MediaStall>,
     cancel: CancellationToken,
 ) -> MuxOutcome {
+    let media_timeout = media_stall.as_ref().map(|stall| stall.timeout);
+    let mut media_clock_rx = media_stall.map(|stall| stall.clock);
+    let media_clock = media_clock_rx
+        .as_mut()
+        .map_or_else(ThrottleClock::default, |rx| *rx.borrow_and_update());
+    let now = Instant::now();
     let mut leader_rx = Some(leader.rx);
-    let (follower_state, mut follower_rx) = match follower {
+    let (follower_state, mut follower_rx, mut follower_clock_rx) = match follower {
         Some(track) => (
             Some(TrackState::new(track.track, track.cancel)),
             Some(track.rx),
+            track.rate_limit_clock,
         ),
-        None => (None, None),
+        None => (None, None, None),
     };
     let mut state = MuxState {
         config,
@@ -520,10 +541,13 @@ pub(crate) async fn run_muxer(
         writer: FragmentWriter::new(),
         out: Vec::new(),
         wait_deadline: None,
+        follower_clock: ThrottleClock::default(),
         follower_stalled: false,
         leader_ended_at: None,
         follower_input_at: None,
-        last_media_at: Instant::now(),
+        last_media_at: now,
+        media_clock,
+        media_paused_at: media_clock.paused_at(now.into_std()),
         leader_absent: VecDeque::new(),
         leader_next_sequence: 0,
         leader_end: None,
@@ -535,6 +559,8 @@ pub(crate) async fn run_muxer(
     };
 
     let outcome = loop {
+        read_clock(&mut follower_clock_rx, &mut state.follower_clock);
+        read_clock(&mut media_clock_rx, &mut state.media_clock);
         if let Err(Fatal(error)) = state.pump() {
             state.out.clear();
             break fail(&out, error, &cancel).await;
@@ -546,7 +572,9 @@ pub(crate) async fn run_muxer(
                 break;
             }
             // Time blocked on a slow consumer is not a media stall.
+            read_clock(&mut media_clock_rx, &mut state.media_clock);
             state.last_media_at = Instant::now();
+            state.media_paused_at = state.media_clock.paused_at(state.last_media_at.into_std());
         }
         if let Some(stop) = stopped {
             break stop;
@@ -572,28 +600,46 @@ pub(crate) async fn run_muxer(
                 .as_ref()
                 .is_some_and(|f| f.queued_bytes < state.config.max_buffered_bytes);
         let deadline = state.wait_deadline;
-        let stall_deadline = media_stall.map(|stall| {
-            state
-                .last_media_at
-                .checked_add(stall.min(Duration::from_secs(24 * 3600)))
-                .unwrap_or(state.last_media_at)
+        let stall_deadline = media_timeout.map(|timeout| {
+            Instant::from_std(state.media_clock.deadline(
+                state.last_media_at.into_std(),
+                state.media_paused_at,
+                timeout.min(Duration::from_secs(24 * 3600)),
+                Instant::now().into_std(),
+            ))
         });
 
         tokio::select! {
             biased;
             _ = cancel.cancelled() => break MuxOutcome::Cancelled,
             item = recv(&mut leader_rx), if leader_open => {
+                read_clock(&mut follower_clock_rx, &mut state.follower_clock);
                 if let Err(Fatal(error)) = state.accept_leader(item, cancel.is_cancelled()) {
                     break fail(&out, error, &cancel).await;
                 }
             }
             item = recv(&mut follower_rx), if follower_open => {
+                read_clock(&mut follower_clock_rx, &mut state.follower_clock);
                 state.accept_follower(item, cancel.is_cancelled());
             }
+            _ = clock_changed(&mut follower_clock_rx), if follower_clock_rx.is_some() => {}
+            _ = clock_changed(&mut media_clock_rx), if media_clock_rx.is_some() => {}
             // Wakes the next pump, which stops waiting past the deadline.
             _ = sleep_until(deadline), if deadline.is_some() => {}
             _ = sleep_until(stall_deadline), if stall_deadline.is_some() => {
-                let stalled_for = media_stall.unwrap_or_default();
+                // A producer can publish after the watch arm was polled but
+                // before this timer became ready in the same select.
+                read_clock(&mut media_clock_rx, &mut state.media_clock);
+                let stalled_for = media_timeout.unwrap_or_default();
+                let now = Instant::now().into_std();
+                if state.media_clock.deadline(
+                    state.last_media_at.into_std(),
+                    state.media_paused_at,
+                    stalled_for.min(Duration::from_secs(24 * 3600)),
+                    now,
+                ) > now {
+                    continue;
+                }
                 warn!(
                     stalled_ms = stalled_for.as_millis() as u64,
                     "no DASH media was written; failing the session"
@@ -629,6 +675,20 @@ pub(crate) async fn run_muxer(
         "DASH muxer finished"
     );
     outcome
+}
+
+fn read_clock(rx: &mut Option<watch::Receiver<ThrottleClock>>, clock: &mut ThrottleClock) {
+    if let Some(rx) = rx {
+        *clock = *rx.borrow_and_update();
+    }
+}
+
+async fn clock_changed(rx: &mut Option<watch::Receiver<ThrottleClock>>) {
+    if let Some(receiver) = rx
+        && receiver.changed().await.is_err()
+    {
+        *rx = None;
+    }
 }
 
 /// Delivers `item` unless the session is cancelled first: a consumer that
@@ -780,6 +840,7 @@ impl MuxState {
                 };
                 match probe_fragments(&init, &data) {
                     Ok(fragments) => {
+                        let arrived = Instant::now();
                         self.leader_rejections = 0;
                         self.leader.queued_bytes += data.len();
                         self.leader.queue.push_back(Queued::Media(QueuedMedia {
@@ -788,7 +849,8 @@ impl MuxState {
                             descriptor,
                             fragments,
                             consumed: 0,
-                            arrived: Instant::now(),
+                            arrived,
+                            follower_paused_at: self.follower_clock.paused_at(arrived.into_std()),
                         }));
                     }
                     Err(error) => self.reject_leader_segment(&error)?,
@@ -806,7 +868,8 @@ impl MuxState {
             }
             AssembledItem::StreamEnded => {
                 self.leader.status = Status::Ended;
-                self.leader_ended_at = Some(Instant::now());
+                let now = Instant::now();
+                self.leader_ended_at = Some((now, self.follower_clock.paused_at(now.into_std())));
             }
             AssembledItem::Notice(EngineNotice::ManifestRefreshed {
                 sequence_base,
@@ -854,7 +917,8 @@ impl MuxState {
 
     fn accept_follower(&mut self, item: Option<TrackItem>, cancelled: bool) {
         self.follower_stalled = false;
-        self.follower_input_at = Some(Instant::now());
+        let now = Instant::now();
+        self.follower_input_at = Some((now, self.follower_clock.paused_at(now.into_std())));
         let Some(follower) = self.follower.as_mut() else {
             return;
         };
@@ -901,6 +965,7 @@ impl MuxState {
                             fragments,
                             consumed: 0,
                             arrived: Instant::now(),
+                            follower_paused_at: Duration::ZERO,
                         }));
                     }
                     Err(error) => self.drop_follower("media segment rejected", &error),
@@ -1053,13 +1118,17 @@ impl MuxState {
         Ok(())
     }
 
-    /// The deadline of a wait for follower data that began at `since`.
-    fn deadline(&self, since: Instant) -> Instant {
-        let lag = self
-            .config
-            .max_audio_lag
-            .min(Duration::from_secs(24 * 3600));
-        since.checked_add(lag).unwrap_or(since)
+    fn follower_deadline(&self, since: Instant, paused_at: Duration, now: Instant) -> Instant {
+        Instant::from_std(
+            self.follower_clock.deadline(
+                since.into_std(),
+                paused_at,
+                self.config
+                    .max_audio_lag
+                    .min(Duration::from_secs(24 * 3600)),
+                now.into_std(),
+            ),
+        )
     }
 
     fn under_buffer_limit(&self) -> bool {
@@ -1100,7 +1169,7 @@ impl MuxState {
         };
         let period = head.init.period.clone();
         let timescale = head.init.timescale;
-        let deadline = self.deadline(head.arrived);
+        let deadline = self.follower_deadline(head.arrived, head.follower_paused_at, now);
         let in_time = now < deadline;
         let may_wait = in_time && self.under_buffer_limit();
         let period_change = self
@@ -1145,13 +1214,13 @@ impl MuxState {
                 // Completion is shared: the follower's tail belongs in the
                 // final items, so its end is awaited while it keeps
                 // delivering, up to one lag after its last input.
-                let since = self
+                let (since, paused_at) = self
                     .leader_ended_at
                     .into_iter()
                     .chain(self.follower_input_at)
                     .max()
-                    .unwrap_or(now);
-                let deadline = self.deadline(since);
+                    .unwrap_or((now, self.follower_clock.paused_at(now.into_std())));
+                let deadline = self.follower_deadline(since, paused_at, now);
                 if self.follower_active() && now < deadline {
                     if !self.under_buffer_limit() {
                         // Write what is queued rather than stop reading:
@@ -1520,6 +1589,7 @@ impl MuxState {
         self.out.push(group);
         self.stats.items += 1;
         self.last_media_at = Instant::now();
+        self.media_paused_at = self.media_clock.paused_at(self.last_media_at.into_std());
     }
 
     fn write_slice(
@@ -2360,6 +2430,16 @@ mod tests {
     }
 
     fn start(leader: MediaTrack, with_follower: bool, config: DashMuxConfig) -> Harness {
+        start_with_clock(leader, with_follower, config, None, None)
+    }
+
+    fn start_with_clock(
+        leader: MediaTrack,
+        with_follower: bool,
+        config: DashMuxConfig,
+        follower_clock: Option<watch::Receiver<ThrottleClock>>,
+        media_stall: Option<MediaStall>,
+    ) -> Harness {
         let (video, video_rx) = mpsc::channel(64);
         let (out_tx, out) = mpsc::channel(64);
         let (sink, events) = EventSink::channel(64);
@@ -2370,6 +2450,7 @@ mod tests {
                 Some(MuxTrack {
                     track: MediaTrack::Audio,
                     rx: audio_rx,
+                    rate_limit_clock: follower_clock,
                     cancel: CancellationToken::new(),
                 }),
             )
@@ -2380,13 +2461,14 @@ mod tests {
             MuxTrack {
                 track: leader,
                 rx: video_rx,
+                rate_limit_clock: None,
                 cancel: CancellationToken::new(),
             },
             follower,
             out_tx,
             Some(sink),
             config,
-            None,
+            media_stall,
             CancellationToken::new(),
         ));
         Harness {
@@ -2547,6 +2629,312 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn bounded_audio_throttling_extends_audio_and_media_stall_waits() {
+        let until = Instant::now() + Duration::from_secs(120);
+        let mut clock = ThrottleClock::default();
+        clock.set_hold(Instant::now().into_std(), Some(until.into_std()));
+        let (clock_tx, clock_rx) = watch::channel(clock);
+        let mut h = start_with_clock(
+            MediaTrack::Video,
+            true,
+            lag(Duration::from_secs(10)),
+            Some(clock_rx.clone()),
+            Some(MediaStall {
+                timeout: Duration::from_secs(60),
+                clock: clock_rx,
+            }),
+        );
+        h.audio(init(MediaTrack::Audio, Some("p0"), 0, AUDIO_INIT))
+            .await;
+        h.video(init(MediaTrack::Video, Some("p0"), 0, VIDEO_INIT))
+            .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(VIDEO_1),
+        ))
+        .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            2,
+            Bytes::from_static(VIDEO_2),
+        ))
+        .await;
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        assert!(h.out.try_recv().is_err(), "still waiting for held audio");
+        assert!(!h.muxer.is_finished());
+
+        // Recovery can clear the hold before its payload crosses the track
+        // channel. Both queued slices retain the actual pause in their clocks.
+        clock_tx.send_modify(|clock| {
+            clock.set_hold(Instant::now().into_std(), None);
+        });
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(AUDIO_1),
+        ))
+        .await;
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            2,
+            Bytes::from_static(AUDIO_2),
+        ))
+        .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        let (items, outcome, events) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        let all: Vec<_> = media_data(&items)
+            .into_iter()
+            .flat_map(|data| fragments(data))
+            .collect();
+        assert_eq!(all.iter().filter(|(_, track)| *track == 1).count(), 2);
+        assert_eq!(all.iter().filter(|(_, track)| *track == 2).count(), 2);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, DownloadEvent::TrackStalled { .. }))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_closed_throttle_publisher_cannot_suspend_audio_forever() {
+        let until = Instant::now() + Duration::from_secs(30);
+        let mut clock = ThrottleClock::default();
+        clock.set_hold(Instant::now().into_std(), Some(until.into_std()));
+        let (clock_tx, clock_rx) = watch::channel(clock);
+        let h = start_with_clock(
+            MediaTrack::Video,
+            true,
+            lag(Duration::from_secs(10)),
+            Some(clock_rx),
+            None,
+        );
+        h.audio(init(MediaTrack::Audio, Some("p0"), 0, AUDIO_INIT))
+            .await;
+        h.video(init(MediaTrack::Video, Some("p0"), 0, VIDEO_INIT))
+            .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(VIDEO_1),
+        ))
+        .await;
+        drop(clock_tx);
+        tokio::time::sleep(Duration::from_secs(41)).await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        let (items, outcome, events) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(media_data(&items).len(), 1);
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, DownloadEvent::TrackStalled { .. }))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_short_throttle_preserves_the_remaining_audio_and_media_stall_budgets() {
+        let (clock_tx, clock_rx) = watch::channel(ThrottleClock::default());
+        let mut h = start_with_clock(
+            MediaTrack::Video,
+            true,
+            lag(Duration::from_secs(10)),
+            Some(clock_rx.clone()),
+            Some(MediaStall {
+                timeout: Duration::from_secs(60),
+                clock: clock_rx,
+            }),
+        );
+        h.audio(init(MediaTrack::Audio, Some("p0"), 0, AUDIO_INIT))
+            .await;
+        h.video(init(MediaTrack::Video, Some("p0"), 0, VIDEO_INIT))
+            .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(VIDEO_1),
+        ))
+        .await;
+        tokio::time::sleep(Duration::from_secs(9)).await;
+        clock_tx.send_modify(|clock| {
+            let now = Instant::now().into_std();
+            clock.set_hold(now, Some(now + Duration::from_secs(300)));
+        });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        clock_tx.send_modify(|clock| {
+            clock.set_hold(Instant::now().into_std(), None);
+        });
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            h.out.try_recv().is_err(),
+            "the last half-second is still available"
+        );
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(next_kind(&mut h.out).await, "init");
+        assert_eq!(next_kind(&mut h.out).await, "media");
+
+        // The refusal ended after one second. It cannot defer an unrelated
+        // subsequent media stall until the unused five-minute allowance.
+        tokio::time::sleep(Duration::from_secs(59)).await;
+        assert!(h.out.try_recv().is_err());
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(matches!(
+            h.out.recv().await,
+            Some(Err(DownloadError::Timeout { .. }))
+        ));
+        assert!(matches!(h.muxer.await.unwrap(), MuxOutcome::Failed(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_bounded_leader_hold_does_not_disable_the_media_watchdog() {
+        let until = Instant::now() + Duration::from_secs(120);
+        let mut clock = ThrottleClock::default();
+        clock.set_hold(Instant::now().into_std(), Some(until.into_std()));
+        let (_clock_tx, clock_rx) = watch::channel(clock);
+        let mut h = start_with_clock(
+            MediaTrack::Video,
+            false,
+            lag(Duration::from_secs(10)),
+            None,
+            Some(MediaStall {
+                timeout: Duration::from_secs(60),
+                clock: clock_rx,
+            }),
+        );
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        assert!(
+            !h.muxer.is_finished(),
+            "the bounded hold extends the watchdog"
+        );
+        tokio::time::sleep(Duration::from_secs(91)).await;
+        assert!(matches!(
+            h.out.recv().await,
+            Some(Err(DownloadError::Timeout { .. }))
+        ));
+        assert!(matches!(h.muxer.await.unwrap(), MuxOutcome::Failed(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_throttled_audio_tail_is_waited_for_after_video_ends() {
+        let until = Instant::now() + Duration::from_secs(120);
+        let mut clock = ThrottleClock::default();
+        clock.set_hold(Instant::now().into_std(), Some(until.into_std()));
+        let (_clock_tx, clock_rx) = watch::channel(clock);
+        let mut h = start_with_clock(
+            MediaTrack::Video,
+            true,
+            lag(Duration::from_secs(10)),
+            Some(clock_rx),
+            None,
+        );
+        h.audio(init(MediaTrack::Audio, Some("p0"), 0, AUDIO_INIT))
+            .await;
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(AUDIO_1),
+        ))
+        .await;
+        // The first audio fragment ends before the first video fragment.
+        // Both initial audio fragments are needed to write that video slice.
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            2,
+            Bytes::from_static(AUDIO_2),
+        ))
+        .await;
+        h.video(init(MediaTrack::Video, Some("p0"), 0, VIDEO_INIT))
+            .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(VIDEO_1),
+        ))
+        .await;
+        assert_eq!(next_kind(&mut h.out).await, "init");
+        assert_eq!(next_kind(&mut h.out).await, "media");
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        tokio::time::sleep(Duration::from_secs(90)).await;
+        assert!(
+            !h.muxer.is_finished(),
+            "the held audio tail is still expected"
+        );
+        h.audio(media(
+            MediaTrack::Audio,
+            Some("p0"),
+            0,
+            3,
+            Bytes::from_static(AUDIO_3),
+        ))
+        .await;
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+        let (items, outcome, _) = h.finish().await;
+        assert_eq!(outcome, MuxOutcome::Ended);
+        assert_eq!(
+            media_data(&items)
+                .into_iter()
+                .flat_map(|data| fragments(data))
+                .filter(|(_, track)| *track == 2)
+                .count(),
+            1,
+            "the final audio fragment is retained"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn bounded_throttling_does_not_override_mux_buffer_pressure() {
+        let until = Instant::now() + Duration::from_secs(120);
+        let mut clock = ThrottleClock::default();
+        clock.set_hold(Instant::now().into_std(), Some(until.into_std()));
+        let (_clock_tx, clock_rx) = watch::channel(clock);
+        let mut config = lag(Duration::from_secs(10));
+        config.max_buffered_bytes = 1;
+        let mut h = start_with_clock(MediaTrack::Video, true, config, Some(clock_rx), None);
+        h.audio(init(MediaTrack::Audio, Some("p0"), 0, AUDIO_INIT))
+            .await;
+        h.video(init(MediaTrack::Video, Some("p0"), 0, VIDEO_INIT))
+            .await;
+        h.video(media(
+            MediaTrack::Video,
+            Some("p0"),
+            0,
+            1,
+            Bytes::from_static(VIDEO_1),
+        ))
+        .await;
+        assert_eq!(next_kind(&mut h.out).await, "init");
+        assert_eq!(next_kind(&mut h.out).await, "media");
+        assert!(
+            Instant::now() < until,
+            "buffer pressure still makes progress"
+        );
+        h.audio(Ok(AssembledItem::StreamEnded)).await;
+        h.video(Ok(AssembledItem::StreamEnded)).await;
+        assert_eq!(h.finish().await.1, MuxOutcome::Ended);
     }
 
     #[tokio::test]
@@ -3622,13 +4010,17 @@ mod tests {
             MuxTrack {
                 track: MediaTrack::Video,
                 rx: video_rx,
+                rate_limit_clock: None,
                 cancel: CancellationToken::new(),
             },
             None,
             out_tx,
             None,
             lag(WAIT),
-            Some(Duration::from_millis(200)),
+            Some(MediaStall {
+                timeout: Duration::from_millis(200),
+                clock: watch::channel(ThrottleClock::default()).1,
+            }),
             CancellationToken::new(),
         ));
         let v = MediaTrack::Video;
@@ -3675,13 +4067,17 @@ mod tests {
             MuxTrack {
                 track: MediaTrack::Video,
                 rx: video_rx,
+                rate_limit_clock: None,
                 cancel: CancellationToken::new(),
             },
             None,
             out_tx,
             None,
             lag(WAIT),
-            Some(stall),
+            Some(MediaStall {
+                timeout: stall,
+                clock: watch::channel(ThrottleClock::default()).1,
+            }),
             CancellationToken::new(),
         ));
         let v = MediaTrack::Video;
@@ -3833,6 +4229,7 @@ mod tests {
             MuxTrack {
                 track: MediaTrack::Video,
                 rx: video_rx,
+                rate_limit_clock: None,
                 cancel: CancellationToken::new(),
             },
             None,
@@ -3947,6 +4344,7 @@ mod tests {
             MuxTrack {
                 track: MediaTrack::Video,
                 rx: video_rx,
+                rate_limit_clock: None,
                 cancel: CancellationToken::new(),
             },
             None,

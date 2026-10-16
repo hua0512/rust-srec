@@ -33,7 +33,7 @@ use crate::CacheManager;
 use crate::DownloadError;
 use crate::dash::config::DashConfig;
 use crate::dash::manifest::{Manifest, PresentationType, RejectedContent, Representation};
-use crate::dash::mux::{MuxOutcome, MuxTrack, TrackSink, run_muxer};
+use crate::dash::mux::{MediaStall, MuxOutcome, MuxTrack, TrackSink, run_muxer};
 use crate::dash::planner::{
     ConsumedFrontier, DashPlanner, PeriodKey, PlannerParams, StartPosition, decide_start,
     rejection_for,
@@ -51,6 +51,7 @@ use crate::segment_engine::fetch::FetchContext;
 use crate::segment_engine::metrics::PerformanceMetrics;
 use crate::segment_engine::reactor::{ReactorConfig, Terminal, run_reactor};
 use crate::segment_engine::store::StoreConfig;
+use crate::segment_engine::throttle::ThrottleSession;
 use crate::session::EventSink;
 
 /// Items buffered between a track's assembler and the muxer.
@@ -165,6 +166,10 @@ pub(crate) async fn start(
     let both = selected.video && selected.audio;
     let mut tracks = Vec::new();
     let mut inputs = Vec::new();
+    let media_stall_timeout = live
+        .then_some(config.output.live_max_overall_stall_duration)
+        .flatten();
+    let throttle_session = media_stall_timeout.map(|_| Arc::new(ThrottleSession::new()));
     for (track, wanted) in [
         (MediaTrack::Video, selected.video),
         (MediaTrack::Audio, selected.audio),
@@ -224,7 +229,12 @@ pub(crate) async fn start(
             0,
             track_cancel.clone(),
         );
-        let emit_cursor = (!live).then(|| assembler.subscribe_cursor());
+        let emit_cursor = Some(assembler.subscribe_cursor());
+        let rate_limit_holds = assembler.rate_limit_holds();
+        if let Some(session) = &throttle_session {
+            rate_limit_holds.set_session(Arc::clone(session), track);
+        }
+        let rate_limit_clock = (!leader).then(|| rate_limit_holds.subscribe_clock());
         let assembler_handle = tokio::spawn(assembler.run().instrument(span.clone()));
 
         let reactor_config = ReactorConfig {
@@ -242,6 +252,8 @@ pub(crate) async fn start(
             max_pending_payload_bytes: split.share(engine.max_pending_payload_bytes, video, both),
             max_pending_items: engine.max_pending_items,
             emit_cursor,
+            rate_limit_holds,
+            live,
         };
         let reactor_rx = snapshot_rx.clone();
         let reactor_cancel = track_cancel.clone();
@@ -270,6 +282,7 @@ pub(crate) async fn start(
         inputs.push(MuxTrack {
             track,
             rx: track_rx,
+            rate_limit_clock,
             cancel: track_cancel,
         });
     }
@@ -291,8 +304,12 @@ pub(crate) async fn start(
         out_tx,
         events,
         config.mux.clone(),
-        live.then_some(config.output.live_max_overall_stall_duration)
-            .flatten(),
+        media_stall_timeout
+            .zip(throttle_session)
+            .map(|(timeout, session)| MediaStall {
+                timeout,
+                clock: session.subscribe(),
+            }),
         cancel,
     ));
 

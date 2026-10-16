@@ -24,6 +24,7 @@ use super::descriptor::{SegmentDescriptor, SegmentSource};
 use super::identity::{SegmentKey, SegmentKind};
 use super::input::AssemblerInput;
 use super::payload::SegmentPayload;
+use super::throttle::RateLimitHolds;
 
 /// Machine-readable failure classification reported by the fetch-and-process
 /// future. The store — not the future — maps class to retryable-vs-terminal,
@@ -332,10 +333,11 @@ pub struct SegmentStateStore {
     /// by MSN: the estimate while a segment downloads, its size once it has
     /// completed. Maintained for the byte bound of a [`MediaWindow`].
     window_bytes: BTreeMap<u64, u64>,
+    rate_limit_holds: Arc<RateLimitHolds>,
 }
 
 impl SegmentStateStore {
-    pub fn new(config: StoreConfig) -> Self {
+    pub fn new(config: StoreConfig, rate_limit_holds: Arc<RateLimitHolds>) -> Self {
         let size_estimate = config.fallback_size_estimate.max(1);
         Self {
             config,
@@ -346,6 +348,7 @@ impl SegmentStateStore {
             next_order: 0,
             size_estimate,
             window_bytes: BTreeMap::new(),
+            rate_limit_holds,
         }
     }
 
@@ -592,6 +595,8 @@ impl SegmentStateStore {
                     "skipping media of a failed init"
                 );
                 inputs.push(terminal_input(&record.descriptor, init_error.clone(), true));
+                self.rate_limit_holds
+                    .release(&key, record.descriptor.msn, now);
                 record.state = SegmentState::TerminalFailed { error: init_error };
                 continue;
             }
@@ -632,6 +637,8 @@ impl SegmentStateStore {
                 let error =
                     SharedError::new(FailureClass::Oversize.error(&reason, &record.descriptor));
                 inputs.push(terminal_input(&record.descriptor, error.clone(), false));
+                self.rate_limit_holds
+                    .release(&key, record.descriptor.msn, now);
                 record.state = SegmentState::TerminalFailed { error };
                 continue;
             }
@@ -670,7 +677,7 @@ impl SegmentStateStore {
             record.awaiting_refresh = false;
             record.state = SegmentState::InFlight;
             record.attempt_generation = record.generation;
-            if is_media && window.is_some_and(|window| window.bytes > 0) {
+            if is_media && window.is_some() {
                 self.window_bytes
                     .insert(record.descriptor.msn, reserve_size);
                 held_bytes = held_bytes.saturating_add(reserve_size);
@@ -734,6 +741,9 @@ impl SegmentStateStore {
                 reason,
                 error,
             } => {
+                if !matches!(class, FailureClass::RateLimited { .. }) {
+                    self.rate_limit_holds.release(&key, msn, now);
+                }
                 if key.kind == SegmentKind::Media {
                     self.window_bytes.remove(&msn);
                 }
@@ -829,6 +839,12 @@ impl SegmentStateStore {
                 };
 
                 if let Some(delay) = retry_delay {
+                    if matches!(class, FailureClass::RateLimited { .. })
+                        && let Some(since) = record.throttled_since
+                        && let Some(until) = since.checked_add(self.config.max_throttled)
+                    {
+                        self.rate_limit_holds.hold(&record.descriptor, until, now);
+                    }
                     let reschedules = record.reschedules;
                     let retry_at = now + delay;
                     record.state = SegmentState::RetryAt { retry_at };
@@ -857,6 +873,7 @@ impl SegmentStateStore {
                         }),
                     }
                 } else {
+                    self.rate_limit_holds.release(&key, msn, now);
                     warn!(msn, ?class, reason = %crate::redact::redact_diagnostic(&reason), "segment terminally failed");
                     // Media and init terminal failures are both surfaced; the
                     // assembler decides whether the stream can continue (see
@@ -1009,6 +1026,7 @@ impl SegmentStateStore {
         let mut dropped_msns = Vec::with_capacity(excess);
         for (msn, key) in backlog.into_iter().take(excess) {
             self.records.remove(&key);
+            self.rate_limit_holds.release(&key, msn, Instant::now());
             dropped_msns.push(msn);
         }
         // Another record can share an MSN (a URI change re-keys a segment);
@@ -1108,11 +1126,14 @@ mod tests {
     }
 
     fn store() -> SegmentStateStore {
-        SegmentStateStore::new(StoreConfig {
-            retry_budget: 2,
-            retry_delay_base: Duration::from_millis(10),
-            ..StoreConfig::default()
-        })
+        SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 2,
+                retry_delay_base: Duration::from_millis(10),
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        )
     }
 
     fn take_one(store: &mut SegmentStateStore, budget: &ByteBudget) -> Option<ReadyJob> {
@@ -1567,12 +1588,15 @@ mod tests {
 
     #[test]
     fn a_failed_init_is_kept_while_media_needing_it_is_unfinished() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            retry_budget: 2,
-            retry_delay_base: Duration::from_millis(10),
-            max_retained_inits: 0,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 2,
+                retry_delay_base: Duration::from_millis(10),
+                max_retained_inits: 0,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         let init_key = init_with_media(&mut s);
         let (jobs, _) = s.next_ready_jobs(3, Instant::now(), &b);
@@ -1708,6 +1732,77 @@ mod tests {
         // A cursor at a segment held back by the bytes admits it regardless.
         assert_eq!(admit(&mut s, 3), [3, 4]);
         assert_eq!(admit(&mut s, 5), [5]);
+    }
+
+    #[test]
+    fn activating_a_byte_window_accounts_for_media_admitted_before_the_bound() {
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                fallback_size_estimate: 4,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
+        let b = budget_unlimited();
+        let now = Instant::now();
+        s.ingest(
+            (0..4)
+                .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
+                .collect(),
+            now,
+        );
+        let unbounded = MediaWindow {
+            cursor: 0,
+            segments: 0,
+            bytes: 0,
+        };
+        let (mut jobs, inputs) = s.next_ready_jobs_within(2, now, &b, Some(unbounded));
+        assert!(inputs.is_empty());
+        let second = jobs.pop().expect("second unbounded admission");
+        let first = jobs.pop().expect("first unbounded admission");
+        let payload = payload_for(&second.descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: second.descriptor.key.clone(),
+                msn: 1,
+                payload,
+            },
+            now,
+        );
+
+        // The missing cursor's in-flight reservation and the later completed
+        // payload already fill this byte window before its gate is enabled.
+        let bounded = MediaWindow {
+            bytes: 8,
+            ..unbounded
+        };
+        assert!(
+            s.next_ready_jobs_within(4, now, &b, Some(bounded))
+                .0
+                .is_empty()
+        );
+
+        let payload = payload_for(&first.descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: first.descriptor.key.clone(),
+                msn: 0,
+                payload,
+            },
+            now,
+        );
+        let advanced = MediaWindow {
+            cursor: 2,
+            ..bounded
+        };
+        let (jobs, inputs) = s.next_ready_jobs_within(4, now, &b, Some(advanced));
+        assert!(inputs.is_empty());
+        assert_eq!(
+            jobs.iter()
+                .map(|job| job.descriptor.msn)
+                .collect::<Vec<_>>(),
+            [2, 3]
+        );
     }
 
     #[test]
@@ -1974,10 +2069,13 @@ mod tests {
 
     #[test]
     fn init_trim_never_evicts_in_window_inits() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            max_retained_inits: 2,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_retained_inits: 2,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         // Three init keys: two below the window (msn 1, 2) and one in-window
         // (msn 10). With max_retained_inits=2 the trim must drop the two
@@ -2014,10 +2112,13 @@ mod tests {
 
     #[test]
     fn completed_init_still_in_the_window_survives_the_retention_trim() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            max_retained_inits: 0,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_retained_inits: 0,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/init.mp4", 1, SegmentKind::Init)],
@@ -2048,11 +2149,14 @@ mod tests {
 
     #[test]
     fn budget_contention_does_not_spend_the_retry_budget() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            retry_budget: 1,
-            retry_delay_base: Duration::ZERO,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 1,
+                retry_delay_base: Duration::ZERO,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/big.ts", 1, SegmentKind::Media)],
@@ -2092,12 +2196,15 @@ mod tests {
 
     #[test]
     fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            retry_budget: 1,
-            retry_delay_base: Duration::from_millis(10),
-            max_throttled: Duration::from_secs(60),
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 1,
+                retry_delay_base: Duration::from_millis(10),
+                max_throttled: Duration::from_secs(60),
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
@@ -2178,12 +2285,177 @@ mod tests {
     }
 
     #[test]
+    fn rate_limit_holds_keep_the_first_deadline_until_output_consumes_the_payload() {
+        let holds = Arc::new(RateLimitHolds::new());
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_throttled: Duration::from_secs(60),
+                ..StoreConfig::default()
+            },
+            Arc::clone(&holds),
+        );
+        let b = budget_unlimited();
+        let start = Instant::now();
+        let descriptor = descriptor("https://e.com/1.m4s", 1, SegmentKind::Media);
+        let key = descriptor.key.clone();
+        s.ingest(vec![descriptor], start);
+        let limited = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(20),
+            held_back: true,
+        };
+
+        fail_at(&mut s, &b, limited, start);
+        let until = start + Duration::from_secs(60);
+        assert_eq!(holds.first_media_hold(1, 2, start), Some((1, until)));
+        let second = start + Duration::from_secs(20);
+        fail_at(&mut s, &b, limited, second);
+        assert_eq!(holds.first_media_hold(1, 2, second), Some((1, until)));
+
+        let now = start + Duration::from_secs(40);
+        let job = s
+            .next_ready_jobs(1, now, &b)
+            .0
+            .pop()
+            .expect("retry admitted");
+        assert_eq!(holds.first_media_hold(1, 2, now), Some((1, until)));
+        let payload = payload_for(&job.descriptor);
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: key.clone(),
+                msn: 1,
+                payload,
+            },
+            now,
+        );
+        s.prune_below(2, 1);
+        // Completion may still sit behind payload backpressure. Only output
+        // consumption, not removal of the finished record, releases its hold.
+        assert_eq!(holds.first_media_hold(1, 2, now), Some((1, until)));
+        holds.release(&key, 1, now);
+        assert_eq!(holds.first_media_hold(1, 2, now), None);
+    }
+
+    #[test]
+    fn ordinary_failure_and_backlog_pruning_release_rate_limit_holds() {
+        let holds = Arc::new(RateLimitHolds::new());
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 2,
+                retry_delay_base: Duration::from_millis(10),
+                ..StoreConfig::default()
+            },
+            Arc::clone(&holds),
+        );
+        let b = budget_unlimited();
+        let start = Instant::now();
+        holds.set_scope(1, None, false, start);
+        s.ingest(
+            vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
+            start,
+        );
+        let limited = FailureClass::RateLimited {
+            status: 429,
+            delay: Duration::from_secs(1),
+            held_back: true,
+        };
+        fail_at(&mut s, &b, limited, start);
+        assert!(holds.first_media_hold(1, 2, start).is_some());
+        let now = start + Duration::from_secs(1);
+        fail_at(&mut s, &b, FailureClass::Network, now);
+        assert_eq!(holds.first_media_hold(1, 2, now), None);
+        assert_eq!(holds.clock().paused_at(now), Duration::from_secs(1));
+        assert_eq!(holds.clock().active_until(), None);
+        assert_eq!(
+            holds
+                .clock()
+                .deadline(start, Duration::ZERO, Duration::from_secs(10), now),
+            start + Duration::from_secs(11),
+        );
+
+        let now = now + Duration::from_secs(1);
+        fail_at(&mut s, &b, limited, now);
+        assert!(holds.first_media_hold(1, 2, now).is_some());
+        assert!(matches!(
+            s.prune_below(2, 0).as_slice(),
+            [AssemblerInput::Skipped {
+                from_msn: 1,
+                to_msn: 1
+            }]
+        ));
+        assert_eq!(holds.first_media_hold(1, 2, now), None);
+    }
+
+    #[test]
+    fn rate_limit_holds_bound_ranges_and_expire_without_further_outcomes() {
+        let holds = RateLimitHolds::new();
+        let start = Instant::now();
+        let until = start + Duration::from_secs(60);
+        let first = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+        let sibling = descriptor("https://e.com/1-new.ts", 1, SegmentKind::Media);
+        let next = descriptor("https://e.com/3.ts", 3, SegmentKind::Media);
+        let init = descriptor("https://e.com/init.mp4", 0, SegmentKind::Init);
+        holds.hold(&first, until, start);
+        holds.hold(&first, until + Duration::from_secs(60), start);
+        holds.hold(&sibling, until + Duration::from_secs(60), start);
+        holds.release(&first.key, first.msn, start);
+        assert_eq!(holds.first_media_hold(0, 2, start), Some((1, until)));
+        holds.hold(&next, until, start);
+        assert_eq!(holds.first_media_hold(2, 3, start), None);
+        assert_eq!(holds.first_media_hold(2, 4, start), Some((3, until)));
+        holds.skip(1, 3, start);
+        assert_eq!(holds.active_until(0, start), None);
+
+        holds.hold(&init, until, start);
+        assert_eq!(holds.active_until(99, start), Some(until));
+        assert_eq!(holds.active_until(0, until), None);
+    }
+
+    #[test]
+    fn producer_clock_retains_short_pauses_and_stops_after_track_teardown() {
+        use super::super::descriptor::MediaTrack;
+        use super::super::throttle::ThrottleSession;
+
+        let holds = RateLimitHolds::new();
+        let session = Arc::new(ThrottleSession::new());
+        let session_clock = session.subscribe();
+        holds.set_session(session, MediaTrack::Audio);
+        let clock = holds.subscribe_clock();
+        let start = Instant::now();
+        let media = descriptor("https://e.com/1.ts", 1, SegmentKind::Media);
+        holds.set_scope(1, None, false, start);
+        let until = start + Duration::from_secs(300);
+        holds.hold(&media, until, start);
+        holds.release(&media.key, 1, start + Duration::from_secs(1));
+        // Reading after both transitions must still see the actual pause.
+        assert_eq!(
+            clock.borrow().paused_at(start + Duration::from_secs(2)),
+            Duration::from_secs(1)
+        );
+
+        holds.hold(&media, until, start + Duration::from_secs(2));
+        holds.clear_scope(start + Duration::from_secs(3));
+        holds.hold(&media, until, start + Duration::from_secs(4));
+        let now = start + Duration::from_secs(5);
+        assert_eq!(clock.borrow().active_until(), None);
+        assert_eq!(clock.borrow().paused_at(now), Duration::from_secs(2));
+        assert_eq!(
+            session_clock.borrow().paused_at(now),
+            Duration::from_secs(2)
+        );
+        assert_eq!(session_clock.borrow().active_until(), None);
+    }
+
+    #[test]
     fn immediate_rate_limit_retries_still_end_at_the_bound() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            retry_delay_base: Duration::ZERO,
-            max_throttled: Duration::from_secs(60),
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_delay_base: Duration::ZERO,
+                max_throttled: Duration::from_secs(60),
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
@@ -2215,10 +2487,13 @@ mod tests {
 
     #[test]
     fn a_rate_limit_retry_never_lands_past_the_bound() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            max_throttled: Duration::from_secs(300),
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_throttled: Duration::from_secs(300),
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
@@ -2349,10 +2624,13 @@ mod tests {
 
     #[test]
     fn backlog_is_capped_by_max_state_entries_and_dropped_msns_are_skipped() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            max_state_entries: 32,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                max_state_entries: 32,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         s.ingest(
             (0..500)
                 .map(|msn| descriptor(&format!("https://e.com/{msn}.ts"), msn, SegmentKind::Media))
@@ -2435,11 +2713,14 @@ mod tests {
 
     #[test]
     fn retrying_segment_below_the_window_keeps_its_retry_and_reports_the_outcome() {
-        let mut s = SegmentStateStore::new(StoreConfig {
-            retry_budget: 1,
-            retry_delay_base: Duration::ZERO,
-            ..StoreConfig::default()
-        });
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 1,
+                retry_delay_base: Duration::ZERO,
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
         let b = budget_unlimited();
         s.ingest(
             vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],

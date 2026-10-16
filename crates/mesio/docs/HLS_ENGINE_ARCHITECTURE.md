@@ -456,6 +456,8 @@ Responsibilities:
 - Reorder media by MSN.
 - Advance past `Skipped`/`TerminalFailed` MSNs instead of waiting on them.
 - Apply gap policies.
+- Preserve known rate-limited media until its fixed recovery deadline;
+  ordinary gap skips stop before any protected MSN in the missing range.
 - Emit discontinuity and gap events.
 - Forward `Notice` items to the sink immediately, without reordering.
 - Reject stale completed segments (stale = MSN below the emit cursor: already
@@ -473,7 +475,8 @@ cursor media is gated on an unresolved fMP4 init key: below the buffer limit the
 assembler still waits for a slow init, but at the limit it skips that media as a
 visible `GapSkipped` and advances. For VOD, the reactor's reordering window keeps
 the buffer near both limits, and a VOD stream that waits for every segment is
-exempt from the forced skip (see "Reordering window (VOD)").
+exempt from the forced skip (see "Reordering window (VOD and throttled live
+output)").
 
 ### OutputSink
 
@@ -1401,10 +1404,11 @@ Important rule:
 
 The sequence assembler must continue draining completed payloads even when its reorder buffer is near a configured limit. Otherwise, an older segment queued behind newer segments can never arrive at the assembler, which can create a false gap or a deadlock.
 
-**Reordering window (VOD).** A VOD stream waits for every segment, yet the
+**Reordering window (VOD and throttled live output).** A VOD stream waits for every segment, yet the
 forced skip at the reorder buffer's limits would still skip one that is slow or
 awaiting a lifecycle retry while later segments complete. The assembler
-therefore publishes its emit cursor, and for VOD the reactor admits media only
+therefore publishes its emit cursor. For VOD, and while known rate-limited
+media or initialization holds live output, the reactor admits media only
 while what lies beyond that cursor stays inside both limits:
 
 - by count, media below the cursor plus `buffer_limits.max_segments`;
@@ -1420,12 +1424,37 @@ any segment while nothing is held, so a bound below one segment's size still
 downloads. Inits are admitted
 regardless, and the window re-opens as the cursor advances. A straggler
 therefore stalls new downloads once the window is full; that is the cost of not
-giving it up. Live streams have no window; their gap policy decides.
+giving it up. Unthrottled live streams keep their ordinary admission and gap
+policies, but retain the byte ledger so a later hold accounts for media already
+downloaded or in flight.
 
 A VOD stream with `WaitIndefinitely` never takes the forced skip at all: the
 assembler keeps draining its input, so waiting on the missing segment loses
 nothing, and the window above only keeps memory bounded when estimates run low.
 Streams with a skipping gap strategy keep the forced skip.
+
+**Bounded rate-limit holds.** A segment refused by rate limiting, including one
+held back by another request's origin cooldown, publishes a hold keyed by its
+media MSN or init identity. Its deadline is the first refusal plus
+`max_throttled`; further refusals do not extend it. The hold survives queued
+retries, probes and completed payload backpressure, and ends when the assembler
+consumes the payload, the attempt has an ordinary failure, upstream explicitly
+skips it, or the deadline expires. Revisions use a separate watch channel so
+payload backpressure cannot hide the hold.
+
+The assembler identifies its blocked media or required init. Fetch transitions
+update a clock for that scope at the producer, retaining elapsed pause time
+even if a consumer misses intermediate watch updates. Gap timers, live input
+watchdogs and DASH audio waits (including queued video slices and final audio
+tails) exclude only the time actually paused; they resume their remaining
+ordinary budget as soon as the hold ends. The five-minute retry cap bounds an
+active hold rather than granting five minutes of grace after a short refusal.
+The DASH media watchdog uses the union of both tracks' pauses, counting overlap
+once, and a stopped track removes its contribution. Unrelated buffered init
+holds do not suspend a known media blocker's watchdog. Buffer-pressure skips,
+backlog pruning, cancellation and terminal failures still apply. These holds
+protect known segment work; a manifest cooldown with no known media blocker
+does not itself extend the ordinary media watchdog.
 
 When memory is above budget:
 

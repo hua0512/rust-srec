@@ -24,7 +24,6 @@ use mp4::independent::IndependentFragmentCheck;
 
 use mesio_engine::dash::manifest::ManualClock;
 use mesio_engine::dash::{DashConfig, DashDownloader, LiveStartPolicy};
-use mesio_engine::hls::GapSkipStrategy;
 use mesio_engine::{
     ContentSource, DashRequestOptions, DownloadError, DownloadEvent, DownloadRequest,
     DownloadSession, DownloadTerminal, DownloaderSession, MediaEngine, MediaTrack, MesioConfig,
@@ -92,8 +91,8 @@ struct OriginState {
     mpd_rate_limit: Option<MpdRateLimit>,
     files: HashMap<String, FileEntry>,
     numbered: HashMap<String, Numbered>,
-    /// Path prefixes answered only once their gate opens.
-    gates: HashMap<String, tokio::sync::watch::Receiver<bool>>,
+    /// Path prefixes answered only once their gate opens, after any allowed hits.
+    gates: HashMap<String, RequestGate>,
     hits: HashMap<String, u64>,
 }
 
@@ -101,6 +100,11 @@ struct OriginState {
 struct Held {
     number: u64,
     description: u32,
+}
+
+struct RequestGate {
+    after_hits: u64,
+    open: tokio::sync::watch::Receiver<bool>,
 }
 
 #[derive(Clone, Default)]
@@ -204,12 +208,20 @@ impl Origin {
 
     /// Holds requests under `prefix` until the returned gate is opened.
     fn gate(&self, prefix: &str) -> tokio::sync::watch::Sender<bool> {
+        self.gate_after(prefix, 0)
+    }
+
+    /// Allows `after_hits` requests for each matching path before holding
+    /// its responses until the returned gate is opened.
+    fn gate_after(&self, prefix: &str, after_hits: u64) -> tokio::sync::watch::Sender<bool> {
         let (open, gate) = tokio::sync::watch::channel(false);
-        self.0
-            .lock()
-            .unwrap()
-            .gates
-            .insert(prefix.to_string(), gate);
+        self.0.lock().unwrap().gates.insert(
+            prefix.to_string(),
+            RequestGate {
+                after_hits,
+                open: gate,
+            },
+        );
         open
     }
 
@@ -261,8 +273,11 @@ async fn handler(State(origin): State<Origin>, uri: Uri) -> Response {
         state
             .gates
             .iter()
-            .find(|(prefix, _)| path.starts_with(prefix.as_str()))
-            .map(|(_, gate)| gate.clone())
+            .find(|(prefix, gate)| {
+                path.starts_with(prefix.as_str())
+                    && state.hits.get(&path).copied().unwrap_or_default() >= gate.after_hits
+            })
+            .map(|(_, gate)| gate.open.clone())
     };
     if let Some(mut gate) = gate {
         let _ = gate.wait_for(|open| *open).await;
@@ -523,6 +538,7 @@ async fn read_until(
 /// never drops any.
 struct EventLog {
     events: Arc<Mutex<Vec<DownloadEvent>>>,
+    changed: tokio::sync::watch::Receiver<()>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -530,16 +546,36 @@ impl EventLog {
     fn collect(mut stream: mesio_engine::DownloadEventStream) -> Self {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&events);
+        let (changed_tx, changed) = tokio::sync::watch::channel(());
         let task = tokio::spawn(async move {
             while let Some(event) = stream.next().await {
                 sink.lock().unwrap().push(event);
+                changed_tx.send_replace(());
             }
         });
-        Self { events, task }
+        Self {
+            events,
+            changed,
+            task,
+        }
     }
 
     fn snapshot(&self) -> Vec<DownloadEvent> {
         self.events.lock().unwrap().clone()
+    }
+
+    async fn wait_for(&self, mut ready: impl FnMut(&[DownloadEvent]) -> bool) {
+        let mut changed = self.changed.clone();
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            loop {
+                if ready(&self.events.lock().unwrap()) {
+                    break;
+                }
+                changed.changed().await.expect("event stream stays open");
+            }
+        })
+        .await
+        .expect("expected session events arrive");
     }
 
     /// Every event, once the session's event sinks are gone.
@@ -1143,18 +1179,10 @@ async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
     let mut config = config(Some(Arc::clone(&clock)));
     config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(3)));
 
-    // MPD and media share one origin, so the four exponential cool-downs
-    // hold segments back too, for up to 15 s in all. A later segment can get
-    // through as the probe that ends a cool-down while an earlier one waits
-    // out the next ones. By default, the live gap policy would skip the
-    // earlier one after 5 s, the muxer would stop waiting for its audio after
-    // 10 s, and the harness's 10 s stall limit would end the stream. Waiting
-    // for every held-back segment keeps the outcome independent of the
-    // backoff jitter and of which request probes.
-    let throttled = Duration::from_secs(30);
-    config.output.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
-    config.mux.max_audio_lag = throttled;
-    config.output.live_max_overall_stall_duration = Some(throttled);
+    // Four MPD cooldowns can exceed the harness's 10 s source-stall
+    // allowance even after known media has drained. Keep the live gap and
+    // audio-lag defaults: segment throttling is handled by the engine.
+    config.output.live_max_overall_stall_duration = Some(Duration::from_secs(30));
 
     let session = start(&format!("{base}/manifest.mpd"), config)
         .await
@@ -1201,6 +1229,111 @@ async fn a_rate_limited_mpd_keeps_the_live_recording_going() {
     }
     // The initial fetch, four rate-limited refreshes, then successful ones.
     assert!(origin.hits("manifest.mpd") >= 6);
+}
+
+async fn assert_rate_limited_live_segment_is_retained(track: MediaTrack) {
+    let origin = Origin::default();
+    origin.add_av();
+    origin.set_mpd(number_mpd(true, 0, "v"));
+    let (prefix, segment, timescale) = match track {
+        MediaTrack::Video => ("v", VIDEO_1, VIDEO_TIMESCALE),
+        MediaTrack::Audio => ("a", AUDIO_1, AUDIO_TIMESCALE),
+    };
+    let held_path = format!("{prefix}/11.m4s");
+    origin.rate_limit_file(
+        &held_path,
+        with_tfdt(segment, 10 * timescale),
+        429,
+        Some("12"),
+        1,
+    );
+    let held = origin.gate(&held_path);
+    // Register before starting: only the initial MPD may pass before the
+    // later segment is downloaded, whatever the refresh scheduling order.
+    let refresh = origin.gate_after("manifest.mpd", 1);
+    origin.rate_limit_mpd(1, 1, Some("12"));
+    let base = origin.clone().serve().await;
+    let clock = live_clock(10);
+    let mut config = config(Some(Arc::clone(&clock)));
+    config.live_start = LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(3)));
+    // Keep the production live policies, including the 5 s gap timeout,
+    // 10 s audio lag and 60 s overall stall limit.
+    config.output = DashConfig::default().output;
+
+    let session = start(&format!("{base}/manifest.mpd"), config)
+        .await
+        .expect("session starts");
+    let DownloadSession {
+        mut items,
+        events,
+        handle,
+    } = session;
+    let log = EventLog::collect(events);
+    let mut out = Vec::new();
+    let error = read_until(&mut items, &mut out, |out| media(out).len() >= 2).await;
+    assert!(error.is_none(), "{track:?}: {error:?}");
+
+    clock.advance(Duration::from_secs(2));
+    log.wait_for(|events| downloads(events, "v/12.m4s") == 1 && downloads(events, "a/12.m4s") == 1)
+        .await;
+    assert_eq!(downloads(&log.snapshot(), &held_path), 0);
+    // Both refusals ask for the same fixed cooldown. Even an answer to an
+    // already admitted request extends it, so no choice of probe can let
+    // segment 11 return before both default timeouts have elapsed.
+    origin.set_mpd(number_mpd(false, 12, "v"));
+    held.send(true).expect("segment gate stays subscribed");
+    refresh.send(true).expect("refresh gate stays subscribed");
+
+    let error = read_until(&mut items, &mut out, |_| false).await;
+    assert!(error.is_none(), "{track:?}: {error:?}");
+    let terminal = tokio::time::timeout(TEST_TIMEOUT, handle.join())
+        .await
+        .expect("lifecycle finishes")
+        .expect("lifecycle handle")
+        .expect("lifecycle joins");
+    assert_eq!(terminal, DownloadTerminal::AuthoritativeEnd);
+    assert_eq!(handle.dropped_events(), 0, "event counts are complete");
+    assert_two_track_stream(&out);
+    for (track_id, timescale) in [(1, VIDEO_TIMESCALE), (2, AUDIO_TIMESCALE)] {
+        let actual: Vec<u64> = media(&out)
+            .iter()
+            .flat_map(|segment| fragments(&segment.data))
+            .filter_map(|(_, fragment_track, decode_time)| {
+                (fragment_track == track_id).then_some(decode_time)
+            })
+            .collect();
+        let expected: Vec<u64> = (7..=11).map(|number| number * timescale).collect();
+        assert_eq!(
+            actual, expected,
+            "{track:?}: track {track_id} recorded once"
+        );
+    }
+    let events = log.finish().await;
+    for number in 8..=12 {
+        for prefix in ["v", "a"] {
+            let path = format!("{prefix}/{number}.m4s");
+            assert_eq!(downloads(&events, &path), 1, "{track:?}: {path}");
+        }
+    }
+    assert!(
+        events.iter().all(|event| !matches!(
+            event,
+            DownloadEvent::GapSkipped { .. } | DownloadEvent::TrackStalled { .. }
+        )),
+        "{track:?}: held media must not be skipped or dropped: {events:?}"
+    );
+    assert_eq!(origin.hits(&held_path), 2, "one refusal, then success");
+    assert!(origin.hits("manifest.mpd") >= 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limited_video_is_retained_with_default_live_policies() {
+    assert_rate_limited_live_segment_is_retained(MediaTrack::Video).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rate_limited_audio_is_retained_with_default_live_policies() {
+    assert_rate_limited_live_segment_is_retained(MediaTrack::Audio).await;
 }
 
 fn failed_url(error: &Option<DownloadError>) -> Option<&str> {
