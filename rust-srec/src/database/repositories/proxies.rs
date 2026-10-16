@@ -427,14 +427,43 @@ pub(crate) async fn routes_of_kind(
     connection: &mut SqliteConnection,
     owner_kind: &RouteOwner,
 ) -> Result<HashMap<String, ProxyRoute>> {
-    let query = format!(
+    fetch_routes(connection, owner_kind, None).await
+}
+
+/// The routes the given scopes of one kind store, by scope ID; scopes absent
+/// from the map inherit.
+pub(crate) async fn routes_of(
+    connection: &mut SqliteConnection,
+    owner_kind: &RouteOwner,
+    ids: &[&str],
+) -> Result<HashMap<String, ProxyRoute>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    fetch_routes(connection, owner_kind, Some(ids)).await
+}
+
+async fn fetch_routes(
+    connection: &mut SqliteConnection,
+    owner_kind: &RouteOwner,
+    ids: Option<&[&str]>,
+) -> Result<HashMap<String, ProxyRoute>> {
+    let mut query = format!(
         "SELECT id, proxy_route, proxy_id FROM {} WHERE proxy_route != 'inherit'",
         owner_kind.table()
     );
-    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    if let Some(ids) = ids {
+        query.push_str(&format!(" AND id IN ({})", vec!["?"; ids.len()].join(", ")));
+    }
+    let mut statement =
+        sqlx::query_as::<_, (String, String, Option<String>)>(sqlx::AssertSqlSafe(query));
+    for id in ids.unwrap_or_default() {
+        statement = statement.bind(*id);
+    }
+    statement
         .fetch_all(connection)
-        .await?;
-    rows.into_iter()
+        .await?
+        .into_iter()
         .map(|(id, kind, proxy)| Ok((id, ProxyRoute::from_columns(&kind, proxy.as_deref())?)))
         .collect()
 }

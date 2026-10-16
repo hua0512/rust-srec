@@ -74,6 +74,13 @@ pub trait ConfigRepository: Send + Sync {
         &self,
         kind: &RouteOwner,
     ) -> Result<std::collections::HashMap<String, ProxyRoute>>;
+    /// The routes the given scopes of `kind`'s kind store, by scope ID;
+    /// scopes absent from the map inherit.
+    async fn proxy_routes_of(
+        &self,
+        kind: &RouteOwner,
+        ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, ProxyRoute>>;
 
     // Platform Config
     async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel>;
@@ -107,6 +114,8 @@ pub trait ConfigRepository: Send + Sync {
     // Account selections
     /// Every stored account selection.
     async fn list_credential_selections(&self) -> Result<Vec<StoredSelection>>;
+    /// The selections the given streamers store.
+    async fn selections_of_streamers(&self, streamer_ids: &[&str]) -> Result<Vec<StoredSelection>>;
     /// The selections one platform, template or streamer stores.
     async fn credential_selections_for(
         &self,
@@ -405,6 +414,14 @@ impl ConfigRepository for SqlxConfigRepository {
         proxies::routes_of_kind(&mut *self.pool.acquire().await?, kind).await
     }
 
+    async fn proxy_routes_of(
+        &self,
+        kind: &RouteOwner,
+        ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, ProxyRoute>> {
+        proxies::routes_of(&mut *self.pool.acquire().await?, kind, ids).await
+    }
+
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
         validate_global_retention(config)?;
         writes::write_global(
@@ -459,6 +476,10 @@ impl ConfigRepository for SqlxConfigRepository {
 
     async fn list_credential_selections(&self) -> Result<Vec<StoredSelection>> {
         credential_selections::load_all(&mut *self.pool.acquire().await?).await
+    }
+
+    async fn selections_of_streamers(&self, streamer_ids: &[&str]) -> Result<Vec<StoredSelection>> {
+        credential_selections::load_streamers(&mut *self.pool.acquire().await?, streamer_ids).await
     }
 
     async fn credential_selections_for(
@@ -581,6 +602,59 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[tokio::test]
+    async fn page_loaders_read_only_the_requested_streamers() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        for statement in [
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, created_at, updated_at)              VALUES ('s1', 'One', 'https://www.twitch.tv/one', 'platform-twitch', 'NOT_LIVE', 'NORMAL', 0, 0),                     ('s2', 'Two', 'https://www.twitch.tv/two', 'platform-twitch', 'NOT_LIVE', 'NORMAL', 0, 0),                     ('s3', 'Three', 'https://www.twitch.tv/three', 'platform-twitch', 'NOT_LIVE', 'NORMAL', 0, 0)",
+            "UPDATE streamers SET proxy_route = 'direct' WHERE id IN ('s1', 's3')",
+            "INSERT INTO credential_selections (platform_config_id, streamer_id, mode)              VALUES ('platform-twitch', NULL, 'none'), ('platform-twitch', 's1', 'none'),                     ('platform-twitch', 's3', 'none')",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        let repository = SqlxConfigRepository::new(pool.clone(), pool);
+        let streamers = RouteOwner::Streamer(String::new());
+
+        let selections = repository
+            .selections_of_streamers(&["s1", "s2"])
+            .await
+            .unwrap();
+        assert_eq!(
+            selections
+                .iter()
+                .map(|stored| &stored.owner)
+                .collect::<Vec<_>>(),
+            [&CredentialOwner::Streamer {
+                streamer_id: "s1".into()
+            }]
+        );
+        let routes = repository
+            .proxy_routes_of(&streamers, &["s1", "s2"])
+            .await
+            .unwrap();
+        assert_eq!(
+            routes,
+            std::collections::HashMap::from([("s1".to_owned(), ProxyRoute::Direct)])
+        );
+        assert!(
+            repository
+                .selections_of_streamers(&[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            repository
+                .proxy_routes_of(&streamers, &[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[tokio::test]
     async fn cancelled_platform_and_template_deletes_publish_after_commit() {

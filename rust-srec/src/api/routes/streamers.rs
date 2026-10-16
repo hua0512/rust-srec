@@ -549,10 +549,14 @@ pub async fn list_streamers(
     let offset = pagination.offset as usize;
     let effective_limit = pagination.limit.min(100);
     let limit = effective_limit as usize;
+    let page: Vec<_> = streamers.into_iter().skip(offset).take(limit).collect();
+    // Writes validate selections and routes, so only the page's own rows are
+    // read; an empty page reads none.
+    let page_ids: Vec<&str> = page.iter().map(|s| s.id.as_str()).collect();
     let selections: std::collections::HashMap<String, crate::credentials::CredentialSelection> =
         state
             .config_service
-            .list_credential_selections()
+            .selections_of_streamers(&page_ids)
             .await
             .map_err(ApiError::from)?
             .into_iter()
@@ -565,17 +569,16 @@ pub async fn list_streamers(
             .collect();
     let routes = state
         .config_service
-        .proxy_routes_of_kind(
+        .proxy_routes_of(
             &crate::database::repositories::proxies::RouteOwner::Streamer(String::new()),
+            &page_ids,
         )
         .await?;
-    let streamers: Vec<_> = streamers
-        .into_iter()
-        .skip(offset)
-        .take(limit)
+    let streamers: Vec<_> = page
+        .iter()
         .map(|s| {
             let blocked = state.credential_blocks.get(&s.id);
-            metadata_to_response(&s, selections.get(&s.id), routes.get(&s.id), blocked)
+            metadata_to_response(s, selections.get(&s.id), routes.get(&s.id), blocked)
         })
         .collect();
 

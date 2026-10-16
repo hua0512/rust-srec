@@ -333,6 +333,16 @@ where
         self.config_repo.proxy_routes_of_kind(kind).await
     }
 
+    /// The routes the given scopes of `kind`'s kind store, by scope ID;
+    /// absent scopes inherit.
+    pub async fn proxy_routes_of(
+        &self,
+        kind: &crate::database::repositories::proxies::RouteOwner,
+        ids: &[&str],
+    ) -> Result<std::collections::HashMap<String, crate::proxies::ProxyRoute>> {
+        self.config_repo.proxy_routes_of(kind, ids).await
+    }
+
     /// A saved proxy changed: every resolved route may have.
     pub(crate) fn notify_proxies_changed(&self) {
         self.cache.invalidate_all();
@@ -346,6 +356,14 @@ where
         &self,
     ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
         self.config_repo.list_credential_selections().await
+    }
+
+    /// The account selections the given streamers store.
+    pub async fn selections_of_streamers(
+        &self,
+        streamer_ids: &[&str],
+    ) -> Result<Vec<crate::database::repositories::StoredSelection>> {
+        self.config_repo.selections_of_streamers(streamer_ids).await
     }
 
     /// The account selections one platform, template or streamer stores.

@@ -170,6 +170,19 @@ pub(crate) async fn load_all(connection: &mut SqliteConnection) -> Result<Vec<St
     fetch(connection, "", &[]).await
 }
 
+/// The selections the given streamers store.
+pub(crate) async fn load_streamers(
+    connection: &mut SqliteConnection,
+    streamer_ids: &[&str],
+) -> Result<Vec<StoredSelection>> {
+    if streamer_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; streamer_ids.len()].join(", ");
+    let filter = format!(" WHERE s.streamer_id IN ({placeholders})");
+    fetch(connection, &filter, streamer_ids).await
+}
+
 /// The selections an owner stores: a platform's own, a template's for each
 /// platform, or a streamer's.
 pub(crate) async fn load_owner(

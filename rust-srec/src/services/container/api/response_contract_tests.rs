@@ -709,3 +709,66 @@ async fn job_summaries_report_unavailable_progress_for_every_status_and_preserve
     assert_eq!(status, StatusCode::NOT_FOUND);
     container.cancellation_token.cancel();
 }
+
+#[tokio::test]
+async fn streamer_pages_carry_only_their_own_selection_and_route() {
+    let (_container, application, _directory) = application().await;
+    for (name, config) in [
+        (
+            "a-routed",
+            json!({"proxy_route": {"kind": "direct"}, "credential_selection": {"mode": "none"}}),
+        ),
+        ("b-plain", json!({})),
+        ("c-routed", json!({"proxy_route": {"kind": "system"}})),
+    ] {
+        let (status, body) = send(
+            &application,
+            Method::POST,
+            "/api/streamers",
+            json!({"name": name, "url": format!("https://www.twitch.tv/{name}"),
+                   "enabled": false, "streamer_specific_config": config}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+
+    let page = |offset: u32| {
+        let application = application.clone();
+        async move {
+            let (status, body) = send(
+                &application,
+                Method::GET,
+                &format!("/api/streamers?sort_by=name&limit=1&offset={offset}"),
+                Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["total"], 3);
+            body["items"].as_array().unwrap().clone()
+        }
+    };
+    let first = page(0).await;
+    assert_eq!(first[0]["name"], "a-routed");
+    assert_eq!(
+        first[0]["streamer_specific_config"],
+        json!({"proxy_route": {"kind": "direct"}, "credential_selection": {"mode": "none"}})
+    );
+    let second = page(1).await;
+    assert_eq!(second[0]["name"], "b-plain");
+    assert!(
+        second[0]["streamer_specific_config"]
+            .get("proxy_route")
+            .is_none()
+    );
+    assert!(
+        second[0]["streamer_specific_config"]
+            .get("credential_selection")
+            .is_none()
+    );
+    let third = page(2).await;
+    assert_eq!(
+        third[0]["streamer_specific_config"]["proxy_route"],
+        json!({"kind": "system"})
+    );
+    assert!(page(3).await.is_empty());
+}
