@@ -124,7 +124,7 @@ msgid "{0, plural, one {# message} other {# messages}}"
 msgstr "{0, plural, other {# 条弹幕}}"
 
 #. placeholder {0}: result.failed
-#: src/components/pipeline/interrupted-output-list.tsx:88
+#: src/components/pipeline/interrupted-output-list.tsx:109
 msgid "{0, plural, one {# partial file could not be deleted} other {# partial files could not be deleted}}"
 msgstr "{0, plural, other {# 个残留文件删除失败}}"
 
@@ -158,7 +158,7 @@ msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, other {# 个警告}}"
 
 #. placeholder {0}: result.succeeded
-#: src/components/pipeline/interrupted-output-list.tsx:82
+#: src/components/pipeline/interrupted-output-list.tsx:103
 msgid "{0, plural, one {Deleted # partial file} other {Deleted # partial files}}"
 msgstr "{0, plural, other {已删除 # 个残留文件}}"
 
@@ -257,7 +257,7 @@ msgstr "{count, plural, other {# 个产物}}"
 msgid "{count, plural, one {# parameter} other {# parameters}}"
 msgstr "{count, plural, other {# 个参数}}"
 
-#: src/components/pipeline/interrupted-output-list.tsx:45
+#: src/components/pipeline/interrupted-output-list.tsx:49
 msgid "{count, plural, one {# partial file from interrupted jobs} other {# partial files from interrupted jobs}}"
 msgstr "{count, plural, other {中断的任务留下了 # 个残留文件}}"
 
@@ -496,7 +496,7 @@ msgstr "检查发现需要刷新"
 msgid "A crash or forced exit stopped an earlier run of this job before it could clean up. These files are unfinished and safe to delete."
 msgstr "此任务之前的一次运行因崩溃或强制退出而中断，没来得及清理。这些文件没有写完，可以放心删除。"
 
-#: src/components/interrupted-outputs-indicator.tsx:74
+#: src/components/interrupted-outputs-indicator.tsx:36
 msgid "A crash or forced exit stopped these jobs before they could clean up. The files are unfinished and safe to delete."
 msgstr "这些任务因崩溃或强制退出而中断，没来得及清理。这些文件没有写完，可以放心删除。"
 
@@ -1620,7 +1620,7 @@ msgstr "缓存与进度"
 #: src/components/notifications/channel-card.tsx:183
 #: src/components/notifications/channel-form.tsx:454
 #: src/components/notifications/subscription-manager.tsx:470
-#: src/components/pipeline/interrupted-output-list.tsx:238
+#: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:220
@@ -2405,11 +2405,11 @@ msgstr "无法连接到服务器，请检查网络连接。"
 msgid "Could not copy to the clipboard"
 msgstr "无法复制到剪贴板"
 
-#: src/components/pipeline/interrupted-output-list.tsx:70
+#: src/components/pipeline/interrupted-output-list.tsx:92
 msgid "Could not delete the partial file"
 msgstr "残留文件删除失败"
 
-#: src/components/pipeline/interrupted-output-list.tsx:96
+#: src/components/pipeline/interrupted-output-list.tsx:117
 msgid "Could not delete the partial files"
 msgstr "残留文件删除失败"
 
@@ -2938,7 +2938,7 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/credentials/delete-profile-dialog.tsx:153
 #: src/components/notifications/channel-card.tsx:166
 #: src/components/notifications/channel-card.tsx:189
-#: src/components/pipeline/interrupted-output-list.tsx:179
+#: src/components/pipeline/interrupted-output-list.tsx:200
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:182
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:264
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:290
@@ -2971,8 +2971,8 @@ msgstr "删除“{name}”及其保存的登录信息？此操作无法撤销。
 msgid "Delete account"
 msgstr "删除账号"
 
-#: src/components/pipeline/interrupted-output-list.tsx:212
-#: src/components/pipeline/interrupted-output-list.tsx:247
+#: src/components/pipeline/interrupted-output-list.tsx:233
+#: src/components/pipeline/interrupted-output-list.tsx:265
 msgid "Delete all"
 msgstr "全部删除"
 
@@ -2980,7 +2980,7 @@ msgstr "全部删除"
 msgid "Delete Channel?"
 msgstr "删除渠道？"
 
-#: src/components/pipeline/interrupted-output-list.tsx:218
+#: src/components/pipeline/interrupted-output-list.tsx:239
 msgid "Delete every partial file?"
 msgstr "删除所有残留文件？"
 
@@ -4450,7 +4450,7 @@ msgstr "文件配置"
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
-#: src/components/pipeline/interrupted-output-list.tsx:66
+#: src/components/pipeline/interrupted-output-list.tsx:88
 msgid "File kept and removed from the list"
 msgstr "文件已保留，并已从列表移除"
 
@@ -4607,7 +4607,7 @@ msgstr "FLV 解析器"
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
 
-#: src/components/pipeline/interrupted-output-list.tsx:132
+#: src/components/pipeline/interrupted-output-list.tsx:153
 msgid "Folder unavailable"
 msgstr "文件夹无法访问"
 
@@ -5411,7 +5411,7 @@ msgid "Internal"
 msgstr "内部"
 
 #. placeholder {0}: formatRelativeTime(output.interrupted_at, i18n.locale)
-#: src/components/pipeline/interrupted-output-list.tsx:149
+#: src/components/pipeline/interrupted-output-list.tsx:170
 msgid "Interrupted {0}"
 msgstr "{0}中断"
 
@@ -5530,7 +5530,7 @@ msgstr "会话配对的 JSON（按分段列出视频和弹幕），否则为 nul
 msgid "KB"
 msgstr "KB"
 
-#: src/components/pipeline/interrupted-output-list.tsx:170
+#: src/components/pipeline/interrupted-output-list.tsx:191
 msgid "Keep"
 msgstr "保留"
 
@@ -7387,7 +7387,7 @@ msgstr "正在解析流..."
 msgid "Parsing..."
 msgstr "解析中..."
 
-#: src/components/pipeline/interrupted-output-list.tsx:67
+#: src/components/pipeline/interrupted-output-list.tsx:89
 msgid "Partial file deleted"
 msgstr "残留文件已删除"
 
@@ -10507,11 +10507,11 @@ msgstr "此删除步骤依赖 <0>{transformDepLabel}</0>，将删除转码后的
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/pipeline/interrupted-output-list.tsx:222
+#: src/components/pipeline/interrupted-output-list.tsx:243
 msgid "This deletes {count} unfinished temporary files ({size}) left by interrupted jobs. Finished outputs and original recordings are not touched."
 msgstr "将删除中断任务留下的 {count} 个未写完的临时文件（{size}）。已完成的输出文件和原始录制文件不受影响。"
 
-#: src/components/pipeline/interrupted-output-list.tsx:228
+#: src/components/pipeline/interrupted-output-list.tsx:249
 msgid "This deletes {count} unfinished temporary files left by interrupted jobs. Finished outputs and original recordings are not touched."
 msgstr "将删除中断任务留下的 {count} 个未写完的临时文件。已完成的输出文件和原始录制文件不受影响。"
 
@@ -11450,7 +11450,7 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
-#: src/components/pipeline/interrupted-output-list.tsx:159
+#: src/components/pipeline/interrupted-output-list.tsx:180
 msgid "View job"
 msgstr "查看任务"
 

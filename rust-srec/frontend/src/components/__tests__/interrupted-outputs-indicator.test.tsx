@@ -3,6 +3,7 @@ import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InterruptedOutputsIndicator } from '../interrupted-outputs-indicator';
@@ -167,6 +168,50 @@ describe('InterruptedOutputsIndicator', () => {
         data: { ids: ['a', 'b'], keep_files: false },
       }),
     );
+  });
+});
+
+describe('deleting every file', () => {
+  beforeEach(() => {
+    vi.mocked(batchDeleteInterruptedOutputs).mockReset();
+    vi.mocked(toast.success).mockReset();
+  });
+
+  it('sends more files than one batch accepts in several requests', async () => {
+    vi.mocked(batchDeleteInterruptedOutputs).mockImplementation(
+      async ({ data }) => ({
+        requested: data.ids.length,
+        succeeded: data.ids.length,
+        failed: 0,
+        results: data.ids.map((id) => ({ id, success: true })),
+      }),
+    );
+    const outputs = Array.from({ length: 150 }, (_, index) =>
+      output(String(index), `/videos/${index}.tmp-${index}.mp4`, 1),
+    );
+    renderIndicator(outputs);
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: '150 partial files from interrupted jobs (150 B)',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(
+      Array.from(dialog.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Delete all',
+      )!,
+    );
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Deleted 150 partial files'),
+    );
+    const batches = vi
+      .mocked(batchDeleteInterruptedOutputs)
+      .mock.calls.map(([{ data }]) => data.ids);
+    expect(batches.map((ids) => ids.length)).toEqual([100, 50]);
+    expect(batches.flat()).toEqual(outputs.map((item) => item.id));
   });
 });
 

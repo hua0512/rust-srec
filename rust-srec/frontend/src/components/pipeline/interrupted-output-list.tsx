@@ -8,7 +8,11 @@ import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 
 import { invalidateInterruptedOutputs } from '@/api/interrupted-outputs';
-import type { InterruptedOutput } from '@/api/schemas';
+import {
+  MAX_BATCH_IDS,
+  type BatchResponse,
+  type InterruptedOutput,
+} from '@/api/schemas';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +56,24 @@ function errorDescription(error: unknown) {
   return error instanceof Error ? error.message : undefined;
 }
 
+/** Deletes every listed file, in as many batch requests as the endpoint needs. */
+async function deleteAll(ids: string[]): Promise<BatchResponse> {
+  const results: BatchResponse['results'] = [];
+  for (let start = 0; start < ids.length; start += MAX_BATCH_IDS) {
+    const response = await batchDeleteInterruptedOutputs({
+      data: { ids: ids.slice(start, start + MAX_BATCH_IDS), keep_files: false },
+    });
+    results.push(...response.results);
+  }
+  const succeeded = results.filter((item) => item.success).length;
+  return {
+    requested: results.length,
+    succeeded,
+    failed: results.length - succeeded,
+    results,
+  };
+}
+
 /** Deletes or keeps entries, then refreshes every listing. */
 function useSettleInterruptedOutputs() {
   const { i18n } = useLingui();
@@ -74,8 +96,7 @@ function useSettleInterruptedOutputs() {
   });
 
   const all = useMutation({
-    mutationFn: (ids: string[]) =>
-      batchDeleteInterruptedOutputs({ data: { ids, keep_files: false } }),
+    mutationFn: deleteAll,
     onSuccess: (result) => {
       if (result.failed === 0) {
         toast.success(
@@ -239,10 +260,7 @@ export function DeleteAllInterruptedOutputs({
             </AlertDialogCancel>
             <AlertDialogAction
               className={buttonVariants({ variant: 'destructive' })}
-              // Batches are capped at 100 IDs; a larger list takes a second pass.
-              onClick={() =>
-                all.mutate(outputs.slice(0, 100).map((output) => output.id))
-              }
+              onClick={() => all.mutate(outputs.map((output) => output.id))}
             >
               <Trans>Delete all</Trans>
             </AlertDialogAction>

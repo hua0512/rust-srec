@@ -391,9 +391,17 @@ export const BatchDagActionSchema = z.discriminatedUnion('type', [
 ]);
 export type BatchDagAction = z.infer<typeof BatchDagActionSchema>;
 
-// `max(100)` matches the backend's batch size limits (e.g. MAX_DAG_BATCH_SIZE), so
-// an oversized selection is rejected before it reaches the network.
-export const BatchIdsSchema = z.array(z.string().min(1)).min(1).max(100);
+/**
+ * The most IDs one batch request accepts. Matches the backend's batch size
+ * limits (e.g. MAX_DAG_BATCH_SIZE), so an oversized selection is rejected
+ * before it reaches the network.
+ */
+export const MAX_BATCH_IDS = 100;
+
+export const BatchIdsSchema = z
+  .array(z.string().min(1))
+  .min(1)
+  .max(MAX_BATCH_IDS);
 
 /** Rejects repeated IDs, reported against `ids`. */
 export function withUniqueIds<T extends z.ZodType<{ ids: string[] }>>(
@@ -434,8 +442,8 @@ export const DeleteOutputResponseSchema = z.object({
 export type DeleteOutputResponse = z.infer<typeof DeleteOutputResponseSchema>;
 
 // A partial temporary file an interrupted job may have left next to its
-// destination. `exists` is null when the folder is unavailable or the file
-// system did not answer in time.
+// destination. `exists` is null when the folder is unavailable, the file
+// system did not answer in time, or an earlier check is still waiting on it.
 export const InterruptedOutputSchema = z.object({
   id: z.string(),
   path: z.string(),
