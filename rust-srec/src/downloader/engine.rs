@@ -27,7 +27,7 @@ mod traits;
 pub mod utils;
 
 pub use ffmpeg::FfmpegEngine;
-pub use mesio::{DashDownloader, DownloadStats, FlvDownloader, HlsDownloader, MesioEngine, config};
+pub use mesio::{DownloadStats, MesioEngine, config};
 pub use streamlink::StreamlinkEngine;
 pub use traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,

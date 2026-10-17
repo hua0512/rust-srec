@@ -11,9 +11,7 @@ use mesio::{
     DashConfig, DownloadEvent, DownloadEventStream, DownloadRequest, MesioConfig, MesioDownloader,
     ProtocolSelection,
 };
-use parking_lot::RwLock;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -23,22 +21,18 @@ use super::config::build_dash_config;
 use super::helpers::DownloadStats;
 use super::hls_downloader::{HlsDownloader, SegmentedProtocol, SessionLifecycle};
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadConfig, EngineStartError, SegmentEvent};
+use crate::downloader::engine::traits::{DownloadHandle, EngineStartError};
 
 /// MPEG-DASH download orchestrator.
 ///
 /// Starts a DASH session with the engine's DASH settings and records it
 /// through the shared fMP4 writer path, with or without pipeline processing.
-pub struct DashDownloader {
-    /// Download configuration.
-    config: Arc<RwLock<DownloadConfig>>,
-    manual_split: Arc<pipeline_common::ManualSplitControl>,
+pub(super) struct DashDownloader {
+    /// The download attempt: shared configuration, event sender, cancellation
+    /// token and manual-split control.
+    handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Event sender for segment events.
-    event_tx: mpsc::Sender<SegmentEvent>,
-    /// Cancellation token for graceful shutdown.
-    cancellation_token: CancellationToken,
     /// Base DASH configuration from the engine.
     dash_config: Option<DashConfig>,
 }
@@ -47,39 +41,27 @@ impl DashDownloader {
     /// Create a new DASH downloader.
     ///
     /// # Arguments
-    /// * `config` - Download configuration with URL, output settings, etc.
+    /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `event_tx` - Channel sender for emitting segment events.
-    /// * `cancellation_token` - Token for graceful cancellation.
     /// * `dash_config` - Optional base DASH configuration from the engine.
-    pub fn new(
-        config: Arc<RwLock<DownloadConfig>>,
+    pub(super) fn new(
+        handle: Arc<DownloadHandle>,
         engine_config: MesioEngineConfig,
-        event_tx: mpsc::Sender<SegmentEvent>,
-        cancellation_token: CancellationToken,
         dash_config: Option<DashConfig>,
     ) -> Self {
         Self {
-            config,
-            manual_split: Arc::default(),
+            handle,
             engine_config,
-            event_tx,
-            cancellation_token,
             dash_config,
         }
-    }
-
-    pub fn with_manual_split(mut self, control: Arc<pipeline_common::ManualSplitControl>) -> Self {
-        self.manual_split = control;
-        self
     }
 
     /// Run the DASH download, consuming the stream and writing to files.
     ///
     /// Returns download statistics on success.
-    pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
-        let token = self.cancellation_token.child_token();
-        let config = self.config.read().clone();
+    pub(super) async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
+        let token = self.handle.cancellation_token.child_token();
+        let config = self.handle.config_snapshot();
 
         let dash_config = build_dash_config(&config, self.dash_config.clone(), &self.engine_config)
             .map_err(|e| {
@@ -123,21 +105,14 @@ impl DashDownloader {
             config.managed_credentials,
         ));
 
-        HlsDownloader::new(
-            self.config,
-            self.engine_config,
-            self.event_tx,
-            self.cancellation_token,
-            None,
-        )
-        .with_manual_split(self.manual_split)
-        .record(
-            SegmentedProtocol::Dash,
-            token,
-            session.items,
-            SessionLifecycle::from(session.handle),
-        )
-        .await
+        HlsDownloader::new(self.handle, self.engine_config, None)
+            .record(
+                SegmentedProtocol::Dash,
+                token,
+                session.items,
+                SessionLifecycle::from(session.handle),
+            )
+            .await
     }
 }
 
@@ -197,10 +172,12 @@ mod tests {
     use axum::Router;
     use axum::http::{StatusCode, Uri};
     use mesio::{EventSink, MediaTrack};
+    use tokio::sync::mpsc;
     use tokio::time::timeout;
 
     use super::*;
     use crate::downloader::EngineEndSignal;
+    use crate::downloader::engine::traits::{DownloadConfig, EngineType, SegmentEvent};
 
     const FIXTURES: &[(&str, &[u8])] = &[
         (
@@ -298,13 +275,13 @@ mod tests {
         .with_protocol(crate::downloader::DownloadProtocol::Dash)
         .with_processing_enabled(processing);
         let (event_tx, mut event_rx) = mpsc::channel(64);
-        let downloader = DashDownloader::new(
-            Arc::new(RwLock::new(config)),
-            MesioEngineConfig::default(),
+        let handle = Arc::new(DownloadHandle::new(
+            "download",
+            EngineType::Mesio,
+            config,
             event_tx,
-            CancellationToken::new(),
-            None,
-        );
+        ));
+        let downloader = DashDownloader::new(handle.clone(), MesioEngineConfig::default(), None);
 
         let stats = timeout(Duration::from_secs(30), downloader.run())
             .await
@@ -323,6 +300,13 @@ mod tests {
             }
         }
         assert_eq!(completed, Some(EngineEndSignal::DashEnd));
+        if processing {
+            assert_ne!(
+                handle.manual_split.snapshot().revision,
+                0,
+                "the pipeline drives the attempt's own manual-split control"
+            );
+        }
 
         let written: Vec<_> = std::fs::read_dir(temp.path())
             .expect("output directory")
@@ -396,13 +380,8 @@ mod tests {
         }))
         .unwrap();
         let (event_tx, _event_rx) = mpsc::channel(8);
-        let downloader = DashDownloader::new(
-            Arc::new(RwLock::new(config)),
-            engine_config,
-            event_tx,
-            CancellationToken::new(),
-            None,
-        );
+        let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
+        let downloader = DashDownloader::new(Arc::new(handle), engine_config, None);
 
         let error = timeout(Duration::from_secs(5), downloader.run())
             .await

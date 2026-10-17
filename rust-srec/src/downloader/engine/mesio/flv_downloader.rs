@@ -8,35 +8,29 @@ use flv::data::FlvData;
 use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter, FlvWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::{DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
-use parking_lot::RwLock;
 use pipeline_common::{
     ChannelSpec, PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
 };
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use super::config::build_flv_config;
 use super::helpers::{self, DownloadStats};
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadConfig, EngineStartError, SegmentEvent};
+use crate::downloader::engine::traits::{DownloadHandle, EngineStartError};
 
 /// FLV-specific download orchestrator.
 ///
 /// Handles FLV stream downloading with support for both pipeline-processed
 /// and raw download modes. Manages stream consumption, writer setup, and
 /// event emission through the provided channel.
-pub struct FlvDownloader {
-    /// Download configuration.
-    config: Arc<RwLock<DownloadConfig>>,
-    manual_split: Arc<pipeline_common::ManualSplitControl>,
+pub(super) struct FlvDownloader {
+    /// The download attempt: shared configuration, event sender, cancellation
+    /// token and manual-split control.
+    handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Event sender for segment events.
-    event_tx: mpsc::Sender<SegmentEvent>,
-    /// Cancellation token for graceful shutdown.
-    cancellation_token: CancellationToken,
     /// Base FLV configuration from the engine.
     flv_config: Option<FlvProtocolConfig>,
 }
@@ -45,40 +39,24 @@ impl FlvDownloader {
     /// Create a new FLV downloader.
     ///
     /// # Arguments
-    /// * `config` - Download configuration with URL, output settings, etc.
+    /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `event_tx` - Channel sender for emitting segment events.
-    /// * `cancellation_token` - Token for graceful cancellation.
     /// * `flv_config` - Optional base FLV configuration from the engine.
-    pub fn new(
-        config: Arc<RwLock<DownloadConfig>>,
+    pub(super) fn new(
+        handle: Arc<DownloadHandle>,
         engine_config: MesioEngineConfig,
-        event_tx: mpsc::Sender<SegmentEvent>,
-        cancellation_token: CancellationToken,
         flv_config: Option<FlvProtocolConfig>,
     ) -> Self {
         Self {
-            config,
-            manual_split: Arc::default(),
+            handle,
             engine_config,
-            event_tx,
-            cancellation_token,
             flv_config,
         }
     }
 
-    pub fn with_manual_split(mut self, control: Arc<pipeline_common::ManualSplitControl>) -> Self {
-        self.manual_split = control;
-        self
-    }
-
-    fn config_snapshot(&self) -> DownloadConfig {
-        self.config.read().clone()
-    }
-
     /// Create a MesioDownloader with the configured settings.
     fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let flv_config = build_flv_config(&config, self.flv_config.clone());
 
         MesioDownloader::new(MesioConfig {
@@ -100,12 +78,12 @@ impl FlvDownloader {
     /// 7. Handles cancellation, progress tracking, and error reporting
     ///
     /// Returns download statistics on success.
-    pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
-        let token = self.cancellation_token.child_token();
+    pub(super) async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
+        let token = self.handle.cancellation_token.child_token();
 
         let downloader = self.create_downloader(token.clone());
 
-        let url = self.config_snapshot().url;
+        let url = self.handle.config_snapshot().url;
 
         let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
@@ -121,7 +99,7 @@ impl FlvDownloader {
         })?;
         let flv_stream = session.items;
 
-        let config_snapshot = self.config_snapshot();
+        let config_snapshot = self.handle.config_snapshot();
 
         // Route based on enable_processing flag AND engine config
         if config_snapshot.enable_processing && self.engine_config.fix_flv {
@@ -142,7 +120,7 @@ impl FlvDownloader {
         + Send
         + Unpin,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(streamer_id = %streamer_id, "Starting FLV download with pipeline processing");
 
@@ -161,9 +139,9 @@ impl FlvDownloader {
         // Create StreamerContext with streamer name and cancellation token
         let context = Arc::new(
             StreamerContext::with_name(&streamer_id, token.clone())
-                .with_manual_split(self.manual_split.clone()),
+                .with_manual_split(self.handle.manual_split.clone()),
         );
-        self.manual_split.enable();
+        self.handle.manual_split.enable();
 
         // Create FlvPipeline using PipelineProvider::with_config
         let pipeline_provider =
@@ -186,7 +164,7 @@ impl FlvDownloader {
             base_name,
         });
 
-        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
+        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
@@ -197,7 +175,7 @@ impl FlvDownloader {
             &pipeline_input_tx,
             helpers::StreamConsumeContext {
                 managed_credentials: config.managed_credentials,
-                parent_token: &self.cancellation_token,
+                parent_token: &self.handle.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
@@ -216,7 +194,7 @@ impl FlvDownloader {
             processing_tasks,
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
-                event_tx: &self.event_tx,
+                event_tx: &self.handle.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
                 output_dir: &config.output_dir,
@@ -241,7 +219,7 @@ impl FlvDownloader {
         + Send
         + Unpin,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
             "Starting FLV download without pipeline processing for {}",
@@ -265,7 +243,7 @@ impl FlvDownloader {
             base_name,
         });
 
-        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
+        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
@@ -276,7 +254,7 @@ impl FlvDownloader {
             &tx,
             helpers::StreamConsumeContext {
                 managed_credentials: config.managed_credentials,
-                parent_token: &self.cancellation_token,
+                parent_token: &self.handle.cancellation_token,
                 child_token: &token,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
@@ -295,7 +273,7 @@ impl FlvDownloader {
             vec![],
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
-                event_tx: &self.event_tx,
+                event_tx: &self.handle.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
                 output_dir: &config.output_dir,
@@ -311,6 +289,7 @@ impl FlvDownloader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::downloader::engine::traits::{DownloadConfig, EngineType, SegmentEvent};
     use bytes::Bytes;
     use flv::header::FlvHeader;
     use flv::tag::{FlvTag, FlvTagType};
@@ -330,13 +309,8 @@ mod tests {
         .with_filename_template("test-flv");
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
-        let downloader = FlvDownloader::new(
-            Arc::new(RwLock::new(config)),
-            MesioEngineConfig::default(),
-            event_tx,
-            CancellationToken::new(),
-            None,
-        );
+        let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
+        let downloader = FlvDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
 
         let header = FlvData::Header(FlvHeader::new(true, true));
         let tag = FlvData::Tag(FlvTag::new(

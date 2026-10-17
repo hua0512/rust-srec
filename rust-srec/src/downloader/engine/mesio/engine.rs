@@ -184,37 +184,22 @@ impl DownloadEngine for MesioEngine {
         // Delegate to appropriate downloader based on protocol type
         let download_result = match protocol_type {
             ProtocolType::Hls => {
-                let downloader = HlsDownloader::new(
-                    handle.config.clone(),
-                    self.config.clone(),
-                    handle.event_tx.clone(),
-                    handle.cancellation_token.clone(),
-                    self.hls_config.clone(),
-                )
-                .with_manual_split(handle.manual_split.clone());
-                downloader.run().await.map(|_| ())
+                HlsDownloader::new(handle, self.config.clone(), self.hls_config.clone())
+                    .run()
+                    .await
+                    .map(|_| ())
             }
             ProtocolType::Dash => {
-                let downloader = DashDownloader::new(
-                    handle.config.clone(),
-                    self.config.clone(),
-                    handle.event_tx.clone(),
-                    handle.cancellation_token.clone(),
-                    self.dash_config.clone(),
-                )
-                .with_manual_split(handle.manual_split.clone());
-                downloader.run().await.map(|_| ())
+                DashDownloader::new(handle, self.config.clone(), self.dash_config.clone())
+                    .run()
+                    .await
+                    .map(|_| ())
             }
             ProtocolType::Flv => {
-                let downloader = FlvDownloader::new(
-                    handle.config.clone(),
-                    self.config.clone(),
-                    handle.event_tx.clone(),
-                    handle.cancellation_token.clone(),
-                    self.flv_config.clone(),
-                )
-                .with_manual_split(handle.manual_split.clone());
-                downloader.run().await.map(|_| ())
+                FlvDownloader::new(handle, self.config.clone(), self.flv_config.clone())
+                    .run()
+                    .await
+                    .map(|_| ())
             }
             _ => {
                 let error_msg = format!("Unsupported protocol type: {:?}", protocol_type);

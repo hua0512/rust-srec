@@ -16,13 +16,11 @@ use mesio::{
     BoxMediaStream, DownloadError, DownloadRequest, DownloadTerminal, MesioConfig, MesioDownloader,
     ProtocolSelection,
 };
-use parking_lot::RwLock;
 use pipeline_common::{
     PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -35,7 +33,7 @@ use super::helpers::{self, DownloadStats};
 use crate::database::models::engine::MesioEngineConfig;
 use crate::downloader::EngineEndSignal;
 use crate::downloader::engine::traits::{
-    DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
+    DownloadFailureKind, DownloadHandle, EngineStartError, SegmentEvent,
 };
 
 /// A protocol whose sessions deliver fMP4/TS `HlsData` and are written by
@@ -213,16 +211,12 @@ fn conclude_session(
 /// Handles HLS stream downloading with support for both pipeline-processed
 /// and raw download modes. Manages stream consumption, writer setup, and
 /// event emission through the provided channel.
-pub struct HlsDownloader {
-    /// Download configuration.
-    config: Arc<RwLock<DownloadConfig>>,
-    manual_split: Arc<pipeline_common::ManualSplitControl>,
+pub(super) struct HlsDownloader {
+    /// The download attempt: shared configuration, event sender, cancellation
+    /// token and manual-split control.
+    handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Event sender for segment events.
-    event_tx: mpsc::Sender<SegmentEvent>,
-    /// Cancellation token for graceful shutdown.
-    cancellation_token: CancellationToken,
     /// Base HLS configuration from the engine.
     hls_config: Option<mesio::hls::HlsConfig>,
 }
@@ -231,40 +225,24 @@ impl HlsDownloader {
     /// Create a new HLS downloader.
     ///
     /// # Arguments
-    /// * `config` - Download configuration with URL, output settings, etc.
+    /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `event_tx` - Channel sender for emitting segment events.
-    /// * `cancellation_token` - Token for graceful cancellation.
     /// * `hls_config` - Optional base HLS configuration from the engine.
-    pub fn new(
-        config: Arc<RwLock<DownloadConfig>>,
+    pub(super) fn new(
+        handle: Arc<DownloadHandle>,
         engine_config: MesioEngineConfig,
-        event_tx: mpsc::Sender<SegmentEvent>,
-        cancellation_token: CancellationToken,
         hls_config: Option<mesio::hls::HlsConfig>,
     ) -> Self {
         Self {
-            config,
-            manual_split: Arc::default(),
+            handle,
             engine_config,
-            event_tx,
-            cancellation_token,
             hls_config,
         }
     }
 
-    pub fn with_manual_split(mut self, control: Arc<pipeline_common::ManualSplitControl>) -> Self {
-        self.manual_split = control;
-        self
-    }
-
-    fn config_snapshot(&self) -> DownloadConfig {
-        self.config.read().clone()
-    }
-
     /// Create a MesioDownloader with the configured settings.
     fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let hls_config = build_hls_config(&config, self.hls_config.clone(), &self.engine_config);
 
         MesioDownloader::new(MesioConfig {
@@ -281,12 +259,12 @@ impl HlsDownloader {
     /// and records it through [`Self::record`].
     ///
     /// Returns download statistics on success.
-    pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
-        let token = self.cancellation_token.child_token();
+    pub(super) async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
+        let token = self.handle.cancellation_token.child_token();
 
         let downloader = self.create_downloader(token.clone());
 
-        let url = self.config_snapshot().url;
+        let url = self.handle.config_snapshot().url;
 
         let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
@@ -330,14 +308,14 @@ impl HlsDownloader {
         lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let label = protocol.label();
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id;
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {
             let next = next_initial_item(
                 hls_stream.next(),
-                &self.cancellation_token,
+                &self.handle.cancellation_token,
                 &token,
                 protocol,
             )
@@ -354,7 +332,8 @@ impl HlsDownloader {
                 Some(Err(e)) => {
                     let kind = classify_download_error(&e);
                     observe_segment_event_send(
-                        self.event_tx
+                        self.handle
+                            .event_tx
                             .send(SegmentEvent::DownloadFailed {
                                 kind,
                                 message: sanitize_engine_message(
@@ -372,7 +351,8 @@ impl HlsDownloader {
                 }
                 None => {
                     observe_segment_event_send(
-                        self.event_tx
+                        self.handle
+                            .event_tx
                             .send(SegmentEvent::DownloadFailed {
                                 kind: DownloadFailureKind::SourceUnavailable,
                                 message: format!("{label} stream is empty"),
@@ -395,7 +375,7 @@ impl HlsDownloader {
             HlsData::EndMarker(_) => unreachable!("filtered before extension detection"),
         };
 
-        let config_snapshot = self.config_snapshot();
+        let config_snapshot = self.handle.config_snapshot();
         let processing =
             config_snapshot.enable_processing && protocol.fix_enabled(&self.engine_config);
         info!(
@@ -447,7 +427,7 @@ impl HlsDownloader {
         extension: &str,
         lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
             "Starting {} download with pipeline processing for {}",
@@ -462,9 +442,9 @@ impl HlsDownloader {
         // Create StreamerContext with cancellation token
         let context = Arc::new(
             StreamerContext::with_name(&streamer_id, token.clone())
-                .with_manual_split(self.manual_split.clone()),
+                .with_manual_split(self.handle.manual_split.clone()),
         );
-        self.manual_split.enable();
+        self.handle.manual_split.enable();
 
         // Create HlsPipeline using PipelineProvider::with_config
         let pipeline_provider =
@@ -495,7 +475,7 @@ impl HlsDownloader {
             max_file_size,
         });
 
-        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
+        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
@@ -517,7 +497,7 @@ impl HlsDownloader {
             processing_tasks,
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
-                event_tx: &self.event_tx,
+                event_tx: &self.handle.event_tx,
                 streamer_id: &streamer_id,
                 protocol: protocol.label(),
                 output_dir: &config.output_dir,
@@ -543,7 +523,7 @@ impl HlsDownloader {
         extension: &str,
         lifecycle: SessionLifecycle,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
             "Starting {} download without pipeline processing for {}",
@@ -573,7 +553,7 @@ impl HlsDownloader {
             max_file_size,
         });
 
-        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
+        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
@@ -588,7 +568,7 @@ impl HlsDownloader {
             vec![],
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
-                event_tx: &self.event_tx,
+                event_tx: &self.handle.event_tx,
                 streamer_id: &streamer_id,
                 protocol: protocol.label(),
                 output_dir: &config.output_dir,
@@ -614,7 +594,7 @@ impl HlsDownloader {
         tx: impl helpers::StreamSender<HlsData>,
         lifecycle: SessionLifecycle,
     ) -> (Option<(DownloadFailureKind, String)>, EngineEndSignal) {
-        let config = self.config_snapshot();
+        let config = self.handle.config_snapshot();
 
         // Tap each item to detect the `EndOfStream` marker mesio emits only
         // when the platform ended the stream (HLS `#EXT-X-ENDLIST`, the end of
@@ -644,7 +624,7 @@ impl HlsDownloader {
             &tx,
             helpers::StreamConsumeContext {
                 managed_credentials: config.managed_credentials,
-                parent_token: &self.cancellation_token,
+                parent_token: &self.handle.cancellation_token,
                 child_token: token,
                 streamer_id: &config.streamer_id,
                 protocol: protocol.label(),
@@ -664,7 +644,7 @@ impl HlsDownloader {
         settle_session(
             SettleContext {
                 protocol,
-                parent_token: &self.cancellation_token,
+                parent_token: &self.handle.cancellation_token,
                 child_token: token,
                 streamer_id: &config.streamer_id,
                 managed_credentials: config.managed_credentials,
@@ -725,8 +705,10 @@ async fn settle_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::downloader::engine::traits::{DownloadConfig, EngineType};
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
+    use tokio::sync::mpsc;
     use tokio::time::{Duration, timeout};
 
     #[tokio::test]
@@ -775,13 +757,8 @@ mod tests {
         .with_filename_template("test-hls");
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
-        let downloader = HlsDownloader::new(
-            Arc::new(RwLock::new(config)),
-            MesioEngineConfig::default(),
-            event_tx,
-            CancellationToken::new(),
-            None,
-        );
+        let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
+        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
 
         let first_segment = HlsData::ts(
             MediaSegment {
@@ -911,13 +888,9 @@ mod tests {
         )
         .with_filename_template("test-session-end");
         let (event_tx, mut event_rx) = mpsc::channel::<SegmentEvent>(64);
-        let downloader = HlsDownloader::new(
-            Arc::new(RwLock::new(config)),
-            MesioEngineConfig::default(),
-            event_tx,
-            parent.clone(),
-            None,
-        );
+        let mut handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
+        handle.cancellation_token = parent.clone();
+        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
         let result = timeout(
             Duration::from_secs(10),
             downloader.download_raw(
