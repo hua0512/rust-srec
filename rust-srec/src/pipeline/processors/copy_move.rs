@@ -29,6 +29,8 @@ use crate::Result;
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 use crate::utils::text::format_bytes;
 
+mod native;
+
 /// Default value for create_dirs option.
 fn default_true() -> bool {
     true
@@ -110,55 +112,6 @@ impl CopyMoveProcessor {
         Self
     }
 
-    /// Retain Linux's kernel-assisted copy path while checking cancellation
-    /// between bounded transfers. A blocked filesystem syscall still has to
-    /// return before cancellation can release the staged output and worker.
-    #[cfg(target_os = "linux")]
-    fn copy_linux_with_cancellation(
-        source: &Path,
-        destination: &Path,
-        mut is_cancelled: impl FnMut() -> bool,
-    ) -> std::io::Result<u64> {
-        use std::fs::{File, OpenOptions};
-        use std::io::Read;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-
-        const CHUNK_SIZE: u64 = 8 * 1024 * 1024;
-
-        let mut reader = File::open(source)?;
-        let metadata = reader.metadata()?;
-        if !metadata.is_file() {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidInput,
-                "the source path is neither a regular file nor a symlink to a regular file",
-            ));
-        }
-        let permissions = metadata.permissions();
-        let mut writer = OpenOptions::new()
-            .mode(permissions.mode())
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(destination)?;
-        if writer.metadata()?.is_file() {
-            writer.set_permissions(permissions)?;
-        }
-
-        let mut copied = 0;
-        loop {
-            if is_cancelled() {
-                return Err(std::io::Error::other("Copy cancelled"));
-            }
-            // Take<File> retains std::io::copy's Linux copy_file_range /
-            // sendfile / splice specialization and fallback handling.
-            let bytes = std::io::copy(&mut (&mut reader).take(CHUNK_SIZE), &mut writer)?;
-            copied += bytes;
-            if bytes < CHUNK_SIZE {
-                return Ok(copied);
-            }
-        }
-    }
-
     /// Copy `source` to `dest` through a temporary sibling, verify the byte
     /// count, and rename the copy into place. Cancellation therefore leaves at
     /// most a `.tmp-*` file, never a partial file under the final destination
@@ -194,13 +147,8 @@ impl CopyMoveProcessor {
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
-            #[cfg(target_os = "linux")]
-            let copied = Self::copy_linux_with_cancellation(&source, staged_output.path(), || {
-                cancel.is_cancelled()
-            })?;
-            // Other platforms retain native metadata, streams and cloning.
-            #[cfg(not(target_os = "linux"))]
-            let copied = std::fs::copy(source, staged_output.path())?;
+            let copied =
+                native::copy_file(&source, staged_output.path(), || cancel.is_cancelled())?;
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
@@ -840,132 +788,6 @@ mod tests {
     use super::super::test_utils::utc_datetime;
     use super::*;
     use tempfile::TempDir;
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_copy_cancels_after_a_chunk_and_cleans_the_unpublished_output() {
-        let directory = TempDir::new().unwrap();
-        let source = directory.path().join("source");
-        let destination = directory.path().join("destination");
-        let chunk_size = 8 * 1024 * 1024;
-        let contents = vec![b'x'; 2 * chunk_size + 1];
-        std::fs::write(&source, &contents).unwrap();
-        std::fs::write(&destination, b"original").unwrap();
-
-        let staged_path;
-        {
-            let mut staged = TempOutputGuard::new(&destination);
-            staged.cleanup_on_current_thread = true;
-            staged_path = staged.path().to_path_buf();
-            // Cancel as soon as a complete chunk is visible. This executes in
-            // the copy thread and does not depend on another task's timing.
-            let result =
-                CopyMoveProcessor::copy_linux_with_cancellation(&source, &staged_path, || {
-                    std::fs::metadata(&staged_path)
-                        .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
-                });
-
-            assert_eq!(result.unwrap_err().to_string(), "Copy cancelled");
-            assert_eq!(
-                std::fs::metadata(&staged_path).unwrap().len(),
-                chunk_size as u64
-            );
-        }
-
-        assert!(!staged_path.exists());
-        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
-        assert_eq!(std::fs::read(&source).unwrap(), contents);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_copy_preserves_content_permissions_and_truncation_through_source_symlinks() {
-        use std::os::unix::fs::{PermissionsExt, symlink};
-
-        let directory = TempDir::new().unwrap();
-        let source = directory.path().join("source");
-        let link = directory.path().join("source-link");
-        let destination = directory.path().join("destination");
-        symlink(&source, &link).unwrap();
-
-        // Empty, exact-chunk and partial final transfers must all reach EOF.
-        for size in [0, 8 * 1024 * 1024, 8 * 1024 * 1024 + 1] {
-            let contents = vec![b'x'; size];
-            std::fs::write(&source, &contents).unwrap();
-            std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o440)).unwrap();
-            std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
-
-            let copied =
-                CopyMoveProcessor::copy_linux_with_cancellation(&link, &destination, || false)
-                    .unwrap();
-
-            assert_eq!(copied, size as u64);
-            assert_eq!(std::fs::read(&destination).unwrap(), contents);
-            assert_eq!(
-                std::fs::metadata(&destination)
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o7777,
-                0o440
-            );
-            std::fs::remove_file(&source).unwrap();
-            std::fs::remove_file(&destination).unwrap();
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_copy_reads_to_eof_if_the_source_grows_between_chunks() {
-        use std::io::Write;
-
-        let directory = TempDir::new().unwrap();
-        let source = directory.path().join("source");
-        let destination = directory.path().join("destination");
-        let chunk_size = 8 * 1024 * 1024;
-        std::fs::write(&source, vec![b'x'; chunk_size]).unwrap();
-        let mut appended = false;
-
-        let copied = CopyMoveProcessor::copy_linux_with_cancellation(&source, &destination, || {
-            if !appended
-                && std::fs::metadata(&destination)
-                    .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
-            {
-                let mut growing_source = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open(&source)
-                    .unwrap();
-                growing_source.write_all(b"appended").unwrap();
-                appended = true;
-            }
-            false
-        })
-        .unwrap();
-
-        assert!(appended);
-        assert_eq!(copied, chunk_size as u64 + 8);
-        assert_eq!(
-            std::fs::read(&destination).unwrap(),
-            std::fs::read(&source).unwrap()
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_copy_rejects_a_non_file_source_before_truncating_destination() {
-        let directory = TempDir::new().unwrap();
-        let destination = directory.path().join("destination");
-        std::fs::write(&destination, b"original").unwrap();
-
-        let error =
-            CopyMoveProcessor::copy_linux_with_cancellation(directory.path(), &destination, || {
-                false
-            })
-            .unwrap_err();
-
-        assert_eq!(error.kind(), ErrorKind::InvalidInput);
-        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
-    }
 
     #[test]
     fn cancelled_copy_retains_worker_completion_until_blocking_work_exits() {
