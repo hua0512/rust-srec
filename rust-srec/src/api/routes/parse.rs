@@ -169,9 +169,9 @@ async fn managed_config(
             .get_streamer_by_url(url)
             .filter(|row| !row.is_deleted())
     {
-        let context = state
+        let config = state
             .config_service
-            .get_context_for_streamer(&streamer.id)
+            .get_config_for_streamer(&streamer.id)
             .await
             .map_err(ApiError::from)?;
         let platform = state
@@ -185,9 +185,9 @@ async fn managed_config(
             },
             streamer.platform_config_id.clone(),
             platform.platform_name,
-            context.config.credential_policy.clone(),
-            context.config.platform_extras.clone(),
-            context.config.extractor,
+            config.credential_policy.clone(),
+            config.platform_extras.clone(),
+            config.extractor,
         )
     } else {
         // Without an explicit profile, anything short of a managed platform policy
@@ -626,11 +626,11 @@ async fn resolve_extractor_config_for_url(
         .filter(|streamer| !streamer.is_deleted())
     {
         resolved.platform_id = Some(streamer.platform_config_id.clone());
-        match config_service.get_context_for_streamer(&streamer.id).await {
-            Ok(context) => {
+        match config_service.get_config_for_streamer(&streamer.id).await {
+            Ok(config) => {
                 // The resolver already removed account fields from these extras.
-                resolved.platform_extras = context.config.platform_extras.clone();
-                resolved.extractor = context.config.extractor;
+                resolved.platform_extras = config.platform_extras.clone();
+                resolved.extractor = config.extractor;
                 return resolved;
             }
             Err(error) => {
@@ -917,9 +917,8 @@ pub(super) async fn resolve_route_for_url(
         .filter(|streamer| !streamer.is_deleted())
     {
         return Ok(config_service
-            .get_context_for_streamer(&streamer.id)
+            .get_config_for_streamer(&streamer.id)
             .await?
-            .config
             .proxy_route
             .clone());
     }

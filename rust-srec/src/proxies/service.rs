@@ -201,9 +201,8 @@ impl ProxyService {
                 drop(connection);
                 return Ok(self
                     .config_service
-                    .get_context_for_streamer(streamer_id)
+                    .get_config_for_streamer(streamer_id)
                     .await?
-                    .config
                     .proxy_route
                     .clone());
             }

@@ -23,7 +23,7 @@ use crate::utils::json::{self, JsonContext};
 
 use super::cache::{ConfigCache, InFlightRequest};
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
-use super::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
+use super::{ConfigResolver, MergedConfig};
 
 mod global_cache;
 use global_cache::GlobalConfigCache;
@@ -36,9 +36,9 @@ const CONFIG_RESOLVE_HARD_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// The owner that created a new in-flight entry via `ConfigCache::get_or_create_in_flight` must
 /// eventually call `complete_in_flight` or `fail_in_flight`. If its task is cancelled mid-resolve
-/// (e.g. an axum client disconnect during `resolve_context_for_streamer`), this guard's drop runs
+/// (e.g. an axum client disconnect during `resolve_config_for_streamer`), this guard's drop runs
 /// `fail_in_flight` so the entry is removed and waiters wake; otherwise every later
-/// `get_context_for_streamer` for that streamer would block on a request that never completes.
+/// `get_config_for_streamer` for that streamer would block on a request that never completes.
 struct InFlightGuard<'a> {
     cache: &'a ConfigCache,
     streamer_id: &'a str,
@@ -539,43 +539,14 @@ where
     /// - Deduplicates concurrent requests for the same streamer
     /// - Only one request will resolve the config while others wait
     pub async fn get_config_for_streamer(&self, streamer_id: &str) -> Result<Arc<MergedConfig>> {
-        Ok(self
-            .get_context_for_streamer(streamer_id)
-            .await?
-            .config
-            .clone())
-    }
-
-    /// Read current configuration layers without waiting for another subscriber's
-    /// invalidation, or cancelling an unrelated cached resolution in flight.
-    pub(crate) async fn get_fresh_config_for_streamer(
-        &self,
-        streamer_id: &str,
-    ) -> Result<Arc<MergedConfig>> {
-        tokio::time::timeout(
-            CONFIG_RESOLVE_HARD_TIMEOUT,
-            self.resolve_context_for_streamer(streamer_id),
-        )
-        .await
-        .map_err(|_| crate::Error::config("Fresh streamer configuration resolution timed out"))?
-        .map(|context| context.config)
-    }
-
-    /// Get the resolved streamer context for a streamer.
-    ///
-    /// This includes the merged config with its resolved credential policy.
-    pub async fn get_context_for_streamer(
-        &self,
-        streamer_id: &str,
-    ) -> Result<Arc<ResolvedStreamerContext>> {
         // One retry is enough to handle "cache invalidated" races and a
         // cancelled owner (InFlightGuard's drop runs fail_in_flight) without
         // creating unbounded loops if the config is being updated repeatedly.
         for attempt in 0..2 {
             // Check cache first
-            if let Some(context) = self.cache.get(streamer_id) {
+            if let Some(config) = self.cache.get(streamer_id) {
                 trace!("Cache hit for streamer {}", streamer_id);
-                return Ok(context);
+                return Ok(config);
             }
 
             // Check for in-flight request (deduplication)
@@ -585,7 +556,7 @@ where
                 // Another request is already resolving this config, wait for it
                 trace!("Waiting for in-flight request for streamer {}", streamer_id);
                 match self.cache.wait_for_in_flight(&cell).await {
-                    Ok(context) => return Ok(context),
+                    Ok(config) => return Ok(config),
                     Err(message)
                         if attempt == 0
                             && (message.contains("Configuration invalidated")
@@ -617,7 +588,7 @@ where
             // Resolve the config
             let resolve = tokio::time::timeout(
                 CONFIG_RESOLVE_HARD_TIMEOUT,
-                self.resolve_context_for_streamer(streamer_id),
+                self.resolve_config_for_streamer(streamer_id),
             )
             .await;
 
@@ -626,12 +597,12 @@ where
             guard.disarm();
 
             return match resolve {
-                Ok(Ok(context)) => {
+                Ok(Ok(config)) => {
                     // Complete the in-flight request (caches and notifies waiters)
-                    let context = Arc::new(context);
+                    let config = Arc::new(config);
                     self.cache
-                        .complete_in_flight(streamer_id, &cell, context.clone());
-                    Ok(context)
+                        .complete_in_flight(streamer_id, &cell, config.clone());
+                    Ok(config)
                 }
                 Ok(Err(e)) => {
                     self.cache.fail_in_flight(
@@ -658,20 +629,32 @@ where
         )))
     }
 
-    /// Resolve the streamer context for a streamer without caching.
-    ///
-    /// Delegates to ConfigResolver which handles the 4-layer merging logic.
-    async fn resolve_context_for_streamer(
+    /// Read current configuration layers without waiting for another subscriber's
+    /// invalidation, or cancelling an unrelated cached resolution in flight.
+    pub(crate) async fn get_fresh_config_for_streamer(
         &self,
         streamer_id: &str,
-    ) -> Result<ResolvedStreamerContext> {
+    ) -> Result<Arc<MergedConfig>> {
+        tokio::time::timeout(
+            CONFIG_RESOLVE_HARD_TIMEOUT,
+            self.resolve_config_for_streamer(streamer_id),
+        )
+        .await
+        .map_err(|_| crate::Error::config("Fresh streamer configuration resolution timed out"))?
+        .map(Arc::new)
+    }
+
+    /// Resolve the merged configuration for a streamer without caching.
+    ///
+    /// Delegates to ConfigResolver which handles the 4-layer merging logic.
+    async fn resolve_config_for_streamer(&self, streamer_id: &str) -> Result<MergedConfig> {
         // Get the streamer and convert to domain entity
         let streamer_db = self.streamer_repo.get_streamer(streamer_id).await?;
         let streamer = self.convert_to_domain_streamer(&streamer_db)?;
 
         // Use ConfigResolver to handle the merging logic
         let resolver = ConfigResolver::new(Arc::clone(&self.config_repo));
-        resolver.resolve_context_for_streamer(&streamer).await
+        resolver.resolve_config_for_streamer(&streamer).await
     }
 
     /// Convert database streamer model to domain entity.

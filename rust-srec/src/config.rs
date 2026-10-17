@@ -5,14 +5,12 @@
 
 pub(crate) mod backup;
 pub(crate) mod cache;
-mod context;
 pub(crate) mod events;
 mod merged;
 mod resolver;
 pub(crate) mod service;
 
 pub use cache::{CacheStats, ConfigCache};
-pub use context::ResolvedStreamerContext;
 pub use events::{ConfigEventBroadcaster, ConfigUpdateEvent};
 pub use merged::{
     GlobalConfigLayer, MergedConfig, MergedConfigBuilder, PlatformConfigLayer, TemplateConfigLayer,

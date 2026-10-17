@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, OnceCell};
 
-use crate::config::ResolvedStreamerContext;
+use crate::config::MergedConfig;
 
 /// Default TTL for cached configurations (1 hour).
 const DEFAULT_TTL: Duration = Duration::from_secs(3600);
@@ -16,14 +16,14 @@ const DEFAULT_TTL: Duration = Duration::from_secs(3600);
 /// A cached configuration entry with expiration time.
 #[derive(Clone)]
 struct CacheEntry {
-    context: Arc<ResolvedStreamerContext>,
+    config: Arc<MergedConfig>,
     expires_at: Instant,
 }
 
 impl CacheEntry {
-    fn new(context: Arc<ResolvedStreamerContext>, ttl: Duration) -> Self {
+    fn new(config: Arc<MergedConfig>, ttl: Duration) -> Self {
         Self {
-            context,
+            config,
             expires_at: Instant::now() + ttl,
         }
     }
@@ -37,7 +37,7 @@ impl CacheEntry {
 ///
 /// When multiple requests come in for the same streamer config simultaneously,
 /// only one will actually resolve the config while others wait for the result.
-pub(super) type InFlightResult = std::result::Result<Arc<ResolvedStreamerContext>, String>;
+pub(super) type InFlightResult = std::result::Result<Arc<MergedConfig>, String>;
 
 pub(super) struct InFlightState {
     result: OnceCell<InFlightResult>,
@@ -118,7 +118,7 @@ impl ConfigCache {
     /// Get a cached configuration for a streamer.
     ///
     /// Returns None if not cached or expired.
-    pub fn get(&self, streamer_id: &str) -> Option<Arc<ResolvedStreamerContext>> {
+    pub fn get(&self, streamer_id: &str) -> Option<Arc<MergedConfig>> {
         let _mutation = self.mutation.lock();
         let entry = self.streamer_configs.get(streamer_id)?;
 
@@ -128,13 +128,13 @@ impl ConfigCache {
             return None;
         }
 
-        Some(entry.context.clone())
+        Some(entry.config.clone())
     }
 
     /// Insert a configuration into the cache.
-    pub fn insert(&self, streamer_id: String, context: Arc<ResolvedStreamerContext>) {
+    pub fn insert(&self, streamer_id: String, config: Arc<MergedConfig>) {
         let _mutation = self.mutation.lock();
-        let entry = CacheEntry::new(context, self.ttl);
+        let entry = CacheEntry::new(config, self.ttl);
         self.streamer_configs.insert(streamer_id, entry);
     }
 
@@ -225,7 +225,7 @@ impl ConfigCache {
         &self,
         streamer_id: &str,
         request: &InFlightRequest,
-        context: Arc<ResolvedStreamerContext>,
+        config: Arc<MergedConfig>,
     ) {
         let _mutation = self.mutation.lock();
         if let Some((_, current)) = self
@@ -236,11 +236,11 @@ impl ConfigCache {
             if let Some(hook) = self.completion_hook.lock().clone() {
                 hook();
             }
-            current.set_result(Ok(context.clone()));
+            current.set_result(Ok(config.clone()));
             // The mutation lock keeps invalidation outside the remove/publish gap.
             // Calling public insert here would acquire it recursively.
             self.streamer_configs
-                .insert(streamer_id.to_string(), CacheEntry::new(context, self.ttl));
+                .insert(streamer_id.to_string(), CacheEntry::new(config, self.ttl));
         }
     }
 
@@ -306,10 +306,10 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{GlobalConfigLayer, MergedConfig, PlatformConfigLayer};
+    use crate::config::{GlobalConfigLayer, PlatformConfigLayer};
 
-    fn create_test_context() -> ResolvedStreamerContext {
-        let config = MergedConfig::builder()
+    fn create_test_config() -> MergedConfig {
+        MergedConfig::builder()
             .with_global(GlobalConfigLayer {
                 output_folder: "/app/output".to_string(),
                 output_filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
@@ -333,11 +333,7 @@ mod tests {
                 download_delay_ms: Some(1_000),
                 ..Default::default()
             })
-            .build();
-
-        ResolvedStreamerContext {
-            config: Arc::new(config),
-        }
+            .build()
     }
 
     #[tokio::test]
@@ -367,15 +363,15 @@ mod tests {
         }
         assert_eq!(requests.iter().filter(|(_, created)| *created).count(), 1);
 
-        let context = Arc::new(create_test_context());
-        cache.complete_in_flight("streamer", &requests[0].0, context.clone());
+        let config = Arc::new(create_test_config());
+        cache.complete_in_flight("streamer", &requests[0].0, config.clone());
         for (request, _) in requests {
             let received =
                 tokio::time::timeout(Duration::from_secs(1), cache.wait_for_in_flight(&request))
                     .await
                     .unwrap()
                     .unwrap();
-            assert!(Arc::ptr_eq(&received, &context));
+            assert!(Arc::ptr_eq(&received, &config));
         }
     }
 
@@ -403,7 +399,7 @@ mod tests {
             completed_cache.complete_in_flight(
                 "streamer",
                 &request,
-                Arc::new(create_test_context()),
+                Arc::new(create_test_config()),
             );
             completed_tx.send(()).unwrap();
         });
@@ -446,10 +442,10 @@ mod tests {
             let (new, created) = cache.get_or_create_in_flight("streamer");
             assert!(created);
             cache.fail_in_flight("streamer", &old, "late failure".into());
-            cache.complete_in_flight("streamer", &old, Arc::new(create_test_context()));
+            cache.complete_in_flight("streamer", &old, Arc::new(create_test_config()));
             assert!(cache.has_in_flight("streamer"));
             assert!(cache.get("streamer").is_none());
-            let current = Arc::new(create_test_context());
+            let current = Arc::new(create_test_config());
             cache.complete_in_flight("streamer", &new, current.clone());
             assert!(Arc::ptr_eq(&cache.get("streamer").unwrap(), &current));
             assert!(
@@ -470,16 +466,11 @@ mod tests {
     #[test]
     fn test_cache_insert_and_get() {
         let cache = ConfigCache::new();
-        let context = create_test_context();
-
-        cache.insert("streamer-1".to_string(), Arc::new(context));
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
 
         let cached = cache.get("streamer-1");
         assert!(cached.is_some());
-        assert_eq!(
-            cached.unwrap().config.output_folder,
-            "/app/output".to_string()
-        );
+        assert_eq!(cached.unwrap().output_folder, "/app/output".to_string());
     }
 
     #[test]
@@ -491,7 +482,7 @@ mod tests {
     #[test]
     fn test_cache_invalidate() {
         let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_context()));
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
 
         assert!(cache.get("streamer-1").is_some());
 
@@ -503,8 +494,8 @@ mod tests {
     #[test]
     fn test_cache_invalidate_all() {
         let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_context()));
-        cache.insert("streamer-2".to_string(), Arc::new(create_test_context()));
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
+        cache.insert("streamer-2".to_string(), Arc::new(create_test_config()));
 
         assert_eq!(cache.len(), 2);
 
@@ -516,7 +507,7 @@ mod tests {
     #[test]
     fn test_cache_ttl_expiration() {
         let cache = ConfigCache::with_ttl(Duration::from_millis(10));
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_context()));
+        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
 
         // Should be present immediately
         assert!(cache.get("streamer-1").is_some());
@@ -533,15 +524,15 @@ mod tests {
         let cache = ConfigCache::new();
         cache.insert(
             "platform-a-streamer-1".to_string(),
-            Arc::new(create_test_context()),
+            Arc::new(create_test_config()),
         );
         cache.insert(
             "platform-a-streamer-2".to_string(),
-            Arc::new(create_test_context()),
+            Arc::new(create_test_config()),
         );
         cache.insert(
             "platform-b-streamer-1".to_string(),
-            Arc::new(create_test_context()),
+            Arc::new(create_test_config()),
         );
 
         assert_eq!(cache.len(), 3);

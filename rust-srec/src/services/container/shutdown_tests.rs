@@ -144,7 +144,7 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
             let (_directory, container, state, row) = fixture().await;
             let previous = state
                 .config_service
-                .get_context_for_streamer(&row.id)
+                .get_config_for_streamer(&row.id)
                 .await
                 .unwrap();
             let config = exported(&state).await;
@@ -239,7 +239,7 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                 .unwrap();
             let current = state
                 .config_service
-                .get_context_for_streamer(&row.id)
+                .get_config_for_streamer(&row.id)
                 .await
                 .unwrap();
             assert!(!Arc::ptr_eq(&previous, &current));
@@ -250,7 +250,7 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                     assert!(matches!(events.try_recv().unwrap(),
                         ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } if streamer_id == row.id));
                     if matches!(mutation, Mutation::Import) {
-                        let policy = current.config.credential_policy.as_ref().unwrap();
+                        let policy = current.credential_policy.as_ref().unwrap();
                         let profile_id = policy.selection.profile_ids()[0];
                         let stored: String = sqlx::query_scalar(
                             "SELECT cookies FROM credential_profiles WHERE id = ?",

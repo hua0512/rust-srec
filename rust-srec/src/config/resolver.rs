@@ -16,10 +16,7 @@ use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
 
-use super::{
-    GlobalConfigLayer, MergedConfig, PlatformConfigLayer, ResolvedStreamerContext,
-    TemplateConfigLayer,
-};
+use super::{GlobalConfigLayer, MergedConfig, PlatformConfigLayer, TemplateConfigLayer};
 
 /// Parse a stored extractor name into [`ExtractorSelection`].
 ///
@@ -58,26 +55,13 @@ impl<R: ConfigRepository> ConfigResolver<R> {
     /// 2. Platform config (overrides global)
     /// 3. Template config (overrides platform)
     /// 4. Streamer-specific config (overrides template)
+    ///
+    /// The merged config carries the streamer's route and account selection policy, read with
+    /// the same platform/template records loaded for the merge.
     pub async fn resolve_config_for_streamer(
         &self,
         streamer: &Streamer,
     ) -> Result<MergedConfig, Error> {
-        Ok(self
-            .resolve_context_for_streamer(streamer)
-            .await?
-            .config
-            .as_ref()
-            .clone())
-    }
-
-    /// Resolve the effective configuration for a streamer plus runtime-only context.
-    ///
-    /// The merged config carries the streamer's route and account selection policy, read with
-    /// the same platform/template records loaded for the merge.
-    pub async fn resolve_context_for_streamer(
-        &self,
-        streamer: &Streamer,
-    ) -> Result<ResolvedStreamerContext, Error> {
         // Start with builder
         debug!(
             "Resolving config for streamer: {} (Platform: {}, Template: {:?})",
@@ -431,9 +415,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 extras,
             )
         });
-        Ok(ResolvedStreamerContext {
-            config: Arc::new(config),
-        })
+        Ok(config)
     }
 }
 

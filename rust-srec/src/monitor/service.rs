@@ -477,12 +477,11 @@ impl<
         if current != *binding {
             return Err(crate::credentials::ProfileError::SourceChanged.into());
         }
-        let context = self
+        let config = self
             .config_service
-            .get_context_for_streamer(streamer_id)
+            .get_config_for_streamer(streamer_id)
             .await?;
-        if context
-            .config
+        if config
             .credential_policy
             .as_ref()
             .map(|policy| &policy.generation)
@@ -668,10 +667,10 @@ impl<
         let hard_timeout = std::cmp::max(STREAM_CHECK_HARD_TIMEOUT, self.config.request_timeout);
         let deadline = OperationDeadline::new(hard_timeout);
 
-        let (context, active) = tokio::time::timeout_at(deadline.instant(), async {
-            let context = self.config_service.get_context_for_streamer(&streamer.id).await?;
+        let (config, active) = tokio::time::timeout_at(deadline.instant(), async {
+            let config = self.config_service.get_config_for_streamer(&streamer.id).await?;
             let active: Option<(String, Option<String>)> = sqlx::query_as("SELECT id, credential_binding FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL").bind(&streamer.id).fetch_optional(&self.write_pool).await?;
-            Ok::<_, Error>((context, active))
+            Ok::<_, Error>((config, active))
         }).await.map_err(|_| Error::Monitor("Credential context deadline exceeded".into()))??;
         let binding = active
             .as_ref()
@@ -681,7 +680,7 @@ impl<
         let key = CredentialCheckKey::new(
             &streamer.id,
             requested_purpose,
-            context.config.credential_policy.as_ref(),
+            config.credential_policy.as_ref(),
             active.map(|(id, _)| id),
             binding.as_ref(),
         );
@@ -715,7 +714,7 @@ impl<
                     // Load filters for this streamer
                     let filters = filter_store.get(streamer_id).await?;
 
-                    let config = &context.config;
+                    let config = &config;
 
                     if let Some(policy) = &config.credential_policy {
                         let execution = execution_service.as_ref().ok_or_else(|| {
@@ -795,9 +794,8 @@ impl<
                             _ => credential_blocks.clear(streamer_id),
                         }
                         let result = result?;
-                        let current = config_service.get_context_for_streamer(streamer_id).await?;
+                        let current = config_service.get_config_for_streamer(streamer_id).await?;
                         if current
-                            .config
                             .credential_policy
                             .as_ref()
                             .map(|policy| &policy.generation)
