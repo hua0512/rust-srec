@@ -14,6 +14,7 @@ import {
   MediaOutputSchema,
   MediaOutputSummarySchema,
   JobProgressSnapshotSchema,
+  StalledOperationListSchema,
   UploadRecordListSchema,
   DagExecutionSchema,
   DagGraphSchema,
@@ -204,6 +205,14 @@ export const getPipelineStats = createServerFn({ method: 'GET' }).handler(
   async () => {
     const json = await fetchBackend('/pipeline/dags/stats');
     return PipelineStatsSchema.parse(json);
+  },
+);
+
+/** Ended jobs whose file operation still holds a worker, longest-stalled first. */
+export const listStalledOperations = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const json = await fetchBackend('/pipeline/stalled-operations');
+    return StalledOperationListSchema.parse(json).items;
   },
 );
 

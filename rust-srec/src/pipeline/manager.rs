@@ -27,7 +27,9 @@ use super::processors::{
 use super::progress::JobProgressSnapshot;
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::upload_events::UploadStatusBroadcaster;
-use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
+use super::worker_pool::{
+    STALLED_OPERATION_THRESHOLD, StalledOperation, WorkerPool, WorkerPoolConfig, WorkerType,
+};
 use crate::Error;
 use crate::Result;
 use crate::config::ConfigService;

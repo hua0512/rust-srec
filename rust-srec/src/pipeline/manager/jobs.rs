@@ -102,6 +102,18 @@ where
         self.job_queue.get_job_progress(job_id).await
     }
 
+    /// Jobs that already ended while blocking work they started, typically a file operation on
+    /// an unresponsive disk or network share, has held a worker for longer than
+    /// `STALLED_OPERATION_THRESHOLD`, longest-stalled first.
+    pub fn stalled_operations(&self) -> Vec<StalledOperation> {
+        let mut operations = self
+            .cpu_pool
+            .stalled_operations(STALLED_OPERATION_THRESHOLD);
+        operations.extend(self.io_pool.stalled_operations(STALLED_OPERATION_THRESHOLD));
+        operations.sort_by_key(|operation| operation.ended_at);
+        operations
+    }
+
     /// In-flight upload jobs with their latest progress snapshots.
     /// Feeds the WebSocket `DownloadSnapshot.uploads` slice.
     pub async fn list_active_uploads(&self) -> Result<Vec<crate::pipeline::ActiveUploadInfo>> {
