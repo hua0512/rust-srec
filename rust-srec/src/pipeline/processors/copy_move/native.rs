@@ -11,24 +11,29 @@ use std::path::Path;
 /// Copy `source` over `destination` and return the default stream's byte
 /// count. Once `is_cancelled` returns `true` the copy stops with a
 /// "Copy cancelled" error and may leave a partial `destination` for the caller
-/// to remove.
+/// to remove. `on_progress` receives the bytes copied so far, ending with the
+/// total; platforms without cancellation report only the total.
 pub(super) fn copy_file(
     source: &Path,
     destination: &Path,
     is_cancelled: impl FnMut() -> bool,
+    on_progress: impl FnMut(u64),
 ) -> io::Result<u64> {
     #[cfg(target_os = "linux")]
     {
-        copy_linux(source, destination, is_cancelled)
+        copy_linux(source, destination, is_cancelled, on_progress)
     }
     #[cfg(windows)]
     {
-        copy_windows(source, destination, is_cancelled)
+        copy_windows(source, destination, is_cancelled, on_progress)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = is_cancelled;
-        std::fs::copy(source, destination)
+        let mut on_progress = on_progress;
+        let copied = std::fs::copy(source, destination)?;
+        on_progress(copied);
+        Ok(copied)
     }
 }
 
@@ -39,6 +44,7 @@ fn copy_linux(
     source: &Path,
     destination: &Path,
     mut is_cancelled: impl FnMut() -> bool,
+    mut on_progress: impl FnMut(u64),
 ) -> io::Result<u64> {
     use std::fs::{File, OpenOptions};
     use std::io::Read;
@@ -74,6 +80,7 @@ fn copy_linux(
         // sendfile / splice specialization and fallback handling.
         let bytes = io::copy(&mut (&mut reader).take(CHUNK_SIZE), &mut writer)?;
         copied += bytes;
+        on_progress(copied);
         if bytes < CHUNK_SIZE {
             return Ok(copied);
         }
@@ -83,14 +90,15 @@ fn copy_linux(
 /// Copy through `CopyFileExW`, the call `std::fs::copy` makes on Windows, so
 /// attributes, alternate data streams and metadata are copied the same way and
 /// the result is the default stream's byte count. Windows invokes the progress
-/// routine on this thread before the first transfer and after each chunk;
-/// returning `PROGRESS_CANCEL` stops the copy, and Windows then deletes the
-/// partial destination itself.
+/// routine on this thread before the first transfer and after each chunk, which
+/// also reports the default stream's progress; returning `PROGRESS_CANCEL`
+/// stops the copy, and Windows then deletes the partial destination itself.
 #[cfg(windows)]
-fn copy_windows<F: FnMut() -> bool>(
+fn copy_windows<F: FnMut() -> bool, P: FnMut(u64)>(
     source: &Path,
     destination: &Path,
     is_cancelled: F,
+    on_progress: P,
 ) -> io::Result<u64> {
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::{ERROR_REQUEST_ABORTED, HANDLE};
@@ -99,14 +107,15 @@ fn copy_windows<F: FnMut() -> bool>(
         PROGRESS_CANCEL, PROGRESS_CONTINUE,
     };
 
-    struct Progress<F> {
+    struct Progress<F, P> {
         is_cancelled: F,
+        on_progress: P,
         copied: i64,
     }
 
     // The routine must not unwind across the FFI boundary; the production
-    // closure only reads a cancellation token.
-    unsafe extern "system" fn progress_routine<F: FnMut() -> bool>(
+    // closures only read a cancellation token and send a progress report.
+    unsafe extern "system" fn progress_routine<F: FnMut() -> bool, P: FnMut(u64)>(
         _total_file_size: i64,
         _total_bytes_transferred: i64,
         _stream_size: i64,
@@ -117,13 +126,14 @@ fn copy_windows<F: FnMut() -> bool>(
         _destination_file: HANDLE,
         data: *const c_void,
     ) -> COPYPROGRESSROUTINE_PROGRESS {
-        // SAFETY: `data` points to the `Progress<F>` that `copy_windows`
+        // SAFETY: `data` points to the `Progress<F, P>` that `copy_windows`
         // exclusively borrows for the whole `CopyFileExW` call, which runs this
         // routine synchronously on the calling thread and never after it
         // returns.
-        let progress = unsafe { &mut *data.cast_mut().cast::<Progress<F>>() };
+        let progress = unsafe { &mut *data.cast_mut().cast::<Progress<F, P>>() };
         if stream_number == 1 {
             progress.copied = stream_bytes_transferred;
+            (progress.on_progress)(stream_bytes_transferred as u64);
         }
         if (progress.is_cancelled)() {
             PROGRESS_CANCEL
@@ -136,6 +146,7 @@ fn copy_windows<F: FnMut() -> bool>(
     let destination = windows_long_path(destination)?;
     let mut progress = Progress {
         is_cancelled,
+        on_progress,
         copied: 0,
     };
     // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the
@@ -144,7 +155,7 @@ fn copy_windows<F: FnMut() -> bool>(
         CopyFileExW(
             source.as_ptr(),
             destination.as_ptr(),
-            Some(progress_routine::<F>),
+            Some(progress_routine::<F, P>),
             (&raw mut progress).cast::<c_void>().cast_const(),
             std::ptr::null_mut(),
             0,
@@ -210,6 +221,39 @@ mod tests {
     use crate::pipeline::processors::outputs::TempOutputGuard;
     use tempfile::TempDir;
 
+    /// The cancellable copies report the default stream's cumulative bytes as
+    /// they go, ending exactly at the file size.
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn copy_reports_increasing_bytes_ending_at_the_total() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        let contents = vec![b'x'; 20 * 1024 * 1024 + 3];
+        std::fs::write(&source, &contents).unwrap();
+        let mut reported = Vec::new();
+
+        let copied = copy_file(
+            &source,
+            &destination,
+            || false,
+            |copied| reported.push(copied),
+        )
+        .unwrap();
+
+        assert_eq!(copied, contents.len() as u64);
+        assert!(reported.len() > 2, "{reported:?}");
+        assert!(
+            reported.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{reported:?}"
+        );
+        assert!(
+            reported.iter().any(|&bytes| bytes > 0 && bytes < copied),
+            "{reported:?}"
+        );
+        assert_eq!(reported.last(), Some(&copied));
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_copy_cancels_after_a_chunk_and_cleans_the_unpublished_output() {
@@ -228,10 +272,15 @@ mod tests {
             staged_path = staged.path().to_path_buf();
             // Cancel as soon as a complete chunk is visible. This executes in
             // the copy thread and does not depend on another task's timing.
-            let result = copy_file(&source, &staged_path, || {
-                std::fs::metadata(&staged_path)
-                    .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
-            });
+            let result = copy_file(
+                &source,
+                &staged_path,
+                || {
+                    std::fs::metadata(&staged_path)
+                        .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
+                },
+                |_| {},
+            );
 
             assert_eq!(result.unwrap_err().to_string(), "Copy cancelled");
             assert_eq!(
@@ -263,7 +312,7 @@ mod tests {
             std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o440)).unwrap();
             std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
 
-            let copied = copy_file(&link, &destination, || false).unwrap();
+            let copied = copy_file(&link, &destination, || false, |_| {}).unwrap();
 
             assert_eq!(copied, size as u64);
             assert_eq!(std::fs::read(&destination).unwrap(), contents);
@@ -292,20 +341,25 @@ mod tests {
         std::fs::write(&source, vec![b'x'; chunk_size]).unwrap();
         let mut appended = false;
 
-        let copied = copy_file(&source, &destination, || {
-            if !appended
-                && std::fs::metadata(&destination)
-                    .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
-            {
-                let mut growing_source = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open(&source)
-                    .unwrap();
-                growing_source.write_all(b"appended").unwrap();
-                appended = true;
-            }
-            false
-        })
+        let copied = copy_file(
+            &source,
+            &destination,
+            || {
+                if !appended
+                    && std::fs::metadata(&destination)
+                        .is_ok_and(|metadata| metadata.len() >= chunk_size as u64)
+                {
+                    let mut growing_source = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&source)
+                        .unwrap();
+                    growing_source.write_all(b"appended").unwrap();
+                    appended = true;
+                }
+                false
+            },
+            |_| {},
+        )
         .unwrap();
 
         assert!(appended);
@@ -323,7 +377,7 @@ mod tests {
         let destination = directory.path().join("destination");
         std::fs::write(&destination, b"original").unwrap();
 
-        let error = copy_file(directory.path(), &destination, || false).unwrap_err();
+        let error = copy_file(directory.path(), &destination, || false, |_| {}).unwrap_err();
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(std::fs::read(&destination).unwrap(), b"original");
@@ -342,10 +396,15 @@ mod tests {
         // The routine runs once before the first transfer and after every
         // chunk, so a complete copy of this file sees it many times.
         let mut complete_calls = 0;
-        let copied = copy_file(&source, &directory.path().join("complete"), || {
-            complete_calls += 1;
-            false
-        })
+        let copied = copy_file(
+            &source,
+            &directory.path().join("complete"),
+            || {
+                complete_calls += 1;
+                false
+            },
+            |_| {},
+        )
         .unwrap();
         assert_eq!(copied, contents.len() as u64);
         assert!(complete_calls > 2, "{complete_calls}");
@@ -358,10 +417,15 @@ mod tests {
             staged_path = staged.path().to_path_buf();
             // Cancel after the first chunk. This executes in the copy thread
             // and does not depend on another task's timing.
-            let result = copy_file(&source, &staged_path, || {
-                calls += 1;
-                calls == 2
-            });
+            let result = copy_file(
+                &source,
+                &staged_path,
+                || {
+                    calls += 1;
+                    calls == 2
+                },
+                |_| {},
+            );
 
             assert_eq!(result.unwrap_err().to_string(), "Copy cancelled");
             // Windows removes the partial destination itself; the guard's
@@ -387,7 +451,7 @@ mod tests {
             std::fs::write(&source, &contents).unwrap();
             std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
 
-            let copied = copy_file(&source, &destination, || false).unwrap();
+            let copied = copy_file(&source, &destination, || false, |_| {}).unwrap();
 
             assert_eq!(copied, size as u64);
             assert_eq!(std::fs::read(&destination).unwrap(), contents);
@@ -405,7 +469,7 @@ mod tests {
         let destination = nested.join(format!("{}.mp4", "c".repeat(60)));
         assert!(destination.as_os_str().len() > 260);
 
-        let copied = copy_file(&source, &destination, || false).unwrap();
+        let copied = copy_file(&source, &destination, || false, |_| {}).unwrap();
 
         assert_eq!(copied, 8);
         assert_eq!(std::fs::read(&destination).unwrap(), b"contents");
@@ -456,7 +520,7 @@ mod tests {
             let mut staged = TempOutputGuard::new(&destination);
             staged.cleanup_on_current_thread = true;
             staged_path = staged.path().to_path_buf();
-            copy_file(&source, &staged_path, || false).unwrap();
+            copy_file(&source, &staged_path, || false, |_| {}).unwrap();
             // CopyFileExW carries the source's read-only attribute over.
             assert!(
                 std::fs::metadata(&staged_path)

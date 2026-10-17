@@ -23,6 +23,7 @@ import {
   replaceNewestLogPage,
   type JobLogPages,
 } from '@/lib/job-log-pages';
+import { JobProgressBytes } from '@/components/pipeline/jobs/job-progress-bytes';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { Button } from '@/components/ui/button';
 import {
@@ -677,6 +678,7 @@ function JobDetailsPage() {
                   </div>
                   {job.status === 'PROCESSING' && progressSnapshot && (
                     <>
+                      <JobProgressBytes snapshot={progressSnapshot} />
                       <div className="p-4 rounded-xl bg-background/50 border border-border/50 text-center">
                         <div className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">
                           <Trans>Speed</Trans>

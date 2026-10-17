@@ -9,6 +9,7 @@ pub enum ProgressKind {
     Rclone,
     BaiduPcs,
     Compression,
+    Copy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
