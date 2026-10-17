@@ -158,6 +158,7 @@ export const JobProgressKindSchema = z.enum([
   'rclone',
   'baidupcs',
   'compression',
+  'copy',
 ]);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;
 

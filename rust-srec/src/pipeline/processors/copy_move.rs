@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
+use std::time::{Duration, Instant};
 use tokio::fs;
 use tracing::{debug, error, info};
 
@@ -26,6 +27,7 @@ use super::traits::{
 };
 use super::utils::create_log_entry;
 use crate::Result;
+use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 use crate::utils::text::format_bytes;
 
@@ -98,6 +100,84 @@ impl Default for CopyMoveConfig {
     }
 }
 
+/// Minimum gap between copy progress reports. A finished copy always reports.
+const COPY_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Byte progress for one file copy, throttled before it reaches the job's
+/// progress channel, which drops reports rather than blocking the copy.
+struct CopyProgress {
+    reporter: ProgressReporter,
+    bytes_total: u64,
+    /// One-based position of this file among the job's inputs.
+    file_index: usize,
+    file_count: usize,
+    file: String,
+    started: Instant,
+    last_report: Option<Instant>,
+}
+
+impl CopyProgress {
+    fn new(
+        reporter: ProgressReporter,
+        bytes_total: u64,
+        file_index: usize,
+        file_count: usize,
+        file: &str,
+    ) -> Self {
+        Self {
+            reporter,
+            bytes_total,
+            file_index,
+            file_count,
+            file: file.to_owned(),
+            started: Instant::now(),
+            last_report: None,
+        }
+    }
+
+    fn update(&mut self, bytes_done: u64) {
+        self.update_at(bytes_done, Instant::now());
+    }
+
+    fn update_at(&mut self, bytes_done: u64, now: Instant) {
+        if bytes_done < self.bytes_total
+            && self
+                .last_report
+                .is_some_and(|last| now.saturating_duration_since(last) < COPY_PROGRESS_INTERVAL)
+        {
+            return;
+        }
+        self.last_report = Some(now);
+        self.reporter
+            .report(self.snapshot(bytes_done, now.saturating_duration_since(self.started)));
+    }
+
+    fn snapshot(&self, bytes_done: u64, elapsed: Duration) -> JobProgressSnapshot {
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Copy);
+        snapshot.bytes_done = Some(bytes_done);
+        snapshot.bytes_total = Some(self.bytes_total);
+        // A source that grows during the copy is read to its end; keep the
+        // percentage within bounds.
+        snapshot.percent = Some(if self.bytes_total == 0 {
+            100.0
+        } else {
+            (bytes_done.min(self.bytes_total) as f64 / self.bytes_total as f64 * 100.0) as f32
+        });
+        let seconds = elapsed.as_secs_f64();
+        if seconds > 0.0 && bytes_done > 0 {
+            let speed = bytes_done as f64 / seconds;
+            snapshot.speed_bytes_per_sec = Some(speed);
+            snapshot.eta_secs = Some(self.bytes_total.saturating_sub(bytes_done) as f64 / speed);
+        }
+        snapshot.raw = serde_json::json!({
+            "file_index": self.file_index,
+            "file_count": self.file_count,
+            "file": self.file,
+        });
+        snapshot
+    }
+}
+
 /// Processor for copying and moving files.
 ///
 /// Handles file copy and move operations with:
@@ -125,6 +205,7 @@ impl CopyMoveProcessor {
         source_size: u64,
         config: &CopyMoveConfig,
         ctx: &ProcessorContext,
+        progress: CopyProgress,
     ) -> std::result::Result<u64, String> {
         if ctx.cancellation_token.is_cancelled() {
             return Err("Copy cancelled".into());
@@ -147,8 +228,13 @@ impl CopyMoveProcessor {
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
-            let copied =
-                native::copy_file(&source, staged_output.path(), || cancel.is_cancelled())?;
+            let mut progress = progress;
+            let copied = native::copy_file(
+                &source,
+                staged_output.path(),
+                || cancel.is_cancelled(),
+                |copied| progress.update(copied),
+            )?;
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
             }
@@ -381,7 +467,7 @@ impl Processor for CopyMoveProcessor {
         let mut total_input_size: u64 = 0;
         let mut total_output_size: u64 = 0;
 
-        for source_path in &input.inputs {
+        for (file_index, source_path) in input.inputs.iter().enumerate() {
             if let Some(exclude_set) = &exclude_set
                 && exclude_set.is_match(source_path)
             {
@@ -624,9 +710,19 @@ impl Processor for CopyMoveProcessor {
                 }
             }
 
+            // Same-filesystem moves are renames and report no progress.
+            let progress = CopyProgress::new(
+                ctx.progress.clone(),
+                source_size,
+                file_index + 1,
+                input.inputs.len(),
+                source_path,
+            );
             let dest_size = match config.operation {
                 CopyMoveOperation::Copy => {
-                    match Self::copy_via_tmp(source, &dest, source_size, &config, ctx).await {
+                    match Self::copy_via_tmp(source, &dest, source_size, &config, ctx, progress)
+                        .await
+                    {
                         Ok(bytes) => bytes,
                         Err(error_msg) => {
                             error!("{}", error_msg);
@@ -675,21 +771,27 @@ impl Processor for CopyMoveProcessor {
                         Err(e) if e.kind() == ErrorKind::CrossesDevices => {
                             // Cross-filesystem move: fall back to copy + verify,
                             // then remove the source.
-                            let bytes_copied =
-                                match Self::copy_via_tmp(source, &dest, source_size, &config, ctx)
-                                    .await
-                                {
-                                    Ok(bytes) => bytes,
-                                    Err(error_msg) => {
-                                        error!("{}", error_msg);
-                                        logs.push(create_log_entry(
-                                            crate::pipeline::job_queue::LogLevel::Error,
-                                            &error_msg,
-                                        ));
-                                        failed_inputs.push((source_path.clone(), error_msg));
-                                        continue;
-                                    }
-                                };
+                            let bytes_copied = match Self::copy_via_tmp(
+                                source,
+                                &dest,
+                                source_size,
+                                &config,
+                                ctx,
+                                progress,
+                            )
+                            .await
+                            {
+                                Ok(bytes) => bytes,
+                                Err(error_msg) => {
+                                    error!("{}", error_msg);
+                                    logs.push(create_log_entry(
+                                        crate::pipeline::job_queue::LogLevel::Error,
+                                        &error_msg,
+                                    ));
+                                    failed_inputs.push((source_path.clone(), error_msg));
+                                    continue;
+                                }
+                            };
 
                             if let Err(e) = fs::remove_file(source).await {
                                 let error_msg =
@@ -789,6 +891,93 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn no_progress() -> CopyProgress {
+        CopyProgress::new(ProgressReporter::noop("copy"), 0, 1, 1, "source")
+    }
+
+    fn progress_channel(
+        bytes_total: u64,
+    ) -> (
+        CopyProgress,
+        tokio::sync::mpsc::Receiver<crate::pipeline::progress::JobProgressUpdate>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let progress = CopyProgress::new(
+            ProgressReporter::new("copy", tx),
+            bytes_total,
+            1,
+            1,
+            "source",
+        );
+        (progress, rx)
+    }
+
+    #[test]
+    fn copy_progress_snapshots_carry_bytes_rate_and_file_position() {
+        let (mut progress, _rx) = progress_channel(1000);
+        progress.file_index = 2;
+        progress.file_count = 4;
+
+        let snapshot = progress.snapshot(250, Duration::from_secs(5));
+        assert_eq!(snapshot.kind, ProgressKind::Copy);
+        assert_eq!(snapshot.bytes_done, Some(250));
+        assert_eq!(snapshot.bytes_total, Some(1000));
+        assert_eq!(snapshot.percent, Some(25.0));
+        assert_eq!(snapshot.speed_bytes_per_sec, Some(50.0));
+        assert_eq!(snapshot.eta_secs, Some(15.0));
+        assert_eq!(
+            snapshot.raw,
+            serde_json::json!({"file_index": 2, "file_count": 4, "file": "source"})
+        );
+
+        // No elapsed time or no bytes yet gives no rate rather than infinity.
+        let starting = progress.snapshot(0, Duration::from_secs(1));
+        assert_eq!(
+            (starting.speed_bytes_per_sec, starting.eta_secs),
+            (None, None)
+        );
+        assert_eq!(
+            progress.snapshot(10, Duration::ZERO).speed_bytes_per_sec,
+            None
+        );
+        // A source that grew past its starting size stays at 100%.
+        assert_eq!(
+            progress.snapshot(1200, Duration::from_secs(1)).percent,
+            Some(100.0)
+        );
+
+        let (empty, _rx) = progress_channel(0);
+        assert_eq!(empty.snapshot(0, Duration::ZERO).percent, Some(100.0));
+    }
+
+    #[test]
+    fn copy_progress_is_throttled_but_always_reports_the_finished_copy() {
+        let (mut progress, mut rx) = progress_channel(100);
+        let start = progress.started;
+        let mut reported = || {
+            let mut bytes = Vec::new();
+            while let Ok(update) = rx.try_recv() {
+                bytes.push(update.snapshot.bytes_done.unwrap());
+            }
+            bytes
+        };
+
+        progress.update_at(0, start);
+        progress.update_at(10, start + Duration::from_millis(100));
+        progress.update_at(20, start + COPY_PROGRESS_INTERVAL);
+        progress.update_at(
+            30,
+            start + COPY_PROGRESS_INTERVAL + Duration::from_millis(1),
+        );
+        // The finished copy reports even inside the interval.
+        progress.update_at(
+            100,
+            start + COPY_PROGRESS_INTERVAL + Duration::from_millis(2),
+        );
+
+        assert_eq!(reported(), vec![0, 20, 100]);
+    }
+
     #[test]
     fn cancelled_copy_retains_worker_completion_until_blocking_work_exits() {
         let directory = TempDir::new().unwrap();
@@ -829,6 +1018,7 @@ mod tests {
                 8,
                 &config,
                 &ctx,
+                no_progress(),
             ));
             assert!(futures::poll!(&mut copying).is_pending());
             drop(copying);
@@ -872,6 +1062,7 @@ mod tests {
                 ..Default::default()
             },
             &ctx,
+            no_progress(),
         )
         .await;
 
@@ -1824,6 +2015,14 @@ mod tests {
         let source = temp_dir.path().join("source.txt");
         let dest = temp_dir.path().join("dest.txt");
         fs::write(&source, "content").await.unwrap();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let progress = CopyProgress::new(
+            ProgressReporter::new("copy", progress_tx),
+            7,
+            2,
+            3,
+            &source.to_string_lossy(),
+        );
 
         let bytes = CopyMoveProcessor::copy_via_tmp(
             &source,
@@ -1831,11 +2030,27 @@ mod tests {
             7,
             &CopyMoveConfig::default(),
             &ProcessorContext::noop("copy"),
+            progress,
         )
         .await
         .unwrap();
 
         assert_eq!(bytes, 7);
+        // Every platform reports the finished copy, whatever came before it.
+        let mut last = None;
+        while let Ok(update) = progress_rx.try_recv() {
+            last = Some(update.snapshot);
+        }
+        let last = last.expect("a final copy progress report");
+        assert_eq!(last.kind, ProgressKind::Copy);
+        assert_eq!(
+            (last.bytes_done, last.bytes_total, last.percent),
+            (Some(7), Some(7), Some(100.0))
+        );
+        assert_eq!(
+            last.raw,
+            serde_json::json!({"file_index": 2, "file_count": 3, "file": source.to_string_lossy()})
+        );
         assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");
         let mut entries = fs::read_dir(temp_dir.path()).await.unwrap();
         while let Some(entry) = entries.next_entry().await.unwrap() {
