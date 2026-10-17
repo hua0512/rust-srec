@@ -159,6 +159,90 @@ impl CopyMoveProcessor {
         }
     }
 
+    /// Copy through `CopyFileExW`, the call `std::fs::copy` makes on Windows,
+    /// so attributes, alternate data streams and metadata are copied the same
+    /// way and the result is the default stream's byte count. Windows invokes
+    /// the progress routine on this thread before the first transfer and after
+    /// each chunk; returning `PROGRESS_CANCEL` stops the copy, and Windows then
+    /// deletes the partial destination itself. A blocked transfer still has to
+    /// return before the routine runs again.
+    #[cfg(windows)]
+    fn copy_windows_with_cancellation<F: FnMut() -> bool>(
+        source: &Path,
+        destination: &Path,
+        is_cancelled: F,
+    ) -> std::io::Result<u64> {
+        use std::ffi::c_void;
+        use windows_sys::Win32::Foundation::{ERROR_REQUEST_ABORTED, HANDLE};
+        use windows_sys::Win32::Storage::FileSystem::{
+            COPYPROGRESSROUTINE_PROGRESS, CopyFileExW, LPPROGRESS_ROUTINE_CALLBACK_REASON,
+            PROGRESS_CANCEL, PROGRESS_CONTINUE,
+        };
+
+        struct Progress<F> {
+            is_cancelled: F,
+            copied: i64,
+        }
+
+        // The routine must not unwind across the FFI boundary; the production
+        // closure only reads a cancellation token.
+        unsafe extern "system" fn progress_routine<F: FnMut() -> bool>(
+            _total_file_size: i64,
+            _total_bytes_transferred: i64,
+            _stream_size: i64,
+            stream_bytes_transferred: i64,
+            stream_number: u32,
+            _reason: LPPROGRESS_ROUTINE_CALLBACK_REASON,
+            _source_file: HANDLE,
+            _destination_file: HANDLE,
+            data: *const c_void,
+        ) -> COPYPROGRESSROUTINE_PROGRESS {
+            // SAFETY: `data` points to the `Progress<F>` that
+            // `copy_windows_with_cancellation` exclusively borrows for the whole
+            // `CopyFileExW` call, which runs this routine synchronously on the
+            // calling thread and never after it returns.
+            let progress = unsafe { &mut *data.cast_mut().cast::<Progress<F>>() };
+            if stream_number == 1 {
+                progress.copied = stream_bytes_transferred;
+            }
+            if (progress.is_cancelled)() {
+                PROGRESS_CANCEL
+            } else {
+                PROGRESS_CONTINUE
+            }
+        }
+
+        let source = windows_long_path(source)?;
+        let destination = windows_long_path(destination)?;
+        let mut progress = Progress {
+            is_cancelled,
+            copied: 0,
+        };
+        // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the
+        // call, and `progress` matches the routine's type parameter.
+        let copied = unsafe {
+            CopyFileExW(
+                source.as_ptr(),
+                destination.as_ptr(),
+                Some(progress_routine::<F>),
+                (&raw mut progress).cast::<c_void>().cast_const(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if copied == 0 {
+            let error = std::io::Error::last_os_error();
+            return Err(
+                if error.raw_os_error() == Some(ERROR_REQUEST_ABORTED as i32) {
+                    std::io::Error::other("Copy cancelled")
+                } else {
+                    error
+                },
+            );
+        }
+        Ok(progress.copied as u64)
+    }
+
     /// Copy `source` to `dest` through a temporary sibling, verify the byte
     /// count, and rename the copy into place. Cancellation therefore leaves at
     /// most a `.tmp-*` file, never a partial file under the final destination
@@ -198,8 +282,14 @@ impl CopyMoveProcessor {
             let copied = Self::copy_linux_with_cancellation(&source, staged_output.path(), || {
                 cancel.is_cancelled()
             })?;
-            // Other platforms retain native metadata, streams and cloning.
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(windows)]
+            let copied =
+                Self::copy_windows_with_cancellation(&source, staged_output.path(), || {
+                    cancel.is_cancelled()
+                })?;
+            // macOS and other platforms keep std's native copy, with its
+            // cloning and metadata, which cannot stop mid-file.
+            #[cfg(not(any(target_os = "linux", windows)))]
             let copied = std::fs::copy(source, staged_output.path())?;
             if cancel.is_cancelled() {
                 return Err(std::io::Error::other("Copy cancelled"));
@@ -261,6 +351,47 @@ impl CopyMoveProcessor {
     fn is_excluded(exclude_set: Option<&RegexSet>, source_path: &str, filename: &str) -> bool {
         exclude_set.is_some_and(|set| set.is_match(source_path) || set.is_match(filename))
     }
+}
+
+/// Convert a path for a direct Win32 call the way std does for its own file
+/// APIs. The path is made absolute, which also normalizes it; one at or past
+/// the legacy length limit then gets the `\\?\` or `\\?\UNC\` prefix, which
+/// lifts that limit but disables Win32's own normalization. The result is
+/// NUL-terminated UTF-16.
+#[cfg(windows)]
+fn windows_long_path(path: &Path) -> std::io::Result<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const LEGACY_MAX_PATH: usize = 248;
+    const SEP: u16 = b'\\' as u16;
+    const QUERY: u16 = b'?' as u16;
+    const VERBATIM: [u16; 4] = [SEP, SEP, QUERY, SEP];
+    const NT: [u16; 4] = [SEP, QUERY, QUERY, SEP];
+    const DEVICE: [u16; 4] = [SEP, SEP, b'.' as u16, SEP];
+
+    let absolute = std::path::absolute(path)?;
+    let wide: Vec<u16> = absolute.as_os_str().encode_wide().collect();
+    if wide.contains(&0) {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidInput,
+            "path contains an interior NUL",
+        ));
+    }
+    let mut converted: Vec<u16> =
+        if wide.len() < LEGACY_MAX_PATH || wide.starts_with(&VERBATIM) || wide.starts_with(&NT) {
+            wide
+        } else if let Some(device) = wide.strip_prefix(&DEVICE[..]) {
+            VERBATIM.iter().chain(device).copied().collect()
+        } else if let Some(share) = wide.strip_prefix(&[SEP, SEP][..]) {
+            r"\\?\UNC\"
+                .encode_utf16()
+                .chain(share.iter().copied())
+                .collect()
+        } else {
+            VERBATIM.iter().chain(&wide).copied().collect()
+        };
+    converted.push(0);
+    Ok(converted)
 }
 
 impl Default for CopyMoveProcessor {
@@ -965,6 +1096,165 @@ mod tests {
 
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_copy_cancels_after_a_chunk_and_leaves_no_staged_output() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        let contents = vec![b'x'; 64 * 1024 * 1024 + 1];
+        std::fs::write(&source, &contents).unwrap();
+        std::fs::write(&destination, b"original").unwrap();
+
+        // The routine runs once before the first transfer and after every
+        // chunk, so a complete copy of this file sees it many times.
+        let mut complete_calls = 0;
+        let copied = CopyMoveProcessor::copy_windows_with_cancellation(
+            &source,
+            &directory.path().join("complete"),
+            || {
+                complete_calls += 1;
+                false
+            },
+        )
+        .unwrap();
+        assert_eq!(copied, contents.len() as u64);
+        assert!(complete_calls > 2, "{complete_calls}");
+
+        let staged_path;
+        let mut calls = 0;
+        {
+            let mut staged = TempOutputGuard::new(&destination);
+            staged.cleanup_on_current_thread = true;
+            staged_path = staged.path().to_path_buf();
+            // Cancel after the first chunk. This executes in the copy thread
+            // and does not depend on another task's timing.
+            let result =
+                CopyMoveProcessor::copy_windows_with_cancellation(&source, &staged_path, || {
+                    calls += 1;
+                    calls == 2
+                });
+
+            assert_eq!(result.unwrap_err().to_string(), "Copy cancelled");
+            // Windows removes the partial destination itself; the guard's
+            // cleanup must tolerate that.
+            assert!(!staged_path.exists());
+        }
+
+        assert_eq!(calls, 2);
+        assert!(!staged_path.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+        assert_eq!(std::fs::read(&source).unwrap(), contents);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_copy_returns_the_byte_count_and_identical_content() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+
+        for size in [0, 1, 4 * 1024 * 1024 + 7] {
+            let contents = vec![b'x'; size];
+            std::fs::write(&source, &contents).unwrap();
+            std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
+
+            let copied =
+                CopyMoveProcessor::copy_windows_with_cancellation(&source, &destination, || false)
+                    .unwrap();
+
+            assert_eq!(copied, size as u64);
+            assert_eq!(std::fs::read(&destination).unwrap(), contents);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_copy_reaches_destinations_past_the_legacy_path_limit() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        std::fs::write(&source, b"contents").unwrap();
+        let nested = directory.path().join("a".repeat(120)).join("b".repeat(120));
+        std::fs::create_dir_all(&nested).unwrap();
+        let destination = nested.join(format!("{}.mp4", "c".repeat(60)));
+        assert!(destination.as_os_str().len() > 260);
+
+        let copied =
+            CopyMoveProcessor::copy_windows_with_cancellation(&source, &destination, || false)
+                .unwrap();
+
+        assert_eq!(copied, 8);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"contents");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_long_paths_get_the_verbatim_prefix_after_normalization() {
+        let convert = |path: &str| {
+            let wide = windows_long_path(Path::new(path)).unwrap();
+            assert_eq!(wide.last(), Some(&0));
+            String::from_utf16(&wide[..wide.len() - 1]).unwrap()
+        };
+        let long = "d".repeat(260);
+
+        assert_eq!(convert(r"C:\short\file.mp4"), r"C:\short\file.mp4");
+        assert_eq!(
+            convert(&format!(r"C:\{long}\file.mp4")),
+            format!(r"\\?\C:\{long}\file.mp4")
+        );
+        assert_eq!(
+            convert(&format!(r"C:/{long}/./x/../file.mp4")),
+            format!(r"\\?\C:\{long}\file.mp4")
+        );
+        assert_eq!(
+            convert(&format!(r"\\server\share\{long}")),
+            format!(r"\\?\UNC\server\share\{long}")
+        );
+        assert_eq!(
+            convert(&format!(r"\\?\C:\{long}")),
+            format!(r"\\?\C:\{long}")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_copy_of_a_read_only_source_is_still_cleaned_up() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        std::fs::write(&source, b"contents").unwrap();
+        let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&source, permissions).unwrap();
+
+        let staged_path;
+        {
+            let mut staged = TempOutputGuard::new(&destination);
+            staged.cleanup_on_current_thread = true;
+            staged_path = staged.path().to_path_buf();
+            CopyMoveProcessor::copy_windows_with_cancellation(&source, &staged_path, || false)
+                .unwrap();
+            // CopyFileExW carries the source's read-only attribute over.
+            assert!(
+                std::fs::metadata(&staged_path)
+                    .unwrap()
+                    .permissions()
+                    .readonly()
+            );
+        }
+
+        assert!(!staged_path.exists());
+        assert!(!destination.exists());
+        let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        assert!(permissions.readonly());
+        #[allow(
+            clippy::permissions_set_readonly_false,
+            reason = "Windows-only cleanup of a test-owned file"
+        )]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&source, permissions).unwrap();
     }
 
     #[test]
