@@ -5572,6 +5572,7 @@ dependencies = [
  "hls-fix",
  "jsonwebtoken",
  "lettre",
+ "libc",
  "m3u8-rs",
  "mesio-engine",
  "mimalloc",
