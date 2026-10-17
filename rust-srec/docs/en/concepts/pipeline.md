@@ -122,6 +122,12 @@ Once such an operation has outlived its job by 30 seconds, an indicator appears 
 
 If this happens repeatedly, check that the destination is reachable. For network mounts, prefer mount settings that return an error after a timeout instead of waiting indefinitely, so a lost connection fails the step rather than holding a worker.
 
+## Partial files from interrupted jobs {#interrupted-partial-files}
+
+Processors write each output to a temporary file next to its destination, named like `video.tmp-<id>.mp4`, and rename it into place once it is complete. A failed or cancelled step deletes its temporary file, but a crash, power loss or forced exit can skip that cleanup and leave an unfinished file behind.
+
+The server records each temporary file before creating it. After a restart, files that an interrupted job may have left are listed behind an icon in the page header and on that job's page, with their folder and size. **Delete** removes the file; **Keep** leaves it on disk and only removes it from the list. These files are never finished outputs or original recordings, so they are safe to delete. Files that are already gone drop off the list on their own. A file whose folder is unreachable, such as one on a disconnected drive, stays listed until the folder is back.
+
 <div id="what-is-a-dag-pipeline" class="legacy-section">
 
 This section is now in [Create a workflow](./pipeline.md#dag-pipeline).
