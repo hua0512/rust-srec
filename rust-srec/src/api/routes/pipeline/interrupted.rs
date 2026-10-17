@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::{
@@ -28,23 +28,43 @@ use crate::database::time::ms_to_datetime;
 const LIST_LIMIT: u32 = 500;
 /// A hung network share must not hang the listing; later files go unsized.
 const INSPECT_TIMEOUT: Duration = Duration::from_secs(5);
-/// Set while a stat pass runs. One stuck on a hung share keeps its blocking
-/// thread until the file system answers, so later listings skip statting
-/// rather than strand another thread each.
-static INSPECTING: AtomicBool = AtomicBool::new(false);
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A blocking file-system call that outlives its deadline keeps its thread
+/// until a hung share answers. These stop later requests from stranding
+/// another thread each meanwhile.
+struct FileSystemCalls {
+    /// Set while a stat pass runs; later listings skip statting.
+    inspecting: AtomicBool,
+    /// Removals that timed out and have not returned; later removals fail at
+    /// once.
+    stuck_removals: AtomicUsize,
+}
+
+impl FileSystemCalls {
+    const fn new() -> Self {
+        Self {
+            inspecting: AtomicBool::new(false),
+            stuck_removals: AtomicUsize::new(0),
+        }
+    }
+}
+
+static FILE_SYSTEM_CALLS: FileSystemCalls = FileSystemCalls::new();
 
 /// Dependencies of the interrupted-output endpoints. `None` when the pipeline
 /// runs without persistence, which records nothing to list.
 #[derive(Clone)]
 pub struct InterruptedOutputRouteState {
     staged_outputs: Option<Arc<dyn StagedOutputRepository>>,
+    file_system: &'static FileSystemCalls,
 }
 
 impl FromRef<AppState> for InterruptedOutputRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             staged_outputs: state.pipeline_manager.staged_output_repository(),
+            file_system: &FILE_SYSTEM_CALLS,
         }
     }
 }
@@ -129,17 +149,10 @@ enum FileState {
 }
 
 /// Stat `paths` on one blocking thread. A hung share then holds one thread, and
-/// the files after it are reported as unknown once the deadline passes.
-async fn inspect(paths: Vec<PathBuf>) -> Vec<Option<FileState>> {
-    inspect_unless_running(paths, &INSPECTING).await
-}
-
-/// [`inspect`], except that every state is unknown while an earlier pass
-/// flagged in `running` has not returned.
-async fn inspect_unless_running(
-    paths: Vec<PathBuf>,
-    running: &'static AtomicBool,
-) -> Vec<Option<FileState>> {
+/// the files after it are reported as unknown once the deadline passes. Every
+/// state is unknown while an earlier pass flagged in `running` has not
+/// returned.
+async fn inspect(paths: Vec<PathBuf>, running: &'static AtomicBool) -> Vec<Option<FileState>> {
     if running.swap(true, Ordering::AcqRel) {
         return vec![None; paths.len()];
     }
@@ -183,6 +196,43 @@ impl Drop for RunningPass {
     }
 }
 
+/// Run `remove` on a blocking thread for at most `deadline`. A removal that
+/// times out stays counted in `stuck` until its thread returns, and later
+/// removals fail at once meanwhile, so retries and batches on a hung share do
+/// not strand a thread each.
+async fn remove_unless_stuck(
+    stuck: &'static AtomicUsize,
+    deadline: Duration,
+    remove: impl FnOnce() -> std::io::Result<bool> + Send + 'static,
+) -> ApiResult<std::io::Result<bool>> {
+    if stuck.load(Ordering::Acquire) > 0 {
+        return Err(ApiError::service_unavailable(
+            "An earlier deletion is still waiting on the file system; try again later",
+        ));
+    }
+    let mut removal = tokio::task::spawn_blocking(remove);
+    match tokio::time::timeout(deadline, &mut removal).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(error)) => Err(ApiError::internal(format!("File removal failed: {error}"))),
+        Err(_) => {
+            stuck.fetch_add(1, Ordering::AcqRel);
+            tokio::spawn(async move {
+                // The entry stays listed; if the file is gone by the time the
+                // share answers, the next listing forgets it.
+                match removal.await {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => warn!(%error, "A timed-out file removal failed"),
+                    Err(error) => warn!(%error, "A timed-out file removal panicked"),
+                }
+                stuck.fetch_sub(1, Ordering::AcqRel);
+            });
+            Err(ApiError::service_unavailable(
+                "The file system did not respond; try again later",
+            ))
+        }
+    }
+}
+
 /// List partial temporary files left by interrupted jobs.
 ///
 /// A file confirmed gone from a reachable folder (removed by hand, or cleaned up
@@ -211,7 +261,11 @@ pub async fn list_interrupted_outputs(
         .list_interrupted(params.job_id.as_deref(), LIST_LIMIT)
         .await
         .map_err(ApiError::from)?;
-    let states = inspect(rows.iter().map(|row| PathBuf::from(&row.path)).collect()).await;
+    let states = inspect(
+        rows.iter().map(|row| PathBuf::from(&row.path)).collect(),
+        &state.file_system.inspecting,
+    )
+    .await;
 
     let mut outputs = Vec::with_capacity(rows.len());
     let mut total_size_bytes = 0u64;
@@ -263,31 +317,24 @@ async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) 
                 "Refusing to delete a file that is not a staged temporary output; keep it instead",
             ));
         }
-        let removal = tokio::task::spawn_blocking({
+        let removal = remove_unless_stuck(&state.file_system.stuck_removals, REMOVE_TIMEOUT, {
             let path = path.clone();
             move || crate::pipeline::remove_leftover(&path)
-        });
-        file_deleted = match tokio::time::timeout(REMOVE_TIMEOUT, removal).await {
-            Ok(Ok(Ok(deleted))) => deleted,
-            Ok(Ok(Err(error))) if error.kind() == std::io::ErrorKind::InvalidInput => {
+        })
+        .await?;
+        file_deleted = match removal {
+            Ok(deleted) => deleted,
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
                 return Err(ApiError::validation(
                     "Refusing to delete a path that is not a regular file; keep it instead",
                 ));
             }
-            Ok(Ok(Err(error))) => {
+            Err(error) => {
                 return Err(ApiError::from(crate::Error::io_path(
                     "remove_file",
                     &path,
                     error,
                 )));
-            }
-            Ok(Err(error)) => {
-                return Err(ApiError::internal(format!("File removal failed: {error}")));
-            }
-            Err(_) => {
-                return Err(ApiError::service_unavailable(
-                    "The file system did not respond; try again later",
-                ));
             }
         };
     }
@@ -311,7 +358,8 @@ async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) 
     responses(
         (status = 200, description = "Interrupted output settled", body = DeleteInterruptedOutputResponse),
         (status = 404, description = "Interrupted output not found", body = crate::api::error::ApiErrorResponse),
-        (status = 422, description = "The recorded path is not a staged temporary file", body = crate::api::error::ApiErrorResponse)
+        (status = 422, description = "The recorded path is not a staged temporary file", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "The file system did not respond, or an earlier deletion is still waiting on it", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -387,6 +435,8 @@ mod tests {
         (
             InterruptedOutputRouteState {
                 staged_outputs: Some(repository.clone()),
+                // Each test gets its own guards.
+                file_system: Box::leak(Box::new(FileSystemCalls::new())),
             },
             repository,
         )
@@ -610,7 +660,7 @@ mod tests {
 
         // A pass stuck on a hung share still holds the flag.
         RUNNING.store(true, Ordering::SeqCst);
-        let skipped = inspect_unless_running(vec![file.clone()], &RUNNING).await;
+        let skipped = inspect(vec![file.clone()], &RUNNING).await;
         assert!(matches!(skipped.as_slice(), [None]));
         assert!(
             RUNNING.load(Ordering::SeqCst),
@@ -618,9 +668,93 @@ mod tests {
         );
 
         RUNNING.store(false, Ordering::SeqCst);
-        let states = inspect_unless_running(vec![file], &RUNNING).await;
+        let states = inspect(vec![file], &RUNNING).await;
         assert!(matches!(states.as_slice(), [Some(FileState::Present(7))]));
         assert!(!RUNNING.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_removal_that_times_out_blocks_later_ones_until_it_returns() {
+        static STUCK: AtomicUsize = AtomicUsize::new(0);
+        let (release, released) = std::sync::mpsc::channel::<()>();
+
+        // The share stops answering: this removal outlives its deadline.
+        let error = remove_unless_stuck(&STUCK, Duration::from_millis(50), move || {
+            released.recv().ok();
+            Ok(true)
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(STUCK.load(Ordering::SeqCst), 1);
+
+        // Later removals fail at once instead of starting another thread.
+        let started = Arc::new(AtomicBool::new(false));
+        let error = remove_unless_stuck(&STUCK, Duration::from_secs(5), {
+            let started = started.clone();
+            move || {
+                started.store(true, Ordering::SeqCst);
+                Ok(true)
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!started.load(Ordering::SeqCst));
+
+        // Once the share answers, removals run again.
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while STUCK.load(Ordering::SeqCst) > 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let removed = remove_unless_stuck(&STUCK, Duration::from_secs(5), || Ok(true))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(removed);
+    }
+
+    #[tokio::test]
+    async fn a_stuck_removal_still_allows_keeping_files() {
+        let (state, repository) = state().await;
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("video.mp4");
+        let temp = crate::pipeline::temp_path_for(&output);
+        std::fs::write(&temp, b"partial").unwrap();
+        let id = interrupted(&repository, &temp, &output).await;
+        state.file_system.stuck_removals.store(1, Ordering::SeqCst);
+
+        let response = batch_delete_interrupted_outputs(
+            State(state.clone()),
+            Json(BatchDeleteInterruptedOutputsRequest {
+                ids: vec![id.clone()],
+                keep_files: false,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.failed, 1);
+        assert_eq!(
+            response.results[0].code.as_deref(),
+            Some("SERVICE_UNAVAILABLE")
+        );
+        assert!(temp.exists());
+        assert_eq!(remaining(&repository).await, 1);
+
+        // Keeping a file does not touch the file system.
+        let kept = delete_interrupted_output(
+            State(state),
+            RoutePath(id),
+            Query(DeleteInterruptedOutputParams { keep_file: true }),
+        )
+        .await
+        .unwrap();
+        assert!(!kept.file_deleted);
+        assert_eq!(remaining(&repository).await, 0);
     }
 
     #[tokio::test]
