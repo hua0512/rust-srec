@@ -540,6 +540,21 @@
       "split_reason_details_json"
     ]
   },
+  "staged_outputs": {
+    "required_epoch_ms": [
+      "created_at"
+    ],
+    "nullable_epoch_ms": [
+      "interrupted_at"
+    ],
+    "non_timestamp_columns": [
+      "id",
+      "path",
+      "output_path",
+      "job_id",
+      "attempt_id"
+    ]
+  },
   "streamer_check_history": {
     "required_epoch_ms": [
       "checked_at"

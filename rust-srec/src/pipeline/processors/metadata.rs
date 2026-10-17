@@ -398,7 +398,7 @@ impl Processor for MetadataProcessor {
         let is_batch = plan.is_batch();
         let mut output = super::media_driver::run_media(
             plan,
-            OutputBatch::new(&input.inputs),
+            OutputBatch::new(&input.inputs, ctx),
             &MetadataProcessorItem {
                 processor: self,
                 config: &config,

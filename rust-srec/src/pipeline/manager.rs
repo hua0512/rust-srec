@@ -45,7 +45,7 @@ use crate::database::repositories::config::{ConfigRepository, SqlxConfigReposito
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
-    UploadRecordRepository,
+    StagedOutputRepository, UploadRecordRepository,
 };
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 
@@ -299,6 +299,7 @@ pub(crate) struct PipelineRuntimeDependencies<
     pub(crate) config_service: Arc<ConfigService<CR, SR>>,
     pub(crate) dag_repository: Arc<dyn DagRepository>,
     pub(crate) upload_record_repository: Arc<dyn UploadRecordRepository>,
+    pub(crate) staged_output_repository: Arc<dyn StagedOutputRepository>,
     pub(crate) upload_broadcaster: UploadStatusBroadcaster,
     pub(crate) download_limit_adjuster: Arc<dyn DownloadLimitAdjuster>,
 }
@@ -452,6 +453,7 @@ where
             config_service,
             dag_repository,
             upload_record_repository,
+            staged_output_repository,
             upload_broadcaster,
             download_limit_adjuster,
         } = dependencies;
@@ -464,6 +466,7 @@ where
             .with_config_service(config_service)
             .with_dag_repository(dag_repository)
             .with_upload_record_repository(upload_record_repository)
+            .with_staged_output_repository(staged_output_repository)
             .with_upload_broadcaster(upload_broadcaster)
             .with_download_adjuster(download_limit_adjuster)
     }
@@ -495,6 +498,21 @@ where
     ) -> Self {
         self.job_queue.set_upload_repo(upload_record_repository);
         self
+    }
+
+    /// Set the repository that records staged temporary files.
+    pub fn with_staged_output_repository(
+        self,
+        staged_output_repository: Arc<dyn StagedOutputRepository>,
+    ) -> Self {
+        self.job_queue
+            .set_staged_output_repo(staged_output_repository);
+        self
+    }
+
+    /// Temporary files interrupted attempts left behind, when persistence is wired.
+    pub(crate) fn staged_output_repository(&self) -> Option<Arc<dyn StagedOutputRepository>> {
+        self.job_queue.staged_output_repo()
     }
 
     /// Install the live upload-status broadcaster on the job queue.

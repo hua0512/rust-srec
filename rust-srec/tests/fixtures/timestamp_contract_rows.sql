@@ -29,6 +29,7 @@ INSERT INTO session_segments (id, session_id, segment_index, file_path, duration
 INSERT INTO streamer_check_history (id, streamer_id, duration_ms, outcome, checked_at) VALUES (9223372036854775800, 'timestamp-contract', 1, 'offline', 1788784496123);
 INSERT INTO template_config (id, name, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 1788784496123, 1788784496123);
 INSERT INTO tool_credentials (tool, account_key, payload, created_at, updated_at) VALUES ('timestamp-contract', 'default', '{}', 1788784496123, 1788784496123);
+INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at, interrupted_at) VALUES ('timestamp-contract', 'video.tmp-contract.mp4', 'video.mp4', 'job', 'attempt', 1788784496123, 1788784496123);
 INSERT INTO upload_records (id, uploader, local_path, status, created_at, updated_at, completed_at) VALUES ('timestamp-contract', 'test', 'test.flv', 'COMPLETED', 1788784496123, 1788784496123, 1788784496123);
 INSERT INTO web_push_subscription (id, user_id, endpoint, p256dh, auth, created_at, updated_at, next_attempt_at, last_429_at) VALUES ('timestamp-contract', 'timestamp-contract', 'https://example.test/push', 'test', 'test', 1788784496123, 1788784496123, 1788784496123, 1788784496123);
 INSERT INTO proxies (id, name, url, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 'http://timestamp-contract.example:1', 1788784496123, 1788784496123);

@@ -23,7 +23,8 @@ use crate::database::models::{
     Pagination, TitleEntry, UploadRecordDbModel,
 };
 use crate::database::repositories::{
-    JobRepository, SessionRepository, StreamerRepository, UploadRecordRepository,
+    JobRepository, SessionRepository, StagedOutputRepository, StreamerRepository,
+    UploadRecordRepository,
 };
 use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::processors::utils as processor_utils;
@@ -777,6 +778,8 @@ pub struct JobQueue {
     streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
     /// Upload record repository for persisting per-file upload results.
     upload_repo: std::sync::OnceLock<Arc<dyn UploadRecordRepository>>,
+    /// Temporary files staged by attempts, for listing what a crash left behind.
+    staged_output_repo: std::sync::OnceLock<Arc<dyn StagedOutputRepository>>,
     /// Fan-out for live upload status events. Shared (`Arc`) with the
     /// progress aggregator task, which publishes `Progress` events on its
     /// flush tick; installed once via `set_upload_broadcaster`.
@@ -852,6 +855,7 @@ impl JobQueue {
             session_repo: std::sync::OnceLock::new(),
             streamer_repo: std::sync::OnceLock::new(),
             upload_repo: std::sync::OnceLock::new(),
+            staged_output_repo: std::sync::OnceLock::new(),
             upload_broadcaster,
             jobs_cache,
             cancellation_tokens,
@@ -904,6 +908,25 @@ impl JobQueue {
         if self.upload_repo.set(repo).is_err() {
             tracing::warn!("Job queue upload record repository was already installed");
         }
+    }
+
+    /// Set the repository that records staged temporary files. This can only be called once.
+    pub(crate) fn set_staged_output_repo(&self, repo: Arc<dyn StagedOutputRepository>) {
+        if self.staged_output_repo.set(repo).is_err() {
+            tracing::warn!("Job queue staged output repository was already installed");
+        }
+    }
+
+    pub(crate) fn staged_output_repo(&self) -> Option<Arc<dyn StagedOutputRepository>> {
+        self.staged_output_repo.get().cloned()
+    }
+
+    /// A recorder for a new attempt of `job_id`; inert without a repository.
+    pub(crate) fn staged_output_recorder(&self, job_id: &str) -> super::StagedOutputRecorder {
+        self.staged_output_repo
+            .get()
+            .map(|repo| super::StagedOutputRecorder::for_attempt(repo.clone(), job_id))
+            .unwrap_or_default()
     }
 
     /// Install the live upload-status broadcaster. This can only be called once.
@@ -2430,6 +2453,23 @@ impl JobQueue {
         let reset_processing = repo.reset_processing_jobs().await?;
         if reset_processing > 0 {
             info!("Reset {} processing jobs to pending", reset_processing);
+        }
+
+        // No worker has started, so every staged file still recorded belongs to
+        // an attempt of an earlier process that never finalized. Listing those
+        // is best effort and must not hold back job recovery.
+        if let Some(staged) = self.staged_output_repo.get() {
+            match staged
+                .mark_interrupted(crate::database::time::now_ms())
+                .await
+            {
+                Ok(0) => {}
+                Ok(interrupted) => warn!(
+                    interrupted,
+                    "Interrupted jobs may have left partial temporary files; they are listed for review"
+                ),
+                Err(error) => warn!(%error, "Failed to mark staged outputs of interrupted jobs"),
+            }
         }
 
         // Load pending jobs into cache
@@ -4648,6 +4688,47 @@ mod tests {
     // ========================================================================
     // Pipeline Recovery Tests
     // ========================================================================
+
+    #[tokio::test]
+    async fn recovery_lists_files_staged_by_unfinished_attempts_only() {
+        use crate::database::repositories::{SqlxStagedOutputRepository, StagedOutputRepository};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repo = Arc::new(crate::database::repositories::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let staged = Arc::new(SqlxStagedOutputRepository::new(pool.clone(), pool));
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), repo);
+        queue.set_staged_output_repo(staged.clone());
+
+        // One attempt finishes normally; the other never does, as in a crash.
+        let finished = queue.staged_output_recorder("job-done");
+        finished
+            .record(
+                std::path::Path::new("/out/a.tmp-1.mp4"),
+                std::path::Path::new("/out/a.mp4"),
+            )
+            .await;
+        finished.finish().await;
+        queue
+            .staged_output_recorder("job-crashed")
+            .record(
+                std::path::Path::new("/out/b.tmp-2.mp4"),
+                std::path::Path::new("/out/b.mp4"),
+            )
+            .await;
+
+        queue.recover_jobs().await.unwrap();
+
+        let listed = staged.list_interrupted(None, 10).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].job_id, "job-crashed");
+        assert_eq!(listed[0].path, "/out/b.tmp-2.mp4");
+    }
 
     #[tokio::test]
     async fn test_recover_jobs_without_repository() {

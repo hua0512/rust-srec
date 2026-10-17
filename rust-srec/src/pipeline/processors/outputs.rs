@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use super::paths::{StagedPath, StagedPathIndex};
+use crate::pipeline::StagedOutputRecorder;
 use crate::{Error, Result};
 
 /// Fold one successful or skipped media result into the batch result, in input
@@ -44,17 +45,8 @@ pub(super) struct TempOutputGuard {
 
 impl TempOutputGuard {
     pub(super) fn new(output_path: &Path) -> Self {
-        let mut name = output_path
-            .file_stem()
-            .map(std::ffi::OsString::from)
-            .unwrap_or_default();
-        name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
-        if let Some(extension) = output_path.extension() {
-            name.push(".");
-            name.push(extension);
-        }
         Self {
-            path: output_path.with_file_name(name),
+            path: crate::pipeline::temp_path_for(output_path),
             cleanup: true,
             cleanup_on_current_thread: false,
             cleanup_readonly: true,
@@ -216,15 +208,17 @@ pub(super) struct OutputBatch {
     sources: Vec<PathBuf>,
     pending: Vec<PendingOutput>,
     staging_validation: Option<OutputValidation>,
+    staged_outputs: StagedOutputRecorder,
     committed: bool,
 }
 
 impl OutputBatch {
-    pub(super) fn new(inputs: &[String]) -> Self {
+    pub(super) fn new(inputs: &[String], ctx: &super::ProcessorContext) -> Self {
         Self {
             sources: inputs.iter().map(PathBuf::from).collect(),
             pending: Vec::new(),
             staging_validation: None,
+            staged_outputs: ctx.staged_outputs.clone(),
             committed: false,
         }
     }
@@ -263,6 +257,8 @@ impl OutputBatch {
         self.staging_validation = Some(validation);
         let temp = TempOutputGuard::new(&output);
         let path = temp.path().to_owned();
+        // The caller creates the file only after this returns.
+        self.staged_outputs.record(&path, &output).await;
         self.pending.push(PendingOutput {
             temp,
             output,
@@ -374,6 +370,55 @@ impl Drop for OutputBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    fn new_batch(inputs: &[String]) -> OutputBatch {
+        OutputBatch::new(
+            inputs,
+            &super::super::ProcessorContext::noop("outputs-test"),
+        )
+    }
+
+    #[tokio::test]
+    async fn staging_records_the_temporary_file_before_it_exists() {
+        use crate::database::repositories::{SqlxStagedOutputRepository, StagedOutputRepository};
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let repository = Arc::new(SqlxStagedOutputRepository::new(pool.clone(), pool));
+        let recorder = StagedOutputRecorder::for_attempt(repository.clone(), "job-1");
+        let ctx =
+            super::super::ProcessorContext::noop("job-1").with_staged_outputs(recorder.clone());
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("video.mp4");
+
+        let mut batch = OutputBatch::new(&[], &ctx);
+        let temp = batch.stage(&output, false).await.unwrap();
+
+        assert!(!temp.exists());
+        repository.mark_interrupted(1).await.unwrap();
+        let rows = repository
+            .list_interrupted(Some("job-1"), 10)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, temp.to_string_lossy());
+        assert_eq!(rows[0].output_path, output.to_string_lossy());
+        assert!(crate::pipeline::is_temp_path_for(&temp, &output));
+
+        // A finished attempt leaves nothing for the next startup to list.
+        let next = StagedOutputRecorder::for_attempt(repository.clone(), "job-1");
+        let ctx = super::super::ProcessorContext::noop("job-1").with_staged_outputs(next.clone());
+        let mut batch = OutputBatch::new(&[], &ctx);
+        batch
+            .stage(&directory.path().join("other.mp4"), false)
+            .await
+            .unwrap();
+        next.finish().await;
+        assert_eq!(repository.mark_interrupted(2).await.unwrap(), 0);
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn temporary_output_cleanup_does_not_block_async_runtime() {
@@ -442,7 +487,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let output = dir.path().join("output.mp4");
             std::fs::write(&output, b"original").unwrap();
-            let mut batch = OutputBatch::new(&[]);
+            let mut batch = new_batch(&[]);
             let temp = batch.stage(&output, true).await.unwrap();
             if !missing {
                 std::fs::write(&temp, b"").unwrap();
@@ -460,7 +505,7 @@ mod tests {
         let output = dir.path().join("output.mp4");
         std::fs::write(&input, b"source").unwrap();
         std::fs::write(&output, b"existing").unwrap();
-        let mut batch = OutputBatch::new(&[input.to_string_lossy().into_owned()]);
+        let mut batch = new_batch(&[input.to_string_lossy().into_owned()]);
         let temp = staged(&mut batch, &output, true, b"partial").await;
         drop(batch);
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -494,7 +539,7 @@ mod tests {
             if replace {
                 std::fs::write(&first, b"original").unwrap();
             }
-            let mut batch = OutputBatch::new(&[]);
+            let mut batch = new_batch(&[]);
             staged(&mut batch, &first, replace, b"completed first").await;
             staged(&mut batch, &second, false, b"completed second").await;
             std::fs::write(&second, b"unrelated").unwrap();
@@ -513,8 +558,8 @@ mod tests {
     async fn no_overwrite_publication_has_one_winner() {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("output.mp4");
-        let mut first = OutputBatch::new(&[]);
-        let mut second = OutputBatch::new(&[]);
+        let mut first = new_batch(&[]);
+        let mut second = new_batch(&[]);
         staged(&mut first, &output, false, b"first").await;
         staged(&mut second, &output, false, b"second").await;
         let (first, second) = tokio::join!(first.commit(), second.commit());
@@ -531,7 +576,7 @@ mod tests {
         let hardlink = dir.path().join("alias.mp4");
         std::fs::write(&input, b"source").unwrap();
         std::fs::hard_link(&input, &hardlink).unwrap();
-        let mut batch = OutputBatch::new(&[input.to_string_lossy().into_owned()]);
+        let mut batch = new_batch(&[input.to_string_lossy().into_owned()]);
         assert!(batch.stage(&input, true).await.is_err());
         assert!(batch.stage(&hardlink, true).await.is_err());
         assert!(
@@ -563,7 +608,7 @@ mod tests {
         let source = dir.path().join("source.mp4");
         let first = dir.path().join("first.mp4");
         std::fs::write(&source, b"source").unwrap();
-        let mut batch = OutputBatch::new(&[]);
+        let mut batch = new_batch(&[]);
         staged(&mut batch, &first, true, b"first").await;
         batch.protect(&source);
         assert!(batch.stage(&source, true).await.is_err());
@@ -574,7 +619,7 @@ mod tests {
     async fn discarded_destination_can_be_staged_again() {
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("output.mp4");
-        let mut batch = OutputBatch::new(&[]);
+        let mut batch = new_batch(&[]);
         let discarded = batch.stage(&output, true).await.unwrap();
         batch.discard(&discarded);
         staged(&mut batch, &output, true, b"replacement").await;
@@ -638,7 +683,7 @@ mod tests {
             let output = dir.path().join("output.mp4");
             std::fs::write(&source, b"source").unwrap();
             std::fs::write(&output, b"existing").unwrap();
-            let mut batch = OutputBatch::new(&[source.to_string_lossy().into_owned()]);
+            let mut batch = new_batch(&[source.to_string_lossy().into_owned()]);
             staged(&mut batch, &output, true, b"replacement").await;
             if replace_source {
                 std::fs::remove_file(&source).unwrap();
@@ -660,7 +705,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("first.mp4");
         let second = dir.path().join("second.mp4");
-        let mut batch = OutputBatch::new(&[]);
+        let mut batch = new_batch(&[]);
         staged(&mut batch, &first, true, b"first replacement").await;
         staged(&mut batch, &second, true, b"second replacement").await;
         std::fs::write(&first, b"existing").unwrap();
@@ -681,7 +726,7 @@ mod tests {
         std::fs::write(&source, b"source").unwrap();
         std::fs::write(&output, b"existing").unwrap();
         std::os::unix::fs::symlink(&source, &link).unwrap();
-        let mut batch = OutputBatch::new(&[link.to_string_lossy().into_owned()]);
+        let mut batch = new_batch(&[link.to_string_lossy().into_owned()]);
         staged(&mut batch, &output, true, b"replacement").await;
         std::fs::remove_file(&link).unwrap();
         std::os::unix::fs::symlink(&output, &link).unwrap();

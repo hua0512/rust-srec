@@ -16,6 +16,7 @@ mod manager;
 mod manifest;
 mod processors;
 mod progress;
+mod staged_outputs;
 mod throttle;
 mod upload_events;
 mod worker_pool;
@@ -44,6 +45,9 @@ pub use processors::{
     UploadItemStatus, UploadResultItem,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+pub(crate) use staged_outputs::{
+    StagedOutputRecorder, is_temp_path_for, remove_leftover, temp_path_for,
+};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 pub use upload_events::{
     UploadBroadcastEnvelope, UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus,

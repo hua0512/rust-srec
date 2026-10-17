@@ -65,8 +65,12 @@
 //! | POST | `/api/pipeline/outputs/batch-delete` | Delete several media outputs |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
 //! | GET | `/api/pipeline/stalled-operations` | List ended jobs whose file operation still holds a worker |
+//! | GET | `/api/pipeline/interrupted-outputs` | List partial files left by interrupted jobs |
+//! | DELETE | `/api/pipeline/interrupted-outputs/{id}` | Delete or keep one partial file and forget it |
+//! | POST | `/api/pipeline/interrupted-outputs/batch-delete` | Delete or keep several partial files |
 
 pub(crate) mod dag;
+pub(crate) mod interrupted;
 pub(crate) mod jobs;
 pub(crate) mod presets;
 
@@ -85,6 +89,10 @@ use jobs::{
 use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
     list_pipeline_presets, preview_pipeline_preset, update_pipeline_preset,
+};
+
+use interrupted::{
+    batch_delete_interrupted_outputs, delete_interrupted_output, list_interrupted_outputs,
 };
 
 use dag::topological_sort;
@@ -203,6 +211,9 @@ impl FromRef<AppState> for UploadRouteState {
 /// - `POST /dags/batch` - Cancel, retry or delete several DAG executions
 /// - `DELETE /outputs/{id}` - Delete a media output, optionally with its file
 /// - `POST /outputs/batch-delete` - Delete several media outputs
+/// - `GET /interrupted-outputs` - List partial files left by interrupted jobs
+/// - `DELETE /interrupted-outputs/{id}` - Delete or keep one partial file
+/// - `POST /interrupted-outputs/batch-delete` - Delete or keep several partial files
 /// - `POST /validate` - Validate a DAG definition
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -220,6 +231,15 @@ pub fn router() -> Router<AppState> {
         .route("/outputs/summary", get(summarize_outputs))
         .route("/outputs/batch-delete", post(batch_delete_outputs))
         .route("/outputs/{id}", delete(delete_output))
+        .route("/interrupted-outputs", get(list_interrupted_outputs))
+        .route(
+            "/interrupted-outputs/batch-delete",
+            post(batch_delete_interrupted_outputs),
+        )
+        .route(
+            "/interrupted-outputs/{id}",
+            delete(delete_interrupted_output),
+        )
         .route("/stats", get(get_stats))
         .route("/stalled-operations", get(list_stalled_operations))
         .route("/create", post(create_pipeline))

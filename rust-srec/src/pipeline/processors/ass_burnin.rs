@@ -448,7 +448,7 @@ impl Processor for AssBurnInProcessor {
             .map(|(video, output)| Self::determine_output_path_for_video(video, &config, output))
             .collect::<Result<Vec<_>>>()?;
 
-        let mut batch = OutputBatch::new(&input.inputs);
+        let mut batch = OutputBatch::new(&input.inputs, ctx);
         for video in &video_inputs {
             batch.protect(Path::new(video));
         }

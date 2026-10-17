@@ -617,7 +617,7 @@ impl Processor for CompressionProcessor {
         // The archive is written to a staged temp and published by the shared
         // batch, whose no-replace promotion cannot overwrite a file that appeared
         // after the check above when overwriting is disabled.
-        let mut batch = OutputBatch::new(&input.inputs);
+        let mut batch = OutputBatch::new(&input.inputs, ctx);
         let tmp_path = batch.stage(&output_path, config.overwrite).await?;
 
         let inputs = input.inputs.clone();
