@@ -196,6 +196,13 @@ impl Default for AttemptToken {
     }
 }
 
+impl AttemptToken {
+    /// Identity of this attempt, unique for the process lifetime.
+    pub(crate) fn id(&self) -> u64 {
+        self.attempt
+    }
+}
+
 impl std::ops::Deref for AttemptToken {
     type Target = CancellationToken;
 

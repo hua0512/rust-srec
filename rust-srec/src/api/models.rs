@@ -831,6 +831,32 @@ pub struct PipelineStatsResponse {
     pub avg_processing_time_secs: Option<f64>,
 }
 
+/// A job that already ended (timed out, cancelled, or stopped by shutdown) while blocking work
+/// it started, typically a file operation on an unresponsive disk or network share, still
+/// holds a worker.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct StalledOperationResponse {
+    pub job_id: String,
+    pub job_type: String,
+    pub processor: String,
+    /// Worker pool holding the operation: `cpu` or `io`.
+    pub worker_type: String,
+    pub streamer_id: String,
+    /// File name of the job's first input.
+    pub input_file_name: Option<String>,
+    pub input_count: usize,
+    /// When the job ended.
+    pub ended_at: DateTime<Utc>,
+    /// Seconds the blocking work has outlived its job.
+    pub stalled_secs: u64,
+}
+
+/// Response for `GET /api/pipeline/stalled-operations`, longest-stalled first.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct StalledOperationListResponse {
+    pub items: Vec<StalledOperationResponse>,
+}
+
 /// Media output response.
 ///
 /// # Example Response

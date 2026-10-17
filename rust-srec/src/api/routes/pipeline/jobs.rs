@@ -11,11 +11,12 @@ use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
     JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, MediaOutputUploadInfo,
     PageResponse, PaginatedResponse, PaginationParams, PipelineStatsResponse,
+    StalledOperationListResponse, StalledOperationResponse,
     StepDurationInfo as ApiStepDurationInfo, UploadRecordListResponse, UploadRecordResponse,
 };
 use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
 use crate::database::time::ms_to_datetime;
-use crate::pipeline::{Job, JobProgressSnapshot};
+use crate::pipeline::{Job, JobProgressSnapshot, StalledOperation, WorkerType};
 
 use super::{
     BatchDagItemResult, BatchDeleteOutputsRequest, BatchDeleteOutputsResponse,
@@ -884,6 +885,53 @@ pub async fn get_stats(
     };
 
     Ok(Json(response))
+}
+
+/// List jobs that already ended while a file operation they started still holds a worker.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/stalled-operations`
+///
+/// Reads in-memory worker state only, so a global indicator can poll it cheaply. An operation
+/// is listed once it has outlived its job by 30 seconds and disappears when it returns.
+#[utoipa::path(
+    get,
+    path = "/api/pipeline/stalled-operations",
+    tag = "pipeline",
+    responses(
+        (status = 200, description = "Stalled file operations, longest-stalled first", body = StalledOperationListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_stalled_operations(
+    State(state): State<PipelineRouteState>,
+) -> Json<StalledOperationListResponse> {
+    let items = state
+        .pipeline_manager
+        .stalled_operations()
+        .into_iter()
+        .map(stalled_operation_response)
+        .collect();
+    Json(StalledOperationListResponse { items })
+}
+
+fn stalled_operation_response(operation: StalledOperation) -> StalledOperationResponse {
+    StalledOperationResponse {
+        stalled_secs: operation.stalled_for().as_secs(),
+        job_id: operation.job_id,
+        job_type: operation.job_type,
+        processor: operation.processor.to_string(),
+        worker_type: match operation.worker_type {
+            WorkerType::Cpu => "cpu",
+            WorkerType::Io => "io",
+        }
+        .to_string(),
+        streamer_id: operation.streamer_id,
+        input_file_name: operation.input_file_name,
+        input_count: operation.input_count,
+        ended_at: operation.ended_at,
+    }
 }
 
 #[utoipa::path(

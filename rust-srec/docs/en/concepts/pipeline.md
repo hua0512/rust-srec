@@ -114,6 +114,14 @@ If processing is interrupted, restart recovery resumes unfinished work. Stored v
 
 Use [Workflow reference](../reference/workflows.md) for JSON definitions, execution states, and API cancellation. Processor options for Execute, archives, and Baidu Netdisk are in [Processor reference](../reference/processors.md).
 
+## Unresponsive file operations {#unresponsive-file-operations}
+
+A step that times out or is cancelled stops right away, but a file operation it has already started, such as a copy to a disk or network share, cannot be interrupted while the file system is not answering. The job is recorded as failed or cancelled, and the operation keeps its worker until the file system returns, so other file jobs may wait in the queue.
+
+Once such an operation has outlived its job by 30 seconds, an indicator appears in the page header. It lists the affected jobs and how long each has not responded, and the job's own page shows a notice. The same condition is logged as a warning. The indicator disappears when the operation returns.
+
+If this happens repeatedly, check that the destination is reachable. For network mounts, prefer mount settings that return an error after a timeout instead of waiting indefinitely, so a lost connection fails the step rather than holding a worker.
+
 <div id="what-is-a-dag-pipeline" class="legacy-section">
 
 This section is now in [Create a workflow](./pipeline.md#dag-pipeline).

@@ -38,6 +38,74 @@ const LOG_CHANNEL_CAPACITY: usize = 1024;
 /// Error recorded when no registered processor accepts a job's type.
 const NO_PROCESSOR_ERROR: &str = "No processor found";
 
+/// How long blocking work may outlive its ended job before the attempt is reported as a
+/// stalled operation. Long enough that a cancelled job's normal cleanup never shows up.
+pub(crate) const STALLED_OPERATION_THRESHOLD: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
+/// A job attempt that already ended (timed out, cancelled, or stopped by the shutdown drain)
+/// while blocking work its processor started, such as a copy waiting on an unresponsive
+/// network share, still holds the log sink and with it the worker.
+#[derive(Debug, Clone)]
+pub struct StalledOperation {
+    pub job_id: String,
+    pub job_type: String,
+    pub processor: &'static str,
+    pub worker_type: WorkerType,
+    pub streamer_id: String,
+    /// File name of the first input, for telling operations of one job type apart.
+    pub input_file_name: Option<String>,
+    pub input_count: usize,
+    /// When the attempt's outcome was decided.
+    pub ended_at: chrono::DateTime<chrono::Utc>,
+    ended: tokio::time::Instant,
+}
+
+impl StalledOperation {
+    /// How long the blocking work has outlived its job.
+    pub fn stalled_for(&self) -> std::time::Duration {
+        self.ended.elapsed()
+    }
+}
+
+/// Attempts of one pool whose job ended before their blocking work returned, keyed by attempt
+/// rather than job ID: a retry can run a successor under the same job ID meanwhile.
+#[derive(Default)]
+struct LingeringAttempts {
+    entries: parking_lot::Mutex<std::collections::HashMap<u64, StalledOperation>>,
+}
+
+impl LingeringAttempts {
+    fn register(self: &Arc<Self>, attempt: u64, operation: StalledOperation) -> LingeringGuard {
+        self.entries.lock().insert(attempt, operation);
+        LingeringGuard {
+            registry: Arc::clone(self),
+            attempt,
+        }
+    }
+
+    fn older_than(&self, min_age: std::time::Duration) -> Vec<StalledOperation> {
+        self.entries
+            .lock()
+            .values()
+            .filter(|operation| operation.stalled_for() >= min_age)
+            .cloned()
+            .collect()
+    }
+}
+
+/// Removes its attempt's entry once the blocking work returns, or when the worker is aborted.
+struct LingeringGuard {
+    registry: Arc<LingeringAttempts>,
+    attempt: u64,
+}
+
+impl Drop for LingeringGuard {
+    fn drop(&mut self) {
+        self.registry.entries.lock().remove(&self.attempt);
+    }
+}
+
 /// Opening words of the error recorded when a job outlives
 /// `WorkerPoolConfig::job_timeout_secs`. `timeout_error` appends the job's context.
 const TIMED_OUT_ERROR: &str = "Job timed out";
@@ -244,6 +312,8 @@ pub struct WorkerPool {
     cancellation_token: CancellationToken,
     /// Task set for workers.
     tasks: parking_lot::Mutex<Option<JoinSet<()>>>,
+    /// Attempts whose job ended while their blocking work still holds a worker.
+    lingering: Arc<LingeringAttempts>,
 }
 
 struct WorkerConcurrency {
@@ -340,6 +410,7 @@ impl WorkerPool {
             avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             cancellation_token: CancellationToken::new(),
             tasks: parking_lot::Mutex::new(Some(JoinSet::new())),
+            lingering: Arc::default(),
         }
     }
 
@@ -394,6 +465,7 @@ impl WorkerPool {
         let job_timeout = std::time::Duration::from_secs(self.config.job_timeout_secs);
         let active_workers = self.active_workers.clone();
         let avg_runtime_ms = self.avg_runtime_ms.clone();
+        let lingering = self.lingering.clone();
 
         info!(
             "Starting {} worker pool with {} max workers",
@@ -450,6 +522,7 @@ impl WorkerPool {
                     avg_runtime_ms,
                     job_timeout,
                     shutdown: cancellation_token.clone(),
+                    lingering: lingering.clone(),
                 };
 
                 join_set.spawn(async move {
@@ -667,6 +740,12 @@ impl WorkerPool {
         self.worker_type
     }
 
+    /// Attempts whose job ended at least `min_age` ago while blocking work they started still
+    /// holds a worker.
+    pub fn stalled_operations(&self, min_age: std::time::Duration) -> Vec<StalledOperation> {
+        self.lingering.older_than(min_age)
+    }
+
     /// Check if the pool is running.
     pub fn is_running(&self) -> bool {
         !self.cancellation_token.is_cancelled()
@@ -692,6 +771,7 @@ struct JobRunner {
     /// The pool's shutdown token. Distinct from the per-job token that reaches the processor
     /// through `ProcessorContext`; see [`JobRunner::execute`].
     shutdown: CancellationToken,
+    lingering: Arc<LingeringAttempts>,
 }
 
 /// What `Processor::process` produced, once the cancellation and timeout races around it have
@@ -1022,6 +1102,32 @@ impl JobRunner {
         // Drop ctx to close the log channel
         drop(ctx);
 
+        // The processor future of a cancelled or timed-out job is gone, but blocking work it
+        // started cannot be interrupted and may still hold a log sender, and with it this
+        // worker, until the file system returns.
+        let lingering =
+            matches!(outcome, JobOutcome::Cancelled | JobOutcome::TimedOut).then(|| {
+                self.lingering.register(
+                    job_token.id(),
+                    StalledOperation {
+                        job_id: facts.id.clone(),
+                        job_type: facts.job_type.clone(),
+                        processor: facts.processor_name,
+                        worker_type: self.worker_type,
+                        streamer_id: input.streamer_id.clone(),
+                        input_file_name: input.inputs.first().map(|first| {
+                            std::path::Path::new(first)
+                                .file_name()
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| first.clone())
+                        }),
+                        input_count: input.inputs.len(),
+                        ended_at: chrono::Utc::now(),
+                        ended: tokio::time::Instant::now(),
+                    },
+                )
+            });
+
         // Blocking work that a deadline cannot interrupt may still own a log sender. The
         // timeout is recorded at the deadline; this worker keeps its slot and output lease
         // until the collector drains, then finalizes only this attempt, because a scheduled
@@ -1045,7 +1151,28 @@ impl JobRunner {
         }
 
         // Wait for log collector to finish draining
-        if let Err(join_error) = log_collector.await {
+        let mut log_collector = log_collector;
+        let drained = match &lingering {
+            Some(_) => {
+                match tokio::time::timeout(STALLED_OPERATION_THRESHOLD, &mut log_collector).await {
+                    Ok(drained) => drained,
+                    Err(_) => {
+                        warn!(
+                            job_id = %facts.id,
+                            processor = facts.processor_name,
+                            worker_type = %self.worker_type,
+                            stalled_secs = STALLED_OPERATION_THRESHOLD.as_secs(),
+                            "Job ended but blocking work it started has not returned; its worker \
+                             stays reserved until the file system responds"
+                        );
+                        log_collector.await
+                    }
+                }
+            }
+            None => log_collector.await,
+        };
+        drop(lingering);
+        if let Err(join_error) = drained {
             error!(
                 job_id = %facts.id,
                 error = %join_error,
@@ -2413,6 +2540,7 @@ mod tests {
             avg_runtime_ms: Arc::new(AtomicU64::new(0)),
             job_timeout: Duration::from_secs(30),
             shutdown: CancellationToken::new(),
+            lingering: Arc::default(),
         }
     }
 
@@ -2506,6 +2634,99 @@ mod tests {
         );
         assert!(event_rx.try_recv().is_err());
         assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
+    }
+
+    struct CompletingProcessor;
+
+    #[async_trait]
+    impl Processor for CompletingProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["handoff"]
+        }
+
+        fn name(&self) -> &'static str {
+            "completing"
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            Ok(ProcessorOutput::default())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
+        let queue = Arc::new(JobQueue::new());
+        let id = queue
+            .enqueue(Job::new(
+                "handoff",
+                vec!["/recordings/part.flv".to_string()],
+                vec![],
+                "streamer",
+                "session",
+            ))
+            .await
+            .unwrap();
+        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (events, _event_rx) = broadcast::channel(8);
+        let runner = observed_runner(queue.clone(), events);
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
+        let execution = runner.execute_job(job, &processor);
+        tokio::pin!(execution);
+        assert!(futures::poll!(execution.as_mut()).is_pending());
+        let retained = receiver.try_recv().unwrap();
+
+        tokio::time::advance(Duration::from_secs(31)).await;
+        assert!(futures::poll!(execution.as_mut()).is_pending());
+        // Listed only once the work has outlived its job by the threshold.
+        assert!(
+            runner
+                .lingering
+                .older_than(STALLED_OPERATION_THRESHOLD)
+                .is_empty()
+        );
+
+        tokio::time::advance(STALLED_OPERATION_THRESHOLD).await;
+        assert!(futures::poll!(execution.as_mut()).is_pending());
+        let stalled = runner.lingering.older_than(STALLED_OPERATION_THRESHOLD);
+        assert_eq!(stalled.len(), 1);
+        assert_eq!(
+            (
+                stalled[0].job_id.as_str(),
+                stalled[0].processor,
+                stalled[0].input_file_name.as_deref(),
+            ),
+            (id.as_str(), "handoff", Some("part.flv"))
+        );
+
+        // A retry runs a successor under the same job ID. Finishing it must not clear the old
+        // attempt, whose work still holds a worker.
+        queue.retry_job(&id).await.unwrap();
+        let successor = queue.dequeue(None).await.unwrap().unwrap();
+        let (successor_events, _successor_rx) = broadcast::channel(8);
+        let mut successor_runner = observed_runner(queue.clone(), successor_events);
+        successor_runner.lingering = runner.lingering.clone();
+        let completing: Arc<dyn Processor> = Arc::new(CompletingProcessor);
+        successor_runner.execute_job(successor, &completing).await;
+        assert_eq!(
+            queue.get_job(&id).await.unwrap().unwrap().status,
+            JobStatus::Completed
+        );
+        assert_eq!(runner.lingering.older_than(Duration::ZERO).len(), 1);
+
+        drop(retained);
+        tokio::time::timeout(Duration::from_secs(1), execution)
+            .await
+            .unwrap();
+        assert!(runner.lingering.older_than(Duration::ZERO).is_empty());
     }
 
     #[tokio::test]

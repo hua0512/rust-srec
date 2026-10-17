@@ -25,6 +25,7 @@ import {
 } from '@/lib/job-log-pages';
 import { JobProgressBytes } from '@/components/pipeline/jobs/job-progress-bytes';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
+import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -742,6 +743,10 @@ function JobDetailsPage() {
 
           {/* Full Width: Error & Logs */}
           <div className="min-w-0 @3xl:col-span-3 space-y-6">
+            <StalledOperationBanner
+              jobId={job.id}
+              enabled={job.status === 'FAILED' || job.status === 'CANCELLED'}
+            />
             {job.error_message && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}

@@ -64,6 +64,7 @@
 //! | DELETE | `/api/pipeline/outputs/{id}` | Delete a media output, optionally with its file |
 //! | POST | `/api/pipeline/outputs/batch-delete` | Delete several media outputs |
 //! | GET | `/api/pipeline/stats` | Get pipeline statistics |
+//! | GET | `/api/pipeline/stalled-operations` | List ended jobs whose file operation still holds a worker |
 
 pub(crate) mod dag;
 pub(crate) mod jobs;
@@ -79,7 +80,7 @@ use dag::{
 use jobs::{
     batch_delete_outputs, cancel_job, cancel_pipeline, create_pipeline, delete_job, delete_output,
     get_job, get_job_progress, get_stats, list_job_logs, list_job_uploads, list_jobs,
-    list_jobs_page, list_outputs, retry_job, summarize_outputs,
+    list_jobs_page, list_outputs, list_stalled_operations, retry_job, summarize_outputs,
 };
 use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
@@ -185,6 +186,7 @@ impl FromRef<AppState> for UploadRouteState {
 /// - `GET /pipelines` - List DAG pipelines with filtering and pagination
 /// - `GET /outputs` - List media outputs
 /// - `GET /stats` - Get pipeline statistics
+/// - `GET /stalled-operations` - List ended jobs whose file operation still holds a worker
 /// - `POST /create` - Create a new DAG pipeline
 /// - `GET /presets` - List pipeline presets (DAG workflows)
 /// - `GET /presets/{id}` - Get a pipeline preset by ID
@@ -219,6 +221,7 @@ pub fn router() -> Router<AppState> {
         .route("/outputs/batch-delete", post(batch_delete_outputs))
         .route("/outputs/{id}", delete(delete_output))
         .route("/stats", get(get_stats))
+        .route("/stalled-operations", get(list_stalled_operations))
         .route("/create", post(create_pipeline))
         .route("/validate", post(validate_dag))
         .route(
@@ -1088,6 +1091,47 @@ mod tests {
         assert!(json.contains("pending_count"));
         assert!(json.contains("cancelled_count"));
         assert!(json.contains("45.5"));
+    }
+
+    #[tokio::test]
+    async fn stalled_operations_are_empty_while_no_worker_is_held() {
+        let response = list_stalled_operations(State(build_test_state())).await;
+        assert!(response.0.items.is_empty());
+    }
+
+    #[test]
+    fn stalled_operation_response_serialization() {
+        let response = crate::api::models::StalledOperationListResponse {
+            items: vec![crate::api::models::StalledOperationResponse {
+                job_id: "job-1".to_string(),
+                job_type: "copy_move".to_string(),
+                processor: "CopyMoveProcessor".to_string(),
+                worker_type: "io".to_string(),
+                streamer_id: "streamer-1".to_string(),
+                input_file_name: Some("part.flv".to_string()),
+                input_count: 2,
+                ended_at: chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap(),
+                stalled_secs: 95,
+            }],
+        };
+
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "items": [{
+                    "job_id": "job-1",
+                    "job_type": "copy_move",
+                    "processor": "CopyMoveProcessor",
+                    "worker_type": "io",
+                    "streamer_id": "streamer-1",
+                    "input_file_name": "part.flv",
+                    "input_count": 2,
+                    "ended_at": "2026-01-02T03:04:05.123Z",
+                    "stalled_secs": 95
+                }]
+            })
+        );
     }
 
     #[test]

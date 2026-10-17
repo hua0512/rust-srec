@@ -98,6 +98,27 @@ export const JobSchema = z.object({
 });
 export type Job = z.infer<typeof JobSchema>;
 
+/**
+ * A job that already ended while a file operation it started, typically on an
+ * unresponsive disk or network share, still holds a worker.
+ */
+export const StalledOperationSchema = z.object({
+  job_id: z.string(),
+  job_type: z.string(),
+  processor: z.string(),
+  worker_type: z.string(),
+  streamer_id: z.string(),
+  input_file_name: z.string().nullable().optional(),
+  input_count: z.number(),
+  ended_at: z.string(),
+  stalled_secs: z.number(),
+});
+export type StalledOperation = z.infer<typeof StalledOperationSchema>;
+
+export const StalledOperationListSchema = z.object({
+  items: z.array(StalledOperationSchema),
+});
+
 export const JobLogsResponseSchema = z.object({
   items: z.array(JobLogEntrySchema),
   total: z.number(),

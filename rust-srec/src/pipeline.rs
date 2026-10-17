@@ -49,4 +49,4 @@ pub use upload_events::{
     UploadBroadcastEnvelope, UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus,
     UploadWsEncoder,
 };
-pub use worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
+pub use worker_pool::{StalledOperation, WorkerPool, WorkerPoolConfig, WorkerType};
