@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound } from 'lucide-react';
@@ -9,23 +8,10 @@ import { useLingui } from '@lingui/react';
 
 import { credentialAttentionQueryOptions } from '@/api/credential-profiles';
 import type { CredentialAttention } from '@/api/schemas/credential-profiles';
+import { HeaderIndicator } from '@/components/header-indicator';
 import { getPlatformIcon } from '@/components/pipeline/constants';
-import { NotificationBadge } from '@/components/ui/notification-badge';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { formatPlatformName } from '@/lib/format';
 import { formatRelativeTime } from '@/lib/date-utils';
-import { usePresence } from '@/hooks/use-presence';
-import {
-  HEADER_BADGE_DOT,
-  HEADER_POPOVER,
-  HEADER_TRIGGER_EXIT_MS,
-  headerTriggerClass,
-} from '@/components/header-indicator';
-import { cn } from '@/lib/utils';
 
 /** Accounts grouped by platform, in the server's platform order. */
 function groupByPlatform(accounts: CredentialAttention[]) {
@@ -79,7 +65,6 @@ function reasonLabel(account: CredentialAttention, i18n: I18n) {
  */
 export function CredentialAttentionIndicator() {
   const { i18n } = useLingui();
-  const [open, setOpen] = useState(false);
   const { data } = useQuery({
     ...credentialAttentionQueryOptions,
     // Accounts are read in the browser only; the live connection reports
@@ -88,54 +73,32 @@ export function CredentialAttentionIndicator() {
     retry: false,
   });
   const accounts = data ?? [];
-  const hasContent = accounts.length > 0;
-  const { mounted, exiting } = usePresence(hasContent, HEADER_TRIGGER_EXIT_MS);
-
-  if (!mounted) return null;
-
-  const label = attentionLabel(accounts, i18n);
 
   return (
-    <Popover open={open && hasContent} onOpenChange={setOpen}>
-      <PopoverTrigger
-        aria-label={label}
-        title={label}
-        className={cn(
-          headerTriggerClass(exiting),
-          'text-amber-600 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-400',
-        )}
-      >
-        <KeyRound className="size-4" />
-        <NotificationBadge
-          open={hasContent}
-          entering={hasContent}
-          className="-top-0.5 -right-0.5"
-          dotClassName={cn(HEADER_BADGE_DOT, 'bg-amber-500')}
-        >
-          {hasContent ? accounts.length : undefined}
-        </NotificationBadge>
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className={HEADER_POPOVER}>
-        <div className="space-y-1 px-4 py-3">
-          <p className="text-sm font-semibold">{label}</p>
-          <p className="text-xs text-muted-foreground">
-            <Trans>
-              Streamers that select only these accounts stop recording until one
-              works again.
-            </Trans>
-          </p>
-        </div>
-        <div className="max-h-80 overflow-y-auto border-t border-border/60 py-1">
+    <HeaderIndicator
+      count={accounts.length}
+      label={attentionLabel(accounts, i18n)}
+      icon={KeyRound}
+      tone="amber"
+      description={
+        <Trans>
+          Streamers that select only these accounts stop recording until one
+          works again.
+        </Trans>
+      }
+    >
+      {(close) => (
+        <div className="py-1">
           {groupByPlatform(accounts).map((group) => (
             <PlatformGroup
               key={group.platformId}
               {...group}
-              onNavigate={() => setOpen(false)}
+              onNavigate={close}
             />
           ))}
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </HeaderIndicator>
   );
 }
 

@@ -219,11 +219,11 @@ msgstr "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel
 msgid "{chat} chat · {gift} gift"
 msgstr "{chat} chat · {gift} gift"
 
-#: src/components/credential-attention-indicator.tsx:59
+#: src/components/credential-attention-indicator.tsx:45
 msgid "{count, plural, one {# account needs attention} other {# accounts need attention}}"
 msgstr "{count, plural, one {# account needs attention} other {# accounts need attention}}"
 
-#: src/components/credential-attention-indicator.tsx:56
+#: src/components/credential-attention-indicator.tsx:42
 msgid "{count, plural, one {# account needs login} other {# accounts need login}}"
 msgstr "{count, plural, one {# account needs login} other {# accounts need login}}"
 
@@ -231,7 +231,7 @@ msgstr "{count, plural, one {# account needs login} other {# accounts need login
 msgid "{count, plural, one {# active upload} other {# active uploads}}"
 msgstr "{count, plural, one {# active upload} other {# active uploads}}"
 
-#: src/components/stalled-operations-indicator.tsx:42
+#: src/components/stalled-operations-indicator.tsx:16
 msgid "{count, plural, one {# file operation is not responding} other {# file operations are not responding}}"
 msgstr "{count, plural, one {# file operation is not responding} other {# file operations are not responding}}"
 
@@ -271,7 +271,7 @@ msgstr "{eta} left"
 msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 msgstr "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 
-#: src/components/credential-attention-indicator.tsx:69
+#: src/components/credential-attention-indicator.tsx:55
 #: src/components/credentials/account-usage.tsx:182
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
@@ -280,7 +280,7 @@ msgstr "{failures, plural, one {Refresh failed # time} other {Refresh failed # t
 msgid "{filesDone}/{filesTotal} files"
 msgstr "{filesDone}/{filesTotal} files"
 
-#: src/components/stalled-operations-indicator.tsx:63
+#: src/components/stalled-operations-indicator.tsx:37
 msgid "{first} and {others} more"
 msgstr "{first} and {others} more"
 
@@ -5553,7 +5553,7 @@ msgid "Last checked"
 msgstr "Last checked"
 
 #. placeholder {0}: formatRelativeTime(lastCheck, i18n.locale)
-#: src/components/credential-attention-indicator.tsx:184
+#: src/components/credential-attention-indicator.tsx:147
 msgid "Last checked {0}"
 msgstr "Last checked {0}"
 
@@ -6363,7 +6363,7 @@ msgstr "Native resolution"
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
 
-#: src/components/credential-attention-indicator.tsx:66
+#: src/components/credential-attention-indicator.tsx:52
 msgid "Needs a new login"
 msgstr "Needs a new login"
 
@@ -6821,7 +6821,7 @@ msgstr "Not available"
 msgid "Not checked"
 msgstr "Not checked"
 
-#: src/components/credential-attention-indicator.tsx:186
+#: src/components/credential-attention-indicator.tsx:149
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
@@ -6833,7 +6833,7 @@ msgstr "Not installed"
 msgid "Not logged in"
 msgstr "Not logged in"
 
-#: src/components/stalled-operations-indicator.tsx:59
+#: src/components/stalled-operations-indicator.tsx:33
 msgid "Not responding for {duration}"
 msgstr "Not responding for {duration}"
 
@@ -9803,7 +9803,7 @@ msgstr "Step Library"
 msgid "Steps List"
 msgstr "Steps List"
 
-#: src/components/pipeline/jobs/stalled-operation-banner.tsx:42
+#: src/components/pipeline/jobs/stalled-operation-banner.tsx:40
 msgid "Still holding a worker"
 msgstr "Still holding a worker"
 
@@ -9995,7 +9995,7 @@ msgstr "Streamers currently live will appear here."
 msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 msgstr "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 
-#: src/components/credential-attention-indicator.tsx:122
+#: src/components/credential-attention-indicator.tsx:84
 msgid "Streamers that select only these accounts stop recording until one works again."
 msgstr "Streamers that select only these accounts stop recording until one works again."
 
@@ -10412,7 +10412,7 @@ msgstr "Theme Preset"
 msgid "then"
 msgstr "then"
 
-#: src/components/stalled-operations-indicator.tsx:111
+#: src/components/stalled-operations-indicator.tsx:61
 msgid "These jobs have ended, but the disk or network share they were using stopped responding. Each one keeps its worker until the file system answers, so other file jobs may wait in the queue."
 msgstr "These jobs have ended, but the disk or network share they were using stopped responding. Each one keeps its worker until the file system answers, so other file jobs may wait in the queue."
 
@@ -10457,7 +10457,7 @@ msgstr "This filter's settings could not be read."
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
-#: src/components/pipeline/jobs/stalled-operation-banner.tsx:49
+#: src/components/pipeline/jobs/stalled-operation-banner.tsx:47
 msgid "This job has ended, but a file operation it started has not returned. The disk or network share it uses stopped responding, and the worker stays reserved until it answers. Check that the destination is reachable."
 msgstr "This job has ended, but a file operation it started has not returned. The disk or network share it uses stopped responding, and the worker stays reserved until it answers. Check that the destination is reachable."
 

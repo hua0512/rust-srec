@@ -219,11 +219,11 @@ msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
 msgid "{chat} chat · {gift} gift"
 msgstr "{chat} 条弹幕 · {gift} 个礼物"
 
-#: src/components/credential-attention-indicator.tsx:59
+#: src/components/credential-attention-indicator.tsx:45
 msgid "{count, plural, one {# account needs attention} other {# accounts need attention}}"
 msgstr "{count, plural, other {# 个账号需要处理}}"
 
-#: src/components/credential-attention-indicator.tsx:56
+#: src/components/credential-attention-indicator.tsx:42
 msgid "{count, plural, one {# account needs login} other {# accounts need login}}"
 msgstr "{count, plural, other {# 个账号需要登录}}"
 
@@ -231,7 +231,7 @@ msgstr "{count, plural, other {# 个账号需要登录}}"
 msgid "{count, plural, one {# active upload} other {# active uploads}}"
 msgstr "{count, plural, other {# 个进行中的上传}}"
 
-#: src/components/stalled-operations-indicator.tsx:42
+#: src/components/stalled-operations-indicator.tsx:16
 msgid "{count, plural, one {# file operation is not responding} other {# file operations are not responding}}"
 msgstr "{count, plural, other {# 个文件操作无响应}}"
 
@@ -271,7 +271,7 @@ msgstr "剩余 {eta}"
 msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 msgstr "{failures, plural, other {连续 # 次刷新失败}}"
 
-#: src/components/credential-attention-indicator.tsx:69
+#: src/components/credential-attention-indicator.tsx:55
 #: src/components/credentials/account-usage.tsx:182
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, other {刷新已失败 # 次}}"
@@ -280,7 +280,7 @@ msgstr "{failures, plural, other {刷新已失败 # 次}}"
 msgid "{filesDone}/{filesTotal} files"
 msgstr "{filesDone}/{filesTotal} 个文件"
 
-#: src/components/stalled-operations-indicator.tsx:63
+#: src/components/stalled-operations-indicator.tsx:37
 msgid "{first} and {others} more"
 msgstr "{first} 等 {others} 个文件"
 
@@ -5553,7 +5553,7 @@ msgid "Last checked"
 msgstr "最近检查"
 
 #. placeholder {0}: formatRelativeTime(lastCheck, i18n.locale)
-#: src/components/credential-attention-indicator.tsx:184
+#: src/components/credential-attention-indicator.tsx:147
 msgid "Last checked {0}"
 msgstr "上次检查：{0}"
 
@@ -6363,7 +6363,7 @@ msgstr "原始分辨率"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/credential-attention-indicator.tsx:66
+#: src/components/credential-attention-indicator.tsx:52
 msgid "Needs a new login"
 msgstr "需要重新登录"
 
@@ -6821,7 +6821,7 @@ msgstr "不可用"
 msgid "Not checked"
 msgstr "未校验"
 
-#: src/components/credential-attention-indicator.tsx:186
+#: src/components/credential-attention-indicator.tsx:149
 msgid "Not checked yet"
 msgstr "尚未检查"
 
@@ -6833,7 +6833,7 @@ msgstr "未安装"
 msgid "Not logged in"
 msgstr "未登录"
 
-#: src/components/stalled-operations-indicator.tsx:59
+#: src/components/stalled-operations-indicator.tsx:33
 msgid "Not responding for {duration}"
 msgstr "已无响应 {duration}"
 
@@ -9803,7 +9803,7 @@ msgstr "步骤库"
 msgid "Steps List"
 msgstr "步骤列表"
 
-#: src/components/pipeline/jobs/stalled-operation-banner.tsx:42
+#: src/components/pipeline/jobs/stalled-operation-banner.tsx:40
 msgid "Still holding a worker"
 msgstr "仍占用工作线程"
 
@@ -9995,7 +9995,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 msgstr "这些网站上未选择账号的主播会使用此账号。网站也包括其子域名，因此 youtube.com 也包括 www.youtube.com 和 m.youtube.com。多个网站用逗号分隔。"
 
-#: src/components/credential-attention-indicator.tsx:122
+#: src/components/credential-attention-indicator.tsx:84
 msgid "Streamers that select only these accounts stop recording until one works again."
 msgstr "仅选择这些账号的主播会停止录制，直到其中一个账号恢复可用。"
 
@@ -10412,7 +10412,7 @@ msgstr "主题预设"
 msgid "then"
 msgstr "然后"
 
-#: src/components/stalled-operations-indicator.tsx:111
+#: src/components/stalled-operations-indicator.tsx:61
 msgid "These jobs have ended, but the disk or network share they were using stopped responding. Each one keeps its worker until the file system answers, so other file jobs may wait in the queue."
 msgstr "这些任务已经结束，但它们使用的磁盘或网络共享没有响应。在文件系统恢复响应之前，每个任务都会继续占用一个工作线程，其他文件任务可能因此排队等待。"
 
@@ -10457,7 +10457,7 @@ msgstr "无法读取该过滤器的设置。"
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
-#: src/components/pipeline/jobs/stalled-operation-banner.tsx:49
+#: src/components/pipeline/jobs/stalled-operation-banner.tsx:47
 msgid "This job has ended, but a file operation it started has not returned. The disk or network share it uses stopped responding, and the worker stays reserved until it answers. Check that the destination is reachable."
 msgstr "此任务已经结束，但它发起的文件操作还没有返回。所用的磁盘或网络共享没有响应，在其恢复之前，这个工作线程会一直被占用。请检查目标位置是否可以访问。"
 

@@ -3,11 +3,9 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { HardDrive } from 'lucide-react';
 
+import { stalledOperationsQueryOptions } from '@/api/stalled-operations';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  stalledForLabel,
-  stalledOperationsQueryOptions,
-} from '@/components/stalled-operations-indicator';
+import { stalledForLabel } from '@/components/stalled-operations-indicator';
 
 /**
  * Explains a finished job that still holds a worker: its status alone reads as
