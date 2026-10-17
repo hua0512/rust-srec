@@ -1,9 +1,9 @@
 //! Whole-file copies that stop between transfers when cancelled.
 //!
-//! Linux and Windows check for cancellation between chunks; a blocked transfer
-//! still has to return before the next check. macOS and other platforms keep
-//! std's native copy, with its cloning and metadata, which cannot stop
-//! mid-file.
+//! Linux, Windows and macOS check for cancellation between chunks; a blocked
+//! transfer still has to return before the next check. A macOS copy within one
+//! APFS volume is a clone, which finishes at once. Other platforms keep std's
+//! native copy, which cannot stop mid-file.
 
 use std::io;
 use std::path::Path;
@@ -12,7 +12,7 @@ use std::path::Path;
 /// count. Once `is_cancelled` returns `true` the copy stops with a
 /// "Copy cancelled" error and may leave a partial `destination` for the caller
 /// to remove. `on_progress` receives the bytes copied so far, ending with the
-/// total; platforms without cancellation report only the total.
+/// total; a clone, or a platform without cancellation, reports only the total.
 pub(super) fn copy_file(
     source: &Path,
     destination: &Path,
@@ -27,7 +27,11 @@ pub(super) fn copy_file(
     {
         copy_windows(source, destination, is_cancelled, on_progress)
     }
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    {
+        copy_macos(source, destination, is_cancelled, on_progress)
+    }
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     {
         let _ = is_cancelled;
         let mut on_progress = on_progress;
@@ -35,6 +39,43 @@ pub(super) fn copy_file(
         on_progress(copied);
         Ok(copied)
     }
+}
+
+/// Open `source` for a copy, accepting only a regular file or a symlink to
+/// one, before anything touches the destination.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_source(source: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
+    let reader = std::fs::File::open(source)?;
+    let metadata = reader.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the source path is neither a regular file nor a symlink to a regular file",
+        ));
+    }
+    Ok((reader, metadata))
+}
+
+/// Create or truncate `destination` with `permissions`, as std does: an
+/// existing regular file gets them too, while a FIFO or device keeps its own.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn open_destination(
+    destination: &Path,
+    permissions: std::fs::Permissions,
+) -> io::Result<(std::fs::File, std::fs::Metadata)> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let writer = std::fs::OpenOptions::new()
+        .mode(permissions.mode())
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(destination)?;
+    let metadata = writer.metadata()?;
+    if metadata.is_file() {
+        writer.set_permissions(permissions)?;
+    }
+    Ok((writer, metadata))
 }
 
 /// Retain Linux's kernel-assisted copy path while checking cancellation
@@ -46,30 +87,12 @@ fn copy_linux(
     mut is_cancelled: impl FnMut() -> bool,
     mut on_progress: impl FnMut(u64),
 ) -> io::Result<u64> {
-    use std::fs::{File, OpenOptions};
     use std::io::Read;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     const CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 
-    let mut reader = File::open(source)?;
-    let metadata = reader.metadata()?;
-    if !metadata.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "the source path is neither a regular file nor a symlink to a regular file",
-        ));
-    }
-    let permissions = metadata.permissions();
-    let mut writer = OpenOptions::new()
-        .mode(permissions.mode())
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(destination)?;
-    if writer.metadata()?.is_file() {
-        writer.set_permissions(permissions)?;
-    }
+    let (mut reader, metadata) = open_source(source)?;
+    let (mut writer, _) = open_destination(destination, metadata.permissions())?;
 
     let mut copied = 0;
     loop {
@@ -215,15 +238,223 @@ fn windows_long_path(path: &Path) -> io::Result<Vec<u16>> {
     Ok(converted)
 }
 
+/// Copy the way `std::fs::copy` does on macOS: a clone within one APFS
+/// volume, otherwise `fcopyfile`, which reports progress and can be
+/// cancelled.
+#[cfg(target_os = "macos")]
+fn copy_macos(
+    source: &Path,
+    destination: &Path,
+    is_cancelled: impl FnMut() -> bool,
+    mut on_progress: impl FnMut(u64),
+) -> io::Result<u64> {
+    let (reader, metadata) = open_source(source)?;
+    // A clone shares the source's blocks and finishes at once, so there is
+    // nothing to cancel or report before it is done.
+    if clone_macos(&reader, destination)? {
+        on_progress(metadata.len());
+        return Ok(metadata.len());
+    }
+    fcopyfile_macos(&reader, &metadata, destination, is_cancelled, on_progress)
+}
+
+/// Clone `reader` to `destination`, or return `Ok(false)` where cloning is
+/// impossible and std falls back to a copy: a volume other than APFS, an
+/// existing destination, or another volume.
+#[cfg(target_os = "macos")]
+fn clone_macos(reader: &std::fs::File, destination: &Path) -> io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes()).map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidInput, "path contains an interior NUL")
+    })?;
+    // SAFETY: the descriptor stays open for the call and the path is
+    // NUL-terminated.
+    let cloned =
+        unsafe { libc::fclonefileat(reader.as_raw_fd(), libc::AT_FDCWD, destination.as_ptr(), 0) };
+    if cloned == 0 {
+        return Ok(true);
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::ENOTSUP | libc::EEXIST | libc::EXDEV) => Ok(false),
+        _ => Err(error),
+    }
+}
+
+/// Copy `reader` into `destination` with `fcopyfile` and the data and
+/// metadata flags std uses, creating the destination with the source's
+/// permissions as std does. macOS calls `status` on this thread at each stage
+/// and after every chunk of data; it reports progress and returns
+/// `COPYFILE_QUIT` once the copy is cancelled, which leaves the partial
+/// destination for the caller to remove.
+#[cfg(target_os = "macos")]
+fn fcopyfile_macos<F: FnMut() -> bool, P: FnMut(u64)>(
+    reader: &std::fs::File,
+    metadata: &std::fs::Metadata,
+    destination: &Path,
+    is_cancelled: F,
+    on_progress: P,
+) -> io::Result<u64> {
+    use std::ffi::{c_char, c_int, c_void};
+    use std::os::fd::AsRawFd;
+
+    struct State(libc::copyfile_state_t);
+
+    impl Drop for State {
+        fn drop(&mut self) {
+            // SAFETY: the state came from `copyfile_state_alloc` and is freed
+            // only here. A failure to close descriptors it opened is not an
+            // error for `fcopyfile`, which opens none.
+            unsafe { libc::copyfile_state_free(self.0) };
+        }
+    }
+
+    struct Progress<F, P> {
+        is_cancelled: F,
+        on_progress: P,
+        cancelled: bool,
+    }
+
+    fn check(result: c_int) -> io::Result<()> {
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
+    // The callback must not unwind across the FFI boundary; the production
+    // closures only read a cancellation token and send a progress report.
+    extern "C" fn status<F: FnMut() -> bool, P: FnMut(u64)>(
+        what: c_int,
+        stage: c_int,
+        state: libc::copyfile_state_t,
+        _source: *const c_char,
+        _destination: *const c_char,
+        context: *mut c_void,
+    ) -> c_int {
+        // SAFETY: `context` points to the `Progress<F, P>` that
+        // `fcopyfile_macos` exclusively borrows for the whole `fcopyfile`
+        // call, which runs this callback synchronously on the calling thread
+        // and never after it returns.
+        let progress = unsafe { &mut *context.cast::<Progress<F, P>>() };
+        // Without a callback any failed step ends the copy with its error.
+        // Quitting keeps that, where `COPYFILE_CONTINUE` would skip the step.
+        if stage == libc::COPYFILE_ERR {
+            return libc::COPYFILE_QUIT;
+        }
+        if what == libc::COPYFILE_COPY_DATA && stage == libc::COPYFILE_PROGRESS {
+            let mut copied: libc::off_t = 0;
+            // SAFETY: `state` is this copy's live state, and
+            // `COPYFILE_STATE_COPIED` writes one `off_t`.
+            let read = unsafe {
+                libc::copyfile_state_get(
+                    state,
+                    libc::COPYFILE_STATE_COPIED as u32,
+                    (&raw mut copied).cast(),
+                )
+            };
+            if read == 0 {
+                (progress.on_progress)(copied as u64);
+            }
+        }
+        if (progress.is_cancelled)() {
+            progress.cancelled = true;
+            libc::COPYFILE_QUIT
+        } else {
+            libc::COPYFILE_CONTINUE
+        }
+    }
+
+    let (writer, writer_metadata) = open_destination(destination, metadata.permissions())?;
+    // SAFETY: allocation has no preconditions; a null state is an error.
+    let state = unsafe { libc::copyfile_state_alloc() };
+    if state.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    let state = State(state);
+    let mut progress = Progress {
+        is_cancelled,
+        on_progress,
+        cancelled: false,
+    };
+    // SAFETY: `state` is live, `copyfile_state_set` stores the callback and
+    // context pointers as given, and `progress` outlives the `fcopyfile` call
+    // that reads it.
+    unsafe {
+        check(libc::copyfile_state_set(
+            state.0,
+            libc::COPYFILE_STATE_STATUS_CB as u32,
+            status::<F, P> as *const c_void,
+        ))?;
+        check(libc::copyfile_state_set(
+            state.0,
+            libc::COPYFILE_STATE_STATUS_CTX as u32,
+            (&raw mut progress).cast::<c_void>().cast_const(),
+        ))?;
+    }
+    // Like std, copy metadata only onto a regular file.
+    let flags = if writer_metadata.is_file() {
+        libc::COPYFILE_METADATA | libc::COPYFILE_DATA
+    } else {
+        libc::COPYFILE_DATA
+    };
+    // SAFETY: both descriptors stay open for the call and `state` is live.
+    let result = unsafe { libc::fcopyfile(reader.as_raw_fd(), writer.as_raw_fd(), state.0, flags) };
+    if result != 0 {
+        // A quit leaves errno as it was, so the flag tells cancellation apart.
+        return Err(if progress.cancelled {
+            io::Error::other("Copy cancelled")
+        } else {
+            io::Error::last_os_error()
+        });
+    }
+    let mut copied: libc::off_t = 0;
+    // SAFETY: `state` is live, and `COPYFILE_STATE_COPIED` writes one `off_t`.
+    check(unsafe {
+        libc::copyfile_state_get(
+            state.0,
+            libc::COPYFILE_STATE_COPIED as u32,
+            (&raw mut copied).cast(),
+        )
+    })?;
+    let copied = copied as u64;
+    (progress.on_progress)(copied);
+    Ok(copied)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pipeline::processors::outputs::TempOutputGuard;
     use tempfile::TempDir;
 
+    /// The copy each platform falls back to when it cannot clone: all of
+    /// `copy_file` on Linux and Windows, and the `fcopyfile` path on macOS,
+    /// whose test directories share one APFS volume and would clone.
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
+    fn transfer(
+        source: &Path,
+        destination: &Path,
+        is_cancelled: impl FnMut() -> bool,
+        on_progress: impl FnMut(u64),
+    ) -> io::Result<u64> {
+        #[cfg(target_os = "macos")]
+        {
+            let (reader, metadata) = open_source(source)?;
+            fcopyfile_macos(&reader, &metadata, destination, is_cancelled, on_progress)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            copy_file(source, destination, is_cancelled, on_progress)
+        }
+    }
+
     /// The cancellable copies report the default stream's cumulative bytes as
     /// they go, ending exactly at the file size.
-    #[cfg(any(target_os = "linux", windows))]
+    #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
     #[test]
     fn copy_reports_increasing_bytes_ending_at_the_total() {
         let directory = TempDir::new().unwrap();
@@ -233,7 +464,7 @@ mod tests {
         std::fs::write(&source, &contents).unwrap();
         let mut reported = Vec::new();
 
-        let copied = copy_file(
+        let copied = transfer(
             &source,
             &destination,
             || false,
@@ -294,9 +525,9 @@ mod tests {
         assert_eq!(std::fs::read(&source).unwrap(), contents);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn linux_copy_preserves_content_permissions_and_truncation_through_source_symlinks() {
+    fn copy_preserves_content_permissions_and_truncation_through_source_symlinks() {
         use std::os::unix::fs::{PermissionsExt, symlink};
 
         let directory = TempDir::new().unwrap();
@@ -312,7 +543,7 @@ mod tests {
             std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o440)).unwrap();
             std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
 
-            let copied = copy_file(&link, &destination, || false, |_| {}).unwrap();
+            let copied = transfer(&link, &destination, || false, |_| {}).unwrap();
 
             assert_eq!(copied, size as u64);
             assert_eq!(std::fs::read(&destination).unwrap(), contents);
@@ -370,9 +601,9 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn linux_copy_rejects_a_non_file_source_before_truncating_destination() {
+    fn copy_rejects_a_non_file_source_before_truncating_destination() {
         let directory = TempDir::new().unwrap();
         let destination = directory.path().join("destination");
         std::fs::write(&destination, b"original").unwrap();
@@ -381,6 +612,68 @@ mod tests {
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_copy_stops_mid_file_when_cancelled_and_leaves_the_rest_to_the_guard() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+        let contents = vec![b'x'; 64 * 1024 * 1024 + 1];
+        std::fs::write(&source, &contents).unwrap();
+        std::fs::write(&destination, b"original").unwrap();
+
+        let staged_path;
+        {
+            let mut staged = TempOutputGuard::new(&destination);
+            staged.cleanup_on_current_thread = true;
+            staged_path = staged.path().to_path_buf();
+            // Cancel once the first chunk of data has been reported. This runs
+            // in the copy thread and does not depend on another task's timing.
+            let reported = std::cell::Cell::new(0);
+            let result = transfer(
+                &source,
+                &staged_path,
+                || reported.get() > 0,
+                |copied| reported.set(copied),
+            );
+
+            assert_eq!(result.unwrap_err().to_string(), "Copy cancelled");
+            let partial = std::fs::metadata(&staged_path).unwrap().len();
+            assert!(partial < contents.len() as u64, "{partial}");
+        }
+
+        assert!(!staged_path.exists());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"original");
+        assert_eq!(std::fs::read(&source).unwrap(), contents);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_copy_and_clone_return_the_byte_count_and_identical_content() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        let destination = directory.path().join("destination");
+
+        for size in [0, 1, 4 * 1024 * 1024 + 7] {
+            let contents = vec![b'x'; size];
+            std::fs::write(&source, &contents).unwrap();
+            std::fs::write(&destination, vec![b'y'; size + 1]).unwrap();
+
+            let copied = transfer(&source, &destination, || false, |_| {}).unwrap();
+            assert_eq!(copied, size as u64);
+            assert_eq!(std::fs::read(&destination).unwrap(), contents);
+
+            // A fresh destination on the same volume takes the clone path.
+            let clone = directory.path().join(format!("clone-{size}"));
+            let mut reported = Vec::new();
+            let cloned =
+                copy_file(&source, &clone, || false, |bytes| reported.push(bytes)).unwrap();
+            assert_eq!(cloned, size as u64);
+            assert_eq!(reported.last(), Some(&(size as u64)));
+            assert_eq!(std::fs::read(&clone).unwrap(), contents);
+        }
     }
 
     #[cfg(windows)]
