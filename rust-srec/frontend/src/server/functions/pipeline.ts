@@ -28,9 +28,13 @@ import {
   BatchDagRequestSchema,
   BatchDeleteOutputsRequestSchema,
   DeleteOutputResponseSchema,
+  InterruptedOutputListSchema,
+  DeleteInterruptedOutputResponseSchema,
+  BatchDeleteInterruptedOutputsRequestSchema,
 } from '../../api/schemas';
 import type {
   BatchDagRequest,
+  BatchDeleteInterruptedOutputsRequest,
   BatchDeleteOutputsRequest,
   DagPipelineDefinition,
 } from '../../api/schemas';
@@ -291,6 +295,48 @@ export const batchDeletePipelineOutputs = createServerFn({ method: 'POST' })
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return BatchResponseSchema.parse(json);
+  });
+
+/** Partial files interrupted jobs left behind, optionally for one job. */
+export const listInterruptedOutputs = createServerFn({ method: 'GET' })
+  .validator((data: { jobId?: string }) =>
+    parseInput(z.object({ jobId: PathIdSchema.optional() }), data),
+  )
+  .handler(async ({ data }) => {
+    const params = new URLSearchParams();
+    if (data.jobId) params.set('job_id', data.jobId);
+    const json = await fetchBackend(
+      withQuery('/pipeline/interrupted-outputs', params),
+    );
+    return InterruptedOutputListSchema.parse(json);
+  });
+
+/** Delete one partial file, or keep it, and forget its entry. */
+export const deleteInterruptedOutput = createServerFn({ method: 'POST' })
+  .validator((data: { id: string; keepFile: boolean }) =>
+    parseInput(z.object({ id: PathIdSchema, keepFile: z.boolean() }), data),
+  )
+  .handler(async ({ data }) => {
+    const json = await fetchBackend(
+      withQuery(
+        backendPath`/pipeline/interrupted-outputs/${data.id}`,
+        new URLSearchParams({ keep_file: String(data.keepFile) }),
+      ),
+      { method: 'DELETE' },
+    );
+    return DeleteInterruptedOutputResponseSchema.parse(json);
+  });
+
+export const batchDeleteInterruptedOutputs = createServerFn({ method: 'POST' })
+  .validator((data: BatchDeleteInterruptedOutputsRequest) =>
+    parseInput(BatchDeleteInterruptedOutputsRequestSchema, data),
+  )
+  .handler(async ({ data }) => {
+    const json = await fetchBackend(
+      '/pipeline/interrupted-outputs/batch-delete',
+      { method: 'POST', body: JSON.stringify(data) },
+    );
     return BatchResponseSchema.parse(json);
   });
 

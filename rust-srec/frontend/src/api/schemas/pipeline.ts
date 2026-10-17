@@ -432,3 +432,40 @@ export const DeleteOutputResponseSchema = z.object({
   message: z.string(),
 });
 export type DeleteOutputResponse = z.infer<typeof DeleteOutputResponseSchema>;
+
+// A partial temporary file an interrupted job may have left next to its
+// destination. `exists` is null when the folder is unavailable or the file
+// system did not answer in time.
+export const InterruptedOutputSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  output_path: z.string(),
+  job_id: z.string(),
+  created_at: z.string(),
+  interrupted_at: z.string(),
+  size_bytes: z.number().nullable().optional(),
+  exists: z.boolean().nullable().optional(),
+});
+export type InterruptedOutput = z.infer<typeof InterruptedOutputSchema>;
+
+export const InterruptedOutputListSchema = z.object({
+  outputs: z.array(InterruptedOutputSchema),
+  total_size_bytes: z.number(),
+});
+export type InterruptedOutputList = z.infer<typeof InterruptedOutputListSchema>;
+
+export const DeleteInterruptedOutputResponseSchema = z.object({
+  id: z.string(),
+  file_deleted: z.boolean(),
+});
+
+export const BatchDeleteInterruptedOutputsRequestSchema = withUniqueIds(
+  z.object({
+    ids: BatchIdsSchema,
+    keep_files: z.boolean(),
+  }),
+  'Interrupted output IDs must be unique',
+);
+export type BatchDeleteInterruptedOutputsRequest = z.infer<
+  typeof BatchDeleteInterruptedOutputsRequestSchema
+>;

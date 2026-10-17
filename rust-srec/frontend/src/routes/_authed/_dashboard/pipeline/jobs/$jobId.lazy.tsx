@@ -24,6 +24,7 @@ import {
   type JobLogPages,
 } from '@/lib/job-log-pages';
 import { JobProgressBytes } from '@/components/pipeline/jobs/job-progress-bytes';
+import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
 import { Button } from '@/components/ui/button';
@@ -747,6 +748,7 @@ function JobDetailsPage() {
               jobId={job.id}
               enabled={job.status === 'FAILED' || job.status === 'CANCELLED'}
             />
+            <JobInterruptedOutputsCard jobId={job.id} />
             {job.error_message && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}

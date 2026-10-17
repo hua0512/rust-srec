@@ -5,6 +5,7 @@ import { MenuIcon } from 'lucide-react';
 
 import { ConnectionStatusIndicator } from '@/components/connection-status-indicator';
 import { CredentialAttentionIndicator } from '@/components/credential-attention-indicator';
+import { InterruptedOutputsIndicator } from '@/components/interrupted-outputs-indicator';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { StalledOperationsIndicator } from '@/components/stalled-operations-indicator';
 import { UploadStatusIndicator } from '@/components/upload-status-indicator';
@@ -116,6 +117,7 @@ export function SiteHeader() {
         <div className="flex flex-1 items-center justify-end space-x-4">
           <CredentialAttentionIndicator />
           <StalledOperationsIndicator />
+          <InterruptedOutputsIndicator />
           <UploadStatusIndicator />
           <ConnectionStatusIndicator />
           <LanguageSwitcher />
