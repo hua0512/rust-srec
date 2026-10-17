@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::{
@@ -27,6 +28,10 @@ use crate::database::time::ms_to_datetime;
 const LIST_LIMIT: u32 = 500;
 /// A hung network share must not hang the listing; later files go unsized.
 const INSPECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Set while a stat pass runs. One stuck on a hung share keeps its blocking
+/// thread until the file system answers, so later listings skip statting
+/// rather than strand another thread each.
+static INSPECTING: AtomicBool = AtomicBool::new(false);
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Dependencies of the interrupted-output endpoints. `None` when the pipeline
@@ -73,8 +78,9 @@ pub struct InterruptedOutputResponse {
     pub interrupted_at: DateTime<Utc>,
     /// File size, when the file system answered in time.
     pub size_bytes: Option<u64>,
-    /// Whether the file is present; `null` when its folder is unavailable or
-    /// the file system did not answer in time.
+    /// Whether the file is present; `null` when its folder is unavailable, the
+    /// file system did not answer in time, or an earlier check is still
+    /// waiting on it.
     pub exists: Option<bool>,
 }
 
@@ -125,9 +131,25 @@ enum FileState {
 /// Stat `paths` on one blocking thread. A hung share then holds one thread, and
 /// the files after it are reported as unknown once the deadline passes.
 async fn inspect(paths: Vec<PathBuf>) -> Vec<Option<FileState>> {
+    inspect_unless_running(paths, &INSPECTING).await
+}
+
+/// [`inspect`], except that every state is unknown while an earlier pass
+/// flagged in `running` has not returned.
+async fn inspect_unless_running(
+    paths: Vec<PathBuf>,
+    running: &'static AtomicBool,
+) -> Vec<Option<FileState>> {
+    if running.swap(true, Ordering::AcqRel) {
+        return vec![None; paths.len()];
+    }
+    // Clears the flag when the pass returns, or when it never runs because the
+    // runtime is shutting down.
+    let pass = RunningPass(running);
     let results = Arc::new(parking_lot::Mutex::new(vec![None; paths.len()]));
     let shared = results.clone();
     let task = tokio::task::spawn_blocking(move || {
+        let _pass = pass;
         for (index, path) in paths.iter().enumerate() {
             let state = match std::fs::symlink_metadata(path) {
                 Ok(metadata) if metadata.is_file() => FileState::Present(metadata.len()),
@@ -151,6 +173,14 @@ async fn inspect(paths: Vec<PathBuf>) -> Vec<Option<FileState>> {
         ),
     }
     results.lock().clone()
+}
+
+struct RunningPass(&'static AtomicBool);
+
+impl Drop for RunningPass {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 /// List partial temporary files left by interrupted jobs.
@@ -569,6 +599,28 @@ mod tests {
         .await
         .unwrap();
         assert!(other_job.outputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn listing_skips_statting_while_an_earlier_pass_is_still_running() {
+        static RUNNING: AtomicBool = AtomicBool::new(false);
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("video.tmp-x.mp4");
+        std::fs::write(&file, b"partial").unwrap();
+
+        // A pass stuck on a hung share still holds the flag.
+        RUNNING.store(true, Ordering::SeqCst);
+        let skipped = inspect_unless_running(vec![file.clone()], &RUNNING).await;
+        assert!(matches!(skipped.as_slice(), [None]));
+        assert!(
+            RUNNING.load(Ordering::SeqCst),
+            "a skipped pass must not clear the flag"
+        );
+
+        RUNNING.store(false, Ordering::SeqCst);
+        let states = inspect_unless_running(vec![file], &RUNNING).await;
+        assert!(matches!(states.as_slice(), [Some(FileState::Present(7))]));
+        assert!(!RUNNING.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

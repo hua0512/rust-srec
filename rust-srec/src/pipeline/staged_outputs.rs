@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::warn;
 
@@ -105,6 +106,9 @@ struct RecorderInner {
     repository: Arc<dyn StagedOutputRepository>,
     job_id: String,
     attempt_id: String,
+    /// Set by the first recording, so finishing an attempt that staged nothing,
+    /// such as an upload, costs no write.
+    staged: AtomicBool,
 }
 
 impl StagedOutputRecorder {
@@ -118,6 +122,7 @@ impl StagedOutputRecorder {
                 repository,
                 job_id: job_id.into(),
                 attempt_id: uuid::Uuid::new_v4().to_string(),
+                staged: AtomicBool::new(false),
             })),
         }
     }
@@ -127,6 +132,9 @@ impl StagedOutputRecorder {
         let Some(inner) = &self.inner else {
             return;
         };
+        // Set before the write: a failure reported after the row was committed
+        // must still have `finish` remove it.
+        inner.staged.store(true, Ordering::Release);
         let (path, output_path) = (temp.to_string_lossy(), output.to_string_lossy());
         let staged = NewStagedOutput {
             path: &path,
@@ -149,6 +157,9 @@ impl StagedOutputRecorder {
         let Some(inner) = &self.inner else {
             return;
         };
+        if !inner.staged.load(Ordering::Acquire) {
+            return;
+        }
         if let Err(error) = inner.repository.remove_attempt(&inner.attempt_id).await {
             warn!(
                 job_id = %inner.job_id,
@@ -162,6 +173,65 @@ impl StagedOutputRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::StagedOutputDbModel;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Counts the writes an attempt makes; attempts never list or settle rows.
+    #[derive(Default)]
+    struct CountingRepository {
+        removals: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl StagedOutputRepository for CountingRepository {
+        async fn record(&self, _: NewStagedOutput<'_>, _: i64) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn remove_attempt(&self, _: &str) -> crate::Result<u64> {
+            self.removals.fetch_add(1, Ordering::SeqCst);
+            Ok(1)
+        }
+
+        async fn mark_interrupted(&self, _: i64) -> crate::Result<u64> {
+            unreachable!("attempts never mark rows interrupted")
+        }
+
+        async fn list_interrupted(
+            &self,
+            _: Option<&str>,
+            _: u32,
+        ) -> crate::Result<Vec<StagedOutputDbModel>> {
+            unreachable!("attempts never list rows")
+        }
+
+        async fn get_interrupted(&self, _: &str) -> crate::Result<StagedOutputDbModel> {
+            unreachable!("attempts never read rows")
+        }
+
+        async fn forget_interrupted(&self, _: &str) -> crate::Result<bool> {
+            unreachable!("attempts never settle rows")
+        }
+    }
+
+    #[tokio::test]
+    async fn finishing_writes_only_for_an_attempt_that_staged_a_file() {
+        let repository = Arc::new(CountingRepository::default());
+
+        StagedOutputRecorder::for_attempt(repository.clone(), "upload")
+            .finish()
+            .await;
+        assert_eq!(repository.removals.load(Ordering::SeqCst), 0);
+
+        // Output batches record through clones of the attempt's recorder.
+        let recorder = StagedOutputRecorder::for_attempt(repository.clone(), "remux");
+        recorder
+            .clone()
+            .record(Path::new("/out/a.tmp-1.mp4"), Path::new("/out/a.mp4"))
+            .await;
+        recorder.finish().await;
+        assert_eq!(repository.removals.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn temp_paths_match_only_their_own_output() {

@@ -873,13 +873,15 @@ mod tests {
 
         assert_eq!(job_count().await, jobs_before);
         sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at)              VALUES ('a', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
+            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
+             VALUES ('a', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
         )
         .execute(&pool)
         .await
         .unwrap();
         let duplicate = sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at)              VALUES ('b', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
+            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
+             VALUES ('b', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
         )
         .execute(&pool)
         .await;

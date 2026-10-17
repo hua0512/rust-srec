@@ -44,6 +44,17 @@ pub(super) struct TempOutputGuard {
 }
 
 impl TempOutputGuard {
+    /// A guard for a new temporary sibling of `output_path`, recorded through
+    /// `recorder` before the caller creates the file, so a crash that skips
+    /// this guard's cleanup still leaves the file listed after a restart.
+    pub(super) async fn recorded(output_path: &Path, recorder: &StagedOutputRecorder) -> Self {
+        let guard = Self::new(output_path);
+        recorder.record(guard.path(), output_path).await;
+        guard
+    }
+
+    /// An unrecorded guard, for overwrite backups that exist only while a
+    /// commit renames outputs into place. Staged outputs use [`Self::recorded`].
     pub(super) fn new(output_path: &Path) -> Self {
         Self {
             path: crate::pipeline::temp_path_for(output_path),
@@ -255,10 +266,8 @@ impl OutputBatch {
             Error::PipelineError(format!("Output path validation failed: {error}"))
         })??;
         self.staging_validation = Some(validation);
-        let temp = TempOutputGuard::new(&output);
+        let temp = TempOutputGuard::recorded(&output, &self.staged_outputs).await;
         let path = temp.path().to_owned();
-        // The caller creates the file only after this returns.
-        self.staged_outputs.record(&path, &output).await;
         self.pending.push(PendingOutput {
             temp,
             output,
