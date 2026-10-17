@@ -11,6 +11,7 @@ use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::progress::ProgressReporter;
+use crate::pipeline::staged_outputs::StagedOutputRecorder;
 
 /// Type of processor (determines which worker pool handles it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -168,6 +169,9 @@ pub struct ProcessorContext {
     pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
     pub is_retry: bool,
+    /// Records staged temporary files so a restart can list what an
+    /// interrupted attempt left behind.
+    pub(crate) staged_outputs: StagedOutputRecorder,
 }
 
 #[derive(Clone)]
@@ -203,6 +207,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
             is_retry: false,
+            staged_outputs: StagedOutputRecorder::default(),
         }
     }
 
@@ -218,12 +223,19 @@ impl ProcessorContext {
             log_sink,
             cancellation_token,
             is_retry: false,
+            staged_outputs: StagedOutputRecorder::default(),
         }
     }
 
     /// Mark this execution as a retry of a previously persisted job.
     pub fn with_retry(mut self, is_retry: bool) -> Self {
         self.is_retry = is_retry;
+        self
+    }
+
+    /// Record this attempt's staged temporary files through `recorder`.
+    pub(crate) fn with_staged_outputs(mut self, recorder: StagedOutputRecorder) -> Self {
+        self.staged_outputs = recorder;
         self
     }
 
@@ -239,6 +251,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
             cancellation_token: self.cancellation_token.clone(),
             is_retry: self.is_retry,
+            staged_outputs: self.staged_outputs.clone(),
         }
     }
 

@@ -1100,13 +1100,15 @@ impl JobRunner {
             log_dropped,
         );
 
+        let staged_outputs = self.job_queue.staged_output_recorder(&facts.id);
         let ctx = ProcessorContext::new(
             facts.id.clone(),
             self.job_queue.progress_reporter(&facts.id),
             log_sink,
             processor_token.clone(),
         )
-        .with_retry(is_retry);
+        .with_retry(is_retry)
+        .with_staged_outputs(staged_outputs.clone());
 
         let outcome = self
             .execute(
@@ -1157,6 +1159,10 @@ impl JobRunner {
 
         self.drain_log_collector(log_collector, &facts, lingering)
             .await;
+        // Blocking copies hold a log sender, so the drain outlasts them; other
+        // staged files were published or handed to their guards' cleanup when
+        // the processor returned. A crash before this point keeps the rows.
+        staged_outputs.finish().await;
 
         // A cancellation that landed while the processor was finishing wins: its CANCELLED row
         // is the durable truth, so nothing here may write a competing terminal state.

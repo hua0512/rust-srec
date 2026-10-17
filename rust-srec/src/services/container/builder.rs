@@ -403,6 +403,12 @@ impl ServiceContainer {
                 config_service: config_service.clone(),
                 dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
                 upload_record_repository: upload_record_repo.clone(),
+                staged_output_repository: Arc::new(
+                    crate::database::repositories::SqlxStagedOutputRepository::new(
+                        pool.clone(),
+                        write_pool.clone(),
+                    ),
+                ),
                 upload_broadcaster: upload_status_broadcaster.clone(),
                 download_limit_adjuster: download_manager.clone(),
             },

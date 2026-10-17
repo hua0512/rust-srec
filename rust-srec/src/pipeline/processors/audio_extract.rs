@@ -518,7 +518,7 @@ impl Processor for AudioExtractProcessor {
         let is_batch = plan.is_batch();
         let mut output = super::media_driver::run_media(
             plan,
-            OutputBatch::new(&input.inputs),
+            OutputBatch::new(&input.inputs, ctx),
             &AudioExtractProcessorItem {
                 processor: self,
                 config: &config,

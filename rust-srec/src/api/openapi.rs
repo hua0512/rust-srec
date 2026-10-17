@@ -36,6 +36,10 @@ use crate::api::routes::logging::{LoggingConfigResponse, ModuleInfo, UpdateLogFi
 use crate::api::routes::notifications::{
     CreateChannelRequest, UpdateChannelRequest, UpdateSubscriptionsRequest,
 };
+use crate::api::routes::pipeline::interrupted::{
+    BatchDeleteInterruptedOutputsRequest, DeleteInterruptedOutputResponse,
+    InterruptedOutputListResponse, InterruptedOutputResponse,
+};
 use crate::api::routes::pipeline::{
     BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse,
     BatchDeleteOutputsRequest, BatchDeleteOutputsResponse, CreatePipelinePresetRequest,
@@ -177,6 +181,9 @@ pub struct MessageResponse {
         crate::api::routes::pipeline::dag::batch_dags,
         crate::api::routes::pipeline::jobs::delete_output,
         crate::api::routes::pipeline::jobs::batch_delete_outputs,
+        crate::api::routes::pipeline::interrupted::list_interrupted_outputs,
+        crate::api::routes::pipeline::interrupted::delete_interrupted_output,
+        crate::api::routes::pipeline::interrupted::batch_delete_interrupted_outputs,
         crate::api::routes::pipeline::dag::get_dag_status,
         crate::api::routes::pipeline::dag::get_dag_graph,
         crate::api::routes::pipeline::dag::get_dag_stats,
@@ -456,6 +463,10 @@ pub struct MessageResponse {
             BatchDeleteOutputsRequest,
             BatchDeleteOutputsResponse,
             DeleteOutputResponse,
+            InterruptedOutputResponse,
+            InterruptedOutputListResponse,
+            DeleteInterruptedOutputResponse,
+            BatchDeleteInterruptedOutputsRequest,
             ValidateDagRequest,
             ValidateDagResponse,
             crate::database::models::job::DagPipelineDefinition,
@@ -508,6 +519,9 @@ mod tests {
             "/api/pipeline/dags/batch",
             "/api/pipeline/outputs/{id}",
             "/api/pipeline/outputs/batch-delete",
+            "/api/pipeline/interrupted-outputs",
+            "/api/pipeline/interrupted-outputs/{id}",
+            "/api/pipeline/interrupted-outputs/batch-delete",
         ] {
             assert!(
                 doc.paths.paths.contains_key(path),
@@ -527,6 +541,8 @@ mod tests {
             "BatchDeleteOutputsRequest",
             "BatchDeleteOutputsResponse",
             "DeleteOutputResponse",
+            "InterruptedOutputListResponse",
+            "BatchDeleteInterruptedOutputsRequest",
         ] {
             assert!(
                 schemas.contains_key(schema),

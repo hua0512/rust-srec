@@ -210,7 +210,7 @@ impl CopyMoveProcessor {
         if ctx.cancellation_token.is_cancelled() {
             return Err("Copy cancelled".into());
         }
-        let temp = TempOutputGuard::new(dest);
+        let temp = TempOutputGuard::recorded(dest, &ctx.staged_outputs).await;
         let tmp_dest = temp.path().to_path_buf();
         let source = source.to_owned();
         let cancel = ctx.cancellation_token.child_token();

@@ -309,7 +309,7 @@ impl Processor for DanmakuFactoryProcessor {
         // after the whole batch converted, so a failure or timeout mid-batch
         // leaves no truncated subtitle at a destination a retry would refuse
         // to overwrite.
-        let mut batch = OutputBatch::new(&input.inputs);
+        let mut batch = OutputBatch::new(&input.inputs, ctx);
         let mut produced = Vec::new();
         let mut converted_xml = Vec::new();
         let mut skipped_inputs = Vec::new();

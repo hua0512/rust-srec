@@ -16,8 +16,10 @@ import { createChannel } from '../functions/notifications';
 import {
   cancelDag,
   createPipelinePreset,
+  deleteInterruptedOutput,
   deletePipelineOutput,
   getPipelineJob,
+  listInterruptedOutputs,
   listPipelinePresets,
 } from '../functions/pipeline';
 import {
@@ -158,6 +160,16 @@ describe('server function request paths', () => {
       'deletePipelineOutput',
       () => deletePipelineOutput({ data: { id: ID, deleteFile: true } }),
       `/pipeline/outputs/${ID}?delete_file=true`,
+    ],
+    [
+      'deleteInterruptedOutput',
+      () => deleteInterruptedOutput({ data: { id: ID, keepFile: true } }),
+      `/pipeline/interrupted-outputs/${ID}?keep_file=true`,
+    ],
+    [
+      'listInterruptedOutputs',
+      () => listInterruptedOutputs({ data: { jobId: ID } }),
+      `/pipeline/interrupted-outputs?job_id=${ID}`,
     ],
     [
       'listCredentialProfiles',
