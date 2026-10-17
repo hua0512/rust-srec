@@ -62,6 +62,26 @@ pub struct StalledOperation {
 }
 
 impl StalledOperation {
+    /// The attempt of `facts` whose job just ended.
+    fn ended(facts: &JobFacts, input: &ProcessorInput, worker_type: WorkerType) -> Self {
+        Self {
+            job_id: facts.id.clone(),
+            job_type: facts.job_type.clone(),
+            processor: facts.processor_name,
+            worker_type,
+            streamer_id: input.streamer_id.clone(),
+            input_file_name: input.inputs.first().map(|first| {
+                std::path::Path::new(first)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| first.clone())
+            }),
+            input_count: input.inputs.len(),
+            ended_at: chrono::Utc::now(),
+            ended: tokio::time::Instant::now(),
+        }
+    }
+
     /// How long the blocking work has outlived its job.
     pub fn stalled_for(&self) -> std::time::Duration {
         self.ended.elapsed()
@@ -1109,22 +1129,7 @@ impl JobRunner {
             matches!(outcome, JobOutcome::Cancelled | JobOutcome::TimedOut).then(|| {
                 self.lingering.register(
                     job_token.id(),
-                    StalledOperation {
-                        job_id: facts.id.clone(),
-                        job_type: facts.job_type.clone(),
-                        processor: facts.processor_name,
-                        worker_type: self.worker_type,
-                        streamer_id: input.streamer_id.clone(),
-                        input_file_name: input.inputs.first().map(|first| {
-                            std::path::Path::new(first)
-                                .file_name()
-                                .map(|name| name.to_string_lossy().into_owned())
-                                .unwrap_or_else(|| first.clone())
-                        }),
-                        input_count: input.inputs.len(),
-                        ended_at: chrono::Utc::now(),
-                        ended: tokio::time::Instant::now(),
-                    },
+                    StalledOperation::ended(&facts, &input, self.worker_type),
                 )
             });
 
@@ -1150,35 +1155,8 @@ impl JobRunner {
                 .await;
         }
 
-        // Wait for log collector to finish draining
-        let mut log_collector = log_collector;
-        let drained = match &lingering {
-            Some(_) => {
-                match tokio::time::timeout(STALLED_OPERATION_THRESHOLD, &mut log_collector).await {
-                    Ok(drained) => drained,
-                    Err(_) => {
-                        warn!(
-                            job_id = %facts.id,
-                            processor = facts.processor_name,
-                            worker_type = %self.worker_type,
-                            stalled_secs = STALLED_OPERATION_THRESHOLD.as_secs(),
-                            "Job ended but blocking work it started has not returned; its worker \
-                             stays reserved until the file system responds"
-                        );
-                        log_collector.await
-                    }
-                }
-            }
-            None => log_collector.await,
-        };
-        drop(lingering);
-        if let Err(join_error) = drained {
-            error!(
-                job_id = %facts.id,
-                error = %join_error,
-                "Job log collector task failed"
-            );
-        }
+        self.drain_log_collector(log_collector, &facts, lingering)
+            .await;
 
         // A cancellation that landed while the processor was finishing wins: its CANCELLED row
         // is the durable truth, so nothing here may write a competing terminal state.
@@ -1222,6 +1200,45 @@ impl JobRunner {
         }
 
         update_avg_runtime_ms(&self.avg_runtime_ms, started.elapsed().as_millis() as u64);
+    }
+
+    /// Wait for the log collector, which finishes once the last log sender is gone, including
+    /// one held by blocking work that outlived its ended job. Such an attempt stays listed
+    /// through `lingering` until then and is logged once it passes
+    /// `STALLED_OPERATION_THRESHOLD`.
+    async fn drain_log_collector(
+        &self,
+        mut log_collector: AbortOnDropHandle<()>,
+        facts: &JobFacts,
+        lingering: Option<LingeringGuard>,
+    ) {
+        let drained = match &lingering {
+            Some(_) => {
+                match tokio::time::timeout(STALLED_OPERATION_THRESHOLD, &mut log_collector).await {
+                    Ok(drained) => drained,
+                    Err(_) => {
+                        warn!(
+                            job_id = %facts.id,
+                            processor = facts.processor_name,
+                            worker_type = %self.worker_type,
+                            stalled_secs = STALLED_OPERATION_THRESHOLD.as_secs(),
+                            "Job ended but blocking work it started has not returned; its worker \
+                             stays reserved until the file system responds"
+                        );
+                        log_collector.await
+                    }
+                }
+            }
+            None => log_collector.await,
+        };
+        drop(lingering);
+        if let Err(join_error) = drained {
+            error!(
+                job_id = %facts.id,
+                error = %join_error,
+                "Job log collector task failed"
+            );
+        }
     }
 
     /// Await `Processor::process` against the job's own cancellation, the pool's shutdown, and
