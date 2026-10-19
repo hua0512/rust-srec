@@ -23,7 +23,7 @@ import {
   replaceNewestLogPage,
   type JobLogPages,
 } from '@/lib/job-log-pages';
-import { JobProgressBytes } from '@/components/pipeline/jobs/job-progress-bytes';
+import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel';
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
@@ -76,7 +76,6 @@ export const Route = createLazyFileRoute(
   component: JobDetailsPage,
 });
 
-import { formatDuration } from '@/lib/format';
 import { formatDate } from '@/lib/datetime';
 
 /** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
@@ -661,50 +660,7 @@ function JobDetailsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 flex-1 flex flex-col gap-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-background/50 border border-border/50 text-center">
-                    <div className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">
-                      <Trans>Duration</Trans>
-                    </div>
-                    <div className="text-2xl font-bold tracking-tight">
-                      {formatDuration(job.duration_secs)}
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-xl bg-background/50 border border-border/50 text-center">
-                    <div className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">
-                      <Trans>Queue</Trans>
-                    </div>
-                    <div className="text-2xl font-bold tracking-tight text-muted-foreground">
-                      {formatDuration(job.queue_wait_secs)}
-                    </div>
-                  </div>
-                  {job.status === 'PROCESSING' && progressSnapshot && (
-                    <>
-                      <JobProgressBytes snapshot={progressSnapshot} />
-                      <div className="p-4 rounded-xl bg-background/50 border border-border/50 text-center">
-                        <div className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">
-                          <Trans>Speed</Trans>
-                        </div>
-                        <div className="text-xl font-bold tracking-tight font-mono">
-                          {progressSnapshot.speed_bytes_per_sec
-                            ? `${(progressSnapshot.speed_bytes_per_sec / 1024 / 1024).toFixed(2)} ` +
-                              i18n._(msg`MB/s`)
-                            : '-'}
-                        </div>
-                      </div>
-                      <div className="p-4 rounded-xl bg-background/50 border border-border/50 text-center">
-                        <div className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">
-                          <Trans>ETA</Trans>
-                        </div>
-                        <div className="text-xl font-bold tracking-tight font-mono">
-                          {progressSnapshot.eta_secs
-                            ? formatDuration(progressSnapshot.eta_secs)
-                            : '-'}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <JobProgressPanel job={job} snapshot={progressSnapshot} />
                 <Separator className="bg-border/50" />
                 <div className="space-y-6">
                   <TimelineItem
