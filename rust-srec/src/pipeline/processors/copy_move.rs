@@ -108,9 +108,9 @@ const COPY_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 struct CopyProgress {
     reporter: ProgressReporter,
     bytes_total: u64,
-    /// One-based position of this file among the job's inputs.
-    file_index: usize,
-    file_count: usize,
+    /// Job inputs handled before this file.
+    files_done: usize,
+    files_total: usize,
     file: String,
     started: Instant,
     last_report: Option<Instant>,
@@ -120,15 +120,15 @@ impl CopyProgress {
     fn new(
         reporter: ProgressReporter,
         bytes_total: u64,
-        file_index: usize,
-        file_count: usize,
+        files_done: usize,
+        files_total: usize,
         file: &str,
     ) -> Self {
         Self {
             reporter,
             bytes_total,
-            file_index,
-            file_count,
+            files_done,
+            files_total,
             file: file.to_owned(),
             started: Instant::now(),
             last_report: None,
@@ -169,11 +169,9 @@ impl CopyProgress {
             snapshot.speed_bytes_per_sec = Some(speed);
             snapshot.eta_secs = Some(self.bytes_total.saturating_sub(bytes_done) as f64 / speed);
         }
-        snapshot.raw = serde_json::json!({
-            "file_index": self.file_index,
-            "file_count": self.file_count,
-            "file": self.file,
-        });
+        snapshot.files_done = Some(self.files_done as u64);
+        snapshot.files_total = Some(self.files_total as u64);
+        snapshot.raw = serde_json::json!({ "file": self.file });
         snapshot
     }
 }
@@ -714,7 +712,7 @@ impl Processor for CopyMoveProcessor {
             let progress = CopyProgress::new(
                 ctx.progress.clone(),
                 source_size,
-                file_index + 1,
+                file_index,
                 input.inputs.len(),
                 source_path,
             );
@@ -892,7 +890,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn no_progress() -> CopyProgress {
-        CopyProgress::new(ProgressReporter::noop("copy"), 0, 1, 1, "source")
+        CopyProgress::new(ProgressReporter::noop("copy"), 0, 0, 1, "source")
     }
 
     fn progress_channel(
@@ -905,7 +903,7 @@ mod tests {
         let progress = CopyProgress::new(
             ProgressReporter::new("copy", tx),
             bytes_total,
-            1,
+            0,
             1,
             "source",
         );
@@ -915,8 +913,8 @@ mod tests {
     #[test]
     fn copy_progress_snapshots_carry_bytes_rate_and_file_position() {
         let (mut progress, _rx) = progress_channel(1000);
-        progress.file_index = 2;
-        progress.file_count = 4;
+        progress.files_done = 1;
+        progress.files_total = 4;
 
         let snapshot = progress.snapshot(250, Duration::from_secs(5));
         assert_eq!(snapshot.kind, ProgressKind::Copy);
@@ -926,8 +924,8 @@ mod tests {
         assert_eq!(snapshot.speed_bytes_per_sec, Some(50.0));
         assert_eq!(snapshot.eta_secs, Some(15.0));
         assert_eq!(
-            snapshot.raw,
-            serde_json::json!({"file_index": 2, "file_count": 4, "file": "source"})
+            (snapshot.files_done, snapshot.files_total),
+            (Some(1), Some(4))
         );
 
         // No elapsed time or no bytes yet gives no rate rather than infinity.
@@ -2019,7 +2017,7 @@ mod tests {
         let progress = CopyProgress::new(
             ProgressReporter::new("copy", progress_tx),
             7,
-            2,
+            1,
             3,
             &source.to_string_lossy(),
         );
@@ -2047,10 +2045,7 @@ mod tests {
             (last.bytes_done, last.bytes_total, last.percent),
             (Some(7), Some(7), Some(100.0))
         );
-        assert_eq!(
-            last.raw,
-            serde_json::json!({"file_index": 2, "file_count": 3, "file": source.to_string_lossy()})
-        );
+        assert_eq!((last.files_done, last.files_total), (Some(1), Some(3)));
         assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");
         let mut entries = fs::read_dir(temp_dir.path()).await.unwrap();
         while let Some(entry) = entries.next_entry().await.unwrap() {

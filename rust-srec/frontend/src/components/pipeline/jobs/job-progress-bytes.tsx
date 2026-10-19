@@ -18,17 +18,14 @@ const BYTES_LABELS: Record<JobProgressKind, MessageDescriptor> = {
   copy: msg`Copied`,
 };
 
-/** Reads `file_index` / `file_count` from a snapshot's free-form `raw` data. */
-function filePosition(raw: unknown): { index: number; count: number } | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const { file_index: index, file_count: count } = raw as Record<
-    string,
-    unknown
-  >;
-  if (typeof index !== 'number' || typeof count !== 'number' || count < 2) {
-    return null;
-  }
-  return { index, count };
+/** One-based position of the file in progress, for jobs of two or more files. */
+function filePosition({
+  files_done: done,
+  files_total: count,
+}: JobProgressSnapshot): { index: number; count: number } | null {
+  if (done == null || count == null || count < 2) return null;
+  // Uploaders report every file done while the job is still finishing.
+  return { index: Math.min(done + 1, count), count };
 }
 
 /**
@@ -47,7 +44,7 @@ export function JobProgressBytes({
 
   const percent =
     snapshot.percent ?? (total > 0 ? Math.min((done / total) * 100, 100) : 100);
-  const position = filePosition(snapshot.raw);
+  const position = filePosition(snapshot);
 
   return (
     <div className="col-span-2 p-4 rounded-xl bg-background/50 border border-border/50">

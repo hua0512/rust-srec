@@ -675,11 +675,20 @@ impl RemuxProcessor {
         crate::utils::configure_ffmpeg_locale(&mut cmd);
         cmd.args(&args);
 
+        // `-ss` is an input option, so output timestamps start at zero and the
+        // output `-to` limits the length just like `-t`.
+        let start = config.start_time.unwrap_or(0.0);
+        let end = config
+            .duration
+            .or(config.end_time)
+            .map_or(f64::INFINITY, |length| start + length);
+
         // Execute command and capture logs
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
             &mut cmd,
             &ctx.progress,
             Some(ctx.log_sink.clone()),
+            Some(start..end),
         )
         .await?;
 
@@ -787,6 +796,7 @@ impl Processor for RemuxProcessor {
         let mut output = super::media_driver::run_media(
             plan,
             OutputBatch::new(&input.inputs, ctx),
+            &ctx.progress,
             &RemuxProcessorItem {
                 processor: self,
                 config: &config,

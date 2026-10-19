@@ -29,3 +29,4 @@
 - Saving an engine or template no longer removes settings the form does not show, such as ones set through the API, and a cleared number in a gap strategy, variant or DASH quality choice is now flagged instead of being saved as 0.
 - Removed the **Live Reorder Window (ms)** and **Live Reorder Window (segments)** settings from Mesio's HLS buffering settings: they had no effect. Values saved for them are ignored.
 - The engines settings page is now a list like proxies, showing each engine's type, installed version and status, with **Configure** beside it.
+- The job page now shows the estimated time remaining while a remux, subtitle burn-in, metadata or audio extraction step runs, and which file a multi-file rclone upload has reached.

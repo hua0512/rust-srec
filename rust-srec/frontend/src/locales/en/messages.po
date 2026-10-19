@@ -4438,7 +4438,7 @@ msgstr "FFmpeg Video Filter"
 
 #. placeholder {0}: position.index
 #. placeholder {1}: position.count
-#: src/components/pipeline/jobs/job-progress-bytes.tsx:69
+#: src/components/pipeline/jobs/job-progress-bytes.tsx:66
 msgid "File {0} of {1}"
 msgstr "File {0} of {1}"
 

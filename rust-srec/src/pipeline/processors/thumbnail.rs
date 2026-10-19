@@ -340,6 +340,7 @@ impl ThumbnailProcessor {
             &mut cmd,
             &ctx.progress,
             Some(ctx.log_sink.clone()),
+            None,
         )
         .await
     }
@@ -409,6 +410,7 @@ impl Processor for ThumbnailProcessor {
         let mut output = super::media_driver::run_media(
             plan,
             OutputBatch::new(&input.inputs, ctx),
+            &ctx.progress,
             &ThumbnailProcessorItem {
                 processor: self,
                 config: &config,

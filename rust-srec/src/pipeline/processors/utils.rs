@@ -1,10 +1,11 @@
 //! Utility functions for processors.
 
 use std::collections::VecDeque;
+use std::ops::Range;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use process_utils::ContainedChild;
 use serde::Deserialize;
@@ -323,7 +324,13 @@ fn push_overlong_summary(
 #[derive(Clone)]
 enum CommandMode {
     Plain,
-    Ffmpeg(ProgressReporter),
+    Ffmpeg {
+        progress: ProgressReporter,
+        trim: Option<Range<f64>>,
+        /// The first input's length in seconds from ffmpeg's stderr report,
+        /// read by the stdout progress parser of the same run.
+        input_secs: Arc<OnceLock<Option<f64>>>,
+    },
     Rclone(ProgressReporter),
     BaiduPcs(ProgressReporter),
 }
@@ -364,9 +371,17 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
         .await;
     }
     let mut lines = CappedLines::new(reader, context.overlong_count);
-    if stdout && let CommandMode::Ffmpeg(progress) = &context.mode {
+    if stdout
+        && let CommandMode::Ffmpeg {
+            progress,
+            trim,
+            input_secs,
+        } = &context.mode
+    {
         let mut state = FfmpegProgressState::default();
         while let Some(line) = lines.next_line().await? {
+            state.duration_ms =
+                output_length_ms(input_secs.get().copied().flatten(), trim.as_ref());
             if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
                 progress.report(snapshot);
             }
@@ -376,7 +391,8 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
     while let Some(line) = lines.next_line().await? {
         let level = if stdout {
             LogLevel::Info
-        } else if matches!(&context.mode, CommandMode::Ffmpeg(_)) {
+        } else if let CommandMode::Ffmpeg { input_secs, .. } = &context.mode {
+            record_ffmpeg_input_length(&line, input_secs);
             determine_ffmpeg_log_level(&line)
         } else if line.starts_with("[error]")
             || line.contains("Error ")
@@ -520,12 +536,40 @@ struct FfmpegProgressState {
     out_time_us: Option<u64>,
     total_size: Option<u64>,
     speed_x: Option<f64>,
+    /// Media length the run writes, when known.
+    duration_ms: Option<u64>,
     raw: serde_json::Map<String, serde_json::Value>,
 }
 
 fn parse_speed_x(s: &str) -> Option<f64> {
     let s = s.trim().trim_end_matches('x');
     s.parse::<f64>().ok()
+}
+
+/// Records the length from ffmpeg's input report line
+/// (`  Duration: 01:02:03.45, start: …`). Only the first input's report
+/// counts; its `Duration: N/A` records an unknown length.
+fn record_ffmpeg_input_length(line: &str, input_secs: &OnceLock<Option<f64>>) {
+    let Some(value) = line.trim_start().strip_prefix("Duration: ") else {
+        return;
+    };
+    input_secs.get_or_init(|| {
+        let clock = value.split(',').next()?.trim();
+        clock.split(':').try_fold(0.0, |secs, part| {
+            Some(secs * 60.0 + part.parse::<f64>().ok()?)
+        })
+    });
+}
+
+/// Milliseconds of media a run writes: the input's length, or the `trim`
+/// range of input time clipped to that length.
+fn output_length_ms(input_secs: Option<f64>, trim: Option<&Range<f64>>) -> Option<u64> {
+    let secs = match trim {
+        Some(trim) => input_secs.map_or(trim.end, |input| input.min(trim.end)) - trim.start,
+        None => input_secs?,
+    };
+    let ms = (secs * 1000.0) as u64;
+    (secs.is_finite() && ms > 0).then_some(ms)
 }
 
 fn parse_ffmpeg_kv_line(
@@ -551,6 +595,28 @@ fn parse_ffmpeg_kv_line(
             let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
             snapshot.out_time_ms = state.out_time_us.map(|us| us / 1000).or(state.out_time_ms);
             snapshot.bytes_done = state.total_size;
+            snapshot.speed_x = state.speed_x;
+            snapshot.duration_ms = state.duration_ms;
+            if let Some(total) = state.duration_ms {
+                let ended = value == "end";
+                let remaining = if ended {
+                    0
+                } else {
+                    total.saturating_sub(snapshot.out_time_ms.unwrap_or(0))
+                };
+                // Only the end marker reaches 100: an estimated input length
+                // (MPEG-TS) can be overshot, and a faststart rewrite runs after
+                // the last frame is written.
+                snapshot.percent = Some(if ended {
+                    100.0
+                } else {
+                    ((total - remaining) as f64 / total as f64 * 100.0).min(99.0) as f32
+                });
+                snapshot.eta_secs = state
+                    .speed_x
+                    .filter(|speed| *speed > 0.0)
+                    .map(|speed| remaining as f64 / 1000.0 / speed);
+            }
             snapshot.raw = serde_json::Value::Object(state.raw.clone());
             return Some(snapshot);
         }
@@ -795,12 +861,21 @@ fn determine_rclone_log_level(line: &str) -> LogLevel {
 
 /// Run an ffmpeg-style command that emits `-progress pipe:1` key=value lines on stdout.
 /// This parses progress snapshots and emits them via `progress` while capturing only stderr logs.
+/// Percent and ETA need the input length from ffmpeg's stderr report, printed at
+/// `-loglevel info`. `trim` is the range of input time in seconds the command writes
+/// when it cuts its input.
 pub async fn run_ffmpeg_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
     log_sink: Option<JobLogSink>,
+    trim: Option<Range<f64>>,
 ) -> crate::Result<CommandOutput> {
-    run_logged_command(command, CommandMode::Ffmpeg(progress.clone()), log_sink).await
+    let mode = CommandMode::Ffmpeg {
+        progress: progress.clone(),
+        trim,
+        input_secs: Arc::default(),
+    };
+    run_logged_command(command, mode, log_sink).await
 }
 
 /// Reads rclone stderr to EOF, routing each line through
@@ -1026,6 +1101,67 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ffmpeg_progress_percent_and_eta_stay_below_100_until_end() {
+        let mut state = FfmpegProgressState {
+            duration_ms: Some(60_000),
+            ..Default::default()
+        };
+        parse_ffmpeg_kv_line("out_time_us=15000000", &mut state);
+        parse_ffmpeg_kv_line("speed=1.5x", &mut state);
+        let running = parse_ffmpeg_kv_line("progress=continue", &mut state).unwrap();
+        assert_eq!(
+            (
+                running.percent,
+                running.eta_secs,
+                running.speed_x,
+                running.duration_ms
+            ),
+            (Some(25.0), Some(30.0), Some(1.5), Some(60_000))
+        );
+
+        parse_ffmpeg_kv_line("out_time_us=61000000", &mut state);
+        let past_length = parse_ffmpeg_kv_line("progress=continue", &mut state).unwrap();
+        assert_eq!(past_length.percent, Some(99.0));
+        let ended = parse_ffmpeg_kv_line("progress=end", &mut state).unwrap();
+        assert_eq!((ended.percent, ended.eta_secs), (Some(100.0), Some(0.0)));
+    }
+
+    #[test]
+    fn ffmpeg_length_comes_from_the_first_input_report_and_trimming() {
+        let input_secs = OnceLock::new();
+        // Matroska's per-stream DURATION tag is metadata, not the input report.
+        record_ffmpeg_input_length("      DURATION        : 00:10:00.040000000", &input_secs);
+        assert_eq!(input_secs.get(), None);
+        record_ffmpeg_input_length(
+            "  Duration: 01:02:03.50, start: 0.000000, bitrate: 2000 kb/s",
+            &input_secs,
+        );
+        record_ffmpeg_input_length(
+            "  Duration: 00:00:05.00, start: 0.000000, bitrate: 128 kb/s",
+            &input_secs,
+        );
+        assert_eq!(input_secs.get(), Some(&Some(3723.5)));
+        let unknown = OnceLock::new();
+        record_ffmpeg_input_length("  Duration: N/A, start: 0.000000, bitrate: N/A", &unknown);
+        assert_eq!(unknown.get(), Some(&None));
+
+        for (input, trim, expected) in [
+            (Some(100.0), None, Some(100_000)),
+            (Some(100.0), Some(10.0..f64::INFINITY), Some(90_000)),
+            (Some(100.0), Some(10.0..40.0), Some(30_000)),
+            (Some(20.0), Some(10.0..40.0), Some(10_000)),
+            (None, Some(10.0..40.0), Some(30_000)),
+            (None, Some(10.0..f64::INFINITY), None),
+        ] {
+            assert_eq!(
+                output_length_ms(input, trim.as_ref()),
+                expected,
+                "input {input:?}, trim {trim:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn processor_path_checks_preserve_io_errors() {
         assert!(try_exists(Path::new("invalid\0path")).await.is_err());
@@ -1048,7 +1184,11 @@ mod tests {
     fn command_modes() -> [CommandMode; 4] {
         [
             CommandMode::Plain,
-            CommandMode::Ffmpeg(ProgressReporter::noop("test")),
+            CommandMode::Ffmpeg {
+                progress: ProgressReporter::noop("test"),
+                trim: None,
+                input_secs: Arc::default(),
+            },
             CommandMode::Rclone(ProgressReporter::noop("test")),
             CommandMode::BaiduPcs(ProgressReporter::noop("test")),
         ]

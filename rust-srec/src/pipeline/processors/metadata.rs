@@ -127,7 +127,7 @@ impl MetadataProcessor {
 
         args.push("-hide_banner".to_string());
         args.push("-nostats".to_string());
-        args.extend(["-loglevel".to_string(), "warning".to_string()]);
+        args.extend(["-loglevel".to_string(), "info".to_string()]);
         args.extend(["-progress".to_string(), "pipe:1".to_string()]);
 
         // Input file
@@ -267,6 +267,7 @@ impl MetadataProcessor {
             &mut cmd,
             &ctx.progress,
             Some(ctx.log_sink.clone()),
+            None,
         )
         .await?;
 
@@ -399,6 +400,7 @@ impl Processor for MetadataProcessor {
         let mut output = super::media_driver::run_media(
             plan,
             OutputBatch::new(&input.inputs, ctx),
+            &ctx.progress,
             &MetadataProcessorItem {
                 processor: self,
                 config: &config,

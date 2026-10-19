@@ -71,7 +71,12 @@ downstream job or increment the DAG's completed-step count again.
 Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
 30 seconds per wait, including extreme configured values. Retry counts keep
 their configured meaning. FFmpeg progress timestamps exposed as `out_time_ms`
-are milliseconds for both supported upstream timestamp keys.
+are milliseconds for both supported upstream timestamp keys. `duration_ms` is
+the length the run writes: the input length FFmpeg reports, shortened by remux
+trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
+100 until FFmpeg reports the end. Multi-file jobs report `files_done` and
+`files_total`; the `percent` of a multi-file FFmpeg job covers the whole job,
+while `out_time_ms` and `duration_ms` describe the file in progress.
 
 Staged outputs with overwrite disabled use native no-replace publication on
 Windows, Linux and macOS, so a filesystem without hard links can still publish

@@ -6,6 +6,7 @@ use super::ProcessorOutput;
 use super::outputs::{OutputBatch, accumulate_media_output};
 use super::planning::OutputPlan;
 use crate::Result;
+use crate::pipeline::ProgressReporter;
 
 #[async_trait]
 pub(super) trait MediaItem: Sync {
@@ -20,13 +21,15 @@ pub(super) trait MediaItem: Sync {
 pub(super) async fn run_media<P: MediaItem>(
     plan: OutputPlan<'_>,
     mut batch: OutputBatch,
+    progress: &ProgressReporter,
     processor: &P,
 ) -> Result<ProcessorOutput> {
     let mut result = ProcessorOutput {
         outputs: Vec::with_capacity(if plan.is_batch() { plan.len() } else { 0 }),
         ..Default::default()
     };
-    for (input, output) in plan.items() {
+    for (index, (input, output)) in plan.items().enumerate() {
+        progress.set_batch_item(index, plan.len());
         let one = processor.process(input, output, &mut batch).await?;
         if plan.is_batch() {
             accumulate_media_output(&mut result, one);

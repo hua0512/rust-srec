@@ -175,6 +175,10 @@ export const JobProgressSnapshotSchema = z.object({
   speed_bytes_per_sec: z.number().nullable().optional(),
   eta_secs: z.number().nullable().optional(),
   out_time_ms: z.number().nullable().optional(),
+  duration_ms: z.number().nullable().optional(),
+  speed_x: z.number().nullable().optional(),
+  files_done: z.number().nullable().optional(),
+  files_total: z.number().nullable().optional(),
   raw: z.any().optional(),
 });
 export type JobProgressSnapshot = z.infer<typeof JobProgressSnapshotSchema>;
