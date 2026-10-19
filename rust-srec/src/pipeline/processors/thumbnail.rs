@@ -340,6 +340,7 @@ impl ThumbnailProcessor {
             &mut cmd,
             &ctx.progress,
             Some(ctx.log_sink.clone()),
+            None,
         )
         .await
     }
@@ -353,6 +354,10 @@ struct ThumbnailProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for ThumbnailProcessorItem<'_> {
+    fn runs_ffmpeg(&self, input: &str) -> bool {
+        is_video(&get_extension(input).unwrap_or_default())
+    }
+
     async fn process(
         &self,
         input: &str,
@@ -409,6 +414,7 @@ impl Processor for ThumbnailProcessor {
         let mut output = super::media_driver::run_media(
             plan,
             OutputBatch::new(&input.inputs, ctx),
+            &ctx.progress,
             &ThumbnailProcessorItem {
                 processor: self,
                 config: &config,

@@ -26,7 +26,9 @@ describe('JobProgressBytes', () => {
       bytes_total: 1024 * 1024 * 1024,
       speed_bytes_per_sec: 50 * 1024 * 1024,
       eta_secs: 15,
-      raw: { file_index: 2, file_count: 3, file: '/rec/a.flv' },
+      files_done: 1,
+      files_total: 3,
+      raw: { file: '/rec/a.flv' },
     });
 
     expect(screen.getByText('Copied')).toBeTruthy();
@@ -44,11 +46,25 @@ describe('JobProgressBytes', () => {
       updated_at: '2026-10-17T00:00:00Z',
       bytes_done: 0,
       bytes_total: 0,
-      raw: { file_index: 1, file_count: 1, file: '/rec/a.flv' },
+      files_done: 0,
+      files_total: 1,
     });
 
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.queryByText(/^File /)).toBeNull();
+  });
+
+  it('keeps the file position within the file count', () => {
+    renderSnapshot({
+      kind: 'rclone',
+      updated_at: '2026-10-17T00:00:00Z',
+      bytes_done: 30,
+      bytes_total: 30,
+      files_done: 3,
+      files_total: 3,
+    });
+
+    expect(screen.getByText('File 3 of 3')).toBeTruthy();
   });
 
   it('renders nothing without byte totals', () => {

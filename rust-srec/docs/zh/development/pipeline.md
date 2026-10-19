@@ -50,7 +50,13 @@
 
 Delete、rclone 和 BaiduPCS 的重试等待时间按指数增长，但每次最多等待 30 秒，
 极端配置值也遵循此上限；重试次数仍按配置执行。FFmpeg 两种上游时间戳字段
-对外都转换为毫秒单位的 `out_time_ms`。
+对外都转换为毫秒单位的 `out_time_ms`。`duration_ms` 是本次运行写出的时长：
+FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 和 `eta_secs`
+由它计算，在 FFmpeg 报告结束前 `percent` 始终低于 100。多文件任务报告
+`files_done` 和 `files_total`；FFmpeg 步骤不计入按文件类型直接透传的输入，
+例如弹幕 XML。多文件 FFmpeg 或复制任务的 `percent` 覆盖整个任务，每个文件
+占相同份额，`out_time_ms`、`duration_ms` 和已复制字节数则描述正在处理的文件。
+`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。
 
 禁用覆盖时，暂存输出在 Windows、Linux 和 macOS 上使用原生的禁止替换发布，
 因此不支持硬链接的文件系统仍可发布文件，且不会覆盖竞争写入的目标。

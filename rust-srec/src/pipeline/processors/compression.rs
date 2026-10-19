@@ -88,8 +88,8 @@ struct CancelProgressReader<R> {
     bytes_total: u64,
     bytes_done: u64,
     last_report_at: std::time::Instant,
-    file_index: usize,
-    file_count: usize,
+    files_done: usize,
+    files_total: usize,
     current_file: String,
 }
 
@@ -98,8 +98,8 @@ struct CompressionProgressContext {
     progress: ProgressReporter,
     bytes_total: u64,
     bytes_done: u64,
-    file_index: usize,
-    file_count: usize,
+    files_done: usize,
+    files_total: usize,
     current_file: String,
 }
 
@@ -110,8 +110,8 @@ impl<R> CancelProgressReader<R> {
             progress,
             bytes_total,
             bytes_done,
-            file_index,
-            file_count,
+            files_done,
+            files_total,
             current_file,
         } = context;
         Self {
@@ -121,8 +121,8 @@ impl<R> CancelProgressReader<R> {
             bytes_total,
             bytes_done,
             last_report_at: std::time::Instant::now(),
-            file_index,
-            file_count,
+            files_done,
+            files_total,
             current_file,
         }
     }
@@ -143,11 +143,9 @@ impl<R> CancelProgressReader<R> {
         snapshot.percent = percent;
         snapshot.bytes_done = Some(self.bytes_done);
         snapshot.bytes_total = Some(self.bytes_total);
-        snapshot.raw = serde_json::json!({
-            "file_index": self.file_index,
-            "file_count": self.file_count,
-            "file": self.current_file,
-        });
+        snapshot.files_done = Some(self.files_done as u64);
+        snapshot.files_total = Some(self.files_total as u64);
+        snapshot.raw = serde_json::json!({ "file": self.current_file });
         self.progress.report(snapshot);
     }
 }
@@ -333,8 +331,8 @@ impl CompressionProcessor {
                     progress: progress.clone(),
                     bytes_total: total_input_size,
                     bytes_done,
-                    file_index: idx.saturating_add(1),
-                    file_count: inputs.len(),
+                    files_done: idx,
+                    files_total: inputs.len(),
                     current_file: input_path.clone(),
                 },
             );
@@ -450,8 +448,8 @@ impl CompressionProcessor {
                     progress: progress.clone(),
                     bytes_total: total_input_size,
                     bytes_done,
-                    file_index: idx.saturating_add(1),
-                    file_count: inputs.len(),
+                    files_done: idx,
+                    files_total: inputs.len(),
                     current_file: input_path.clone(),
                 },
             );
@@ -780,8 +778,8 @@ mod tests {
                     progress: ProgressReporter::noop("cancel-copy"),
                     bytes_total: input_size as u64,
                     bytes_done: 0,
-                    file_index: 1,
-                    file_count: 1,
+                    files_done: 0,
+                    files_total: 1,
                     current_file: "input".into(),
                 },
             ),
