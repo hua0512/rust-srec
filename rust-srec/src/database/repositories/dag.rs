@@ -2577,15 +2577,27 @@ mod tests {
         let pool = setup_test_pool().await;
         let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
         let jobs = SqlxJobRepository::new(pool.clone(), pool.clone());
-        let definition = noop_definition("retrying", &[("A", &[])]);
+        let definition = noop_definition("retrying", &[("A", &[]), ("B", &[])]);
         let (_dag, ids) = seed_dag_rows(
             &pool,
             &repo,
             &definition,
-            &[("A", "PROCESSING", Some("job-a"))],
+            &[
+                ("A", "PROCESSING", Some("job-a")),
+                ("B", "PROCESSING", Some("job-b")),
+            ],
         )
         .await;
-        assert_eq!(jobs.mark_job_failed("job-a", "boom").await.unwrap(), 1);
+        assert_eq!(
+            jobs.mark_job_failed("job-a", "boom", None).await.unwrap(),
+            1
+        );
+        assert_eq!(
+            jobs.mark_job_failed("job-b", "boom", Some(i64::MAX))
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(
             repo.list_processing_steps_with_failed_jobs()
                 .await
@@ -2594,15 +2606,7 @@ mod tests {
                 .map(|step| step.id.as_str())
                 .collect::<Vec<_>>(),
             vec![ids["A"].as_str()],
-            "a failed job without a retry is stranded"
-        );
-        assert_eq!(jobs.schedule_job_retry("job-a", i64::MAX).await.unwrap(), 1);
-        assert!(
-            repo.list_processing_steps_with_failed_jobs()
-                .await
-                .unwrap()
-                .is_empty(),
-            "a scheduled retry is not stranded"
+            "a failed job without a retry is stranded; one with a scheduled retry is not"
         );
     }
 

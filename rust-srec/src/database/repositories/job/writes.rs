@@ -16,9 +16,9 @@ const INSERT: &str = r#"
 "#;
 
 // `retry_after` is deliberately absent from the full-row update: only
-// `schedule_job_retry`, `clear_job_retry` and `reset_job_for_retry` move it, so
-// a completion or failure write racing the retry sweeper cannot drop a
-// scheduled retry or resurrect a cleared one.
+// `mark_job_failed`, `clear_job_retry` and `reset_job_for_retry` move it, so a
+// full-row write racing the retry sweeper cannot drop a scheduled retry or
+// resurrect a cleared one.
 
 const UPDATE: &str = r#"
     UPDATE job SET

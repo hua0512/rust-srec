@@ -152,6 +152,7 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
                 .fail_with_step_info(
                     &job_id,
                     "retry failed",
+                    None,
                     Some("retry"),
                     Some(2),
                     Some(4),

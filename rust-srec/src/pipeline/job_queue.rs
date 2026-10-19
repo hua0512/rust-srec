@@ -1879,6 +1879,7 @@ impl JobQueue {
             .fail_internal(
                 job_id,
                 error,
+                None,
                 FailedStep::default(),
                 FailureMetadata::DatabaseLog,
                 &[],
@@ -1891,14 +1892,17 @@ impl JobQueue {
     }
 
     /// Fail before processor invocation without rewriting unavailable or invalid metadata.
+    /// `retry_after` is when the job's automatic retry is due, if one is planned.
     pub async fn fail_execution_start(
         &self,
         job_id: &str,
         error: &str,
+        retry_after: Option<DateTime<Utc>>,
     ) -> Result<JobFailureOutcome> {
         self.fail_internal(
             job_id,
             error,
+            retry_after,
             FailedStep::default(),
             FailureMetadata::Preserve,
             &[],
@@ -1908,13 +1912,19 @@ impl JobQueue {
 
     /// Mark a job as failed with step information for observability.
     /// Records the error message, failing step, and processor name in execution_info.
+    /// `retry_after` is when the job's automatic retry is due, if one is planned.
     /// `uploads` carries the per-file results an upload processor reported for
     /// a partially failed batch; inputs it does not cover are recorded as failed
     /// with the job's error.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a separate part of the recorded failure"
+    )]
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
         error: &str,
+        retry_after: Option<DateTime<Utc>>,
         processor_name: Option<&str>,
         step_number: Option<u32>,
         total_steps: Option<u32>,
@@ -1924,6 +1934,7 @@ impl JobQueue {
             .fail_internal(
                 job_id,
                 error,
+                retry_after,
                 FailedStep {
                     processor_name,
                     step_number,
@@ -2139,32 +2150,6 @@ impl JobQueue {
         Ok(jobs)
     }
 
-    /// Retry a failed or cancelled job.
-    /// Returns error if job is not in a retryable terminal status.
-    /// Record that the failed job `job_id` gets another attempt at
-    /// `retry_after`; the manager's retry sweeper re-queues it when due.
-    pub async fn schedule_retry(&self, job_id: &str, retry_after: DateTime<Utc>) -> Result<()> {
-        let Some(repo) = &self.job_repository else {
-            return Err(Error::Validation(
-                "Scheduled retries need a job repository".to_string(),
-            ));
-        };
-        if repo
-            .schedule_job_retry(job_id, retry_after.timestamp_millis())
-            .await?
-            == 0
-        {
-            return Err(Error::InvalidStateTransition {
-                from: "not FAILED".to_string(),
-                to: "scheduled retry".to_string(),
-            });
-        }
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.retry_after = Some(retry_after);
-        }
-        Ok(())
-    }
-
     /// Failed jobs whose scheduled retry is due at `now`, earliest first.
     pub async fn list_due_retries(&self, now: DateTime<Utc>) -> Result<Vec<Job>> {
         let Some(repo) = &self.job_repository else {
@@ -2189,6 +2174,8 @@ impl JobQueue {
         Ok(())
     }
 
+    /// Retry a failed or cancelled job.
+    /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         let attempt_lease = self.attempt_gate.write().await;
         if let Some(repo) = &self.job_repository {
@@ -2964,6 +2951,7 @@ impl JobQueue {
         &self,
         job_id: &str,
         error: &str,
+        retry_after: Option<DateTime<Utc>>,
         step: FailedStep<'_>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
@@ -2989,7 +2977,13 @@ impl JobQueue {
 
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
-            let updated = repo.mark_job_failed(job_id, error).await?;
+            let updated = repo
+                .mark_job_failed(
+                    job_id,
+                    error,
+                    retry_after.map(|retry_after| retry_after.timestamp_millis()),
+                )
+                .await?;
             if updated == 0 {
                 self.finalize_cancelled_job(job_id);
                 return Ok(JobFailureOutcome::Unchanged);
@@ -3014,6 +3008,7 @@ impl JobQueue {
                 job.status = JobStatus::Failed;
                 job.completed_at = Some(Utc::now());
                 job.error = Some(error.to_string());
+                job.retry_after = retry_after;
 
                 if metadata == FailureMetadata::DatabaseAndCacheLog {
                     let exec_info = job
@@ -3676,6 +3671,7 @@ mod tests {
             .fail_with_step_info(
                 &job_id,
                 "1 of 3 inputs failed: /rec/c.mp4: boom",
+                None,
                 Some("rclone"),
                 None,
                 None,
@@ -4766,10 +4762,12 @@ mod tests {
         queue.enqueue(job).await.unwrap();
 
         // Fail the job with step info
+        let retry_after = Utc::now() + chrono::Duration::seconds(30);
         queue
             .fail_with_step_info(
                 &job_id,
                 "FFmpeg error: invalid input",
+                Some(retry_after),
                 Some("RemuxProcessor"),
                 Some(1),
                 Some(3),
@@ -4785,6 +4783,7 @@ mod tests {
             failed_job.error,
             Some("FFmpeg error: invalid input".to_string())
         );
+        assert_eq!(failed_job.retry_after, Some(retry_after));
 
         // Verify execution info contains failure details
         let exec_info = failed_job.execution_info.unwrap();

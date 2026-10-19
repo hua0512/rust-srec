@@ -570,12 +570,13 @@ impl DagScheduler {
     /// entry point for a job outcome.
     ///
     /// Decides first whether the step's retry policy grants another attempt,
-    /// then has `persist_failure` record the attempt on the job row with the
-    /// message the job list should show: the error, extended with the retry
-    /// time when one is planned. With the row recorded, a planned retry is
-    /// stored for the manager's sweeper and the step stays PROCESSING;
-    /// otherwise the failure reaches the step and its dependents through
-    /// [`Self::on_job_failed`]. A retry that cannot be scheduled fails the step.
+    /// then has `persist_failure` record the attempt on the job row in one
+    /// write: the message the job list should show (the error, extended with
+    /// the retry time when one is planned) together with the planned retry
+    /// time, so neither a reader nor a restart sees the failure without its
+    /// retry. With the row recorded, a planned retry is left to the manager's
+    /// sweeper and the step stays PROCESSING; otherwise the failure reaches the
+    /// step and its dependents through [`Self::on_job_failed`].
     /// A job failure that could not be persisted leaves the step active: the worker
     /// retains ownership until persistence succeeds or shutdown interrupts it.
     pub async fn on_job_attempt_failed<F, Fut>(
@@ -585,7 +586,7 @@ impl DagScheduler {
         persist_failure: F,
     ) -> Result<StepFailureOutcome>
     where
-        F: FnOnce(String) -> Fut,
+        F: FnOnce(String, Option<DateTime<Utc>>) -> Fut,
         Fut: Future<Output = Result<JobFailureOutcome>>,
     {
         let planned = if attempt.kind.retryable() {
@@ -607,33 +608,24 @@ impl DagScheduler {
             None => attempt.error.to_string(),
         };
 
-        let recorded = persist_failure(message.clone()).await?;
+        let recorded = persist_failure(
+            message.clone(),
+            planned.as_ref().map(|planned| planned.retry_after),
+        )
+        .await?;
         if recorded == JobFailureOutcome::Unchanged {
             return Ok(StepFailureOutcome::Ignored);
         }
         if let Some(planned) = planned {
-            match self
-                .job_queue
-                .schedule_retry(attempt.job_id, planned.retry_after)
-                .await
-            {
-                Ok(()) => {
-                    info!(
-                        job_id = %attempt.job_id,
-                        dag_step_execution_id,
-                        next_attempt = planned.next_attempt,
-                        max_attempts = planned.max_attempts,
-                        retry_after = %planned.retry_after,
-                        "Step failed; automatic retry scheduled"
-                    );
-                    return Ok(StepFailureOutcome::Retried(planned));
-                }
-                Err(error) => warn!(
-                    job_id = %attempt.job_id,
-                    %error,
-                    "Could not schedule the step retry; failing the step"
-                ),
-            }
+            info!(
+                job_id = %attempt.job_id,
+                dag_step_execution_id,
+                next_attempt = planned.next_attempt,
+                max_attempts = planned.max_attempts,
+                retry_after = %planned.retry_after,
+                "Step failed; automatic retry scheduled"
+            );
+            return Ok(StepFailureOutcome::Retried(planned));
         }
 
         Ok(
@@ -1923,7 +1915,12 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn mark_job_failed(&self, _id: &str, _error: &str) -> Result<u64> {
+        async fn mark_job_failed(
+            &self,
+            _id: &str,
+            _error: &str,
+            _retry_after: Option<i64>,
+        ) -> Result<u64> {
             unimplemented!("not needed for these tests")
         }
 
@@ -2245,7 +2242,7 @@ mod tests {
         );
 
         job_repo
-            .mark_job_failed(&root_job.id, "boom")
+            .mark_job_failed(&root_job.id, "boom", None)
             .await
             .unwrap();
 
@@ -2917,7 +2914,7 @@ mod tests {
             .await
             .unwrap();
         job_repo
-            .mark_job_failed(&created.root_job_ids[0], "disk full")
+            .mark_job_failed(&created.root_job_ids[0], "disk full", None)
             .await
             .unwrap();
 
@@ -3612,11 +3609,10 @@ mod tests {
     }
 
     /// The worker's failure entry point. A retryable failure with budget left
-    /// is recorded on the job row with the retry time, scheduled, and leaves
-    /// the step PROCESSING; once the budget is spent it reaches the workflow.
-    /// A kind that cannot succeed again, a job row that could not be written,
-    /// and a retry that could not be recorded all fail the step instead; a
-    /// report for a settled step is ignored.
+    /// is recorded on the job row together with its retry time and leaves the
+    /// step PROCESSING; once the budget is spent it reaches the workflow. A
+    /// kind that cannot succeed again and a job row that could not be written
+    /// fail the step instead; a report for a settled step is ignored.
     #[tokio::test]
     async fn job_attempt_failure_is_retried_or_applied_by_kind_budget_and_persistence() {
         use crate::database::models::StepRetryPolicy;
@@ -3651,7 +3647,6 @@ mod tests {
                     vec![
                         retrying("A"),
                         retrying("B"),
-                        retrying("C"),
                         retrying("E"),
                         retrying("F"),
                         DagStep::with_dependencies(
@@ -3686,10 +3681,29 @@ mod tests {
         };
         let record = |job_id: String| {
             let queue = queue.clone();
-            move |message: String| async move {
-                queue
-                    .fail_with_step_info(&job_id, &message, Some("noop"), None, None, &[])
-                    .await
+            let job_repo = job_repo.clone();
+            move |message: String, retry_after: Option<DateTime<Utc>>| async move {
+                let recorded = queue
+                    .fail_with_step_info(
+                        &job_id,
+                        &message,
+                        retry_after,
+                        Some("noop"),
+                        None,
+                        None,
+                        &[],
+                    )
+                    .await;
+                // The failure write itself carries the planned retry, so a
+                // reader or a restart right after it never sees one without
+                // the other.
+                if matches!(recorded, Ok(JobFailureOutcome::Transitioned)) {
+                    assert_eq!(
+                        job_repo.get_job(&job_id).await.unwrap().retry_after,
+                        retry_after.map(|retry_after| retry_after.timestamp_millis())
+                    );
+                }
+                recorded
             }
         };
         fn attempt(job_id: &str, retry_count: i32, kind: StepFailureKind) -> FailedStepAttempt<'_> {
@@ -3731,7 +3745,6 @@ mod tests {
             [
                 "A=PROCESSING",
                 "B=PROCESSING",
-                "C=PROCESSING",
                 "D=BLOCKED",
                 "E=PROCESSING",
                 "F=PROCESSING"
@@ -3800,37 +3813,13 @@ mod tests {
             "{outcome:?}"
         );
 
-        // C: the failure is durable, but scheduling another attempt fails.
-        sqlx::query("CREATE TRIGGER reject_retry BEFORE UPDATE OF retry_after ON job WHEN NEW.retry_after IS NOT NULL BEGIN SELECT RAISE(ABORT, 'retry write failed'); END")
-            .execute(&pool).await.unwrap();
-        let job_c = job_of("C");
-        let outcome = scheduler
-            .on_job_attempt_failed(
-                &step_id("C"),
-                attempt(&job_c, 0, StepFailureKind::Timeout),
-                record(job_c.clone()),
-            )
-            .await
-            .unwrap();
-        assert!(
-            matches!(outcome, StepFailureOutcome::Failed(_)),
-            "{outcome:?}"
-        );
-        let row = job_repo.get_job(&job_c).await.unwrap();
-        assert_eq!(row.status, JobStatus::Failed.as_str());
-        assert!(row.retry_after.is_none());
-        sqlx::query("DROP TRIGGER reject_retry")
-            .execute(&pool)
-            .await
-            .unwrap();
-
         // E: an unrecorded failure cannot settle the step. Its owner can retry persistence.
         let job_e = job_of("E");
         let error = scheduler
             .on_job_attempt_failed(
                 &step_id("E"),
                 attempt(&job_e, 0, StepFailureKind::ProcessorError),
-                |_message| async { Err(Error::Database("disk full".to_string())) },
+                |_message, _retry_after| async { Err(Error::Database("disk full".to_string())) },
             )
             .await
             .unwrap_err();
@@ -3873,7 +3862,6 @@ mod tests {
             [
                 "A=FAILED",
                 "B=FAILED",
-                "C=FAILED",
                 "D=CANCELLED",
                 "E=FAILED",
                 "F=FAILED"
@@ -3882,7 +3870,7 @@ mod tests {
         let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
         assert_eq!(dag.error.as_deref(), Some("Step 'A' failed: boom"));
-        assert_eq!(dag.failed_steps, 5);
+        assert_eq!(dag.failed_steps, 4);
     }
 
     #[tokio::test]
@@ -4014,7 +4002,7 @@ mod tests {
                     error: "late failure",
                     kind: StepFailureKind::ProcessorError,
                 },
-                |message| {
+                |message, retry_after| {
                     let scheduler = &scheduler;
                     let queue = &queue;
                     let pool = &pool;
@@ -4027,7 +4015,15 @@ mod tests {
                         let observer = SqlTrace::install(pool).await;
                         *trace.lock().unwrap() = Some(observer);
                         queue
-                            .fail_with_step_info(job_id, &message, Some("noop"), None, None, &[])
+                            .fail_with_step_info(
+                                job_id,
+                                &message,
+                                retry_after,
+                                Some("noop"),
+                                None,
+                                None,
+                                &[],
+                            )
                             .await
                     }
                 },
@@ -4039,19 +4035,12 @@ mod tests {
         assert!(
             !statements
                 .iter()
-                .any(|sql| sql.starts_with("UPDATE job SET retry_after")),
-            "{statements:?}"
-        );
-        assert!(
-            !statements
-                .iter()
                 .any(|sql| sql.contains("UPDATE dag_step_execution")),
             "{statements:?}"
         );
-        assert_eq!(
-            jobs.get_job(&job.id).await.unwrap().get_status(),
-            Some(JobStatus::Cancelled)
-        );
+        let stored = jobs.get_job(&job.id).await.unwrap();
+        assert_eq!(stored.get_status(), Some(JobStatus::Cancelled));
+        assert!(stored.retry_after.is_none());
         assert_eq!(
             dags.get_dag(&created.dag_id).await.unwrap().get_status(),
             Some(DagExecutionStatus::Cancelled)
@@ -4120,7 +4109,7 @@ mod tests {
                         error: "upload failed",
                         kind: StepFailureKind::ProcessorError,
                     },
-                    |message| {
+                    |message, retry_after| {
                         let queue = &queue;
                         let job_id = &job.id;
                         async move {
@@ -4128,6 +4117,7 @@ mod tests {
                                 .fail_with_step_info(
                                     job_id,
                                     &message,
+                                    retry_after,
                                     Some("rclone"),
                                     Some(1),
                                     Some(1),
@@ -4277,6 +4267,7 @@ mod tests {
                     job_repo.as_ref(),
                     &created.root_job_ids[0],
                     "boom",
+                    None,
                 )
                 .await
                 .unwrap();

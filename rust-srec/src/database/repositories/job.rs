@@ -106,20 +106,17 @@ pub trait JobRepository: Send + Sync {
     async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>>;
     async fn create_job(&self, job: &JobDbModel) -> Result<()>;
     async fn update_job_status(&self, id: &str, status: JobStatus) -> Result<()>;
-    /// Mark a job as FAILED and set error/completed_at.
+    /// Mark a job as FAILED and set error/completed_at, recording in the same
+    /// write when its automatic retry is due (`retry_after`, milliseconds since
+    /// the epoch; `None` when no retry is planned).
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64>;
+    async fn mark_job_failed(&self, id: &str, error: &str, retry_after: Option<i64>)
+    -> Result<u64>;
     /// Mark a job as CANCELLED and set completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
     async fn mark_job_cancelled(&self, id: &str) -> Result<u64>;
     /// Reset a job for retry (PENDING, clear started/completed/error, increment retry_count).
     async fn reset_job_for_retry(&self, id: &str) -> Result<()>;
-    /// Schedule an automatic retry of a FAILED job at `retry_after` (milliseconds
-    /// since the epoch). Returns the rows updated: 0 when the job is not FAILED.
-    /// Default for test doubles that never schedule retries.
-    async fn schedule_job_retry(&self, _id: &str, _retry_after: i64) -> Result<u64> {
-        Ok(0)
-    }
     /// FAILED jobs whose scheduled retry is due at `now` (milliseconds since the
     /// epoch), earliest due first.
     async fn list_jobs_due_for_retry(&self, _now: i64) -> Result<Vec<JobDbModel>> {
@@ -304,16 +301,22 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
+    async fn mark_job_failed(
+        &self,
+        id: &str,
+        error: &str,
+        retry_after: Option<i64>,
+    ) -> Result<u64> {
         retry_on_sqlite_busy("mark_job_failed", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = ?, completed_at = ?, updated_at = ?, error = ? WHERE id = ? AND status IN (?, ?)",
+                "UPDATE job SET status = ?, completed_at = ?, updated_at = ?, error = ?, retry_after = ? WHERE id = ? AND status IN (?, ?)",
             )
             .bind(JobStatus::Failed.as_str())
             .bind(now)
             .bind(now)
             .bind(error)
+            .bind(retry_after)
             .bind(id)
             .bind(JobStatus::Pending.as_str())
             .bind(JobStatus::Processing.as_str())
@@ -373,23 +376,6 @@ impl JobRepository for SqlxJobRepository {
                 };
             }
             Ok(())
-        })
-        .await
-    }
-
-    async fn schedule_job_retry(&self, id: &str, retry_after: i64) -> Result<u64> {
-        retry_on_sqlite_busy("schedule_job_retry", || async {
-            let now = crate::database::time::now_ms();
-            let res = sqlx::query(
-                "UPDATE job SET retry_after = ?, updated_at = ? WHERE id = ? AND status = ?",
-            )
-            .bind(retry_after)
-            .bind(now)
-            .bind(id)
-            .bind(JobStatus::Failed.as_str())
-            .execute(&self.write_pool)
-            .await?;
-            Ok(res.rows_affected())
         })
         .await
     }
@@ -1166,8 +1152,8 @@ mod stress_tests {
         );
     }
 
-    /// A scheduled retry is recorded only on a FAILED job, is listed once due,
-    /// and is cleared when the job is reset for the retry or dropped.
+    /// A planned retry is recorded by the write that fails the job, is listed
+    /// once due, and is cleared when the job is reset for the retry or dropped.
     #[tokio::test]
     async fn scheduled_retries_are_recorded_listed_when_due_and_cleared() {
         let (_dir, repo) = temp_repo("scheduled_retry.db").await;
@@ -1181,16 +1167,14 @@ mod stress_tests {
         );
         repo.create_job(&job).await.unwrap();
         assert_eq!(
-            repo.schedule_job_retry(&job.id, 1_000).await.unwrap(),
-            0,
-            "only a FAILED job waits for a retry"
+            repo.mark_job_failed(&job.id, "boom", Some(1_000))
+                .await
+                .unwrap(),
+            1
         );
-        assert_eq!(repo.mark_job_failed(&job.id, "boom").await.unwrap(), 1);
-        assert_eq!(repo.schedule_job_retry(&job.id, 1_000).await.unwrap(), 1);
-        assert_eq!(
-            repo.get_job(&job.id).await.unwrap().retry_after,
-            Some(1_000)
-        );
+        let failed = repo.get_job(&job.id).await.unwrap();
+        assert_eq!(failed.status, JobStatus::Failed.as_str());
+        assert_eq!(failed.retry_after, Some(1_000));
         assert!(repo.list_jobs_due_for_retry(999).await.unwrap().is_empty());
         let due = repo.list_jobs_due_for_retry(1_000).await.unwrap();
         assert_eq!(
@@ -1210,8 +1194,12 @@ mod stress_tests {
                 .is_empty()
         );
 
-        assert_eq!(repo.mark_job_failed(&job.id, "again").await.unwrap(), 1);
-        assert_eq!(repo.schedule_job_retry(&job.id, 5).await.unwrap(), 1);
+        assert_eq!(
+            repo.mark_job_failed(&job.id, "again", Some(5))
+                .await
+                .unwrap(),
+            1
+        );
         repo.clear_job_retry(&job.id).await.unwrap();
         let cleared = repo.get_job(&job.id).await.unwrap();
         assert_eq!(cleared.status, JobStatus::Failed.as_str());
