@@ -136,6 +136,17 @@ impl PlannedRetry {
     }
 }
 
+/// A workflow step's retry budget and whether it still waits on a given job.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StepRetryState {
+    /// Attempts the step's retry policy allows, counting the first run; `None`
+    /// when the step has no policy.
+    pub max_attempts: Option<u32>,
+    /// Whether the step is still running the job in a DAG that has not
+    /// settled, so the job's scheduled retry will run.
+    pub awaits_job: bool,
+}
+
 /// Why a step job attempt failed, as the worker observed it. Decides whether
 /// the step's retry policy applies: another attempt is only worth scheduling
 /// when the same job could succeed next time.
@@ -881,22 +892,41 @@ impl DagScheduler {
     /// wanted. A step that was cancelled, failed by recovery or deleted in the
     /// meantime answers `false`.
     pub async fn step_awaits_job(&self, dag_step_execution_id: &str, job_id: &str) -> Result<bool> {
+        Ok(self
+            .step_retry_state(dag_step_execution_id, job_id)
+            .await?
+            .awaits_job)
+    }
+
+    /// The retry budget of step `dag_step_execution_id` and whether it still
+    /// awaits `job_id`, as [`Self::step_awaits_job`] decides.
+    pub async fn step_retry_state(
+        &self,
+        dag_step_execution_id: &str,
+        job_id: &str,
+    ) -> Result<StepRetryState> {
         let step = match self.dag_repository.get_step(dag_step_execution_id).await {
             Ok(step) => step,
-            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
             Err(error) => return Err(error),
         };
-        if step.get_status() != Some(crate::database::models::DagStepStatus::Processing)
-            || step.job_id.as_deref() != Some(job_id)
-        {
-            return Ok(false);
-        }
         let dag = match self.dag_repository.get_dag(&step.dag_id).await {
             Ok(dag) => dag,
-            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
             Err(error) => return Err(error),
         };
-        Ok(!dag.get_status().is_some_and(|status| status.is_terminal()))
+        let max_attempts = dag
+            .get_dag_definition()
+            .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone())
+            .map(|policy| policy.max_attempts);
+        let awaits_job = step.get_status()
+            == Some(crate::database::models::DagStepStatus::Processing)
+            && step.job_id.as_deref() == Some(job_id)
+            && !dag.get_status().is_some_and(|status| status.is_terminal());
+        Ok(StepRetryState {
+            max_attempts,
+            awaits_job,
+        })
     }
 
     fn build_step_job(
@@ -3419,7 +3449,8 @@ mod tests {
     }
 
     /// The plan follows the step's policy, doubling the wait per retry and
-    /// stopping when the budget is spent; the step's timeout reaches its job.
+    /// stopping when the budget is spent, and the budget is reported for the
+    /// job page; the step's timeout reaches its job.
     #[tokio::test]
     async fn plan_step_retry_follows_the_step_policy_and_stops_when_spent() {
         use crate::database::models::StepRetryPolicy;
@@ -3510,6 +3541,24 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "no policy"
+        );
+        assert_eq!(
+            scheduler
+                .step_retry_state(&step_id("A"), &job_of("A"))
+                .await
+                .unwrap(),
+            StepRetryState {
+                max_attempts: Some(3),
+                awaits_job: true
+            }
+        );
+        assert_eq!(
+            scheduler
+                .step_retry_state(&step_id("B"), &job_of("B"))
+                .await
+                .unwrap()
+                .max_attempts,
+            None
         );
 
         let job_a = job_repo.get_job(&job_of("A")).await.unwrap();

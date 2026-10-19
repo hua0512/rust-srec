@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -16,6 +16,7 @@ import {
   cancelActivePipelineJob,
   deletePipelineJob,
 } from '@/server/functions/pipeline';
+import type { Job } from '@/api/schemas/pipeline';
 import {
   flattenLogPages,
   latestLogTotal,
@@ -77,6 +78,7 @@ export const Route = createLazyFileRoute(
 });
 
 import { formatDate } from '@/lib/datetime';
+import { formatLocalizedDuration } from '@/lib/date-utils';
 
 /** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
 const LOG_PAGE_SIZE = 1000;
@@ -95,12 +97,17 @@ function JobDetailsPage() {
     queryKey: ['pipeline', 'job', jobId],
     queryFn: () => getPipelineJob({ data: jobId }),
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'PROCESSING' || status === 'PENDING' ? 1000 : false;
+      const data = query.state.data;
+      if (data?.status === 'PROCESSING' || data?.status === 'PENDING') {
+        return 1000;
+      }
+      // The retry sweeper re-queues a due retry within about 15 s, so a slower
+      // poll still follows the job back to PENDING.
+      return data?.status === 'FAILED' && data.retry_after ? 5000 : false;
     },
   });
 
-  // A finished job cannot change again, so every interval below stops with it.
+  // Every interval below runs only while the job is queued or running.
   const jobStatus = job?.status;
   const isJobActive = jobStatus === 'PROCESSING' || jobStatus === 'PENDING';
   const isJobTerminal =
@@ -228,7 +235,10 @@ function JobDetailsPage() {
         queryKey: ['pipeline', 'job', jobId],
       });
     },
-    onError: () => toast.error(i18n._(msg`Failed to retry job`)),
+    onError: (error) =>
+      toast.error(i18n._(msg`Failed to retry job`), {
+        description: error.message,
+      }),
   });
 
   // A workflow step cannot be retried on its own: the backend restarts it together
@@ -244,7 +254,10 @@ function JobDetailsPage() {
         queryKey: ['pipeline', 'executions', result.dag_id],
       });
     },
-    onError: () => toast.error(i18n._(msg`Failed to retry workflow`)),
+    onError: (error) =>
+      toast.error(i18n._(msg`Failed to retry workflow`), {
+        description: error.message,
+      }),
   });
 
   const cancelMutation = useMutation({
@@ -255,7 +268,10 @@ function JobDetailsPage() {
         queryKey: ['pipeline', 'job', jobId],
       });
     },
-    onError: () => toast.error(i18n._(msg`Failed to cancel job`)),
+    onError: (error) =>
+      toast.error(i18n._(msg`Failed to cancel job`), {
+        description: error.message,
+      }),
   });
 
   const deleteMutation = useMutation({
@@ -312,7 +328,10 @@ function JobDetailsPage() {
     );
   }
 
-  const statusConfig = getStatusConfig(job.status);
+  // A failed workflow step waiting for its automatic retry is not finished.
+  const retryScheduled = job.status === 'FAILED' && !!job.retry_after;
+  const displayStatus = retryScheduled ? 'RETRYING' : job.status;
+  const statusConfig = getStatusConfig(displayStatus);
   const StatusIcon = statusConfig.icon;
   // Workflow steps are retried through their workflow, so the job's own retry
   // endpoint is only offered for standalone jobs.
@@ -381,7 +400,7 @@ function JobDetailsPage() {
                       statusConfig.textColor,
                     )}
                   >
-                    {getStatusLabel(i18n, job.status)}
+                    {getStatusLabel(i18n, displayStatus)}
                   </Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium">
@@ -394,6 +413,7 @@ function JobDetailsPage() {
                         : job.processor_type.replace(/_/g, ' ');
                     })()}
                   </span>
+                  <JobAttempt job={job} />
                   <span className="opacity-40">•</span>
                   <span className="font-mono text-xs opacity-70 selection:bg-muted select-all break-all">
                     ID: {job.id}
@@ -408,7 +428,10 @@ function JobDetailsPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-3"
             >
+              {/* The backend refuses a workflow retry while the step's own
+                  automatic retry is pending. */}
               {['FAILED', 'CANCELLED'].includes(job.status) &&
+                !retryScheduled &&
                 (workflowRetryId ? (
                   <Button
                     className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all font-medium"
@@ -722,16 +745,6 @@ function JobDetailsPage() {
                     <div className="font-mono text-sm text-destructive/90 bg-background/50 p-4 rounded-lg border border-destructive/20 selection:bg-destructive/20 wrap-break-word">
                       {job.error_message}
                     </div>
-                    {job.retry_after && (
-                      <p className="mt-3 text-xs text-muted-foreground">
-                        <Trans>
-                          Automatic retry scheduled for{' '}
-                          {formatDate(i18n.locale, job.retry_after, {
-                            timeStyle: 'medium',
-                          })}
-                        </Trans>
-                      </p>
-                    )}
                   </CardContent>
                 </Card>
               </motion.div>
@@ -870,6 +883,65 @@ function JobDetailsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Which attempt a job that has run more than once is on and, while a failed
+ * workflow step waits for its automatic retry, when the next attempt starts.
+ * Holds the countdown's clock so its ticks re-render only this chip.
+ */
+function JobAttempt({ job }: { job: Job }) {
+  const { i18n } = useLingui();
+  const retryAt = job.status === 'FAILED' ? job.retry_after : null;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!retryAt) return;
+    // The clock is stale if the job ran for a while before this retry.
+    const tick = () => setNow(Date.now());
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [retryAt]);
+
+  // While a retry waits, the attempt shown is the one it will start.
+  const attempt = job.retry_count + (retryAt ? 2 : 1);
+  if (attempt === 1) return null;
+  // A manual workflow retry can run a step past its automatic budget.
+  const maxAttempts =
+    job.max_attempts != null && attempt <= job.max_attempts
+      ? job.max_attempts
+      : null;
+  const waitSecs = retryAt ? Math.ceil((Date.parse(retryAt) - now) / 1000) : 0;
+  const wait = formatLocalizedDuration(waitSecs, i18n.locale);
+
+  return (
+    <>
+      <span className="opacity-40">•</span>
+      <span
+        className={cn(
+          'px-2 py-0.5 rounded-md border tabular-nums',
+          retryAt
+            ? getStatusConfig('RETRYING').bgColor
+            : 'bg-muted/50 border-border/50',
+        )}
+      >
+        {retryAt &&
+          (waitSecs > 0 ? (
+            <Trans>Retrying in {wait}</Trans>
+          ) : (
+            <Trans>Retrying shortly</Trans>
+          ))}
+        {retryAt && ' · '}
+        {maxAttempts ? (
+          <Trans>
+            Attempt {attempt} of {maxAttempts}
+          </Trans>
+        ) : (
+          <Trans>Attempt {attempt}</Trans>
+        )}
+      </span>
+    </>
   );
 }
 

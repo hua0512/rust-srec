@@ -95,6 +95,10 @@ export const JobSchema = z.object({
   queue_wait_secs: z.number().nullable().optional(),
   // Set while a failed workflow step job waits for its automatic retry.
   retry_after: z.string().nullable().optional(),
+  // Runs after the first; the latest run is attempt retry_count + 1.
+  retry_count: z.number().default(0),
+  // The step's attempt budget; only the job detail endpoint fills it.
+  max_attempts: z.number().nullable().optional(),
 });
 export type Job = z.infer<typeof JobSchema>;
 
