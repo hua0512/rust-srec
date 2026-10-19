@@ -1,5 +1,6 @@
 //! Worker pool implementation for pipeline processing.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -1000,7 +1001,8 @@ impl JobRunner {
             }
             let job_id = job.id.clone();
             let job_type = job.job_type.clone();
-            let persist = |message: String| async move {
+            // `ExecutionStart` is never retried, so no retry time is planned.
+            let persist = |message: String, _retry_after: Option<DateTime<Utc>>| async move {
                 let outcome = self
                     .persist_failure_with_retry(&job_id, || {
                         self.job_queue.fail_execution_start(&job_id, &message)
@@ -1030,7 +1032,7 @@ impl JobRunner {
                         .await;
                 }
                 _ => {
-                    if let Err(error) = persist(reason).await {
+                    if let Err(error) = persist(reason, None).await {
                         error!(job_id = %job.id, %error, "Failed to persist execution-start failure");
                     }
                 }
@@ -1453,12 +1455,13 @@ impl JobRunner {
         kind: StepFailureKind,
         uploads: &[UploadResultItem],
     ) {
-        let persist = |message: String| async move {
+        let persist = |message: String, retry_after: Option<DateTime<Utc>>| async move {
             let outcome = self
                 .persist_failure_with_retry(&facts.id, || {
                     self.job_queue.fail_with_step_info(
                         &facts.id,
                         &message,
+                        retry_after,
                         Some(facts.processor_name),
                         facts.current_step,
                         facts.total_steps,
@@ -1490,7 +1493,7 @@ impl JobRunner {
                 self.report_step_failure(dag_step_id, kind, outcome).await;
             }
             _ => {
-                if let Err(error) = persist(error.to_string()).await {
+                if let Err(error) = persist(error.to_string(), None).await {
                     error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
                 }
             }
@@ -2369,19 +2372,14 @@ mod tests {
             first.contains("boom; attempt 1 of 2 failed, retrying at "),
             "{first}"
         );
-        // The schedule is written after the failure row; wait for it.
-        let job = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let job = job_repo.get_job(&job_id).await.unwrap();
-                if job.retry_after.is_some() {
-                    break job;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("the retry is scheduled");
+        // The failure event follows the job-row write, which records the retry
+        // together with the failure.
+        let job = job_repo.get_job(&job_id).await.unwrap();
         assert_eq!(job.status, JobStatus::Failed.as_str());
+        assert!(
+            job.retry_after.is_some(),
+            "the retry lands with the failure"
+        );
         assert!(job.error.as_deref().unwrap().contains("retrying at"));
         assert_eq!(
             dag_repo.get_step(&step.id).await.unwrap().status,

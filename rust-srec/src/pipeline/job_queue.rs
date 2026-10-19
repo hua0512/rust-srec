@@ -820,8 +820,9 @@ pub enum JobFailureOutcome {
 pub struct JobQueue {
     /// Workers hold a read lease through execution and cleanup. Retention takes an exclusive lease.
     pub(crate) output_files_gate: Arc<tokio::sync::RwLock<()>>,
-    /// Dequeues share a lease through claiming and publishing tracking. Retry and
-    /// attempt finalization take an exclusive lease so cleanup cannot cross that handoff.
+    /// Dequeues share a lease through claiming and publishing tracking, and failures
+    /// through recording and cleaning up their attempt. Retry and attempt finalization
+    /// take an exclusive lease so cleanup cannot cross that handoff.
     attempt_gate: tokio::sync::RwLock<()>,
     /// Configuration.
     config: JobQueueConfig,
@@ -1879,6 +1880,7 @@ impl JobQueue {
             .fail_internal(
                 job_id,
                 error,
+                None,
                 FailedStep::default(),
                 FailureMetadata::DatabaseLog,
                 &[],
@@ -1899,6 +1901,7 @@ impl JobQueue {
         self.fail_internal(
             job_id,
             error,
+            None,
             FailedStep::default(),
             FailureMetadata::Preserve,
             &[],
@@ -1908,13 +1911,19 @@ impl JobQueue {
 
     /// Mark a job as failed with step information for observability.
     /// Records the error message, failing step, and processor name in execution_info.
+    /// `retry_after` is when the job's automatic retry is due, if one is planned.
     /// `uploads` carries the per-file results an upload processor reported for
     /// a partially failed batch; inputs it does not cover are recorded as failed
     /// with the job's error.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a separate part of the recorded failure"
+    )]
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
         error: &str,
+        retry_after: Option<DateTime<Utc>>,
         processor_name: Option<&str>,
         step_number: Option<u32>,
         total_steps: Option<u32>,
@@ -1924,6 +1933,7 @@ impl JobQueue {
             .fail_internal(
                 job_id,
                 error,
+                retry_after,
                 FailedStep {
                     processor_name,
                     step_number,
@@ -2139,32 +2149,6 @@ impl JobQueue {
         Ok(jobs)
     }
 
-    /// Retry a failed or cancelled job.
-    /// Returns error if job is not in a retryable terminal status.
-    /// Record that the failed job `job_id` gets another attempt at
-    /// `retry_after`; the manager's retry sweeper re-queues it when due.
-    pub async fn schedule_retry(&self, job_id: &str, retry_after: DateTime<Utc>) -> Result<()> {
-        let Some(repo) = &self.job_repository else {
-            return Err(Error::Validation(
-                "Scheduled retries need a job repository".to_string(),
-            ));
-        };
-        if repo
-            .schedule_job_retry(job_id, retry_after.timestamp_millis())
-            .await?
-            == 0
-        {
-            return Err(Error::InvalidStateTransition {
-                from: "not FAILED".to_string(),
-                to: "scheduled retry".to_string(),
-            });
-        }
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.retry_after = Some(retry_after);
-        }
-        Ok(())
-    }
-
     /// Failed jobs whose scheduled retry is due at `now`, earliest first.
     pub async fn list_due_retries(&self, now: DateTime<Utc>) -> Result<Vec<Job>> {
         let Some(repo) = &self.job_repository else {
@@ -2189,6 +2173,8 @@ impl JobQueue {
         Ok(())
     }
 
+    /// Retry a failed or cancelled job.
+    /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         let attempt_lease = self.attempt_gate.write().await;
         if let Some(repo) = &self.job_repository {
@@ -2964,6 +2950,7 @@ impl JobQueue {
         &self,
         job_id: &str,
         error: &str,
+        retry_after: Option<DateTime<Utc>>,
         step: FailedStep<'_>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
@@ -2987,9 +2974,20 @@ impl JobQueue {
             })
         });
 
+        // The failure write can make a retry due at once. `retry_job` needs the
+        // exclusive lease, so it cannot hand the job to a successor attempt
+        // before the cleanup below has removed this attempt's tracking.
+        let _attempt_lease = self.attempt_gate.read().await;
+
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
-            let updated = repo.mark_job_failed(job_id, error).await?;
+            let updated = repo
+                .mark_job_failed(
+                    job_id,
+                    error,
+                    retry_after.map(|retry_after| retry_after.timestamp_millis()),
+                )
+                .await?;
             if updated == 0 {
                 self.finalize_cancelled_job(job_id);
                 return Ok(JobFailureOutcome::Unchanged);
@@ -3014,6 +3012,7 @@ impl JobQueue {
                 job.status = JobStatus::Failed;
                 job.completed_at = Some(Utc::now());
                 job.error = Some(error.to_string());
+                job.retry_after = retry_after;
 
                 if metadata == FailureMetadata::DatabaseAndCacheLog {
                     let exec_info = job
@@ -3676,6 +3675,7 @@ mod tests {
             .fail_with_step_info(
                 &job_id,
                 "1 of 3 inputs failed: /rec/c.mp4: boom",
+                None,
                 Some("rclone"),
                 None,
                 None,
@@ -4536,6 +4536,111 @@ mod tests {
         ));
     }
 
+    /// A failure whose retry is already due keeps the retry waiting until the
+    /// failed attempt's cleanup is done, so that cleanup cannot remove the
+    /// tracking of the attempt the retry starts.
+    #[tokio::test]
+    async fn due_retry_waits_for_the_failed_attempt_cleanup() {
+        use std::time::Duration;
+
+        use crate::database::repositories::SqlxJobRepository;
+
+        /// Pauses the per-file upload write, which `fail_internal` makes after
+        /// the failure is durable and before it cleans up the attempt.
+        #[derive(Default)]
+        struct PausedUploads {
+            entered: Notify,
+            release: Notify,
+        }
+
+        #[async_trait::async_trait]
+        impl UploadRecordRepository for PausedUploads {
+            async fn upsert_records(&self, _records: &[UploadRecordDbModel]) -> Result<()> {
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(())
+            }
+
+            async fn list_by_job(&self, _job_id: &str) -> Result<Vec<UploadRecordDbModel>> {
+                Ok(Vec::new())
+            }
+
+            async fn list_by_session_local_paths(
+                &self,
+                _output_keys: &[(String, String)],
+            ) -> Result<Vec<UploadRecordDbModel>> {
+                Ok(Vec::new())
+            }
+        }
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let queue = JobQueue::with_repository(
+            JobQueueConfig::default(),
+            Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
+        );
+        queue.stop_progress_aggregator().await;
+        let uploads = Arc::new(PausedUploads::default());
+        queue.set_upload_repo(uploads.clone());
+        let job_id = queue
+            .enqueue(Job::new(
+                "rclone",
+                vec!["/input.mp4".to_string()],
+                vec![],
+                "",
+                "",
+            ))
+            .await
+            .unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        let failed = queue.attempt_token(&job_id).unwrap();
+
+        let mut failure = std::pin::pin!(queue.fail_with_step_info(
+            &job_id,
+            "boom",
+            Some(Utc::now()),
+            Some("rclone"),
+            None,
+            None,
+            &[],
+        ));
+        tokio::select! {
+            outcome = &mut failure => panic!("the upload write did not pause: {outcome:?}"),
+            () = uploads.entered.notified() => {}
+        }
+
+        let mut successor = std::pin::pin!(async {
+            queue.retry_job(&job_id).await.unwrap();
+            queue.dequeue(None).await.unwrap().unwrap();
+            queue.attempt_token(&job_id).unwrap()
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut successor)
+                .await
+                .is_err(),
+            "the retry started while the failed attempt was still cleaning up"
+        );
+
+        uploads.release.notify_one();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), failure)
+                .await
+                .unwrap()
+                .unwrap(),
+            JobFailureOutcome::Transitioned
+        );
+        let successor = tokio::time::timeout(Duration::from_secs(3), successor)
+            .await
+            .unwrap();
+        assert_ne!(successor.id(), failed.id());
+        assert_eq!(
+            queue.attempt_token(&job_id).map(|token| token.id()),
+            Some(successor.id())
+        );
+    }
+
     #[tokio::test]
     async fn test_cancel_processing_job_is_idempotent_and_not_overridden() {
         let queue = JobQueue::new();
@@ -4766,10 +4871,12 @@ mod tests {
         queue.enqueue(job).await.unwrap();
 
         // Fail the job with step info
+        let retry_after = Utc::now() + chrono::Duration::seconds(30);
         queue
             .fail_with_step_info(
                 &job_id,
                 "FFmpeg error: invalid input",
+                Some(retry_after),
                 Some("RemuxProcessor"),
                 Some(1),
                 Some(3),
@@ -4785,6 +4892,7 @@ mod tests {
             failed_job.error,
             Some("FFmpeg error: invalid input".to_string())
         );
+        assert_eq!(failed_job.retry_after, Some(retry_after));
 
         // Verify execution info contains failure details
         let exec_info = failed_job.execution_info.unwrap();

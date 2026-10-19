@@ -474,7 +474,12 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
+    async fn mark_job_failed(
+        &self,
+        id: &str,
+        error: &str,
+        retry_after: Option<i64>,
+    ) -> Result<u64> {
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
@@ -489,6 +494,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         let now = chrono::Utc::now().timestamp_millis();
         job.status = JobStatus::Failed.as_str().to_string();
         job.error = Some(error.to_string());
+        job.retry_after = retry_after;
         job.completed_at = Some(now);
         job.updated_at = now;
         Ok(1)
@@ -1373,7 +1379,7 @@ async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
     let scheduler = manager.dag_scheduler().unwrap().clone();
 
     // First attempt fails: the coordinator adopts the raw recording as fallback.
-    jobs.mark_job_failed(&job_id, "boom").await.unwrap();
+    jobs.mark_job_failed(&job_id, "boom", None).await.unwrap();
     let failed = scheduler.on_job_failed(&step.id, "boom").await.unwrap();
     manager
         .handle_dag_completion(failed.completion.unwrap())
@@ -1520,7 +1526,7 @@ async fn retry_dag_rejects_an_unrestartable_job_before_touching_rows() {
         .await
         .unwrap()
         .remove(0);
-    jobs.mark_job_failed(&created.root_job_ids[0], "boom")
+    jobs.mark_job_failed(&created.root_job_ids[0], "boom", None)
         .await
         .unwrap();
     scheduler.on_job_failed(&step.id, "boom").await.unwrap();
@@ -1567,7 +1573,7 @@ async fn retry_dag_refails_the_dag_when_it_cannot_be_advanced() {
     let scheduler = manager.dag_scheduler().unwrap().clone();
     let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
     let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    jobs.mark_job_failed(&created.root_job_ids[0], "boom")
+    jobs.mark_job_failed(&created.root_job_ids[0], "boom", None)
         .await
         .unwrap();
     scheduler.on_job_failed(&step_a.id, "boom").await.unwrap();
@@ -1751,7 +1757,7 @@ async fn retry_dag_after_a_partial_failure_reruns_only_the_failed_branch() {
     assert_eq!(update.new_job_ids.len(), 2);
     let job_b = dags.get_step(&step_id("B")).await.unwrap().job_id.unwrap();
     // The worker fails the job before it reports the step failure.
-    assert_eq!(jobs.mark_job_failed(&job_b, "boom").await.unwrap(), 1);
+    assert_eq!(jobs.mark_job_failed(&job_b, "boom", None).await.unwrap(), 1);
     let update = scheduler
         .on_job_failed(&step_id("B"), "boom")
         .await
@@ -1859,8 +1865,10 @@ async fn run_due_retries_requeues_live_attempts_and_drops_settled_ones() {
         .unwrap();
     for created in [&live, &settled] {
         let job_id = &created.root_job_ids[0];
-        assert_eq!(jobs.mark_job_failed(job_id, "boom").await.unwrap(), 1);
-        assert_eq!(jobs.schedule_job_retry(job_id, 0).await.unwrap(), 1);
+        assert_eq!(
+            jobs.mark_job_failed(job_id, "boom", Some(0)).await.unwrap(),
+            1
+        );
     }
     manager.cancel_pipeline(&settled.dag_id).await.unwrap();
 
