@@ -133,6 +133,13 @@ curl http://localhost:12555/api/streamers \
 `GET /api/pipeline/jobs/{id}/progress` 获取最近的处理器专用进度快照；
 没有快照时，该接口返回 404。
 
+`GET /api/pipeline/dag/{id}` 为每个步骤返回 `job_status`、`started_at` 和
+`retry_after`，时间均为 epoch 毫秒。不会再执行自动重试时，`retry_after` 为
+null，已取消或已失败的工作流也是如此。每个步骤的 `progress` 是其运行中任务的
+快照，与 `GET /api/pipeline/jobs/{id}/progress` 返回的相同，但 `raw` 始终为
+null。只有步骤的任务正在运行且已上报进度时，步骤的 `progress` 才有值，因此 null
+不表示完成了零百分比。
+
 ## 搜索筛选
 
 管道任务、录制会话、媒体产物、通知事件、任务预设和管道预设的 `search`

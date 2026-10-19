@@ -1,8 +1,9 @@
 use super::*;
 use crate::database::models::{
-    DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DanmuStatisticsDbModel,
-    JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel, MediaOutputTypeSummary, OutputFilters,
-    PipelinePreset, ReadyStep, SessionFilters, SessionSegmentDbModel,
+    DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DagStepWithJob,
+    DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel,
+    MediaOutputTypeSummary, OutputFilters, PipelinePreset, ReadyStep, SessionFilters,
+    SessionSegmentDbModel,
 };
 use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
 use crate::downloader::DownloadTerminalEvent;
@@ -845,6 +846,10 @@ impl DagRepository for TestDagRepositoryForRetry {
         Ok(Vec::new())
     }
 
+    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+        Ok(Vec::new())
+    }
+
     async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
@@ -1100,6 +1105,10 @@ impl DagRepository for TestDagRepository {
             .get(dag_id)
             .cloned()
             .unwrap_or_default())
+    }
+
+    async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+        unimplemented!("not needed for these tests")
     }
 
     async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {

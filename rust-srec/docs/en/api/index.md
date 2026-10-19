@@ -141,6 +141,14 @@ when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
 processor-specific snapshot; it returns 404 when no snapshot is available.
 
+`GET /api/pipeline/dag/{id}` gives each step `job_status`, `started_at` and
+`retry_after`, with times in epoch milliseconds. `retry_after` is null when no
+automatic retry will run, including for cancelled or failed workflows. Each
+step's `progress` is its running job's snapshot as returned by
+`GET /api/pipeline/jobs/{id}/progress`, except that `raw` is always null. A
+step's `progress` is null unless its job is running and has reported progress,
+so null does not mean zero percent complete.
+
 ## Search filters
 
 The `search` filters for pipeline jobs, recording sessions, media outputs,

@@ -10,7 +10,8 @@ use crate::database::begin_immediate;
 use crate::database::models::dag::dag_definition_name;
 use crate::database::models::{
     DagDisplayCounts, DagExecutionDbModel, DagExecutionListSummary, DagExecutionStats,
-    DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus, JobDbModel, ReadyStep,
+    DagExecutionStatus, DagStepExecutionDbModel, DagStepStatus, DagStepWithJob, JobDbModel,
+    ReadyStep,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -103,6 +104,10 @@ pub trait DagRepository: Send + Sync {
 
     /// Get all step executions for a DAG.
     async fn get_steps_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>>;
+
+    /// Get all step executions for a DAG, each with the status and timing of
+    /// its job, in creation order.
+    async fn get_steps_with_jobs_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepWithJob>>;
 
     /// Update a step execution.
     async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()>;
@@ -883,8 +888,27 @@ impl DagRepository for SqlxDagRepository {
     }
 
     async fn get_steps_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+        // A DAG's steps are inserted together in definition order and usually
+        // share created_at; rowid keeps that order instead of the index's.
         let steps = sqlx::query_as::<_, DagStepExecutionDbModel>(
-            "SELECT * FROM dag_step_execution WHERE dag_id = ? ORDER BY created_at",
+            "SELECT * FROM dag_step_execution WHERE dag_id = ? ORDER BY created_at, rowid",
+        )
+        .bind(dag_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(steps)
+    }
+
+    async fn get_steps_with_jobs_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+        let steps = sqlx::query_as::<_, DagStepWithJob>(
+            r#"
+            SELECT s.*, j.status AS job_status, j.started_at AS job_started_at,
+                   j.retry_after AS job_retry_after
+            FROM dag_step_execution AS s
+            LEFT JOIN job AS j ON j.id = s.job_id
+            WHERE s.dag_id = ?
+            ORDER BY s.created_at, s.rowid
+            "#,
         )
         .bind(dag_id)
         .fetch_all(&self.pool)

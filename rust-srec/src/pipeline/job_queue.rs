@@ -1404,6 +1404,21 @@ impl JobQueue {
         Ok(Some(snapshot))
     }
 
+    /// The latest progress snapshot of a running job, read from memory only,
+    /// with `raw` set to null.
+    ///
+    /// Only running jobs have an entry, but a failing job keeps its entry for a
+    /// moment after FAILED is written, so callers should only ask about jobs
+    /// whose stored status is PROCESSING. `raw` is dropped because it is too
+    /// large to repeat for every workflow step.
+    pub fn cached_progress(&self, job_id: &str) -> Option<JobProgressSnapshot> {
+        let snapshot = self.progress_cache.get(job_id)?;
+        Some(JobProgressSnapshot {
+            raw: serde_json::Value::Null,
+            ..*snapshot
+        })
+    }
+
     /// Resolve missing metadata (streamer_name, session_title, session_start) for a job.
     ///
     /// This is useful for jobs recovered from the database where metadata
@@ -3762,6 +3777,20 @@ mod tests {
             }
             other => panic!("expected Progress event, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn cached_progress_copies_the_snapshot_without_raw() {
+        let queue = JobQueue::new();
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        snapshot.percent = Some(42.5);
+        snapshot.raw = serde_json::json!({"path": "/abs/file"});
+        queue.progress_cache.insert("job-1".to_string(), snapshot);
+
+        let cached = queue.cached_progress("job-1").unwrap();
+        assert_eq!(cached.percent, Some(42.5));
+        assert_eq!(cached.raw, serde_json::Value::Null);
+        assert!(queue.cached_progress("unknown").is_none());
     }
 
     #[test]

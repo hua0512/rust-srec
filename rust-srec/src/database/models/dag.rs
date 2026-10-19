@@ -320,6 +320,15 @@ impl DagStepExecutionDbModel {
         self.get_depends_on().is_empty()
     }
 
+    /// Whether this step is still running `job_id` in a DAG that has not
+    /// settled, so a scheduled retry of that job will run. `dag_status` is the
+    /// stored status of the step's DAG.
+    pub fn awaits_job(&self, job_id: &str, dag_status: Option<DagExecutionStatus>) -> bool {
+        self.get_status() == Some(DagStepStatus::Processing)
+            && self.job_id.as_deref() == Some(job_id)
+            && !dag_status.is_some_and(|status| status.is_terminal())
+    }
+
     /// Mark the step as pending (ready to run).
     pub fn mark_pending(&mut self) {
         let now = crate::database::time::now_ms();
@@ -356,6 +365,22 @@ impl DagStepExecutionDbModel {
         self.status = DagStepStatus::Cancelled.as_str().to_string();
         self.updated_at = now;
     }
+}
+
+/// A step execution together with the status and timing of its job.
+#[derive(Debug, Clone, FromRow)]
+pub struct DagStepWithJob {
+    #[sqlx(flatten)]
+    pub step: DagStepExecutionDbModel,
+    /// Stored status of the step's job; `None` while the step has no job.
+    pub job_status: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the job's latest attempt started.
+    pub job_started_at: Option<i64>,
+    /// Unix epoch milliseconds (UTC) of the job's scheduled automatic retry.
+    /// It stays set until the retry is due even when the DAG settles first, so
+    /// it only means a retry will run while
+    /// [`DagStepExecutionDbModel::awaits_job`] holds.
+    pub job_retry_after: Option<i64>,
 }
 
 // ============================================================================
