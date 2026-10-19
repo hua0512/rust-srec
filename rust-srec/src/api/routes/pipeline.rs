@@ -513,7 +513,8 @@ pub struct DagStatusResponse {
     pub completed_steps: i32,
     /// Number of failed steps.
     pub failed_steps: i32,
-    /// Progress percentage (0-100).
+    /// Progress percentage (0-100): completed steps count fully, running steps
+    /// by their reported progress, and every other step not at all.
     pub progress_percent: f64,
     /// All steps in the DAG with their status.
     pub steps: Vec<DagStepStatusResponse>,
@@ -732,7 +733,8 @@ pub struct DagListItem {
     pub completed_steps: i32,
     /// Number of failed steps.
     pub failed_steps: i32,
-    /// Progress percentage (0-100).
+    /// Progress percentage (0-100): completed steps count fully, running steps
+    /// by their reported progress, and every other step not at all.
     pub progress_percent: f64,
     /// When the DAG was created.
     pub created_at: i64,
@@ -784,7 +786,8 @@ pub struct DagStatsResponse {
     pub cancelled: u64,
     /// Total number of steps.
     pub total: u64,
-    /// Progress percentage (0-100).
+    /// Progress percentage (0-100): completed steps count fully, running steps
+    /// by their reported progress, and every other step not at all.
     pub progress_percent: f64,
 }
 

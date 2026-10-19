@@ -1684,6 +1684,11 @@ impl DagScheduler {
         self.dag_repository.get_dag_stats(dag_id).await
     }
 
+    /// The running steps of the given DAGs, as `(dag_id, job_id)` pairs.
+    pub async fn list_running_step_jobs(&self, dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
+        self.dag_repository.list_running_step_jobs(dag_ids).await
+    }
+
     /// Permanently delete a DAG execution, all its steps, and associated jobs/logs.
     ///
     /// `delete_jobs_by_pipeline` removes rows regardless of status, so a job that is still

@@ -170,6 +170,12 @@ pub trait DagRepository: Send + Sync {
     /// Get statistics for a DAG execution.
     async fn get_dag_stats(&self, dag_id: &str) -> Result<DagExecutionStats>;
 
+    /// The running steps of the given DAGs, as `(dag_id, job_id)` pairs: steps
+    /// that are PROCESSING with a PROCESSING job. A step whose job is still
+    /// queued or waits for an automatic retry is not running. Empty `dag_ids`
+    /// return nothing without a query.
+    async fn list_running_step_jobs(&self, dag_ids: &[&str]) -> Result<Vec<(String, String)>>;
+
     /// Ready steps of a DAG that have no job: BLOCKED or PENDING rows whose
     /// dependencies have all COMPLETED, with their inputs merged from those
     /// dependencies' outputs in dependency order. Root steps are not listed;
@@ -1426,6 +1432,31 @@ impl DagRepository for SqlxDagRepository {
         }
 
         Ok(stats)
+    }
+
+    async fn list_running_step_jobs(&self, dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
+        let mut running = Vec::new();
+        for dag_ids in dag_ids.chunks(super::LOOKUP_BATCH_SIZE) {
+            let mut query = QueryBuilder::<Sqlite>::new(
+                "SELECT step.dag_id, job.id \
+                 FROM dag_step_execution AS step \
+                 JOIN job ON job.id = step.job_id \
+                 WHERE step.status = 'PROCESSING' AND job.status = 'PROCESSING' \
+                   AND step.dag_id IN (",
+            );
+            let mut separated = query.separated(", ");
+            for dag_id in dag_ids {
+                separated.push_bind(*dag_id);
+            }
+            separated.push_unseparated(")");
+            running.extend(
+                query
+                    .build_query_as::<(String, String)>()
+                    .fetch_all(&self.pool)
+                    .await?,
+            );
+        }
+        Ok(running)
     }
 
     async fn list_ready_steps(&self, dag_id: &str) -> Result<Vec<ReadyStep>> {

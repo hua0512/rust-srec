@@ -150,11 +150,6 @@ impl DagExecutionDbModel {
     pub fn is_failed(&self) -> bool {
         self.failed_steps > 0
     }
-
-    /// Get the progress as a percentage (0-100).
-    pub fn progress_percent(&self) -> f64 {
-        progress_percent(self.total_steps, self.completed_steps, self.failed_steps)
-    }
 }
 
 /// Display fields for an execution list, without its input manifest or error payload.
@@ -172,12 +167,6 @@ pub struct DagExecutionListSummary {
     pub updated_at: i64,
 }
 
-impl DagExecutionListSummary {
-    pub fn progress_percent(&self) -> f64 {
-        progress_percent(self.total_steps, self.completed_steps, self.failed_steps)
-    }
-}
-
 /// Read only the `name` field of a DAG definition.
 ///
 /// List views need the name alone; deserialising every step and its
@@ -193,11 +182,29 @@ pub(crate) fn dag_definition_name(definition: &str) -> Option<String> {
         .map(|definition| definition.name)
 }
 
-fn progress_percent(total_steps: i32, completed_steps: i32, failed_steps: i32) -> f64 {
-    if total_steps == 0 {
-        return 100.0;
+/// A workflow's progress as a percentage (0-100) of its `total_steps`.
+///
+/// Each completed step counts fully, and each of `running_percents`, the
+/// reported percents of running steps clamped to 0-100, counts as that share
+/// of a step. Every other step counts nothing, including a running step that
+/// has not reported a percent or reported NaN, so a failed or cancelled
+/// workflow shows how much of it completed. A workflow without steps reports 0.
+pub fn dag_progress_percent(
+    total_steps: i32,
+    completed_steps: i32,
+    running_percents: impl IntoIterator<Item = f32>,
+) -> f64 {
+    if total_steps <= 0 {
+        return 0.0;
     }
-    ((completed_steps + failed_steps) as f64 / total_steps as f64) * 100.0
+    // `clamp` passes NaN through, and `f64::min` would then turn the NaN sum
+    // into 100.
+    let running_steps: f64 = running_percents
+        .into_iter()
+        .filter(|percent| !percent.is_nan())
+        .map(|percent| f64::from(percent.clamp(0.0, 100.0)) / 100.0)
+        .sum();
+    (100.0 * (f64::from(completed_steps) + running_steps) / f64::from(total_steps)).min(100.0)
 }
 
 // ============================================================================
@@ -527,26 +534,13 @@ mod tests {
     }
 
     #[test]
-    fn test_dag_execution_progress() {
-        let dag_def = DagPipelineDefinition::new(
-            "test-dag",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::new("B", PipelineStep::preset("upload")),
-                DagStep::new("C", PipelineStep::preset("thumbnail")),
-                DagStep::new("D", PipelineStep::preset("notify")),
-            ],
-        );
-
-        let mut dag_exec = DagExecutionDbModel::new(&dag_def, None, None);
-        assert_eq!(dag_exec.progress_percent(), 0.0);
-
-        dag_exec.increment_completed();
-        assert_eq!(dag_exec.progress_percent(), 25.0);
-
-        dag_exec.increment_completed();
-        dag_exec.increment_failed();
-        assert_eq!(dag_exec.progress_percent(), 75.0);
+    fn dag_progress_percent_counts_completed_steps_and_running_progress() {
+        assert_eq!(dag_progress_percent(4, 1, []), 25.0);
+        assert_eq!(dag_progress_percent(4, 1, [50.0]), 37.5);
+        assert_eq!(dag_progress_percent(4, 1, [-20.0, 150.0]), 50.0);
+        assert_eq!(dag_progress_percent(4, 1, [f32::NAN]), 25.0);
+        assert_eq!(dag_progress_percent(0, 0, []), 0.0);
+        assert_eq!(dag_progress_percent(2, 2, [100.0]), 100.0);
     }
 
     #[test]

@@ -729,6 +729,8 @@ async fn dag_steps_report_their_job_state_and_only_a_retry_that_will_run() {
     );
     let mut dag = DagExecutionDbModel::new(&definition, None, None);
     dag.status = "PROCESSING".to_owned();
+    dag.completed_steps = 1;
+    dag.failed_steps = 1;
     dags.create_dag(&dag).await.unwrap();
 
     for (id, status, started_at) in [
@@ -804,6 +806,37 @@ async fn dag_steps_report_their_job_state_and_only_a_retry_that_will_run() {
         assert_eq!(step.get("retry_after"), Some(&json!(retry)), "{name}");
         assert_eq!(step.get("progress"), Some(&Value::Null), "{name}");
     }
+
+    // One of five steps completed and none is running; the failed step counts
+    // nothing, on every endpoint.
+    assert_eq!(body["progress_percent"], json!(20.0));
+    let (status, list) =
+        request(&application, Method::GET, "/api/pipeline/dags", Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let item = list["dags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == dag.id.as_str())
+        .unwrap();
+    assert_eq!(item["progress_percent"], json!(20.0));
+    let (status, stats) = request(
+        &application,
+        Method::GET,
+        &format!("{path}/stats"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["progress_percent"], json!(20.0));
+    let (status, missing) = request(
+        &application,
+        Method::GET,
+        "/api/pipeline/dag/does-not-exist/stats",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
 
     let (status, body) = request(&application, Method::DELETE, &path, Value::Null).await;
     assert_eq!(status, StatusCode::OK, "{body}");
