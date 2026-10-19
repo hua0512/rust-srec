@@ -98,12 +98,10 @@ impl ProgressReporter {
 
     /// Marks later reports as coming from item `index` (zero-based) of a
     /// `total`-item batch: they carry the file position, and a reported
-    /// percent covers the whole batch with each item as an equal share.
-    /// Single-item jobs stay unmarked.
+    /// percent covers the whole batch with each item as an equal share. A
+    /// reported ETA covers only its item, so only the last item keeps it.
     pub fn set_batch_item(&self, index: usize, total: usize) {
-        if total > 1 {
-            *self.batch_item.lock() = Some((index as u64, total as u64));
-        }
+        *self.batch_item.lock() = Some((index as u64, total as u64));
     }
 
     pub fn report(&self, mut snapshot: JobProgressSnapshot) {
@@ -114,6 +112,9 @@ impl ProgressReporter {
             snapshot.percent = snapshot
                 .percent
                 .map(|percent| (done as f32 * 100.0 + percent) / total as f32);
+            if done + 1 < total {
+                snapshot.eta_secs = None;
+            }
         }
         let _ = self.tx.try_send(JobProgressUpdate {
             job_id: self.job_id.clone(),
@@ -132,21 +133,23 @@ mod tests {
         let reporter = ProgressReporter::new("job", tx);
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         snapshot.percent = Some(50.0);
-
-        reporter.set_batch_item(0, 1);
-        reporter.report(snapshot.clone());
-        let single = rx.try_recv().unwrap().snapshot;
-        assert_eq!(
-            (single.files_done, single.files_total, single.percent),
-            (None, None, Some(50.0))
-        );
+        snapshot.eta_secs = Some(10.0);
 
         reporter.clone().set_batch_item(1, 4);
-        reporter.report(snapshot);
+        reporter.report(snapshot.clone());
         let batch = rx.try_recv().unwrap().snapshot;
         assert_eq!(
-            (batch.files_done, batch.files_total, batch.percent),
-            (Some(1), Some(4), Some(37.5))
+            (
+                batch.files_done,
+                batch.files_total,
+                batch.percent,
+                batch.eta_secs
+            ),
+            (Some(1), Some(4), Some(37.5), None)
         );
+
+        reporter.set_batch_item(3, 4);
+        reporter.report(snapshot);
+        assert_eq!(rx.try_recv().unwrap().snapshot.eta_secs, Some(10.0));
     }
 }

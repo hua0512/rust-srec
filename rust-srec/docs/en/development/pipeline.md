@@ -75,8 +75,11 @@ are milliseconds for both supported upstream timestamp keys. `duration_ms` is
 the length the run writes: the input length FFmpeg reports, shortened by remux
 trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
 100 until FFmpeg reports the end. Multi-file jobs report `files_done` and
-`files_total`; the `percent` of a multi-file FFmpeg job covers the whole job,
-while `out_time_ms` and `duration_ms` describe the file in progress.
+`files_total`; FFmpeg steps leave out inputs they pass through by file type,
+such as danmu XML. The `percent` of a multi-file FFmpeg or copy job covers the
+whole job with an equal share per file, while `out_time_ms`, `duration_ms` and
+copied bytes describe the file in progress. `eta_secs` covers only that file,
+so these jobs report it only for their last file.
 
 Staged outputs with overwrite disabled use native no-replace publication on
 Windows, Linux and macOS, so a filesystem without hard links can still publish

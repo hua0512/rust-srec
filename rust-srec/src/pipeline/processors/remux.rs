@@ -739,6 +739,10 @@ struct RemuxProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for RemuxProcessorItem<'_> {
+    fn runs_ffmpeg(&self, input: &str) -> bool {
+        is_media(&get_extension(input).unwrap_or_default())
+    }
+
     async fn process(
         &self,
         input: &str,

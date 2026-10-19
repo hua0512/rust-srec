@@ -343,6 +343,10 @@ struct MetadataProcessorItem<'a> {
 
 #[async_trait]
 impl super::media_driver::MediaItem for MetadataProcessorItem<'_> {
+    fn runs_ffmpeg(&self, input: &str) -> bool {
+        self.processor.supports_metadata(input)
+    }
+
     async fn process(
         &self,
         input: &str,
