@@ -37,10 +37,10 @@ pub struct JobProgressSnapshot {
     /// FFmpeg processing speed as a multiple of real time, such as 2.3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speed_x: Option<f64>,
-    /// Files of a multi-file job finished so far.
+    /// Files finished so far.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_done: Option<u64>,
-    /// Files in a multi-file job.
+    /// Files the job counts towards its progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_total: Option<u64>,
     #[serde(default)]
