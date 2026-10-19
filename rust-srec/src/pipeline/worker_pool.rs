@@ -1001,11 +1001,11 @@ impl JobRunner {
             }
             let job_id = job.id.clone();
             let job_type = job.job_type.clone();
-            let persist = |message: String, retry_after: Option<DateTime<Utc>>| async move {
+            // `ExecutionStart` is never retried, so no retry time is planned.
+            let persist = |message: String, _retry_after: Option<DateTime<Utc>>| async move {
                 let outcome = self
                     .persist_failure_with_retry(&job_id, || {
-                        self.job_queue
-                            .fail_execution_start(&job_id, &message, retry_after)
+                        self.job_queue.fail_execution_start(&job_id, &message)
                     })
                     .await?;
                 if outcome == JobFailureOutcome::Transitioned {
@@ -3080,7 +3080,7 @@ mod tests {
                 assert!(receiver.try_recv().is_err());
                 assert_eq!(
                     queue
-                        .fail_execution_start(&job.id, "late startup failure", None)
+                        .fail_execution_start(&job.id, "late startup failure")
                         .await
                         .unwrap(),
                     JobFailureOutcome::Unchanged

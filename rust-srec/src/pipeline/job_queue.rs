@@ -820,8 +820,9 @@ pub enum JobFailureOutcome {
 pub struct JobQueue {
     /// Workers hold a read lease through execution and cleanup. Retention takes an exclusive lease.
     pub(crate) output_files_gate: Arc<tokio::sync::RwLock<()>>,
-    /// Dequeues share a lease through claiming and publishing tracking. Retry and
-    /// attempt finalization take an exclusive lease so cleanup cannot cross that handoff.
+    /// Dequeues share a lease through claiming and publishing tracking, and failures
+    /// through recording and cleaning up their attempt. Retry and attempt finalization
+    /// take an exclusive lease so cleanup cannot cross that handoff.
     attempt_gate: tokio::sync::RwLock<()>,
     /// Configuration.
     config: JobQueueConfig,
@@ -1892,17 +1893,15 @@ impl JobQueue {
     }
 
     /// Fail before processor invocation without rewriting unavailable or invalid metadata.
-    /// `retry_after` is when the job's automatic retry is due, if one is planned.
     pub async fn fail_execution_start(
         &self,
         job_id: &str,
         error: &str,
-        retry_after: Option<DateTime<Utc>>,
     ) -> Result<JobFailureOutcome> {
         self.fail_internal(
             job_id,
             error,
-            retry_after,
+            None,
             FailedStep::default(),
             FailureMetadata::Preserve,
             &[],
@@ -2974,6 +2973,11 @@ impl JobQueue {
                 inputs: job.inputs.clone(),
             })
         });
+
+        // The failure write can make a retry due at once. `retry_job` needs the
+        // exclusive lease, so it cannot hand the job to a successor attempt
+        // before the cleanup below has removed this attempt's tracking.
+        let _attempt_lease = self.attempt_gate.read().await;
 
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
@@ -4530,6 +4534,111 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// A failure whose retry is already due keeps the retry waiting until the
+    /// failed attempt's cleanup is done, so that cleanup cannot remove the
+    /// tracking of the attempt the retry starts.
+    #[tokio::test]
+    async fn due_retry_waits_for_the_failed_attempt_cleanup() {
+        use std::time::Duration;
+
+        use crate::database::repositories::SqlxJobRepository;
+
+        /// Pauses the per-file upload write, which `fail_internal` makes after
+        /// the failure is durable and before it cleans up the attempt.
+        #[derive(Default)]
+        struct PausedUploads {
+            entered: Notify,
+            release: Notify,
+        }
+
+        #[async_trait::async_trait]
+        impl UploadRecordRepository for PausedUploads {
+            async fn upsert_records(&self, _records: &[UploadRecordDbModel]) -> Result<()> {
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(())
+            }
+
+            async fn list_by_job(&self, _job_id: &str) -> Result<Vec<UploadRecordDbModel>> {
+                Ok(Vec::new())
+            }
+
+            async fn list_by_session_local_paths(
+                &self,
+                _output_keys: &[(String, String)],
+            ) -> Result<Vec<UploadRecordDbModel>> {
+                Ok(Vec::new())
+            }
+        }
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let queue = JobQueue::with_repository(
+            JobQueueConfig::default(),
+            Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
+        );
+        queue.stop_progress_aggregator().await;
+        let uploads = Arc::new(PausedUploads::default());
+        queue.set_upload_repo(uploads.clone());
+        let job_id = queue
+            .enqueue(Job::new(
+                "rclone",
+                vec!["/input.mp4".to_string()],
+                vec![],
+                "",
+                "",
+            ))
+            .await
+            .unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        let failed = queue.attempt_token(&job_id).unwrap();
+
+        let mut failure = std::pin::pin!(queue.fail_with_step_info(
+            &job_id,
+            "boom",
+            Some(Utc::now()),
+            Some("rclone"),
+            None,
+            None,
+            &[],
+        ));
+        tokio::select! {
+            outcome = &mut failure => panic!("the upload write did not pause: {outcome:?}"),
+            () = uploads.entered.notified() => {}
+        }
+
+        let mut successor = std::pin::pin!(async {
+            queue.retry_job(&job_id).await.unwrap();
+            queue.dequeue(None).await.unwrap().unwrap();
+            queue.attempt_token(&job_id).unwrap()
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut successor)
+                .await
+                .is_err(),
+            "the retry started while the failed attempt was still cleaning up"
+        );
+
+        uploads.release.notify_one();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(3), failure)
+                .await
+                .unwrap()
+                .unwrap(),
+            JobFailureOutcome::Transitioned
+        );
+        let successor = tokio::time::timeout(Duration::from_secs(3), successor)
+            .await
+            .unwrap();
+        assert_ne!(successor.id(), failed.id());
+        assert_eq!(
+            queue.attempt_token(&job_id).map(|token| token.id()),
+            Some(successor.id())
+        );
     }
 
     #[tokio::test]

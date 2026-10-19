@@ -161,8 +161,8 @@ pub enum StepFailureKind {
     /// inputs would be rejected again.
     NonBatchInput,
     /// The attempt's start could not be persisted, so the processor never ran.
-    /// Recording a retry needs the job-row write that just failed, so the
-    /// failure is applied at once.
+    /// The fault lies with the database that refused the write, not with the
+    /// job, so the failure is applied at once.
     ExecutionStart,
 }
 
