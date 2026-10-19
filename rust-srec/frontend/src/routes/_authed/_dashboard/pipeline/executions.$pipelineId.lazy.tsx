@@ -97,7 +97,12 @@ function PipelineExecutionPage() {
     mutationFn: (pipelineId: string) => cancelDag({ data: pipelineId }),
     onSuccess: (result) => {
       toast.success(
-        i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
+        i18n._(
+          msg`${plural(result.cancelled_steps, {
+            one: 'Cancelled # step in pipeline',
+            other: 'Cancelled # steps in pipeline',
+          })}`,
+        ),
       );
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
