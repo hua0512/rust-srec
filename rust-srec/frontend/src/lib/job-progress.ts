@@ -21,14 +21,20 @@ export function jobTypeLabel(jobType: string, i18n: I18n): string {
   return definition ? i18n._(definition.label) : jobType.replace(/_/g, ' ');
 }
 
-type JobProgress = Omit<UploadProgressInput, 'jobId' | 'streamerId'>;
+// The store's live progress, or a job page snapshot with plain numbers and nulls.
+type JobProgress = {
+  [K in Exclude<keyof UploadProgressInput, 'jobId' | 'streamerId'>]?:
+    | UploadProgressInput[K]
+    | number
+    | null;
+};
 
 /**
  * A job's progress for display: the percent for a bar, capped at 100, and
  * short details in the units the job reports. FFmpeg steps show the output
- * position against the length being written, the speed and the time left;
- * jobs counting bytes show bytes and speed; batches add the file in progress.
- * No details means the job reports no progress.
+ * position against the length being written and the speed; jobs counting
+ * bytes show bytes and speed. The time left and, in batches, the file in
+ * progress follow. No details means the job reports no progress.
  */
 export function describeJobProgress(
   progress: JobProgress,
@@ -44,16 +50,16 @@ export function describeJobProgress(
         : done,
     );
     if (progress.speedX != null) details.push(`${progress.speedX.toFixed(1)}×`);
-    // Under a second the duration would read in milliseconds.
-    if (progress.etaSecs != null && progress.etaSecs >= 1) {
-      const eta = formatLocalizedDuration(progress.etaSecs, i18n.locale);
-      details.push(i18n._(msg`~${eta} left`));
-    }
   } else if (bytes != null) {
     details.push(bytes);
     if (progress.speedBytesPerSec) {
       details.push(formatSpeed(progress.speedBytesPerSec));
     }
+  }
+  // Under a second the duration would read in milliseconds.
+  if (progress.etaSecs != null && progress.etaSecs >= 1) {
+    const eta = formatLocalizedDuration(progress.etaSecs, i18n.locale);
+    details.push(i18n._(msg`~${eta} left`));
   }
   const { progressFilesDone: done, progressFilesTotal: total } = progress;
   if (done != null && total != null && total > 1) {

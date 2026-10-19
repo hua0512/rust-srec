@@ -13,9 +13,10 @@ export function uploadPercent(upload: Pick<UploadView, 'percent'>) {
 }
 
 /** "1.2 GB / 4.0 GB", or only the bytes sent while the total is unknown. */
-export function formatUploadBytes(
-  upload: Pick<UploadView, 'bytesDone' | 'bytesTotal'>,
-) {
+export function formatUploadBytes(upload: {
+  bytesDone?: number | bigint | null;
+  bytesTotal?: number | bigint | null;
+}) {
   if (upload.bytesDone == null) return undefined;
   if (upload.bytesTotal == null) return formatBytes(upload.bytesDone);
   return `${formatBytes(upload.bytesDone)} / ${formatBytes(upload.bytesTotal)}`;
