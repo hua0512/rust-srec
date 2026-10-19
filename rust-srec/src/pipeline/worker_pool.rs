@@ -1,6 +1,5 @@
 //! Worker pool implementation for pipeline processing.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -14,7 +13,7 @@ use tracing::{debug, error, info, warn};
 
 use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler, FailedStepAttempt,
-    StepFailureKind, StepFailureOutcome,
+    PlannedRetry, StepFailureKind, StepFailureOutcome,
 };
 use super::job_queue::{Job, JobFailureOutcome, JobLogEntry, JobQueue, JobResult};
 use super::manager::PipelineEvent;
@@ -1001,18 +1000,19 @@ impl JobRunner {
             }
             let job_id = job.id.clone();
             let job_type = job.job_type.clone();
-            // `ExecutionStart` is never retried, so no retry time is planned.
-            let persist = |message: String, _retry_after: Option<DateTime<Utc>>| async move {
+            let reason = reason.as_str();
+            // `ExecutionStart` is never retried, so no retry is planned.
+            let persist = |_planned: Option<PlannedRetry>| async move {
                 let outcome = self
                     .persist_failure_with_retry(&job_id, || {
-                        self.job_queue.fail_execution_start(&job_id, &message)
+                        self.job_queue.fail_execution_start(&job_id, reason)
                     })
                     .await?;
                 if outcome == JobFailureOutcome::Transitioned {
                     self.emit(PipelineEvent::JobFailed {
                         job_id,
                         job_type,
-                        error: message,
+                        error: reason.to_string(),
                     });
                 }
                 Ok(outcome)
@@ -1022,7 +1022,7 @@ impl JobRunner {
                     let attempt = FailedStepAttempt {
                         job_id: &job.id,
                         retry_count: job.retry_count,
-                        error: &reason,
+                        error: reason,
                         kind: StepFailureKind::ExecutionStart,
                     };
                     let outcome = scheduler
@@ -1032,7 +1032,7 @@ impl JobRunner {
                         .await;
                 }
                 _ => {
-                    if let Err(error) = persist(reason, None).await {
+                    if let Err(error) = persist(None).await {
                         error!(job_id = %job.id, %error, "Failed to persist execution-start failure");
                     }
                 }
@@ -1444,8 +1444,9 @@ impl JobRunner {
 
     /// Record a failed or timed-out attempt. For a workflow step the scheduler
     /// decides whether the step gets another attempt or fails, and the job row
-    /// is written with the message it settles on; the worker itself only
-    /// persists and announces. Processors own cleanup of their staged outputs;
+    /// is written with the retry it plans; the worker itself only persists and
+    /// announces. The row keeps the plain error, while the failure event says
+    /// when a planned retry runs. Processors own cleanup of their staged outputs;
     /// persisted artifact paths may belong to earlier attempts. `uploads` are
     /// the per-file results of a partially failed upload batch.
     async fn finish_failed(
@@ -1455,13 +1456,13 @@ impl JobRunner {
         kind: StepFailureKind,
         uploads: &[UploadResultItem],
     ) {
-        let persist = |message: String, retry_after: Option<DateTime<Utc>>| async move {
+        let persist = |planned: Option<PlannedRetry>| async move {
             let outcome = self
                 .persist_failure_with_retry(&facts.id, || {
                     self.job_queue.fail_with_step_info(
                         &facts.id,
-                        &message,
-                        retry_after,
+                        error,
+                        planned.map(|planned| planned.retry_after),
                         Some(facts.processor_name),
                         facts.current_step,
                         facts.total_steps,
@@ -1473,7 +1474,8 @@ impl JobRunner {
                 self.emit(PipelineEvent::JobFailed {
                     job_id: facts.id.clone(),
                     job_type: facts.job_type.clone(),
-                    error: message,
+                    error: planned
+                        .map_or_else(|| error.to_string(), |planned| planned.describe(error)),
                 });
             }
             Ok(outcome)
@@ -1493,7 +1495,7 @@ impl JobRunner {
                 self.report_step_failure(dag_step_id, kind, outcome).await;
             }
             _ => {
-                if let Err(error) = persist(error.to_string(), None).await {
+                if let Err(error) = persist(None).await {
                     error!(job_id = %facts.id, %error, "Failed to persist pipeline job failure");
                 }
             }
@@ -2296,7 +2298,8 @@ mod tests {
     }
 
     /// A step with retry budget left does not fail its workflow: the job row
-    /// is FAILED with the retry time recorded and the step keeps waiting on it.
+    /// is FAILED with its plain error and the retry time recorded, the failure
+    /// event says when the retry runs, and the step keeps waiting on the job.
     /// Once the budget is spent the failure reaches the workflow as usual.
     #[tokio::test]
     async fn failed_step_with_a_retry_budget_is_rescheduled_then_fails_when_spent() {
@@ -2368,10 +2371,6 @@ mod tests {
         let first = tokio::time::timeout(Duration::from_secs(5), next_failure(&mut event_rx))
             .await
             .expect("the first attempt fails");
-        assert!(
-            first.contains("boom; attempt 1 of 2 failed, retrying at "),
-            "{first}"
-        );
         // The failure event follows the job-row write, which records the retry
         // together with the failure.
         let job = job_repo.get_job(&job_id).await.unwrap();
@@ -2380,7 +2379,14 @@ mod tests {
             job.retry_after.is_some(),
             "the retry lands with the failure"
         );
-        assert!(job.error.as_deref().unwrap().contains("retrying at"));
+        let stored_error = job.error.as_deref().unwrap();
+        assert!(stored_error.ends_with("boom"), "{stored_error}");
+        assert!(
+            first.starts_with(&format!(
+                "{stored_error}; attempt 1 of 2 failed, retrying at "
+            )),
+            "{first}"
+        );
         assert_eq!(
             dag_repo.get_step(&step.id).await.unwrap().status,
             "PROCESSING"

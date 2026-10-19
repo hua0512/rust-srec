@@ -380,7 +380,7 @@ where
         Ok(dag_cancelled.unwrap_or(0) + cancelled_jobs.len())
     }
 
-    /// Cancel `pipeline_id` as a DAG execution, returning the number of step jobs cancelled.
+    /// Cancel `pipeline_id` as a DAG execution, returning the number of running steps stopped.
     ///
     /// `None` means `pipeline_id` names no DAG that still needs standing down: no DAG scheduler is
     /// configured, `DagScheduler::get_dag_status` finds no such `dag_execution` row, the row is
