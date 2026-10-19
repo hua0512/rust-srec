@@ -351,8 +351,9 @@ where
     /// Cancel a pipeline: the `dag_execution` row when `pipeline_id` names one, plus every pending
     /// or processing job carrying that `pipeline_id`.
     ///
-    /// Returns the number of jobs cancelled. An id that matches nothing, and a DAG that is already
-    /// terminal, both report zero rather than failing.
+    /// Returns the number of running DAG steps stopped plus the stray jobs the sweep cancelled. An
+    /// id that matches nothing, and a DAG that is already terminal, both report zero rather than
+    /// failing.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<usize> {
         // `DagScheduler::build_step_job` stores the DAG id in every step job's `pipeline_id`, so a
         // pipeline id naming a `dag_execution` row is stood down through `cancel_dag` first:
@@ -365,7 +366,7 @@ where
         // `job_id` — the shape `list_processing_steps_with_completed_jobs` reverse-links through
         // `job.dag_step_execution_id` — would otherwise keep running with its cancellation token
         // unfired. Jobs `cancel_dag` cancelled are terminal by now, so `cancel_jobs_by_pipeline`
-        // and the `jobs_cache` scan skip them: each job is counted and announced at most once.
+        // and the `jobs_cache` scan skip them: each job is announced at most once.
         let cancelled_jobs = self.job_queue.cancel_pipeline(pipeline_id).await?;
 
         // Emit events for each cancelled job

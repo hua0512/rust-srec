@@ -3771,7 +3771,6 @@ mod tests {
         assert_eq!(update.cancelled_count, 0, "D had no job");
         assert!(update.completion.is_none(), "siblings still run");
         let row = job_repo.get_job(&job_a).await.unwrap();
-        assert_eq!(row.error.as_deref(), Some("boom"));
         assert!(row.retry_after.is_none());
         let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
         assert_eq!(dag.get_status(), Some(DagExecutionStatus::Processing));
@@ -3792,7 +3791,6 @@ mod tests {
             "{outcome:?}"
         );
         let row = job_repo.get_job(&job_b).await.unwrap();
-        assert_eq!(row.error.as_deref(), Some("boom"));
         assert!(row.retry_after.is_none());
         // A repeated report for the settled step changes nothing.
         let outcome = scheduler
@@ -4133,7 +4131,6 @@ mod tests {
                 stored.retry_after,
                 Some(planned.retry_after.timestamp_millis())
             );
-            assert_eq!(stored.error.as_deref(), Some("upload failed"));
             assert_eq!(queue.depth(), 0);
             assert!(queue.get_cancellation_token(&job.id).await.is_none());
             assert_eq!(

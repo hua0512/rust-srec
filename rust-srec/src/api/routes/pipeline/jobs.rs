@@ -525,7 +525,7 @@ pub async fn cancel_pipeline(
 
     Ok(Json(serde_json::json!({
         "success": true,
-        "message": format!("Cancelled {} jobs in pipeline '{}'", cancelled_count, pipeline_id),
+        "message": format!("Cancelled {} steps or jobs in pipeline '{}'", cancelled_count, pipeline_id),
         "cancelled_count": cancelled_count
     })))
 }

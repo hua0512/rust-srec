@@ -22,7 +22,7 @@
 ## Workflows and file processing
 
 - Fixed a workflow step losing its scheduled automatic retry when rust-srec stopped just as the step failed; the workflow was then marked failed on the next start.
-- Fixed cancelling a workflow while a step waits for its automatic retry: the step's job no longer says it will be retried, and the cancel confirmation counts that step instead of reporting 0 cancelled steps.
+- Fixed the confirmation after cancelling a workflow not counting a step that was waiting for its automatic retry.
 
 ## Web interface
 
