@@ -9,22 +9,14 @@ import { useLingui } from '@lingui/react';
 import type { StalledOperation } from '@/api/schemas';
 import { stalledOperationsQueryOptions } from '@/api/stalled-operations';
 import { HeaderIndicator } from '@/components/header-indicator';
-import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { formatDuration } from '@/lib/format';
+import { jobTypeLabel } from '@/lib/job-progress';
 
 export function stalledOperationsLabel(count: number, i18n: I18n) {
   return t(i18n)`${plural(count, {
     one: '# file operation is not responding',
     other: '# file operations are not responding',
   })}`;
-}
-
-/** The job type's display name, as the job pages show it. */
-export function stalledOperationTitle(operation: StalledOperation, i18n: I18n) {
-  const definition = getProcessorDefinition(operation.job_type);
-  return definition
-    ? i18n._(definition.label)
-    : operation.job_type.replace(/_/g, ' ');
 }
 
 /** How long the operation has outlived its job, e.g. "Not responding for 2m 5s". */
@@ -77,7 +69,7 @@ export function StalledOperationsIndicator() {
               >
                 <span className="flex items-center gap-2">
                   <span className="min-w-0 truncate text-sm font-medium">
-                    {stalledOperationTitle(operation, i18n)}
+                    {jobTypeLabel(operation.job_type, i18n)}
                   </span>
                   <span className="ml-auto shrink-0 text-xs font-medium text-orange-600 dark:text-orange-400">
                     {stalledForLabel(operation, i18n)}

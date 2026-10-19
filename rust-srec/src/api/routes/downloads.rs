@@ -30,7 +30,7 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 
 use crate::api::error::ApiError;
-use crate::api::proto::SnapshotUploads;
+use crate::api::proto::SnapshotJobs;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
     EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_snapshot_message,
@@ -50,7 +50,7 @@ pub struct DownloadRouteState {
     download_manager: std::sync::Arc<crate::downloader::DownloadManager>,
     check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
-    /// Source of the snapshot's `uploads` slice (`list_active_uploads`).
+    /// Source of the snapshot's `uploads` and `jobs` slices (`list_active_jobs`).
     pipeline_manager: std::sync::Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
     streamer_avatar: StreamerAvatarLookup,
     credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
@@ -58,8 +58,8 @@ pub struct DownloadRouteState {
     credential_attention: tokio::sync::watch::Receiver<u64>,
 }
 
-/// Streamer id to avatar URL. Upload jobs carry the streamer's name but not
-/// its avatar, so the API layer adds it from the streamer manager's cache.
+/// Streamer id to avatar URL. Jobs carry the streamer's name but not its
+/// avatar, so the API layer adds it from the streamer manager's cache.
 pub type StreamerAvatarLookup = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 pub fn streamer_avatar_lookup(
@@ -198,25 +198,25 @@ async fn download_progress_ws(
     }))
 }
 
-/// All active upload jobs and the number waiting for a worker, for the
-/// snapshot. Never narrowed by the connection's streamer subscription: the
-/// client keeps one global uploads store (the header's upload status) and
-/// replaces it from every snapshot, so a filtered slice would drop other
-/// streamers' uploads.
+/// All active upload and long jobs and the number of uploads waiting for a
+/// worker, for the snapshot. Never narrowed by the connection's streamer
+/// subscription: the client keeps one global store of them (the header's
+/// indicators) and replaces it from every snapshot, so a filtered slice
+/// would drop other streamers' jobs.
 /// Best-effort: a repository error degrades to an empty slice / zero rather
 /// than failing the snapshot — download state is still worth delivering.
-async fn snapshot_uploads(
+async fn snapshot_jobs(
     pipeline_manager: &PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>,
     streamer_avatar: &StreamerAvatarLookup,
-) -> SnapshotUploads {
+) -> SnapshotJobs {
     let active = pipeline_manager
-        .list_active_uploads()
+        .list_active_jobs()
         .await
         .unwrap_or_else(|e| {
-            warn!("Failed to list active uploads for WS snapshot: {}", e);
+            warn!("Failed to list active jobs for WS snapshot: {}", e);
             Vec::new()
         });
-    let pending = pipeline_manager
+    let pending_uploads = pipeline_manager
         .count_pending_uploads()
         .await
         .unwrap_or_else(|e| {
@@ -225,12 +225,12 @@ async fn snapshot_uploads(
         });
     let streamer_avatars = active
         .iter()
-        .filter_map(|upload| upload.streamer_id.as_deref())
+        .filter_map(|job| job.streamer_id.as_deref())
         .filter_map(|id| Some((id.to_string(), streamer_avatar(id)?)))
         .collect();
-    SnapshotUploads {
+    SnapshotJobs {
         active,
-        pending,
+        pending_uploads,
         streamer_avatars,
     }
 }
@@ -261,8 +261,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // 2. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
     let queued = download_manager.snapshot_pending();
-    let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
-    let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
+    let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
+    let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
     let bytes = snapshot_msg.encode_to_vec();
 
     if sender
@@ -303,8 +303,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                                 downloads.retain(|d| &d.streamer_id == streamer_id);
                                                 queued.retain(|q| &q.streamer_id == streamer_id);
                                             }
-                                            let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
-                                            let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
+                                            let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
+                                            let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -318,8 +318,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                         if SNAPSHOT_ON_SUBSCRIBE {
                                             let downloads = download_manager.get_active_downloads();
                                             let queued = download_manager.snapshot_pending();
-                                            let uploads = snapshot_uploads(&state.pipeline_manager, &state.streamer_avatar).await;
-                                            let snapshot_msg = create_snapshot_message(downloads, queued, uploads);
+                                            let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
+                                            let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -417,10 +417,10 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                 }
             }
 
-            // Upload status events (started/progress/terminal), pre-encoded
-            // once by the UploadStatusBroadcaster's encoder. Unlike download
-            // events these ignore the streamer subscription, for the same
-            // reason as `snapshot_uploads`.
+            // Upload and long-job events (started/progress/terminal),
+            // pre-encoded once by the UploadStatusBroadcaster's encoder.
+            // Unlike download events these ignore the streamer subscription,
+            // for the same reason as `snapshot_jobs`.
             envelope = upload_rx.recv() => {
                 match envelope {
                     Ok(envelope) => {
@@ -930,6 +930,48 @@ pub fn map_upload_event_to_protobuf(
             event_type: EventType::UploadQueue as i32,
             payload: Some(Payload::UploadQueue(crate::api::proto::UploadQueue {
                 pending: *pending,
+            })),
+        },
+        UploadStatusEvent::JobStarted {
+            job_id,
+            streamer_id,
+            streamer_name,
+            job_type,
+            started_at_ms,
+        } => WsMessage {
+            event_type: EventType::JobStarted as i32,
+            payload: Some(Payload::JobStarted(crate::api::proto::JobStarted {
+                job_id: job_id.clone(),
+                streamer_id: streamer_id.clone().unwrap_or_default(),
+                job_type: job_type.clone(),
+                started_at_ms: *started_at_ms,
+                streamer_name: streamer_name.clone().unwrap_or_default(),
+                streamer_avatar: streamer_id
+                    .as_deref()
+                    .and_then(|id| streamer_avatar(id))
+                    .unwrap_or_default(),
+            })),
+        },
+        UploadStatusEvent::JobProgress {
+            job_id,
+            streamer_id,
+            snapshot,
+        } => WsMessage {
+            event_type: EventType::JobProgress as i32,
+            payload: Some(Payload::JobProgress(upload_progress_to_proto(
+                job_id,
+                streamer_id.as_deref(),
+                snapshot,
+            ))),
+        },
+        UploadStatusEvent::JobEnded {
+            job_id,
+            started_at_ms,
+        } => WsMessage {
+            event_type: EventType::JobEnded as i32,
+            payload: Some(Payload::JobEnded(crate::api::proto::JobEnded {
+                job_id: job_id.clone(),
+                started_at_ms: *started_at_ms,
             })),
         },
     }

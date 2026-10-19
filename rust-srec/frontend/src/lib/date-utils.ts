@@ -77,7 +77,11 @@ export function formatLocalizedDuration(
   const durationFormat = (
     Intl as unknown as { DurationFormat?: DurationFormatCtor }
   ).DurationFormat;
-  if (!durationFormat) return formatDuration(seconds);
+  if (!durationFormat) {
+    return formatDuration(seconds < 1 ? seconds : Math.round(seconds), {
+      decimals: 0,
+    });
+  }
 
   if (seconds < 1) {
     return new durationFormat(locale, { style: 'narrow' }).format({
@@ -85,16 +89,18 @@ export function formatLocalizedDuration(
     });
   }
 
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.round(seconds % 60);
+  // Rounded before splitting so that 119.6 s carries into "2m", not "1m 60s".
+  const total = Math.round(seconds);
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
 
   const duration: Record<string, number> = {};
   if (days > 0) duration.days = days;
   if (hours > 0) duration.hours = hours;
   if (minutes > 0) duration.minutes = minutes;
-  if (seconds < 3600 && secs > 0) duration.seconds = secs;
+  if (total < 3600 && secs > 0) duration.seconds = secs;
 
   if (Object.keys(duration).length === 0) return formatDuration(seconds);
 

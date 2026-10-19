@@ -99,7 +99,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, one {# failed} other {# failed}}"
 
 #. placeholder {0}: upload.filesFailed
-#: src/components/upload-status-indicator.tsx:412
+#: src/components/upload-status-indicator.tsx:415
 msgid "{0, plural, one {# file failed} other {# files failed}}"
 msgstr "{0, plural, one {# file failed} other {# files failed}}"
 
@@ -249,6 +249,10 @@ msgstr "{count, plural, one {# file operation is not responding} other {# file o
 msgid "{count, plural, one {# item} other {# items}}"
 msgstr "{count, plural, one {# item} other {# items}}"
 
+#: src/components/processing-jobs-indicator.tsx:33
+msgid "{count, plural, one {# job in progress} other {# jobs in progress}}"
+msgstr "{count, plural, one {# job in progress} other {# jobs in progress}}"
+
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:50
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, one {# output} other {# outputs}}"
@@ -277,7 +281,7 @@ msgstr "{displayName} Configuration"
 msgid "{engine} Settings"
 msgstr "{engine} Settings"
 
-#: src/components/upload-status-indicator.tsx:359
+#: src/components/upload-status-indicator.tsx:362
 msgid "{eta} left"
 msgstr "{eta} left"
 
@@ -290,11 +294,11 @@ msgstr "{failures, plural, one {# failed refresh} other {# failed refreshes in a
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 
-#: src/components/upload-status-indicator.tsx:356
+#: src/components/upload-status-indicator.tsx:359
 msgid "{filesDone}/{filesTotal} files"
 msgstr "{filesDone}/{filesTotal} files"
 
-#: src/components/stalled-operations-indicator.tsx:37
+#: src/components/stalled-operations-indicator.tsx:29
 msgid "{first} and {others} more"
 msgstr "{first} and {others} more"
 
@@ -405,6 +409,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
+#: src/lib/job-progress.ts:50
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -1362,7 +1367,7 @@ msgstr "Background"
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
-#: src/components/layout/site-header.tsx:45
+#: src/components/layout/site-header.tsx:46
 msgid "Backup"
 msgstr "Backup"
 
@@ -1661,12 +1666,12 @@ msgstr "Cancel Pipeline?"
 msgid "Cancel selected"
 msgstr "Cancel selected"
 
-#: src/components/upload-status-indicator.tsx:534
+#: src/components/upload-status-indicator.tsx:537
 msgid "Cancel this upload?"
 msgstr "Cancel this upload?"
 
-#: src/components/upload-status-indicator.tsx:392
-#: src/components/upload-status-indicator.tsx:553
+#: src/components/upload-status-indicator.tsx:395
+#: src/components/upload-status-indicator.tsx:556
 msgid "Cancel upload"
 msgstr "Cancel upload"
 
@@ -1731,7 +1736,7 @@ msgstr "CDN"
 msgid "Change"
 msgstr "Change"
 
-#: src/components/layout/site-header.tsx:38
+#: src/components/layout/site-header.tsx:39
 #: src/components/sidebar/user-menu.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:278
@@ -2108,7 +2113,7 @@ msgstr "Concurrent checkers (--checkers)."
 msgid "Concurrent file transfers (--transfers)."
 msgstr "Concurrent file transfers (--transfers)."
 
-#: src/components/layout/site-header.tsx:36
+#: src/components/layout/site-header.tsx:37
 msgid "Config"
 msgstr "Config"
 
@@ -2799,7 +2804,7 @@ msgstr "Danmus"
 msgid "Dark"
 msgstr "Dark"
 
-#: src/components/layout/site-header.tsx:32
+#: src/components/layout/site-header.tsx:33
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
 msgstr "Dashboard"
@@ -3305,7 +3310,7 @@ msgstr "Disk"
 msgid "Disk Space"
 msgstr "Disk Space"
 
-#: src/components/upload-status-indicator.tsx:443
+#: src/components/upload-status-indicator.tsx:446
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -3550,7 +3555,7 @@ msgstr "Earlier files are still being finalized, so the cut was not made. Record
 #: src/components/config/templates/template-card.tsx:96
 #: src/components/credentials/account-row.tsx:222
 #: src/components/credentials/account-row.tsx:280
-#: src/components/layout/site-header.tsx:59
+#: src/components/layout/site-header.tsx:60
 #: src/components/notifications/channel-card.tsx:150
 #: src/components/pipeline/presets/preset-card.tsx:105
 #: src/components/pipeline/workflows/workflow-card.tsx:77
@@ -3725,7 +3730,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:393
 #: src/components/config/global/backup-restore-card.tsx:398
 #: src/components/config/templates/template-editor.tsx:246
-#: src/components/layout/site-header.tsx:46
+#: src/components/layout/site-header.tsx:47
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Engines"
 msgstr "Engines"
@@ -3839,7 +3844,7 @@ msgstr "Event Type"
 msgid "Event Types"
 msgstr "Event Types"
 
-#: src/components/layout/site-header.tsx:42
+#: src/components/layout/site-header.tsx:43
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:369
 msgid "Events"
 msgstr "Events"
@@ -3909,7 +3914,7 @@ msgstr "Execution Settings"
 msgid "Execution time (default)"
 msgstr "Execution time (default)"
 
-#: src/components/layout/site-header.tsx:52
+#: src/components/layout/site-header.tsx:53
 msgid "Executions"
 msgstr "Executions"
 
@@ -4024,7 +4029,7 @@ msgstr "F"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:105
-#: src/components/upload-status-indicator.tsx:415
+#: src/components/upload-status-indicator.tsx:418
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:463
@@ -4057,7 +4062,7 @@ msgstr "Failed to cancel job"
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
-#: src/components/upload-status-indicator.tsx:520
+#: src/components/upload-status-indicator.tsx:523
 msgid "Failed to cancel upload"
 msgstr "Failed to cancel upload"
 
@@ -4442,6 +4447,10 @@ msgstr "FFmpeg Video Filter"
 msgid "File {0} of {1}"
 msgstr "File {0} of {1}"
 
+#: src/lib/job-progress.ts:62
+msgid "File {index} of {total}"
+msgstr "File {index} of {total}"
+
 #: src/components/config/global/file-config-card.tsx:20
 msgid "File Configuration"
 msgstr "File Configuration"
@@ -4823,7 +4832,7 @@ msgid "Gift items"
 msgstr "Gift items"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:193
-#: src/components/layout/site-header.tsx:51
+#: src/components/layout/site-header.tsx:52
 #: src/components/proxies/proxy-references.tsx:68
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
@@ -4945,7 +4954,7 @@ msgstr "Header received"
 msgid "Header Value"
 msgstr "Header Value"
 
-#: src/components/layout/site-header.tsx:57
+#: src/components/layout/site-header.tsx:58
 msgid "Health"
 msgstr "Health"
 
@@ -5051,7 +5060,7 @@ msgid "HLS stream fixing pipeline"
 msgstr "HLS stream fixing pipeline"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/layout/site-header.tsx:88
+#: src/components/layout/site-header.tsx:89
 msgid "Home"
 msgstr "Home"
 
@@ -5500,7 +5509,7 @@ msgstr "Job retry initiated"
 msgid "Job Timeouts"
 msgstr "Job Timeouts"
 
-#: src/components/layout/site-header.tsx:53
+#: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:348
 msgid "Jobs"
@@ -5550,7 +5559,7 @@ msgstr "Keep Running"
 msgid "Keep the original frame size instead of scaling to a width"
 msgstr "Keep the original frame size instead of scaling to a width"
 
-#: src/components/upload-status-indicator.tsx:545
+#: src/components/upload-status-indicator.tsx:548
 msgid "Keep uploading"
 msgstr "Keep uploading"
 
@@ -5883,7 +5892,7 @@ msgstr "Login failed"
 msgid "Login invalid"
 msgstr "Login invalid"
 
-#: src/components/layout/site-header.tsx:37
+#: src/components/layout/site-header.tsx:38
 msgid "Logs"
 msgstr "Logs"
 
@@ -6005,7 +6014,7 @@ msgstr "Manifest Timeout (ms)"
 msgid "Manual cut"
 msgstr "Manual cut"
 
-#: src/components/upload-status-indicator.tsx:332
+#: src/components/upload-status-indicator.tsx:335
 msgid "Manual job"
 msgstr "Manual job"
 
@@ -6457,7 +6466,7 @@ msgctxt "an account never used or checked"
 msgid "Never"
 msgstr "Never"
 
-#: src/components/layout/site-header.tsx:58
+#: src/components/layout/site-header.tsx:59
 msgid "New"
 msgstr "New"
 
@@ -6891,7 +6900,7 @@ msgstr "Not installed"
 msgid "Not logged in"
 msgstr "Not logged in"
 
-#: src/components/stalled-operations-indicator.tsx:33
+#: src/components/stalled-operations-indicator.tsx:25
 msgid "Not responding for {duration}"
 msgstr "Not responding for {duration}"
 
@@ -6949,7 +6958,7 @@ msgstr "Notification Retention"
 msgid "Notification Service"
 msgstr "Notification Service"
 
-#: src/components/layout/site-header.tsx:41
+#: src/components/layout/site-header.tsx:42
 #: src/lib/menu-list.ts:119
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:359
 msgid "Notifications"
@@ -7246,7 +7255,7 @@ msgstr "Output retention (days)"
 msgid "Output Settings"
 msgstr "Output Settings"
 
-#: src/components/layout/site-header.tsx:54
+#: src/components/layout/site-header.tsx:55
 #: src/components/sessions/overview-tab.tsx:132
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:471
@@ -7542,7 +7551,7 @@ msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
 #: src/components/config/shared-config-editor.tsx:212
-#: src/components/layout/site-header.tsx:40
+#: src/components/layout/site-header.tsx:41
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:513
 msgid "Pipeline"
@@ -7711,7 +7720,7 @@ msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:405
 #: src/components/config/templates/template-editor.tsx:256
-#: src/components/layout/site-header.tsx:48
+#: src/components/layout/site-header.tsx:49
 #: src/components/proxies/proxy-references.tsx:77
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
@@ -7747,7 +7756,7 @@ msgstr "Playback Error"
 msgid "Playback stalled while seeking. Retry to reload the video."
 msgstr "Playback stalled while seeking. Retry to reload the video."
 
-#: src/components/layout/site-header.tsx:43
+#: src/components/layout/site-header.tsx:44
 #: src/lib/menu-list.ts:97
 msgid "Player"
 msgstr "Player"
@@ -7870,7 +7879,7 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/upload-status-indicator.tsx:362
+#: src/components/upload-status-indicator.tsx:365
 msgid "Preparing…"
 msgstr "Preparing…"
 
@@ -7916,7 +7925,7 @@ msgstr "presets"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:146
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
-#: src/components/layout/site-header.tsx:55
+#: src/components/layout/site-header.tsx:56
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:221
 msgid "Presets"
@@ -8052,6 +8061,10 @@ msgstr "Processing Behavior"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
+#: src/components/processing-jobs-indicator.tsx:39
+msgid "Processing steps that have run for more than 10 seconds."
+msgstr "Processing steps that have run for more than 10 seconds."
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
 msgid "Processor"
 msgstr "Processor"
@@ -8106,7 +8119,7 @@ msgstr "Protection Settings"
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
-#: src/components/layout/site-header.tsx:47
+#: src/components/layout/site-header.tsx:48
 #: src/components/proxies/proxies-panel.tsx:166
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
 msgid "Proxies"
@@ -8868,6 +8881,10 @@ msgstr "Run a custom FFmpeg command. Edit the args to customize."
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
+#: src/components/processing-jobs-indicator.tsx:89
+msgid "Running for {elapsed}"
+msgstr "Running for {elapsed}"
+
 #: src/components/config/shared/pipeline-tabs-section.tsx:197
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
@@ -9527,7 +9544,7 @@ msgstr "Session started. Additional details are unavailable."
 msgid "Session thumbnail"
 msgstr "Session thumbnail"
 
-#: src/components/layout/site-header.tsx:33
+#: src/components/layout/site-header.tsx:34
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:262
 msgid "Sessions"
@@ -9551,7 +9568,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/filters/FilterDialog.tsx:267
-#: src/components/layout/site-header.tsx:34
+#: src/components/layout/site-header.tsx:35
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:114
 msgid "Settings"
@@ -10042,7 +10059,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:371
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
-#: src/components/layout/site-header.tsx:35
+#: src/components/layout/site-header.tsx:36
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:396
@@ -10161,7 +10178,7 @@ msgstr "Switching modes clears the previous command or program and arguments."
 msgid "Sync"
 msgstr "Sync"
 
-#: src/components/layout/site-header.tsx:44
+#: src/components/layout/site-header.tsx:45
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:142
 msgid "System"
 msgstr "System"
@@ -10277,7 +10294,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:354
 #: src/components/config/global/backup-restore-card.tsx:359
 #: src/components/config/global/backup-restore-card.tsx:364
-#: src/components/layout/site-header.tsx:49
+#: src/components/layout/site-header.tsx:50
 #: src/components/proxies/proxy-references.tsx:93
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
@@ -10452,11 +10469,11 @@ msgstr "The streaming source could not be reached through the server. Retry or c
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
-#: src/components/upload-status-indicator.tsx:537
+#: src/components/upload-status-indicator.tsx:540
 msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 msgstr "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 
-#: src/components/layout/site-header.tsx:50
+#: src/components/layout/site-header.tsx:51
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:86
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:111
 msgid "Theme"
@@ -10474,7 +10491,7 @@ msgstr "Theme Preset"
 msgid "then"
 msgstr "then"
 
-#: src/components/stalled-operations-indicator.tsx:61
+#: src/components/stalled-operations-indicator.tsx:53
 msgid "These jobs have ended, but the disk or network share they were using stopped responding. Each one keeps its worker until the file system answers, so other file jobs may wait in the queue."
 msgstr "These jobs have ended, but the disk or network share they were using stopped responding. Each one keeps its worker until the file system answers, so other file jobs may wait in the queue."
 
@@ -10777,7 +10794,7 @@ msgstr "Today"
 msgid "Toggle"
 msgstr "Toggle"
 
-#: src/components/layout/site-header.tsx:76
+#: src/components/layout/site-header.tsx:77
 msgid "Toggle navigation menu"
 msgstr "Toggle navigation menu"
 
@@ -11172,7 +11189,7 @@ msgstr "Upload attempts per job before failing. Retries only re-send files witho
 msgid "Upload Behavior"
 msgstr "Upload Behavior"
 
-#: src/components/upload-status-indicator.tsx:517
+#: src/components/upload-status-indicator.tsx:520
 msgid "Upload cancelled"
 msgstr "Upload cancelled"
 
@@ -11309,7 +11326,7 @@ msgstr "Username"
 msgid "Username (Optional)"
 msgstr "Username (Optional)"
 
-#: src/components/layout/site-header.tsx:39
+#: src/components/layout/site-header.tsx:40
 msgid "Users"
 msgstr "Users"
 
@@ -11648,7 +11665,7 @@ msgstr "Workflow updated successfully"
 msgid "workflows"
 msgstr "workflows"
 
-#: src/components/layout/site-header.tsx:56
+#: src/components/layout/site-header.tsx:57
 #: src/components/pipeline/workflows/step-library.tsx:286
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:143

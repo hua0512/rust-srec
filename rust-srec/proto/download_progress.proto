@@ -43,7 +43,7 @@ enum EventType {
   // silent for longer than that as lost.
   //
   // NOTE: enum values and WsMessage oneof field numbers have drifted
-  // (value 11 is a hole); pick each independently. Next free enum: 21.
+  // (value 11 is a hole); pick each independently. Next free enum: 24.
   EVENT_TYPE_UPLOAD_STARTED = 14;
   EVENT_TYPE_UPLOAD_PROGRESS = 15;
   EVENT_TYPE_UPLOAD_TERMINAL = 16;
@@ -60,6 +60,16 @@ enum EventType {
   // may have changed. No payload beyond the marker; clients refetch.
   // Never narrowed by the streamer subscription.
   EVENT_TYPE_CREDENTIAL_ATTENTION_CHANGED = 20;
+  // Pipeline jobs other than uploads, once they have been PROCESSING for
+  // 10 s; shorter jobs never appear. JOB_STARTED announces the job,
+  // JOB_PROGRESS follows each progress-aggregator flush after that, and
+  // JOB_ENDED marks complete/fail/cancel (it can also arrive for a job that
+  // was never announced; clients ignore it then). Kept alive like uploads:
+  // the latest JOB_PROGRESS, or JOB_STARTED before any, is repeated at
+  // least every 30 s.
+  EVENT_TYPE_JOB_STARTED = 21;
+  EVENT_TYPE_JOB_PROGRESS = 22;
+  EVENT_TYPE_JOB_ENDED = 23;
 }
 
 // Server-to-client message envelope
@@ -85,7 +95,10 @@ message WsMessage {
     UploadQueue upload_queue = 18;
     StreamerCredentialBlock streamer_credential_block = 19;
     CredentialAttentionChanged credential_attention_changed = 20;
-    // Next free oneof field: 21.
+    JobStarted job_started = 21;
+    UploadProgress job_progress = 22;
+    JobEnded job_ended = 23;
+    // Next free oneof field: 24.
   }
 }
 
@@ -117,6 +130,8 @@ message DownloadSnapshot {
   repeated UploadState uploads = 3;
   // Upload jobs waiting for a worker; later changes arrive as UPLOAD_QUEUE.
   uint32 pending_uploads = 4;
+  // Other jobs PROCESSING for 10 s or more, like `uploads`.
+  repeated JobState jobs = 5;
 }
 
 // A complete download state, split into metadata and metrics.
@@ -315,10 +330,10 @@ message UploadStarted {
   string streamer_avatar = 8;
 }
 
-// Coalesced live progress for one upload job. Numeric fields use proto3
-// `optional` because the source (JobProgressSnapshot) genuinely
-// distinguishes "unknown" from zero — e.g. bytes_total is unknown until
-// rclone reports its first stats line.
+// Coalesced live progress for one upload job, or for a long-running job
+// as JOB_PROGRESS. Numeric fields use proto3 `optional` because the source
+// (JobProgressSnapshot) genuinely distinguishes "unknown" from zero — e.g.
+// bytes_total is unknown until rclone reports its first stats line.
 message UploadProgress {
   string job_id = 1;
   string streamer_id = 2;
@@ -332,6 +347,11 @@ message UploadProgress {
   // file in flight.
   optional uint32 files_done = 9;
   optional uint32 files_total = 10;
+  // FFmpeg steps: output position, the length being written, and the
+  // processing speed as a multiple of real time.
+  optional uint64 out_time_ms = 11;
+  optional uint64 duration_ms = 12;
+  optional double speed_x = 13;
 }
 
 enum UploadTerminalStatus {
@@ -365,6 +385,33 @@ message UploadQueue {
 // UPLOAD_STARTED + the most recent UPLOAD_PROGRESS.
 message UploadState {
   UploadStarted started = 1;
+  optional UploadProgress progress = 2;
+}
+
+// A pipeline job other than an upload has been PROCESSING for 10 s. Empty
+// strings mean absent, as in UploadStarted.
+message JobStarted {
+  string job_id = 1;
+  string streamer_id = 2;
+  // Job type as stored, e.g. "remux" or "thumbnail_hd".
+  string job_type = 3;
+  int64 started_at_ms = 4;
+  string streamer_name = 5;
+  string streamer_avatar = 6;
+}
+
+// A job announced by JOB_STARTED completed, failed or was cancelled.
+message JobEnded {
+  string job_id = 1;
+  // started_at_ms of the attempt that ended. A JOB_STARTED for that same
+  // attempt can still arrive after this event and must be ignored; a retry
+  // starts later and so carries a newer value.
+  int64 started_at_ms = 2;
+}
+
+// Snapshot slice: one long-running job, like UploadState.
+message JobState {
+  JobStarted started = 1;
   optional UploadProgress progress = 2;
 }
 

@@ -7,6 +7,7 @@ import { ConnectionStatusIndicator } from '@/components/connection-status-indica
 import { CredentialAttentionIndicator } from '@/components/credential-attention-indicator';
 import { InterruptedOutputsIndicator } from '@/components/interrupted-outputs-indicator';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { ProcessingJobsIndicator } from '@/components/processing-jobs-indicator';
 import { StalledOperationsIndicator } from '@/components/stalled-operations-indicator';
 import { UploadStatusIndicator } from '@/components/upload-status-indicator';
 import { ModeToggle } from '@/components/sidebar/mode-toggle';
@@ -118,6 +119,7 @@ export function SiteHeader() {
           <CredentialAttentionIndicator />
           <StalledOperationsIndicator />
           <InterruptedOutputsIndicator />
+          <ProcessingJobsIndicator />
           <UploadStatusIndicator />
           <ConnectionStatusIndicator />
           <LanguageSwitcher />

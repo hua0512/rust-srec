@@ -78,37 +78,91 @@ fn upload_started_event(job: &Job) -> Option<UploadStatusEvent> {
     })
 }
 
-/// Re-announces every live upload job. Uploaders can go silent for minutes
-/// (BaiduPCS-Go prints nothing while it prepares a file), and clients drop
-/// uploads they have not heard about for a while so that a lost terminal
-/// event cannot leave one on screen forever. Repeating the latest progress,
-/// or `Started` before there is any, keeps a silent upload alive without
-/// inventing new numbers.
-fn upload_heartbeat_events(
+/// True when `job` is not an upload and has been processing for at least
+/// [`LONG_JOB_AFTER`] at `now`. Only such jobs reach the WebSocket, which
+/// keeps per-segment thumbnails and quick renames off it.
+fn is_long_job(job: &Job, now: DateTime<Utc>) -> bool {
+    upload_kind_for_job_type(&job.job_type).is_none()
+        && job.started_at.is_some_and(|started| {
+            (now - started)
+                .to_std()
+                .is_ok_and(|elapsed| elapsed >= LONG_JOB_AFTER)
+        })
+}
+
+fn long_job_started_event(job: &Job) -> UploadStatusEvent {
+    UploadStatusEvent::JobStarted {
+        job_id: job.id.clone(),
+        streamer_id: non_empty(&job.streamer_id),
+        streamer_name: job.streamer_name.clone(),
+        job_type: job.job_type.clone(),
+        started_at_ms: job.started_at.unwrap_or_else(Utc::now).timestamp_millis(),
+    }
+}
+
+/// `JobProgress` for a long job, `Progress` for an upload.
+fn progress_event(
+    long_job: bool,
+    job_id: String,
+    streamer_id: Option<String>,
+    snapshot: JobProgressSnapshot,
+) -> UploadStatusEvent {
+    if long_job {
+        UploadStatusEvent::JobProgress {
+            job_id,
+            streamer_id,
+            snapshot,
+        }
+    } else {
+        UploadStatusEvent::Progress {
+            job_id,
+            streamer_id,
+            snapshot,
+        }
+    }
+}
+
+/// Re-announces every live upload job and long job (see [`is_long_job`]) at
+/// `now`. Uploaders can go silent for minutes (BaiduPCS-Go prints nothing
+/// while it prepares a file), and clients drop jobs they have not heard
+/// about for a while so that a lost terminal event cannot leave one on
+/// screen forever. Repeating the latest progress, or the start event before
+/// there is any, keeps a silent job alive without inventing new numbers.
+fn heartbeat_events(
     jobs_cache: &DashMap<String, Job>,
     cancellation_tokens: &DashMap<String, AttemptToken>,
     progress_cache: &DashMap<String, JobProgressSnapshot>,
+    now: DateTime<Utc>,
 ) -> Vec<UploadStatusEvent> {
+    // Collected before touching jobs_cache: cancel_pipeline locks jobs_cache
+    // and then cancellation_tokens, so holding a token guard here while
+    // locking jobs_cache could deadlock against it.
+    let live_job_ids: Vec<String> = cancellation_tokens
+        .iter()
+        .filter(|entry| !entry.value().is_cancelled())
+        .map(|entry| entry.key().clone())
+        .collect();
     let mut events = Vec::new();
-    for entry in cancellation_tokens.iter() {
-        if entry.value().is_cancelled() {
-            continue;
-        }
-        let Some(job) = jobs_cache.get(entry.key()) else {
+    for job_id in live_job_ids {
+        let Some(job) = jobs_cache.get(&job_id) else {
             continue;
         };
         if job.status != JobStatus::Processing {
             continue;
         }
-        let Some(started) = upload_started_event(&job) else {
-            continue;
+        let long_job = is_long_job(&job, now);
+        let started = match upload_started_event(&job) {
+            Some(started) => started,
+            None if long_job => long_job_started_event(&job),
+            None => continue,
         };
         match progress_cache.get(&job.id) {
-            Some(snapshot) => events.push(UploadStatusEvent::Progress {
-                job_id: job.id.clone(),
-                streamer_id: non_empty(&job.streamer_id),
-                snapshot: snapshot.clone(),
-            }),
+            Some(snapshot) => events.push(progress_event(
+                long_job,
+                job.id.clone(),
+                non_empty(&job.streamer_id),
+                snapshot.clone(),
+            )),
             None => events.push(started),
         }
     }
@@ -144,8 +198,10 @@ async fn count_pending_uploads(
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
 const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
 /// Must stay well under the frontend's upload staleness window
-/// (`STALE_AFTER_MS`, 2 minutes); see [`upload_heartbeat_events`].
-const UPLOAD_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+/// (`STALE_AFTER_MS`, 2 minutes); see [`heartbeat_events`].
+const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a job other than an upload runs before it reaches the WebSocket.
+const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
 /// How often the queued-uploads count is re-checked while a client is
 /// subscribed. Changes are only broadcast when the count moves.
 const UPLOAD_QUEUE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
@@ -711,16 +767,19 @@ pub struct JobResult {
     pub logs: Vec<JobLogEntry>,
 }
 
-/// One in-flight upload job, as reported by [`JobQueue::list_active_uploads`].
-/// Feeds the WebSocket `DownloadSnapshot.uploads` slice so reconnecting
-/// clients recover uploads that started before they subscribed.
+/// One in-flight job, as reported by [`JobQueue::list_active_jobs`]. Feeds
+/// the WebSocket `DownloadSnapshot.uploads` and `jobs` slices so reconnecting
+/// clients recover jobs that started before they subscribed.
 #[derive(Debug, Clone)]
-pub struct ActiveUploadInfo {
+pub struct ActiveJobInfo {
     pub job_id: String,
     pub streamer_id: Option<String>,
     pub streamer_name: Option<String>,
     pub session_id: Option<String>,
-    pub uploader: &'static str,
+    /// Upload kind; `None` for other jobs, which are listed once they have
+    /// been processing for 10 seconds.
+    pub uploader: Option<&'static str>,
+    pub job_type: String,
     pub files_total: u32,
     pub started_at: Option<DateTime<Utc>>,
     /// Latest in-memory progress snapshot, when the processor has reported one.
@@ -942,12 +1001,36 @@ impl JobQueue {
         }
     }
 
-    /// Publish `UploadStatusEvent::Started` when `job` is an upload job.
-    /// Called from `dequeue` right after the claim succeeds.
-    fn emit_upload_started(&self, job: &Job) {
+    /// Publish `Started` for an upload job. Any other job is announced as
+    /// `JobStarted` after [`LONG_JOB_AFTER`], and only if `attempt` is still
+    /// running then. Called from `dequeue` right after the claim succeeds.
+    fn announce_started(&self, job: &Job, attempt: u64) {
         if let Some(event) = upload_started_event(job) {
             self.emit_upload_event(event);
+            return;
         }
+        let jobs_cache = self.jobs_cache.clone();
+        let cancellation_tokens = self.cancellation_tokens.clone();
+        let upload_broadcaster = self.upload_broadcaster.clone();
+        let job_id = job.id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(LONG_JOB_AFTER).await;
+            // The token guard is released before jobs_cache is locked; see
+            // heartbeat_events for the lock order this avoids.
+            let live = cancellation_tokens
+                .get(&job_id)
+                .is_some_and(|token| token.id() == attempt && !token.is_cancelled());
+            if live
+                && let Some(broadcaster) = upload_broadcaster.get()
+                && broadcaster.has_subscribers()
+                && let Some(event) = jobs_cache
+                    .get(&job_id)
+                    .filter(|job| job.status == JobStatus::Processing)
+                    .map(|job| long_job_started_event(&job))
+            {
+                broadcaster.send(event);
+            }
+        });
     }
 
     /// Publish `Terminal { Cancelled }` when the job is an upload job.
@@ -966,6 +1049,19 @@ impl JobQueue {
             files_skipped: 0,
             error: None,
         });
+    }
+
+    /// Publish `JobEnded` when `job` ran long enough to have been announced
+    /// (see [`is_long_job`]); shorter jobs never reach the socket.
+    fn emit_long_job_ended(&self, job: &Job) {
+        if is_long_job(job, Utc::now())
+            && let Some(started_at) = job.started_at
+        {
+            self.emit_upload_event(UploadStatusEvent::JobEnded {
+                job_id: job.id.clone(),
+                started_at_ms: started_at.timestamp_millis(),
+            });
+        }
     }
 
     /// Persist per-file upload results to `upload_records`.
@@ -1017,28 +1113,21 @@ impl JobQueue {
         }
     }
 
-    /// In-flight upload jobs with their latest progress snapshots. Feeds the
-    /// WebSocket `DownloadSnapshot.uploads` slice.
-    pub async fn list_active_uploads(&self) -> Result<Vec<ActiveUploadInfo>> {
+    /// In-flight upload jobs, and other jobs processing for 10 seconds or
+    /// more, with their latest progress snapshots. Feeds the WebSocket
+    /// `DownloadSnapshot`.
+    pub async fn list_active_jobs(&self) -> Result<Vec<ActiveJobInfo>> {
+        let now = Utc::now();
         let mut infos = Vec::new();
         if let Some(repo) = &self.job_repository {
             for db_job in repo.list_jobs_by_status(JobStatus::Processing).await? {
-                let Some(uploader) = upload_kind_for_job_type(&db_job.job_type) else {
-                    continue;
-                };
-                let job = db_model_to_job(&db_job);
-                infos.push(self.active_upload_info(&job, uploader));
+                infos.extend(self.active_job_info(&db_model_to_job(&db_job), now));
             }
         } else {
             for entry in self.jobs_cache.iter() {
-                let job = entry.value();
-                if job.status != JobStatus::Processing {
-                    continue;
+                if entry.status == JobStatus::Processing {
+                    infos.extend(self.active_job_info(entry.value(), now));
                 }
-                let Some(uploader) = upload_kind_for_job_type(&job.job_type) else {
-                    continue;
-                };
-                infos.push(self.active_upload_info(job, uploader));
             }
         }
         Ok(infos)
@@ -1049,17 +1138,22 @@ impl JobQueue {
         count_pending_uploads(self.job_repository.as_ref(), &self.jobs_cache).await
     }
 
-    fn active_upload_info(&self, job: &Job, uploader: &'static str) -> ActiveUploadInfo {
-        ActiveUploadInfo {
+    fn active_job_info(&self, job: &Job, now: DateTime<Utc>) -> Option<ActiveJobInfo> {
+        let uploader = upload_kind_for_job_type(&job.job_type);
+        if uploader.is_none() && !is_long_job(job, now) {
+            return None;
+        }
+        Some(ActiveJobInfo {
             job_id: job.id.clone(),
             streamer_id: non_empty(&job.streamer_id),
             streamer_name: job.streamer_name.clone(),
             session_id: non_empty(&job.session_id),
             uploader,
+            job_type: job.job_type.clone(),
             files_total: job.inputs.len() as u32,
             started_at: job.started_at,
             progress: self.progress_cache.get(&job.id).map(|s| s.clone()),
-        }
+        })
     }
 
     /// Persist thumbnail output to media_outputs table.
@@ -1466,9 +1560,13 @@ impl JobQueue {
 
                 // Create cancellation token for this job (do not overwrite an existing token,
                 // e.g. if a cancellation raced with dequeue).
-                self.cancellation_tokens.entry(job.id.clone()).or_default();
+                let attempt = self
+                    .cancellation_tokens
+                    .entry(job.id.clone())
+                    .or_default()
+                    .id();
 
-                self.emit_upload_started(&job);
+                self.announce_started(&job, attempt);
                 return Ok(Some(job));
             }
         } else {
@@ -1514,8 +1612,12 @@ impl JobQueue {
                 let job = job_ref.clone();
                 drop(job_ref);
 
-                self.cancellation_tokens.entry(job.id.clone()).or_default();
-                self.emit_upload_started(&job);
+                let attempt = self
+                    .cancellation_tokens
+                    .entry(job.id.clone())
+                    .or_default()
+                    .id();
+                self.announce_started(&job, attempt);
                 return Ok(Some(job));
             }
         }
@@ -1748,6 +1850,9 @@ impl JobQueue {
                 files_skipped: skipped,
                 error: None,
             });
+        }
+        if transitioned && let Some(job) = self.jobs_cache.get(job_id) {
+            self.emit_long_job_ended(&job);
         }
 
         // Cleanup in-memory tracking for this job.
@@ -2204,6 +2309,7 @@ impl JobQueue {
             // job was fetched before the transition, so its type/streamer
             // fields are intact even though the cache entry is gone now.
             self.emit_upload_cancelled(id, &job.job_type, &job.streamer_id);
+            self.emit_long_job_ended(&job);
         }
 
         info!("Job {} cancelled", id);
@@ -2361,6 +2467,7 @@ impl JobQueue {
 
         for job in &cancelled_jobs {
             self.emit_upload_cancelled(&job.id, &job.job_type, &job.streamer_id);
+            self.emit_long_job_ended(job);
         }
 
         info!(
@@ -2973,6 +3080,9 @@ impl JobQueue {
             )
             .await;
         }
+        if transitioned && let Some(job) = self.jobs_cache.get(job_id) {
+            self.emit_long_job_ended(&job);
+        }
 
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
@@ -3073,8 +3183,8 @@ fn spawn_progress_aggregator(
         let flush_every = std::time::Duration::from_millis(PROGRESS_FLUSH_INTERVAL_MS);
         let mut tick = tokio::time::interval(flush_every);
         let mut heartbeat = tokio::time::interval_at(
-            tokio::time::Instant::now() + UPLOAD_HEARTBEAT_INTERVAL,
-            UPLOAD_HEARTBEAT_INTERVAL,
+            tokio::time::Instant::now() + HEARTBEAT_INTERVAL,
+            HEARTBEAT_INTERVAL,
         );
         let mut queue_poll = tokio::time::interval(UPLOAD_QUEUE_POLL_INTERVAL);
         // Last count broadcast; `None` forces a send on the first poll that
@@ -3089,10 +3199,11 @@ fn spawn_progress_aggregator(
                     if let Some(broadcaster) = upload_broadcaster.get()
                         && broadcaster.has_subscribers()
                     {
-                        for event in upload_heartbeat_events(
+                        for event in heartbeat_events(
                             &jobs_cache,
                             &cancellation_tokens,
                             &progress_cache,
+                            Utc::now(),
                         ) {
                             broadcaster.send(event);
                         }
@@ -3139,28 +3250,34 @@ fn spawn_progress_aggregator(
                             continue;
                         }
 
-                        // Upload processor snapshots double as live
-                        // upload-status WS events.
+                        // Snapshots of upload processors and long jobs (see
+                        // is_long_job) double as live WS events.
                         // Publishing on the flush tick reuses this loop's
                         // coalescing instead of adding a second throttle.
                         // has_subscribers first: without it the jobs_cache
                         // lookup and snapshot clone (including its raw JSON
                         // tree) would run on every flush of an idle deployment.
-                        if matches!(
-                            snapshot.kind,
-                            ProgressKind::Rclone | ProgressKind::BaiduPcs
-                        )
-                            && let Some(broadcaster) = upload_broadcaster.get()
+                        if let Some(broadcaster) = upload_broadcaster.get()
                             && broadcaster.has_subscribers()
                         {
-                            let streamer_id = jobs_cache
+                            let upload = matches!(
+                                snapshot.kind,
+                                ProgressKind::Rclone | ProgressKind::BaiduPcs
+                            );
+                            let (long_job, streamer_id) = jobs_cache
                                 .get(&job_id)
-                                .and_then(|job| non_empty(&job.streamer_id));
-                            broadcaster.send(UploadStatusEvent::Progress {
-                                job_id: job_id.clone(),
-                                streamer_id,
-                                snapshot: snapshot.clone(),
-                            });
+                                .map(|job| {
+                                    (is_long_job(&job, Utc::now()), non_empty(&job.streamer_id))
+                                })
+                                .unwrap_or_default();
+                            if upload || long_job {
+                                broadcaster.send(progress_event(
+                                    long_job,
+                                    job_id.clone(),
+                                    streamer_id,
+                                    snapshot.clone(),
+                                ));
+                            }
                         }
 
                         let Some(repo) = &repo else {
@@ -4797,19 +4914,19 @@ mod tests {
         assert!(job.is_none());
     }
 
-    /// Silent uploads are kept alive by repeating what the client already
-    /// knows: the latest progress, or `Started` before any progress exists.
-    /// Jobs that are not uploads, or are being cancelled, stay quiet.
+    /// Silent uploads and long jobs are kept alive by repeating what the
+    /// client already knows: the latest progress, or the start event before
+    /// any progress exists. Other jobs, and cancelling ones, stay quiet.
     #[tokio::test]
-    async fn heartbeat_reannounces_only_live_uploads() {
+    async fn heartbeat_reannounces_live_uploads_and_long_jobs() {
         let queue = JobQueue::new();
         let mut ids = Vec::new();
-        for job_type in ["rclone", "baidupcs_main", "rclone", "remux"] {
+        for job_type in ["rclone", "baidupcs_main", "rclone", "remux", "remux"] {
             let job = Job::new(job_type, vec!["/in.flv".to_string()], vec![], "s", "");
             ids.push(queue.enqueue(job).await.unwrap());
             queue.dequeue(None).await.unwrap().unwrap();
         }
-        let [with_progress, silent, cancelling, not_upload] = ids.as_slice() else {
+        let [with_progress, silent, cancelling, short, long] = ids.as_slice() else {
             unreachable!()
         };
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
@@ -4817,19 +4934,23 @@ mod tests {
         queue
             .progress_cache
             .insert(with_progress.clone(), snapshot.clone());
-        queue.progress_cache.insert(
-            not_upload.clone(),
-            JobProgressSnapshot::new(ProgressKind::Ffmpeg),
-        );
+        for id in [short, long] {
+            queue
+                .progress_cache
+                .insert(id.clone(), JobProgressSnapshot::new(ProgressKind::Ffmpeg));
+        }
         queue.cancellation_tokens.get(cancelling).unwrap().cancel();
+        let now = Utc::now();
+        queue.jobs_cache.get_mut(long).unwrap().started_at = Some(now - LONG_JOB_AFTER);
 
-        let events = upload_heartbeat_events(
+        let events = heartbeat_events(
             &queue.jobs_cache,
             &queue.cancellation_tokens,
             &queue.progress_cache,
+            now,
         );
 
-        assert_eq!(events.len(), 2, "{events:?}");
+        assert_eq!(events.len(), 3, "{events:?}");
         for event in &events {
             match event {
                 UploadStatusEvent::Progress {
@@ -4844,8 +4965,90 @@ mod tests {
                     assert_eq!(job_id, silent);
                     assert_eq!(*uploader, "baidupcs");
                 }
+                UploadStatusEvent::JobProgress { job_id, .. } => assert_eq!(job_id, long),
                 other => panic!("unexpected heartbeat event {other:?}"),
             }
+        }
+    }
+
+    /// Jobs other than uploads reach the socket only after `LONG_JOB_AFTER`
+    /// of processing: announced, then their progress, then their end, and
+    /// listed in the connect snapshot. Shorter jobs stay off it entirely.
+    #[tokio::test(start_paused = true)]
+    async fn long_jobs_reach_the_socket_after_ten_seconds() {
+        async fn next_event(
+            rx: &mut tokio::sync::broadcast::Receiver<crate::pipeline::UploadBroadcastEnvelope>,
+        ) -> Arc<UploadStatusEvent> {
+            tokio::time::timeout(LONG_JOB_AFTER * 2, async {
+                loop {
+                    let envelope = rx.recv().await.expect("broadcast channel stays open");
+                    // The queued-uploads count is published independently.
+                    if !matches!(*envelope.event, UploadStatusEvent::Queue { .. }) {
+                        return envelope.event;
+                    }
+                }
+            })
+            .await
+            .expect("an event is published")
+        }
+
+        let queue = JobQueue::new();
+        let broadcaster =
+            UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+        let dequeued_at = tokio::time::Instant::now();
+        let mut ids = Vec::new();
+        for job_type in ["thumbnail", "remux"] {
+            let job = Job::new(job_type, vec![], vec![], "s", "");
+            ids.push(queue.enqueue(job).await.unwrap());
+            queue.dequeue(None).await.unwrap().unwrap();
+        }
+        let [short, long] = ids.as_slice() else {
+            unreachable!()
+        };
+        // The paused clock does not move Utc::now(), which the snapshot,
+        // progress and end checks read.
+        queue.jobs_cache.get_mut(long).unwrap().started_at = Some(Utc::now() - LONG_JOB_AFTER);
+
+        let active = queue.list_active_jobs().await.unwrap();
+        assert_eq!(
+            active.iter().map(|job| &job.job_id).collect::<Vec<_>>(),
+            [long]
+        );
+
+        queue.fail(short, "boom").await.unwrap();
+        let started_at_ms = match &*next_event(&mut rx).await {
+            UploadStatusEvent::JobStarted {
+                job_id,
+                job_type,
+                started_at_ms,
+                ..
+            } => {
+                assert_eq!((job_id, job_type.as_str()), (long, "remux"));
+                *started_at_ms
+            }
+            other => panic!("expected JobStarted, got {other:?}"),
+        };
+        assert!(dequeued_at.elapsed() >= LONG_JOB_AFTER);
+
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        snapshot.percent = Some(42.0);
+        queue.progress_reporter(long).report(snapshot);
+        match &*next_event(&mut rx).await {
+            UploadStatusEvent::JobProgress {
+                job_id, snapshot, ..
+            } => assert_eq!((job_id, snapshot.percent), (long, Some(42.0))),
+            other => panic!("expected JobProgress, got {other:?}"),
+        }
+
+        queue.fail(long, "boom").await.unwrap();
+        match &*next_event(&mut rx).await {
+            UploadStatusEvent::JobEnded {
+                job_id,
+                started_at_ms: ended_started_at_ms,
+            } => assert_eq!((job_id, *ended_started_at_ms), (long, started_at_ms)),
+            other => panic!("expected JobEnded, got {other:?}"),
         }
     }
 

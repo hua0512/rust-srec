@@ -164,3 +164,49 @@ describe('useUploadStore batched progress', () => {
     expect(state.uploadsByJobId.has('job-2')).toBe(false);
   });
 });
+
+describe('useUploadStore jobs', () => {
+  const jobStarted = (jobId: string, startedAtMs = 0n) => ({
+    jobId,
+    streamerId: 'streamer-1',
+    streamerName: 'Streamer One',
+    streamerAvatar: '',
+    jobType: 'remux',
+    startedAtMs,
+  });
+
+  beforeEach(() => {
+    useUploadStore.getState().clearAll();
+  });
+
+  it('keeps progress when a job is announced again, and ignores it once the job ends', () => {
+    const store = useUploadStore.getState();
+    store.setSnapshot(
+      [],
+      [{ jobId: 'job-1', streamerId: 'streamer-1', percent: 40 }],
+      0,
+      [jobStarted('job-1')],
+    );
+    // The server can announce a job the snapshot already delivered.
+    store.upsertJobStarted(jobStarted('job-1'));
+    expect(store.getActiveJobs()).toMatchObject([
+      { jobId: 'job-1', percent: 40 },
+    ]);
+    expect(store.getActiveUploads()).toEqual([]);
+
+    store.remove('job-1', 0n);
+    store.upsertJobProgressBatch([
+      { jobId: 'job-1', streamerId: 'streamer-1', percent: 50 },
+    ]);
+    expect(store.getActiveJobs()).toEqual([]);
+
+    // The ended attempt's own late announcement stays ignored; a retry,
+    // which starts later, shows again.
+    store.upsertJobStarted(jobStarted('job-1'));
+    expect(store.getActiveJobs()).toEqual([]);
+    store.upsertJobStarted(jobStarted('job-1', 1n));
+    expect(store.getActiveJobs()).toMatchObject([
+      { jobId: 'job-1', startedAtMs: 1n },
+    ]);
+  });
+});

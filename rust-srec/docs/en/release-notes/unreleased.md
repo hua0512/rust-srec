@@ -30,3 +30,4 @@
 - Removed the **Live Reorder Window (ms)** and **Live Reorder Window (segments)** settings from Mesio's HLS buffering settings: they had no effect. Values saved for them are ignored.
 - The engines settings page is now a list like proxies, showing each engine's type, installed version and status, with **Configure** beside it.
 - The job page now shows the estimated time remaining while a remux, subtitle burn-in, metadata or audio extraction step runs, and which file a multi-file rclone upload has reached.
+- Long-running processing steps, such as remuxing, transcoding, copies and compression, now appear in the top bar with live progress once they have run for 10 seconds. Open it to see each step's streamer, progress and remaining time, or to go to its job.
