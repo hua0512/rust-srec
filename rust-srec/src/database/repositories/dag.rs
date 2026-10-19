@@ -146,8 +146,8 @@ pub trait DagRepository: Send + Sync {
     /// Returns job IDs of steps that had jobs created (for cancellation).
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
-    /// Atomically cancel a DAG and cancel all pending/blocked steps.
-    /// Returns job IDs of steps that had jobs created (for cancellation).
+    /// Atomically cancel a DAG and every step that has not settled.
+    /// Returns the job IDs of the cancelled PROCESSING steps, one per step.
     async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
     /// Reset a previously-failed DAG execution for retry.
