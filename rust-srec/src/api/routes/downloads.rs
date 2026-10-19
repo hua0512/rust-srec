@@ -936,18 +936,14 @@ pub fn map_upload_event_to_protobuf(
             job_id,
             streamer_id,
             streamer_name,
-            session_id,
             job_type,
-            files_total,
             started_at_ms,
         } => WsMessage {
             event_type: EventType::JobStarted as i32,
             payload: Some(Payload::JobStarted(crate::api::proto::JobStarted {
                 job_id: job_id.clone(),
                 streamer_id: streamer_id.clone().unwrap_or_default(),
-                session_id: session_id.clone().unwrap_or_default(),
                 job_type: job_type.clone(),
-                files_total: *files_total,
                 started_at_ms: *started_at_ms,
                 streamer_name: streamer_name.clone().unwrap_or_default(),
                 streamer_avatar: streamer_id
@@ -968,10 +964,14 @@ pub fn map_upload_event_to_protobuf(
                 snapshot,
             ))),
         },
-        UploadStatusEvent::JobEnded { job_id } => WsMessage {
+        UploadStatusEvent::JobEnded {
+            job_id,
+            started_at_ms,
+        } => WsMessage {
             event_type: EventType::JobEnded as i32,
             payload: Some(Payload::JobEnded(crate::api::proto::JobEnded {
                 job_id: job_id.clone(),
+                started_at_ms: *started_at_ms,
             })),
         },
     }

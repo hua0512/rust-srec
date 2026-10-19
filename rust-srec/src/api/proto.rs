@@ -183,7 +183,6 @@ pub fn create_snapshot_message(
             .progress
             .as_ref()
             .map(|s| upload_progress_to_proto(&info.job_id, Some(&streamer_id), s));
-        let session_id = info.session_id.unwrap_or_default();
         let started_at_ms = info
             .started_at
             .map(|dt| dt.timestamp_millis())
@@ -194,7 +193,7 @@ pub fn create_snapshot_message(
                 started: Some(UploadStarted {
                     job_id: info.job_id,
                     streamer_id,
-                    session_id,
+                    session_id: info.session_id.unwrap_or_default(),
                     uploader: uploader.to_string(),
                     files_total: info.files_total,
                     started_at_ms,
@@ -207,9 +206,7 @@ pub fn create_snapshot_message(
                 started: Some(JobStarted {
                     job_id: info.job_id,
                     streamer_id,
-                    session_id,
                     job_type: info.job_type,
-                    files_total: info.files_total,
                     started_at_ms,
                     streamer_name,
                     streamer_avatar,

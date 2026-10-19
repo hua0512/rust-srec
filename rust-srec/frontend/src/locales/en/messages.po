@@ -409,7 +409,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:61
+#: src/lib/job-progress.ts:49
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -4447,7 +4447,7 @@ msgstr "FFmpeg Video Filter"
 msgid "File {0} of {1}"
 msgstr "File {0} of {1}"
 
-#: src/lib/job-progress.ts:73
+#: src/lib/job-progress.ts:61
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 

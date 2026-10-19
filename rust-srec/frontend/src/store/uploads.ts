@@ -42,7 +42,10 @@ export interface UploadView {
 
 // A pipeline job other than an upload. The server sends only jobs that have
 // been running for 10 seconds or more.
-export interface JobView extends Omit<UploadView, 'uploader'> {
+export interface JobView extends Omit<
+  UploadView,
+  'uploader' | 'sessionId' | 'filesTotal'
+> {
   jobType: string;
   // FFmpeg steps only: output position, the length being written, and the
   // speed as a multiple of real time.
@@ -77,7 +80,10 @@ export interface UploadStartedInput {
   startedAtMs: bigint;
 }
 
-export interface JobStartedInput extends Omit<UploadStartedInput, 'uploader'> {
+export interface JobStartedInput extends Omit<
+  UploadStartedInput,
+  'uploader' | 'sessionId' | 'filesTotal'
+> {
   // Job type as stored, such as "remux" or "thumbnail_hd".
   jobType: string;
 }
@@ -140,7 +146,7 @@ function freshOldestFirst<V extends UploadView | JobView>(
  */
 function applyProgress<V extends UploadView | JobView>(
   entries: Map<string, V>,
-  terminatedIds: Map<string, number>,
+  terminatedIds: Map<string, TerminatedMarker>,
   batch: UploadProgressInput[],
   unknown: Omit<V, keyof UploadProgressInput | 'lastEventAtMs'>,
 ): boolean {
@@ -158,6 +164,12 @@ function applyProgress<V extends UploadView | JobView>(
   return changed;
 }
 
+interface TerminatedMarker {
+  atMs: number;
+  // JOB_ENDED only: the ended attempt's start, as in its JOB_STARTED.
+  startedAtMs?: bigint;
+}
+
 interface UploadStoreState {
   uploadsByJobId: Map<string, UploadView>;
   jobsByJobId: Map<string, JobView>;
@@ -168,7 +180,7 @@ interface UploadStoreState {
   // terminatedIds in store/downloads.ts). Cleared on snapshot/clearAll;
   // entries older than STALE_AFTER_MS are dropped by sweepStaleUploads so
   // the map stays bounded across a long-lived connection.
-  terminatedIds: Map<string, number>;
+  terminatedIds: Map<string, TerminatedMarker>;
   // Uploads that failed during this session, oldest first, kept until
   // dismissed or retried. Snapshots clear failures for running jobs and
   // preserve unrelated failures; the map is emptied on sign-out.
@@ -191,8 +203,8 @@ interface UploadStoreState {
   upsertProgressBatch: (batch: UploadProgressInput[]) => void;
   upsertJobStarted: (started: JobStartedInput) => void;
   upsertJobProgressBatch: (batch: UploadProgressInput[]) => void;
-  // Ends an upload or a job.
-  remove: (jobId: string) => void;
+  // Ends an upload or a job; JOB_ENDED passes the ended attempt's start.
+  remove: (jobId: string, startedAtMs?: bigint) => void;
   // Like remove, but keeps the upload on screen as failed.
   fail: (failed: UploadFailedInput) => void;
   dismissFailed: (jobId: string) => void;
@@ -289,7 +301,14 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
 
   upsertJobStarted: (started) =>
     set((state) => {
-      // A retried job reuses its id, as with uploads.
+      // JOB_STARTED can trail its own attempt's JOB_ENDED. A retry reuses
+      // the job id but starts later, so it un-terminates as with uploads.
+      if (
+        state.terminatedIds.get(started.jobId)?.startedAtMs ===
+        started.startedAtMs
+      ) {
+        return state;
+      }
       state.terminatedIds.delete(started.jobId);
       // The server also announces jobs a snapshot already delivered, so keep
       // the progress shown until the next update.
@@ -310,18 +329,16 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
       applyProgress(state.jobsByJobId, state.terminatedIds, batch, {
         streamerName: '',
         streamerAvatar: '',
-        sessionId: '',
         jobType: '',
-        filesTotal: 0,
         startedAtMs: 0n,
       })
         ? { jobsByJobId: state.jobsByJobId, version: state.version + 1 }
         : state,
     ),
 
-  remove: (jobId) =>
+  remove: (jobId, startedAtMs) =>
     set((state) => {
-      state.terminatedIds.set(jobId, Date.now());
+      state.terminatedIds.set(jobId, { atMs: Date.now(), startedAtMs });
       const removed =
         state.uploadsByJobId.delete(jobId) || state.jobsByJobId.delete(jobId);
       if (!removed) return state;
@@ -336,7 +353,7 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
   fail: (failed) =>
     set((state) => {
       const now = Date.now();
-      state.terminatedIds.set(failed.jobId, now);
+      state.terminatedIds.set(failed.jobId, { atMs: now });
       const view = state.uploadsByJobId.get(failed.jobId);
       state.uploadsByJobId.delete(failed.jobId);
       // Re-inserting moves a repeat failure to the end (newest).
@@ -433,8 +450,8 @@ export function sweepStaleUploads(nowMs = Date.now()): void {
   // delay on late UPLOAD_PROGRESS; after STALE_AFTER_MS any progress for
   // that job would be discarded as stale anyway. No version bump —
   // nothing renders these ids.
-  for (const [jobId, terminatedAtMs] of terminatedIds) {
-    if (nowMs - terminatedAtMs >= STALE_AFTER_MS) {
+  for (const [jobId, { atMs }] of terminatedIds) {
+    if (nowMs - atMs >= STALE_AFTER_MS) {
       terminatedIds.delete(jobId);
     }
   }

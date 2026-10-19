@@ -377,7 +377,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.JOB_ENDED:
             if (message.payload.case === 'jobEnded') {
-              useUploadStore.getState().remove(message.payload.value.jobId);
+              const { jobId, startedAtMs } = message.payload.value;
+              useUploadStore.getState().remove(jobId, startedAtMs);
             }
             break;
 
@@ -627,9 +628,7 @@ function wireJobStarted(wire: WireJobStarted): JobStartedInput {
     streamerId: wire.streamerId,
     streamerName: wire.streamerName,
     streamerAvatar: wire.streamerAvatar,
-    sessionId: wire.sessionId,
     jobType: wire.jobType,
-    filesTotal: wire.filesTotal,
     startedAtMs: wire.startedAtMs,
   };
 }

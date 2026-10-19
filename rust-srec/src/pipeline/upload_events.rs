@@ -72,20 +72,19 @@ pub enum UploadStatusEvent {
         job_id: String,
         streamer_id: Option<String>,
         streamer_name: Option<String>,
-        session_id: Option<String>,
         job_type: String,
-        files_total: u32,
         started_at_ms: i64,
     },
-    /// Progress of a job announced by `JobStarted`.
+    /// Progress of a long job (see `JobStarted`).
     JobProgress {
         job_id: String,
         streamer_id: Option<String>,
         snapshot: JobProgressSnapshot,
     },
     /// A job that ran long enough to be announced completed, failed or was
-    /// cancelled.
-    JobEnded { job_id: String },
+    /// cancelled. `started_at_ms` matches the attempt's `JobStarted`, which
+    /// can still be published after this event.
+    JobEnded { job_id: String, started_at_ms: i64 },
 }
 
 impl UploadStatusEvent {
@@ -108,7 +107,7 @@ impl UploadStatusEvent {
             | UploadStatusEvent::Terminal { job_id, .. }
             | UploadStatusEvent::JobStarted { job_id, .. }
             | UploadStatusEvent::JobProgress { job_id, .. }
-            | UploadStatusEvent::JobEnded { job_id } => Some(job_id),
+            | UploadStatusEvent::JobEnded { job_id, .. } => Some(job_id),
             UploadStatusEvent::Queue { .. } => None,
         }
     }

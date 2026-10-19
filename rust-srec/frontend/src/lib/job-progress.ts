@@ -5,7 +5,7 @@ import { getProcessorDefinition } from '@/components/pipeline/presets/processors
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
 import { formatUploadBytes } from '@/lib/upload-format';
-import type { JobView } from '@/store/uploads';
+import type { UploadProgressInput } from '@/store/uploads';
 
 /** A media position in milliseconds as "01:02:03". */
 export function formatTimecode(ms: number): string {
@@ -21,19 +21,7 @@ export function jobTypeLabel(jobType: string, i18n: I18n): string {
   return definition ? i18n._(definition.label) : jobType.replace(/_/g, ' ');
 }
 
-type JobProgress = Pick<
-  JobView,
-  | 'percent'
-  | 'bytesDone'
-  | 'bytesTotal'
-  | 'speedBytesPerSec'
-  | 'etaSecs'
-  | 'outTimeMs'
-  | 'durationMs'
-  | 'speedX'
-  | 'progressFilesDone'
-  | 'progressFilesTotal'
->;
+type JobProgress = Omit<UploadProgressInput, 'jobId' | 'streamerId'>;
 
 /**
  * A job's progress for display: the percent for a bar, capped at 100, and

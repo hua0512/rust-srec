@@ -393,19 +393,20 @@ message UploadState {
 message JobStarted {
   string job_id = 1;
   string streamer_id = 2;
-  string session_id = 3;
   // Job type as stored, e.g. "remux" or "thumbnail_hd".
-  string job_type = 4;
-  // Number of input files.
-  uint32 files_total = 5;
-  int64 started_at_ms = 6;
-  string streamer_name = 7;
-  string streamer_avatar = 8;
+  string job_type = 3;
+  int64 started_at_ms = 4;
+  string streamer_name = 5;
+  string streamer_avatar = 6;
 }
 
 // A job announced by JOB_STARTED completed, failed or was cancelled.
 message JobEnded {
   string job_id = 1;
+  // started_at_ms of the attempt that ended. A JOB_STARTED for that same
+  // attempt can still arrive after this event and must be ignored; a retry
+  // starts later and so carries a newer value.
+  int64 started_at_ms = 2;
 }
 
 // Snapshot slice: one long-running job, like UploadState.

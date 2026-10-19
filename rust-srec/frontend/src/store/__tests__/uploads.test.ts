@@ -166,10 +166,14 @@ describe('useUploadStore batched progress', () => {
 });
 
 describe('useUploadStore jobs', () => {
-  const jobStarted = (jobId: string) => {
-    const { uploader: _, ...started } = startedInput(jobId);
-    return { ...started, jobType: 'remux' };
-  };
+  const jobStarted = (jobId: string, startedAtMs = 0n) => ({
+    jobId,
+    streamerId: 'streamer-1',
+    streamerName: 'Streamer One',
+    streamerAvatar: '',
+    jobType: 'remux',
+    startedAtMs,
+  });
 
   beforeEach(() => {
     useUploadStore.getState().clearAll();
@@ -190,10 +194,19 @@ describe('useUploadStore jobs', () => {
     ]);
     expect(store.getActiveUploads()).toEqual([]);
 
-    store.remove('job-1');
+    store.remove('job-1', 0n);
     store.upsertJobProgressBatch([
       { jobId: 'job-1', streamerId: 'streamer-1', percent: 50 },
     ]);
     expect(store.getActiveJobs()).toEqual([]);
+
+    // The ended attempt's own late announcement stays ignored; a retry,
+    // which starts later, shows again.
+    store.upsertJobStarted(jobStarted('job-1'));
+    expect(store.getActiveJobs()).toEqual([]);
+    store.upsertJobStarted(jobStarted('job-1', 1n));
+    expect(store.getActiveJobs()).toMatchObject([
+      { jobId: 'job-1', startedAtMs: 1n },
+    ]);
   });
 });

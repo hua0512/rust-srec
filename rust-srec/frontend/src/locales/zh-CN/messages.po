@@ -409,7 +409,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:61
+#: src/lib/job-progress.ts:49
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -4447,7 +4447,7 @@ msgstr "FFmpeg 视频滤镜"
 msgid "File {0} of {1}"
 msgstr "第 {0}/{1} 个文件"
 
-#: src/lib/job-progress.ts:73
+#: src/lib/job-progress.ts:61
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
