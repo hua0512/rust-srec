@@ -21,15 +21,23 @@
 
 ## Workflows and file processing
 
-- Fixed a workflow step losing its scheduled automatic retry when rust-srec stopped just as the step failed; the workflow was then marked failed on the next start.
-- Fixed the confirmation after cancelling a workflow not counting a step that was waiting for its automatic retry.
+- Added the **Full Processing (Single Pass)** workflow. Like **Full Processing**, it remuxes to MP4, creates a thumbnail and uploads, but it writes the title, streamer and date while remuxing instead of rewriting the whole file in a separate metadata step. The new **Include Recording Metadata** option in remux settings (**Advanced** → **Streams & Metadata**) lets other remux steps do the same. Existing workflows are unchanged.
+- **Copy / Move** steps now show their progress on the job page while copying, including moves to another drive or network share: percentage, amount copied and time remaining for the whole job, speed and, for several files, which file it is on (for example File 2 of 5). When such a step is cancelled, times out or rust-srec shuts down, the copy now stops promptly and its partial file is removed, instead of carrying on with the rest of the file in the background.
+- A **Copy / Move** step whose copy is stuck on a disk or network share that stopped responding cannot be interrupted. It now keeps its worker until the file system answers, instead of carrying on in the background after its job ends, so other file jobs may wait in the queue. When such a copy is still running 30 seconds after its job was cancelled or timed out, a hard-drive icon appears in the top bar listing the affected jobs and how long each has not responded, the job's page shows **Still holding a worker**, and a warning is logged. See [Unresponsive file operations](../concepts/pipeline.md#unresponsive-file-operations).
+- After rust-srec restarts from a crash, power loss or forced exit, unfinished temporary files that interrupted workflow steps left next to their outputs (named like `video.tmp-<id>.mp4`) are now listed behind a file icon in the top bar and on the affected job's page, with their folder and size. **Delete** removes a file, **Keep** leaves it on disk and only takes it off the list, and **Delete all** removes them all. Finished outputs and original recordings are never listed or deleted. Only temporary files created after updating are tracked. See [Partial files from interrupted jobs](../concepts/pipeline.md#interrupted-partial-files).
 - A workflow's progress now moves while its steps run, for steps that report progress such as remuxing, copying, compression and uploads, instead of only when a step finishes. Failed steps no longer count as progress, so a failed or cancelled workflow shows how much of it completed.
 - Live progress of processing jobs is no longer written to the database several times a second, which cuts disk writes while jobs run and keeps progress updates flowing when the database is busy.
 - Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
 - A job's progress, the top bar and workflow steps now show which file is being processed.
 - rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress and the top bar. rclone uploads also show the file being sent.
 - Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, update it every second, and show when they are waiting for another upload to finish.
-- Copy and move jobs now show the bytes and time remaining for the whole job, compression jobs show their speed and time remaining, and converting several danmu files shows which file it has reached.
+- Compression jobs now show their speed and time remaining, and converting several danmu files shows which file it has reached.
+- Fixed a workflow step losing its scheduled automatic retry when rust-srec stopped just as the step failed; the workflow was then marked failed on the next start.
+- Fixed the confirmation after cancelling a workflow not counting a step that was waiting for its automatic retry.
+- Fixed a ZIP or tar.gz compression step that was cancelled, timed out or interrupted by stopping rust-srec leaving a CPU core fully busy in the background, which could also keep rust-srec from exiting.
+- Fixed rclone uploads that start at the same time, such as a recording's video and its danmu, creating two folders with the same name on remotes that allow this, such as Google Drive, and splitting the uploaded files between them.
+- Fixed rclone's **Max Retries** setting having no effect: uploads always made 3 attempts. The **Rclone Executable** field, which was also ignored, is removed; rust-srec still runs `rclone` from the system path, or the program set in the `RCLONE_PATH` environment variable.
+- Fixed saving a native-resolution thumbnail preset, such as the built-in **Native Resolution Thumbnail**, or a workflow step made from one with **Detach & Edit**, silently making its thumbnails 320 pixels wide. Thumbnail settings now have a **Native resolution** switch. Presets and steps already changed this way are not repaired: turn the switch on and save them again. The **Output Pattern (Optional)** field, which had no effect, is removed.
 
 ## Web interface
 
@@ -48,3 +56,8 @@
 - Pipeline pages use less processor time while open: the status icons and badges of running jobs and workflows no longer spin or pulse.
 - The workflow graph now adjusts its height to its steps, so a few parallel steps are no longer hidden below the frame (larger graphs can still be dragged into view), and each step is titled by its step ID, so steps that use the same processor can be told apart.
 - The message shown after **Retry All Failed** is now translated.
+
+## Deployment and desktop
+
+- Fixed the desktop app not applying the chosen **Theme Preset** or imported theme, **Brand Colors** or **Border Radius**, which only worked in the browser. Also fixed an extra scrollbar in the sidebar and some panels, most visible on Windows, where it ran the full height of the sidebar.
+- Mesio downloads now trust the certificates your operating system trusts, as live checks and danmu already did, instead of a list built into rust-srec. In the desktop app, notifications, account checks and sign-ins, playback through the server proxy and proxy tests now do the same. A company or self-hosted certificate authority is therefore accepted once it is installed on the system (for Docker, in the container). Email notifications still use the built-in list. If connections fail with a certificate error, update the system's certificates, such as the `ca-certificates` package on Linux, which the Docker image already includes.
