@@ -409,7 +409,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:61
+#: src/lib/job-progress.ts:62
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -3439,7 +3439,7 @@ msgstr "Due at its next use"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:102
+#: src/components/pipeline/jobs/job-progress-panel.tsx:106
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -4432,7 +4432,7 @@ msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend serv
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/lib/job-progress.ts:67
+#: src/lib/job-progress.ts:68
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 
@@ -6718,7 +6718,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:143
+#: src/components/pipeline/jobs/job-progress-panel.tsx:147
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
@@ -7864,7 +7864,7 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:138
+#: src/components/pipeline/jobs/job-progress-panel.tsx:142
 #: src/components/upload-status-indicator.tsx:365
 msgid "Preparing…"
 msgstr "Preparing…"
@@ -8076,7 +8076,7 @@ msgstr "Programmatic & MCP access"
 msgid "Programs"
 msgstr "Programs"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:122
+#: src/components/pipeline/jobs/job-progress-panel.tsx:126
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:286
 msgid "Progress"
 msgstr "Progress"
@@ -8149,7 +8149,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:110
+#: src/components/pipeline/jobs/job-progress-panel.tsx:114
 msgid "Queue"
 msgstr "Queue"
 

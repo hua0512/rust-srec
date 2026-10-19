@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
@@ -35,8 +35,12 @@ export function JobProgressPanel({
   const { i18n } = useLingui();
   const running = job.status === 'PROCESSING';
   const [now, setNow] = useState(Date.now);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!running) return;
+    // The clock stood still while the job was not running and a retried
+    // attempt started after it: catch up before paint so Duration never shows
+    // "-" for a running job.
+    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [running]);
