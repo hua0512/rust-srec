@@ -114,10 +114,11 @@ where
         operations
     }
 
-    /// In-flight upload jobs with their latest progress snapshots.
-    /// Feeds the WebSocket `DownloadSnapshot.uploads` slice.
-    pub async fn list_active_uploads(&self) -> Result<Vec<crate::pipeline::ActiveUploadInfo>> {
-        self.job_queue.list_active_uploads().await
+    /// In-flight upload jobs, and other jobs processing for 10 seconds or
+    /// more, with their latest progress snapshots. Feeds the WebSocket
+    /// `DownloadSnapshot`.
+    pub async fn list_active_jobs(&self) -> Result<Vec<crate::pipeline::ActiveJobInfo>> {
+        self.job_queue.list_active_jobs().await
     }
 
     /// Upload jobs waiting for a worker. Feeds `DownloadSnapshot.pending_uploads`.

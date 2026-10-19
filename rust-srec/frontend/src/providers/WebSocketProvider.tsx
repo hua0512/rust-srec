@@ -10,11 +10,13 @@ import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import type {
+  JobStartedInput,
   UploadFailedInput,
   UploadProgressInput,
   UploadStartedInput,
 } from '@/store/uploads';
 import type {
+  JobStarted as WireJobStarted,
   StreamerCredentialBlock as WireCredentialBlock,
   UploadProgress as WireUploadProgress,
   UploadStarted as WireUploadStarted,
@@ -181,6 +183,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // Progress ticks waiting for the next flush, in arrival order.
   const pendingMetricsRef = useRef<DownloadMetrics[]>([]);
   const pendingUploadProgressRef = useRef<UploadProgressInput[]>([]);
+  const pendingJobProgressRef = useRef<UploadProgressInput[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -192,10 +195,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
     const metrics = pendingMetricsRef.current;
     const uploads = pendingUploadProgressRef.current;
+    const jobs = pendingJobProgressRef.current;
     pendingMetricsRef.current = [];
     pendingUploadProgressRef.current = [];
+    pendingJobProgressRef.current = [];
     if (metrics.length > 0) upsertMetricsBatch(metrics);
     if (uploads.length > 0) upsertUploadProgressBatch(uploads);
+    if (jobs.length > 0) useUploadStore.getState().upsertJobProgressBatch(jobs);
   }, [upsertMetricsBatch, upsertUploadProgressBatch]);
 
   const scheduleProgressFlush = useCallback(() => {
@@ -211,6 +217,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
     pendingMetricsRef.current = [];
     pendingUploadProgressRef.current = [];
+    pendingJobProgressRef.current = [];
   }, []);
 
   useEffect(() => dropPendingProgress, [dropPendingProgress]);
@@ -227,7 +234,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         // in the order the server sent them.
         if (
           message.eventType !== EventType.DOWNLOAD_METRICS &&
-          message.eventType !== EventType.UPLOAD_PROGRESS
+          message.eventType !== EventType.UPLOAD_PROGRESS &&
+          message.eventType !== EventType.JOB_PROGRESS
         ) {
           flushProgress();
         }
@@ -293,22 +301,27 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
               setSnapshot(downloads, queued);
 
-              // Uploads slice: in-flight upload jobs, so a (re)connecting
-              // client recovers indicators for uploads that started before
+              // Uploads and jobs slices: in-flight jobs, so a (re)connecting
+              // client recovers indicators for jobs that started before
               // this connection.
               const uploadStarted: UploadStartedInput[] = [];
-              const uploadProgress: UploadProgressInput[] = [];
+              const jobStarted: JobStartedInput[] = [];
+              const progress: UploadProgressInput[] = [];
               for (const u of message.payload.value.uploads) {
                 if (!u.started) continue;
                 uploadStarted.push(wireUploadStarted(u.started));
-                if (u.progress) {
-                  uploadProgress.push(wireUploadProgress(u.progress));
-                }
+                if (u.progress) progress.push(wireUploadProgress(u.progress));
+              }
+              for (const j of message.payload.value.jobs) {
+                if (!j.started) continue;
+                jobStarted.push(wireJobStarted(j.started));
+                if (j.progress) progress.push(wireUploadProgress(j.progress));
               }
               setUploadSnapshot(
                 uploadStarted,
-                uploadProgress,
+                progress,
                 message.payload.value.pendingUploads,
+                jobStarted,
               );
             }
             break;
@@ -342,6 +355,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.UPLOAD_QUEUE:
             if (message.payload.case === 'uploadQueue') {
               setPendingUploads(message.payload.value.pending);
+            }
+            break;
+
+          case EventType.JOB_STARTED:
+            if (message.payload.case === 'jobStarted') {
+              useUploadStore
+                .getState()
+                .upsertJobStarted(wireJobStarted(message.payload.value));
+            }
+            break;
+
+          case EventType.JOB_PROGRESS:
+            if (message.payload.case === 'jobProgress') {
+              pendingJobProgressRef.current.push(
+                wireUploadProgress(message.payload.value),
+              );
+              scheduleProgressFlush();
+            }
+            break;
+
+          case EventType.JOB_ENDED:
+            if (message.payload.case === 'jobEnded') {
+              useUploadStore.getState().remove(message.payload.value.jobId);
             }
             break;
 
@@ -585,9 +621,22 @@ function wireUploadStarted(wire: WireUploadStarted): UploadStartedInput {
   };
 }
 
-/** Wire → store shape for UPLOAD_PROGRESS. Numeric fields are proto3
- *  `optional`, so absence survives the trip and the UI can distinguish
- *  "unknown" from zero. */
+function wireJobStarted(wire: WireJobStarted): JobStartedInput {
+  return {
+    jobId: wire.jobId,
+    streamerId: wire.streamerId,
+    streamerName: wire.streamerName,
+    streamerAvatar: wire.streamerAvatar,
+    sessionId: wire.sessionId,
+    jobType: wire.jobType,
+    filesTotal: wire.filesTotal,
+    startedAtMs: wire.startedAtMs,
+  };
+}
+
+/** Wire → store shape for UPLOAD_PROGRESS and JOB_PROGRESS. Numeric fields
+ *  are proto3 `optional`, so absence survives the trip and the UI can
+ *  distinguish "unknown" from zero. */
 function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
   return {
     jobId: wire.jobId,
@@ -599,6 +648,9 @@ function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
     etaSecs: wire.etaSecs,
     progressFilesDone: wire.filesDone,
     progressFilesTotal: wire.filesTotal,
+    outTimeMs: wire.outTimeMs,
+    durationMs: wire.durationMs,
+    speedX: wire.speedX,
   };
 }
 

@@ -28,8 +28,8 @@ pub use coordination::{
 };
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
-    ActiveUploadInfo, Job, JobExecutionInfo, JobFailureOutcome, JobLogEntry, JobQueue,
-    JobQueueConfig, JobResult, JobStats, LogLevel, QueueDepthStatus,
+    ActiveJobInfo, Job, JobExecutionInfo, JobFailureOutcome, JobLogEntry, JobQueue, JobQueueConfig,
+    JobResult, JobStats, LogLevel, QueueDepthStatus,
 };
 pub(crate) use manager::PipelineRuntimeDependencies;
 pub use manager::{

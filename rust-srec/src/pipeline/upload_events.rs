@@ -2,9 +2,11 @@
 //!
 //! `JobQueue` publishes one event per upload-job lifecycle transition
 //! (dequeue → `Started`, progress-aggregator flush → `Progress`,
-//! complete/fail/cancel → `Terminal`). The `/api/downloads/ws` route
-//! subscribes and forwards the pre-encoded bytes to every connected client
-//! (upload events are not narrowed by the per-connection streamer filter).
+//! complete/fail/cancel → `Terminal`), and the same lifecycle as `Job*`
+//! events for other jobs once they have run for a while. The
+//! `/api/downloads/ws` route subscribes and forwards the pre-encoded bytes
+//! to every connected client (these events are not narrowed by the
+//! per-connection streamer filter).
 //!
 //! Mirrors `monitor::check_history_writer::CheckHistoryBroadcaster`:
 //! protobuf encoding runs **once per event** in the producer (not once per
@@ -64,6 +66,26 @@ pub enum UploadStatusEvent {
     },
     /// The number of upload jobs waiting for a worker changed.
     Queue { pending: u32 },
+    /// A job other than an upload has been processing for
+    /// `job_queue::LONG_JOB_AFTER`; shorter jobs are never announced.
+    JobStarted {
+        job_id: String,
+        streamer_id: Option<String>,
+        streamer_name: Option<String>,
+        session_id: Option<String>,
+        job_type: String,
+        files_total: u32,
+        started_at_ms: i64,
+    },
+    /// Progress of a job announced by `JobStarted`.
+    JobProgress {
+        job_id: String,
+        streamer_id: Option<String>,
+        snapshot: JobProgressSnapshot,
+    },
+    /// A job that ran long enough to be announced completed, failed or was
+    /// cancelled.
+    JobEnded { job_id: String },
 }
 
 impl UploadStatusEvent {
@@ -72,8 +94,10 @@ impl UploadStatusEvent {
         match self {
             UploadStatusEvent::Started { streamer_id, .. }
             | UploadStatusEvent::Progress { streamer_id, .. }
-            | UploadStatusEvent::Terminal { streamer_id, .. } => streamer_id.as_deref(),
-            UploadStatusEvent::Queue { .. } => None,
+            | UploadStatusEvent::Terminal { streamer_id, .. }
+            | UploadStatusEvent::JobStarted { streamer_id, .. }
+            | UploadStatusEvent::JobProgress { streamer_id, .. } => streamer_id.as_deref(),
+            UploadStatusEvent::Queue { .. } | UploadStatusEvent::JobEnded { .. } => None,
         }
     }
 
@@ -81,7 +105,10 @@ impl UploadStatusEvent {
         match self {
             UploadStatusEvent::Started { job_id, .. }
             | UploadStatusEvent::Progress { job_id, .. }
-            | UploadStatusEvent::Terminal { job_id, .. } => Some(job_id),
+            | UploadStatusEvent::Terminal { job_id, .. }
+            | UploadStatusEvent::JobStarted { job_id, .. }
+            | UploadStatusEvent::JobProgress { job_id, .. }
+            | UploadStatusEvent::JobEnded { job_id } => Some(job_id),
             UploadStatusEvent::Queue { .. } => None,
         }
     }

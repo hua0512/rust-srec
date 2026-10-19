@@ -51,6 +51,11 @@ const TONES = {
       'text-orange-600 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-400',
     badge: 'bg-orange-500',
   },
+  violet: {
+    trigger:
+      'text-violet-600 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-400',
+    badge: 'bg-violet-500',
+  },
 } as const;
 
 /**

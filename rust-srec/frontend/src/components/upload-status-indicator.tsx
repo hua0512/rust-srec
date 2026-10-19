@@ -328,7 +328,10 @@ export function UploadStatusIndicator() {
   );
 }
 
-function displayName(upload: UploadView, i18n: I18n) {
+export function displayName(
+  upload: Pick<UploadView, 'streamerName' | 'streamerId'>,
+  i18n: I18n,
+) {
   return upload.streamerName || upload.streamerId || i18n._(msg`Manual job`);
 }
 
@@ -447,12 +450,12 @@ function FailedUploadRow({
   );
 }
 
-function StreamerAvatar({
+export function StreamerAvatar({
   upload,
   name,
   failed = false,
 }: {
-  upload: UploadView;
+  upload: Pick<UploadView, 'streamerAvatar'>;
   name: string;
   failed?: boolean;
 }) {

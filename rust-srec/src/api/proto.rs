@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::downloader::engine::DownloadInfo;
 use crate::downloader::queue::PendingEntry as QueuePendingEntry;
-use crate::pipeline::{ActiveUploadInfo, JobProgressSnapshot};
+use crate::pipeline::{ActiveJobInfo, JobProgressSnapshot};
 
 // Include the generated protobuf code
 pub mod download_progress {
@@ -23,8 +23,9 @@ pub mod log_event {
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadDequeued, DownloadFailed,
     DownloadMeta, DownloadMetrics, DownloadQueued, DownloadRejected, DownloadSnapshot,
-    DownloadState, EventType, SegmentCompleted, StreamerCheckRecorded, UploadProgress, UploadQueue,
-    UploadStarted, UploadState, UploadTerminal, UploadTerminalStatus, WsMessage,
+    DownloadState, EventType, JobEnded, JobStarted, JobState, SegmentCompleted,
+    StreamerCheckRecorded, UploadProgress, UploadQueue, UploadStarted, UploadState, UploadTerminal,
+    UploadTerminalStatus, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadMeta {
@@ -99,9 +100,9 @@ fn safe_playback_ratio(media_duration_secs: f64, elapsed_secs: f64) -> f64 {
     }
 }
 
-/// Wire shape of one upload progress update. Shared between the live
-/// `UPLOAD_PROGRESS` event and the `DownloadSnapshot.uploads` slice so both
-/// paths serialize a `JobProgressSnapshot` identically.
+/// Wire shape of one progress update. Shared between the live
+/// `UPLOAD_PROGRESS` and `JOB_PROGRESS` events and the snapshot slices so
+/// every path serializes a `JobProgressSnapshot` identically.
 pub fn upload_progress_to_proto(
     job_id: &str,
     streamer_id: Option<&str>,
@@ -118,6 +119,9 @@ pub fn upload_progress_to_proto(
         updated_at_ms: snapshot.updated_at.timestamp_millis(),
         files_done: snapshot.files_done.map(saturating_u32),
         files_total: snapshot.files_total.map(saturating_u32),
+        out_time_ms: snapshot.out_time_ms,
+        duration_ms: snapshot.duration_ms,
+        speed_x: snapshot.speed_x,
     }
 }
 
@@ -125,36 +129,12 @@ fn saturating_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-/// Snapshot slice for one in-flight upload job: what a client would have
-/// assembled from `UPLOAD_STARTED` plus the latest `UPLOAD_PROGRESS`.
-fn upload_state_to_proto(info: &ActiveUploadInfo, streamer_avatar: Option<&String>) -> UploadState {
-    UploadState {
-        started: Some(UploadStarted {
-            job_id: info.job_id.clone(),
-            streamer_id: info.streamer_id.clone().unwrap_or_default(),
-            session_id: info.session_id.clone().unwrap_or_default(),
-            uploader: info.uploader.to_string(),
-            files_total: info.files_total,
-            started_at_ms: info
-                .started_at
-                .map(|dt| dt.timestamp_millis())
-                .unwrap_or_default(),
-            streamer_name: info.streamer_name.clone().unwrap_or_default(),
-            streamer_avatar: streamer_avatar.cloned().unwrap_or_default(),
-        }),
-        progress: info
-            .progress
-            .as_ref()
-            .map(|s| upload_progress_to_proto(&info.job_id, info.streamer_id.as_deref(), s)),
-    }
-}
-
-/// Upload state carried by a snapshot: jobs being processed plus how many
-/// are waiting for a worker.
+/// Job state carried by a snapshot: upload and long jobs being processed
+/// plus how many uploads are waiting for a worker.
 #[derive(Default)]
-pub struct SnapshotUploads {
-    pub active: Vec<ActiveUploadInfo>,
-    pub pending: u32,
+pub struct SnapshotJobs {
+    pub active: Vec<ActiveJobInfo>,
+    pub pending_uploads: u32,
     /// Avatar URL by streamer id, for the streamers in `active`.
     pub streamer_avatars: HashMap<String, String>,
 }
@@ -162,11 +142,11 @@ pub struct SnapshotUploads {
 /// Create a snapshot message from a list of download infos plus the
 /// list of currently-queued pending acquires (downloads that have
 /// emitted `DownloadQueued` but not yet received their slot) and the
-/// upload jobs.
+/// jobs shown live.
 pub fn create_snapshot_message(
     downloads: Vec<DownloadInfo>,
     queued: Vec<QueuePendingEntry>,
-    uploads: SnapshotUploads,
+    jobs: SnapshotJobs,
 ) -> WsMessage {
     let states: Vec<DownloadState> = downloads
         .iter()
@@ -188,17 +168,56 @@ pub fn create_snapshot_message(
         })
         .collect();
 
-    let upload_msgs: Vec<UploadState> = uploads
-        .active
-        .iter()
-        .map(|info| {
-            let avatar = info
-                .streamer_id
-                .as_ref()
-                .and_then(|id| uploads.streamer_avatars.get(id));
-            upload_state_to_proto(info, avatar)
-        })
-        .collect();
+    // Each entry is what a client would have assembled from the start event
+    // plus the latest progress event.
+    let mut upload_msgs = Vec::new();
+    let mut job_msgs = Vec::new();
+    for info in jobs.active {
+        let streamer_id = info.streamer_id.unwrap_or_default();
+        let streamer_avatar = jobs
+            .streamer_avatars
+            .get(&streamer_id)
+            .cloned()
+            .unwrap_or_default();
+        let progress = info
+            .progress
+            .as_ref()
+            .map(|s| upload_progress_to_proto(&info.job_id, Some(&streamer_id), s));
+        let session_id = info.session_id.unwrap_or_default();
+        let started_at_ms = info
+            .started_at
+            .map(|dt| dt.timestamp_millis())
+            .unwrap_or_default();
+        let streamer_name = info.streamer_name.unwrap_or_default();
+        match info.uploader {
+            Some(uploader) => upload_msgs.push(UploadState {
+                started: Some(UploadStarted {
+                    job_id: info.job_id,
+                    streamer_id,
+                    session_id,
+                    uploader: uploader.to_string(),
+                    files_total: info.files_total,
+                    started_at_ms,
+                    streamer_name,
+                    streamer_avatar,
+                }),
+                progress,
+            }),
+            None => job_msgs.push(JobState {
+                started: Some(JobStarted {
+                    job_id: info.job_id,
+                    streamer_id,
+                    session_id,
+                    job_type: info.job_type,
+                    files_total: info.files_total,
+                    started_at_ms,
+                    streamer_name,
+                    streamer_avatar,
+                }),
+                progress,
+            }),
+        }
+    }
 
     WsMessage {
         event_type: EventType::Snapshot as i32,
@@ -207,7 +226,8 @@ pub fn create_snapshot_message(
                 downloads: states,
                 queued: queued_msgs,
                 uploads: upload_msgs,
-                pending_uploads: uploads.pending,
+                pending_uploads: jobs.pending_uploads,
+                jobs: job_msgs,
             },
         )),
     }
@@ -276,7 +296,7 @@ mod tests {
     #[test]
     fn test_create_snapshot_message() {
         let downloads = vec![create_test_download_info()];
-        let msg = create_snapshot_message(downloads, Vec::new(), SnapshotUploads::default());
+        let msg = create_snapshot_message(downloads, Vec::new(), SnapshotJobs::default());
 
         assert_eq!(msg.event_type, EventType::Snapshot as i32);
         assert!(msg.payload.is_some());
@@ -295,7 +315,7 @@ mod tests {
             priority: Priority::High,
             queued_at_ms: 1234567890,
         }];
-        let msg = create_snapshot_message(downloads, queued, SnapshotUploads::default());
+        let msg = create_snapshot_message(downloads, queued, SnapshotJobs::default());
 
         assert_eq!(msg.event_type, EventType::Snapshot as i32);
         if let Some(download_progress::ws_message::Payload::Snapshot(s)) = msg.payload {

@@ -164,3 +164,36 @@ describe('useUploadStore batched progress', () => {
     expect(state.uploadsByJobId.has('job-2')).toBe(false);
   });
 });
+
+describe('useUploadStore jobs', () => {
+  const jobStarted = (jobId: string) => {
+    const { uploader: _, ...started } = startedInput(jobId);
+    return { ...started, jobType: 'remux' };
+  };
+
+  beforeEach(() => {
+    useUploadStore.getState().clearAll();
+  });
+
+  it('keeps progress when a job is announced again, and ignores it once the job ends', () => {
+    const store = useUploadStore.getState();
+    store.setSnapshot(
+      [],
+      [{ jobId: 'job-1', streamerId: 'streamer-1', percent: 40 }],
+      0,
+      [jobStarted('job-1')],
+    );
+    // The server can announce a job the snapshot already delivered.
+    store.upsertJobStarted(jobStarted('job-1'));
+    expect(store.getActiveJobs()).toMatchObject([
+      { jobId: 'job-1', percent: 40 },
+    ]);
+    expect(store.getActiveUploads()).toEqual([]);
+
+    store.remove('job-1');
+    store.upsertJobProgressBatch([
+      { jobId: 'job-1', streamerId: 'streamer-1', percent: 50 },
+    ]);
+    expect(store.getActiveJobs()).toEqual([]);
+  });
+});

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file download_progress.proto.
  */
 export const file_download_progress: GenFile = /*@__PURE__*/
-  fileDesc("Chdkb3dubG9hZF9wcm9ncmVzcy5wcm90bxIRZG93bmxvYWRfcHJvZ3Jlc3MimAoKCVdzTWVzc2FnZRIwCgpldmVudF90eXBlGAEgASgOMhwuZG93bmxvYWRfcHJvZ3Jlc3MuRXZlbnRUeXBlEjcKCHNuYXBzaG90GAIgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTbmFwc2hvdEgAEjgKDWRvd25sb2FkX21ldGEYAyABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldGFIABI+ChBkb3dubG9hZF9tZXRyaWNzGAQgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzSAASQAoRc2VnbWVudF9jb21wbGV0ZWQYBSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TZWdtZW50Q29tcGxldGVkSAASQgoSZG93bmxvYWRfY29tcGxldGVkGAYgASgLMiQuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRDb21wbGV0ZWRIABI8Cg9kb3dubG9hZF9mYWlsZWQYByABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZEZhaWxlZEgAEkIKEmRvd25sb2FkX2NhbmNlbGxlZBgIIAEoCzIkLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkQ2FuY2VsbGVkSAASMAoFZXJyb3IYCSABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5FcnJvclBheWxvYWRIABJAChFkb3dubG9hZF9yZWplY3RlZBgKIAEoCzIjLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUmVqZWN0ZWRIABJLChdzdHJlYW1lcl9jaGVja19yZWNvcmRlZBgLIAEoCzIoLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ2hlY2tSZWNvcmRlZEgAEjwKD2Rvd25sb2FkX3F1ZXVlZBgMIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUXVldWVkSAASQAoRZG93bmxvYWRfZGVxdWV1ZWQYDSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZERlcXVldWVkSAASOgoOdXBsb2FkX3N0YXJ0ZWQYDiABKAsyIC5kb3dubG9hZF9wcm9ncmVzcy5VcGxvYWRTdGFydGVkSAASPAoPdXBsb2FkX3Byb2dyZXNzGA8gASgLMiEuZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkUHJvZ3Jlc3NIABI8Cg91cGxvYWRfdGVybWluYWwYECABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5VcGxvYWRUZXJtaW5hbEgAEjoKDmRvd25sb2FkX3NwbGl0GBEgASgLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTcGxpdEgAEjYKDHVwbG9hZF9xdWV1ZRgSIAEoCzIeLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFF1ZXVlSAASTwoZc3RyZWFtZXJfY3JlZGVudGlhbF9ibG9jaxgTIAEoCzIqLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ3JlZGVudGlhbEJsb2NrSAASVQocY3JlZGVudGlhbF9hdHRlbnRpb25fY2hhbmdlZBgUIAEoCzItLmRvd25sb2FkX3Byb2dyZXNzLkNyZWRlbnRpYWxBdHRlbnRpb25DaGFuZ2VkSABCCQoHcGF5bG9hZCKRAQoNQ2xpZW50TWVzc2FnZRI4CglzdWJzY3JpYmUYASABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TdWJzY3JpYmVSZXF1ZXN0SAASPAoLdW5zdWJzY3JpYmUYAiABKAsyJS5kb3dubG9hZF9wcm9ncmVzcy5VbnN1YnNjcmliZVJlcXVlc3RIAEIICgZhY3Rpb24iJwoQU3Vic2NyaWJlUmVxdWVzdBITCgtzdHJlYW1lcl9pZBgBIAEoCSIUChJVbnN1YnNjcmliZVJlcXVlc3QixAEKEERvd25sb2FkU25hcHNob3QSMwoJZG93bmxvYWRzGAEgAygLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTdGF0ZRIxCgZxdWV1ZWQYAiADKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZFF1ZXVlZBIvCgd1cGxvYWRzGAMgAygLMh4uZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkU3RhdGUSFwoPcGVuZGluZ191cGxvYWRzGAQgASgNInMKDURvd25sb2FkU3RhdGUSLQoEbWV0YRgBIAEoCzIfLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkTWV0YRIzCgdtZXRyaWNzGAIgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzIvIBCgxEb3dubG9hZE1ldGESOQoMbWFudWFsX3NwbGl0GAkgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuTWFudWFsU3BsaXRTdGF0ZRITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhMKC2VuZ2luZV90eXBlGAQgASgJEhUKDXN0YXJ0ZWRfYXRfbXMYBSABKAMSFQoNdXBkYXRlZF9hdF9tcxgIIAEoAxIQCghjZG5faG9zdBgGIAEoCRIUCgxkb3dubG9hZF91cmwYByABKAkijgEKEE1hbnVhbFNwbGl0U3RhdGUSEQoJc3VwcG9ydGVkGAEgASgIEhoKEnVuYXZhaWxhYmxlX3JlYXNvbhgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgEEhAKCHJldmlzaW9uGAQgASgEEg4KBnN0YXR1cxgFIAEoCRIVCg1leHBpcnlfcmVhc29uGAYgASgJIm0KDURvd25sb2FkU3BsaXQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSMgoFc3RhdGUYAyABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5NYW51YWxTcGxpdFN0YXRlItUBCg9Eb3dubG9hZE1ldHJpY3MSEwoLZG93bmxvYWRfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEhgKEGJ5dGVzX2Rvd25sb2FkZWQYAyABKAQSFQoNZHVyYXRpb25fc2VjcxgEIAEoARIbChNzcGVlZF9ieXRlc19wZXJfc2VjGAUgASgEEhoKEnNlZ21lbnRzX2NvbXBsZXRlZBgGIAEoDRIbChNtZWRpYV9kdXJhdGlvbl9zZWNzGAcgASgBEhYKDnBsYXliYWNrX3JhdGlvGAggASgBIu4BChBTZWdtZW50Q29tcGxldGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhQKDHNlZ21lbnRfcGF0aBgDIAEoCRIVCg1zZWdtZW50X2luZGV4GAQgASgNEhUKDWR1cmF0aW9uX3NlY3MYBSABKAESEgoKc2l6ZV9ieXRlcxgGIAEoBBISCgpzZXNzaW9uX2lkGAcgASgJEhQKDHNwbGl0X3JlYXNvbhgIIAEoCRIVCg1zdGFydGVkX2F0X21zGAkgASgDEhcKD2NvbXBsZXRlZF9hdF9tcxgKIAEoAyKbAQoRRG93bmxvYWRDb21wbGV0ZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRITCgt0b3RhbF9ieXRlcxgEIAEoBBIbChN0b3RhbF9kdXJhdGlvbl9zZWNzGAUgASgBEhYKDnRvdGFsX3NlZ21lbnRzGAYgASgNInIKDkRvd25sb2FkRmFpbGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSDQoFZXJyb3IYBCABKAkSEwoLcmVjb3ZlcmFibGUYBSABKAgiYAoRRG93bmxvYWRDYW5jZWxsZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRINCgVjYXVzZRgEIAEoCSJ6ChBEb3dubG9hZFJlamVjdGVkEhMKC3N0cmVhbWVyX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSDgoGcmVhc29uGAMgASgJEhgKEHJldHJ5X2FmdGVyX3NlY3MYBCABKAQSEwoLcmVjb3ZlcmFibGUYBSABKAgiLQoMRXJyb3JQYXlsb2FkEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCSK7AgoVU3RyZWFtZXJDaGVja1JlY29yZGVkEhMKC3N0cmVhbWVyX2lkGAEgASgJEhUKDWNoZWNrZWRfYXRfbXMYAiABKAMSEwoLZHVyYXRpb25fbXMYAyABKAUSDwoHb3V0Y29tZRgEIAEoCRISCgpmYXRhbF9raW5kGAUgASgJEhUKDWZpbHRlcl9yZWFzb24YBiABKAkSFQoNZXJyb3JfbWVzc2FnZRgHIAEoCRIZChFzdHJlYW1zX2V4dHJhY3RlZBgIIAEoDRIcChRzdHJlYW1fc2VsZWN0ZWRfanNvbhgJIAEoCRINCgV0aXRsZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRIUCgx2aWV3ZXJfY291bnQYDCABKAQSHgoWc3RyZWFtc19leHRyYWN0ZWRfanNvbhgNIAEoCSKVAQoORG93bmxvYWRRdWV1ZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIVCg1zdHJlYW1lcl9uYW1lGAMgASgJEhMKC2VuZ2luZV90eXBlGAQgASgJEhQKDHF1ZXVlZF9hdF9tcxgFIAEoAxIYChBpc19oaWdoX3ByaW9yaXR5GAYgASgIIlIKEERvd25sb2FkRGVxdWV1ZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIVCg1zdHJlYW1lcl9uYW1lGAMgASgJIrYBCg1VcGxvYWRTdGFydGVkEg4KBmpvYl9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhAKCHVwbG9hZGVyGAQgASgJEhMKC2ZpbGVzX3RvdGFsGAUgASgNEhUKDXN0YXJ0ZWRfYXRfbXMYBiABKAMSFQoNc3RyZWFtZXJfbmFtZRgHIAEoCRIXCg9zdHJlYW1lcl9hdmF0YXIYCCABKAki8AIKDlVwbG9hZFByb2dyZXNzEg4KBmpvYl9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRIUCgdwZXJjZW50GAMgASgCSACIAQESFwoKYnl0ZXNfZG9uZRgEIAEoBEgBiAEBEhgKC2J5dGVzX3RvdGFsGAUgASgESAKIAQESIAoTc3BlZWRfYnl0ZXNfcGVyX3NlYxgGIAEoAUgDiAEBEhUKCGV0YV9zZWNzGAcgASgBSASIAQESFQoNdXBkYXRlZF9hdF9tcxgIIAEoAxIXCgpmaWxlc19kb25lGAkgASgNSAWIAQESGAoLZmlsZXNfdG90YWwYCiABKA1IBogBAUIKCghfcGVyY2VudEINCgtfYnl0ZXNfZG9uZUIOCgxfYnl0ZXNfdG90YWxCFgoUX3NwZWVkX2J5dGVzX3Blcl9zZWNCCwoJX2V0YV9zZWNzQg0KC19maWxlc19kb25lQg4KDF9maWxlc190b3RhbCLDAQoOVXBsb2FkVGVybWluYWwSDgoGam9iX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEjcKBnN0YXR1cxgDIAEoDjInLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFRlcm1pbmFsU3RhdHVzEhcKD2ZpbGVzX3N1Y2NlZWRlZBgEIAEoDRIUCgxmaWxlc19mYWlsZWQYBSABKA0SFQoNZmlsZXNfc2tpcHBlZBgGIAEoDRINCgVlcnJvchgHIAEoCSIeCgtVcGxvYWRRdWV1ZRIPCgdwZW5kaW5nGAEgASgNIocBCgtVcGxvYWRTdGF0ZRIxCgdzdGFydGVkGAEgASgLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkU3RhcnRlZBI4Cghwcm9ncmVzcxgCIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFByb2dyZXNzSACIAQFCCwoJX3Byb2dyZXNzInYKF1N0cmVhbWVyQ3JlZGVudGlhbEJsb2NrEhMKC3N0cmVhbWVyX2lkGAEgASgJEg8KB2Jsb2NrZWQYAiABKAgSDgoGcmVhc29uGAMgASgJEhMKC3BsYXRmb3JtX2lkGAQgASgJEhAKCHNpbmNlX21zGAUgASgDIhwKGkNyZWRlbnRpYWxBdHRlbnRpb25DaGFuZ2VkKpsFCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEhcKE0VWRU5UX1RZUEVfU05BUFNIT1QQARIcChhFVkVOVF9UWVBFX0RPV05MT0FEX01FVEEQAhIfChtFVkVOVF9UWVBFX0RPV05MT0FEX01FVFJJQ1MQAxIgChxFVkVOVF9UWVBFX1NFR01FTlRfQ09NUExFVEVEEAQSIQodRVZFTlRfVFlQRV9ET1dOTE9BRF9DT01QTEVURUQQBRIeChpFVkVOVF9UWVBFX0RPV05MT0FEX0ZBSUxFRBAGEiEKHUVWRU5UX1RZUEVfRE9XTkxPQURfQ0FOQ0VMTEVEEAcSFAoQRVZFTlRfVFlQRV9FUlJPUhAIEiAKHEVWRU5UX1RZUEVfRE9XTkxPQURfUkVKRUNURUQQCRImCiJFVkVOVF9UWVBFX1NUUkVBTUVSX0NIRUNLX1JFQ09SREVEEAoSHgoaRVZFTlRfVFlQRV9ET1dOTE9BRF9RVUVVRUQQDBIgChxFVkVOVF9UWVBFX0RPV05MT0FEX0RFUVVFVUVEEA0SHQoZRVZFTlRfVFlQRV9VUExPQURfU1RBUlRFRBAOEh4KGkVWRU5UX1RZUEVfVVBMT0FEX1BST0dSRVNTEA8SHgoaRVZFTlRfVFlQRV9VUExPQURfVEVSTUlOQUwQEBIdChlFVkVOVF9UWVBFX0RPV05MT0FEX1NQTElUEBESGwoXRVZFTlRfVFlQRV9VUExPQURfUVVFVUUQEhIoCiRFVkVOVF9UWVBFX1NUUkVBTUVSX0NSRURFTlRJQUxfQkxPQ0sQExIrCidFVkVOVF9UWVBFX0NSRURFTlRJQUxfQVRURU5USU9OX0NIQU5HRUQQFCqtAQoUVXBsb2FkVGVybWluYWxTdGF0dXMSJgoiVVBMT0FEX1RFUk1JTkFMX1NUQVRVU19VTlNQRUNJRklFRBAAEiQKIFVQTE9BRF9URVJNSU5BTF9TVEFUVVNfQ09NUExFVEVEEAESIQodVVBMT0FEX1RFUk1JTkFMX1NUQVRVU19GQUlMRUQQAhIkCiBVUExPQURfVEVSTUlOQUxfU1RBVFVTX0NBTkNFTExFRBADYgZwcm90bzM");
+  fileDesc("Chdkb3dubG9hZF9wcm9ncmVzcy5wcm90bxIRZG93bmxvYWRfcHJvZ3Jlc3MiuwsKCVdzTWVzc2FnZRIwCgpldmVudF90eXBlGAEgASgOMhwuZG93bmxvYWRfcHJvZ3Jlc3MuRXZlbnRUeXBlEjcKCHNuYXBzaG90GAIgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTbmFwc2hvdEgAEjgKDWRvd25sb2FkX21ldGEYAyABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldGFIABI+ChBkb3dubG9hZF9tZXRyaWNzGAQgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzSAASQAoRc2VnbWVudF9jb21wbGV0ZWQYBSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TZWdtZW50Q29tcGxldGVkSAASQgoSZG93bmxvYWRfY29tcGxldGVkGAYgASgLMiQuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRDb21wbGV0ZWRIABI8Cg9kb3dubG9hZF9mYWlsZWQYByABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZEZhaWxlZEgAEkIKEmRvd25sb2FkX2NhbmNlbGxlZBgIIAEoCzIkLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkQ2FuY2VsbGVkSAASMAoFZXJyb3IYCSABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5FcnJvclBheWxvYWRIABJAChFkb3dubG9hZF9yZWplY3RlZBgKIAEoCzIjLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUmVqZWN0ZWRIABJLChdzdHJlYW1lcl9jaGVja19yZWNvcmRlZBgLIAEoCzIoLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ2hlY2tSZWNvcmRlZEgAEjwKD2Rvd25sb2FkX3F1ZXVlZBgMIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUXVldWVkSAASQAoRZG93bmxvYWRfZGVxdWV1ZWQYDSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZERlcXVldWVkSAASOgoOdXBsb2FkX3N0YXJ0ZWQYDiABKAsyIC5kb3dubG9hZF9wcm9ncmVzcy5VcGxvYWRTdGFydGVkSAASPAoPdXBsb2FkX3Byb2dyZXNzGA8gASgLMiEuZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkUHJvZ3Jlc3NIABI8Cg91cGxvYWRfdGVybWluYWwYECABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5VcGxvYWRUZXJtaW5hbEgAEjoKDmRvd25sb2FkX3NwbGl0GBEgASgLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTcGxpdEgAEjYKDHVwbG9hZF9xdWV1ZRgSIAEoCzIeLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFF1ZXVlSAASTwoZc3RyZWFtZXJfY3JlZGVudGlhbF9ibG9jaxgTIAEoCzIqLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ3JlZGVudGlhbEJsb2NrSAASVQocY3JlZGVudGlhbF9hdHRlbnRpb25fY2hhbmdlZBgUIAEoCzItLmRvd25sb2FkX3Byb2dyZXNzLkNyZWRlbnRpYWxBdHRlbnRpb25DaGFuZ2VkSAASNAoLam9iX3N0YXJ0ZWQYFSABKAsyHS5kb3dubG9hZF9wcm9ncmVzcy5Kb2JTdGFydGVkSAASOQoMam9iX3Byb2dyZXNzGBYgASgLMiEuZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkUHJvZ3Jlc3NIABIwCglqb2JfZW5kZWQYFyABKAsyGy5kb3dubG9hZF9wcm9ncmVzcy5Kb2JFbmRlZEgAQgkKB3BheWxvYWQikQEKDUNsaWVudE1lc3NhZ2USOAoJc3Vic2NyaWJlGAEgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuU3Vic2NyaWJlUmVxdWVzdEgAEjwKC3Vuc3Vic2NyaWJlGAIgASgLMiUuZG93bmxvYWRfcHJvZ3Jlc3MuVW5zdWJzY3JpYmVSZXF1ZXN0SABCCAoGYWN0aW9uIicKEFN1YnNjcmliZVJlcXVlc3QSEwoLc3RyZWFtZXJfaWQYASABKAkiFAoSVW5zdWJzY3JpYmVSZXF1ZXN0Iu8BChBEb3dubG9hZFNuYXBzaG90EjMKCWRvd25sb2FkcxgBIAMoCzIgLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkU3RhdGUSMQoGcXVldWVkGAIgAygLMiEuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRRdWV1ZWQSLwoHdXBsb2FkcxgDIAMoCzIeLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFN0YXRlEhcKD3BlbmRpbmdfdXBsb2FkcxgEIAEoDRIpCgRqb2JzGAUgAygLMhsuZG93bmxvYWRfcHJvZ3Jlc3MuSm9iU3RhdGUicwoNRG93bmxvYWRTdGF0ZRItCgRtZXRhGAEgASgLMh8uZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRhEjMKB21ldHJpY3MYAiABKAsyIi5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldHJpY3Mi8gEKDERvd25sb2FkTWV0YRI5CgxtYW51YWxfc3BsaXQYCSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5NYW51YWxTcGxpdFN0YXRlEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEwoLZW5naW5lX3R5cGUYBCABKAkSFQoNc3RhcnRlZF9hdF9tcxgFIAEoAxIVCg11cGRhdGVkX2F0X21zGAggASgDEhAKCGNkbl9ob3N0GAYgASgJEhQKDGRvd25sb2FkX3VybBgHIAEoCSKOAQoQTWFudWFsU3BsaXRTdGF0ZRIRCglzdXBwb3J0ZWQYASABKAgSGgoSdW5hdmFpbGFibGVfcmVhc29uGAIgASgJEhIKCnJlcXVlc3RfaWQYAyABKAQSEAoIcmV2aXNpb24YBCABKAQSDgoGc3RhdHVzGAUgASgJEhUKDWV4cGlyeV9yZWFzb24YBiABKAkibQoNRG93bmxvYWRTcGxpdBITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRIyCgVzdGF0ZRgDIAEoCzIjLmRvd25sb2FkX3Byb2dyZXNzLk1hbnVhbFNwbGl0U3RhdGUi1QEKD0Rvd25sb2FkTWV0cmljcxITCgtkb3dubG9hZF9pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSGAoQYnl0ZXNfZG93bmxvYWRlZBgDIAEoBBIVCg1kdXJhdGlvbl9zZWNzGAQgASgBEhsKE3NwZWVkX2J5dGVzX3Blcl9zZWMYBSABKAQSGgoSc2VnbWVudHNfY29tcGxldGVkGAYgASgNEhsKE21lZGlhX2R1cmF0aW9uX3NlY3MYByABKAESFgoOcGxheWJhY2tfcmF0aW8YCCABKAEi7gEKEFNlZ21lbnRDb21wbGV0ZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSFAoMc2VnbWVudF9wYXRoGAMgASgJEhUKDXNlZ21lbnRfaW5kZXgYBCABKA0SFQoNZHVyYXRpb25fc2VjcxgFIAEoARISCgpzaXplX2J5dGVzGAYgASgEEhIKCnNlc3Npb25faWQYByABKAkSFAoMc3BsaXRfcmVhc29uGAggASgJEhUKDXN0YXJ0ZWRfYXRfbXMYCSABKAMSFwoPY29tcGxldGVkX2F0X21zGAogASgDIpsBChFEb3dubG9hZENvbXBsZXRlZBITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhMKC3RvdGFsX2J5dGVzGAQgASgEEhsKE3RvdGFsX2R1cmF0aW9uX3NlY3MYBSABKAESFgoOdG90YWxfc2VnbWVudHMYBiABKA0icgoORG93bmxvYWRGYWlsZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRINCgVlcnJvchgEIAEoCRITCgtyZWNvdmVyYWJsZRgFIAEoCCJgChFEb3dubG9hZENhbmNlbGxlZBITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEg0KBWNhdXNlGAQgASgJInoKEERvd25sb2FkUmVqZWN0ZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkSGAoQcmV0cnlfYWZ0ZXJfc2VjcxgEIAEoBBITCgtyZWNvdmVyYWJsZRgFIAEoCCItCgxFcnJvclBheWxvYWQSDAoEY29kZRgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIrsCChVTdHJlYW1lckNoZWNrUmVjb3JkZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSFQoNY2hlY2tlZF9hdF9tcxgCIAEoAxITCgtkdXJhdGlvbl9tcxgDIAEoBRIPCgdvdXRjb21lGAQgASgJEhIKCmZhdGFsX2tpbmQYBSABKAkSFQoNZmlsdGVyX3JlYXNvbhgGIAEoCRIVCg1lcnJvcl9tZXNzYWdlGAcgASgJEhkKEXN0cmVhbXNfZXh0cmFjdGVkGAggASgNEhwKFHN0cmVhbV9zZWxlY3RlZF9qc29uGAkgASgJEg0KBXRpdGxlGAogASgJEhAKCGNhdGVnb3J5GAsgASgJEhQKDHZpZXdlcl9jb3VudBgMIAEoBBIeChZzdHJlYW1zX2V4dHJhY3RlZF9qc29uGA0gASgJIpUBCg5Eb3dubG9hZFF1ZXVlZBITCgtzdHJlYW1lcl9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhUKDXN0cmVhbWVyX25hbWUYAyABKAkSEwoLZW5naW5lX3R5cGUYBCABKAkSFAoMcXVldWVkX2F0X21zGAUgASgDEhgKEGlzX2hpZ2hfcHJpb3JpdHkYBiABKAgiUgoQRG93bmxvYWREZXF1ZXVlZBITCgtzdHJlYW1lcl9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhUKDXN0cmVhbWVyX25hbWUYAyABKAkitgEKDVVwbG9hZFN0YXJ0ZWQSDgoGam9iX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEAoIdXBsb2FkZXIYBCABKAkSEwoLZmlsZXNfdG90YWwYBSABKA0SFQoNc3RhcnRlZF9hdF9tcxgGIAEoAxIVCg1zdHJlYW1lcl9uYW1lGAcgASgJEhcKD3N0cmVhbWVyX2F2YXRhchgIIAEoCSLmAwoOVXBsb2FkUHJvZ3Jlc3MSDgoGam9iX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhQKB3BlcmNlbnQYAyABKAJIAIgBARIXCgpieXRlc19kb25lGAQgASgESAGIAQESGAoLYnl0ZXNfdG90YWwYBSABKARIAogBARIgChNzcGVlZF9ieXRlc19wZXJfc2VjGAYgASgBSAOIAQESFQoIZXRhX3NlY3MYByABKAFIBIgBARIVCg11cGRhdGVkX2F0X21zGAggASgDEhcKCmZpbGVzX2RvbmUYCSABKA1IBYgBARIYCgtmaWxlc190b3RhbBgKIAEoDUgGiAEBEhgKC291dF90aW1lX21zGAsgASgESAeIAQESGAoLZHVyYXRpb25fbXMYDCABKARICIgBARIUCgdzcGVlZF94GA0gASgBSAmIAQFCCgoIX3BlcmNlbnRCDQoLX2J5dGVzX2RvbmVCDgoMX2J5dGVzX3RvdGFsQhYKFF9zcGVlZF9ieXRlc19wZXJfc2VjQgsKCV9ldGFfc2Vjc0INCgtfZmlsZXNfZG9uZUIOCgxfZmlsZXNfdG90YWxCDgoMX291dF90aW1lX21zQg4KDF9kdXJhdGlvbl9tc0IKCghfc3BlZWRfeCLDAQoOVXBsb2FkVGVybWluYWwSDgoGam9iX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEjcKBnN0YXR1cxgDIAEoDjInLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFRlcm1pbmFsU3RhdHVzEhcKD2ZpbGVzX3N1Y2NlZWRlZBgEIAEoDRIUCgxmaWxlc19mYWlsZWQYBSABKA0SFQoNZmlsZXNfc2tpcHBlZBgGIAEoDRINCgVlcnJvchgHIAEoCSIeCgtVcGxvYWRRdWV1ZRIPCgdwZW5kaW5nGAEgASgNIocBCgtVcGxvYWRTdGF0ZRIxCgdzdGFydGVkGAEgASgLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuVXBsb2FkU3RhcnRlZBI4Cghwcm9ncmVzcxgCIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFByb2dyZXNzSACIAQFCCwoJX3Byb2dyZXNzIrMBCgpKb2JTdGFydGVkEg4KBmpvYl9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhAKCGpvYl90eXBlGAQgASgJEhMKC2ZpbGVzX3RvdGFsGAUgASgNEhUKDXN0YXJ0ZWRfYXRfbXMYBiABKAMSFQoNc3RyZWFtZXJfbmFtZRgHIAEoCRIXCg9zdHJlYW1lcl9hdmF0YXIYCCABKAkiGgoISm9iRW5kZWQSDgoGam9iX2lkGAEgASgJIoEBCghKb2JTdGF0ZRIuCgdzdGFydGVkGAEgASgLMh0uZG93bmxvYWRfcHJvZ3Jlc3MuSm9iU3RhcnRlZBI4Cghwcm9ncmVzcxgCIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLlVwbG9hZFByb2dyZXNzSACIAQFCCwoJX3Byb2dyZXNzInYKF1N0cmVhbWVyQ3JlZGVudGlhbEJsb2NrEhMKC3N0cmVhbWVyX2lkGAEgASgJEg8KB2Jsb2NrZWQYAiABKAgSDgoGcmVhc29uGAMgASgJEhMKC3BsYXRmb3JtX2lkGAQgASgJEhAKCHNpbmNlX21zGAUgASgDIhwKGkNyZWRlbnRpYWxBdHRlbnRpb25DaGFuZ2VkKu4FCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEhcKE0VWRU5UX1RZUEVfU05BUFNIT1QQARIcChhFVkVOVF9UWVBFX0RPV05MT0FEX01FVEEQAhIfChtFVkVOVF9UWVBFX0RPV05MT0FEX01FVFJJQ1MQAxIgChxFVkVOVF9UWVBFX1NFR01FTlRfQ09NUExFVEVEEAQSIQodRVZFTlRfVFlQRV9ET1dOTE9BRF9DT01QTEVURUQQBRIeChpFVkVOVF9UWVBFX0RPV05MT0FEX0ZBSUxFRBAGEiEKHUVWRU5UX1RZUEVfRE9XTkxPQURfQ0FOQ0VMTEVEEAcSFAoQRVZFTlRfVFlQRV9FUlJPUhAIEiAKHEVWRU5UX1RZUEVfRE9XTkxPQURfUkVKRUNURUQQCRImCiJFVkVOVF9UWVBFX1NUUkVBTUVSX0NIRUNLX1JFQ09SREVEEAoSHgoaRVZFTlRfVFlQRV9ET1dOTE9BRF9RVUVVRUQQDBIgChxFVkVOVF9UWVBFX0RPV05MT0FEX0RFUVVFVUVEEA0SHQoZRVZFTlRfVFlQRV9VUExPQURfU1RBUlRFRBAOEh4KGkVWRU5UX1RZUEVfVVBMT0FEX1BST0dSRVNTEA8SHgoaRVZFTlRfVFlQRV9VUExPQURfVEVSTUlOQUwQEBIdChlFVkVOVF9UWVBFX0RPV05MT0FEX1NQTElUEBESGwoXRVZFTlRfVFlQRV9VUExPQURfUVVFVUUQEhIoCiRFVkVOVF9UWVBFX1NUUkVBTUVSX0NSRURFTlRJQUxfQkxPQ0sQExIrCidFVkVOVF9UWVBFX0NSRURFTlRJQUxfQVRURU5USU9OX0NIQU5HRUQQFBIaChZFVkVOVF9UWVBFX0pPQl9TVEFSVEVEEBUSGwoXRVZFTlRfVFlQRV9KT0JfUFJPR1JFU1MQFhIYChRFVkVOVF9UWVBFX0pPQl9FTkRFRBAXKq0BChRVcGxvYWRUZXJtaW5hbFN0YXR1cxImCiJVUExPQURfVEVSTUlOQUxfU1RBVFVTX1VOU1BFQ0lGSUVEEAASJAogVVBMT0FEX1RFUk1JTkFMX1NUQVRVU19DT01QTEVURUQQARIhCh1VUExPQURfVEVSTUlOQUxfU1RBVFVTX0ZBSUxFRBACEiQKIFVQTE9BRF9URVJNSU5BTF9TVEFUVVNfQ0FOQ0VMTEVEEANiBnByb3RvMw");
 
 /**
  * Server-to-client message envelope
@@ -136,12 +136,30 @@ export type WsMessage = Message<"download_progress.WsMessage"> & {
     case: "streamerCredentialBlock";
   } | {
     /**
-     * Next free oneof field: 21.
-     *
      * @generated from field: download_progress.CredentialAttentionChanged credential_attention_changed = 20;
      */
     value: CredentialAttentionChanged;
     case: "credentialAttentionChanged";
+  } | {
+    /**
+     * @generated from field: download_progress.JobStarted job_started = 21;
+     */
+    value: JobStarted;
+    case: "jobStarted";
+  } | {
+    /**
+     * @generated from field: download_progress.UploadProgress job_progress = 22;
+     */
+    value: UploadProgress;
+    case: "jobProgress";
+  } | {
+    /**
+     * Next free oneof field: 24.
+     *
+     * @generated from field: download_progress.JobEnded job_ended = 23;
+     */
+    value: JobEnded;
+    case: "jobEnded";
   } | { case: undefined; value?: undefined };
 };
 
@@ -249,6 +267,13 @@ export type DownloadSnapshot = Message<"download_progress.DownloadSnapshot"> & {
    * @generated from field: uint32 pending_uploads = 4;
    */
   pendingUploads: number;
+
+  /**
+   * Other jobs PROCESSING for 10 s or more, like `uploads`.
+   *
+   * @generated from field: repeated download_progress.JobState jobs = 5;
+   */
+  jobs: JobState[];
 };
 
 /**
@@ -981,10 +1006,10 @@ export const UploadStartedSchema: GenMessage<UploadStarted> = /*@__PURE__*/
   messageDesc(file_download_progress, 19);
 
 /**
- * Coalesced live progress for one upload job. Numeric fields use proto3
- * `optional` because the source (JobProgressSnapshot) genuinely
- * distinguishes "unknown" from zero — e.g. bytes_total is unknown until
- * rclone reports its first stats line.
+ * Coalesced live progress for one upload job, or for a long-running job
+ * as JOB_PROGRESS. Numeric fields use proto3 `optional` because the source
+ * (JobProgressSnapshot) genuinely distinguishes "unknown" from zero — e.g.
+ * bytes_total is unknown until rclone reports its first stats line.
  *
  * @generated from message download_progress.UploadProgress
  */
@@ -1041,6 +1066,24 @@ export type UploadProgress = Message<"download_progress.UploadProgress"> & {
    * @generated from field: optional uint32 files_total = 10;
    */
   filesTotal?: number | undefined;
+
+  /**
+   * FFmpeg steps: output position, the length being written, and the
+   * processing speed as a multiple of real time.
+   *
+   * @generated from field: optional uint64 out_time_ms = 11;
+   */
+  outTimeMs?: bigint | undefined;
+
+  /**
+   * @generated from field: optional uint64 duration_ms = 12;
+   */
+  durationMs?: bigint | undefined;
+
+  /**
+   * @generated from field: optional double speed_x = 13;
+   */
+  speedX?: number | undefined;
 };
 
 /**
@@ -1149,6 +1192,108 @@ export const UploadStateSchema: GenMessage<UploadState> = /*@__PURE__*/
   messageDesc(file_download_progress, 23);
 
 /**
+ * A pipeline job other than an upload has been PROCESSING for 10 s. Empty
+ * strings mean absent, as in UploadStarted.
+ *
+ * @generated from message download_progress.JobStarted
+ */
+export type JobStarted = Message<"download_progress.JobStarted"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * @generated from field: string streamer_id = 2;
+   */
+  streamerId: string;
+
+  /**
+   * @generated from field: string session_id = 3;
+   */
+  sessionId: string;
+
+  /**
+   * Job type as stored, e.g. "remux" or "thumbnail_hd".
+   *
+   * @generated from field: string job_type = 4;
+   */
+  jobType: string;
+
+  /**
+   * Number of input files.
+   *
+   * @generated from field: uint32 files_total = 5;
+   */
+  filesTotal: number;
+
+  /**
+   * @generated from field: int64 started_at_ms = 6;
+   */
+  startedAtMs: bigint;
+
+  /**
+   * @generated from field: string streamer_name = 7;
+   */
+  streamerName: string;
+
+  /**
+   * @generated from field: string streamer_avatar = 8;
+   */
+  streamerAvatar: string;
+};
+
+/**
+ * Describes the message download_progress.JobStarted.
+ * Use `create(JobStartedSchema)` to create a new message.
+ */
+export const JobStartedSchema: GenMessage<JobStarted> = /*@__PURE__*/
+  messageDesc(file_download_progress, 24);
+
+/**
+ * A job announced by JOB_STARTED completed, failed or was cancelled.
+ *
+ * @generated from message download_progress.JobEnded
+ */
+export type JobEnded = Message<"download_progress.JobEnded"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message download_progress.JobEnded.
+ * Use `create(JobEndedSchema)` to create a new message.
+ */
+export const JobEndedSchema: GenMessage<JobEnded> = /*@__PURE__*/
+  messageDesc(file_download_progress, 25);
+
+/**
+ * Snapshot slice: one long-running job, like UploadState.
+ *
+ * @generated from message download_progress.JobState
+ */
+export type JobState = Message<"download_progress.JobState"> & {
+  /**
+   * @generated from field: download_progress.JobStarted started = 1;
+   */
+  started?: JobStarted | undefined;
+
+  /**
+   * @generated from field: optional download_progress.UploadProgress progress = 2;
+   */
+  progress?: UploadProgress | undefined;
+};
+
+/**
+ * Describes the message download_progress.JobState.
+ * Use `create(JobStateSchema)` to create a new message.
+ */
+export const JobStateSchema: GenMessage<JobState> = /*@__PURE__*/
+  messageDesc(file_download_progress, 26);
+
+/**
  * A streamer's credential block changed. `blocked` false lifts it, and the
  * other fields are then empty/zero.
  *
@@ -1193,7 +1338,7 @@ export type StreamerCredentialBlock = Message<"download_progress.StreamerCredent
  * Use `create(StreamerCredentialBlockSchema)` to create a new message.
  */
 export const StreamerCredentialBlockSchema: GenMessage<StreamerCredentialBlock> = /*@__PURE__*/
-  messageDesc(file_download_progress, 24);
+  messageDesc(file_download_progress, 27);
 
 /**
  * Marker: refetch the accounts needing attention.
@@ -1208,7 +1353,7 @@ export type CredentialAttentionChanged = Message<"download_progress.CredentialAt
  * Use `create(CredentialAttentionChangedSchema)` to create a new message.
  */
 export const CredentialAttentionChangedSchema: GenMessage<CredentialAttentionChanged> = /*@__PURE__*/
-  messageDesc(file_download_progress, 25);
+  messageDesc(file_download_progress, 28);
 
 /**
  * Event types for WebSocket messages
@@ -1311,7 +1456,7 @@ export enum EventType {
    * silent for longer than that as lost.
    *
    * NOTE: enum values and WsMessage oneof field numbers have drifted
-   * (value 11 is a hole); pick each independently. Next free enum: 21.
+   * (value 11 is a hole); pick each independently. Next free enum: 24.
    *
    * @generated from enum value: EVENT_TYPE_UPLOAD_STARTED = 14;
    */
@@ -1358,6 +1503,29 @@ export enum EventType {
    * @generated from enum value: EVENT_TYPE_CREDENTIAL_ATTENTION_CHANGED = 20;
    */
   CREDENTIAL_ATTENTION_CHANGED = 20,
+
+  /**
+   * Pipeline jobs other than uploads, once they have been PROCESSING for
+   * 10 s; shorter jobs never appear. JOB_STARTED announces the job,
+   * JOB_PROGRESS follows each progress-aggregator flush after that, and
+   * JOB_ENDED marks complete/fail/cancel (it can also arrive for a job that
+   * was never announced; clients ignore it then). Kept alive like uploads:
+   * the latest JOB_PROGRESS, or JOB_STARTED before any, is repeated at
+   * least every 30 s.
+   *
+   * @generated from enum value: EVENT_TYPE_JOB_STARTED = 21;
+   */
+  JOB_STARTED = 21,
+
+  /**
+   * @generated from enum value: EVENT_TYPE_JOB_PROGRESS = 22;
+   */
+  JOB_PROGRESS = 22,
+
+  /**
+   * @generated from enum value: EVENT_TYPE_JOB_ENDED = 23;
+   */
+  JOB_ENDED = 23,
 }
 
 /**
