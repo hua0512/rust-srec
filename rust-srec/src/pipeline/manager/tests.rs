@@ -1834,9 +1834,8 @@ async fn retry_dag_after_a_partial_failure_reruns_only_the_failed_branch() {
     );
 }
 
-/// Cancelling a workflow drops its scheduled retry at once. The retry sweeper
-/// re-queues a due retry whose step still waits on the job and drops one whose
-/// workflow has settled since.
+/// The retry sweeper re-queues a due retry whose step still waits on the job
+/// and drops one whose workflow has settled since.
 #[tokio::test]
 async fn run_due_retries_requeues_live_attempts_and_drops_settled_ones() {
     let (manager, jobs, _dags, _pool) = sqlx_manager().await;
@@ -1864,24 +1863,13 @@ async fn run_due_retries_requeues_live_attempts_and_drops_settled_ones() {
         assert_eq!(jobs.schedule_job_retry(job_id, 0).await.unwrap(), 1);
     }
     manager.cancel_pipeline(&settled.dag_id).await.unwrap();
-    let settled_id = &settled.root_job_ids[0];
-    assert!(
-        jobs.get_job(settled_id)
-            .await
-            .unwrap()
-            .retry_after
-            .is_none(),
-        "cancelling the workflow drops its retry"
-    );
-    // A retry the cancel failed to drop is left for the sweeper.
-    assert_eq!(jobs.schedule_job_retry(settled_id, 0).await.unwrap(), 1);
 
     assert_eq!(manager.run_due_retries().await, 1);
     let live_job = jobs.get_job(&live.root_job_ids[0]).await.unwrap();
     assert_eq!(live_job.status, "PENDING");
     assert_eq!(live_job.retry_count, 1);
     assert!(live_job.retry_after.is_none());
-    let settled_job = jobs.get_job(settled_id).await.unwrap();
+    let settled_job = jobs.get_job(&settled.root_job_ids[0]).await.unwrap();
     assert_eq!(settled_job.status, "FAILED");
     assert!(
         settled_job.retry_after.is_none(),

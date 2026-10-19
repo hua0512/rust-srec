@@ -136,6 +136,17 @@ impl PlannedRetry {
     }
 }
 
+/// A workflow step's retry budget and whether it still waits on a given job.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StepRetryState {
+    /// Attempts the step's retry policy allows, counting the first run; `None`
+    /// when the step has no policy.
+    pub max_attempts: Option<u32>,
+    /// Whether the step is still running the job in a DAG that has not
+    /// settled, so the job's scheduled retry will run.
+    pub awaits_job: bool,
+}
+
 /// Why a step job attempt failed, as the worker observed it. Decides whether
 /// the step's retry policy applies: another attempt is only worth scheduling
 /// when the same job could succeed next time.
@@ -876,38 +887,46 @@ impl DagScheduler {
         }))
     }
 
-    /// Attempts the retry policy of step `dag_step_execution_id` allows,
-    /// counting the first run; `None` when the step has no policy.
-    pub async fn step_max_attempts(&self, dag_step_execution_id: &str) -> Result<Option<u32>> {
-        let step = self.dag_repository.get_step(dag_step_execution_id).await?;
-        let dag = self.dag_repository.get_dag(&step.dag_id).await?;
-        let policy = dag
-            .get_dag_definition()
-            .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone());
-        Ok(policy.map(|policy| policy.max_attempts))
-    }
-
     /// Whether `job_id` is still the attempt `dag_step_execution_id` is waiting
     /// on in a DAG that has not settled, so a scheduled retry of it is still
     /// wanted. A step that was cancelled, failed by recovery or deleted in the
     /// meantime answers `false`.
     pub async fn step_awaits_job(&self, dag_step_execution_id: &str, job_id: &str) -> Result<bool> {
+        Ok(self
+            .step_retry_state(dag_step_execution_id, job_id)
+            .await?
+            .awaits_job)
+    }
+
+    /// The retry budget of step `dag_step_execution_id` and whether it still
+    /// awaits `job_id`, as [`Self::step_awaits_job`] decides.
+    pub async fn step_retry_state(
+        &self,
+        dag_step_execution_id: &str,
+        job_id: &str,
+    ) -> Result<StepRetryState> {
         let step = match self.dag_repository.get_step(dag_step_execution_id).await {
             Ok(step) => step,
-            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
             Err(error) => return Err(error),
         };
-        if step.get_status() != Some(crate::database::models::DagStepStatus::Processing)
-            || step.job_id.as_deref() != Some(job_id)
-        {
-            return Ok(false);
-        }
         let dag = match self.dag_repository.get_dag(&step.dag_id).await {
             Ok(dag) => dag,
-            Err(Error::NotFound { .. }) => return Ok(false),
+            Err(Error::NotFound { .. }) => return Ok(StepRetryState::default()),
             Err(error) => return Err(error),
         };
-        Ok(!dag.get_status().is_some_and(|status| status.is_terminal()))
+        let max_attempts = dag
+            .get_dag_definition()
+            .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone())
+            .map(|policy| policy.max_attempts);
+        let awaits_job = step.get_status()
+            == Some(crate::database::models::DagStepStatus::Processing)
+            && step.job_id.as_deref() == Some(job_id)
+            && !dag.get_status().is_some_and(|status| status.is_terminal());
+        Ok(StepRetryState {
+            max_attempts,
+            awaits_job,
+        })
     }
 
     fn build_step_job(
@@ -1163,13 +1182,6 @@ impl DagScheduler {
         for job_id in &cancelled {
             if self.job_queue.cancel_job(job_id).await.is_ok() {
                 cancelled_count += 1;
-                continue;
-            }
-            // A step waiting for an automatic retry holds a FAILED job, which
-            // cannot be cancelled; dropping the retry stops the job advertising
-            // an attempt that will never run.
-            if let Err(error) = self.job_queue.clear_scheduled_retry(job_id).await {
-                warn!(dag_id, %job_id, %error, "Failed to drop the scheduled retry of a cancelled step");
             }
         }
 
@@ -3531,11 +3543,21 @@ mod tests {
             "no policy"
         );
         assert_eq!(
-            scheduler.step_max_attempts(&step_id("A")).await.unwrap(),
-            Some(3)
+            scheduler
+                .step_retry_state(&step_id("A"), &job_of("A"))
+                .await
+                .unwrap(),
+            StepRetryState {
+                max_attempts: Some(3),
+                awaits_job: true
+            }
         );
         assert_eq!(
-            scheduler.step_max_attempts(&step_id("B")).await.unwrap(),
+            scheduler
+                .step_retry_state(&step_id("B"), &job_of("B"))
+                .await
+                .unwrap()
+                .max_attempts,
             None
         );
 

@@ -84,7 +84,7 @@ msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, other {# 已完成}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:788
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:778
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
@@ -114,7 +114,7 @@ msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, other {# 项}}"
 
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:808
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:798
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, other {# 行}}"
 
@@ -153,7 +153,7 @@ msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:798
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:788
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, other {# 个警告}}"
 
@@ -1165,11 +1165,11 @@ msgstr "分配模板"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:951
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:941
 msgid "Attempt {attempt}"
 msgstr "第 {attempt} 次尝试"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:947
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:937
 msgid "Attempt {attempt} of {maxAttempts}"
 msgstr "第 {attempt} 次尝试，共 {maxAttempts} 次"
 
@@ -1294,11 +1294,6 @@ msgstr "自动（按站点匹配）"
 #: src/components/config/engines/forms/mesio-sections.tsx:753
 msgid "Automatic follows the delay the stream suggests, else three segments behind the live edge. Finished streams are always recorded from the beginning."
 msgstr "自动：采用流建议的延迟，否则落后直播边缘三个分段。已结束的流始终从头录制。"
-
-#. placeholder {0}: formatDate(i18n.locale, job.retry_after, { timeStyle: 'medium', })
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:750
-msgid "Automatic retry scheduled for {0}"
-msgstr "已安排在 {0} 自动重试"
 
 #: src/components/config/global/file-config-card.tsx:41
 msgid "Automatically generate a thumbnail for the first segment of each session."
@@ -5763,7 +5758,7 @@ msgstr "正在加载弹幕"
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:827
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:817
 msgid "Loading logs..."
 msgstr "正在加载日志..."
 
@@ -5772,7 +5767,7 @@ msgstr "正在加载日志..."
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:864
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:854
 msgid "Loading older logs..."
 msgstr "正在加载历史日志..."
 
@@ -6624,7 +6619,7 @@ msgstr "不限"
 msgid "No log files found"
 msgstr "未找到日志文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:876
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:866
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
@@ -8824,11 +8819,11 @@ msgstr "重试工作流"
 msgid "Retrying"
 msgstr "等待重试"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:941
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:931
 msgid "Retrying in {wait}"
 msgstr "{wait}后重试"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:943
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:933
 msgid "Retrying shortly"
 msgstr "即将重试"
 
@@ -10837,7 +10832,7 @@ msgstr "高频词"
 msgid "total"
 msgstr "总计"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:813
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:803
 msgid "Total"
 msgstr "总计"
 

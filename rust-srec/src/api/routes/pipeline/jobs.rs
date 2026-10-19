@@ -255,7 +255,8 @@ pub async fn list_job_uploads(
 /// # Response
 ///
 /// Returns the job details if found. Unlike the job lists, it fills
-/// `max_attempts` for a workflow step job whose step has a retry policy.
+/// `max_attempts` for a workflow step job whose step has a retry policy, and
+/// reports `retry_after` only while the step still waits on the job.
 ///
 /// ```json
 /// {
@@ -310,22 +311,29 @@ pub async fn get_job(
         .ok()
         .map(|s| s.name);
 
-    let max_attempts = match (
+    // The retry sweeper drops a retry its step no longer awaits only once it
+    // is due, so a cancelled or failed workflow can leave a stored time behind.
+    let (max_attempts, retry_wanted) = match (
         pipeline_manager.dag_scheduler(),
         job.dag_step_execution_id.as_deref(),
     ) {
-        (Some(scheduler), Some(step_id)) => scheduler
-            .step_max_attempts(step_id)
-            .await
-            .unwrap_or_else(|error| {
-                debug!(job_id = %id, %error, "Could not read the step's retry policy");
-                None
-            }),
-        _ => None,
+        (Some(scheduler), Some(step_id)) => {
+            match scheduler.step_retry_state(step_id, &job.id).await {
+                Ok(state) => (state.max_attempts, state.awaits_job),
+                Err(error) => {
+                    debug!(job_id = %id, %error, "Could not read the step's retry state");
+                    (None, true)
+                }
+            }
+        }
+        _ => (None, false),
     };
 
     let mut response = job_to_response(job, streamer_name);
     response.max_attempts = max_attempts;
+    if !retry_wanted {
+        response.retry_after = None;
+    }
     Ok(Json(response))
 }
 

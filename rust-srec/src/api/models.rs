@@ -710,7 +710,9 @@ pub struct JobResponse {
     /// Time spent waiting in queue before processing started (seconds).
     pub queue_wait_secs: Option<f64>,
     /// When a failed workflow step job is scheduled to run again under its
-    /// step's retry policy; `null` when no automatic retry is pending.
+    /// step's retry policy; `null` when no automatic retry is pending. The job
+    /// lists can still report a retry of a step that has since been cancelled
+    /// or failed, which never runs; `GET /api/pipeline/jobs/{id}` does not.
     pub retry_after: Option<DateTime<Utc>>,
     /// Times the job was run again after failing or being cancelled, by an
     /// automatic or a manual retry; the latest run is attempt `retry_count + 1`.
