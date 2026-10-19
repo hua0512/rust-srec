@@ -8,20 +8,16 @@ import { Progress } from '@/components/ui/progress';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { describeJobProgress } from '@/lib/job-progress';
 
-// A running job silent for this long is flagged as making no progress.
+// A running job whose progress has not moved for this long is flagged.
 const STALL_AFTER_SECS = 60;
 
-/**
- * Whole seconds from `start` to `end`, or undefined while either is unknown.
- * Whole, so a ticking clock never formats as "1m 60s".
- */
+/** Seconds from `start` to `end`, or undefined while either is unknown. */
 function secondsBetween(
   start: string | null | undefined,
   end: string | number | null | undefined,
 ): number | undefined {
   if (!start || end == null) return undefined;
-  const ms = new Date(end).getTime() - Date.parse(start);
-  return Math.max(0, Math.round(ms / 1000));
+  return Math.max(0, (new Date(end).getTime() - Date.parse(start)) / 1000);
 }
 
 /**
@@ -52,24 +48,50 @@ export function JobProgressPanel({
   const queueSecs =
     job.queue_wait_secs ?? secondsBetween(job.created_at, job.started_at);
 
+  // A retried job keeps its id, and the progress query keeps its last data
+  // through the 404s before the new attempt reports, so a snapshot from
+  // before this attempt started belongs to an earlier one.
+  const current =
+    snapshot &&
+    job.started_at &&
+    Date.parse(snapshot.updated_at) >= Date.parse(job.started_at)
+      ? snapshot
+      : undefined;
   const { percent, details } = describeJobProgress(
     {
-      percent: snapshot?.percent,
-      bytesDone: snapshot?.bytes_done,
-      bytesTotal: snapshot?.bytes_total,
-      speedBytesPerSec: snapshot?.speed_bytes_per_sec,
-      etaSecs: snapshot?.eta_secs,
-      outTimeMs: snapshot?.out_time_ms,
-      durationMs: snapshot?.duration_ms,
-      speedX: snapshot?.speed_x,
-      progressFilesDone: snapshot?.files_done,
-      progressFilesTotal: snapshot?.files_total,
+      percent: current?.percent,
+      bytesDone: current?.bytes_done,
+      bytesTotal: current?.bytes_total,
+      speedBytesPerSec: current?.speed_bytes_per_sec,
+      etaSecs: current?.eta_secs,
+      outTimeMs: current?.out_time_ms,
+      durationMs: current?.duration_ms,
+      speedX: current?.speed_x,
+      progressFilesDone: current?.files_done,
+      progressFilesTotal: current?.files_total,
     },
     i18n,
   );
   const hasProgress = percent != null || details.length > 0;
-  const quietSecs =
-    secondsBetween(snapshot?.updated_at ?? job.started_at, now) ?? 0;
+  const preparing =
+    !hasProgress &&
+    (secondsBetween(current?.updated_at ?? job.started_at, now) ?? 0) <
+      STALL_AFTER_SECS;
+
+  // Timed on this client's clock from the last change in the reported
+  // values, not from the report time: rclone repeats an unchanged stats line
+  // every second while stuck, and the server's clock may differ.
+  const signature = [
+    current?.percent,
+    current?.bytes_done,
+    current?.out_time_ms,
+    current?.files_done,
+  ].join();
+  const [lastChange, setLastChange] = useState({ signature, atMs: now });
+  if (lastChange.signature !== signature) {
+    setLastChange({ signature, atMs: now });
+  }
+  const quietSecs = (now - lastChange.atMs) / 1000;
   const stalled = quietSecs >= STALL_AFTER_SECS;
   const quietFor = formatLocalizedDuration(quietSecs, i18n.locale);
 
@@ -93,7 +115,7 @@ export function JobProgressPanel({
       </div>
       {/* Steps that never report progress, such as commands and deletes,
           drop "Preparing…" after a minute instead of showing it all run. */}
-      {running && (hasProgress || !stalled) && (
+      {running && (hasProgress || preparing) && (
         <div className="col-span-2 p-4 rounded-xl bg-background/50 border border-border/50">
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">

@@ -409,7 +409,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:66
+#: src/lib/job-progress.ts:61
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -3439,7 +3439,7 @@ msgstr "下次使用时续期"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:80
+#: src/components/pipeline/jobs/job-progress-panel.tsx:102
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -4432,7 +4432,7 @@ msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器�
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/lib/job-progress.ts:72
+#: src/lib/job-progress.ts:67
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
@@ -6718,7 +6718,7 @@ msgstr "暂无预设"
 msgid "No preview generated"
 msgstr "未生成预览"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:121
+#: src/components/pipeline/jobs/job-progress-panel.tsx:143
 msgid "No progress for {quietFor}"
 msgstr "已 {quietFor} 无进度"
 
@@ -7864,7 +7864,7 @@ msgstr "首选视频编码"
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:116
+#: src/components/pipeline/jobs/job-progress-panel.tsx:138
 #: src/components/upload-status-indicator.tsx:365
 msgid "Preparing…"
 msgstr "准备中…"
@@ -8076,7 +8076,7 @@ msgstr "编程与 MCP 访问"
 msgid "Programs"
 msgstr "程序"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:100
+#: src/components/pipeline/jobs/job-progress-panel.tsx:122
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:286
 msgid "Progress"
 msgstr "进度"
@@ -8149,7 +8149,7 @@ msgstr "画质设置"
 msgid "Query Parameters"
 msgstr "查询参数"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:88
+#: src/components/pipeline/jobs/job-progress-panel.tsx:110
 msgid "Queue"
 msgstr "队列"
 

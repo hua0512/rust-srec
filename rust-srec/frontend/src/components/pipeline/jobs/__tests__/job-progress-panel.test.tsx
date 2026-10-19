@@ -36,7 +36,6 @@ function renderRunningJob(snapshot: Record<string, unknown>) {
 
 it('shows FFmpeg progress as media time, speed and time left', () => {
   renderRunningJob({
-    kind: 'ffmpeg',
     percent: 20,
     out_time_ms: 754_000,
     duration_ms: 3_720_000,
@@ -55,7 +54,6 @@ it('shows FFmpeg progress as media time, speed and time left', () => {
 
 it('shows byte progress with speed, time left and the file in a batch', () => {
   renderRunningJob({
-    kind: 'copy',
     percent: 25,
     bytes_done: 256 * 1024 * 1024,
     bytes_total: 1024 * 1024 * 1024,

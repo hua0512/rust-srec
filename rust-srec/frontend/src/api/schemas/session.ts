@@ -156,9 +156,6 @@ export type SessionDanmuStatistics = z.infer<
 >;
 
 export const JobProgressSnapshotSchema = z.object({
-  // Open on purpose: nothing reads it, and a backend kind missing from a
-  // closed list would fail the parse and hide the job's progress.
-  kind: z.string(),
   updated_at: z.string(),
   percent: z.number().nullable().optional(),
   bytes_done: z.number().nullable().optional(),
