@@ -44,7 +44,8 @@ export function describeJobProgress(
         : done,
     );
     if (progress.speedX != null) details.push(`${progress.speedX.toFixed(1)}×`);
-    if (progress.etaSecs != null && progress.etaSecs > 0) {
+    // Under a second the duration would read in milliseconds.
+    if (progress.etaSecs != null && progress.etaSecs >= 1) {
       const eta = formatLocalizedDuration(progress.etaSecs, i18n.locale);
       details.push(i18n._(msg`~${eta} left`));
     }

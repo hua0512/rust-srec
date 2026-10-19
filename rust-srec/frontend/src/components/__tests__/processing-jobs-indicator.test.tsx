@@ -65,16 +65,14 @@ it('lists each running job with its step and progress, linked to the job', () =>
     '/pipeline/jobs/job-1',
   );
   expect(
-    screen.getByText(
-      'Remux / Transcode · 00:12:34 / 01:02:00 · 2.3× · ~3m left',
-    ),
-  ).toBeInTheDocument();
+    screen.getByText('Remux / Transcode').nextElementSibling,
+  ).toHaveTextContent('00:12:34 / 01:02:00 · 2.3× · ~3m left');
   expect(screen.getByRole('progressbar')).toHaveAttribute(
     'aria-valuenow',
     '20',
   );
   // Without progress reports a job shows how long it has run, and no bar.
   expect(
-    screen.getByText(/^Execute Command · Running for 1m/),
-  ).toBeInTheDocument();
+    screen.getByText('Execute Command').nextElementSibling,
+  ).toHaveTextContent(/^Running for 1m/);
 });

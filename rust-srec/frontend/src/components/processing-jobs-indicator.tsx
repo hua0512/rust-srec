@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
@@ -121,9 +121,16 @@ function JobRow({
           )}
         </div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-          {[jobTypeLabel(job.jobType, i18n), ...details]
-            .filter(Boolean)
-            .join(' · ')}
+          {jobTypeLabel(job.jobType, i18n)}
+        </div>
+        {/* Wraps only between details, so no value splits across lines. */}
+        <div className="text-[11px] text-muted-foreground">
+          {details.map((detail, index) => (
+            <Fragment key={detail}>
+              {index > 0 && ' · '}
+              <span className="whitespace-nowrap">{detail}</span>
+            </Fragment>
+          ))}
         </div>
       </div>
     </Link>
