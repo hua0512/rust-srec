@@ -533,7 +533,6 @@ pub async fn run_command_with_logs(
 #[derive(Default)]
 struct FfmpegProgressState {
     out_time_ms: Option<u64>,
-    out_time_us: Option<u64>,
     total_size: Option<u64>,
     speed_x: Option<f64>,
     /// Media length the run writes, when known.
@@ -586,14 +585,27 @@ fn parse_ffmpeg_kv_line(
     );
 
     match key {
-        // FFmpeg's legacy out_time_ms name also carries microseconds.
-        "out_time_ms" => state.out_time_ms = value.parse::<u64>().ok().map(|us| us / 1000),
-        "out_time_us" => state.out_time_us = value.parse::<u64>().ok(),
-        "total_size" => state.total_size = value.parse::<u64>().ok(),
-        "speed" => state.speed_x = parse_speed_x(value),
+        // Both keys carry microseconds (FFmpeg's legacy out_time_ms name too).
+        // FFmpeg prints N/A while the encoder flushes and can step back once
+        // under load; neither may move the reported position backwards.
+        "out_time_ms" | "out_time_us" => {
+            if let Ok(us) = value.parse::<u64>() {
+                state.out_time_ms = state.out_time_ms.max(Some(us / 1000));
+            }
+        }
+        "total_size" => {
+            if let Ok(size) = value.parse::<u64>() {
+                state.total_size = Some(size);
+            }
+        }
+        "speed" => {
+            if let Some(speed) = parse_speed_x(value) {
+                state.speed_x = Some(speed);
+            }
+        }
         "progress" => {
             let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-            snapshot.out_time_ms = state.out_time_us.map(|us| us / 1000).or(state.out_time_ms);
+            snapshot.out_time_ms = state.out_time_ms;
             snapshot.bytes_done = state.total_size;
             snapshot.speed_x = state.speed_x;
             snapshot.duration_ms = state.duration_ms;
@@ -1074,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn ffmpeg_progress_converts_both_microsecond_keys_to_milliseconds() {
+    fn ffmpeg_progress_position_is_in_milliseconds_and_never_moves_back() {
         for key in ["out_time_ms", "out_time_us"] {
             let mut state = FfmpegProgressState::default();
             parse_ffmpeg_kv_line(&format!("{key}=1234567"), &mut state);
@@ -1097,7 +1109,7 @@ mod tests {
             parse_ffmpeg_kv_line("progress=end", &mut state)
                 .unwrap()
                 .out_time_ms,
-            None
+            Some(2000)
         );
     }
 
