@@ -1,17 +1,18 @@
+import { memo } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  getDagExecution,
-  getDagGraph,
-  retryDagSteps,
-  cancelDag,
-} from '@/server/functions';
+import { getDagExecution, retryDagSteps, cancelDag } from '@/server/functions';
 import { DagGraphView } from '@/components/pipeline/dag-graph-view';
+import {
+  StepActivity,
+  stepProgress,
+} from '@/components/pipeline/step-activity';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   ArrowLeft,
@@ -40,7 +41,7 @@ import { isNotFoundError } from '@/lib/api-error';
 import {
   getStatusConfig,
   getStatusLabel,
-  type StatusConfigItem,
+  stepDisplayStatus,
 } from '@/components/pipeline/status-config';
 
 export const Route = createLazyFileRoute(
@@ -65,20 +66,16 @@ function PipelineExecutionPage() {
     // default backoff would hold the page on skeletons for several seconds
     // before the error is shown.
     retry: (failureCount, error) => !isNotFoundError(error) && failureCount < 3,
+    // Running steps report progress every second; a workflow that is pending
+    // only has queued or retrying steps, which change when a worker picks
+    // them up.
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return ['PENDING', 'PROCESSING'].includes(status || '') ? 1000 : false;
-    },
-  });
-
-  const { data: graph } = useQuery({
-    queryKey: ['pipeline', 'executions', pipelineId, 'graph'],
-    queryFn: () => getDagGraph({ data: pipelineId }),
-    enabled: !!dag,
-    refetchInterval: () => {
-      return ['PENDING', 'PROCESSING'].includes(dag?.status || '')
-        ? 2000
-        : false;
+      return status === 'PROCESSING'
+        ? 1000
+        : status === 'PENDING'
+          ? 5000
+          : false;
     },
   });
 
@@ -334,35 +331,26 @@ function PipelineExecutionPage() {
           </TabsList>
 
           <TabsContent value="graph" className="mt-0">
-            {graph ? (
-              <DagGraphView graph={graph} />
-            ) : (
-              <div className="h-[500px] flex items-center justify-center border border-dashed rounded-xl">
-                <Skeleton className="h-[400px] w-full max-w-3xl rounded-xl" />
-              </div>
-            )}
+            <DagGraphView steps={steps} />
           </TabsContent>
 
           <TabsContent value="list" className="mt-0">
             <div className="space-y-4">
-              {steps.map((step) => {
-                const jobConfig = getStatusConfig(step.status);
-                return (
-                  <div key={step.step_id} className="block">
-                    {step.job_id ? (
-                      <Link
-                        to="/pipeline/jobs/$jobId"
-                        params={{ jobId: step.job_id }}
-                        className="group"
-                      >
-                        <StepCard step={step} jobConfig={jobConfig} />
-                      </Link>
-                    ) : (
-                      <StepCard step={step} jobConfig={jobConfig} />
-                    )}
-                  </div>
-                );
-              })}
+              {steps.map((step) => (
+                <div key={step.step_id} className="block">
+                  {step.job_id ? (
+                    <Link
+                      to="/pipeline/jobs/$jobId"
+                      params={{ jobId: step.job_id }}
+                      className="group"
+                    >
+                      <StepCard step={step} />
+                    </Link>
+                  ) : (
+                    <StepCard step={step} />
+                  )}
+                </div>
+              ))}
             </div>
           </TabsContent>
         </Tabs>
@@ -371,15 +359,13 @@ function PipelineExecutionPage() {
   );
 }
 
-function StepCard({
-  step,
-  jobConfig,
-}: {
-  step: DagStep;
-  jobConfig: StatusConfigItem;
-}) {
+// Unchanged steps keep their objects across polls, so only steps whose state
+// changed re-render.
+const StepCard = memo(function StepCard({ step }: { step: DagStep }) {
   const { i18n } = useLingui();
-  const isProcessing = step.status === 'PROCESSING';
+  const status = stepDisplayStatus(step);
+  const jobConfig = getStatusConfig(status);
+  const { percent } = stepProgress(step, i18n);
   const isCompleted = step.status === 'COMPLETED';
   const isFailed = step.status === 'FAILED';
 
@@ -387,16 +373,12 @@ function StepCard({
 
   return (
     <Card className="group relative overflow-hidden border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-2xl hover:-translate-y-1 hover:border-primary/30 hover:bg-card/60">
-      {/* Top Progress Bar for active jobs */}
-      {isProcessing && (
-        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500/10 overflow-hidden">
-          <motion.div
-            className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-            initial={{ x: '-100%' }}
-            animate={{ x: '100%' }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
-          />
-        </div>
+      {percent != null && (
+        <Progress
+          value={percent}
+          className="absolute inset-x-0 top-0 h-1 rounded-none bg-blue-500/10"
+          indicatorClassName="bg-blue-500"
+        />
       )}
 
       {/* Background Pattern */}
@@ -415,20 +397,14 @@ function StepCard({
                   'ring-white/5',
                 )}
               >
-                <StatusIcon
-                  className={cn(
-                    'h-4 w-4',
-                    jobConfig.textColor,
-                    isProcessing && 'animate-spin',
-                  )}
-                />
+                <StatusIcon className={cn('h-4 w-4', jobConfig.textColor)} />
               </div>
               <Badge
                 variant="outline"
                 className="font-mono text-[10px] uppercase opacity-60 tracking-tight"
               >
                 {(() => {
-                  const def = getProcessorDefinition(step.processor);
+                  const def = getProcessorDefinition(step.processor ?? '');
                   return def ? i18n._(def.label) : step.processor;
                 })()}
               </Badge>
@@ -441,6 +417,10 @@ function StepCard({
                   i18n,
                 ).replace(/_/g, ' ')}
               </h3>
+              <StepActivity
+                step={step}
+                className="mt-1 text-xs text-muted-foreground tabular-nums"
+              />
               {step.job_id && (
                 <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground/60 font-mono">
                   <div className="w-1.5 h-1.5 rounded-full bg-current opacity-40" />
@@ -462,7 +442,7 @@ function StepCard({
                     jobConfig.textColor,
                   )}
                 >
-                  {getStatusLabel(i18n, step.status)}
+                  {getStatusLabel(i18n, status)}
                 </span>
                 {isCompleted && (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -507,7 +487,7 @@ function StepCard({
       )}
     </Card>
   );
-}
+});
 
 function StatsCard({
   icon,

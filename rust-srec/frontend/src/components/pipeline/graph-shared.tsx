@@ -41,6 +41,11 @@ interface GlassNodeProps {
   glow?: string;
   bg?: string;
   isClickable?: boolean;
+  /**
+   * Drawn over the card's padding box and clipped to its rounded corners, for
+   * marks anchored to the card's edges rather than its content.
+   */
+  overlay?: ReactNode;
 }
 
 export function GlassNode({
@@ -49,6 +54,7 @@ export function GlassNode({
   glow = 'shadow-transparent',
   bg = 'bg-muted/5',
   isClickable,
+  overlay,
 }: GlassNodeProps) {
   return (
     <div
@@ -71,6 +77,12 @@ export function GlassNode({
 
       {/* Glass reflection */}
       <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+
+      {overlay && (
+        <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none">
+          {overlay}
+        </div>
+      )}
 
       <div className="relative z-10">{children}</div>
     </div>

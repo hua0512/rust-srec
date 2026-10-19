@@ -1,11 +1,17 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { motion, useMotionValue, useSpring } from 'motion/react';
-import { DagGraph, DagGraphNode } from '@/api/schemas';
+import type { DagStep } from '@/api/schemas';
 import { cn } from '@/lib/utils';
 import { Maximize2, Minimize2, Move } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { GraphViewport, GlassNode } from './graph-shared';
 import { computeNodeLevels } from './graph-levels';
 import { useLingui } from '@lingui/react';
@@ -13,17 +19,72 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { getJobPresetName } from './presets/default-presets-i18n';
 import { getProcessorDefinition } from './presets/processors/registry';
+import { StepActivity, stepProgress } from './step-activity';
 import {
   getStatusConfig,
   getStatusLabel,
+  stepDisplayStatus,
 } from '@/components/pipeline/status-config';
 
 interface DagGraphViewProps {
-  graph: DagGraph;
+  steps: DagStep[];
   className?: string;
 }
 
-export function DagGraphView({ graph, className }: DagGraphViewProps) {
+type NodePosition = { x: number; y: number };
+
+// Each step's id with the ids of the steps it depends on.
+type Topology = [id: string, dependsOn: string[]][];
+
+const LEVEL_SPACING = 350;
+const NODE_SPACING = 180;
+
+/**
+ * Places each step in the column of its depth from a root and lists the edges
+ * between known steps, from a dependency to its dependent.
+ */
+function layoutGraph(topology: Topology) {
+  const ids = topology.map(([id]) => id);
+  const known = new Set(ids);
+  const edges = topology.flatMap(([id, dependsOn]) =>
+    dependsOn
+      .filter((dependency) => known.has(dependency))
+      .map((dependency) => ({ from: dependency, to: id })),
+  );
+  const levels = computeNodeLevels(
+    ids,
+    edges.map((edge) => ({ source: edge.from, target: edge.to })),
+  );
+
+  const idsByLevel: string[][] = [];
+  Object.entries(levels).forEach(([id, level]) => {
+    if (!idsByLevel[level]) idsByLevel[level] = [];
+    idsByLevel[level].push(id);
+  });
+
+  const maxNodesPerLevel = Math.max(...idsByLevel.map((l) => l.length), 1);
+  const maxHeight = maxNodesPerLevel * NODE_SPACING;
+  const positions: Record<string, NodePosition> = {};
+  idsByLevel.forEach((levelIds, levelIdx) => {
+    const levelHeight = (levelIds.length - 1) * NODE_SPACING;
+    const offset = (maxHeight - levelHeight) / 2;
+    levelIds.forEach((id, nodeIdx) => {
+      positions[id] = {
+        x: levelIdx * LEVEL_SPACING + 100,
+        y: offset + nodeIdx * NODE_SPACING + 100,
+      };
+    });
+  });
+
+  return {
+    positions,
+    edges,
+    width: idsByLevel.length * LEVEL_SPACING + 300,
+    height: maxHeight + 200,
+  };
+}
+
+export function DagGraphView({ steps, className }: DagGraphViewProps) {
   const { i18n } = useLingui();
   const [scale, setScale] = useState(1);
   const x = useMotionValue(0);
@@ -33,50 +94,19 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
   const springX = useSpring(x, { stiffness: 300, damping: 30 });
   const springY = useSpring(y, { stiffness: 300, damping: 30 });
 
-  // Simple layering algorithm
-  const layout = useMemo(() => {
-    const { nodes, edges } = graph;
-    const nodeMap: Record<string, DagGraphNode> = {};
-    nodes.forEach((n) => (nodeMap[n.id] = n));
-    const levels = computeNodeLevels(
-      nodes.map((n) => n.id),
-      edges.map((e) => ({ source: e.from, target: e.to })),
-    );
-
-    const nodesByLevel: DagGraphNode[][] = [];
-    Object.entries(levels).forEach(([id, level]) => {
-      if (!nodesByLevel[level]) nodesByLevel[level] = [];
-      nodesByLevel[level].push(nodeMap[id]);
-    });
-
-    return nodesByLevel;
-  }, [graph]);
-
-  const { nodePositions, totalWidth, totalHeight } = useMemo(() => {
-    const positions: Record<string, { x: number; y: number }> = {};
-    const LEVEL_SPACING = 350;
-    const NODE_SPACING = 180;
-
-    const maxNodesPerLevel = Math.max(...layout.map((l) => l.length), 1);
-    const maxHeight = maxNodesPerLevel * NODE_SPACING;
-
-    layout.forEach((nodes, levelIdx) => {
-      const levelHeight = (nodes.length - 1) * NODE_SPACING;
-      const offset = (maxHeight - levelHeight) / 2;
-      nodes.forEach((node, nodeIdx) => {
-        positions[node.id] = {
-          x: levelIdx * LEVEL_SPACING + 100,
-          y: offset + nodeIdx * NODE_SPACING + 100,
-        };
-      });
-    });
-
-    return {
-      nodePositions: positions,
-      totalWidth: layout.length * LEVEL_SPACING + 300,
-      totalHeight: maxHeight + 200,
-    };
-  }, [layout]);
+  // Keyed on the step ids and dependencies alone, so the status polls keep
+  // the same positions and leave unchanged nodes alone.
+  const topology = JSON.stringify(
+    steps.map((step) => [step.step_id, step.depends_on]),
+  );
+  const layout = useMemo(
+    () => layoutGraph(JSON.parse(topology) as Topology),
+    [topology],
+  );
+  const stepById = useMemo(
+    () => new Map(steps.map((step) => [step.step_id, step])),
+    [steps],
+  );
 
   const handleReset = () => {
     x.set(0);
@@ -130,40 +160,19 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
           y: springY,
           scale,
           cursor: 'grab',
-          width: totalWidth,
-          height: totalHeight,
+          width: layout.width,
+          height: layout.height,
         }}
         className="relative active:cursor-grabbing"
       >
         {/* SVG Layer */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-          <defs>
-            <linearGradient id="edgeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(59, 130, 246, 0.2)" />
-              <stop offset="50%" stopColor="rgba(59, 130, 246, 0.5)" />
-              <stop offset="100%" stopColor="rgba(59, 130, 246, 0.2)" />
-            </linearGradient>
-            <marker
-              id="premium-arrowhead"
-              markerWidth="10"
-              markerHeight="10"
-              refX="9"
-              refY="5"
-              orient="auto"
-            >
-              <path d="M0,0 L10,5 L0,10 Z" fill="rgb(59, 130, 246)" />
-            </marker>
-          </defs>
-
-          {graph.edges.map((edge, idx) => {
-            const from = nodePositions[edge.from];
-            const to = nodePositions[edge.to];
-            if (!from || !to) return null;
-
-            const fromNode = graph.nodes.find((n) => n.id === edge.from);
+          {layout.edges.map((edge, idx) => {
+            const from = layout.positions[edge.from];
+            const to = layout.positions[edge.to];
+            const fromStatus = stepById.get(edge.from)?.status;
             const isActive =
-              fromNode?.status === 'PROCESSING' ||
-              fromNode?.status === 'COMPLETED';
+              fromStatus === 'PROCESSING' || fromStatus === 'COMPLETED';
 
             // Calculate points - arrows connect at node edges only
             const startX = from.x + 180; // Right edge of source node
@@ -173,24 +182,8 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
             const midX = (startX + endX) / 2;
             const pathString = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
 
-            // Shorter path for flow animation (doesn't need marker)
-            const flowEndX = to.x - 15;
-            const flowMidX = (startX + flowEndX) / 2;
-            const flowPathString = `M ${startX} ${startY} C ${flowMidX} ${startY}, ${flowMidX} ${endY}, ${flowEndX} ${endY}`;
-
             return (
               <g key={`${edge.from}-${edge.to}-${idx}`}>
-                {/* Shadow/Glow Path */}
-                {isActive && (
-                  <path
-                    d={flowPathString}
-                    fill="none"
-                    stroke="rgba(59, 130, 246, 0.08)"
-                    strokeWidth="6"
-                    className="blur-[6px]"
-                  />
-                )}
-                {/* Base Path */}
                 <motion.path
                   d={pathString}
                   fill="none"
@@ -222,25 +215,6 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   }}
                   style={{ transformOrigin: `${endX}px ${endY}px` }}
                 />
-
-                {/* Flow Animation */}
-                {isActive && (
-                  <motion.path
-                    d={flowPathString}
-                    fill="none"
-                    stroke="url(#edgeGradient)"
-                    strokeWidth="3.5"
-                    strokeDasharray="12, 24"
-                    animate={{
-                      strokeDashoffset: [0, -72],
-                    }}
-                    transition={{
-                      duration: 1.5,
-                      repeat: Infinity,
-                      ease: 'linear',
-                    }}
-                  />
-                )}
               </g>
             );
           })}
@@ -248,126 +222,137 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
 
         {/* Nodes Layer */}
         <div className="relative z-10">
-          {graph.nodes.map((node, idx) => {
-            const pos = nodePositions[node.id];
-            const config = getStatusConfig(node.status);
-            const Icon = config.icon;
-
-            const nodeContent = (
-              <GlassNode
-                glow={config.glow}
-                bg={config.surfaceBg}
-                isClickable={!!node.job_id}
-                className="w-full"
-              >
-                {node.job_id && (
-                  <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                    <div className="bg-primary text-primary-foreground text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-lg ring-1 ring-white/20">
-                      <Trans>View</Trans>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-start justify-between gap-2 mb-4 relative z-10">
-                  <div
-                    className={cn(
-                      'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
-                      config.surfaceBg,
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        'h-4 w-4',
-                        config.textColor,
-                        config.animate && 'animate-spin',
-                      )}
-                    />
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="min-w-0 shrink bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
-                  >
-                    <span className="truncate">
-                      {(() => {
-                        const def = getProcessorDefinition(
-                          node.processor || '',
-                        );
-                        return def ? i18n._(def.label) : node.processor || '';
-                      })()}
-                    </span>
-                  </Badge>
-                </div>
-
-                <h4 className="text-[15px] font-bold truncate text-foreground mb-1 tracking-tight relative z-10 uppercase">
-                  {getJobPresetName(
-                    { id: node.label || node.id, name: node.label || node.id },
-                    i18n,
-                  )}
-                </h4>
-
-                <div className="flex items-center justify-between relative z-10">
-                  <span
-                    className={cn(
-                      'text-[10px] font-black uppercase tracking-widest',
-                      config.textColor,
-                    )}
-                  >
-                    {getStatusLabel(i18n, node.status)}
-                  </span>
-                  {node.job_id && (
-                    <span className="text-[9px] font-mono text-foreground/20 group-hover:text-foreground/40 transition-colors">
-                      #{node.job_id.slice(0, 8)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Animated progress bar for processing */}
-                {node.status === 'PROCESSING' && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 overflow-hidden rounded-b-2xl">
-                    <motion.div
-                      className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"
-                      animate={{
-                        x: ['-100%', '100%'],
-                      }}
-                      transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: 'linear',
-                      }}
-                    />
-                  </div>
-                )}
-              </GlassNode>
-            );
-
-            return (
-              <motion.div
-                key={node.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 + 0.3, type: 'spring' }}
-                style={{
-                  left: pos.x,
-                  top: pos.y,
-                  width: 180,
-                }}
-                className="absolute"
-              >
-                {node.job_id ? (
-                  <Link
-                    to="/pipeline/jobs/$jobId"
-                    params={{ jobId: node.job_id }}
-                  >
-                    {nodeContent}
-                  </Link>
-                ) : (
-                  nodeContent
-                )}
-              </motion.div>
-            );
-          })}
+          {steps.map((step, idx) => (
+            <DagNode
+              key={step.step_id}
+              step={step}
+              position={layout.positions[step.step_id]}
+              index={idx}
+            />
+          ))}
         </div>
       </motion.div>
     </GraphViewport>
   );
 }
+
+const DagNode = memo(function DagNode({
+  step,
+  position,
+  index,
+}: {
+  step: DagStep;
+  position: NodePosition;
+  index: number;
+}) {
+  const { i18n } = useLingui();
+  const status = stepDisplayStatus(step);
+  const config = getStatusConfig(status);
+  const Icon = config.icon;
+  const { percent } = stepProgress(step, i18n);
+  const label = step.processor ?? step.step_id;
+  const definition = getProcessorDefinition(step.processor ?? '');
+
+  const nodeContent = (
+    <GlassNode
+      glow={config.glow}
+      bg={config.surfaceBg}
+      isClickable={!!step.job_id}
+      className="w-full"
+      overlay={
+        percent != null && (
+          <Progress
+            value={percent}
+            className="absolute inset-x-0 bottom-0 h-1 rounded-none bg-blue-500/10"
+            indicatorClassName="bg-blue-500"
+          />
+        )
+      }
+    >
+      {step.job_id && (
+        <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+          <div className="bg-primary text-primary-foreground text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-lg ring-1 ring-white/20">
+            <Trans>View</Trans>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-2 mb-4 relative z-10">
+        <div
+          className={cn(
+            'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
+            config.surfaceBg,
+          )}
+        >
+          <Icon className={cn('h-4 w-4', config.textColor)} />
+        </div>
+        <Badge
+          variant="outline"
+          className="min-w-0 shrink bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
+        >
+          <span className="truncate">
+            {definition ? i18n._(definition.label) : step.processor}
+          </span>
+        </Badge>
+      </div>
+
+      <h4 className="text-[15px] font-bold truncate text-foreground mb-1 tracking-tight relative z-10 uppercase">
+        {getJobPresetName({ id: label, name: label }, i18n)}
+      </h4>
+
+      <div className="flex items-center justify-between relative z-10">
+        <span
+          className={cn(
+            'flex items-baseline gap-1.5 text-[10px] font-black uppercase tracking-widest',
+            config.textColor,
+          )}
+        >
+          <span>{getStatusLabel(i18n, status)}</span>
+          {percent != null && (
+            <span className="tabular-nums">{`${percent.toFixed(0)}%`}</span>
+          )}
+        </span>
+        {step.job_id && (
+          <span className="text-[9px] font-mono text-foreground/20 group-hover:text-foreground/40 transition-colors">
+            #{step.job_id.slice(0, 8)}
+          </span>
+        )}
+      </div>
+    </GlassNode>
+  );
+
+  const node = step.job_id ? (
+    <Link to="/pipeline/jobs/$jobId" params={{ jobId: step.job_id }}>
+      {nodeContent}
+    </Link>
+  ) : (
+    nodeContent
+  );
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 + 0.3, type: 'spring' }}
+      style={{
+        left: position.x,
+        top: position.y,
+        width: 180,
+      }}
+      className="absolute"
+    >
+      {status === 'RUNNING' || status === 'RETRYING' ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>{node}</div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <StepActivity step={step} />
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        node
+      )}
+    </motion.div>
+  );
+});

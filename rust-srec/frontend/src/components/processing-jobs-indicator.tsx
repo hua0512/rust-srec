@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
@@ -12,6 +12,7 @@ import {
   displayName,
   StreamerAvatar,
 } from '@/components/upload-status-indicator';
+import { useNow } from '@/hooks/use-now';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { describeJobProgress, jobTypeLabel } from '@/lib/job-progress';
 import { cn } from '@/lib/utils';
@@ -52,11 +53,7 @@ function JobList({
   onNavigate: () => void;
 }) {
   // Mounted only while the popover is open; keeps elapsed times current.
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow();
 
   return (
     <ul className="py-1">

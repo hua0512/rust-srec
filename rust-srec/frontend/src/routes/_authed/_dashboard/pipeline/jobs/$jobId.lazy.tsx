@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -28,6 +28,7 @@ import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel'
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
 import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
+import { RetryCountdown } from '@/components/pipeline/retry-countdown';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -78,7 +79,6 @@ export const Route = createLazyFileRoute(
 });
 
 import { formatDate } from '@/lib/datetime';
-import { formatLocalizedDuration } from '@/lib/date-utils';
 
 /** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
 const LOG_PAGE_SIZE = 1000;
@@ -889,20 +889,9 @@ function JobDetailsPage() {
 /**
  * Which attempt a job that has run more than once is on and, while a failed
  * workflow step waits for its automatic retry, when the next attempt starts.
- * Holds the countdown's clock so its ticks re-render only this chip.
  */
 function JobAttempt({ job }: { job: Job }) {
-  const { i18n } = useLingui();
   const retryAt = job.status === 'FAILED' ? job.retry_after : null;
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!retryAt) return;
-    // The clock is stale if the job ran for a while before this retry.
-    const tick = () => setNow(Date.now());
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [retryAt]);
 
   // While a retry waits, the attempt shown is the one it will start.
   const attempt = job.retry_count + (retryAt ? 2 : 1);
@@ -912,8 +901,6 @@ function JobAttempt({ job }: { job: Job }) {
     job.max_attempts != null && attempt <= job.max_attempts
       ? job.max_attempts
       : null;
-  const waitSecs = retryAt ? Math.ceil((Date.parse(retryAt) - now) / 1000) : 0;
-  const wait = formatLocalizedDuration(waitSecs, i18n.locale);
 
   return (
     <>
@@ -926,12 +913,7 @@ function JobAttempt({ job }: { job: Job }) {
             : 'bg-muted/50 border-border/50',
         )}
       >
-        {retryAt &&
-          (waitSecs > 0 ? (
-            <Trans>Retrying in {wait}</Trans>
-          ) : (
-            <Trans>Retrying shortly</Trans>
-          ))}
+        {retryAt && <RetryCountdown retryAt={Date.parse(retryAt)} />}
         {retryAt && ' · '}
         {maxAttempts ? (
           <Trans>
