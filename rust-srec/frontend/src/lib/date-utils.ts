@@ -77,7 +77,11 @@ export function formatLocalizedDuration(
   const durationFormat = (
     Intl as unknown as { DurationFormat?: DurationFormatCtor }
   ).DurationFormat;
-  if (!durationFormat) return formatDuration(seconds);
+  if (!durationFormat) {
+    return formatDuration(seconds < 1 ? seconds : Math.round(seconds), {
+      decimals: 0,
+    });
+  }
 
   if (seconds < 1) {
     return new durationFormat(locale, { style: 'narrow' }).format({
