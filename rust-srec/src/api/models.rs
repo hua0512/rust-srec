@@ -712,6 +712,13 @@ pub struct JobResponse {
     /// When a failed workflow step job is scheduled to run again under its
     /// step's retry policy; `null` when no automatic retry is pending.
     pub retry_after: Option<DateTime<Utc>>,
+    /// Times the job was run again after failing or being cancelled, by an
+    /// automatic or a manual retry; the latest run is attempt `retry_count + 1`.
+    pub retry_count: i32,
+    /// Attempts the retry policy of the workflow step this job runs allows,
+    /// counting the first run. Only `GET /api/pipeline/jobs/{id}` fills it;
+    /// `null` elsewhere and for a job without a retry policy.
+    pub max_attempts: Option<u32>,
 }
 
 /// Execution details for a job.

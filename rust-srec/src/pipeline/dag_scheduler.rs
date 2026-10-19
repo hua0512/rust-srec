@@ -876,6 +876,17 @@ impl DagScheduler {
         }))
     }
 
+    /// Attempts the retry policy of step `dag_step_execution_id` allows,
+    /// counting the first run; `None` when the step has no policy.
+    pub async fn step_max_attempts(&self, dag_step_execution_id: &str) -> Result<Option<u32>> {
+        let step = self.dag_repository.get_step(dag_step_execution_id).await?;
+        let dag = self.dag_repository.get_dag(&step.dag_id).await?;
+        let policy = dag
+            .get_dag_definition()
+            .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone());
+        Ok(policy.map(|policy| policy.max_attempts))
+    }
+
     /// Whether `job_id` is still the attempt `dag_step_execution_id` is waiting
     /// on in a DAG that has not settled, so a scheduled retry of it is still
     /// wanted. A step that was cancelled, failed by recovery or deleted in the
@@ -1152,6 +1163,13 @@ impl DagScheduler {
         for job_id in &cancelled {
             if self.job_queue.cancel_job(job_id).await.is_ok() {
                 cancelled_count += 1;
+                continue;
+            }
+            // A step waiting for an automatic retry holds a FAILED job, which
+            // cannot be cancelled; dropping the retry stops the job advertising
+            // an attempt that will never run.
+            if let Err(error) = self.job_queue.clear_scheduled_retry(job_id).await {
+                warn!(dag_id, %job_id, %error, "Failed to drop the scheduled retry of a cancelled step");
             }
         }
 
@@ -3419,7 +3437,8 @@ mod tests {
     }
 
     /// The plan follows the step's policy, doubling the wait per retry and
-    /// stopping when the budget is spent; the step's timeout reaches its job.
+    /// stopping when the budget is spent, and the budget is reported for the
+    /// job page; the step's timeout reaches its job.
     #[tokio::test]
     async fn plan_step_retry_follows_the_step_policy_and_stops_when_spent() {
         use crate::database::models::StepRetryPolicy;
@@ -3510,6 +3529,14 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "no policy"
+        );
+        assert_eq!(
+            scheduler.step_max_attempts(&step_id("A")).await.unwrap(),
+            Some(3)
+        );
+        assert_eq!(
+            scheduler.step_max_attempts(&step_id("B")).await.unwrap(),
+            None
         );
 
         let job_a = job_repo.get_job(&job_of("A")).await.unwrap();

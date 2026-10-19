@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Hourglass,
 } from 'lucide-react';
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
@@ -21,7 +22,12 @@ export interface StatusConfigItem {
   glow: string;
 }
 
-const STATUS_CONFIG: Record<DagStatus | DagStepStatus, StatusConfigItem> = {
+// RETRYING is not a backend status: it shows a FAILED workflow step job
+// whose automatic retry is scheduled.
+const STATUS_CONFIG: Record<
+  DagStatus | DagStepStatus | 'RETRYING',
+  StatusConfigItem
+> = {
   PENDING: {
     icon: Clock,
     textColor: 'text-muted-foreground',
@@ -63,6 +69,16 @@ const STATUS_CONFIG: Record<DagStatus | DagStepStatus, StatusConfigItem> = {
     surfaceBg: 'bg-red-500/10',
     glow: 'shadow-red-500/20',
   },
+  RETRYING: {
+    icon: Hourglass,
+    textColor: 'text-amber-500',
+    bgColor: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+    badgeVariant: 'outline',
+    gradient: 'from-amber-500/20 to-amber-500/5',
+    borderColor: 'border-amber-500/20',
+    surfaceBg: 'bg-amber-500/10',
+    glow: 'shadow-amber-500/20',
+  },
   CANCELLED: {
     icon: AlertCircle,
     textColor: 'text-gray-500',
@@ -103,6 +119,8 @@ export function getStatusLabel(i18n: I18n, status: string): string {
       return i18n._(msg`Completed`);
     case 'FAILED':
       return i18n._(msg`Failed`);
+    case 'RETRYING':
+      return i18n._(msg`Retrying`);
     case 'CANCELLED':
       return i18n._(msg`Cancelled`);
     default:

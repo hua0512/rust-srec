@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use tracing::debug;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
@@ -253,7 +254,8 @@ pub async fn list_job_uploads(
 ///
 /// # Response
 ///
-/// Returns the job details if found.
+/// Returns the job details if found. Unlike the job lists, it fills
+/// `max_attempts` for a workflow step job whose step has a retry policy.
 ///
 /// ```json
 /// {
@@ -261,7 +263,7 @@ pub async fn list_job_uploads(
 ///     "session_id": "session-123",
 ///     "streamer_id": "streamer-456",
 ///     "pipeline_id": "job-uuid-123",
-///     "status": "completed",
+///     "status": "COMPLETED",
 ///     "processor_type": "remux",
 ///     "input_path": ["/recordings/stream.flv"],
 ///     "output_path": ["/recordings/stream.mp4"],
@@ -308,7 +310,23 @@ pub async fn get_job(
         .ok()
         .map(|s| s.name);
 
-    Ok(Json(job_to_response(job, streamer_name)))
+    let max_attempts = match (
+        pipeline_manager.dag_scheduler(),
+        job.dag_step_execution_id.as_deref(),
+    ) {
+        (Some(scheduler), Some(step_id)) => scheduler
+            .step_max_attempts(step_id)
+            .await
+            .unwrap_or_else(|error| {
+                debug!(job_id = %id, %error, "Could not read the step's retry policy");
+                None
+            }),
+        _ => None,
+    };
+
+    let mut response = job_to_response(job, streamer_name);
+    response.max_attempts = max_attempts;
+    Ok(Json(response))
 }
 
 /// Retry a failed or cancelled job.
@@ -328,7 +346,7 @@ pub async fn get_job(
 /// ```json
 /// {
 ///     "id": "job-uuid-123",
-///     "status": "pending",
+///     "status": "PENDING",
 ///     "retry_count": 1,
 ///     ...
 /// }
@@ -1078,6 +1096,8 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
 
     JobResponse {
         retry_after: job.retry_after,
+        retry_count: job.retry_count,
+        max_attempts: None,
         id: job.id,
         session_id: job.session_id,
         streamer_id: job.streamer_id,
