@@ -34,12 +34,9 @@ pub(super) fn retry_delay(base_ms: u64, attempt: u32) -> std::time::Duration {
     )
 }
 
-/// Waits out the delay after attempt `failed` (1-based) of at most `attempts`
-/// in a processor's own retry loop. The job log notes `failure` and the wait.
-/// Progress reports the retrying phase for the length of the wait, without
-/// the failed attempt's bytes, speed or time left, then a plain snapshot so
-/// that the next attempt does not read as retrying while it sets up (such as
-/// rclone before its first stats line).
+/// Waits out the delay after attempt `failed` (1-based) of the processor's
+/// main work in its own retry loop, as [`wait_out_retry`] does. From the wait
+/// on, reports also carry attempt `failed + 1` of at most `attempts`.
 pub(super) async fn wait_to_retry(
     ctx: &ProcessorContext,
     kind: ProgressKind,
@@ -47,9 +44,28 @@ pub(super) async fn wait_to_retry(
     attempts: u32,
     failure: &str,
 ) {
+    ctx.progress.set_attempt(failed + 1, attempts);
+    wait_out_retry(ctx, kind, failed, failure).await;
+}
+
+/// Waits out the delay after attempt `failed` (1-based) in a processor's own
+/// retry loop. The job log notes `failure` and the wait. Progress reports the
+/// retrying phase for the length of the wait, without the failed attempt's
+/// bytes, speed or time left, then a plain snapshot so that the next attempt
+/// does not read as retrying while it sets up (such as rclone before its
+/// first stats line).
+///
+/// It sets no attempt number, because the reporter keeps one for the rest of
+/// the job run: retries of a preparatory step, such as creating remote
+/// folders, would otherwise number the main work's first attempt.
+pub(super) async fn wait_out_retry(
+    ctx: &ProcessorContext,
+    kind: ProgressKind,
+    failed: u32,
+    failure: &str,
+) {
     let delay = retry_delay(1000, failed);
     ctx.warn(format!("{failure}; retrying in {} s", delay.as_secs()));
-    ctx.progress.set_attempt(failed + 1, attempts);
     let mut snapshot = JobProgressSnapshot::new(kind);
     snapshot.phase = Some(JobPhase::Retrying);
     ctx.progress.report(snapshot);

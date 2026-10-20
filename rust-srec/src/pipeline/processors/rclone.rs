@@ -536,14 +536,21 @@ impl RcloneProcessor {
 
             let mut attempt = 1;
             while let Err(error) = self.run_mkdir(path, &loggable, execution).await {
-                execution.context.warn(format!(
+                let failure = format!(
                     "rclone mkdir attempt {attempt} of {} failed: {error}",
                     execution.attempts
-                ));
+                );
                 if attempt >= execution.attempts {
+                    execution.context.warn(failure);
                     return Err(error);
                 }
-                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
+                super::utils::wait_out_retry(
+                    execution.context,
+                    ProgressKind::Rclone,
+                    attempt,
+                    &failure,
+                )
+                .await;
                 attempt += 1;
             }
             execution
@@ -2101,7 +2108,9 @@ mod tests {
     }
 
     /// A throttled or hung `mkdir` is retried before the job gives up, like
-    /// a transfer: failed jobs are only retried by hand.
+    /// a transfer: failed jobs are only retried by hand. Its waits show like
+    /// a transfer's, but without an attempt number, which would otherwise
+    /// stick to the transfer's reports.
     #[tokio::test(start_paused = true)]
     async fn transient_mkdir_failures_are_retried() {
         let runner = Arc::new(
@@ -2114,14 +2123,51 @@ mod tests {
             write_inputs(temp_dir.path(), &["video.mp4"]).await,
             "remote:records/day",
         );
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
+        let context = ProcessorContext::new(
+            "upload",
+            crate::pipeline::ProgressReporter::new("upload", progress_tx),
+            super::super::traits::JobLogSink::new(log_tx, Arc::default()),
+            tokio_util::sync::CancellationToken::new(),
+        );
 
-        processor
-            .process(&input, &ProcessorContext::noop("upload"))
-            .await
-            .unwrap();
+        processor.process(&input, &context).await.unwrap();
+        drop(context);
 
         assert_eq!(runner.mkdirs().len(), 3);
         assert_eq!(runner.commands().len(), 1);
+        let warnings: Vec<String> = std::iter::from_fn(|| log_rx.try_recv().ok())
+            .filter(|entry| entry.level == crate::pipeline::job_queue::LogLevel::Warn)
+            .map(|entry| entry.message)
+            .collect();
+        assert_eq!(
+            warnings,
+            [
+                "rclone mkdir attempt 1 of 3 failed: rclone mkdir remote:records/day failed with exit code 1: simulated mkdir failure; retrying in 2 s".to_owned(),
+                format!(
+                    "rclone mkdir attempt 2 of 3 failed: rclone mkdir remote:records/day timed out after {}s; retrying in 4 s",
+                    MKDIR_TIMEOUT.as_secs()
+                ),
+            ]
+        );
+        let progress: Vec<_> = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .map(|update| {
+                let snapshot = update.snapshot;
+                (snapshot.phase, snapshot.attempt, snapshot.max_attempts)
+            })
+            .collect();
+        // The last report is the mock transfer's.
+        assert_eq!(
+            progress,
+            [
+                (Some(JobPhase::Retrying), None, None),
+                (None, None, None),
+                (Some(JobPhase::Retrying), None, None),
+                (None, None, None),
+                (None, None, None),
+            ]
+        );
     }
 
     #[tokio::test(start_paused = true)]
