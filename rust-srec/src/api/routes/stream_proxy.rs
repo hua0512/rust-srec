@@ -186,7 +186,7 @@ pub(super) async fn validate_target_url(
     }
 
     let host = target
-        .host_str()
+        .host()
         .ok_or_else(|| ApiError::bad_request("Target host is required"))?;
     if allow_private_targets {
         // `stream_proxy_allow_private_targets` opts the operator into LAN and
@@ -194,18 +194,23 @@ pub(super) async fn validate_target_url(
         return Ok(());
     }
 
-    let normalized_host = host.trim_end_matches('.');
+    // The connector dials an IP literal without a lookup, so the literal's
+    // own address is the one to check. The URL parser has already decoded
+    // alternative IPv4 spellings such as `127.1` into `Host::Ipv4`.
+    let domain = match host {
+        url::Host::Domain(domain) => domain,
+        url::Host::Ipv4(address) if is_public_ipv4(address) => return Ok(()),
+        url::Host::Ipv6(address) if is_public_ipv6(address) => return Ok(()),
+        url::Host::Ipv4(_) | url::Host::Ipv6(_) => {
+            return Err(ApiError::bad_request("Target host is not allowed"));
+        }
+    };
+
+    let normalized_host = domain.trim_end_matches('.');
     if normalized_host.eq_ignore_ascii_case("localhost")
         || normalized_host.to_ascii_lowercase().ends_with(".localhost")
     {
         return Err(ApiError::bad_request("Target host is not allowed"));
-    }
-
-    if let Ok(address) = normalized_host.parse::<IpAddr>() {
-        if !is_public_ip(address) {
-            return Err(ApiError::bad_request("Target host is not allowed"));
-        }
-        return Ok(());
     }
 
     let port = target
