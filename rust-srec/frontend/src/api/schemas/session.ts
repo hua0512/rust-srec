@@ -156,7 +156,7 @@ export type SessionDanmuStatistics = z.infer<
 >;
 
 /** A stage of a job that is not plain work towards its percent. */
-export const JobPhaseSchema = z.enum(['finalizing']);
+export const JobPhaseSchema = z.enum(['finalizing', 'retrying']);
 export type JobPhase = z.infer<typeof JobPhaseSchema>;
 
 export const JobProgressSnapshotSchema = z.object({
@@ -175,6 +175,10 @@ export const JobProgressSnapshotSchema = z.object({
   // failing the response that nests the snapshot.
   phase: JobPhaseSchema.nullish().catch(undefined),
   current_file: z.string().nullish(),
+  // The processor's own attempt within one job run, such as an upload
+  // retried by rclone; unrelated to the job's retry count.
+  attempt: z.number().nullish(),
+  max_attempts: z.number().nullish(),
   raw: z.any().optional(),
 });
 export type JobProgressSnapshot = z.infer<typeof JobProgressSnapshotSchema>;

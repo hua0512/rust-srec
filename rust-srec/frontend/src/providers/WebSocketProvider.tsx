@@ -654,6 +654,8 @@ function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
     speedX: wire.speedX,
     phase: wireJobPhase(wire.phase),
     currentFile: wire.currentFile,
+    attempt: wire.attempt,
+    maxAttempts: wire.maxAttempts,
   };
 }
 
@@ -662,6 +664,8 @@ function wireJobPhase(phase: WireJobPhase | undefined): JobPhase | undefined {
   switch (phase) {
     case WireJobPhase.FINALIZING:
       return 'finalizing';
+    case WireJobPhase.RETRYING:
+      return 'retrying';
     default:
       return undefined;
   }

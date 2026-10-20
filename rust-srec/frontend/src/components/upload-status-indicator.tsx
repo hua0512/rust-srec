@@ -30,12 +30,8 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
-import {
-  activeUploadsLabel,
-  formatUploadBytes,
-  uploaderLabel,
-  uploadPercent,
-} from '@/lib/upload-format';
+import { describeJobProgress } from '@/lib/job-progress';
+import { activeUploadsLabel, uploaderLabel } from '@/lib/upload-format';
 import { usePresence } from '@/hooks/use-presence';
 import {
   HEADER_BADGE_DOT,
@@ -346,23 +342,18 @@ function ActiveUploadRow({
 }) {
   const { i18n } = useLingui();
   const name = displayName(upload, i18n);
-  const percent = uploadPercent(upload);
-  const eta =
-    upload.etaSecs != null && upload.etaSecs > 0
-      ? formatLocalizedDuration(upload.etaSecs, i18n.locale)
-      : undefined;
-  const bytes = formatUploadBytes(upload);
-  const filesDone = upload.progressFilesDone;
-  const filesTotal = upload.progressFilesTotal;
-  const details = [uploaderLabel(upload, i18n)];
-  if (filesDone != null && filesTotal != null && filesTotal > 1) {
-    details.push(i18n._(msg`${filesDone}/${filesTotal} files`));
-  }
-  if (bytes != null) details.push(bytes);
-  if (eta != null) details.push(i18n._(msg`${eta} left`));
+  // The popover header already shows the uploads' speed; omitting it here
+  // leaves more of this narrow row for the time left and the file name.
+  const { percent, details: progressDetails } = describeJobProgress(
+    { ...upload, speedBytesPerSec: undefined },
+    i18n,
+  );
+  const details = [uploaderLabel(upload, i18n), ...progressDetails];
   // Before the first progress line the uploader is still setting up:
   // checking the destination, hashing, or waiting on the remote.
-  if (percent == null) details.push(i18n._(msg`Preparing…`));
+  if (percent == null && !upload.phase) {
+    details.push(i18n._(msg`Preparing…`));
+  }
 
   return (
     <div className="group/row flex items-center hover:bg-accent/60">

@@ -23,6 +23,9 @@ pub enum JobPhase {
     /// FFmpeg wrote the last frame and is rewriting the output, such as
     /// moving an MP4's index to the front for fast start.
     Finalizing,
+    /// The processor waits to try its work again after a failed attempt,
+    /// such as an rclone or BaiduPCS-Go upload.
+    Retrying,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -59,6 +62,14 @@ pub struct JobProgressSnapshot {
     /// Name of the file in progress, without its directories.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_file: Option<String>,
+    /// The processor's own attempt within one job run, from 1, such as an
+    /// rclone or BaiduPCS-Go upload retry; unrelated to the job's
+    /// `retry_count`. Absent until the processor retries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    /// Attempts the processor makes at most within this job run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<u32>,
     #[serde(default)]
     pub raw: serde_json::Value,
 }
@@ -80,6 +91,8 @@ impl JobProgressSnapshot {
             files_total: None,
             phase: None,
             current_file: None,
+            attempt: None,
+            max_attempts: None,
             raw: serde_json::Value::Null,
         }
     }
@@ -105,6 +118,8 @@ struct ReporterState {
     batch_item: Option<(u64, u64)>,
     /// File name of the batch item in progress.
     current_file: Option<String>,
+    /// `(attempt, max_attempts)` of the processor's own retries.
+    attempt: Option<(u32, u32)>,
 }
 
 #[derive(Clone)]
@@ -141,6 +156,14 @@ impl ProgressReporter {
         state.current_file = progress_file_name(path);
     }
 
+    /// Marks later reports as coming from attempt `attempt` (1-based) of at
+    /// most `max_attempts` that the processor makes within this job run. The
+    /// worker pool creates a reporter for each job run, so a job retry starts
+    /// with no attempt.
+    pub fn set_attempt(&self, attempt: u32, max_attempts: u32) {
+        self.state.lock().attempt = Some((attempt, max_attempts));
+    }
+
     pub fn report(&self, mut snapshot: JobProgressSnapshot) {
         snapshot.updated_at = Utc::now();
         {
@@ -157,6 +180,10 @@ impl ProgressReporter {
             }
             if snapshot.current_file.is_none() {
                 snapshot.current_file.clone_from(&state.current_file);
+            }
+            if let Some((attempt, max_attempts)) = state.attempt {
+                snapshot.attempt = Some(attempt);
+                snapshot.max_attempts = Some(max_attempts);
             }
         }
         let _ = self.tx.try_send(JobProgressUpdate {
@@ -201,7 +228,9 @@ mod tests {
     fn phase_is_serialized_by_name_and_omitted_when_absent() {
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         let plain = serde_json::to_value(&snapshot).unwrap();
-        assert!(plain.get("phase").is_none() && plain.get("current_file").is_none());
+        for absent in ["phase", "current_file", "attempt", "max_attempts"] {
+            assert!(plain.get(absent).is_none(), "{absent} is serialized");
+        }
 
         snapshot.phase = Some(JobPhase::Finalizing);
         assert_eq!(

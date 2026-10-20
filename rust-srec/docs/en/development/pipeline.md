@@ -70,7 +70,13 @@ downstream job or increment the DAG's completed-step count again.
 
 Delete, rclone and BaiduPCS retry delays grow exponentially but are capped at
 30 seconds per wait, including extreme configured values. Retry counts keep
-their configured meaning. FFmpeg progress timestamps exposed as `out_time_ms`
+their configured meaning. Before each rclone or BaiduPCS upload retry, the
+job log notes the failed attempt and the wait, and the job's progress reports
+the `retrying` phase, without bytes, speed or `eta_secs`, until the next
+attempt starts. From the first retry on, snapshots carry `attempt` and
+`max_attempts`: the upload's own attempt within one job run, separate from the
+job's retry count.
+FFmpeg progress timestamps exposed as `out_time_ms`
 are milliseconds for both supported upstream timestamp keys. `duration_ms` is
 the length the run writes: the input length FFmpeg reports, shortened by remux
 trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
@@ -83,8 +89,10 @@ so these jobs report it only for their last file. `phase` is absent while a job
 does plain work towards `percent`. It is `finalizing` while FFmpeg rewrites an
 MP4 after writing its last frame, such as moving the index to the front for
 fast start; `percent` then stops at 99% of the file's share, with no speed or
-`eta_secs`, until FFmpeg reports the end. FFmpeg, copy and compression jobs name the file in progress in
-`current_file`, without its directories. `raw` carries no file paths.
+`eta_secs`, until FFmpeg reports the end. FFmpeg, copy, compression and rclone
+jobs name the file in progress in `current_file`, without its directories; an
+rclone job sending several files at once names one of them. `raw` carries no
+file paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,
 including after a restart, and loses it when it ends;

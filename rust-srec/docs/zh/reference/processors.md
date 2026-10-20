@@ -21,6 +21,8 @@
 | `delete` | 自动清理中间文件 | - |
 | `execute` | 运行程序或自定义 Shell 命令 | `program`, `args` 或 `command`, `scan_output_dir`, `scan_extension` |
 
+`rclone` 和 `baidupcs` 会在同一次任务运行中重试失败的上传；每次重试都会记入任务日志，任务进度和顶栏会显示当前是第几次尝试。
+
 ### 执行程序（`execute`） {#execute-execute}
 
 在预设编辑器或工作流步骤的配置对话框中，通过**执行模式**选择 **Shell 命令**或**程序和参数**。已有 Shell 命令会保持原样，以 Shell 模式打开。切换模式会清空原有命令或程序及参数；输出扫描设置由两种模式共用并保留。

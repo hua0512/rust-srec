@@ -41,6 +41,10 @@ export interface UploadView {
   phase?: JobPhase;
   // The file in progress, without directories.
   currentFile?: string;
+  // The uploader's own attempt within one job run, such as an rclone
+  // retry; unrelated to the job's retry count. Absent until it retries.
+  attempt?: number;
+  maxAttempts?: number;
 
   // Wall-clock ms of the last event applied; drives the staleness guard.
   lastEventAtMs: number;
@@ -110,6 +114,8 @@ export interface UploadProgressInput {
   speedX?: number;
   phase?: JobPhase;
   currentFile?: string;
+  attempt?: number;
+  maxAttempts?: number;
 }
 
 // A terminal event dropped by broadcast lag would leave a job stuck in the

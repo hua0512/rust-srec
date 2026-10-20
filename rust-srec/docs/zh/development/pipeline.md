@@ -49,7 +49,11 @@
 同时报告未完整完成。重复完成同一步骤不会再创建下游任务，也不会再次增加 DAG 的已完成步骤数。
 
 Delete、rclone 和 BaiduPCS 的重试等待时间按指数增长，但每次最多等待 30 秒，
-极端配置值也遵循此上限；重试次数仍按配置执行。FFmpeg 两种上游时间戳字段
+极端配置值也遵循此上限；重试次数仍按配置执行。rclone 或 BaiduPCS 每次上传重试前，
+任务日志会记下失败的尝试和等待时间，任务进度在下一次尝试开始前报告 `retrying`
+阶段，不含字节数、速度和 `eta_secs`。从第一次重试起，快照带有 `attempt` 和
+`max_attempts`，即上传在一次任务运行内自身的尝试次数，与任务的重试次数无关。
+FFmpeg 两种上游时间戳字段
 对外都转换为毫秒单位的 `out_time_ms`。`duration_ms` 是本次运行写出的时长：
 FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 和 `eta_secs`
 由它计算，在 FFmpeg 报告结束前 `percent` 始终低于 100。多文件任务报告
@@ -59,8 +63,9 @@ FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 
 `eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。任务正常推进
 `percent` 时没有 `phase`。FFmpeg 写完最后一帧后重写 MP4（例如为快速启动把索引
 移到文件开头）时，`phase` 为 `finalizing`，此时该文件的 `percent` 份额停在 99%，
-不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。FFmpeg、复制和压缩任务在 `current_file`
-中给出正在处理的文件名，不含目录。`raw` 不包含文件路径。
+不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。FFmpeg、复制、压缩和 rclone 任务
+在 `current_file` 中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出
+其中一个。`raw` 不包含文件路径。
 
 任务进度只保存在内存中。任务在上报进度之前（包括重启后）没有快照，
 结束时快照会被丢弃；没有快照时，`GET /api/pipeline/jobs/{id}/progress` 返回 404。

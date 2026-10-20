@@ -152,6 +152,18 @@ describe('UploadStatusIndicator', () => {
     );
   });
 
+  it('shows a retrying upload with its attempt instead of preparing', () => {
+    renderIndicator([
+      createUpload({ phase: 'retrying', attempt: 2, maxAttempts: 3 }),
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: '1 active upload' }));
+
+    expect(
+      screen.getByText('rclone · Retrying... · Upload attempt 2 of 3'),
+    ).toBeInTheDocument();
+  });
+
   it('shows queued uploads even before any of them starts', () => {
     renderIndicator([]);
     act(() => useUploadStore.getState().setPendingCount(3));

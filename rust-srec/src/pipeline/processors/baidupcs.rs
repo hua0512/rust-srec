@@ -24,6 +24,7 @@ use super::traits::{
 use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
+use crate::pipeline::progress::ProgressKind;
 use crate::utils::filename::expand_placeholders_at;
 
 // Output markers printed by BaiduPCS-Go (hardcoded constants in its
@@ -781,7 +782,17 @@ impl Processor for BaiduPcsProcessor {
             }
             if attempt > 0 {
                 info!("Retry attempt {} for BaiduPCS-Go upload", attempt + 1);
-                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
+                super::utils::wait_to_retry(
+                    ctx,
+                    ProgressKind::BaiduPcs,
+                    attempt,
+                    attempts_max,
+                    &format!(
+                        "BaiduPCS-Go upload attempt {attempt} of {attempts_max} left {} file(s) not uploaded",
+                        pending.len()
+                    ),
+                )
+                .await;
             }
             attempts_used = attempt + 1;
 
@@ -1425,12 +1436,25 @@ mod tests {
             config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
             ..Default::default()
         };
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
+        let ctx = ProcessorContext::new(
+            "retry",
+            crate::pipeline::ProgressReporter::noop("retry"),
+            super::super::traits::JobLogSink::new(log_tx, Arc::default()),
+            tokio_util::sync::CancellationToken::new(),
+        );
 
-        let output = processor
-            .process(&input, &ProcessorContext::noop("retry"))
-            .await
-            .unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
 
+        // The failed attempt is noted in the job log.
+        let warnings: Vec<String> = std::iter::from_fn(|| log_rx.try_recv().ok())
+            .filter(|entry| entry.level == crate::pipeline::job_queue::LogLevel::Warn)
+            .map(|entry| entry.message)
+            .collect();
+        assert_eq!(
+            warnings,
+            ["BaiduPCS-Go upload attempt 1 of 3 left 1 file(s) not uploaded; retrying in 2 s"]
+        );
         let commands = runner.commands();
         assert_eq!(commands.len(), 2);
         assert!(commands[0].contains(&first_str));
