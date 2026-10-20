@@ -412,7 +412,7 @@ const StepCard = memo(function StepCard({ step }: { step: DagStep }) {
               </h3>
               <StepActivity
                 step={step}
-                className="mt-1 text-xs text-muted-foreground tabular-nums"
+                className="mt-1 text-xs text-muted-foreground tabular-nums wrap-anywhere"
               />
               {step.job_id && (
                 <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground/60 font-mono">

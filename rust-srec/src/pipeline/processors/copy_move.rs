@@ -108,17 +108,15 @@ const COPY_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 struct CopyProgress {
     reporter: ProgressReporter,
     bytes_total: u64,
-    file: String,
     started: Instant,
     last_report: Option<Instant>,
 }
 
 impl CopyProgress {
-    fn new(reporter: ProgressReporter, bytes_total: u64, file: &str) -> Self {
+    fn new(reporter: ProgressReporter, bytes_total: u64) -> Self {
         Self {
             reporter,
             bytes_total,
-            file: file.to_owned(),
             started: Instant::now(),
             last_report: None,
         }
@@ -158,7 +156,6 @@ impl CopyProgress {
             snapshot.speed_bytes_per_sec = Some(speed);
             snapshot.eta_secs = Some(self.bytes_total.saturating_sub(bytes_done) as f64 / speed);
         }
-        snapshot.raw = serde_json::json!({ "file": self.file });
         snapshot
     }
 }
@@ -453,7 +450,8 @@ impl Processor for CopyMoveProcessor {
         let mut total_output_size: u64 = 0;
 
         for (file_index, source_path) in input.inputs.iter().enumerate() {
-            ctx.progress.set_batch_item(file_index, input.inputs.len());
+            ctx.progress
+                .set_batch_item(file_index, input.inputs.len(), source_path);
             if let Some(exclude_set) = &exclude_set
                 && exclude_set.is_match(source_path)
             {
@@ -697,7 +695,7 @@ impl Processor for CopyMoveProcessor {
             }
 
             // Same-filesystem moves are renames and report no progress.
-            let progress = CopyProgress::new(ctx.progress.clone(), source_size, source_path);
+            let progress = CopyProgress::new(ctx.progress.clone(), source_size);
             let dest_size = match config.operation {
                 CopyMoveOperation::Copy => {
                     match Self::copy_via_tmp(source, &dest, source_size, &config, ctx, progress)
@@ -872,7 +870,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn no_progress() -> CopyProgress {
-        CopyProgress::new(ProgressReporter::noop("copy"), 0, "source")
+        CopyProgress::new(ProgressReporter::noop("copy"), 0)
     }
 
     fn progress_channel(
@@ -882,12 +880,12 @@ mod tests {
         tokio::sync::mpsc::Receiver<crate::pipeline::progress::JobProgressUpdate>,
     ) {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let progress = CopyProgress::new(ProgressReporter::new("copy", tx), bytes_total, "source");
+        let progress = CopyProgress::new(ProgressReporter::new("copy", tx), bytes_total);
         (progress, rx)
     }
 
     #[test]
-    fn copy_progress_snapshots_carry_bytes_rate_and_file() {
+    fn copy_progress_snapshots_carry_bytes_and_rate() {
         let (progress, _rx) = progress_channel(1000);
 
         let snapshot = progress.snapshot(250, Duration::from_secs(5));
@@ -897,7 +895,6 @@ mod tests {
         assert_eq!(snapshot.percent, Some(25.0));
         assert_eq!(snapshot.speed_bytes_per_sec, Some(50.0));
         assert_eq!(snapshot.eta_secs, Some(15.0));
-        assert_eq!(snapshot.raw, serde_json::json!({"file": "source"}));
 
         // No elapsed time or no bytes yet gives no rate rather than infinity.
         let starting = progress.snapshot(0, Duration::from_secs(1));
@@ -1985,11 +1982,7 @@ mod tests {
         let dest = temp_dir.path().join("dest.txt");
         fs::write(&source, "content").await.unwrap();
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
-        let progress = CopyProgress::new(
-            ProgressReporter::new("copy", progress_tx),
-            7,
-            &source.to_string_lossy(),
-        );
+        let progress = CopyProgress::new(ProgressReporter::new("copy", progress_tx), 7);
 
         let bytes = CopyMoveProcessor::copy_via_tmp(
             &source,
@@ -2013,10 +2006,6 @@ mod tests {
         assert_eq!(
             (last.bytes_done, last.bytes_total, last.percent),
             (Some(7), Some(7), Some(100.0))
-        );
-        assert_eq!(
-            last.raw,
-            serde_json::json!({"file": source.to_string_lossy()})
         );
         assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");
         let mut entries = fs::read_dir(temp_dir.path()).await.unwrap();

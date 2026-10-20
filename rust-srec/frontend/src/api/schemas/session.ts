@@ -155,6 +155,10 @@ export type SessionDanmuStatistics = z.infer<
   typeof SessionDanmuStatisticsSchema
 >;
 
+/** A stage of a job that is not plain work towards its percent. */
+export const JobPhaseSchema = z.enum(['finalizing']);
+export type JobPhase = z.infer<typeof JobPhaseSchema>;
+
 export const JobProgressSnapshotSchema = z.object({
   updated_at: z.string(),
   percent: z.number().nullable().optional(),
@@ -167,6 +171,10 @@ export const JobProgressSnapshotSchema = z.object({
   speed_x: z.number().nullable().optional(),
   files_done: z.number().nullable().optional(),
   files_total: z.number().nullable().optional(),
+  // A phase this client does not know reads as plain work rather than
+  // failing the response that nests the snapshot.
+  phase: JobPhaseSchema.nullish().catch(undefined),
+  current_file: z.string().nullish(),
   raw: z.any().optional(),
 });
 export type JobProgressSnapshot = z.infer<typeof JobProgressSnapshotSchema>;

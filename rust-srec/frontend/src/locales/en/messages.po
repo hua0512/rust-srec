@@ -435,7 +435,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:81
+#: src/lib/job-progress.ts:100
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -3462,7 +3462,7 @@ msgstr "Due at its next use"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:95
+#: src/components/pipeline/jobs/job-progress-panel.tsx:99
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -4455,7 +4455,7 @@ msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend serv
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/lib/job-progress.ts:87
+#: src/lib/job-progress.ts:106
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 
@@ -4553,6 +4553,7 @@ msgid "Finalizing recording file..."
 msgstr "Finalizing recording file..."
 
 #: src/components/streamers/card/lossless-cut-action.tsx:173
+#: src/lib/job-progress.ts:35
 msgid "Finalizing..."
 msgstr "Finalizing..."
 
@@ -6745,7 +6746,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:136
+#: src/components/pipeline/jobs/job-progress-panel.tsx:140
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
@@ -7887,7 +7888,7 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:131
+#: src/components/pipeline/jobs/job-progress-panel.tsx:135
 #: src/components/upload-status-indicator.tsx:365
 msgid "Preparing…"
 msgstr "Preparing…"
@@ -8093,7 +8094,7 @@ msgstr "Programmatic & MCP access"
 msgid "Programs"
 msgstr "Programs"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:115
+#: src/components/pipeline/jobs/job-progress-panel.tsx:119
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:284
 msgid "Progress"
 msgstr "Progress"
@@ -8166,7 +8167,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:103
+#: src/components/pipeline/jobs/job-progress-panel.tsx:107
 msgid "Queue"
 msgstr "Queue"
 

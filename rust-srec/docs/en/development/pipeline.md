@@ -79,7 +79,12 @@ trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
 such as danmu XML. The `percent` of a multi-file FFmpeg or copy job covers the
 whole job with an equal share per file, while `out_time_ms`, `duration_ms` and
 copied bytes describe the file in progress. `eta_secs` covers only that file,
-so these jobs report it only for their last file.
+so these jobs report it only for their last file. `phase` is absent while a job
+does plain work towards `percent`. It is `finalizing` while FFmpeg rewrites an
+MP4 after writing its last frame, such as moving the index to the front for
+fast start; `percent` then stops at 99% of the file's share, with no speed or
+`eta_secs`, until FFmpeg reports the end. FFmpeg, copy and compression jobs name the file in progress in
+`current_file`, without its directories. `raw` carries no file paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,
 including after a restart, and loses it when it ends;

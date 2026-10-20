@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::downloader::engine::DownloadInfo;
 use crate::downloader::queue::PendingEntry as QueuePendingEntry;
-use crate::pipeline::{ActiveJobInfo, JobProgressSnapshot};
+use crate::pipeline::{ActiveJobInfo, JobPhase, JobProgressSnapshot};
 
 // Include the generated protobuf code
 pub mod download_progress {
@@ -122,6 +122,14 @@ pub fn upload_progress_to_proto(
         out_time_ms: snapshot.out_time_ms,
         duration_ms: snapshot.duration_ms,
         speed_x: snapshot.speed_x,
+        phase: snapshot.phase.map(|phase| job_phase_to_proto(phase) as i32),
+        current_file: snapshot.current_file.clone(),
+    }
+}
+
+fn job_phase_to_proto(phase: JobPhase) -> download_progress::JobPhase {
+    match phase {
+        JobPhase::Finalizing => download_progress::JobPhase::Finalizing,
     }
 }
 
@@ -288,6 +296,18 @@ mod tests {
     fn test_safe_playback_ratio_zero_duration() {
         assert_eq!(safe_playback_ratio(60.0, 0.0), 0.0);
         assert_eq!(safe_playback_ratio(60.0, -1.0), 0.0);
+    }
+
+    #[test]
+    fn upload_progress_carries_the_phase_and_current_file() {
+        let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::Ffmpeg);
+        snapshot.phase = Some(JobPhase::Finalizing);
+        snapshot.current_file = Some("seg_002.flv".to_string());
+        let wire = upload_progress_to_proto("job", None, &snapshot);
+        assert_eq!(
+            (wire.phase(), wire.current_file.as_deref()),
+            (download_progress::JobPhase::Finalizing, Some("seg_002.flv"))
+        );
     }
 
     #[test]

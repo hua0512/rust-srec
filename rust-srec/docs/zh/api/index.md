@@ -131,7 +131,9 @@ curl http://localhost:12555/api/streamers \
 任务列表、任务详情和管道创建响应中的任务摘要使用 `progress: null` 表示该响应
 没有可用进度，这不表示完成了零百分比。请使用
 `GET /api/pipeline/jobs/{id}/progress` 获取最近的处理器专用进度快照；
-没有快照时，该接口返回 404。
+没有快照时，该接口返回 404。快照中可选的 `phase` 在 FFmpeg 写完最后一帧后重写
+输出时为 `finalizing`（遇到未知的值时按正常处理对待），`current_file` 给出正在
+处理的文件名，不含目录。
 
 `GET /api/pipeline/dag/{id}` 为每个步骤返回 `job_status`、`started_at` 和
 `retry_after`，时间均为 epoch 毫秒。不会再执行自动重试时，`retry_after` 为

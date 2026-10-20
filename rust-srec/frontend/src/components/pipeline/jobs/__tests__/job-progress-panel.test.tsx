@@ -1,13 +1,17 @@
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import { JobSchema } from '@/api/schemas/pipeline';
 import { JobProgressSnapshotSchema } from '@/api/schemas/session';
 import { JobProgressPanel } from '../job-progress-panel';
 
 const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function renderRunningJob(snapshot: Record<string, unknown>) {
   const now = new Date().toISOString();
@@ -68,3 +72,26 @@ it('shows byte progress with speed, time left and the file in a batch', () => {
   ).toBeInTheDocument();
   expect(screen.getByText('25%')).toBeInTheDocument();
 });
+
+it('shows progress whose phase this client does not know', () => {
+  renderRunningJob({ phase: 'verifying', percent: 40 });
+
+  expect(screen.getByText('40%')).toBeInTheDocument();
+});
+
+it.each([
+  ['plain work', undefined, true],
+  ['finalizing', 'finalizing', false],
+])(
+  'flags progress unchanged for a minute only outside finalizing (%s)',
+  (_name, phase, flagged) => {
+    vi.useFakeTimers();
+    renderRunningJob({ phase, percent: 99, out_time_ms: 60_000 });
+
+    act(() => {
+      vi.advanceTimersByTime(61_000);
+    });
+
+    expect(screen.queryByText(/^No progress for/) != null).toBe(flagged);
+  },
+);

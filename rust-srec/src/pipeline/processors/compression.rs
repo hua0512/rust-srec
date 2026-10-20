@@ -21,7 +21,9 @@ use super::outputs::OutputBatch;
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
-use crate::pipeline::progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+use crate::pipeline::progress::{
+    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+};
 
 /// Default compression level (6 is a good balance between speed and compression).
 fn default_compression_level() -> u8 {
@@ -90,7 +92,8 @@ struct CancelProgressReader<R> {
     last_report_at: std::time::Instant,
     files_done: usize,
     files_total: usize,
-    current_file: String,
+    /// Name of the input being read, without its directories.
+    current_file: Option<String>,
 }
 
 struct CompressionProgressContext {
@@ -123,7 +126,7 @@ impl<R> CancelProgressReader<R> {
             last_report_at: std::time::Instant::now(),
             files_done,
             files_total,
-            current_file,
+            current_file: progress_file_name(current_file),
         }
     }
 
@@ -145,7 +148,7 @@ impl<R> CancelProgressReader<R> {
         snapshot.bytes_total = Some(self.bytes_total);
         snapshot.files_done = Some(self.files_done as u64);
         snapshot.files_total = Some(self.files_total as u64);
-        snapshot.raw = serde_json::json!({ "file": self.current_file });
+        snapshot.current_file.clone_from(&self.current_file);
         self.progress.report(snapshot);
     }
 }

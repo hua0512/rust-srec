@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { JobPhase } from '@/api/schemas/session';
+
 // Live upload jobs pushed over the downloads WebSocket
 // (UPLOAD_STARTED / UPLOAD_PROGRESS / UPLOAD_TERMINAL / UPLOAD_QUEUE plus the
 // DownloadSnapshot.uploads slice on connect/subscribe), the uploads that
@@ -35,6 +37,10 @@ export interface UploadView {
   // patches replace these fields wholesale.
   progressFilesDone?: number;
   progressFilesTotal?: number;
+  // Absent while the job does plain work towards its percent.
+  phase?: JobPhase;
+  // The file in progress, without directories.
+  currentFile?: string;
 
   // Wall-clock ms of the last event applied; drives the staleness guard.
   lastEventAtMs: number;
@@ -102,6 +108,8 @@ export interface UploadProgressInput {
   outTimeMs?: bigint;
   durationMs?: bigint;
   speedX?: number;
+  phase?: JobPhase;
+  currentFile?: string;
 }
 
 // A terminal event dropped by broadcast lag would leave a job stuck in the

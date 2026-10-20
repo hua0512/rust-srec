@@ -25,6 +25,8 @@
 - Fixed the confirmation after cancelling a workflow not counting a step that was waiting for its automatic retry.
 - A workflow's progress now moves while its steps run, for steps that report progress such as remuxing, copying, compression and uploads, instead of only when a step finishes. Failed steps no longer count as progress, so a failed or cancelled workflow shows how much of it completed.
 - Live progress of processing jobs is no longer written to the database several times a second, which cuts disk writes while jobs run and keeps progress updates flowing when the database is busy.
+- Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
+- A job's progress, the top bar and workflow steps now show which file is being processed.
 
 ## Web interface
 
