@@ -4,9 +4,10 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
 
+use parking_lot::Mutex;
 use process_utils::ContainedChild;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -17,7 +18,7 @@ use tracing::{debug, warn};
 
 use super::traits::{JobLogSink, ProcessorContext};
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
-use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+use crate::pipeline::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
@@ -326,10 +327,8 @@ enum CommandMode {
     Plain,
     Ffmpeg {
         progress: ProgressReporter,
-        trim: Option<Range<f64>>,
-        /// The first input's length in seconds from ffmpeg's stderr report,
-        /// read by the stdout progress parser of the same run.
-        input_secs: Arc<OnceLock<Option<f64>>>,
+        /// Shared by the run's stdout and stderr readers.
+        state: Arc<Mutex<FfmpegProgressState>>,
     },
     Rclone(ProgressReporter),
     BaiduPcs(ProgressReporter),
@@ -371,17 +370,11 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
         .await;
     }
     let mut lines = CappedLines::new(reader, context.overlong_count);
-    if stdout
-        && let CommandMode::Ffmpeg {
-            progress,
-            trim,
-            input_secs,
-        } = &context.mode
-    {
-        let mut state = FfmpegProgressState::default();
+    if stdout && let CommandMode::Ffmpeg { progress, state } = &context.mode {
         while let Some(line) = lines.next_line().await? {
-            state.duration_ms =
-                output_length_ms(input_secs.get().copied().flatten(), trim.as_ref());
+            // Reporting under the state lock delivers the two readers'
+            // snapshots in the order they read the run's state.
+            let mut state = state.lock();
             if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
                 progress.report(snapshot);
             }
@@ -391,8 +384,11 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
     while let Some(line) = lines.next_line().await? {
         let level = if stdout {
             LogLevel::Info
-        } else if let CommandMode::Ffmpeg { input_secs, .. } = &context.mode {
-            record_ffmpeg_input_length(&line, input_secs);
+        } else if let CommandMode::Ffmpeg { progress, state } = &context.mode {
+            let mut state = state.lock();
+            if let Some(snapshot) = parse_ffmpeg_stderr_line(&line, &mut state) {
+                progress.report(snapshot);
+            }
             determine_ffmpeg_log_level(&line)
         } else if line.starts_with("[error]")
             || line.contains("Error ")
@@ -530,14 +526,60 @@ pub async fn run_command_with_logs(
     run_logged_command(command, CommandMode::Plain, log_sink).await
 }
 
+/// What one FFmpeg run has reported on stdout and stderr.
 #[derive(Default)]
 struct FfmpegProgressState {
+    /// Range of input time in seconds the run writes when it cuts its input.
+    trim: Option<Range<f64>>,
+    /// The first input's length in seconds from ffmpeg's stderr report;
+    /// `Some(None)` once it reported an unknown length.
+    input_secs: Option<Option<f64>>,
     out_time_ms: Option<u64>,
     total_size: Option<u64>,
     speed_x: Option<f64>,
-    /// Media length the run writes, when known.
-    duration_ms: Option<u64>,
+    phase: Option<JobPhase>,
+    /// Set by the final `progress=end` report.
+    ended: bool,
     raw: serde_json::Map<String, serde_json::Value>,
+}
+
+impl FfmpegProgressState {
+    /// Media length the run writes, when known.
+    fn duration_ms(&self) -> Option<u64> {
+        output_length_ms(self.input_secs.flatten(), self.trim.as_ref())
+    }
+
+    fn snapshot(&self) -> JobProgressSnapshot {
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        snapshot.out_time_ms = self.out_time_ms;
+        snapshot.bytes_done = self.total_size;
+        snapshot.duration_ms = self.duration_ms();
+        snapshot.phase = self.phase;
+        // Speed and time left describe writing frames, which a finalizing run
+        // has finished.
+        let speed = self.speed_x.filter(|_| self.phase.is_none());
+        snapshot.speed_x = speed;
+        if let Some(total) = snapshot.duration_ms {
+            let remaining = if self.ended {
+                0
+            } else {
+                total.saturating_sub(snapshot.out_time_ms.unwrap_or(0))
+            };
+            // Only the end marker reaches 100: an estimated input length
+            // (MPEG-TS) can be overshot, and a faststart rewrite runs after
+            // the last frame is written.
+            snapshot.percent = Some(if self.ended {
+                100.0
+            } else {
+                ((total - remaining) as f64 / total as f64 * 100.0).min(99.0) as f32
+            });
+            snapshot.eta_secs = speed
+                .filter(|speed| *speed > 0.0)
+                .map(|speed| remaining as f64 / 1000.0 / speed);
+        }
+        snapshot.raw = serde_json::Value::Object(self.raw.clone());
+        snapshot
+    }
 }
 
 fn parse_speed_x(s: &str) -> Option<f64> {
@@ -545,19 +587,34 @@ fn parse_speed_x(s: &str) -> Option<f64> {
     s.parse::<f64>().ok()
 }
 
-/// Records the length from ffmpeg's input report line
-/// (`  Duration: 01:02:03.45, start: …`). Only the first input's report
-/// counts; its `Duration: N/A` records an unknown length.
-fn record_ffmpeg_input_length(line: &str, input_secs: &OnceLock<Option<f64>>) {
-    let Some(value) = line.trim_start().strip_prefix("Duration: ") else {
-        return;
-    };
-    input_secs.get_or_init(|| {
-        let clock = value.split(',').next()?.trim();
-        clock.split(':').try_fold(0.0, |secs, part| {
-            Some(secs * 60.0 + part.parse::<f64>().ok()?)
-        })
-    });
+/// Reads an ffmpeg stderr line, returning a snapshot when it changes the
+/// run's phase.
+///
+/// The input report line (`  Duration: 01:02:03.45, start: …`) gives the
+/// length; only the first input's report counts, and its `Duration: N/A`
+/// records an unknown length. The MP4 muxer logs `Starting second pass`
+/// after it has written every packet and before it rewrites the file to move
+/// its index (faststart) or insert one (global sidx), which can take a while
+/// for a long recording.
+fn parse_ffmpeg_stderr_line(
+    line: &str,
+    state: &mut FfmpegProgressState,
+) -> Option<JobProgressSnapshot> {
+    if let Some(value) = line.trim_start().strip_prefix("Duration: ") {
+        if state.input_secs.is_none() {
+            let clock = value.split(',').next().unwrap_or_default().trim();
+            state.input_secs = Some(clock.split(':').try_fold(0.0, |secs, part| {
+                Some(secs * 60.0 + part.parse::<f64>().ok()?)
+            }));
+        }
+        return None;
+    }
+    if state.ended || !line.contains("Starting second pass") {
+        return None;
+    }
+    state.phase = Some(JobPhase::Finalizing);
+    state.out_time_ms = state.out_time_ms.max(state.duration_ms());
+    Some(state.snapshot())
 }
 
 /// Milliseconds of media a run writes: the input's length, or the `trim`
@@ -604,33 +661,11 @@ fn parse_ffmpeg_kv_line(
             }
         }
         "progress" => {
-            let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-            snapshot.out_time_ms = state.out_time_ms;
-            snapshot.bytes_done = state.total_size;
-            snapshot.speed_x = state.speed_x;
-            snapshot.duration_ms = state.duration_ms;
-            if let Some(total) = state.duration_ms {
-                let ended = value == "end";
-                let remaining = if ended {
-                    0
-                } else {
-                    total.saturating_sub(snapshot.out_time_ms.unwrap_or(0))
-                };
-                // Only the end marker reaches 100: an estimated input length
-                // (MPEG-TS) can be overshot, and a faststart rewrite runs after
-                // the last frame is written.
-                snapshot.percent = Some(if ended {
-                    100.0
-                } else {
-                    ((total - remaining) as f64 / total as f64 * 100.0).min(99.0) as f32
-                });
-                snapshot.eta_secs = state
-                    .speed_x
-                    .filter(|speed| *speed > 0.0)
-                    .map(|speed| remaining as f64 / 1000.0 / speed);
+            if value == "end" {
+                state.ended = true;
+                state.phase = None;
             }
-            snapshot.raw = serde_json::Value::Object(state.raw.clone());
-            return Some(snapshot);
+            return Some(state.snapshot());
         }
         _ => {}
     }
@@ -884,8 +919,10 @@ pub async fn run_ffmpeg_with_progress(
 ) -> crate::Result<CommandOutput> {
     let mode = CommandMode::Ffmpeg {
         progress: progress.clone(),
-        trim,
-        input_secs: Arc::default(),
+        state: Arc::new(Mutex::new(FfmpegProgressState {
+            trim,
+            ..Default::default()
+        })),
     };
     run_logged_command(command, mode, log_sink).await
 }
@@ -1116,7 +1153,7 @@ mod tests {
     #[test]
     fn ffmpeg_progress_percent_and_eta_stay_below_100_until_end() {
         let mut state = FfmpegProgressState {
-            duration_ms: Some(60_000),
+            input_secs: Some(Some(60.0)),
             ..Default::default()
         };
         parse_ffmpeg_kv_line("out_time_us=15000000", &mut state);
@@ -1140,23 +1177,73 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_finalizing_holds_99_percent_until_end() {
+        const SECOND_PASS: &str = "[mp4 @ 0x5564] Starting second pass: moving the moov atom to the beginning of the file";
+        let writing = || {
+            let mut state = FfmpegProgressState::default();
+            parse_ffmpeg_stderr_line(
+                "  Duration: 00:01:00.00, start: 0.000000, bitrate: 2000 kb/s",
+                &mut state,
+            );
+            for line in ["out_time_us=59000000", "speed=2x", "progress=continue"] {
+                parse_ffmpeg_kv_line(line, &mut state);
+            }
+            state
+        };
+
+        let mut state = writing();
+        let finalizing = parse_ffmpeg_stderr_line(SECOND_PASS, &mut state).unwrap();
+        assert_eq!(
+            (
+                finalizing.phase,
+                finalizing.out_time_ms,
+                finalizing.percent,
+                finalizing.eta_secs,
+                finalizing.speed_x
+            ),
+            (
+                Some(JobPhase::Finalizing),
+                Some(60_000),
+                Some(99.0),
+                None,
+                None
+            )
+        );
+        let later = parse_ffmpeg_kv_line("progress=continue", &mut state).unwrap();
+        assert_eq!((later.phase, later.percent), (finalizing.phase, Some(99.0)));
+        let ended = parse_ffmpeg_kv_line("progress=end", &mut state).unwrap();
+        assert_eq!((ended.phase, ended.percent), (None, Some(100.0)));
+
+        // stdout and stderr are read separately, so the second-pass line can
+        // be read after the end.
+        let mut state = writing();
+        parse_ffmpeg_kv_line("progress=end", &mut state);
+        assert!(parse_ffmpeg_stderr_line(SECOND_PASS, &mut state).is_none());
+        let ended = state.snapshot();
+        assert_eq!((ended.phase, ended.percent), (None, Some(100.0)));
+    }
+
+    #[test]
     fn ffmpeg_length_comes_from_the_first_input_report_and_trimming() {
-        let input_secs = OnceLock::new();
+        let mut state = FfmpegProgressState::default();
         // Matroska's per-stream DURATION tag is metadata, not the input report.
-        record_ffmpeg_input_length("      DURATION        : 00:10:00.040000000", &input_secs);
-        assert_eq!(input_secs.get(), None);
-        record_ffmpeg_input_length(
+        parse_ffmpeg_stderr_line("      DURATION        : 00:10:00.040000000", &mut state);
+        assert_eq!(state.input_secs, None);
+        parse_ffmpeg_stderr_line(
             "  Duration: 01:02:03.50, start: 0.000000, bitrate: 2000 kb/s",
-            &input_secs,
+            &mut state,
         );
-        record_ffmpeg_input_length(
+        parse_ffmpeg_stderr_line(
             "  Duration: 00:00:05.00, start: 0.000000, bitrate: 128 kb/s",
-            &input_secs,
+            &mut state,
         );
-        assert_eq!(input_secs.get(), Some(&Some(3723.5)));
-        let unknown = OnceLock::new();
-        record_ffmpeg_input_length("  Duration: N/A, start: 0.000000, bitrate: N/A", &unknown);
-        assert_eq!(unknown.get(), Some(&None));
+        assert_eq!(state.input_secs, Some(Some(3723.5)));
+        let mut unknown = FfmpegProgressState::default();
+        parse_ffmpeg_stderr_line(
+            "  Duration: N/A, start: 0.000000, bitrate: N/A",
+            &mut unknown,
+        );
+        assert_eq!(unknown.input_secs, Some(None));
 
         for (input, trim, expected) in [
             (Some(100.0), None, Some(100_000)),
@@ -1198,8 +1285,7 @@ mod tests {
             CommandMode::Plain,
             CommandMode::Ffmpeg {
                 progress: ProgressReporter::noop("test"),
-                trim: None,
-                input_secs: Arc::default(),
+                state: Arc::default(),
             },
             CommandMode::Rclone(ProgressReporter::noop("test")),
             CommandMode::BaiduPcs(ProgressReporter::noop("test")),

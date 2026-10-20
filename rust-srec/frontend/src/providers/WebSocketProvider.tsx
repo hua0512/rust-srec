@@ -28,6 +28,7 @@ import {
   SubscribeRequestSchema,
   UnsubscribeRequestSchema,
   EventType,
+  JobPhase as WireJobPhase,
   UploadTerminalStatus,
 } from '@/api/proto/gen/download_progress_pb.js';
 import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
@@ -37,6 +38,7 @@ import {
   type StreamerCheckHistoryEntry,
 } from '@/api/schemas/check-history';
 import { UnavailableReasonSchema } from '@/api/schemas/credential-profiles';
+import type { JobPhase } from '@/api/schemas/session';
 import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
 import { invalidateCredentialAttention } from '@/api/credential-profiles';
 
@@ -650,7 +652,19 @@ function wireUploadProgress(wire: WireUploadProgress): UploadProgressInput {
     outTimeMs: wire.outTimeMs,
     durationMs: wire.durationMs,
     speedX: wire.speedX,
+    phase: wireJobPhase(wire.phase),
+    currentFile: wire.currentFile,
   };
+}
+
+/** A phase this client does not know reads as plain work. */
+function wireJobPhase(phase: WireJobPhase | undefined): JobPhase | undefined {
+  switch (phase) {
+    case WireJobPhase.FINALIZING:
+      return 'finalizing';
+    default:
+      return undefined;
+  }
 }
 
 /** Cap kept in sync with the backend's `KEEP_PER_STREAMER` repository

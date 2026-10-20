@@ -120,12 +120,15 @@ function JobRow({
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {jobTypeLabel(job.jobType, i18n)}
         </div>
-        {/* Wraps only between details, so no value splits across lines. */}
+        {/* Wraps only between details, so no value splits across lines; a
+            detail wider than the row, such as a long file name, is cut. */}
         <div className="text-[11px] text-muted-foreground">
           {details.map((detail, index) => (
             <Fragment key={detail}>
               {index > 0 && ' · '}
-              <span className="whitespace-nowrap">{detail}</span>
+              <span className="inline-block max-w-full truncate align-bottom">
+                {detail}
+              </span>
             </Fragment>
           ))}
         </div>

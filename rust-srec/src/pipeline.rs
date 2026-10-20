@@ -44,7 +44,7 @@ pub use processors::{
     ProcessorOutput, ProcessorType, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
     UploadItemStatus, UploadResultItem,
 };
-pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+pub use progress::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 pub(crate) use staged_outputs::{
     StagedOutputRecorder, is_temp_path_for, remove_leftover, temp_path_for,
 };

@@ -139,7 +139,10 @@ subscribe and unsubscribe), including their request and response schemas.
 Job list, job detail and pipeline-creation summaries return `progress: null`
 when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
-processor-specific snapshot; it returns 404 when no snapshot is available.
+processor-specific snapshot; it returns 404 when no snapshot is available. The
+snapshot's optional `phase` is `finalizing` while FFmpeg rewrites its output
+after the last frame (treat values you do not know as plain work), and
+`current_file` names the file in progress without its directories.
 
 `GET /api/pipeline/dag/{id}` gives each step `job_status`, `started_at` and
 `retry_after`, with times in epoch milliseconds. `retry_after` is null when no

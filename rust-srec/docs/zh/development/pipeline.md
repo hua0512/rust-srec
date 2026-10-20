@@ -56,7 +56,11 @@ FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 
 `files_done` 和 `files_total`；FFmpeg 步骤不计入按文件类型直接透传的输入，
 例如弹幕 XML。多文件 FFmpeg 或复制任务的 `percent` 覆盖整个任务，每个文件
 占相同份额，`out_time_ms`、`duration_ms` 和已复制字节数则描述正在处理的文件。
-`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。
+`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。任务正常推进
+`percent` 时没有 `phase`。FFmpeg 写完最后一帧后重写 MP4（例如为快速启动把索引
+移到文件开头）时，`phase` 为 `finalizing`，此时该文件的 `percent` 份额停在 99%，
+不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。FFmpeg、复制和压缩任务在 `current_file`
+中给出正在处理的文件名，不含目录。`raw` 不包含文件路径。
 
 任务进度只保存在内存中。任务在上报进度之前（包括重启后）没有快照，
 结束时快照会被丢弃；没有快照时，`GET /api/pipeline/jobs/{id}/progress` 返回 404。

@@ -1,7 +1,7 @@
-import type { I18n } from '@lingui/core';
+import type { I18n, MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 
-import type { JobProgressSnapshot } from '@/api/schemas/session';
+import type { JobPhase, JobProgressSnapshot } from '@/api/schemas/session';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
@@ -22,12 +22,17 @@ export function jobTypeLabel(jobType: string, i18n: I18n): string {
   return definition ? i18n._(definition.label) : jobType.replace(/_/g, ' ');
 }
 
-// The store's live progress, or a job page snapshot with plain numbers and nulls.
+// The store's live progress, or a job page snapshot with plain numbers for
+// the store's bigints, and nulls.
 type JobProgress = {
   [K in Exclude<keyof UploadProgressInput, 'jobId' | 'streamerId'>]?:
     | UploadProgressInput[K]
-    | number
+    | (bigint extends UploadProgressInput[K] ? number : never)
     | null;
+};
+
+const PHASE_LABELS: Record<JobPhase, MessageDescriptor> = {
+  finalizing: msg`Finalizing...`,
 };
 
 /** A progress snapshot from the API, or none, as {@link describeJobProgress} takes it. */
@@ -45,21 +50,26 @@ export function snapshotProgress(
     speedX: snapshot?.speed_x,
     progressFilesDone: snapshot?.files_done,
     progressFilesTotal: snapshot?.files_total,
+    phase: snapshot?.phase,
+    currentFile: snapshot?.current_file,
   };
 }
 
 /**
  * A job's progress for display: the percent for a bar, capped at 100, and
- * short details in the units the job reports. FFmpeg steps show the output
- * position against the length being written and the speed; jobs counting
- * bytes show bytes and speed. The time left and, in batches, the file in
- * progress follow. No details means the job reports no progress.
+ * short details in the units the job reports. A phase such as finalizing
+ * leads. FFmpeg steps show the output position against the length being
+ * written and the speed; jobs counting bytes show bytes and speed. The time
+ * left, the position in a batch and the name of the file in progress follow;
+ * the name comes last so that narrow rows cut it first. No details means the
+ * job reports no progress.
  */
 export function describeJobProgress(
   progress: JobProgress,
   i18n: I18n,
 ): { percent?: number; details: string[] } {
   const details: string[] = [];
+  if (progress.phase) details.push(i18n._(PHASE_LABELS[progress.phase]));
   const bytes = formatUploadBytes(progress);
   if (progress.outTimeMs != null) {
     const done = formatTimecode(Number(progress.outTimeMs));
@@ -86,6 +96,7 @@ export function describeJobProgress(
     const index = Math.min(done + 1, total);
     details.push(i18n._(msg`File ${index} of ${total}`));
   }
+  if (progress.currentFile) details.push(progress.currentFile);
   return {
     percent:
       progress.percent != null ? Math.min(progress.percent, 100) : undefined,

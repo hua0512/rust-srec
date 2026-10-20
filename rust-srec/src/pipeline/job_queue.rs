@@ -1003,8 +1003,9 @@ impl JobQueue {
     }
 
     /// Publish `Started` for an upload job. Any other job is announced as
-    /// `JobStarted` after [`LONG_JOB_AFTER`], and only if `attempt` is still
-    /// running then. Called from `dequeue` right after the claim succeeds.
+    /// `JobStarted` after [`LONG_JOB_AFTER`], followed by its latest progress,
+    /// and only if `attempt` is still running then. Called from `dequeue`
+    /// right after the claim succeeds.
     fn announce_started(&self, job: &Job, attempt: u64) {
         if let Some(event) = upload_started_event(job) {
             self.emit_upload_event(event);
@@ -1012,6 +1013,7 @@ impl JobQueue {
         }
         let jobs_cache = self.jobs_cache.clone();
         let cancellation_tokens = self.cancellation_tokens.clone();
+        let progress_cache = self.progress_cache.clone();
         let upload_broadcaster = self.upload_broadcaster.clone();
         let job_id = job.id.clone();
         tokio::spawn(async move {
@@ -1024,12 +1026,25 @@ impl JobQueue {
             if live
                 && let Some(broadcaster) = upload_broadcaster.get()
                 && broadcaster.has_subscribers()
-                && let Some(event) = jobs_cache
+                && let Some((started, streamer_id)) = jobs_cache
                     .get(&job_id)
                     .filter(|job| job.status == JobStatus::Processing)
-                    .map(|job| long_job_started_event(&job))
+                    .map(|job| (long_job_started_event(&job), non_empty(&job.streamer_id)))
             {
-                broadcaster.send(event);
+                broadcaster.send(started);
+                // Progress from before this point stayed off the socket, and
+                // the job may report nothing more for a while (FFmpeg prints
+                // no progress during the MP4 muxer's second pass), so its
+                // latest snapshot goes out now rather than at the next
+                // heartbeat.
+                let snapshot = progress_cache.get(&job_id).map(|snapshot| snapshot.clone());
+                if let Some(snapshot) = snapshot {
+                    broadcaster.send(UploadStatusEvent::JobProgress {
+                        job_id,
+                        streamer_id,
+                        snapshot,
+                    });
+                }
             }
         });
     }
@@ -1397,6 +1412,7 @@ impl JobQueue {
     pub fn cached_progress(&self, job_id: &str) -> Option<JobProgressSnapshot> {
         let snapshot = self.progress_cache.get(job_id)?;
         Some(JobProgressSnapshot {
+            current_file: snapshot.current_file.clone(),
             raw: serde_json::Value::Null,
             ..*snapshot
         })
@@ -3572,6 +3588,7 @@ impl Default for JobQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::JobPhase;
 
     /// The manifest travels in the `state` column with the placeholder metadata
     /// and comes back through `db_model_to_job`; rows written before the column
@@ -3745,11 +3762,15 @@ mod tests {
         let queue = JobQueue::new();
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         snapshot.percent = Some(42.5);
+        snapshot.current_file = Some("seg.flv".to_string());
         snapshot.raw = serde_json::json!({"path": "/abs/file"});
         queue.progress_cache.insert("job-1".to_string(), snapshot);
 
         let cached = queue.cached_progress("job-1").unwrap();
-        assert_eq!(cached.percent, Some(42.5));
+        assert_eq!(
+            (cached.percent, cached.current_file.as_deref()),
+            (Some(42.5), Some("seg.flv"))
+        );
         assert_eq!(cached.raw, serde_json::Value::Null);
         assert!(queue.cached_progress("unknown").is_none());
     }
@@ -5068,8 +5089,9 @@ mod tests {
     }
 
     /// Jobs other than uploads reach the socket only after `LONG_JOB_AFTER`
-    /// of processing: announced, then their progress, then their end, and
-    /// listed in the connect snapshot. Shorter jobs stay off it entirely.
+    /// of processing: announced with the progress they already have, then
+    /// their progress, then their end, and listed in the connect snapshot.
+    /// Shorter jobs stay off it entirely.
     #[tokio::test(start_paused = true)]
     async fn long_jobs_reach_the_socket_after_ten_seconds() {
         async fn next_event(
@@ -5112,6 +5134,11 @@ mod tests {
             active.iter().map(|job| &job.job_id).collect::<Vec<_>>(),
             [long]
         );
+        // Cached before the announcement, with nothing reported after it, as
+        // while FFmpeg finalizes an MP4.
+        let mut finalizing = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        finalizing.phase = Some(JobPhase::Finalizing);
+        queue.progress_cache.insert(long.clone(), finalizing);
 
         queue.fail(short, "boom").await.unwrap();
         let started_at_ms = match &*next_event(&mut rx).await {
@@ -5127,6 +5154,14 @@ mod tests {
             other => panic!("expected JobStarted, got {other:?}"),
         };
         assert!(dequeued_at.elapsed() >= LONG_JOB_AFTER);
+        match &*next_event(&mut rx).await {
+            UploadStatusEvent::JobProgress {
+                job_id, snapshot, ..
+            } => assert_eq!((job_id, snapshot.phase), (long, Some(JobPhase::Finalizing))),
+            other => panic!("expected the cached JobProgress, got {other:?}"),
+        }
+        // With the announcement, not from the heartbeat.
+        assert!(dequeued_at.elapsed() < HEARTBEAT_INTERVAL);
 
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         snapshot.percent = Some(42.0);

@@ -462,7 +462,8 @@ impl Processor for AssBurnInProcessor {
         let mut output_size_bytes = 0u64;
 
         for (idx, video_path) in video_inputs.iter().enumerate() {
-            ctx.progress.set_batch_item(idx, video_inputs.len());
+            ctx.progress
+                .set_batch_item(idx, video_inputs.len(), video_path);
             let output_path = &output_paths[idx];
 
             if !super::utils::try_exists(Path::new(video_path)).await? {

@@ -39,7 +39,7 @@ pub(super) async fn run_media<P: MediaItem>(
     let mut ffmpeg_index = 0;
     for (input, output) in plan.items() {
         if processor.runs_ffmpeg(input) {
-            progress.set_batch_item(ffmpeg_index, ffmpeg_runs);
+            progress.set_batch_item(ffmpeg_index, ffmpeg_runs, input);
             ffmpeg_index += 1;
         }
         let one = processor.process(input, output, &mut batch).await?;

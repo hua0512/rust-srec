@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -13,6 +14,15 @@ pub enum ProgressKind {
     BaiduPcs,
     Compression,
     Copy,
+}
+
+/// A stage of a job that is not plain work towards its percent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum JobPhase {
+    /// FFmpeg wrote the last frame and is rewriting the output, such as
+    /// moving an MP4's index to the front for fast start.
+    Finalizing,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -43,6 +53,12 @@ pub struct JobProgressSnapshot {
     /// Files the job counts towards its progress.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_total: Option<u64>,
+    /// Absent while the job does plain work towards `percent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<JobPhase>,
+    /// Name of the file in progress, without its directories.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_file: Option<String>,
     #[serde(default)]
     pub raw: serde_json::Value,
 }
@@ -62,6 +78,8 @@ impl JobProgressSnapshot {
             speed_x: None,
             files_done: None,
             files_total: None,
+            phase: None,
+            current_file: None,
             raw: serde_json::Value::Null,
         }
     }
@@ -73,13 +91,29 @@ pub struct JobProgressUpdate {
     pub snapshot: JobProgressSnapshot,
 }
 
+/// Name of the file at `path`, without its directories.
+pub(crate) fn progress_file_name(path: impl AsRef<Path>) -> Option<String> {
+    path.as_ref()
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+}
+
+/// What a reporter adds to every report.
+#[derive(Default)]
+struct ReporterState {
+    /// `(files_done, files_total)` of the batch item in progress.
+    batch_item: Option<(u64, u64)>,
+    /// File name of the batch item in progress.
+    current_file: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct ProgressReporter {
     job_id: String,
     tx: mpsc::Sender<JobProgressUpdate>,
-    /// `(files_done, files_total)` of the batch item in progress. Shared by
-    /// every clone, so commands started from the job's context report it.
-    batch_item: Arc<Mutex<Option<(u64, u64)>>>,
+    /// Shared by every clone, so commands started from the job's context
+    /// report it.
+    state: Arc<Mutex<ReporterState>>,
 }
 
 impl ProgressReporter {
@@ -87,7 +121,7 @@ impl ProgressReporter {
         Self {
             job_id: job_id.into(),
             tx,
-            batch_item: Arc::default(),
+            state: Arc::default(),
         }
     }
 
@@ -97,23 +131,32 @@ impl ProgressReporter {
     }
 
     /// Marks later reports as coming from item `index` (zero-based) of a
-    /// `total`-item batch: they carry the file position, and a reported
+    /// `total`-item batch, the file at `path`. They carry the file position
+    /// and, unless they name their own file, the item's file name. A reported
     /// percent covers the whole batch with each item as an equal share. A
     /// reported ETA covers only its item, so only the last item keeps it.
-    pub fn set_batch_item(&self, index: usize, total: usize) {
-        *self.batch_item.lock() = Some((index as u64, total as u64));
+    pub fn set_batch_item(&self, index: usize, total: usize, path: impl AsRef<Path>) {
+        let mut state = self.state.lock();
+        state.batch_item = Some((index as u64, total as u64));
+        state.current_file = progress_file_name(path);
     }
 
     pub fn report(&self, mut snapshot: JobProgressSnapshot) {
         snapshot.updated_at = Utc::now();
-        if let Some((done, total)) = *self.batch_item.lock() {
-            snapshot.files_done = Some(done);
-            snapshot.files_total = Some(total);
-            snapshot.percent = snapshot
-                .percent
-                .map(|percent| (done as f32 * 100.0 + percent) / total as f32);
-            if done + 1 < total {
-                snapshot.eta_secs = None;
+        {
+            let state = self.state.lock();
+            if let Some((done, total)) = state.batch_item {
+                snapshot.files_done = Some(done);
+                snapshot.files_total = Some(total);
+                snapshot.percent = snapshot
+                    .percent
+                    .map(|percent| (done as f32 * 100.0 + percent) / total as f32);
+                if done + 1 < total {
+                    snapshot.eta_secs = None;
+                }
+            }
+            if snapshot.current_file.is_none() {
+                snapshot.current_file.clone_from(&state.current_file);
             }
         }
         let _ = self.tx.try_send(JobProgressUpdate {
@@ -135,7 +178,7 @@ mod tests {
         snapshot.percent = Some(50.0);
         snapshot.eta_secs = Some(10.0);
 
-        reporter.clone().set_batch_item(1, 4);
+        reporter.clone().set_batch_item(1, 4, "/rec/a/seg_002.flv");
         reporter.report(snapshot.clone());
         let batch = rx.try_recv().unwrap().snapshot;
         assert_eq!(
@@ -143,13 +186,27 @@ mod tests {
                 batch.files_done,
                 batch.files_total,
                 batch.percent,
-                batch.eta_secs
+                batch.eta_secs,
+                batch.current_file.as_deref()
             ),
-            (Some(1), Some(4), Some(37.5), None)
+            (Some(1), Some(4), Some(37.5), None, Some("seg_002.flv"))
         );
 
-        reporter.set_batch_item(3, 4);
+        reporter.set_batch_item(3, 4, "/rec/a/seg_004.flv");
         reporter.report(snapshot);
         assert_eq!(rx.try_recv().unwrap().snapshot.eta_secs, Some(10.0));
+    }
+
+    #[test]
+    fn phase_is_serialized_by_name_and_omitted_when_absent() {
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        let plain = serde_json::to_value(&snapshot).unwrap();
+        assert!(plain.get("phase").is_none() && plain.get("current_file").is_none());
+
+        snapshot.phase = Some(JobPhase::Finalizing);
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["phase"],
+            "finalizing"
+        );
     }
 }

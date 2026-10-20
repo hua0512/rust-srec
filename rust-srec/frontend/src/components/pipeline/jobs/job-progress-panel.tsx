@@ -75,6 +75,7 @@ export function JobProgressPanel({
   // values, not from the report time: rclone repeats an unchanged stats line
   // every second while stuck, and the server's clock may differ.
   const signature = [
+    current?.phase,
     current?.percent,
     current?.bytes_done,
     current?.out_time_ms,
@@ -85,7 +86,10 @@ export function JobProgressPanel({
     setLastChange({ signature, atMs: now });
   }
   const quietSecs = (now - lastChange.atMs) / 1000;
-  const stalled = quietSecs >= STALL_AFTER_SECS;
+  // Finalizing leaves the reported values alone until it ends, however long
+  // it takes.
+  const stalled =
+    quietSecs >= STALL_AFTER_SECS && current?.phase !== 'finalizing';
   const quietFor = formatLocalizedDuration(quietSecs, i18n.locale);
 
   return (
@@ -122,7 +126,7 @@ export function JobProgressPanel({
           </div>
           {percent != null && <Progress value={percent} />}
           {details.length > 0 && (
-            <div className="mt-2 text-xs text-muted-foreground font-mono">
+            <div className="mt-2 text-xs text-muted-foreground font-mono wrap-anywhere">
               {details.join(' · ')}
             </div>
           )}
