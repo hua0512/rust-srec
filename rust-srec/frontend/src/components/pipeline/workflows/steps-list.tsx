@@ -224,7 +224,7 @@ export const StepsList = memo(
           </Reorder.Group>
         ) : (
           <div className="flex-1 min-h-[150px] flex flex-col items-center justify-center text-center space-y-4">
-            <div className="p-4 rounded-full bg-muted/30 border border-dashed border-border mb-2 animate-pulse">
+            <div className="p-4 rounded-full bg-muted/30 border border-dashed border-border mb-2">
               <Workflow className="h-8 w-8 text-muted-foreground/40" />
             </div>
             <div className="space-y-1 max-w-sm">

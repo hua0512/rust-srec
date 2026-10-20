@@ -46,6 +46,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import {
+  Activity,
   RefreshCw,
   XCircle,
   CheckCircle2,
@@ -95,7 +96,7 @@ function PipelineJobsPage() {
         {
           value: 'PROCESSING',
           label: i18n._(msg`Processing`),
-          icon: RefreshCw,
+          icon: Activity,
         },
         {
           value: 'COMPLETED',
@@ -453,9 +454,7 @@ function PipelineJobsPage() {
               value={stats?.processing_count}
               loading={isStatsLoading}
               color="text-blue-500"
-              icon={
-                <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
-              }
+              icon={<Activity className="h-4 w-4 text-blue-500" />}
             />
             <StatCard
               title={<Trans>Completed</Trans>}
