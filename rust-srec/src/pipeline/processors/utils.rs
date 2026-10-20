@@ -257,7 +257,8 @@ struct CappedLines<R> {
     /// (`run_baidupcs_with_logs`): without CR splitting an entire
     /// transfer's redraws accumulate into one overlong "line" that gets
     /// skipped wholesale. `\r\n` then yields an empty line for the `\n`,
-    /// which callers must skip.
+    /// which callers must skip. A segment ending in [`BAIDUPCS_BAR_END`] is
+    /// also yielded as soon as it is read, without waiting for a terminator.
     split_cr: bool,
 }
 
@@ -335,6 +336,11 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
                         }
                     }
                     self.reader.consume(chunk_len);
+                    // Only BaiduPCS-Go's next output ends such a bar, and that
+                    // may be the next bar 3 s later.
+                    if self.split_cr && self.partial.ends_with(BAIDUPCS_BAR_END.as_bytes()) {
+                        return Ok(Some(self.take_line()));
+                    }
                 }
             }
         }
@@ -1022,8 +1028,8 @@ pub async fn run_rclone_with_progress(
 }
 
 /// Minimum seconds between progress-bar lines forwarded to the live log
-/// sink by [`run_baidupcs_with_logs`]; the bar redraws many times per
-/// second.
+/// sink by [`run_baidupcs_with_logs`]: BaiduPCS-Go redraws each file's bar
+/// every 3 seconds and uploads several files at once (four by default).
 const BAIDUPCS_NOISE_INTERVAL_SECS: u64 = 5;
 
 /// True for BaiduPCS-Go upload progress-bar redraws
@@ -1033,6 +1039,11 @@ const BAIDUPCS_NOISE_INTERVAL_SECS: u64 = 5;
 fn is_baidupcs_progress_noise(line: &str) -> bool {
     line.contains('↑') && line.contains("/s")
 }
+
+/// End of the bar BaiduPCS-Go prints when it uploads one file at a time.
+/// That bar starts with `\r` and has no newline after it, so BaiduPCS-Go's
+/// next output follows these dots.
+const BAIDUPCS_BAR_END: &str = "............";
 
 /// One redraw of a BaiduPCS-Go upload task's progress bar.
 struct BaiduPcsBar<'a> {
@@ -1085,14 +1096,17 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
 ) -> std::io::Result<()> {
     let mut lines = CappedLines::with_cr_splitting(reader, overlong_count);
     let mut last_noise: Option<std::time::Instant> = None;
-    while let Some(line) = lines.next_line().await? {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if is_baidupcs_progress_noise(line) {
+    while let Some(segment) = lines.next_line().await? {
+        // A line printed right after a bar ending in `BAIDUPCS_BAR_END`, such
+        // as a failure, shares the bar's segment when both arrive in one read.
+        let (bar, line) = match segment.split_once(BAIDUPCS_BAR_END) {
+            Some((bar, rest)) if is_baidupcs_progress_noise(bar) => (Some(bar.trim()), rest.trim()),
+            _ if is_baidupcs_progress_noise(&segment) => (Some(segment.trim()), ""),
+            _ => (None, segment.trim()),
+        };
+        if let Some(bar) = bar {
             if let Some(tracker) = &tracker
-                && let Some(bar) = parse_baidupcs_progress_line(line)
+                && let Some(bar) = parse_baidupcs_progress_line(bar)
             {
                 tracker.record_bar(bar.task_id, bar.bytes_done, bar.speed_bytes_per_sec);
             }
@@ -1102,9 +1116,11 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
             }) {
                 last_noise = Some(now);
                 if let Some(sink) = &noise_sink {
-                    sink.try_send(create_log_entry(LogLevel::Info, line));
+                    sink.try_send(create_log_entry(LogLevel::Info, bar));
                 }
             }
+        }
+        if line.is_empty() {
             continue;
         }
         if let Some(tracker) = &tracker {
@@ -1720,10 +1736,13 @@ mod tests {
 
     #[tokio::test]
     async fn consume_baidupcs_stream_throttles_bar_and_keeps_markers() {
+        // BaiduPCS-Go's output while uploading one file: each bar starts with
+        // `\r` and ends with dots, and the retry notice follows them directly.
         let input = "[1] 加入上传队列: D:\\rec\\a.flv\n\
-                     [1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r\
-                     [1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\
-                     [1] ↑ 3.00MB/9.00MB 1.00MB/s in 3s\r\n\
+                     \r[1] ↑ 1.00MB/9.00MB 1.00MB/s in 3s ............\
+                     \r[1] ↑ 2.00MB/9.00MB 1.00MB/s in 6s ............\
+                     [1] 上传文件失败, 网络请求错误, 重试 1/3\n\
+                     \r[1] ↑ 3.00MB/9.00MB 1.00MB/s in 3s ............\n\
                      [1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
             .as_bytes();
 
@@ -1740,11 +1759,13 @@ mod tests {
             messages.push(entry.message);
         }
 
-        // Bar redraws never reach the captured-log channel; markers do.
+        // Bar redraws never reach the captured-log channel; markers and the
+        // retry notice do.
         assert_eq!(
             messages,
             vec![
                 "[1] 加入上传队列: D:\\rec\\a.flv".to_string(),
+                "[1] 上传文件失败, 网络请求错误, 重试 1/3".to_string(),
                 "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
             ]
         );
@@ -1799,9 +1820,9 @@ mod tests {
             &sizes,
         ));
 
-        // BaiduPCS-Go uploads both files at once, so their bars interleave.
-        // Each redraw starts with `\r`, so the last one written is read when
-        // the next output arrives.
+        // The dots end each bar, so the last one written is read as it
+        // arrives. Two tasks share the stream here only to exercise the
+        // job-wide sums.
         let start = tokio::time::Instant::now();
         let script = [
             (
@@ -1864,14 +1885,14 @@ mod tests {
                 // files' bytes and speeds; the oldest task names the file.
                 (
                     (Some(0), Some(2)),
-                    (Some(50 * MIB), Some(400 * MIB), Some(12.5)),
-                    (mib_per_sec(15.0), Some(350.0 / 15.0)),
+                    (Some(80 * MIB), Some(400 * MIB), Some(20.0)),
+                    (mib_per_sec(15.0), Some(320.0 / 15.0)),
                     Some("a.flv".to_string()),
                 ),
                 (
                     (Some(1), Some(2)),
-                    (Some(220 * MIB), Some(400 * MIB), Some(55.0)),
-                    (mib_per_sec(12.0), Some(180.0 / 12.0)),
+                    (Some(250 * MIB), Some(400 * MIB), Some(62.5)),
+                    (mib_per_sec(12.0), Some(150.0 / 12.0)),
                     Some("b.flv".to_string()),
                 ),
                 // When the output ends.

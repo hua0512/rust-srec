@@ -38,6 +38,7 @@
 - Fixed rclone uploads that start at the same time, such as a recording's video and its danmu, creating two folders with the same name on remotes that allow this, such as Google Drive, and splitting the uploaded files between them.
 - Fixed rclone's **Max Retries** setting having no effect: uploads always made 3 attempts. The **Rclone Executable** field, which was also ignored, is removed; rust-srec still runs `rclone` from the system path, or the program set in the `RCLONE_PATH` environment variable.
 - Fixed saving a native-resolution thumbnail preset, such as the built-in **Native Resolution Thumbnail**, or a workflow step made from one with **Detach & Edit**, silently making its thumbnails 320 pixels wide. Thumbnail settings now have a **Native resolution** switch. Presets and steps already changed this way are not repaired: turn the switch on and save them again. The **Output Pattern (Optional)** field, which had no effect, is removed.
+- Fixed a Baidu Netdisk upload that failed while sending a file sometimes showing only that the file was on BaiduPCS-Go's list of failed uploads instead of why it failed; BaiduPCS-Go's own retry notices were also missing from the job log.
 
 ## Web interface
 
