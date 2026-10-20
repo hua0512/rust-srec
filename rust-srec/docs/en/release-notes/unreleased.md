@@ -28,8 +28,8 @@
 - A workflow's progress now moves while its steps run, for steps that report progress such as remuxing, copying, compression and uploads, instead of only when a step finishes. Failed steps no longer count as progress, so a failed or cancelled workflow shows how much of it completed.
 - Live progress of processing jobs is no longer written to the database several times a second, which cuts disk writes while jobs run and keeps progress updates flowing when the database is busy.
 - Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
-- A job's progress, the top bar and workflow steps now show which file is being processed.
-- rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress and the top bar. rclone uploads also show the file being sent.
+- A job's progress, the top bar and workflow steps now show which file is being processed, and hovering the upload badge on a streamer's card shows the file being uploaded.
+- rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress, the top bar and the streamer's card. rclone uploads also show the file being sent.
 - Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, update it every second, and show when they are waiting for another upload to finish.
 - Compression jobs now show their speed and time remaining, and converting several danmu files shows which file it has reached.
 - Fixed a workflow step losing its scheduled automatic retry when rust-srec stopped just as the step failed; the workflow was then marked failed on the next start.

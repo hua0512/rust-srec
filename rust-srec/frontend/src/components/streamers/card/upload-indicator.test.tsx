@@ -1,9 +1,23 @@
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { UploadIndicator } from './upload-indicator';
 import { useUploadStore, type UploadView } from '@/store/uploads';
+
+beforeAll(() => {
+  // Radix measures tooltip content; jsdom does not provide ResizeObserver.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
+afterAll(() => vi.unstubAllGlobals());
 
 function renderIndicator(uploads: UploadView[]) {
   const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
@@ -50,5 +64,23 @@ describe('UploadIndicator', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.queryByText('26%')).not.toBeInTheDocument();
     expect(screen.queryByText('100%')).not.toBeInTheDocument();
+  });
+
+  it("shows a retrying upload's attempt in the tooltip", async () => {
+    renderIndicator([
+      createUpload({
+        percent: undefined,
+        phase: 'retrying',
+        attempt: 2,
+        maxAttempts: 3,
+      }),
+    ]);
+    const trigger = document.querySelector('[data-slot="tooltip-trigger"]');
+    expect(trigger).not.toBeNull();
+    fireEvent.pointerMove(trigger!, { pointerType: 'mouse' });
+
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Retrying...');
+    expect(tooltip).toHaveTextContent('Upload attempt 2 of 3');
   });
 });

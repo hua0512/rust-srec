@@ -1,21 +1,21 @@
 import { CloudUpload } from 'lucide-react';
-import { plural, t } from '@lingui/core/macro';
+import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 
+import { JobProgressDetails } from '@/components/job-progress-details';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { formatSpeed } from '@/lib/format';
+import { describeJobProgress } from '@/lib/job-progress';
 import {
   activeUploadsLabel,
-  formatUploadBytes,
   uploaderLabel,
   uploadPercent,
 } from '@/lib/upload-format';
 import { useShallow } from 'zustand/react/shallow';
-import { useUploadStore } from '@/store/uploads';
+import { useUploadStore, type UploadView } from '@/store/uploads';
 
 /**
  * Pulsing cloud badge on the streamer card while upload job(s) for this
@@ -50,45 +50,52 @@ export function UploadIndicator({ streamerId }: { streamerId: string }) {
           ) : null}
         </div>
       </TooltipTrigger>
-      <TooltipContent className="space-y-1.5">
+      <TooltipContent className="max-w-xs space-y-1.5">
         <div className="text-xs font-medium">
           {activeUploadsLabel(uploads.length, i18n)}
         </div>
-        {uploads.map((upload) => {
-          const percent = uploadPercent(upload);
-          const bytes = formatUploadBytes(upload);
-          return (
-            <div key={upload.jobId} className="text-xs space-y-0.5">
-              <div className="flex items-center justify-between gap-4">
-                <span className="opacity-70">
-                  {uploaderLabel(upload, i18n)}
-                  {upload.filesTotal > 0 && (
-                    <>
-                      {' · '}
-                      {t(
-                        i18n,
-                      )`${plural(upload.filesTotal, { one: '# file', other: '# files' })}`}
-                    </>
-                  )}
-                </span>
-                {percent != null && (
-                  <span className="font-mono font-semibold">
-                    {percent.toFixed(1)}%
-                  </span>
-                )}
-              </div>
-              {(bytes != null || upload.speedBytesPerSec != null) && (
-                <div className="flex items-center justify-between gap-4 font-mono opacity-60">
-                  <span>{bytes}</span>
-                  {upload.speedBytesPerSec != null && (
-                    <span>{formatSpeed(upload.speedBytesPerSec)}</span>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {uploads.map((upload) => (
+          <UploadTooltipRow key={upload.jobId} upload={upload} />
+        ))}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function UploadTooltipRow({ upload }: { upload: UploadView }) {
+  const { i18n } = useLingui();
+  // Keeps each upload's speed, which the header's rows leave out: the card
+  // shows no total speed anywhere else.
+  const { percent, details } = describeJobProgress(upload, i18n);
+  // Before the first progress line the uploader is still setting up:
+  // checking the destination, hashing, or waiting on the remote.
+  if (percent == null && !upload.phase) {
+    details.push(i18n._(msg`Preparing…`));
+  }
+
+  return (
+    <div className="space-y-0.5 text-xs">
+      <div className="flex items-center justify-between gap-4">
+        <span className="min-w-0 truncate opacity-70">
+          {uploaderLabel(upload, i18n)}
+          {upload.filesTotal > 0 && (
+            <>
+              {' · '}
+              {t(
+                i18n,
+              )`${plural(upload.filesTotal, { one: '# file', other: '# files' })}`}
+            </>
+          )}
+        </span>
+        {percent != null && (
+          <span className="shrink-0 font-mono font-semibold">
+            {percent.toFixed(1)}%
+          </span>
+        )}
+      </div>
+      {details.length > 0 && (
+        <JobProgressDetails details={details} className="opacity-60" />
+      )}
+    </div>
   );
 }

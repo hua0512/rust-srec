@@ -33,6 +33,7 @@ import { formatSpeed } from '@/lib/format';
 import { describeJobProgress } from '@/lib/job-progress';
 import { activeUploadsLabel, uploaderLabel } from '@/lib/upload-format';
 import { usePresence } from '@/hooks/use-presence';
+import { JobProgressDetails } from '@/components/job-progress-details';
 import {
   HEADER_BADGE_DOT,
   HEADER_POPOVER,
@@ -342,13 +343,12 @@ function ActiveUploadRow({
 }) {
   const { i18n } = useLingui();
   const name = displayName(upload, i18n);
-  // The popover header already shows the uploads' speed; omitting it here
-  // leaves more of this narrow row for the time left and the file name.
-  const { percent, details: progressDetails } = describeJobProgress(
+  // The popover header already shows the uploads' speed; leaving it out
+  // keeps these rows short.
+  const { percent, details } = describeJobProgress(
     { ...upload, speedBytesPerSec: undefined },
     i18n,
   );
-  const details = [uploaderLabel(upload, i18n), ...progressDetails];
   // Before the first progress line the uploader is still setting up:
   // checking the destination, hashing, or waiting on the remote.
   if (percent == null && !upload.phase) {
@@ -379,8 +379,12 @@ function ActiveUploadRow({
             </span>
           </div>
           <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {details.join(' · ')}
+            {uploaderLabel(upload, i18n)}
           </div>
+          <JobProgressDetails
+            details={details}
+            className="text-[11px] text-muted-foreground"
+          />
         </div>
       </Link>
       <RowAction label={i18n._(msg`Cancel upload`)} onClick={onCancel}>

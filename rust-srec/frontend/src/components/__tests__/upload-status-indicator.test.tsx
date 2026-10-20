@@ -159,9 +159,9 @@ describe('UploadStatusIndicator', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '1 active upload' }));
 
-    expect(
-      screen.getByText('rclone · Retrying... · Upload attempt 2 of 3'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('rclone').nextElementSibling).toHaveTextContent(
+      /^Retrying\.\.\. · Upload attempt 2 of 3$/,
+    );
   });
 
   it('shows queued uploads even before any of them starts', () => {
