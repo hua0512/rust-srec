@@ -34,6 +34,9 @@ type JobProgress = {
 const PHASE_LABELS: Record<JobPhase, MessageDescriptor> = {
   finalizing: msg`Finalizing...`,
   retrying: msg`Retrying...`,
+  // Distinct from "Waiting for a free upload worker.", said of uploads not
+  // yet started: this one runs, but BaiduPCS-Go uploads one job at a time.
+  waiting: msg`Waiting for another upload to finish`,
 };
 
 /** A progress snapshot from the API, or none, as {@link describeJobProgress} takes it. */

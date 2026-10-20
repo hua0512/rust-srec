@@ -16,6 +16,7 @@ use tokio::process::Command;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{debug, warn};
 
+use super::baidupcs::{UploadTracker, parse_task_prefix};
 use super::traits::{JobLogSink, ProcessorContext};
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
 use crate::pipeline::progress::progress_file_name;
@@ -37,8 +38,8 @@ pub(super) fn retry_delay(base_ms: u64, attempt: u32) -> std::time::Duration {
 /// in a processor's own retry loop. The job log notes `failure` and the wait.
 /// Progress reports the retrying phase for the length of the wait, without
 /// the failed attempt's bytes, speed or time left, then a plain snapshot so
-/// that the next attempt does not read as waiting while it sets up (such as
-/// BaiduPCS-Go waiting for the upload slot or hashing without output).
+/// that the next attempt does not read as retrying while it sets up (such as
+/// rclone before its first stats line).
 pub(super) async fn wait_to_retry(
     ctx: &ProcessorContext,
     kind: ProgressKind,
@@ -355,7 +356,8 @@ enum CommandMode {
         state: Arc<Mutex<FfmpegProgressState>>,
     },
     Rclone(ProgressReporter),
-    BaiduPcs(ProgressReporter),
+    /// Follows an `upload` invocation's progress when present.
+    BaiduPcs(Option<Arc<UploadTracker>>),
 }
 
 #[derive(Clone)]
@@ -382,10 +384,10 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
         )
         .await;
     }
-    if let CommandMode::BaiduPcs(progress) = &context.mode {
+    if let CommandMode::BaiduPcs(tracker) = &context.mode {
         return consume_baidupcs_stream(
             reader,
-            progress.clone(),
+            tracker.clone(),
             context.log_sink,
             context.tx,
             context.dropped_count,
@@ -1016,33 +1018,22 @@ fn is_baidupcs_progress_noise(line: &str) -> bool {
     line.contains('↑') && line.contains("/s")
 }
 
-fn parse_baidupcs_progress_line(line: &str) -> Option<JobProgressSnapshot> {
-    let mut parts = line.split_once('↑')?.1.split_whitespace();
-    let (done, total) = parts.next()?.split_once('/')?;
-    let speed = parts.next()?;
-    let bytes_done = parse_size_to_bytes(done)?;
-    let bytes_total = parse_size_to_bytes(total)?;
-    let speed_bytes_per_sec = parse_speed_to_bytes_per_sec(speed);
-    let percent = (bytes_total > 0)
-        .then(|| (bytes_done as f64 / bytes_total as f64 * 100.0).clamp(0.0, 100.0) as f32);
-    let eta_secs = speed_bytes_per_sec
-        .filter(|speed| *speed > 0.0)
-        .map(|speed| bytes_total.saturating_sub(bytes_done) as f64 / speed);
+/// One redraw of a BaiduPCS-Go upload task's progress bar.
+struct BaiduPcsBar<'a> {
+    task_id: &'a str,
+    bytes_done: u64,
+    speed_bytes_per_sec: Option<f64>,
+}
 
-    let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
-    snapshot.bytes_done = Some(bytes_done);
-    snapshot.bytes_total = Some(bytes_total);
-    snapshot.percent = percent;
-    snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
-    snapshot.eta_secs = eta_secs;
-    snapshot.raw = serde_json::json!({
-        "bytes_done": bytes_done,
-        "bytes_total": bytes_total,
-        "percent": percent,
-        "speed_bytes_per_sec": speed_bytes_per_sec,
-        "eta_secs": eta_secs,
-    });
-    Some(snapshot)
+fn parse_baidupcs_progress_line(line: &str) -> Option<BaiduPcsBar<'_>> {
+    let (task_id, bar) = parse_task_prefix(line)?;
+    let mut parts = bar.strip_prefix('↑')?.split_whitespace();
+    let (done, _total) = parts.next()?.split_once('/')?;
+    Some(BaiduPcsBar {
+        task_id,
+        bytes_done: parse_size_to_bytes(done)?,
+        speed_bytes_per_sec: parts.next().and_then(parse_speed_to_bytes_per_sec),
+    })
 }
 
 /// Log level for a BaiduPCS-Go output line. Cosmetic for the job-log UI
@@ -1064,14 +1055,13 @@ fn determine_baidupcs_log_level(line: &str) -> LogLevel {
 }
 
 /// Reads one BaiduPCS-Go output stream to EOF through a CR-splitting
-/// [`CappedLines`]: progress-bar redraws update the progress reporter and
-/// go straight to `noise_sink` at most once per
-/// [`BAIDUPCS_NOISE_INTERVAL_SECS`]. They are never captured; empty
-/// segments produced by `\r\n` are dropped, and every other line is sent
-/// to the bounded log channel for capture.
+/// [`CappedLines`], feeding every line to `tracker`. Progress-bar redraws go
+/// straight to `noise_sink` at most once per [`BAIDUPCS_NOISE_INTERVAL_SECS`]
+/// and are never captured; empty segments produced by `\r\n` are dropped,
+/// and every other line is sent to the bounded log channel for capture.
 async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     reader: R,
-    progress: ProgressReporter,
+    tracker: Option<Arc<UploadTracker>>,
     noise_sink: Option<super::traits::JobLogSink>,
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped_count: Arc<AtomicUsize>,
@@ -1085,19 +1075,24 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
             continue;
         }
         if is_baidupcs_progress_noise(line) {
+            if let Some(tracker) = &tracker
+                && let Some(bar) = parse_baidupcs_progress_line(line)
+            {
+                tracker.record_bar(bar.task_id, bar.bytes_done, bar.speed_bytes_per_sec);
+            }
             let now = std::time::Instant::now();
             if last_noise.is_none_or(|prev| {
                 now.duration_since(prev).as_secs() >= BAIDUPCS_NOISE_INTERVAL_SECS
             }) {
                 last_noise = Some(now);
-                if let Some(snapshot) = parse_baidupcs_progress_line(line) {
-                    progress.report(snapshot);
-                }
                 if let Some(sink) = &noise_sink {
                     sink.try_send(create_log_entry(LogLevel::Info, line));
                 }
             }
             continue;
+        }
+        if let Some(tracker) = &tracker {
+            tracker.record_line(line);
         }
         let level = determine_baidupcs_log_level(line);
         if tx.try_send(create_log_entry(level, line)).is_err() {
@@ -1107,18 +1102,19 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     Ok(())
 }
 
-/// Run a BaiduPCS-Go `upload` command, capturing stdout and stderr as logs.
+/// Run a BaiduPCS-Go command, capturing stdout and stderr as logs.
 /// Both streams are split on `\r` as well as `\n` because the upload
 /// progress bar redraws with bare `\r`; bar redraws are throttled to the
 /// live `log_sink` and excluded from `CommandOutput::logs`, so hours of
 /// redraws cannot evict the per-file outcome markers that
-/// `BaiduPcsProcessor` resolves upload statuses from.
-pub async fn run_baidupcs_with_logs(
+/// `BaiduPcsProcessor` resolves upload statuses from. Both streams of an
+/// `upload` invocation feed its `tracker`.
+pub(super) async fn run_baidupcs_with_logs(
     command: &mut Command,
-    progress: &ProgressReporter,
+    tracker: Option<Arc<UploadTracker>>,
     log_sink: Option<JobLogSink>,
 ) -> crate::Result<CommandOutput> {
-    run_logged_command(command, CommandMode::BaiduPcs(progress.clone()), log_sink).await
+    run_logged_command(command, CommandMode::BaiduPcs(tracker), log_sink).await
 }
 
 #[cfg(test)]
@@ -1331,7 +1327,7 @@ mod tests {
                 state: Arc::default(),
             },
             CommandMode::Rclone(ProgressReporter::noop("test")),
-            CommandMode::BaiduPcs(ProgressReporter::noop("test")),
+            CommandMode::BaiduPcs(None),
         ]
     }
 
@@ -1719,16 +1715,9 @@ mod tests {
         let dropped = Arc::new(AtomicUsize::new(0));
         let overlong = Arc::new(AtomicUsize::new(0));
 
-        consume_baidupcs_stream(
-            input,
-            ProgressReporter::noop("baidupcs-test"),
-            None,
-            log_tx,
-            dropped.clone(),
-            overlong.clone(),
-        )
-        .await
-        .expect("stream drains");
+        consume_baidupcs_stream(input, None, None, log_tx, dropped.clone(), overlong.clone())
+            .await
+            .expect("stream drains");
 
         let mut messages = Vec::new();
         while let Ok(entry) = log_rx.try_recv() {
@@ -1774,18 +1763,110 @@ mod tests {
         );
     }
 
-    #[test]
-    fn baidupcs_progress_bar_becomes_progress_snapshot() {
-        let snapshot =
-            parse_baidupcs_progress_line("[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............")
-                .expect("progress bar should parse");
+    #[tokio::test(start_paused = true)]
+    async fn baidupcs_tracker_reports_job_wide_progress_once_a_second() {
+        use super::super::baidupcs::UploadCounts;
+        use tokio::io::AsyncWriteExt;
 
-        assert_eq!(snapshot.kind, ProgressKind::BaiduPcs);
-        assert_eq!(snapshot.bytes_done, Some(12 * 1024 * 1024));
-        assert_eq!(snapshot.bytes_total, Some(120 * 1024 * 1024));
-        assert_eq!(snapshot.percent, Some(10.0));
-        assert_eq!(snapshot.speed_bytes_per_sec, Some(3.5 * 1024.0 * 1024.0));
-        assert_eq!(snapshot.eta_secs, Some(108.0 / 3.5));
+        const MIB: u64 = 1024 * 1024;
+        let inputs = ["/rec/a.flv".to_string(), "/rec/b.flv".to_string()];
+        let sizes = std::collections::HashMap::from([
+            (inputs[0].clone(), 100 * MIB),
+            (inputs[1].clone(), 300 * MIB),
+        ]);
+        let none = std::collections::HashMap::new();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(8);
+        let tracker = Arc::new(UploadTracker::new(
+            ProgressReporter::new("job", progress_tx),
+            UploadCounts::of_job(&inputs, &sizes, &none, &none, &none),
+            &inputs,
+            &sizes,
+        ));
+
+        // BaiduPCS-Go uploads both files at once, so their bars interleave.
+        // Each redraw starts with `\r`, so the last one written is read when
+        // the next output arrives.
+        let start = tokio::time::Instant::now();
+        let script = [
+            (
+                250,
+                "[1] 加入上传队列: /rec/a.flv\n[2] 加入上传队列: /rec/b.flv\n\
+                 [1] 准备上传: /rec/a.flv\n[2] 准备上传: /rec/b.flv\n\
+                 \r[1] ↑ 10.00MB/100.00MB 5.00MB/s in 2s ............\
+                 \r[2] ↑ 30.00MB/300.00MB 10.00MB/s in 3s ............\
+                 \r[1] ↑ 20.00MB/100.00MB 5.00MB/s in 4s ............\
+                 \r[2] ↑ 60.00MB/300.00MB 10.00MB/s in 6s ............",
+            ),
+            (
+                1250,
+                "\r[1] ↑ 100.00MB/100.00MB 5.00MB/s in 20s ............\
+                 \r[2] ↑ 120.00MB/300.00MB 12.00MB/s in 8s ............\
+                 \n[1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n\
+                 \r[2] ↑ 150.00MB/300.00MB 12.00MB/s in 10s ............",
+            ),
+            (
+                2250,
+                "\n[2] 秒传成功, 保存到网盘路径: /rec/b.flv\n\
+                 \n上传结束, 时间: 3s, 总大小: 400.00MB\n",
+            ),
+        ];
+        let (mut output, reader) = tokio::io::duplex(4096);
+        let write = async move {
+            for (at_ms, text) in script {
+                tokio::time::sleep_until(start + std::time::Duration::from_millis(at_ms)).await;
+                output.write_all(text.as_bytes()).await.unwrap();
+            }
+        };
+        let (log_tx, _log_rx) = tokio::sync::mpsc::channel(16);
+        let read = consume_baidupcs_stream(
+            reader,
+            Some(tracker.clone()),
+            None,
+            log_tx,
+            Arc::default(),
+            Arc::default(),
+        );
+        let (read, ()) = tokio::join!(tracker.report_while(read), write);
+        read.unwrap();
+
+        let reports: Vec<_> = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .map(|update| {
+                let s = update.snapshot;
+                (
+                    (s.files_done, s.files_total),
+                    (s.bytes_done, s.bytes_total, s.percent),
+                    (s.speed_bytes_per_sec, s.eta_secs),
+                    s.current_file,
+                )
+            })
+            .collect();
+        let mib_per_sec = |speed: f64| Some(speed * MIB as f64);
+        assert_eq!(
+            reports,
+            [
+                // One report for the first second's burst of bars, with both
+                // files' bytes and speeds; the oldest task names the file.
+                (
+                    (Some(0), Some(2)),
+                    (Some(50 * MIB), Some(400 * MIB), Some(12.5)),
+                    (mib_per_sec(15.0), Some(350.0 / 15.0)),
+                    Some("a.flv".to_string()),
+                ),
+                (
+                    (Some(1), Some(2)),
+                    (Some(220 * MIB), Some(400 * MIB), Some(55.0)),
+                    (mib_per_sec(12.0), Some(180.0 / 12.0)),
+                    Some("b.flv".to_string()),
+                ),
+                // When the output ends.
+                (
+                    (Some(2), Some(2)),
+                    (Some(400 * MIB), Some(400 * MIB), Some(100.0)),
+                    (None, None),
+                    None,
+                ),
+            ]
+        );
     }
 
     #[test]

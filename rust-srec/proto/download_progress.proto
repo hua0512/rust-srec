@@ -373,6 +373,9 @@ enum JobPhase {
   // The processor waits to try its work again after a failed attempt, such
   // as an rclone or BaiduPCS-Go upload.
   JOB_PHASE_RETRYING = 2;
+  // The upload waits for another job's upload to finish, as BaiduPCS-Go
+  // uploads run one at a time.
+  JOB_PHASE_WAITING = 3;
 }
 
 enum UploadTerminalStatus {

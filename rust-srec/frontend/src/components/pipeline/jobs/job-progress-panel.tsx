@@ -86,10 +86,12 @@ export function JobProgressPanel({
     setLastChange({ signature, atMs: now });
   }
   const quietSecs = (now - lastChange.atMs) / 1000;
-  // Finalizing leaves the reported values alone until it ends, however long
-  // it takes.
+  // Finalizing and waiting for another upload leave the reported values
+  // alone until they end, however long they take.
   const stalled =
-    quietSecs >= STALL_AFTER_SECS && current?.phase !== 'finalizing';
+    quietSecs >= STALL_AFTER_SECS &&
+    current?.phase !== 'finalizing' &&
+    current?.phase !== 'waiting';
   const quietFor = formatLocalizedDuration(quietSecs, i18n.locale);
 
   return (

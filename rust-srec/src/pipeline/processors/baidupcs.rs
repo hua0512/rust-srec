@@ -9,12 +9,16 @@
 //! credentials.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
+use tokio::time::MissedTickBehavior;
 use tracing::{error, info, warn};
 
 use super::traits::{
@@ -24,7 +28,9 @@ use super::traits::{
 use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
-use crate::pipeline::progress::ProgressKind;
+use crate::pipeline::progress::{
+    JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+};
 use crate::utils::filename::expand_placeholders_at;
 
 // Output markers printed by BaiduPCS-Go (hardcoded constants in its
@@ -201,8 +207,14 @@ pub struct BaiduPcsProcessor {
 
 #[async_trait]
 trait BaiduPcsCommandRunner: Send + Sync {
-    async fn run(&self, command: &mut Command, context: &ProcessorContext)
-    -> Result<CommandOutput>;
+    /// An `upload` invocation's output lines feed `tracker`; other commands
+    /// have none.
+    async fn run(
+        &self,
+        command: &mut Command,
+        context: &ProcessorContext,
+        tracker: Option<Arc<UploadTracker>>,
+    ) -> Result<CommandOutput>;
 }
 
 struct ProcessBaiduPcsCommandRunner;
@@ -213,13 +225,9 @@ impl BaiduPcsCommandRunner for ProcessBaiduPcsCommandRunner {
         &self,
         command: &mut Command,
         context: &ProcessorContext,
+        tracker: Option<Arc<UploadTracker>>,
     ) -> Result<CommandOutput> {
-        super::utils::run_baidupcs_with_logs(
-            command,
-            &context.progress,
-            Some(context.log_sink.clone()),
-        )
-        .await
+        super::utils::run_baidupcs_with_logs(command, tracker, Some(context.log_sink.clone())).await
     }
 }
 
@@ -251,7 +259,7 @@ struct UploadOutcomes {
 
 /// `[<id>] rest` → `(id, rest)`. IDs are numeric task counters; anything
 /// else inside the brackets is not a task prefix.
-fn parse_task_prefix(line: &str) -> Option<(&str, &str)> {
+pub(super) fn parse_task_prefix(line: &str) -> Option<(&str, &str)> {
     let rest = line.trim_start().strip_prefix('[')?;
     let close = rest.find(']')?;
     let id = rest[..close].trim();
@@ -308,18 +316,91 @@ fn match_input_by_containment<'a>(inputs: &'a [String], line: &str) -> Option<&'
     }
 }
 
-/// Resolve per-file outcomes from the captured log lines of one `upload`
-/// run over `inputs`.
+/// What a task line of `upload` output says about the task's file.
+#[derive(Debug)]
+enum TaskLine<'a> {
+    /// `加入上传队列` or `准备上传`: task `id` is the file at `path`.
+    /// `started` for the latter, printed when the task begins.
+    Named {
+        id: &'a str,
+        path: &'a str,
+        started: bool,
+    },
+    /// The file of task `id` is in the Netdisk, uploaded or by rapid upload,
+    /// at `remote` when the line carries a readable path.
+    Uploaded {
+        id: &'a str,
+        remote: Option<&'a str>,
+    },
+    /// The Netdisk already has the file of task `id`: a benign skip.
+    Skipped { id: &'a str, reason: &'a str },
+    /// BaiduPCS-Go never uploads the file of task `id` with this
+    /// configuration: a file over the size limit, an unreadable file or an
+    /// exhausted quota.
+    Rejected { id: &'a str, reason: &'a str },
+    /// The file whose path `reason` embeds has an illegal name and is never
+    /// uploaded. The line carries a literal `[0]` prefix, not a task ID.
+    IllegalName { reason: &'a str },
+    /// The upload of task `id` failed in this run; another attempt may
+    /// succeed.
+    Failed { id: &'a str, reason: &'a str },
+}
+
+/// Classify a task line of `upload` output. Both [`parse_upload_outcomes`]
+/// and the live [`UploadTracker`] read lines through it, so progress counts
+/// a file as ended exactly when its outcome is resolved.
 ///
 /// Marker precedence guards against the CLI's overloaded wording:
 /// `跳过秒传失败, 开始秒传` matches neither the skip test (`, 跳过` /
 /// `已跳过`) nor the failure test (which requires [`MARKER_UPLOAD_FAILED`]
 /// without [`MARKER_RETRY`]), and `文件路径含有非法字符，已跳过` is a
-/// permanent failure despite its skip wording. Failures the CLI reports as
-/// skips of the file itself land in `permanent`; transfer failures land in
-/// `failed`. Unrecognized lines are ignored; inputs without any marker stay
-/// unresolved and the caller decides between the orphan-success escape hatch
-/// and failing the attempt.
+/// permanent failure despite its skip wording.
+fn parse_task_line(line: &str) -> Option<TaskLine<'_>> {
+    let (id, rest) = parse_task_prefix(line)?;
+    if let Some(path) = rest.strip_prefix(MARKER_QUEUED) {
+        return Some(TaskLine::Named {
+            id,
+            path: path.trim(),
+            started: false,
+        });
+    }
+    if let Some(path) = rest.strip_prefix(MARKER_PREPARING) {
+        return Some(TaskLine::Named {
+            id,
+            path: path.trim(),
+            started: true,
+        });
+    }
+    if rest.contains(MARKER_UPLOAD_SUCCESS) || rest.contains(MARKER_RAPID_SUCCESS) {
+        let remote = rest
+            .split(MARKER_REMOTE_PATH)
+            .nth(1)
+            .map(str::trim)
+            .filter(|path| !path.is_empty());
+        return Some(TaskLine::Uploaded { id, remote });
+    }
+    if rest.contains(", 跳过") || rest.contains("已跳过") {
+        return Some(if rest.contains(MARKER_ILLEGAL) {
+            TaskLine::IllegalName { reason: rest }
+        } else if rest.contains(MARKER_EXISTS) || rest.contains(MARKER_UNCHANGED) {
+            TaskLine::Skipped { id, reason: rest }
+        } else {
+            TaskLine::Rejected { id, reason: rest }
+        });
+    }
+    if rest.contains(MARKER_UPLOAD_FAILED) && !rest.contains(MARKER_RETRY) {
+        return Some(TaskLine::Failed { id, reason: rest });
+    }
+    None
+}
+
+/// Resolve per-file outcomes from the captured log lines of one `upload`
+/// run over `inputs`.
+///
+/// Failures the CLI reports as skips of the file itself land in
+/// `permanent`; transfer failures land in `failed`. Unrecognized lines are
+/// ignored; inputs without any marker stay unresolved and the caller decides
+/// between the orphan-success escape hatch and failing the attempt.
 fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutcomes {
     let mut outcomes = UploadOutcomes::default();
     let mut task_to_input: HashMap<String, String> = HashMap::new();
@@ -344,75 +425,52 @@ fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutco
             continue;
         }
 
-        if let Some((id, rest)) = parse_task_prefix(line) {
-            if let Some(printed) = rest
-                .strip_prefix(MARKER_QUEUED)
-                .or_else(|| rest.strip_prefix(MARKER_PREPARING))
-            {
-                if let Some(input) = match_input(inputs, printed.trim()) {
-                    task_to_input.insert(id.to_string(), input.clone());
+        if let Some(task_line) = parse_task_line(line) {
+            match task_line {
+                TaskLine::Named { id, path, .. } => {
+                    if let Some(input) = match_input(inputs, path) {
+                        task_to_input.insert(id.to_string(), input.clone());
+                    }
                 }
-                continue;
-            }
-
-            if rest.contains(MARKER_UPLOAD_SUCCESS) || rest.contains(MARKER_RAPID_SUCCESS) {
-                let remote = rest
-                    .split(MARKER_REMOTE_PATH)
-                    .nth(1)
-                    .map(|path| path.trim().to_string())
-                    .filter(|path| !path.is_empty());
-                match task_to_input.get(id) {
+                TaskLine::Uploaded { id, remote } => match task_to_input.get(id) {
                     Some(input) => {
-                        outcomes.completed.insert(input.clone(), remote);
+                        outcomes
+                            .completed
+                            .insert(input.clone(), remote.map(str::to_string));
                     }
                     None => outcomes.orphan_successes += 1,
-                }
-                continue;
-            }
-
-            if rest.contains(", 跳过") || rest.contains("已跳过") {
-                if rest.contains(MARKER_ILLEGAL) {
-                    // Printed with a literal `[0]` prefix and the path
-                    // embedded in the sentence, not a task ID.
-                    match match_input_by_containment(inputs, rest) {
-                        Some(input) => {
-                            outcomes.permanent.insert(input.clone(), rest.to_string());
-                        }
-                        None => outcomes.orphan_failures += 1,
-                    }
-                } else if rest.contains(MARKER_EXISTS) || rest.contains(MARKER_UNCHANGED) {
-                    match task_to_input.get(id) {
-                        Some(input) => {
-                            outcomes.skipped.insert(input.clone(), rest.to_string());
-                        }
-                        // A benign skip is a terminal success-like outcome,
-                        // so an unmapped one feeds the same escape hatch as
-                        // an unmapped success.
-                        None => outcomes.orphan_successes += 1,
-                    }
-                } else {
-                    // Remaining skip wordings (over 128 GB, unreadable
-                    // file, quota exhausted) mean the file was never
-                    // uploaded and never will be by this config.
-                    match task_to_input.get(id) {
-                        Some(input) => {
-                            outcomes.permanent.insert(input.clone(), rest.to_string());
-                        }
-                        None => outcomes.orphan_failures += 1,
-                    }
-                }
-                continue;
-            }
-
-            if rest.contains(MARKER_UPLOAD_FAILED) && !rest.contains(MARKER_RETRY) {
-                match task_to_input.get(id) {
+                },
+                TaskLine::Skipped { id, reason } => match task_to_input.get(id) {
                     Some(input) => {
-                        outcomes.failed.insert(input.clone(), rest.to_string());
+                        outcomes.skipped.insert(input.clone(), reason.to_string());
+                    }
+                    // A benign skip is a terminal success-like outcome, so an
+                    // unmapped one feeds the same escape hatch as an unmapped
+                    // success.
+                    None => outcomes.orphan_successes += 1,
+                },
+                TaskLine::Rejected { id, reason } => match task_to_input.get(id) {
+                    Some(input) => {
+                        outcomes.permanent.insert(input.clone(), reason.to_string());
                     }
                     None => outcomes.orphan_failures += 1,
+                },
+                TaskLine::IllegalName { reason } => {
+                    match match_input_by_containment(inputs, reason) {
+                        Some(input) => {
+                            outcomes.permanent.insert(input.clone(), reason.to_string());
+                        }
+                        None => outcomes.orphan_failures += 1,
+                    }
                 }
-                continue;
+                TaskLine::Failed { id, reason } => match task_to_input.get(id) {
+                    Some(input) => {
+                        outcomes.failed.insert(input.clone(), reason.to_string());
+                    }
+                    None => outcomes.orphan_failures += 1,
+                },
             }
+            continue;
         }
 
         if in_failure_table && let Some(input) = match_input_by_containment(inputs, line) {
@@ -424,6 +482,266 @@ fn parse_upload_outcomes(logs: &[JobLogEntry], inputs: &[String]) -> UploadOutco
     }
 
     outcomes
+}
+
+/// How often an `upload` invocation reports its progress at most.
+const UPLOAD_REPORT_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Files and bytes of a job's upload, counted for its progress.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct UploadCounts {
+    files_done: u64,
+    files_total: u64,
+    bytes_done: u64,
+    bytes_total: u64,
+}
+
+impl UploadCounts {
+    /// Counts over `inputs`, the files pending when the job started: those in
+    /// `uploaded` or `skipped` are done, and those in `rejected`, which
+    /// BaiduPCS-Go never uploads, are out of the totals. Other entries, such
+    /// as inputs an earlier run of the job uploaded and removed, are not
+    /// counted, so `files_done` never exceeds `files_total`.
+    pub(super) fn of_job(
+        inputs: &[String],
+        sizes: &HashMap<String, u64>,
+        uploaded: &HashMap<String, String>,
+        skipped: &HashMap<String, String>,
+        rejected: &HashMap<String, String>,
+    ) -> Self {
+        let mut counts = Self::default();
+        for input in inputs {
+            let size = sizes.get(input).copied().unwrap_or(0);
+            counts.files_total += 1;
+            counts.bytes_total += size;
+            if uploaded.contains_key(input) || skipped.contains_key(input) {
+                counts.end(size, true);
+            } else if rejected.contains_key(input) {
+                counts.end(size, false);
+            }
+        }
+        counts
+    }
+
+    /// Count a file of `size` bytes as ended: done when it is in the Netdisk,
+    /// otherwise out of the totals, so the percent can still reach 100.
+    fn end(&mut self, size: u64, in_netdisk: bool) {
+        if in_netdisk {
+            self.files_done += 1;
+            self.bytes_done += size;
+        } else {
+            self.files_total = self.files_total.saturating_sub(1);
+            self.bytes_total = self.bytes_total.saturating_sub(size);
+        }
+    }
+
+    fn snapshot(&self) -> JobProgressSnapshot {
+        let bytes_done = self.bytes_done.min(self.bytes_total);
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+        snapshot.bytes_done = Some(bytes_done);
+        snapshot.bytes_total = Some(self.bytes_total);
+        snapshot.percent = (self.bytes_total > 0)
+            .then(|| (bytes_done as f64 / self.bytes_total as f64 * 100.0) as f32);
+        snapshot.files_done = Some(self.files_done);
+        snapshot.files_total = Some(self.files_total);
+        snapshot
+    }
+}
+
+/// A task of one `upload` invocation that has started and not ended.
+struct TaskInFlight {
+    id: String,
+    bytes_done: u64,
+    speed_bytes_per_sec: Option<f64>,
+}
+
+#[derive(Default)]
+struct TrackerState {
+    /// The job's counts, including the files this invocation ended.
+    counts: UploadCounts,
+    /// Task ID → input, from the queue and start lines.
+    names: HashMap<String, String>,
+    /// Oldest first.
+    in_flight: Vec<TaskInFlight>,
+    /// Tasks that ended; a bar redrawn after the end must not restart one.
+    ended: HashSet<String>,
+    /// Something changed since the last report.
+    changed: bool,
+}
+
+impl TrackerState {
+    fn task(&mut self, id: &str) -> &mut TaskInFlight {
+        let index = match self.in_flight.iter().position(|task| task.id == id) {
+            Some(index) => index,
+            None => {
+                self.in_flight.push(TaskInFlight {
+                    id: id.to_string(),
+                    bytes_done: 0,
+                    speed_bytes_per_sec: None,
+                });
+                self.in_flight.len() - 1
+            }
+        };
+        &mut self.in_flight[index]
+    }
+
+    /// Task `id` ended; returns its input.
+    fn end_task(&mut self, id: &str) -> Option<String> {
+        self.in_flight.retain(|task| task.id != id);
+        self.ended.insert(id.to_string());
+        self.changed = true;
+        self.names.remove(id)
+    }
+
+    fn snapshot(&self) -> JobProgressSnapshot {
+        let mut counts = self.counts;
+        counts.bytes_done += self
+            .in_flight
+            .iter()
+            .map(|task| task.bytes_done)
+            .sum::<u64>();
+        let mut snapshot = counts.snapshot();
+        // BaiduPCS-Go uploads several files at once (four by default), each
+        // with its own bar.
+        snapshot.speed_bytes_per_sec = self
+            .in_flight
+            .iter()
+            .filter_map(|task| task.speed_bytes_per_sec)
+            .reduce(|sum, speed| sum + speed);
+        snapshot.eta_secs = snapshot
+            .speed_bytes_per_sec
+            .filter(|speed| *speed > 0.0)
+            .map(|speed| counts.bytes_total.saturating_sub(counts.bytes_done) as f64 / speed);
+        // The oldest task rather than the latest bar, so the name does not
+        // flip between the files in flight.
+        snapshot.current_file = self
+            .in_flight
+            .iter()
+            .find_map(|task| self.names.get(&task.id))
+            .and_then(progress_file_name);
+        snapshot
+    }
+}
+
+/// Job-wide progress of one `upload` invocation, fed by the readers of its
+/// stdout and stderr.
+pub(super) struct UploadTracker {
+    reporter: ProgressReporter,
+    /// The invocation's inputs, which its task lines name.
+    inputs: Vec<String>,
+    sizes: HashMap<String, u64>,
+    state: Mutex<TrackerState>,
+}
+
+impl UploadTracker {
+    /// `counts` are the job's counts before the invocation starts.
+    pub(super) fn new(
+        reporter: ProgressReporter,
+        counts: UploadCounts,
+        inputs: &[String],
+        sizes: &HashMap<String, u64>,
+    ) -> Self {
+        Self {
+            reporter,
+            inputs: inputs.to_vec(),
+            sizes: inputs
+                .iter()
+                .filter_map(|input| Some((input.clone(), *sizes.get(input)?)))
+                .collect(),
+            state: Mutex::new(TrackerState {
+                counts,
+                ..TrackerState::default()
+            }),
+        }
+    }
+
+    fn size(&self, input: &str) -> u64 {
+        self.sizes.get(input).copied().unwrap_or(0)
+    }
+
+    /// A progress bar redraw of task `id`.
+    pub(super) fn record_bar(&self, id: &str, bytes_done: u64, speed_bytes_per_sec: Option<f64>) {
+        let mut state = self.state.lock();
+        if state.ended.contains(id) {
+            return;
+        }
+        let task = state.task(id);
+        task.bytes_done = bytes_done;
+        task.speed_bytes_per_sec = speed_bytes_per_sec;
+        state.changed = true;
+    }
+
+    /// An output line other than a progress bar.
+    pub(super) fn record_line(&self, line: &str) {
+        let Some(task_line) = parse_task_line(line.trim()) else {
+            return;
+        };
+        let mut state = self.state.lock();
+        match task_line {
+            TaskLine::Named { id, path, started } => {
+                if let Some(input) = match_input(&self.inputs, path) {
+                    state.names.insert(id.to_string(), input.clone());
+                }
+                if started && !state.ended.contains(id) {
+                    state.task(id);
+                    state.changed = true;
+                }
+            }
+            TaskLine::Uploaded { id, .. } | TaskLine::Skipped { id, .. } => {
+                if let Some(input) = state.end_task(id) {
+                    state.counts.end(self.size(&input), true);
+                }
+            }
+            TaskLine::Rejected { id, .. } => {
+                if let Some(input) = state.end_task(id) {
+                    state.counts.end(self.size(&input), false);
+                }
+            }
+            TaskLine::IllegalName { reason } => {
+                if let Some(input) = match_input_by_containment(&self.inputs, reason) {
+                    state.counts.end(self.size(input), false);
+                    state.changed = true;
+                }
+            }
+            // Another attempt may upload the file, so it stays pending.
+            TaskLine::Failed { id, .. } => {
+                state.end_task(id);
+            }
+        }
+    }
+
+    /// Run `work`, the invocation, reporting what changed at most once per
+    /// [`UPLOAD_REPORT_INTERVAL`], and once more when it ends.
+    pub(super) async fn report_while<T>(&self, work: impl Future<Output = T>) -> T {
+        let mut ticks = tokio::time::interval_at(
+            tokio::time::Instant::now() + UPLOAD_REPORT_INTERVAL,
+            UPLOAD_REPORT_INTERVAL,
+        );
+        ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        tokio::pin!(work);
+        let output = loop {
+            tokio::select! {
+                output = &mut work => break output,
+                _ = ticks.tick() => {
+                    let snapshot = {
+                        let mut state = self.state.lock();
+                        std::mem::take(&mut state.changed).then(|| state.snapshot())
+                    };
+                    if let Some(snapshot) = snapshot {
+                        self.reporter.report(snapshot);
+                    }
+                }
+            }
+        };
+        let snapshot = {
+            let mut state = self.state.lock();
+            // No task runs once the invocation's output ends.
+            state.in_flight.clear();
+            state.snapshot()
+        };
+        self.reporter.report(snapshot);
+        output
+    }
 }
 
 impl BaiduPcsProcessor {
@@ -499,7 +817,7 @@ impl BaiduPcsProcessor {
         cmd.arg("who");
         match self
             .command_runner
-            .run(&mut cmd, &ctx.without_job_log())
+            .run(&mut cmd, &ctx.without_job_log(), None)
             .await
         {
             Ok(output) => {
@@ -736,6 +1054,7 @@ impl Processor for BaiduPcsProcessor {
 
         let file_sizes = super::inputs::input_size_map(&pending).await;
         let total_input_size = file_sizes.values().copied().sum::<u64>();
+        let job_inputs = pending.clone();
         let attempts_max = config.max_retries.clamp(1, MAX_ATTEMPTS_CAP);
 
         let mut completed: HashMap<String, String> = resumed
@@ -799,11 +1118,26 @@ impl Processor for BaiduPcsProcessor {
             // `upload_slot` serializes BaiduPCS-Go upload processes (its
             // config-dir databases are single-writer); the read side of
             // `cli_lock` keeps `login`/`logout` from rewriting the session
-            // mid-upload.
-            let _upload_permit = crate::baidupcs::upload_slot()
-                .acquire()
-                .await
-                .map_err(|_| crate::Error::Other("BaiduPCS-Go upload slot closed".to_string()))?;
+            // mid-upload. The wait counts towards the job's timeout.
+            let upload_slot = crate::baidupcs::upload_slot();
+            let _upload_permit = match upload_slot.try_acquire() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    ctx.info("Waiting for another BaiduPCS-Go upload to finish");
+                    let mut waiting = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
+                    waiting.phase = Some(JobPhase::Waiting);
+                    ctx.progress.report(waiting);
+                    upload_slot.acquire().await.map_err(|_| {
+                        crate::Error::Other("BaiduPCS-Go upload slot closed".to_string())
+                    })?
+                }
+            };
+            // Clears the waiting phase, and shows the job's counts while
+            // BaiduPCS-Go hashes a file, which it does without output.
+            ctx.progress.report(
+                UploadCounts::of_job(&job_inputs, &file_sizes, &completed, &skipped, &permanent)
+                    .snapshot(),
+            );
 
             // At most one stored-credential re-login per job run: on the
             // first attempt only when a `who` probe positively reports a
@@ -857,7 +1191,22 @@ impl Processor for BaiduPcsProcessor {
                 }
                 cmd.arg(&remote_dir);
 
-                let command_output = match self.command_runner.run(&mut cmd, ctx).await {
+                let tracker = Arc::new(UploadTracker::new(
+                    ctx.progress.clone(),
+                    UploadCounts::of_job(
+                        &job_inputs,
+                        &file_sizes,
+                        &completed,
+                        &skipped,
+                        &permanent,
+                    ),
+                    &chunk,
+                    &file_sizes,
+                ));
+                let run = self
+                    .command_runner
+                    .run(&mut cmd, ctx, Some(tracker.clone()));
+                let command_output = match tracker.report_while(run).await {
                     Ok(output) => output,
                     Err(e) => {
                         let message = format!("Failed to execute BaiduPCS-Go: {e}");
@@ -1162,6 +1511,7 @@ mod tests {
             &self,
             command: &mut Command,
             context: &ProcessorContext,
+            tracker: Option<Arc<UploadTracker>>,
         ) -> Result<CommandOutput> {
             let args: Vec<String> = command
                 .as_std()
@@ -1188,9 +1538,13 @@ mod tests {
                     crate::Error::Other("unexpected BaiduPCS-Go attempt".to_string())
                 })?;
             let logs: Vec<JobLogEntry> = attempt.lines.into_iter().map(JobLogEntry::info).collect();
-            // The real runner streams every line to the job log as it arrives.
+            // The real runner streams every line to the job log and an
+            // upload's tracker as it arrives.
             for entry in &logs {
                 context.log_sink.try_send(entry.clone());
+                if let Some(tracker) = &tracker {
+                    tracker.record_line(&entry.message);
+                }
             }
             Ok(CommandOutput {
                 status: test_exit_status(attempt.exit_ok),
@@ -1436,10 +1790,11 @@ mod tests {
             config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
             ..Default::default()
         };
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
         let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
         let ctx = ProcessorContext::new(
             "retry",
-            crate::pipeline::ProgressReporter::noop("retry"),
+            crate::pipeline::ProgressReporter::new("retry", progress_tx),
             super::super::traits::JobLogSink::new(log_tx, Arc::default()),
             tokio_util::sync::CancellationToken::new(),
         );
@@ -1455,6 +1810,12 @@ mod tests {
             warnings,
             ["BaiduPCS-Go upload attempt 1 of 3 left 1 file(s) not uploaded; retrying in 2 s"]
         );
+        // Files done count across attempts: the second starts from the file
+        // the first uploaded.
+        let files: Vec<_> = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .filter_map(|update| update.snapshot.files_done.zip(update.snapshot.files_total))
+            .collect();
+        assert_eq!(files, [(0, 2), (1, 2), (1, 2), (2, 2)]);
         let commands = runner.commands();
         assert_eq!(commands.len(), 2);
         assert!(commands[0].contains(&first_str));
@@ -1467,6 +1828,62 @@ mod tests {
                 .iter()
                 .all(|item| item.status == UploadItemStatus::Completed)
         );
+    }
+
+    #[tokio::test]
+    async fn upload_waits_for_the_upload_slot_with_the_waiting_phase() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file = temp_dir.path().join("a.flv");
+        tokio::fs::write(&file, b"video").await.unwrap();
+        let file_str = file.to_string_lossy().into_owned();
+
+        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
+            exit_ok: true,
+            lines: vec![
+                queue_line(1, &file_str),
+                success_line(1, "/rec/a.flv"),
+                finished_line(),
+            ],
+        }]));
+        let processor = MockBaiduPcsCommandRunner::processor(runner);
+        let input = ProcessorInput {
+            inputs: vec![file_str],
+            config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
+            ..Default::default()
+        };
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
+        let ctx = ProcessorContext::new(
+            "waiting",
+            crate::pipeline::ProgressReporter::new("waiting", progress_tx),
+            super::super::traits::JobLogSink::new(log_tx, Arc::default()),
+            tokio_util::sync::CancellationToken::new(),
+        );
+
+        let other_upload = crate::baidupcs::upload_slot().acquire().await.unwrap();
+        let upload = processor.process(&input, &ctx);
+        tokio::pin!(upload);
+        let waiting = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::select! {
+                _ = &mut upload => panic!("the upload must wait for the slot"),
+                update = progress_rx.recv() => update.unwrap().snapshot,
+            }
+        })
+        .await
+        .expect("the waiting upload reports its phase");
+        assert_eq!(waiting.phase, Some(JobPhase::Waiting));
+        assert_eq!(
+            log_rx.try_recv().unwrap().message,
+            "Waiting for another BaiduPCS-Go upload to finish"
+        );
+
+        drop(other_upload);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(5), upload)
+            .await
+            .expect("the upload runs once the slot is free")
+            .unwrap();
+        assert_eq!(progress_rx.try_recv().unwrap().snapshot.phase, None);
+        assert_eq!(output.uploads[0].status, UploadItemStatus::Completed);
     }
 
     #[tokio::test]

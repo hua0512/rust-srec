@@ -85,14 +85,20 @@ trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
 such as danmu XML. The `percent` of a multi-file FFmpeg or copy job covers the
 whole job with an equal share per file, while `out_time_ms`, `duration_ms` and
 copied bytes describe the file in progress. `eta_secs` covers only that file,
-so these jobs report it only for their last file. `phase` is absent while a job
-does plain work towards `percent`. It is `finalizing` while FFmpeg rewrites an
-MP4 after writing its last frame, such as moving the index to the front for
-fast start; `percent` then stops at 99% of the file's share, with no speed or
-`eta_secs`, until FFmpeg reports the end. FFmpeg, copy, compression and rclone
-jobs name the file in progress in `current_file`, without its directories; an
-rclone job sending several files at once names one of them. `raw` carries no
-file paths.
+so these jobs report it only for their last file. BaiduPCS uploads count
+bytes and files across the whole job instead, starting from the files earlier
+attempts of the same run uploaded, and report at most once a second; their
+speed is the sum of the files BaiduPCS-Go uploads at once. `phase` is absent
+while a job does plain work towards `percent`. It is `finalizing` while FFmpeg
+rewrites an MP4 after writing its last frame, such as moving the index to the
+front for fast start; `percent` then stops at 99% of the file's share, with no
+speed or `eta_secs`, until FFmpeg reports the end. It is `waiting`, with no
+other progress, while a BaiduPCS upload waits for another job's upload to
+finish, since BaiduPCS-Go uploads run one at a time. FFmpeg, copy, compression,
+rclone and BaiduPCS jobs name the file in progress in `current_file`, without
+its directories; an rclone job sending several files at once names one of
+them, and a BaiduPCS job the one it started first. `raw` carries no file
+paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,
 including after a restart, and loses it when it ends;
