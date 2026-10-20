@@ -149,6 +149,12 @@ step's `progress` is its running job's snapshot as returned by
 step's `progress` is null unless its job is running and has reported progress,
 so null does not mean zero percent complete.
 
+`progress_percent` on `GET /api/pipeline/dag/{id}`, `GET /api/pipeline/dags` and
+`GET /api/pipeline/dag/{id}/stats` counts each completed step fully and each
+running step by its reported progress. Failed, cancelled and waiting steps count
+nothing, so a failed or cancelled workflow shows how much of it completed.
+`GET /api/pipeline/dag/{id}/stats` returns 404 for an unknown workflow.
+
 ## Search filters
 
 The `search` filters for pipeline jobs, recording sessions, media outputs,

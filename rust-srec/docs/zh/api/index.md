@@ -140,6 +140,12 @@ null，已取消或已失败的工作流也是如此。每个步骤的 `progress
 null。只有步骤的任务正在运行且已上报进度时，步骤的 `progress` 才有值，因此 null
 不表示完成了零百分比。
 
+`GET /api/pipeline/dag/{id}`、`GET /api/pipeline/dags` 和
+`GET /api/pipeline/dag/{id}/stats` 中的 `progress_percent` 将每个已完成的步骤完整计入，
+运行中的步骤按其上报的进度计入。失败、已取消和等待中的步骤不计入，
+因此失败或已取消的工作流会显示其已完成的部分。对于不存在的工作流，
+`GET /api/pipeline/dag/{id}/stats` 返回 404。
+
 ## 搜索筛选
 
 管道任务、录制会话、媒体产物、通知事件、任务预设和管道预设的 `search`

@@ -926,6 +926,10 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
+    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn list_ready_steps(&self, _dag_id: &str) -> Result<Vec<ReadyStep>> {
         unimplemented!("not needed for these tests")
     }
@@ -1197,6 +1201,10 @@ impl DagRepository for TestDagRepository {
         &self,
         _dag_id: &str,
     ) -> Result<crate::database::models::DagExecutionStats> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn list_running_step_jobs(&self, _dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
         unimplemented!("not needed for these tests")
     }
 

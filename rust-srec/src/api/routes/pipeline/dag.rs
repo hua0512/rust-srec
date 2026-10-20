@@ -6,10 +6,12 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::database::models::dag_progress_percent;
 use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStepStatus, JobStatus, PipelineStep,
 };
 use crate::database::repositories::DagListFilter;
+use crate::pipeline::DagScheduler;
 
 use super::jobs::job_status_to_api_status;
 use super::{
@@ -149,7 +151,17 @@ pub async fn get_dag_status(
     let name = dag_def
         .map(|d| d.name)
         .unwrap_or_else(|| "Unknown".to_string());
-    let progress_percent = dag.progress_percent();
+    let completed_steps = steps
+        .iter()
+        .filter(|row| row.step.get_status() == Some(DagStepStatus::Completed))
+        .count();
+    let progress_percent = dag_progress_percent(
+        steps.len() as i32,
+        completed_steps as i32,
+        step_responses
+            .iter()
+            .filter_map(|step| step.progress.as_ref()?.percent),
+    );
 
     Ok(Json(DagStatusResponse {
         id: dag.id,
@@ -304,6 +316,29 @@ async fn retry_dag_inner(state: &PipelineRouteState, dag_id: &str) -> ApiResult<
     })
 }
 
+/// Reported percents of the running steps of `dag_ids`, keyed by DAG ID, for
+/// [`dag_progress_percent`]. A running job that has not reported a percent is
+/// left out.
+async fn running_step_percents(
+    dag_scheduler: &DagScheduler,
+    dag_ids: &[&str],
+) -> ApiResult<HashMap<String, Vec<f32>>> {
+    let running = dag_scheduler
+        .list_running_step_jobs(dag_ids)
+        .await
+        .map_err(ApiError::from)?;
+    let mut percents: HashMap<String, Vec<f32>> = HashMap::new();
+    for (dag_id, job_id) in running {
+        if let Some(percent) = dag_scheduler
+            .cached_job_progress(&job_id)
+            .and_then(|progress| progress.percent)
+        {
+            percents.entry(dag_id).or_default().push(percent);
+        }
+    }
+    Ok(percents)
+}
+
 #[utoipa::path(
     get,
     path = "/api/pipeline/dags",
@@ -353,6 +388,15 @@ pub async fn list_dags(
         .await
         .map_err(ApiError::from)?;
 
+    // A DAG displayed as PENDING has no running job, so only PROCESSING ones
+    // can have running steps.
+    let processing_dag_ids: Vec<&str> = dags
+        .iter()
+        .filter(|dag| dag.display_status == DagExecutionStatus::Processing)
+        .map(|dag| dag.id.as_str())
+        .collect();
+    let mut running_percents = running_step_percents(dag_scheduler, &processing_dag_ids).await?;
+
     // One `WHERE id IN (...)` query for every streamer on the page. A failed
     // lookup only blanks the display names.
     let streamer_ids: Vec<String> = dags
@@ -377,7 +421,14 @@ pub async fn list_dags(
     let dag_items: Vec<DagListItem> = dags
         .into_iter()
         .map(|dag| {
-            let progress_percent = dag.progress_percent();
+            // `completed_steps` is incremented in the transaction that
+            // completes a step and `total_steps` is the number of step rows
+            // published with the DAG, so these match the step rows.
+            let progress_percent = dag_progress_percent(
+                dag.total_steps,
+                dag.completed_steps,
+                running_percents.remove(&dag.id).unwrap_or_default(),
+            );
 
             let streamer_name = dag
                 .streamer_id
@@ -692,22 +743,30 @@ pub async fn get_dag_stats(
         .dag_scheduler()
         .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
+    // Read the display status first so an unknown DAG is a 404; its step
+    // counts alone would all be zero. As in `list_dags`, only a DAG displayed
+    // as PROCESSING has a running job, so only its running steps are read.
+    let display_status = dag_scheduler
+        .get_dag_display_status(&dag_id)
+        .await
+        .map_err(ApiError::from)?;
+
     let stats = dag_scheduler
         .get_dag_stats(&dag_id)
         .await
         .map_err(ApiError::from)?;
 
-    let total = stats.blocked
-        + stats.pending
-        + stats.processing
-        + stats.completed
-        + stats.failed
-        + stats.cancelled;
-    let progress_percent = if total > 0 {
-        (stats.completed as f64 / total as f64) * 100.0
+    let total = stats.total();
+    let running_percents = if display_status == DagExecutionStatus::Processing {
+        running_step_percents(dag_scheduler, &[dag_id.as_str()])
+            .await?
+            .remove(&dag_id)
+            .unwrap_or_default()
     } else {
-        0.0
+        Vec::new()
     };
+    let progress_percent =
+        dag_progress_percent(total as i32, stats.completed as i32, running_percents);
 
     Ok(Json(DagStatsResponse {
         dag_id,
