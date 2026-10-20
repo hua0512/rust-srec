@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use futures::FutureExt;
+use futures::future::{BoxFuture, OptionFuture};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
@@ -3203,6 +3205,11 @@ fn spawn_progress_aggregator(
         // Last count broadcast; `None` forces a send on the first poll that
         // has a subscriber.
         let mut last_pending_uploads: Option<u32> = None;
+        // The count can wait on the database for a connection, so it runs as
+        // its own branch rather than inside a handler: meanwhile the loop
+        // keeps draining progress, flushing and heartbeating, and shutdown
+        // still stops it.
+        let mut queue_count: Option<BoxFuture<'_, Result<u32>>> = None;
 
         loop {
             tokio::select! {
@@ -3228,14 +3235,25 @@ fn spawn_progress_aggregator(
                     };
                     if !broadcaster.has_subscribers() {
                         // New subscribers get the count from their snapshot;
-                        // re-sync on the next poll that has one.
+                        // re-sync on the next poll that has one. A count still
+                        // in flight would set the remembered value for nobody.
                         last_pending_uploads = None;
+                        queue_count = None;
                         continue;
                     }
-                    match count_pending_uploads(repo.as_ref(), &jobs_cache).await {
+                    if queue_count.is_none() {
+                        queue_count =
+                            Some(count_pending_uploads(repo.as_ref(), &jobs_cache).boxed());
+                    }
+                }
+                Some(result) = OptionFuture::from(queue_count.as_mut()) => {
+                    queue_count = None;
+                    match result {
                         Ok(pending) if last_pending_uploads != Some(pending) => {
                             last_pending_uploads = Some(pending);
-                            broadcaster.send(UploadStatusEvent::Queue { pending });
+                            if let Some(broadcaster) = upload_broadcaster.get() {
+                                broadcaster.send(UploadStatusEvent::Queue { pending });
+                            }
                         }
                         Ok(_) => {}
                         Err(error) => warn!(%error, "Failed to count pending uploads"),
@@ -5218,5 +5236,58 @@ mod tests {
         assert_eq!(dequeued.priority, 10);
 
         assert_eq!(queue.count_pending_uploads().await.unwrap(), 4);
+    }
+
+    /// Live progress is published while the queued-uploads count waits for a
+    /// database connection, and the count follows once one is free.
+    #[tokio::test]
+    async fn progress_flows_while_the_queued_upload_count_waits_for_the_database() {
+        use std::time::Duration;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        // Taken before the aggregator first runs: its first queue poll is
+        // immediate and has to wait for this connection.
+        let connection = pool.acquire().await.unwrap();
+        let queue = JobQueue::with_repository(
+            JobQueueConfig::default(),
+            Arc::new(crate::database::repositories::SqlxJobRepository::new(
+                pool.clone(),
+                pool.clone(),
+            )),
+        );
+        let broadcaster =
+            UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
+        queue.set_upload_broadcaster(broadcaster.clone());
+        let mut rx = broadcaster.subscribe();
+        queue
+            .cancellation_tokens
+            .insert("job-1".to_string(), AttemptToken::default());
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
+        snapshot.percent = Some(42.0);
+        queue.progress_reporter("job-1").report(snapshot);
+
+        let envelope = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("progress is published while the count waits")
+            .expect("broadcast channel stays open");
+        match envelope.event.as_ref() {
+            UploadStatusEvent::Progress {
+                job_id, snapshot, ..
+            } => assert_eq!((job_id.as_str(), snapshot.percent), ("job-1", Some(42.0))),
+            other => panic!("expected Progress, got {other:?}"),
+        }
+
+        drop(connection);
+        let envelope = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("the count is published once the database is free")
+            .expect("broadcast channel stays open");
+        assert!(matches!(
+            envelope.event.as_ref(),
+            UploadStatusEvent::Queue { pending: 0 }
+        ));
     }
 }
