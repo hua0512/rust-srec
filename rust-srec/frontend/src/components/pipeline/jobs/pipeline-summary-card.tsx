@@ -299,7 +299,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
 
       <CardContent className="relative pb-4 flex-1 z-10">
         <p className="text-[10px] sm:text-xs text-muted-foreground/80 mb-3 sm:mb-4 leading-relaxed font-light truncate">
-          <Trans>Started</Trans>{' '}
+          <Trans>Created</Trans>{' '}
           {mounted
             ? formatRelativeTime(new Date(pipeline.created_at), i18n.locale)
             : '-'}

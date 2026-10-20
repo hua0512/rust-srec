@@ -46,7 +46,7 @@ where
             io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
         info!(
-            "Starting one-worker IO pool with processors: {:?}",
+            "Starting Serial IO pool with processors: {:?}",
             serial_io_processors
                 .iter()
                 .map(|p| p.name())

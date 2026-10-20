@@ -953,7 +953,7 @@ fn stalled_operation_response(operation: StalledOperation) -> StalledOperationRe
         processor: operation.processor.to_string(),
         worker_type: match operation.worker_type {
             WorkerType::Cpu => "cpu",
-            WorkerType::Io => "io",
+            WorkerType::Io | WorkerType::SerialIo => "io",
         }
         .to_string(),
         streamer_id: operation.streamer_id,
