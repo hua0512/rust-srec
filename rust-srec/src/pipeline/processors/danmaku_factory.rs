@@ -19,6 +19,7 @@ use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput
 use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
 use crate::pipeline::manifest::PipelineInputManifest;
+use crate::pipeline::{JobProgressSnapshot, ProgressKind};
 
 fn default_true() -> bool {
     true
@@ -314,7 +315,14 @@ impl Processor for DanmakuFactoryProcessor {
         let mut converted_xml = Vec::new();
         let mut skipped_inputs = Vec::new();
 
-        for (xml_path, ass_path) in xml_inputs.iter().zip(ass_outputs.iter()) {
+        for (index, (xml_path, ass_path)) in xml_inputs.iter().zip(ass_outputs.iter()).enumerate() {
+            // DanmakuFactory reports no progress of its own, so each file is
+            // an equal share of the job, reached when its conversion starts.
+            ctx.progress.set_batch_item(index, xml_count, xml_path);
+            let mut snapshot = JobProgressSnapshot::new(ProgressKind::Danmaku);
+            snapshot.percent = Some(0.0);
+            ctx.progress.report(snapshot);
+
             let xml = PathBuf::from(xml_path);
             let ass = PathBuf::from(ass_path);
 

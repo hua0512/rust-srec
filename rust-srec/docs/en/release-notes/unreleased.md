@@ -29,6 +29,7 @@
 - A job's progress, the top bar and workflow steps now show which file is being processed.
 - rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress and the top bar. rclone uploads also show the file being sent.
 - Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, update it every second, and show when they are waiting for another upload to finish.
+- Copy and move jobs now show the bytes and time remaining for the whole job, compression jobs show their speed and time remaining, and converting several danmu files shows which file it has reached.
 
 ## Web interface
 

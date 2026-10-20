@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use tar::Builder as TarBuilder;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -89,7 +90,8 @@ struct CancelProgressReader<R> {
     progress: ProgressReporter,
     bytes_total: u64,
     bytes_done: u64,
-    last_report_at: std::time::Instant,
+    started: Instant,
+    last_report_at: Instant,
     files_done: usize,
     files_total: usize,
     /// Name of the input being read, without its directories.
@@ -101,6 +103,8 @@ struct CompressionProgressContext {
     progress: ProgressReporter,
     bytes_total: u64,
     bytes_done: u64,
+    /// When the job started; its speed covers every byte read since.
+    started: Instant,
     files_done: usize,
     files_total: usize,
     current_file: String,
@@ -113,6 +117,7 @@ impl<R> CancelProgressReader<R> {
             progress,
             bytes_total,
             bytes_done,
+            started,
             files_done,
             files_total,
             current_file,
@@ -123,7 +128,8 @@ impl<R> CancelProgressReader<R> {
             progress,
             bytes_total,
             bytes_done,
-            last_report_at: std::time::Instant::now(),
+            started,
+            last_report_at: Instant::now(),
             files_done,
             files_total,
             current_file: progress_file_name(current_file),
@@ -134,18 +140,23 @@ impl<R> CancelProgressReader<R> {
         if self.last_report_at.elapsed() < PROGRESS_REPORT_INTERVAL {
             return;
         }
-        self.last_report_at = std::time::Instant::now();
+        self.last_report_at = Instant::now();
 
+        // An input that grows after the job measured it is read to its end;
+        // keep the percentage within bounds.
         let percent = if self.bytes_total == 0 {
             None
         } else {
-            Some(((self.bytes_done as f64 / self.bytes_total as f64) * 100.0) as f32)
+            Some(((self.bytes_done as f64 / self.bytes_total as f64) * 100.0).min(100.0) as f32)
         };
 
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Compression);
         snapshot.percent = percent;
         snapshot.bytes_done = Some(self.bytes_done);
         snapshot.bytes_total = Some(self.bytes_total);
+        let speed = self.bytes_done as f64 / self.started.elapsed().as_secs_f64();
+        snapshot.speed_bytes_per_sec = Some(speed);
+        snapshot.eta_secs = Some(self.bytes_total.saturating_sub(self.bytes_done) as f64 / speed);
         snapshot.files_done = Some(self.files_done as u64);
         snapshot.files_total = Some(self.files_total as u64);
         snapshot.current_file.clone_from(&self.current_file);
@@ -257,6 +268,7 @@ impl CompressionProcessor {
         config: &CompressionConfig,
         progress: ProgressReporter,
         cancel: CancellationToken,
+        started: Instant,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path).map_err(|e| {
             crate::Error::PipelineError(format!("Failed to create ZIP archive: {}", e))
@@ -334,6 +346,7 @@ impl CompressionProcessor {
                     progress: progress.clone(),
                     bytes_total: total_input_size,
                     bytes_done,
+                    started,
                     files_done: idx,
                     files_total: inputs.len(),
                     current_file: input_path.clone(),
@@ -369,6 +382,7 @@ impl CompressionProcessor {
         config: &CompressionConfig,
         progress: ProgressReporter,
         cancel: CancellationToken,
+        started: Instant,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path).map_err(|e| {
             crate::Error::PipelineError(format!("Failed to create tar.gz archive: {}", e))
@@ -451,6 +465,7 @@ impl CompressionProcessor {
                     progress: progress.clone(),
                     bytes_total: total_input_size,
                     bytes_done,
+                    started,
                     files_done: idx,
                     files_total: inputs.len(),
                     current_file: input_path.clone(),
@@ -534,7 +549,7 @@ impl Processor for CompressionProcessor {
         input: &ProcessorInput,
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
 
         // Initialize logs
         let mut logs = Vec::new();
@@ -642,6 +657,7 @@ impl Processor for CompressionProcessor {
                     &config_for_blocking,
                     progress,
                     cancel.clone(),
+                    start,
                 ),
                 ArchiveFormat::TarGz => processor.create_tar_gz_archive(
                     &inputs,
@@ -649,6 +665,7 @@ impl Processor for CompressionProcessor {
                     &config_for_blocking,
                     progress,
                     cancel.clone(),
+                    start,
                 ),
             }?;
 
@@ -781,6 +798,7 @@ mod tests {
                     progress: ProgressReporter::noop("cancel-copy"),
                     bytes_total: input_size as u64,
                     bytes_done: 0,
+                    started: Instant::now(),
                     files_done: 0,
                     files_total: 1,
                     current_file: "input".into(),

@@ -21,13 +21,16 @@ use std::time::{Duration, Instant};
 use tokio::fs;
 use tracing::{debug, error, info};
 
+use super::inputs::input_size_map;
 use super::outputs::TempOutputGuard;
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
 use super::utils::create_log_entry;
 use crate::Result;
-use crate::pipeline::{JobProgressSnapshot, ProgressKind, ProgressReporter};
+use crate::pipeline::progress::{
+    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+};
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 use crate::utils::text::format_bytes;
 
@@ -103,20 +106,42 @@ impl Default for CopyMoveConfig {
 /// Minimum gap between copy progress reports. A finished copy always reports.
 const COPY_PROGRESS_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Byte progress for one file copy, throttled before it reaches the job's
-/// progress channel, which drops reports rather than blocking the copy.
+/// Progress of one file copy as part of its job, throttled before it reaches
+/// the job's progress channel, which drops reports rather than blocking the
+/// copy. Bytes, percent and ETA cover the whole job; the speed is the file's.
 struct CopyProgress {
     reporter: ProgressReporter,
-    bytes_total: u64,
+    /// Size of the file; its copy is finished at this many bytes.
+    file_bytes: u64,
+    /// Bytes of the transferred inputs before this file.
+    bytes_before: u64,
+    /// Bytes of all the inputs the job transfers.
+    job_bytes: u64,
+    /// Zero-based position of the file among the inputs the job transfers.
+    file_index: u64,
+    files_total: u64,
+    current_file: Option<String>,
     started: Instant,
     last_report: Option<Instant>,
 }
 
 impl CopyProgress {
-    fn new(reporter: ProgressReporter, bytes_total: u64) -> Self {
+    fn new(
+        reporter: ProgressReporter,
+        path: &Path,
+        file_bytes: u64,
+        bytes_before: u64,
+        job_bytes: u64,
+        (index, total): (usize, usize),
+    ) -> Self {
         Self {
             reporter,
-            bytes_total,
+            file_bytes,
+            bytes_before,
+            job_bytes,
+            file_index: index as u64,
+            files_total: total as u64,
+            current_file: progress_file_name(path),
             started: Instant::now(),
             last_report: None,
         }
@@ -127,7 +152,7 @@ impl CopyProgress {
     }
 
     fn update_at(&mut self, bytes_done: u64, now: Instant) {
-        if bytes_done < self.bytes_total
+        if bytes_done < self.file_bytes
             && self
                 .last_report
                 .is_some_and(|last| now.saturating_duration_since(last) < COPY_PROGRESS_INTERVAL)
@@ -139,22 +164,27 @@ impl CopyProgress {
             .report(self.snapshot(bytes_done, now.saturating_duration_since(self.started)));
     }
 
+    /// The job's progress once `bytes_done` bytes of this file are copied.
     fn snapshot(&self, bytes_done: u64, elapsed: Duration) -> JobProgressSnapshot {
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Copy);
-        snapshot.bytes_done = Some(bytes_done);
-        snapshot.bytes_total = Some(self.bytes_total);
-        // A source that grows during the copy is read to its end; keep the
-        // percentage within bounds.
-        snapshot.percent = Some(if self.bytes_total == 0 {
+        let job_done = self.bytes_before.saturating_add(bytes_done);
+        snapshot.bytes_done = Some(job_done);
+        snapshot.bytes_total = Some(self.job_bytes);
+        // A source that grows after the job measured it is read to its end;
+        // keep the percentage within bounds.
+        snapshot.percent = Some(if self.job_bytes == 0 {
             100.0
         } else {
-            (bytes_done.min(self.bytes_total) as f64 / self.bytes_total as f64 * 100.0) as f32
+            (job_done.min(self.job_bytes) as f64 / self.job_bytes as f64 * 100.0) as f32
         });
+        snapshot.files_done = Some(self.file_index);
+        snapshot.files_total = Some(self.files_total);
+        snapshot.current_file.clone_from(&self.current_file);
         let seconds = elapsed.as_secs_f64();
         if seconds > 0.0 && bytes_done > 0 {
             let speed = bytes_done as f64 / seconds;
             snapshot.speed_bytes_per_sec = Some(speed);
-            snapshot.eta_secs = Some(self.bytes_total.saturating_sub(bytes_done) as f64 / speed);
+            snapshot.eta_secs = Some(self.job_bytes.saturating_sub(job_done) as f64 / speed);
         }
         snapshot
     }
@@ -441,6 +471,14 @@ impl Processor for CopyMoveProcessor {
             }
         }
 
+        // Progress counts the bytes and files of the inputs the job transfers,
+        // measured before any of them is moved away; an excluded input counts
+        // for neither.
+        let transferred: Vec<String> = destinations.into_values().cloned().collect();
+        let files_total = transferred.len();
+        let input_sizes = input_size_map(&transferred).await;
+        let job_bytes: u64 = input_sizes.values().sum();
+
         let mut outputs = Vec::with_capacity(input.inputs.len());
         let mut items_produced = Vec::with_capacity(input.inputs.len());
         let mut succeeded_inputs = Vec::with_capacity(input.inputs.len());
@@ -448,10 +486,14 @@ impl Processor for CopyMoveProcessor {
         let mut skipped_inputs: Vec<(String, String)> = Vec::new();
         let mut total_input_size: u64 = 0;
         let mut total_output_size: u64 = 0;
+        let mut passed_bytes: u64 = 0;
+        let mut passed_files: usize = 0;
 
-        for (file_index, source_path) in input.inputs.iter().enumerate() {
-            ctx.progress
-                .set_batch_item(file_index, input.inputs.len(), source_path);
+        for source_path in &input.inputs {
+            // Each input moves the job's progress past its bytes, whatever
+            // becomes of it.
+            let bytes_before = passed_bytes;
+            passed_bytes += input_sizes.get(source_path).copied().unwrap_or(0);
             if let Some(exclude_set) = &exclude_set
                 && exclude_set.is_match(source_path)
             {
@@ -492,6 +534,10 @@ impl Processor for CopyMoveProcessor {
                 continue;
             }
 
+            // Exactly the inputs in `transferred` get here; each moves the job
+            // past one file, whatever becomes of it.
+            let file_index = passed_files;
+            passed_files += 1;
             let dest = dest_dir_path.join(filename);
 
             let log_msg = format!(
@@ -695,7 +741,14 @@ impl Processor for CopyMoveProcessor {
             }
 
             // Same-filesystem moves are renames and report no progress.
-            let progress = CopyProgress::new(ctx.progress.clone(), source_size);
+            let progress = CopyProgress::new(
+                ctx.progress.clone(),
+                source,
+                source_size,
+                bytes_before,
+                job_bytes,
+                (file_index, files_total),
+            );
             let dest_size = match config.operation {
                 CopyMoveOperation::Copy => {
                     match Self::copy_via_tmp(source, &dest, source_size, &config, ctx, progress)
@@ -870,29 +923,59 @@ mod tests {
     use tempfile::TempDir;
 
     fn no_progress() -> CopyProgress {
-        CopyProgress::new(ProgressReporter::noop("copy"), 0)
+        CopyProgress::new(
+            ProgressReporter::noop("copy"),
+            Path::new("source"),
+            0,
+            0,
+            0,
+            (0, 1),
+        )
     }
 
+    /// Progress for the only input of a job, `file_bytes` long.
     fn progress_channel(
-        bytes_total: u64,
+        file_bytes: u64,
     ) -> (
         CopyProgress,
         tokio::sync::mpsc::Receiver<crate::pipeline::progress::JobProgressUpdate>,
     ) {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let progress = CopyProgress::new(ProgressReporter::new("copy", tx), bytes_total);
+        let progress = CopyProgress::new(
+            ProgressReporter::new("copy", tx),
+            Path::new("/rec/a.flv"),
+            file_bytes,
+            0,
+            file_bytes,
+            (0, 1),
+        );
         (progress, rx)
     }
 
     #[test]
-    fn copy_progress_snapshots_carry_bytes_and_rate() {
-        let (progress, _rx) = progress_channel(1000);
+    fn copy_progress_snapshots_cover_the_job_at_the_file_speed() {
+        // The second of two inputs: 1000 bytes after 500.
+        let progress = CopyProgress::new(
+            ProgressReporter::noop("copy"),
+            Path::new("/rec/b.flv"),
+            1000,
+            500,
+            1500,
+            (1, 2),
+        );
 
         let snapshot = progress.snapshot(250, Duration::from_secs(5));
         assert_eq!(snapshot.kind, ProgressKind::Copy);
-        assert_eq!(snapshot.bytes_done, Some(250));
-        assert_eq!(snapshot.bytes_total, Some(1000));
-        assert_eq!(snapshot.percent, Some(25.0));
+        assert_eq!(
+            (snapshot.bytes_done, snapshot.bytes_total, snapshot.percent),
+            (Some(750), Some(1500), Some(50.0))
+        );
+        assert_eq!(
+            (snapshot.files_done, snapshot.files_total),
+            (Some(1), Some(2))
+        );
+        assert_eq!(snapshot.current_file.as_deref(), Some("b.flv"));
+        // The file's speed, against the bytes left in the job.
         assert_eq!(snapshot.speed_bytes_per_sec, Some(50.0));
         assert_eq!(snapshot.eta_secs, Some(15.0));
 
@@ -906,7 +989,7 @@ mod tests {
             progress.snapshot(10, Duration::ZERO).speed_bytes_per_sec,
             None
         );
-        // A source that grew past its starting size stays at 100%.
+        // A source that grew past its measured size stays at 100%.
         assert_eq!(
             progress.snapshot(1200, Duration::from_secs(1)).percent,
             Some(100.0)
@@ -1167,7 +1250,9 @@ mod tests {
         fs::write(&skip_path, "skip").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let mut ctx = ProcessorContext::noop("test");
+        ctx.progress = ProgressReporter::new("test", progress_tx);
         let input = ProcessorInput {
             inputs: vec![
                 keep_path.to_string_lossy().to_string(),
@@ -1209,6 +1294,16 @@ mod tests {
                 "excluded".to_string()
             )]
         );
+        // The excluded input's bytes and file are not part of the job's progress.
+        let last = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .last()
+            .expect("a final copy progress report")
+            .snapshot;
+        assert_eq!(
+            (last.bytes_done, last.bytes_total, last.percent),
+            (Some(4), Some(4), Some(100.0))
+        );
+        assert_eq!((last.files_done, last.files_total), (Some(0), Some(1)));
     }
 
     #[tokio::test]
@@ -1596,7 +1691,9 @@ mod tests {
         fs::write(&source2, "content 2").await.unwrap();
 
         let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let mut ctx = ProcessorContext::noop("test");
+        ctx.progress = ProgressReporter::new("test", progress_tx);
         let input = ProcessorInput {
             inputs: vec![
                 source1.to_string_lossy().to_string(),
@@ -1623,6 +1720,29 @@ mod tests {
         assert_eq!(output.outputs.len(), 2);
         assert_eq!(output.succeeded_inputs.len(), 2);
         assert!(output.failed_inputs.is_empty());
+        // The second file's copy ends the job's bytes.
+        let last = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .last()
+            .expect("a final copy progress report")
+            .snapshot;
+        assert_eq!(
+            (
+                last.bytes_done,
+                last.bytes_total,
+                last.percent,
+                last.files_done,
+                last.files_total,
+                last.current_file.as_deref()
+            ),
+            (
+                Some(18),
+                Some(18),
+                Some(100.0),
+                Some(1),
+                Some(2),
+                Some("file2.txt")
+            )
+        );
     }
 
     #[tokio::test]
@@ -1982,7 +2102,14 @@ mod tests {
         let dest = temp_dir.path().join("dest.txt");
         fs::write(&source, "content").await.unwrap();
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
-        let progress = CopyProgress::new(ProgressReporter::new("copy", progress_tx), 7);
+        let progress = CopyProgress::new(
+            ProgressReporter::new("copy", progress_tx),
+            &source,
+            7,
+            0,
+            7,
+            (0, 1),
+        );
 
         let bytes = CopyMoveProcessor::copy_via_tmp(
             &source,
