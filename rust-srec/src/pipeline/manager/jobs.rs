@@ -97,9 +97,9 @@ where
         self.job_queue.list_job_logs(job_id, pagination).await
     }
 
-    /// Get latest execution progress snapshot for a job (if available).
-    pub async fn get_job_progress(&self, job_id: &str) -> Result<Option<JobProgressSnapshot>> {
-        self.job_queue.get_job_progress(job_id).await
+    /// The latest progress snapshot of a running job, if it has reported one.
+    pub fn get_job_progress(&self, job_id: &str) -> Option<JobProgressSnapshot> {
+        self.job_queue.get_job_progress(job_id)
     }
 
     /// Jobs that already ended while blocking work they started, typically a file operation on

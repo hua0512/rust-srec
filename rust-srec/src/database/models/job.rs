@@ -460,18 +460,6 @@ impl JobExecutionLogDbModel {
     }
 }
 
-/// Job execution progress snapshot (latest only) database model.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct JobExecutionProgressDbModel {
-    pub job_id: String,
-    /// Progress kind (e.g. "ffmpeg", "rclone").
-    pub kind: String,
-    /// JSON blob for the progress snapshot.
-    pub progress: String,
-    /// Unix epoch milliseconds (UTC).
-    pub updated_at: i64,
-}
-
 /// Log entry structure for job execution logs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ProgressKind {
     Ffmpeg,
@@ -15,7 +15,7 @@ pub enum ProgressKind {
     Copy,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobProgressSnapshot {
     pub kind: ProgressKind,
     pub updated_at: DateTime<Utc>,

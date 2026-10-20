@@ -1143,17 +1143,7 @@ impl JobRunner {
         // or manual retry can start a successor under the same job ID in the meantime.
         let timeout_recorded = matches!(outcome, JobOutcome::TimedOut) && !job_token.is_cancelled();
         if timeout_recorded {
-            let progress = match self.job_queue.get_job_progress(&facts.id).await {
-                Ok(snapshot) => snapshot,
-                Err(error) => {
-                    warn!(
-                        job_id = %facts.id,
-                        %error,
-                        "Failed to read last progress for timed-out job"
-                    );
-                    None
-                }
-            };
+            let progress = self.job_queue.get_job_progress(&facts.id);
             let reason = timeout_error(job_timeout, &facts, &input, progress.as_ref());
             self.finish_failed(&facts, &reason, StepFailureKind::Timeout, &[])
                 .await;

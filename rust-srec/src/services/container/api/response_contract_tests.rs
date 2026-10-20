@@ -13,12 +13,11 @@ use crate::api::jwt::Claims;
 use crate::api::openapi::ApiDoc;
 use crate::database::models::{
     DagExecutionDbModel, DagPipelineDefinition, DagStep, DagStepExecutionDbModel, JobDbModel,
-    JobExecutionProgressDbModel, LiveSessionDbModel, PipelineStep,
+    LiveSessionDbModel, PipelineStep,
 };
 use crate::database::repositories::{
     DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
 };
-use crate::pipeline::{JobProgressSnapshot, ProgressKind};
 
 use super::ServiceContainer;
 
@@ -656,7 +655,7 @@ async fn newly_registered_routes_respond_through_the_complete_router() {
 }
 
 #[tokio::test]
-async fn job_summaries_report_unavailable_progress_for_every_status_and_preserve_snapshots() {
+async fn job_summaries_report_unavailable_progress_for_every_status() {
     let (container, application, _directory) = application().await;
     let repo = SqlxJobRepository::new(container.pool.clone(), container.write_pool.clone());
     for status in ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"] {
@@ -685,29 +684,10 @@ async fn job_summaries_report_unavailable_progress_for_every_status_and_preserve
                 .all(|row| row.get("progress") == Some(&Value::Null))
         );
     }
-    let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-    snapshot.percent = Some(42.5);
-    repo.upsert_job_execution_progress(&JobExecutionProgressDbModel {
-        job_id: "contract-PROCESSING".to_owned(),
-        kind: "ffmpeg".to_owned(),
-        progress: serde_json::to_string(&snapshot).unwrap(),
-        updated_at: snapshot.updated_at.timestamp_millis(),
-    })
-    .await
-    .unwrap();
-    let (status, body) = request(
-        &application,
-        Method::GET,
-        "/api/pipeline/jobs/contract-PROCESSING/progress",
-        Value::Null,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["percent"], 42.5);
     let (status, _) = request(
         &application,
         Method::GET,
-        "/api/pipeline/jobs/contract-PENDING/progress",
+        "/api/pipeline/jobs/contract-PROCESSING/progress",
         Value::Null,
     )
     .await;

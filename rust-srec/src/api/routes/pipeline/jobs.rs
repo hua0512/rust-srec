@@ -190,8 +190,6 @@ pub async fn get_job_progress(
 
     let snapshot = pipeline_manager
         .get_job_progress(&id)
-        .await
-        .map_err(ApiError::from)?
         .ok_or_else(|| ApiError::not_found(format!("No progress available for job {}", id)))?;
 
     Ok(Json(snapshot))

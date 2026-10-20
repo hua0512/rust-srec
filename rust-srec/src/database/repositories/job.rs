@@ -4,8 +4,7 @@ pub(super) mod writes;
 
 use crate::database::begin_immediate;
 use crate::database::models::{
-    JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
-    JobStatus, Pagination,
+    JobCounts, JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus, Pagination,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -131,16 +130,6 @@ pub trait JobRepository: Send + Sync {
     /// Pending job counts grouped by exact `job_type`, for callers that
     /// classify job types with rules SQL cannot express.
     async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>>;
-    /// Upsert (replace) the latest execution progress snapshot for a job.
-    async fn upsert_job_execution_progress(
-        &self,
-        progress: &JobExecutionProgressDbModel,
-    ) -> Result<()>;
-    /// Get the latest execution progress snapshot for a job.
-    async fn get_job_execution_progress(
-        &self,
-        job_id: &str,
-    ) -> Result<Option<JobExecutionProgressDbModel>>;
     /// Atomically claim (transition) the next pending job to PROCESSING.
     /// Returns the claimed job, if any.
     ///
@@ -221,7 +210,7 @@ pub trait JobRepository: Send + Sync {
     /// Get all jobs in a pipeline.
     async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>>;
 
-    /// Delete all jobs in a pipeline and their associated data (logs, progress).
+    /// Delete all jobs in a pipeline and their associated data (logs).
     /// Returns the number of jobs deleted.
     async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64>;
 }
@@ -451,53 +440,6 @@ impl JobRepository for SqlxJobRepository {
             .into_iter()
             .map(|(job_type, count)| (job_type, count.max(0) as u64))
             .collect())
-    }
-
-    async fn upsert_job_execution_progress(
-        &self,
-        progress: &JobExecutionProgressDbModel,
-    ) -> Result<()> {
-        retry_on_sqlite_busy("upsert_job_execution_progress", || async {
-            // Guarded on the job still being PROCESSING, atomically with the
-            // write: the progress aggregator flushes asynchronously, so a
-            // snapshot can arrive here after the job's terminal transition
-            // already fired trg_job_terminal_clears_progress — an
-            // unconditional upsert would re-insert the row it just deleted
-            // and orphan it until job retention.
-            sqlx::query(
-                r#"
-                INSERT INTO job_execution_progress (job_id, kind, progress, updated_at)
-                SELECT ?, ?, ?, ?
-                WHERE (SELECT status FROM job WHERE id = ?) = 'PROCESSING'
-                ON CONFLICT(job_id) DO UPDATE SET
-                    kind = excluded.kind,
-                    progress = excluded.progress,
-                    updated_at = excluded.updated_at
-                "#,
-            )
-            .bind(&progress.job_id)
-            .bind(&progress.kind)
-            .bind(&progress.progress)
-            .bind(progress.updated_at)
-            .bind(&progress.job_id)
-            .execute(&self.write_pool)
-            .await?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn get_job_execution_progress(
-        &self,
-        job_id: &str,
-    ) -> Result<Option<JobExecutionProgressDbModel>> {
-        let row = sqlx::query_as::<_, JobExecutionProgressDbModel>(
-            "SELECT * FROM job_execution_progress WHERE job_id = ?",
-        )
-        .bind(job_id)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row)
     }
 
     async fn claim_next_pending_job(
@@ -999,7 +941,7 @@ impl JobRepository for SqlxJobRepository {
 
     async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
         retry_on_sqlite_busy("delete_jobs_by_pipeline", || async {
-            // Delete the jobs (logs and progress omitted, they are deleted via CASCADE)
+            // Delete the jobs (their logs are deleted via CASCADE)
             let result = sqlx::query("DELETE FROM job WHERE pipeline_id = ?")
                 .bind(pipeline_id)
                 .execute(&self.write_pool)

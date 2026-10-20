@@ -16,7 +16,6 @@ use tracing::{info, warn};
 use super::processors::{UploadItemStatus, UploadResultItem};
 use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressKind, ProgressReporter};
 use super::upload_events::{UploadStatusBroadcaster, UploadStatusEvent, UploadTerminalStatus};
-use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus, MediaFileType, MediaOutputDbModel,
@@ -856,11 +855,12 @@ pub struct JobQueue {
     /// Latest progress snapshot per job (in-memory). `Arc`-shared with the
     /// progress aggregator, which writes it (see `jobs_cache`).
     progress_cache: Arc<DashMap<String, JobProgressSnapshot>>,
-    /// Progress update sender for async persistence/coalescing.
+    /// Progress updates for the aggregator, which caches and coalesces them.
     progress_tx: tokio::sync::mpsc::Sender<JobProgressUpdate>,
     /// Stops the progress consumer after worker producers have settled.
     progress_shutdown: CancellationToken,
-    /// Owned so pipeline shutdown can prove no progress write remains in flight.
+    /// Owned so pipeline shutdown can join the aggregator, which reads the job
+    /// repository for the queued-upload count, before the database pools close.
     progress_aggregator: parking_lot::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Durable row counts used to cap logs in `job_execution_logs`.
     persisted_log_cursor: DashMap<String, PersistedLogCursor>,
@@ -1378,34 +1378,17 @@ impl JobQueue {
         ProgressReporter::new(job_id.to_string(), self.progress_tx.clone())
     }
 
-    /// Get the latest progress snapshot for a job.
-    pub async fn get_job_progress(&self, job_id: &str) -> Result<Option<JobProgressSnapshot>> {
-        if let Some(snapshot) = self.progress_cache.get(job_id) {
-            return Ok(Some(snapshot.clone()));
-        }
-
-        let Some(repo) = &self.job_repository else {
-            return Ok(None);
-        };
-
-        let Some(row) = repo.get_job_execution_progress(job_id).await? else {
-            return Ok(None);
-        };
-
-        let snapshot = serde_json::from_str::<JobProgressSnapshot>(&row.progress)
-            .map_err(|e| Error::Other(format!("Failed to parse job progress JSON: {}", e)))?;
-
-        // Only cache progress for actively-processing jobs. This avoids unbounded memory growth
-        // from clients requesting progress for historical (already completed) jobs.
-        if self.cancellation_tokens.contains_key(job_id) {
-            self.progress_cache
-                .insert(job_id.to_string(), snapshot.clone());
-        }
-        Ok(Some(snapshot))
+    /// The latest progress snapshot of a running job.
+    ///
+    /// Snapshots are kept in memory only: a job has none until it first
+    /// reports, including after a restart, and loses it when it ends.
+    pub fn get_job_progress(&self, job_id: &str) -> Option<JobProgressSnapshot> {
+        self.progress_cache
+            .get(job_id)
+            .map(|snapshot| snapshot.clone())
     }
 
-    /// The latest progress snapshot of a running job, read from memory only,
-    /// with `raw` set to null.
+    /// [`Self::get_job_progress`] with `raw` set to null.
     ///
     /// Only running jobs have an entry, but a failing job keeps its entry for a
     /// moment after FAILED is written, so callers should only ask about jobs
@@ -3187,8 +3170,8 @@ fn spawn_progress_aggregator(
     shutdown: CancellationToken,
 ) -> Option<tokio::task::JoinHandle<()>> {
     if tokio::runtime::Handle::try_current().is_err() {
-        // Some unit tests construct JobQueue outside a Tokio runtime. Progress persistence
-        // is best-effort and can be disabled in those contexts.
+        // Some unit tests construct JobQueue outside a Tokio runtime; they run
+        // without progress tracking.
         return None;
     }
 
@@ -3246,14 +3229,14 @@ fn spawn_progress_aggregator(
                     if pending.is_empty() {
                         continue;
                     }
+                    let Some(broadcaster) = upload_broadcaster.get() else {
+                        continue;
+                    };
+                    let now = Utc::now();
                     for (job_id, snapshot) in pending.drain() {
                         // A job can reach a terminal state between receive and
-                        // this flush tick. The terminal status transition fires
-                        // trg_job_terminal_clears_progress and broadcasts the
-                        // terminal WS event, so this snapshot must be dropped.
-                        // This check narrows the race; the DB write is closed
-                        // for good by upsert_job_execution_progress, which
-                        // inserts only while job.status is still PROCESSING.
+                        // this flush tick, and its terminal WS event is already
+                        // out, so a progress event now would outlive it.
                         // cancel_job cancels the token before the worker
                         // finalizes, hence the is_cancelled check on top of
                         // plain presence.
@@ -3265,59 +3248,30 @@ fn spawn_progress_aggregator(
                         }
 
                         // Snapshots of upload processors and long jobs (see
-                        // is_long_job) double as live WS events.
-                        // Publishing on the flush tick reuses this loop's
-                        // coalescing instead of adding a second throttle.
-                        // has_subscribers first: without it the jobs_cache
-                        // lookup and snapshot clone (including its raw JSON
-                        // tree) would run on every flush of an idle deployment.
-                        if let Some(broadcaster) = upload_broadcaster.get()
-                            && broadcaster.has_subscribers()
-                        {
-                            let upload = matches!(
-                                snapshot.kind,
-                                ProgressKind::Rclone | ProgressKind::BaiduPcs
-                            );
-                            let (long_job, streamer_id) = jobs_cache
-                                .get(&job_id)
-                                .map(|job| {
-                                    (is_long_job(&job, Utc::now()), non_empty(&job.streamer_id))
-                                })
-                                .unwrap_or_default();
-                            if upload || long_job {
-                                broadcaster.send(progress_event(
-                                    long_job,
-                                    job_id.clone(),
-                                    streamer_id,
-                                    snapshot.clone(),
-                                ));
-                            }
-                        }
-
-                        let Some(repo) = &repo else {
-                            continue;
-                        };
-                        let progress = match serde_json::to_string(&snapshot) {
-                            Ok(s) => s,
-                            Err(error) => {
-                                warn!(job_id, %error, "Failed to serialize job progress");
-                                continue;
-                            }
-                        };
-                        let row = JobExecutionProgressDbModel {
-                            job_id: job_id.clone(),
-                            kind: format!("{:?}", snapshot.kind).to_ascii_lowercase(),
-                            progress,
-                            updated_at: snapshot.updated_at.timestamp_millis(),
-                        };
-                        if let Err(error) = repo.upsert_job_execution_progress(&row).await {
-                            warn!(job_id, %error, "Failed to persist job progress");
+                        // is_long_job) double as live WS events. Publishing on
+                        // the flush tick reuses this loop's coalescing instead
+                        // of adding a second throttle.
+                        let upload = matches!(
+                            snapshot.kind,
+                            ProgressKind::Rclone | ProgressKind::BaiduPcs
+                        );
+                        let (long_job, streamer_id) = jobs_cache
+                            .get(&job_id)
+                            .map(|job| (is_long_job(&job, now), non_empty(&job.streamer_id)))
+                            .unwrap_or_default();
+                        if upload || long_job {
+                            broadcaster.send(progress_event(
+                                long_job,
+                                job_id,
+                                streamer_id,
+                                snapshot,
+                            ));
                         }
                     }
                 }
                 update = rx.recv() => {
                     let Some(update) = update else { break; };
-                    // Only retain/persist progress for actively-processing jobs. This prevents
+                    // Only retain progress for actively-processing jobs. This prevents
                     // late progress messages (after completion/cancellation) from reintroducing
                     // entries into the in-memory cache. The token is also checked for
                     // cancellation: cancel_job cancels it but leaves it in the map until the
@@ -3328,8 +3282,15 @@ fn spawn_progress_aggregator(
                     if !job_is_live {
                         continue;
                     }
-                    progress_cache.insert(update.job_id.clone(), update.snapshot.clone());
-                    pending.insert(update.job_id, update.snapshot);
+                    // pending only feeds the WS broadcast, so skip the clone
+                    // while nobody is listening.
+                    if upload_broadcaster
+                        .get()
+                        .is_some_and(|broadcaster| broadcaster.has_subscribers())
+                    {
+                        pending.insert(update.job_id.clone(), update.snapshot.clone());
+                    }
+                    progress_cache.insert(update.job_id, update.snapshot);
                 }
             }
         }
@@ -4214,50 +4175,49 @@ mod tests {
         );
     }
 
-    /// Every terminal status transition must clear the job's persisted
-    /// progress row via `trg_job_terminal_clears_progress` — a snapshot only
-    /// means anything while the job is PROCESSING, and a leftover row would
-    /// otherwise linger until job retention prunes the job itself.
+    /// A snapshot only means anything while its job runs: it is dropped when
+    /// the job ends, and a report that reaches the aggregator after that does
+    /// not bring it back.
     #[tokio::test]
-    async fn test_terminal_transition_clears_persisted_progress() {
-        async fn progress_count(pool: &sqlx::SqlitePool, job_id: &str) -> i64 {
-            sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_progress WHERE job_id = ?")
-                .bind(job_id)
-                .fetch_one(pool)
-                .await
-                .unwrap()
-        }
-
-        async fn seed_progress(repo: &Arc<dyn JobRepository>, job_id: &str) {
-            repo.upsert_job_execution_progress(&JobExecutionProgressDbModel {
-                job_id: job_id.to_string(),
-                kind: "ffmpeg".to_string(),
-                progress: "{}".to_string(),
-                updated_at: 1,
+    async fn terminal_transitions_drop_progress_and_late_reports_stay_dropped() {
+        async fn wait_until(mut done: impl FnMut() -> bool) {
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                while !done() {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
             })
             .await
-            .unwrap();
+            .expect("the aggregator handles the report");
         }
 
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
+        let queue = JobQueue::new();
 
-        let job_repo: Arc<dyn JobRepository> = Arc::new(
-            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
-        );
-        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+        let mut job_ids = Vec::new();
+        for _ in 0..4 {
+            let job = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+            job_ids.push(queue.enqueue(job).await.unwrap());
+        }
+        for _ in &job_ids {
+            queue.dequeue(None).await.unwrap().unwrap();
+        }
+        for job_id in &job_ids {
+            queue
+                .progress_reporter(job_id)
+                .report(JobProgressSnapshot::new(ProgressKind::Ffmpeg));
+        }
+        wait_until(|| {
+            job_ids
+                .iter()
+                .all(|job_id| queue.get_job_progress(job_id).is_some())
+        })
+        .await;
 
-        // COMPLETED clears the row.
-        let completed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
-        let completed_id = queue.enqueue(completed).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
-        seed_progress(&job_repo, &completed_id).await;
-        assert_eq!(progress_count(&pool, &completed_id).await, 1);
+        let [completed, failed, cancelled, live] = job_ids.as_slice() else {
+            unreachable!("four jobs were enqueued");
+        };
         queue
             .complete(
-                &completed_id,
+                completed,
                 JobResult {
                     outputs: vec![],
                     duration_secs: 1.0,
@@ -4268,28 +4228,35 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(progress_count(&pool, &completed_id).await, 0);
+        queue.fail(failed, "boom").await.unwrap();
+        // A cancelled job keeps its tracking until its worker ends the attempt.
+        let cancelled_attempt = queue.attempt_token(cancelled).unwrap();
+        queue.cancel_job(cancelled).await.unwrap();
+        queue.finalize_attempt(cancelled, &cancelled_attempt).await;
+        let ended = [completed, failed, cancelled];
+        for job_id in ended {
+            assert!(queue.get_job_progress(job_id).is_none(), "{job_id}");
+        }
 
-        // A late aggregator flush cannot resurrect the row: the upsert
-        // inserts only while the job is still PROCESSING.
-        seed_progress(&job_repo, &completed_id).await;
-        assert_eq!(progress_count(&pool, &completed_id).await, 0);
-
-        // FAILED clears the row.
-        let failed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
-        let failed_id = queue.enqueue(failed).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
-        seed_progress(&job_repo, &failed_id).await;
-        queue.fail(&failed_id, "boom").await.unwrap();
-        assert_eq!(progress_count(&pool, &failed_id).await, 0);
-
-        // CANCELLED clears the row.
-        let cancelled = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
-        let cancelled_id = queue.enqueue(cancelled).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
-        seed_progress(&job_repo, &cancelled_id).await;
-        queue.cancel_job(&cancelled_id).await.unwrap();
-        assert_eq!(progress_count(&pool, &cancelled_id).await, 0);
+        for job_id in ended {
+            queue
+                .progress_reporter(job_id)
+                .report(JobProgressSnapshot::new(ProgressKind::Ffmpeg));
+        }
+        // The channel is FIFO: once this later report is cached, the late
+        // ones before it have been handled.
+        let mut probe = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        probe.percent = Some(50.0);
+        queue.progress_reporter(live).report(probe);
+        wait_until(|| {
+            queue
+                .get_job_progress(live)
+                .is_some_and(|snapshot| snapshot.percent == Some(50.0))
+        })
+        .await;
+        for job_id in ended {
+            assert!(queue.get_job_progress(job_id).is_none(), "{job_id}");
+        }
     }
 
     #[test]
@@ -4540,15 +4507,7 @@ mod tests {
             .await
             .unwrap();
         assert!(!queue.attempt_token(&job_id).unwrap().is_cancelled());
-        assert_eq!(
-            queue
-                .get_job_progress(&job_id)
-                .await
-                .unwrap()
-                .unwrap()
-                .percent,
-            Some(42.0)
-        );
+        assert_eq!(queue.get_job_progress(&job_id).unwrap().percent, Some(42.0));
 
         let mut events = broadcaster.subscribe();
         queue.fail(&job_id, "successor failed").await.unwrap();

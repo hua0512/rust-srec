@@ -297,17 +297,6 @@
       "message"
     ]
   },
-  "job_execution_progress": {
-    "required_epoch_ms": [
-      "updated_at"
-    ],
-    "nullable_epoch_ms": [],
-    "non_timestamp_columns": [
-      "job_id",
-      "kind",
-      "progress"
-    ]
-  },
   "job_presets": {
     "required_epoch_ms": [
       "created_at",

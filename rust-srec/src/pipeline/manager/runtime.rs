@@ -189,8 +189,9 @@ where
         self.io_pool.stop().await;
 
         // Workers are the only producers of DAG completion and progress
-        // updates. Once they have joined, the consumers can drain/stop without
-        // racing a late repository write.
+        // updates. Once they have joined, the progress aggregator can stop and
+        // the DAG completion consumers can drain without racing a late
+        // repository write.
         self.job_queue.stop_progress_aggregator().await;
 
         while let Some(result) = runtime_tasks.join_next().await {

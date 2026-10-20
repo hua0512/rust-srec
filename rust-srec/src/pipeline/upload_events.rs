@@ -146,7 +146,7 @@ impl UploadStatusBroadcaster {
 
     /// True when at least one WS connection is subscribed. `send` already
     /// early-returns without one, but producers on hot paths (the progress
-    /// aggregator flush) check this first to skip building the event —
+    /// aggregator) check this first to skip building the event —
     /// cloning a `JobProgressSnapshot` and its `raw` JSON tree — at all.
     pub fn has_subscribers(&self) -> bool {
         self.tx.receiver_count() > 0

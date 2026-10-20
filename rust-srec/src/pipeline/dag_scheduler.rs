@@ -1950,20 +1950,6 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn upsert_job_execution_progress(
-            &self,
-            _progress: &crate::database::models::JobExecutionProgressDbModel,
-        ) -> Result<()> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn get_job_execution_progress(
-            &self,
-            _job_id: &str,
-        ) -> Result<Option<crate::database::models::JobExecutionProgressDbModel>> {
-            unimplemented!("not needed for these tests")
-        }
-
         async fn claim_next_pending_job(
             &self,
             _job_types: Option<&[String]>,

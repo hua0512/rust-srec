@@ -3,8 +3,8 @@
 //! One row per (upload job, local file): the durable outcome of an upload
 //! attempt. Rows are written only at terminal job transitions
 //! (`JobQueue::complete` on success, worker-pool failure synthesis on error);
-//! live upload state travels through `job_execution_progress` and the upload
-//! WebSocket events instead.
+//! live upload state travels through the job queue's in-memory progress and
+//! the upload WebSocket events instead.
 
 use sqlx::FromRow;
 
