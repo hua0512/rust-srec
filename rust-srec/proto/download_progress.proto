@@ -356,6 +356,12 @@ message UploadProgress {
   optional JobPhase phase = 14;
   // The file in progress: a file name without directories.
   optional string current_file = 15;
+  // The processor's own attempt within one job run, from 1, such as an
+  // rclone or BaiduPCS-Go upload retry; unrelated to the job's retry count.
+  // Absent until the processor retries.
+  optional uint32 attempt = 16;
+  // Attempts the processor makes at most within this job run.
+  optional uint32 max_attempts = 17;
 }
 
 // A stage of a job that is not plain work towards its percent.
@@ -364,6 +370,9 @@ enum JobPhase {
   // FFmpeg wrote the last frame and is rewriting the output, such as moving
   // an MP4's index to the front for fast start.
   JOB_PHASE_FINALIZING = 1;
+  // The processor waits to try its work again after a failed attempt, such
+  // as an rclone or BaiduPCS-Go upload.
+  JOB_PHASE_RETRYING = 2;
 }
 
 enum UploadTerminalStatus {

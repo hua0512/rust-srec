@@ -27,6 +27,7 @@
 - Live progress of processing jobs is no longer written to the database several times a second, which cuts disk writes while jobs run and keeps progress updates flowing when the database is busy.
 - Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
 - A job's progress, the top bar and workflow steps now show which file is being processed.
+- rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress and the top bar. rclone uploads also show the file being sent.
 
 ## Web interface
 

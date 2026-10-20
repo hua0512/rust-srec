@@ -21,6 +21,8 @@ Each pipeline step is executed by a specialized processor:
 | `delete` | Automatically cleans up files | - |
 | `execute` | Runs a program or custom shell command | `program`, `args` or `command`, `scan_output_dir`, `scan_extension` |
 
+`rclone` and `baidupcs` retry a failed upload within the same job run; each retry is noted in the job log, and the job's progress and the top bar show which attempt is running.
+
 ### Execute (`execute`) {#execute-execute}
 
 In the preset editor or a workflow step's configuration dialog, choose **Shell command** or **Program and arguments** under **Execution mode**. Existing shell commands open in shell mode without conversion. Switching modes clears the previous command or program and arguments; the output scan settings are shared and retained.

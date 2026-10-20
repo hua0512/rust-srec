@@ -19,6 +19,7 @@ use super::traits::{
 };
 use super::utils::CommandOutput;
 use crate::Result;
+use crate::pipeline::progress::ProgressKind;
 use crate::utils::filename::expand_placeholders_at;
 
 /// Rclone operation type.
@@ -676,7 +677,15 @@ impl RcloneProcessor {
 
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {}", attempt + 1, cmd_op);
-                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
+                let error = last_error.as_deref().unwrap_or("unknown error");
+                super::utils::wait_to_retry(
+                    context,
+                    ProgressKind::Rclone,
+                    attempt,
+                    *attempts,
+                    &format!("rclone {cmd_op} attempt {attempt} of {attempts} failed: {error}"),
+                )
+                .await;
             }
 
             let mut cmd = Command::new(&self.rclone_path);
@@ -883,7 +892,15 @@ impl RcloneProcessor {
         for attempt in 0..*attempts {
             if attempt > 0 {
                 info!("Retry attempt {} for rclone {} batch", attempt + 1, cmd_op);
-                tokio::time::sleep(super::utils::retry_delay(1000, attempt)).await;
+                let error = last_error.as_deref().unwrap_or("unknown error");
+                super::utils::wait_to_retry(
+                    context,
+                    ProgressKind::Rclone,
+                    attempt,
+                    *attempts,
+                    &format!("rclone {cmd_op} attempt {attempt} of {attempts} failed: {error}"),
+                )
+                .await;
             }
 
             let files_from_path = Self::create_files_from_list(&pending_inputs, &base_dir)
@@ -1281,6 +1298,7 @@ mod tests {
 
     use super::super::test_utils::{test_exit_status, utc_datetime};
     use super::*;
+    use crate::pipeline::{JobPhase, JobProgressSnapshot};
 
     struct MockAttempt {
         moved_inputs: Vec<PathBuf>,
@@ -1478,7 +1496,7 @@ mod tests {
         async fn run(
             &self,
             command: &mut Command,
-            _context: &ProcessorContext,
+            context: &ProcessorContext,
         ) -> Result<CommandOutput> {
             let args: Vec<String> = command
                 .as_std()
@@ -1537,6 +1555,10 @@ mod tests {
                     .await
                     .map_err(|e| crate::Error::io_path("moving test input", &input, e))?;
             }
+            // Like a stats line of the real transfer.
+            context
+                .progress
+                .report(JobProgressSnapshot::new(ProgressKind::Rclone));
 
             Ok(CommandOutput {
                 status: test_exit_status(attempt.succeeds),
@@ -1656,12 +1678,45 @@ mod tests {
             config: Some(r#"{"operation":"move"}"#.to_string()),
             ..Default::default()
         };
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
+        let ctx = ProcessorContext::new(
+            "batch-move",
+            crate::pipeline::ProgressReporter::new("batch-move", progress_tx),
+            super::super::traits::JobLogSink::new(log_tx, Arc::default()),
+            tokio_util::sync::CancellationToken::new(),
+        );
 
-        let output = processor
-            .process(&input, &ProcessorContext::noop("batch-move"))
-            .await
-            .unwrap();
+        let output = processor.process(&input, &ctx).await.unwrap();
+        drop(ctx);
 
+        // The failed attempt is noted in the job log. Progress shows the
+        // retrying phase only for the wait, and attempt 2 from its start.
+        let warnings: Vec<String> = std::iter::from_fn(|| log_rx.try_recv().ok())
+            .filter(|entry| entry.level == crate::pipeline::job_queue::LogLevel::Warn)
+            .map(|entry| entry.message)
+            .collect();
+        assert_eq!(
+            warnings,
+            [
+                "rclone move attempt 1 of 3 failed: rclone batch failed with exit code 1: simulated partial move failure; retrying in 2 s"
+            ]
+        );
+        let progress: Vec<_> = std::iter::from_fn(|| progress_rx.try_recv().ok())
+            .map(|update| {
+                let snapshot = update.snapshot;
+                (snapshot.phase, snapshot.attempt, snapshot.max_attempts)
+            })
+            .collect();
+        assert_eq!(
+            progress,
+            [
+                (None, None, None),
+                (Some(JobPhase::Retrying), Some(2), Some(3)),
+                (None, Some(2), Some(3)),
+                (None, Some(2), Some(3)),
+            ]
+        );
         assert_eq!(output.succeeded_inputs, inputs);
         assert!(output.failed_inputs.is_empty());
         assert!(!first.exists());

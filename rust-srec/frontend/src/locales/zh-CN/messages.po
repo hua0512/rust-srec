@@ -89,7 +89,7 @@ msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
 #. placeholder {0}: failed.length
-#: src/components/upload-status-indicator.tsx:137
+#: src/components/upload-status-indicator.tsx:133
 msgid "{0, plural, one {# failed upload} other {# failed uploads}}"
 msgstr "{0, plural, other {# 个上传失败}}"
 
@@ -99,7 +99,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
 #. placeholder {0}: upload.filesFailed
-#: src/components/upload-status-indicator.tsx:415
+#: src/components/upload-status-indicator.tsx:404
 msgid "{0, plural, one {# file failed} other {# files failed}}"
 msgstr "{0, plural, other {# 个文件失败}}"
 
@@ -303,10 +303,6 @@ msgstr "{displayName} 配置"
 msgid "{engine} Settings"
 msgstr "{engine} 设置"
 
-#: src/components/upload-status-indicator.tsx:362
-msgid "{eta} left"
-msgstr "剩余 {eta}"
-
 #: src/components/credentials/account-usage.tsx:302
 msgid "{failures, plural, one {# failed refresh} other {# failed refreshes in a row}}"
 msgstr "{failures, plural, other {连续 # 次刷新失败}}"
@@ -315,10 +311,6 @@ msgstr "{failures, plural, other {连续 # 次刷新失败}}"
 #: src/components/credentials/account-usage.tsx:182
 msgid "{failures, plural, one {Refresh failed # time} other {Refresh failed # times}}"
 msgstr "{failures, plural, other {刷新已失败 # 次}}"
-
-#: src/components/upload-status-indicator.tsx:359
-msgid "{filesDone}/{filesTotal} files"
-msgstr "{filesDone}/{filesTotal} 个文件"
 
 #: src/components/stalled-operations-indicator.tsx:29
 msgid "{first} and {others} more"
@@ -345,11 +337,11 @@ msgstr "{minutes} 分钟"
 msgid "{name} fixing is off, so these settings have no effect."
 msgstr "{name} 修复已关闭，这些设置不会生效。"
 
-#: src/components/upload-status-indicator.tsx:140
+#: src/components/upload-status-indicator.tsx:136
 msgid "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgstr "{pending, plural, other {# 个上传排队中}}"
 
-#: src/components/upload-status-indicator.tsx:143
+#: src/components/upload-status-indicator.tsx:139
 msgid "{pending} queued"
 msgstr "{pending} 个排队中"
 
@@ -434,8 +426,8 @@ msgstr "<0>录制轮流使用</0> {names}"
 msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
-#: src/components/upload-status-indicator.tsx:267
-#: src/lib/job-progress.ts:100
+#: src/components/upload-status-indicator.tsx:263
+#: src/lib/job-progress.ts:110
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -1695,12 +1687,12 @@ msgstr "取消处理管道？"
 msgid "Cancel selected"
 msgstr "取消所选"
 
-#: src/components/upload-status-indicator.tsx:537
+#: src/components/upload-status-indicator.tsx:526
 msgid "Cancel this upload?"
 msgstr "取消此上传？"
 
-#: src/components/upload-status-indicator.tsx:395
-#: src/components/upload-status-indicator.tsx:556
+#: src/components/upload-status-indicator.tsx:384
+#: src/components/upload-status-indicator.tsx:545
 msgid "Cancel upload"
 msgstr "取消上传"
 
@@ -3328,7 +3320,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
-#: src/components/upload-status-indicator.tsx:446
+#: src/components/upload-status-indicator.tsx:435
 msgid "Dismiss"
 msgstr "忽略"
 
@@ -4043,7 +4035,7 @@ msgstr "五"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:152
-#: src/components/upload-status-indicator.tsx:418
+#: src/components/upload-status-indicator.tsx:407
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:491
@@ -4076,7 +4068,7 @@ msgstr "取消处理任务失败"
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
 
-#: src/components/upload-status-indicator.tsx:523
+#: src/components/upload-status-indicator.tsx:512
 msgid "Failed to cancel upload"
 msgstr "取消上传失败"
 
@@ -4455,7 +4447,7 @@ msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器�
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/lib/job-progress.ts:106
+#: src/lib/job-progress.ts:116
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
@@ -5568,7 +5560,7 @@ msgstr "保持运行"
 msgid "Keep the original frame size instead of scaling to a width"
 msgstr "保留原始画面尺寸，不缩放到指定宽度"
 
-#: src/components/upload-status-indicator.tsx:548
+#: src/components/upload-status-indicator.tsx:537
 msgid "Keep uploading"
 msgstr "继续上传"
 
@@ -6023,7 +6015,7 @@ msgstr "清单超时 (ms)"
 msgid "Manual cut"
 msgstr "手动分段"
 
-#: src/components/upload-status-indicator.tsx:335
+#: src/components/upload-status-indicator.tsx:331
 msgid "Manual job"
 msgstr "手动任务"
 
@@ -7889,7 +7881,7 @@ msgid "Preparing download..."
 msgstr "正在准备下载……"
 
 #: src/components/pipeline/jobs/job-progress-panel.tsx:135
-#: src/components/upload-status-indicator.tsx:365
+#: src/components/upload-status-indicator.tsx:353
 msgid "Preparing…"
 msgstr "准备中…"
 
@@ -8842,6 +8834,10 @@ msgstr "{wait}后重试"
 #: src/components/pipeline/retry-countdown.tsx:20
 msgid "Retrying shortly"
 msgstr "即将重试"
+
+#: src/lib/job-progress.ts:36
+msgid "Retrying..."
+msgstr "等待重试…"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:150
 msgid "Return Previous Page"
@@ -10482,7 +10478,7 @@ msgstr "服务器无法连接直播源。请重试或切换直播源。"
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
-#: src/components/upload-status-indicator.tsx:540
+#: src/components/upload-status-indicator.tsx:529
 msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 msgstr "{name} 的上传将立即停止。已完成的文件会保留在目标位置，之后可以重试该任务。"
 
@@ -11194,6 +11190,10 @@ msgstr "上传 (Rclone)"
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
+#: src/lib/job-progress.ts:90
+msgid "Upload attempt {attempt} of {max}"
+msgstr "第 {attempt} 次上传尝试，共 {max} 次"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:519
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重新上传尚未确认结果的文件。"
@@ -11202,7 +11202,7 @@ msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重
 msgid "Upload Behavior"
 msgstr "上传行为"
 
-#: src/components/upload-status-indicator.tsx:520
+#: src/components/upload-status-indicator.tsx:509
 msgid "Upload cancelled"
 msgstr "上传已取消"
 
@@ -11482,7 +11482,7 @@ msgstr "查看详情"
 msgid "View job"
 msgstr "查看任务"
 
-#: src/components/upload-status-indicator.tsx:316
+#: src/components/upload-status-indicator.tsx:312
 msgid "View processing jobs"
 msgstr "查看处理中的任务"
 
@@ -11511,7 +11511,7 @@ msgstr "无限等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/upload-status-indicator.tsx:305
+#: src/components/upload-status-indicator.tsx:301
 msgid "Waiting for a free upload worker."
 msgstr "正在等待空闲的上传工作线程。"
 

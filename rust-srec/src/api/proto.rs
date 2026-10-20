@@ -124,12 +124,15 @@ pub fn upload_progress_to_proto(
         speed_x: snapshot.speed_x,
         phase: snapshot.phase.map(|phase| job_phase_to_proto(phase) as i32),
         current_file: snapshot.current_file.clone(),
+        attempt: snapshot.attempt,
+        max_attempts: snapshot.max_attempts,
     }
 }
 
 fn job_phase_to_proto(phase: JobPhase) -> download_progress::JobPhase {
     match phase {
         JobPhase::Finalizing => download_progress::JobPhase::Finalizing,
+        JobPhase::Retrying => download_progress::JobPhase::Retrying,
     }
 }
 
@@ -299,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn upload_progress_carries_the_phase_and_current_file() {
+    fn upload_progress_carries_the_phase_current_file_and_attempt() {
         let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::Ffmpeg);
         snapshot.phase = Some(JobPhase::Finalizing);
         snapshot.current_file = Some("seg_002.flv".to_string());
@@ -307,6 +310,15 @@ mod tests {
         assert_eq!(
             (wire.phase(), wire.current_file.as_deref()),
             (download_progress::JobPhase::Finalizing, Some("seg_002.flv"))
+        );
+
+        snapshot.phase = Some(JobPhase::Retrying);
+        snapshot.attempt = Some(2);
+        snapshot.max_attempts = Some(3);
+        let wire = upload_progress_to_proto("job", None, &snapshot);
+        assert_eq!(
+            (wire.phase(), wire.attempt, wire.max_attempts),
+            (download_progress::JobPhase::Retrying, Some(2), Some(3))
         );
     }
 

@@ -33,6 +33,7 @@ type JobProgress = {
 
 const PHASE_LABELS: Record<JobPhase, MessageDescriptor> = {
   finalizing: msg`Finalizing...`,
+  retrying: msg`Retrying...`,
 };
 
 /** A progress snapshot from the API, or none, as {@link describeJobProgress} takes it. */
@@ -52,17 +53,20 @@ export function snapshotProgress(
     progressFilesTotal: snapshot?.files_total,
     phase: snapshot?.phase,
     currentFile: snapshot?.current_file,
+    attempt: snapshot?.attempt,
+    maxAttempts: snapshot?.max_attempts,
   };
 }
 
 /**
  * A job's progress for display: the percent for a bar, capped at 100, and
  * short details in the units the job reports. A phase such as finalizing
- * leads. FFmpeg steps show the output position against the length being
- * written and the speed; jobs counting bytes show bytes and speed. The time
- * left, the position in a batch and the name of the file in progress follow;
- * the name comes last so that narrow rows cut it first. No details means the
- * job reports no progress.
+ * leads, followed by the uploader's own attempt once it retries. FFmpeg
+ * steps show the output position against the length being written and the
+ * speed; jobs counting bytes show bytes and speed. The time left, the
+ * position in a batch and the name of the file in progress follow; the name
+ * comes last so that narrow rows cut it first. No details means the job
+ * reports no progress.
  */
 export function describeJobProgress(
   progress: JobProgress,
@@ -70,6 +74,12 @@ export function describeJobProgress(
 ): { percent?: number; details: string[] } {
   const details: string[] = [];
   if (progress.phase) details.push(i18n._(PHASE_LABELS[progress.phase]));
+  const { attempt, maxAttempts: max } = progress;
+  if (attempt != null && max != null) {
+    // Distinct from the job's own "Attempt n of m": an upload retries
+    // within one run of the job.
+    details.push(i18n._(msg`Upload attempt ${attempt} of ${max}`));
+  }
   const bytes = formatUploadBytes(progress);
   if (progress.outTimeMs != null) {
     const done = formatTimecode(Number(progress.outTimeMs));

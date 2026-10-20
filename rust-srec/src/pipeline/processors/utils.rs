@@ -18,6 +18,7 @@ use tracing::{debug, warn};
 
 use super::traits::{JobLogSink, ProcessorContext};
 use crate::pipeline::job_queue::{JobLogEntry, LogLevel};
+use crate::pipeline::progress::progress_file_name;
 use crate::pipeline::{JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter};
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
@@ -30,6 +31,29 @@ pub(super) fn retry_delay(base_ms: u64, attempt: u32) -> std::time::Duration {
             .saturating_mul(2u64.saturating_pow(attempt))
             .min(30_000),
     )
+}
+
+/// Waits out the delay after attempt `failed` (1-based) of at most `attempts`
+/// in a processor's own retry loop. The job log notes `failure` and the wait.
+/// Progress reports the retrying phase for the length of the wait, without
+/// the failed attempt's bytes, speed or time left, then a plain snapshot so
+/// that the next attempt does not read as waiting while it sets up (such as
+/// BaiduPCS-Go waiting for the upload slot or hashing without output).
+pub(super) async fn wait_to_retry(
+    ctx: &ProcessorContext,
+    kind: ProgressKind,
+    failed: u32,
+    attempts: u32,
+    failure: &str,
+) {
+    let delay = retry_delay(1000, failed);
+    ctx.warn(format!("{failure}; retrying in {} s", delay.as_secs()));
+    ctx.progress.set_attempt(failed + 1, attempts);
+    let mut snapshot = JobProgressSnapshot::new(kind);
+    snapshot.phase = Some(JobPhase::Retrying);
+    ctx.progress.report(snapshot);
+    tokio::time::sleep(delay).await;
+    ctx.progress.report(JobProgressSnapshot::new(kind));
 }
 
 pub(super) async fn try_exists(path: &Path) -> crate::Result<bool> {
@@ -769,9 +793,7 @@ fn parse_rclone_stats_line(line: &str) -> Option<JobProgressSnapshot> {
 }
 
 /// One stderr line from rclone under `--use-json-log`. Only the fields this
-/// module consumes are declared; serde drops the rest at parse time —
-/// deliberately including `stats.transferring`, whose per-file entries would
-/// otherwise ride along on every snapshot clone.
+/// module consumes are declared; serde drops the rest at parse time.
 #[derive(Deserialize)]
 struct RcloneJsonLine {
     #[serde(default)]
@@ -797,6 +819,17 @@ struct RcloneJsonStats {
     transfers: Option<u64>,
     #[serde(default, rename = "totalTransfers")]
     total_transfers: Option<u64>,
+    /// Files in flight; rclone leaves the key out when there are none.
+    #[serde(default)]
+    transferring: Vec<RcloneTransfer>,
+}
+
+/// A file in flight, of which only the name is read.
+#[derive(Deserialize)]
+struct RcloneTransfer {
+    /// Path relative to the root of the transfer.
+    #[serde(default)]
+    name: Option<String>,
 }
 
 /// Maps rclone's JSON `level` values onto [`LogLevel`]. Error mapping
@@ -839,6 +872,12 @@ fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
     // job rather than the file in flight.
     snapshot.files_done = stats.transfers;
     snapshot.files_total = stats.total_transfers.filter(|total| *total > 0);
+    // With several transfers at once this is one of the files in flight.
+    snapshot.current_file = stats
+        .transferring
+        .iter()
+        .find_map(|transfer| transfer.name.as_deref())
+        .and_then(progress_file_name);
     // File counters only — see the raw-size note on parse_rclone_stats_line.
     snapshot.raw = serde_json::json!({
         "transfers": stats.transfers,
@@ -1011,7 +1050,11 @@ fn parse_baidupcs_progress_line(line: &str) -> Option<JobProgressSnapshot> {
 /// markers to resolve per-file outcomes, so mislevelled lines (e.g. the
 /// benign `跳过秒传失败, 开始秒传` note) cannot flip an upload status.
 fn determine_baidupcs_log_level(line: &str) -> LogLevel {
-    if line.contains("失败") || line.contains("错误") || line.contains("ERROR") {
+    // The CLI's own per-file retry notice (`[<id>] 上传文件失败, 重试 <n>/<max>`)
+    // is not a failure yet.
+    if line.contains("失败") && line.contains("重试") {
+        LogLevel::Warn
+    } else if line.contains("失败") || line.contains("错误") || line.contains("ERROR") {
         LogLevel::Error
     } else if line.contains("警告") || line.contains("WARNING") {
         LogLevel::Warn
@@ -1471,8 +1514,7 @@ mod tests {
     }
 
     // Captured from rclone v1.72.1 stderr under the flag set built by
-    // RcloneProcessor (`--use-json-log --stats 1s --stats-log-level NOTICE`),
-    // including the `transferring` array the parser must drop.
+    // RcloneProcessor (`--use-json-log --stats 1s --stats-log-level NOTICE`).
     const RCLONE_JSON_STATS_LINE: &str = r#"{"time":"2026-07-26T14:06:28.7986513+02:00","level":"notice","msg":"50.059 MiB / 100 MiB, 50%, 25.090 MiB/s, ETA 1s","stats":{"bytes":229376,"checks":0,"deletedDirs":0,"deletes":0,"elapsedTime":1.999943,"errors":0,"eta":2,"fatalError":false,"listed":1,"renames":0,"retryError":false,"speed":131072,"totalBytes":508811,"totalChecks":0,"totalTransfers":1,"transferTime":1.999943,"transferring":[{"bytes":229376,"eta":2,"group":"global_stats","name":"clip.mp4","percentage":45,"size":508811,"speed":114720.5,"speedAvg":131072}],"transfers":0},"source":"slog/logger.go:256"}"#;
 
     #[test]
@@ -1489,14 +1531,38 @@ mod tests {
         assert_eq!(snapshot.speed_bytes_per_sec, Some(131072.0));
         assert_eq!(snapshot.eta_secs, Some(2.0));
         assert_eq!(
-            (snapshot.files_done, snapshot.files_total),
-            (Some(0), Some(1))
+            (
+                snapshot.files_done,
+                snapshot.files_total,
+                snapshot.current_file.as_deref()
+            ),
+            (Some(0), Some(1), Some("clip.mp4"))
         );
         // Only the file counters survive into raw; `transferring` and the
         // human msg must not.
         assert_eq!(
             snapshot.raw,
             serde_json::json!({"transfers": 0, "totalTransfers": 1})
+        );
+    }
+
+    #[test]
+    fn parse_rclone_line_names_the_file_in_flight_without_its_directories() {
+        let line = r#"{"level":"notice","stats":{"bytes":10,"totalBytes":40,"transferring":[{"name":"day/sub/clip2.mp4","bytes":10}],"transfers":1,"totalTransfers":2}}"#;
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+            panic!("stats JSON line should parse as progress");
+        };
+        assert_eq!(snapshot.current_file.as_deref(), Some("clip2.mp4"));
+
+        // rclone leaves `transferring` out when nothing is in flight, as on
+        // its final line.
+        let line = r#"{"level":"notice","stats":{"bytes":40,"totalBytes":40,"speed":20,"eta":0,"transfers":2,"totalTransfers":2}}"#;
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+            panic!("stats JSON line without transfers in flight should parse as progress");
+        };
+        assert_eq!(
+            (snapshot.percent, snapshot.current_file),
+            (Some(100.0), None)
         );
     }
 
@@ -1693,6 +1759,10 @@ mod tests {
         assert_eq!(
             determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误"),
             LogLevel::Error
+        );
+        assert_eq!(
+            determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误, 重试 1/3"),
+            LogLevel::Warn
         );
         assert_eq!(
             determine_baidupcs_log_level("警告: 遍历错误: xx"),
