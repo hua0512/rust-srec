@@ -20,6 +20,10 @@ pub enum ProcessorType {
     Cpu,
     /// IO-bound processor (upload, file operations).
     Io,
+    /// IO-bound processor whose jobs run one at a time, on one worker shared
+    /// by every such processor. A job waiting for its turn stays pending: it
+    /// holds no IO worker and its timeout has not started.
+    SerialIo,
 }
 
 /// Timestamp source for processor time placeholder expansion.

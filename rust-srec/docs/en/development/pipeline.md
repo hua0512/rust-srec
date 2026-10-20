@@ -100,9 +100,7 @@ their speed is the sum of the files BaiduPCS-Go uploads at once. `phase` is
 absent while a job does plain work towards `percent`. It is `finalizing` while
 FFmpeg rewrites an MP4 after writing its last frame, such as moving the index
 to the front for fast start; `percent` then stops at 99% of the file's share,
-with no speed or `eta_secs`, until FFmpeg reports the end. It is `waiting`,
-with no other progress, while a BaiduPCS upload waits for another job's upload
-to finish, since BaiduPCS-Go uploads run one at a time. FFmpeg, copy,
+with no speed or `eta_secs`, until FFmpeg reports the end. FFmpeg, copy,
 compression, DanmakuFactory, rclone and BaiduPCS jobs name the file in progress
 in `current_file`, without its directories; an rclone job sending several files
 at once names one of them, and a BaiduPCS job the one it started first. `raw`

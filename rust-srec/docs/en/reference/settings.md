@@ -52,7 +52,7 @@ longer than what is tracked.
 | `max_concurrent_downloads` | Max simultaneous recording tasks | `6` |
 | `max_concurrent_uploads` | Max simultaneous upload tasks | `3` |
 | `max_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
-| `max_io_jobs` | Max concurrent I/O-intensive tasks | `8` (0 = Auto) |
+| `max_io_jobs` | Max concurrent I/O-intensive tasks; Baidu Netdisk uploads run separately, one at a time | `8` (0 = Auto) |
 | `download_engine` | Engine used for recording (`ffmpeg`, `mesio`, etc.) | `mesio` |
 | `queue_freshness_threshold` | When a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60 Secs` |
 

@@ -71,9 +71,7 @@ DanmakuFactory 不报告单个文件内的进度，因此其任务只显示已�
 速度之和。任务正常推进
 `percent` 时没有 `phase`。FFmpeg 写完最后一帧后重写 MP4（例如为快速启动把索引
 移到文件开头）时，`phase` 为 `finalizing`，此时该文件的 `percent` 份额停在 99%，
-不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。由于 BaiduPCS-Go 上传同一时间
-只能运行一个，BaiduPCS 上传等待其他任务的上传完成时，`phase` 为 `waiting`，
-不报告其他进度。FFmpeg、复制、压缩、DanmakuFactory、rclone 和 BaiduPCS 任务在
+不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。FFmpeg、复制、压缩、DanmakuFactory、rclone 和 BaiduPCS 任务在
 `current_file` 中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出其中一个，
 BaiduPCS 则给出其中最先开始的一个。`raw` 不包含文件路径。
 

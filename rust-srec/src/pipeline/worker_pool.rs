@@ -207,14 +207,13 @@ fn progress_clause(snapshot: &JobProgressSnapshot) -> String {
             crate::utils::text::format_bytes(speed as u64)
         ));
     }
-    // The phase tells a job that waited, such as for the BaiduPCS-Go upload
-    // slot, from one whose work stalled.
+    // The phase tells a job waiting to retry or finalizing its output from
+    // one whose work stalled.
     if let Some(phase) = snapshot.phase {
         parts.push(
             match phase {
                 JobPhase::Finalizing => "finalizing its output",
                 JobPhase::Retrying => "waiting to retry",
-                JobPhase::Waiting => "waiting for another upload",
             }
             .to_string(),
         );
@@ -3579,12 +3578,12 @@ mod tests {
     #[test]
     fn timeout_progress_clause_names_the_phase() {
         let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::BaiduPcs);
-        snapshot.phase = Some(JobPhase::Waiting);
+        snapshot.phase = Some(JobPhase::Retrying);
         snapshot.updated_at = chrono::Utc::now() - chrono::Duration::minutes(59);
 
         let clause = progress_clause(&snapshot);
         assert!(
-            clause.starts_with(", progress waiting for another upload, last updated 59m "),
+            clause.starts_with(", progress waiting to retry, last updated 59m "),
             "{clause}"
         );
     }

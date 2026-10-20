@@ -27,9 +27,6 @@ pub enum JobPhase {
     /// The processor waits to try its work again after a failed attempt,
     /// such as an rclone or BaiduPCS-Go upload.
     Retrying,
-    /// The upload waits for another job's upload to finish, as BaiduPCS-Go
-    /// uploads run one at a time.
-    Waiting,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]

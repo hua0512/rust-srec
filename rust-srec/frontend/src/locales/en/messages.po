@@ -427,7 +427,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:263
-#: src/lib/job-progress.ts:113
+#: src/lib/job-progress.ts:101
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -3454,7 +3454,7 @@ msgstr "Due at its next use"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:101
+#: src/components/pipeline/jobs/job-progress-panel.tsx:99
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -4447,7 +4447,7 @@ msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend serv
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/lib/job-progress.ts:119
+#: src/lib/job-progress.ts:107
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 
@@ -6738,7 +6738,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:142
+#: src/components/pipeline/jobs/job-progress-panel.tsx:140
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
@@ -7880,7 +7880,7 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:137
+#: src/components/pipeline/jobs/job-progress-panel.tsx:135
 #: src/components/upload-status-indicator.tsx:355
 msgid "Preparing…"
 msgstr "Preparing…"
@@ -8086,7 +8086,7 @@ msgstr "Programmatic & MCP access"
 msgid "Programs"
 msgstr "Programs"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:121
+#: src/components/pipeline/jobs/job-progress-panel.tsx:119
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:284
 msgid "Progress"
 msgstr "Progress"
@@ -8159,7 +8159,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:109
+#: src/components/pipeline/jobs/job-progress-panel.tsx:107
 msgid "Queue"
 msgstr "Queue"
 
@@ -11190,7 +11190,7 @@ msgstr "Upload (Rclone)"
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
-#: src/lib/job-progress.ts:93
+#: src/lib/job-progress.ts:81
 msgid "Upload attempt {attempt} of {max}"
 msgstr "Upload attempt {attempt} of {max}"
 
@@ -11518,10 +11518,6 @@ msgstr "Waiting for a free upload worker."
 #: src/components/streamers/card/lossless-cut-action.tsx:140
 msgid "Waiting for a safe cut..."
 msgstr "Waiting for a safe cut..."
-
-#: src/lib/job-progress.ts:39
-msgid "Waiting for another upload to finish"
-msgstr "Waiting for another upload to finish"
 
 #: src/components/logging/log-viewer.tsx:496
 msgid "Waiting for connection..."

@@ -22,7 +22,8 @@ use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthSta
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, BaiduPcsProcessor, CompressionProcessor,
     CopyMoveProcessor, DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor,
-    MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor, ThumbnailProcessor,
+    MetadataProcessor, Processor, ProcessorType, RcloneProcessor, RemuxProcessor,
+    ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
@@ -234,6 +235,8 @@ pub struct PipelineManager<
     cpu_pool: WorkerPool,
     /// IO worker pool.
     io_pool: WorkerPool,
+    /// One-worker pool for [`ProcessorType::SerialIo`] processors.
+    serial_io_pool: WorkerPool,
     /// Processors.
     processors: Vec<Arc<dyn Processor>>,
     /// Event broadcaster.
@@ -416,6 +419,13 @@ where
         Self {
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
             io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
+            serial_io_pool: WorkerPool::with_config(
+                WorkerType::Io,
+                WorkerPoolConfig {
+                    max_workers: 1,
+                    ..config.io_pool.clone()
+                },
+            ),
             job_queue,
             processors,
             event_tx,

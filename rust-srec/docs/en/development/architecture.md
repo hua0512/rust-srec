@@ -279,7 +279,7 @@ The pipeline manager is the post-processing engine:
 
 - Maintains a DB-backed job queue (with recovery on restart)
 - Executes a DAG pipeline model (fan-in / fan-out)
-- Uses separate worker pools for CPU-bound and IO-bound processors
+- Uses separate worker pools for CPU-bound and IO-bound processors, and a one-worker pool for BaiduPCS uploads, which must run one at a time
 - Coordinates multi-stage triggers:
   - Segment pipelines (single output file)
   - Paired-segment pipelines (video + danmu for the same segment index)

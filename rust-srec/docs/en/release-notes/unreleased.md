@@ -30,7 +30,7 @@
 - Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
 - A job's progress, the top bar and workflow steps now show which file is being processed, and hovering the upload badge on a streamer's card shows the file being uploaded.
 - rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress, the top bar and the streamer's card. rclone uploads also show the file being sent.
-- Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, update it every second, and show when they are waiting for another upload to finish.
+- Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, and update it more often.
 - Compression jobs now show their speed and time remaining, and converting several danmu files shows which file it has reached.
 - Fixed a workflow step losing its scheduled automatic retry when rust-srec stopped just as the step failed; the workflow was then marked failed on the next start.
 - Fixed the confirmation after cancelling a workflow not counting a step that was waiting for its automatic retry.
@@ -39,6 +39,7 @@
 - Fixed rclone's **Max Retries** setting having no effect: uploads always made 3 attempts. The **Rclone Executable** field, which was also ignored, is removed; rust-srec still runs `rclone` from the system path, or the program set in the `RCLONE_PATH` environment variable.
 - Fixed saving a native-resolution thumbnail preset, such as the built-in **Native Resolution Thumbnail**, or a workflow step made from one with **Detach & Edit**, silently making its thumbnails 320 pixels wide. Thumbnail settings now have a **Native resolution** switch. Presets and steps already changed this way are not repaired: turn the switch on and save them again. The **Output Pattern (Optional)** field, which had no effect, is removed.
 - Fixed a Baidu Netdisk upload that failed while sending a file sometimes showing only that the file was on BaiduPCS-Go's list of failed uploads instead of why it failed; BaiduPCS-Go's own retry notices were also missing from the job log.
+- Fixed Baidu Netdisk uploads that wait for another upload to finish using up their timeout and holding up other file jobs such as copies, deletions and rclone uploads. Waiting uploads now stay in the queue, shown as queued uploads in the top bar, and their timeout starts only when they start running. Baidu Netdisk uploads also no longer count toward **Max IO Jobs**.
 
 ## Web interface
 
