@@ -1014,17 +1014,13 @@ async fn a_late_database_failure_rolls_back_a_replace_import() {
 }
 
 #[tokio::test]
-#[ignore = "bug: the channel form's integer min_priority fails WebhookChannelSettings, so a backup holding the channel is rejected"]
-async fn known_bug_backup_holding_a_form_shaped_webhook_channel_imports() {
+async fn a_backup_holding_webhooks_with_an_integer_or_string_min_priority_imports() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    app.post(
-        "/api/notifications/channels",
-        &token,
-        &json!({
-            "name": "Form webhook",
-            "channel_type": "Webhook",
-            "settings": {
+    for (name, settings) in [
+        (
+            "Form webhook",
+            json!({
                 "url": "http://127.0.0.1:9/form",
                 "method": "POST",
                 "min_priority": 2,
@@ -1032,16 +1028,27 @@ async fn known_bug_backup_holding_a_form_shaped_webhook_channel_imports() {
                 "enabled": true,
                 "timeout_secs": 30,
                 "headers": {},
-            },
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
+            }),
+        ),
+        (
+            "Labelled webhook",
+            json!({ "url": "http://127.0.0.1:9/labelled", "min_priority": "high" }),
+        ),
+    ] {
+        app.post(
+            "/api/notifications/channels",
+            &token,
+            &json!({ "name": name, "channel_type": "Webhook", "settings": settings }),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    }
 
     let bundle = export(&app, &token).await;
-    import(&app, &token, &bundle, "merge")
+    let imported = import(&app, &token, &bundle, "merge")
         .await
         .expect_status(StatusCode::OK);
+    assert_eq!(imported.body["stats"]["channels_updated"], 2);
 
     app.shutdown().await;
 }

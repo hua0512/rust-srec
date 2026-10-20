@@ -114,6 +114,10 @@ fn default_gotify_timeout() -> u64 {
 }
 
 /// Webhook channel settings.
+///
+/// Like the other channel types' settings, this leaves out `min_priority` and `locale`: the
+/// registry reads them from the raw settings JSON, where `min_priority` may be the integer the
+/// channel form saves or a string label such as `"high"`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebhookChannelSettings {
     pub url: String,
@@ -121,8 +125,6 @@ pub struct WebhookChannelSettings {
     pub headers: Option<std::collections::HashMap<String, String>>,
     #[serde(default = "default_method")]
     pub method: String,
-    #[serde(default)]
-    pub min_priority: Option<String>,
     #[serde(default)]
     pub enabled: Option<bool>,
     #[serde(default)]

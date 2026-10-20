@@ -370,9 +370,9 @@ async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
     app.shutdown().await;
 }
 
+/// The integer `min_priority` the form saves and a string label both load.
 #[tokio::test]
-#[ignore = "bug: the channel form's integer min_priority fails WebhookChannelSettings (Option<String>), so the webhook never loads"]
-async fn known_bug_form_shaped_webhook_channel_loads_and_can_be_tested() {
+async fn webhook_channels_with_an_integer_or_string_min_priority_load_and_can_be_tested() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "ok").await;
@@ -394,12 +394,30 @@ async fn known_bug_form_shaped_webhook_channel_loads_and_can_be_tested() {
         }),
     )
     .await;
+    let labelled = create_channel(
+        &app,
+        &token,
+        "Labelled webhook",
+        "Webhook",
+        json!({ "url": receiver.url("/labelled"), "min_priority": "low" }),
+    )
+    .await;
 
-    assert!(loaded_channel_ids(&app, &token).await.contains(&id));
+    let loaded = loaded_channel_ids(&app, &token).await;
+    assert!(loaded.contains(&id), "{loaded:?}");
+    assert!(loaded.contains(&labelled), "{loaded:?}");
     test_send(&app, &token, &id)
         .await
         .expect_status(StatusCode::OK);
-    assert_eq!(receiver.received().len(), 1);
+    test_send(&app, &token, &labelled)
+        .await
+        .expect_status(StatusCode::OK);
+    let paths: Vec<String> = receiver
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(paths, ["/form", "/labelled"]);
 
     app.shutdown().await;
 }
