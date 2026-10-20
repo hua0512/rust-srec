@@ -6,6 +6,7 @@ import { DagGraphView } from '@/components/pipeline/dag-graph-view';
 import {
   StepActivity,
   stepProgress,
+  stepTitle,
 } from '@/components/pipeline/step-activity';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -34,7 +35,6 @@ import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { STAT_GRID } from '@/lib/grid';
 import { cn } from '@/lib/utils';
-import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { type DagStep } from '@/api/schemas';
 import { isNotFoundError } from '@/lib/api-error';
@@ -408,10 +408,7 @@ const StepCard = memo(function StepCard({ step }: { step: DagStep }) {
 
             <div>
               <h3 className="text-xl font-bold tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
-                {getJobPresetName(
-                  { id: step.step_id, name: step.step_id },
-                  i18n,
-                ).replace(/_/g, ' ')}
+                {stepTitle(step.step_id)}
               </h3>
               <StepActivity
                 step={step}
