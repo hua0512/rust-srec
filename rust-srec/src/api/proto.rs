@@ -133,7 +133,6 @@ fn job_phase_to_proto(phase: JobPhase) -> download_progress::JobPhase {
     match phase {
         JobPhase::Finalizing => download_progress::JobPhase::Finalizing,
         JobPhase::Retrying => download_progress::JobPhase::Retrying,
-        JobPhase::Waiting => download_progress::JobPhase::Waiting,
     }
 }
 

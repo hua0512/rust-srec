@@ -2522,6 +2522,37 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
     assert!(!manager.job_queue.progress_aggregator_is_running());
 }
 
+#[tokio::test]
+async fn baidupcs_upload_jobs_are_claimed() {
+    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::new());
+    manager.clone().start();
+
+    let job_id = manager
+        .enqueue(Job::new("baidupcs", vec![], vec![], "streamer", "session"))
+        .await
+        .unwrap();
+    let job = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let job = manager.get_job(&job_id).await.unwrap().unwrap();
+            if job.status == JobStatus::Failed {
+                break job;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a worker should claim and run the upload job");
+    assert!(
+        job.error
+            .as_deref()
+            .is_some_and(|error| error.contains("No input files provided")),
+        "unexpected error: {:?}",
+        job.error
+    );
+
+    manager.stop().await;
+}
+
 struct TestPipelinePresetRepository {
     preset: PipelinePreset,
 }

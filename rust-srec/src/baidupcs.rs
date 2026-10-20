@@ -6,8 +6,9 @@
 //! (overridable via [`CONFIG_DIR_ENV`]), which is not safe under concurrent
 //! writers: [`cli_lock`] serializes session mutation (`login`/`logout` take
 //! the write side) against reads (`upload`/`who`/`quota` take the read
-//! side), and [`upload_slot`] additionally serializes `upload` invocations
-//! because each one writes the shared upload database.
+//! side). Each `upload` also writes the shared upload database, so the
+//! pipeline runs uploads one at a time
+//! ([`crate::pipeline::ProcessorType::SerialIo`]).
 
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -18,7 +19,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tokio::sync::{OwnedRwLockWriteGuard, RwLock, Semaphore};
+use tokio::sync::{OwnedRwLockWriteGuard, RwLock};
 use tracing::{debug, warn};
 
 use crate::database::models::ToolCredentialDbModel;
@@ -77,14 +78,6 @@ pub fn resolve_binary_path(explicit: Option<&str>) -> String {
 pub fn cli_lock() -> &'static Arc<RwLock<()>> {
     static LOCK: OnceLock<Arc<RwLock<()>>> = OnceLock::new();
     LOCK.get_or_init(|| Arc::new(RwLock::new(())))
-}
-
-/// Single-permit semaphore serializing `upload` invocations across IO
-/// workers: concurrent BaiduPCS-Go processes would share the upload
-/// database in the config directory, which is a single-writer store.
-pub fn upload_slot() -> &'static Semaphore {
-    static SLOT: OnceLock<Semaphore> = OnceLock::new();
-    SLOT.get_or_init(|| Semaphore::new(1))
 }
 
 /// Build a [`Command`] for the given binary with [`CONFIG_DIR_ENV`] applied

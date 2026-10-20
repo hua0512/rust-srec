@@ -29,7 +29,7 @@ use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
-    JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
 use crate::utils::filename::expand_placeholders_at;
 
@@ -967,7 +967,9 @@ impl Default for BaiduPcsProcessor {
 #[async_trait]
 impl Processor for BaiduPcsProcessor {
     fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Io
+        // BaiduPCS-Go's upload database in its config directory is
+        // single-writer.
+        ProcessorType::SerialIo
     }
 
     fn job_types(&self) -> Vec<&'static str> {
@@ -1115,25 +1117,8 @@ impl Processor for BaiduPcsProcessor {
             }
             attempts_used = attempt + 1;
 
-            // `upload_slot` serializes BaiduPCS-Go upload processes (its
-            // config-dir databases are single-writer); the read side of
-            // `cli_lock` keeps `login`/`logout` from rewriting the session
-            // mid-upload. The wait counts towards the job's timeout.
-            let upload_slot = crate::baidupcs::upload_slot();
-            let _upload_permit = match upload_slot.try_acquire() {
-                Ok(permit) => permit,
-                Err(_) => {
-                    ctx.info("Waiting for another BaiduPCS-Go upload to finish");
-                    let mut waiting = JobProgressSnapshot::new(ProgressKind::BaiduPcs);
-                    waiting.phase = Some(JobPhase::Waiting);
-                    ctx.progress.report(waiting);
-                    upload_slot.acquire().await.map_err(|_| {
-                        crate::Error::Other("BaiduPCS-Go upload slot closed".to_string())
-                    })?
-                }
-            };
-            // Clears the waiting phase, and shows the job's counts while
-            // BaiduPCS-Go hashes a file, which it does without output.
+            // Shows the job's counts while BaiduPCS-Go hashes a file, which
+            // it does without output.
             ctx.progress.report(
                 UploadCounts::of_job(&job_inputs, &file_sizes, &completed, &skipped, &permanent)
                     .snapshot(),
@@ -1157,10 +1142,12 @@ impl Processor for BaiduPcsProcessor {
                     .await;
             }
 
+            // The read side of `cli_lock` keeps `login`/`logout` from
+            // rewriting the session mid-upload.
             let _config_guard = crate::baidupcs::cli_lock().read().await;
 
             // One invocation per chunk of paths that fits the command line;
-            // the permit and guard above span every chunk of this attempt.
+            // the guard above spans every chunk of this attempt.
             let chunks = chunk_by_argument_budget(&pending, self.upload_args_budget);
             if chunks.len() > 1 {
                 ctx.info(format!(
@@ -1828,62 +1815,6 @@ mod tests {
                 .iter()
                 .all(|item| item.status == UploadItemStatus::Completed)
         );
-    }
-
-    #[tokio::test]
-    async fn upload_waits_for_the_upload_slot_with_the_waiting_phase() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let file = temp_dir.path().join("a.flv");
-        tokio::fs::write(&file, b"video").await.unwrap();
-        let file_str = file.to_string_lossy().into_owned();
-
-        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
-            exit_ok: true,
-            lines: vec![
-                queue_line(1, &file_str),
-                success_line(1, "/rec/a.flv"),
-                finished_line(),
-            ],
-        }]));
-        let processor = MockBaiduPcsCommandRunner::processor(runner);
-        let input = ProcessorInput {
-            inputs: vec![file_str],
-            config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
-            ..Default::default()
-        };
-        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
-        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(64);
-        let ctx = ProcessorContext::new(
-            "waiting",
-            crate::pipeline::ProgressReporter::new("waiting", progress_tx),
-            super::super::traits::JobLogSink::new(log_tx, Arc::default()),
-            tokio_util::sync::CancellationToken::new(),
-        );
-
-        let other_upload = crate::baidupcs::upload_slot().acquire().await.unwrap();
-        let upload = processor.process(&input, &ctx);
-        tokio::pin!(upload);
-        let waiting = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::select! {
-                _ = &mut upload => panic!("the upload must wait for the slot"),
-                update = progress_rx.recv() => update.unwrap().snapshot,
-            }
-        })
-        .await
-        .expect("the waiting upload reports its phase");
-        assert_eq!(waiting.phase, Some(JobPhase::Waiting));
-        assert_eq!(
-            log_rx.try_recv().unwrap().message,
-            "Waiting for another BaiduPCS-Go upload to finish"
-        );
-
-        drop(other_upload);
-        let output = tokio::time::timeout(std::time::Duration::from_secs(5), upload)
-            .await
-            .expect("the upload runs once the slot is free")
-            .unwrap();
-        assert_eq!(progress_rx.try_recv().unwrap().snapshot.phase, None);
-        assert_eq!(output.uploads[0].status, UploadItemStatus::Completed);
     }
 
     #[tokio::test]

@@ -50,7 +50,7 @@
 | `max_concurrent_downloads` | 最大同时录制任务数 | `6` |
 | `max_concurrent_uploads` | 最大同时上传任务数 | `3` |
 | `max_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
-| `max_io_jobs` | 最大并发 I/O 密集型任务数 | `8` (0 = Auto / 自动) |
+| `max_io_jobs` | 最大并发 I/O 密集型任务数；百度网盘上传单独逐个运行，不计入 | `8` (0 = Auto / 自动) |
 | `download_engine` | 录制引擎 (`ffmpeg`, `mesio` 等) | `mesio` |
 | `queue_freshness_threshold` | 当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60 秒` |
 

@@ -132,9 +132,8 @@ curl http://localhost:12555/api/streamers \
 没有可用进度，这不表示完成了零百分比。请使用
 `GET /api/pipeline/jobs/{id}/progress` 获取最近的处理器专用进度快照；
 没有快照时，该接口返回 404。快照中可选的 `phase` 在 FFmpeg 写完最后一帧后重写
-输出时为 `finalizing`，在上传等待重试时为 `retrying`，在 BaiduPCS 上传等待其他
-上传完成时为 `waiting`（遇到未知的值时按正常处理对待），`current_file` 给出
-正在处理的文件名，不含目录。上传首次尝试失败后，
+输出时为 `finalizing`，在上传等待重试时为 `retrying`（遇到未知的值时按正常处理
+对待），`current_file` 给出正在处理的文件名，不含目录。上传首次尝试失败后，
 `attempt` 和 `max_attempts` 给出它在本次任务运行内的尝试次数，与任务的重试次数
 无关。
 

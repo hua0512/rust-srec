@@ -24,29 +24,33 @@ where
 
         info!("Starting Pipeline Manager");
 
-        // Get CPU and IO processors
-        let cpu_processors: Vec<Arc<dyn Processor>> = self
-            .processors
-            .iter()
-            .filter(|p| p.processor_type() == crate::pipeline::ProcessorType::Cpu)
-            .cloned()
-            .collect();
+        // Every processor type must map to a started pool: jobs of a type no
+        // pool claims would stay pending forever.
+        let mut cpu_processors: Vec<Arc<dyn Processor>> = Vec::new();
+        let mut io_processors: Vec<Arc<dyn Processor>> = Vec::new();
+        let mut serial_io_processors: Vec<Arc<dyn Processor>> = Vec::new();
+        for processor in &self.processors {
+            match processor.processor_type() {
+                ProcessorType::Cpu => cpu_processors.push(processor.clone()),
+                ProcessorType::Io => io_processors.push(processor.clone()),
+                ProcessorType::SerialIo => serial_io_processors.push(processor.clone()),
+            }
+        }
 
         info!(
             "Starting CPU pool with processors: {:?}",
             cpu_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
-
-        let io_processors: Vec<Arc<dyn Processor>> = self
-            .processors
-            .iter()
-            .filter(|p| p.processor_type() == crate::pipeline::ProcessorType::Io)
-            .cloned()
-            .collect();
-
         info!(
             "Starting IO pool with processors: {:?}",
             io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
+        );
+        info!(
+            "Starting one-worker IO pool with processors: {:?}",
+            serial_io_processors
+                .iter()
+                .map(|p| p.name())
+                .collect::<Vec<_>>()
         );
 
         // Use a bounded channel for DAG completion notifications to avoid unbounded memory growth
@@ -150,6 +154,13 @@ where
             self.job_queue.clone(),
             io_processors,
             self.dag_scheduler.clone(),
+            Some(dag_notify_tx.clone()),
+            Some(self.event_tx.clone()),
+        );
+        self.serial_io_pool.start_with_dag_scheduler(
+            self.job_queue.clone(),
+            serial_io_processors,
+            self.dag_scheduler.clone(),
             Some(dag_notify_tx),
             Some(self.event_tx.clone()),
         );
@@ -184,9 +195,13 @@ where
             std::mem::take(&mut runtime.tasks)
         };
 
-        // Stop worker pools
-        self.cpu_pool.stop().await;
-        self.io_pool.stop().await;
+        // Stopped together so that every pool stops claiming jobs at once and
+        // their running jobs share one shutdown drain grace.
+        tokio::join!(
+            self.cpu_pool.stop(),
+            self.io_pool.stop(),
+            self.serial_io_pool.stop()
+        );
 
         // Workers are the only producers of DAG completion and progress
         // updates. Once they have joined, the progress aggregator can stop and
@@ -224,7 +239,12 @@ where
             std::mem::take(&mut runtime.tasks)
         };
 
-        let mut aborted = self.cpu_pool.abort(deadline).await + self.io_pool.abort(deadline).await;
+        let (cpu_aborted, io_aborted, serial_io_aborted) = tokio::join!(
+            self.cpu_pool.abort(deadline),
+            self.io_pool.abort(deadline),
+            self.serial_io_pool.abort(deadline)
+        );
+        let mut aborted = cpu_aborted + io_aborted + serial_io_aborted;
 
         aborted += runtime_tasks.len();
         runtime_tasks.abort_all();
