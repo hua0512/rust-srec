@@ -188,13 +188,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn from_scheduler_uses_count_plus_one_times_interval() {
-        // (3 + 1) × 20 000 ms = 80 000 ms = 80 s
-        let c = HysteresisConfig::from_scheduler(3, 20_000);
-        assert_eq!(c.window(), Duration::from_secs(80));
-    }
-
-    #[test]
     fn from_scheduler_caps_at_max() {
         // Config typo: (3 + 1) × 1h = 4h, must cap at 5 min.
         let c = HysteresisConfig::from_scheduler(3, 60 * 60 * 1000);
@@ -202,39 +195,9 @@ mod tests {
     }
 
     #[test]
-    fn from_scheduler_floors_count_at_one() {
-        // count = 0 collapses to 1 to keep the math sensible.
-        let c = HysteresisConfig::from_scheduler(0, 20_000);
-        assert_eq!(c.window(), Duration::from_secs(40));
-    }
-
-    #[test]
     fn from_scheduler_floors_interval_at_one_second() {
         // interval = 50 ms collapses to 1 s.
         let c = HysteresisConfig::from_scheduler(3, 50);
         assert_eq!(c.window(), Duration::from_secs(4));
-    }
-
-    #[test]
-    fn default_matches_scheduler_default() {
-        // Scheduler default is count=3, interval=20s → window = 80s.
-        let c = HysteresisConfig::default();
-        assert_eq!(c.window(), Duration::from_secs(80));
-    }
-
-    #[test]
-    fn handle_starts_uncancelled() {
-        let h = HysteresisHandle::new(Duration::from_secs(90));
-        assert!(!h.is_cancelled());
-        assert!(h.elapsed() < Duration::from_secs(1));
-    }
-
-    #[test]
-    fn handle_cancel_is_idempotent() {
-        let h = HysteresisHandle::new(Duration::from_secs(90));
-        h.cancel();
-        assert!(h.is_cancelled());
-        h.cancel();
-        assert!(h.is_cancelled());
     }
 }

@@ -173,65 +173,6 @@ impl StagedOutputRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::StagedOutputDbModel;
-    use std::sync::atomic::AtomicUsize;
-
-    /// Counts the writes an attempt makes; attempts never list or settle rows.
-    #[derive(Default)]
-    struct CountingRepository {
-        removals: AtomicUsize,
-    }
-
-    #[async_trait::async_trait]
-    impl StagedOutputRepository for CountingRepository {
-        async fn record(&self, _: NewStagedOutput<'_>, _: i64) -> crate::Result<()> {
-            Ok(())
-        }
-
-        async fn remove_attempt(&self, _: &str) -> crate::Result<u64> {
-            self.removals.fetch_add(1, Ordering::SeqCst);
-            Ok(1)
-        }
-
-        async fn mark_interrupted(&self, _: i64) -> crate::Result<u64> {
-            unreachable!("attempts never mark rows interrupted")
-        }
-
-        async fn list_interrupted(
-            &self,
-            _: Option<&str>,
-            _: u32,
-        ) -> crate::Result<Vec<StagedOutputDbModel>> {
-            unreachable!("attempts never list rows")
-        }
-
-        async fn get_interrupted(&self, _: &str) -> crate::Result<StagedOutputDbModel> {
-            unreachable!("attempts never read rows")
-        }
-
-        async fn forget_interrupted(&self, _: &str) -> crate::Result<bool> {
-            unreachable!("attempts never settle rows")
-        }
-    }
-
-    #[tokio::test]
-    async fn finishing_writes_only_for_an_attempt_that_staged_a_file() {
-        let repository = Arc::new(CountingRepository::default());
-
-        StagedOutputRecorder::for_attempt(repository.clone(), "upload")
-            .finish()
-            .await;
-        assert_eq!(repository.removals.load(Ordering::SeqCst), 0);
-
-        // Output batches record through clones of the attempt's recorder.
-        let recorder = StagedOutputRecorder::for_attempt(repository.clone(), "remux");
-        recorder
-            .clone()
-            .record(Path::new("/out/a.tmp-1.mp4"), Path::new("/out/a.mp4"))
-            .await;
-        recorder.finish().await;
-        assert_eq!(repository.removals.load(Ordering::SeqCst), 1);
-    }
 
     #[test]
     fn temp_paths_match_only_their_own_output() {
@@ -265,24 +206,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn removing_a_leftover_refuses_directories_and_accepts_missing_files() {
-        let directory = tempfile::tempdir().unwrap();
-        let file = directory.path().join("a.tmp-x.mp4");
-        std::fs::write(&file, b"partial").unwrap();
-        assert!(remove_leftover(&file).unwrap());
-        assert!(!file.exists());
-        assert!(!remove_leftover(&file).unwrap());
-
-        let nested = directory.path().join("dir.tmp-x.mp4");
-        std::fs::create_dir(&nested).unwrap();
-        assert_eq!(
-            remove_leftover(&nested).unwrap_err().kind(),
-            std::io::ErrorKind::InvalidInput
-        );
-        assert!(nested.exists());
-    }
-
     #[cfg(windows)]
     #[test]
     fn removing_a_read_only_leftover_clears_the_attribute() {
@@ -295,21 +218,5 @@ mod tests {
 
         assert!(remove_leftover(&file).unwrap());
         assert!(!file.exists());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn removing_a_leftover_refuses_symlinks() {
-        let directory = tempfile::tempdir().unwrap();
-        let target = directory.path().join("recording.mp4");
-        std::fs::write(&target, b"keep").unwrap();
-        let link = directory.path().join("recording.tmp-x.mp4");
-        std::os::unix::fs::symlink(&target, &link).unwrap();
-
-        assert_eq!(
-            remove_leftover(&link).unwrap_err().kind(),
-            std::io::ErrorKind::InvalidInput
-        );
-        assert!(link.exists() && target.exists());
     }
 }

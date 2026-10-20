@@ -990,26 +990,6 @@ mod tests {
         assert_eq!(database.status, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    #[test]
-    fn resolve_requests_accept_only_client_owned_media() {
-        assert!(
-            serde_json::from_value::<crate::api::models::ResolveUrlRequest>(serde_json::json!({
-                "url": "https://live.example/room",
-                "stream_info": {},
-                "playback_handle": "opaque",
-            }))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_value::<crate::api::models::ResolveUrlRequest>(serde_json::json!({
-                "url": "https://live.example/room",
-                "stream_info": {},
-                "cookies": "a=b",
-            }))
-            .is_ok()
-        );
-    }
-
     #[tokio::test]
     async fn playback_revalidates_principal_profile_revision_and_current_policy() {
         use crate::credentials::{

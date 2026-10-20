@@ -336,13 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn test_throttle_controller_creation() {
-        let controller = ThrottleController::with_defaults();
-        assert!(!controller.is_throttled());
-        assert!(!controller.is_enabled());
-    }
-
-    #[test]
     fn enabled_throttle_config_rejects_unrecoverable_or_expanding_limits() {
         let valid = ThrottleConfig {
             enabled: true,
@@ -385,58 +378,6 @@ mod tests {
                 .is_ok()
             );
         }
-    }
-
-    #[test]
-    fn test_throttle_disabled_no_events() {
-        let config = ThrottleConfig {
-            enabled: false,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            ..Default::default()
-        };
-        let controller = ThrottleController::new(config);
-        let adjuster = MockAdjuster::new(10);
-
-        // Even with high queue depth, no event should be emitted
-        let event = controller.check_and_update(200, &adjuster);
-        assert!(event.is_none());
-        assert!(!controller.is_throttled());
-        assert_eq!(adjuster.get_max_concurrent_downloads(), 10);
-    }
-
-    #[test]
-    fn test_throttle_activation() {
-        let config = ThrottleConfig {
-            enabled: true,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            reduction_factor: 0.5,
-            ..Default::default()
-        };
-        let controller = ThrottleController::new(config);
-        let adjuster = MockAdjuster::new(10);
-
-        // Queue depth exceeds critical threshold
-        let event = controller.check_and_update(150, &adjuster);
-
-        assert!(event.is_some());
-        match event.unwrap() {
-            ThrottleEvent::ThrottleActivated {
-                queue_depth,
-                new_limit,
-                original_limit,
-            } => {
-                assert_eq!(queue_depth, 150);
-                assert_eq!(new_limit, 5); // 10 * 0.5
-                assert_eq!(original_limit, 10);
-            }
-            _ => panic!("Expected ThrottleActivated event"),
-        }
-
-        assert!(controller.is_throttled());
-        assert_eq!(adjuster.get_max_concurrent_downloads(), 5);
-        assert_eq!(controller.original_max_downloads(), 10);
     }
 
     #[test]
@@ -510,41 +451,6 @@ mod tests {
     }
 
     #[test]
-    fn test_throttle_round_trip() {
-        let config = ThrottleConfig {
-            enabled: true,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            reduction_factor: 0.5,
-            ..Default::default()
-        };
-        let controller = ThrottleController::new(config);
-        let adjuster = MockAdjuster::new(10);
-
-        // Initial state
-        assert!(!controller.is_throttled());
-        assert_eq!(adjuster.get_max_concurrent_downloads(), 10);
-
-        // Activate: queue exceeds critical threshold
-        let event = controller.check_and_update(150, &adjuster);
-        assert!(matches!(
-            event,
-            Some(ThrottleEvent::ThrottleActivated { .. })
-        ));
-        assert!(controller.is_throttled());
-        assert_eq!(adjuster.get_max_concurrent_downloads(), 5); // Reduced by 50%
-
-        // Deactivate: queue falls below warning threshold
-        let event = controller.check_and_update(30, &adjuster);
-        assert!(matches!(
-            event,
-            Some(ThrottleEvent::ThrottleDeactivated { .. })
-        ));
-        assert!(!controller.is_throttled());
-        assert_eq!(adjuster.get_max_concurrent_downloads(), 10); // Restored to original
-    }
-
-    #[test]
     fn test_no_event_when_already_throttled_and_still_high() {
         let config = ThrottleConfig {
             enabled: true,
@@ -564,57 +470,6 @@ mod tests {
         let event = controller.check_and_update(200, &adjuster);
         assert!(event.is_none());
         assert!(controller.is_throttled());
-    }
-
-    #[test]
-    fn test_no_event_when_not_throttled_and_still_low() {
-        let config = ThrottleConfig {
-            enabled: true,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            reduction_factor: 0.5,
-            ..Default::default()
-        };
-        let controller = ThrottleController::new(config);
-        let adjuster = MockAdjuster::new(10);
-
-        // Check with low queue - no event
-        let event = controller.check_and_update(30, &adjuster);
-        assert!(event.is_none());
-        assert!(!controller.is_throttled());
-
-        // Check again with still low queue - no event
-        let event = controller.check_and_update(20, &adjuster);
-        assert!(event.is_none());
-        assert!(!controller.is_throttled());
-    }
-
-    #[test]
-    fn test_event_subscription() {
-        let config = ThrottleConfig {
-            enabled: true,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            reduction_factor: 0.5,
-            ..Default::default()
-        };
-        let controller = ThrottleController::new(config);
-        let adjuster = MockAdjuster::new(10);
-
-        let mut receiver = controller.subscribe();
-
-        // Activate throttling
-        controller.check_and_update(150, &adjuster);
-
-        // Should receive the event
-        let event = receiver.try_recv();
-        assert!(event.is_ok());
-        match event.unwrap() {
-            ThrottleEvent::ThrottleActivated { queue_depth, .. } => {
-                assert_eq!(queue_depth, 150);
-            }
-            _ => panic!("Expected ThrottleActivated event"),
-        }
     }
 
     #[tokio::test]

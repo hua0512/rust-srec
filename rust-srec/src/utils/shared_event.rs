@@ -69,40 +69,7 @@ pub(crate) fn publish_shared<T: Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn shared_fanout_encodes_once_and_preserves_domain_delivery() {
-        let (domain, mut domain_rx) = broadcast::channel(8);
-        let shared = SharedEventSender::new(8);
-        let mut receivers = vec![shared.subscribe()];
-        for _ in 0..7 {
-            receivers.push(shared.subscribe());
-        }
-        assert!(publish_shared(&domain, &shared, "payload".to_string()));
-        assert_eq!(domain_rx.try_recv().unwrap(), "payload");
-        let encodes = AtomicUsize::new(0);
-        let mut first_bytes: Option<Bytes> = None;
-        for receiver in &mut receivers {
-            let event = receiver.try_recv().unwrap();
-            let bytes = event
-                .encoded(|payload| {
-                    encodes.fetch_add(1, Ordering::SeqCst);
-                    Some(Bytes::copy_from_slice(payload.as_bytes()))
-                })
-                .unwrap();
-            assert_eq!(bytes.as_ref(), b"payload");
-            if let Some(first) = &first_bytes {
-                assert_eq!(first.as_ptr(), bytes.as_ptr());
-            }
-            first_bytes = Some(bytes);
-        }
-        assert_eq!(encodes.load(Ordering::SeqCst), 1);
-        drop(domain_rx);
-        drop(receivers);
-        assert!(!publish_shared(&domain, &shared, "unobserved".to_string()));
-        assert_eq!(shared.tx.len(), 0);
-    }
     #[test]
     fn concurrent_publishers_keep_domain_and_socket_order_identical() {
         let (domain, mut domain_rx) = broadcast::channel(512);

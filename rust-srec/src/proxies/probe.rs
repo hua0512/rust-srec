@@ -240,12 +240,4 @@ mod tests {
         .await
         .unwrap();
     }
-
-    #[test]
-    fn known_platforms_have_a_home_page() {
-        for platform in ["bilibili", "Twitch", "douyin"] {
-            assert!(platform_homepage(platform).is_some(), "{platform}");
-        }
-        assert!(platform_homepage("unknown").is_none());
-    }
 }

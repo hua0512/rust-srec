@@ -508,38 +508,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn incomplete_batch_drop_removes_only_staged_outputs() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("input.mp4");
-        let output = dir.path().join("output.mp4");
-        std::fs::write(&input, b"source").unwrap();
-        std::fs::write(&output, b"existing").unwrap();
-        let mut batch = new_batch(&[input.to_string_lossy().into_owned()]);
-        let temp = staged(&mut batch, &output, true, b"partial").await;
-        drop(batch);
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            loop {
-                match tokio::fs::try_exists(&temp).await {
-                    Ok(false) => break,
-                    Ok(true) => {}
-                    // A Windows file pending deletion can reject metadata opens.
-                    // Keep waiting for confirmed absence within the same bound.
-                    Err(error)
-                        if cfg!(windows)
-                            && error.kind() == std::io::ErrorKind::PermissionDenied => {}
-                    Err(error) => panic!("failed to inspect staged output during cleanup: {error}"),
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        assert_eq!(std::fs::read(input).unwrap(), b"source");
-        assert_eq!(std::fs::read(output).unwrap(), b"existing");
-        assert_no_temps(dir.path());
-    }
-
-    #[tokio::test]
     async fn failed_publication_rolls_back_new_and_overwritten_outputs() {
         for replace in [false, true] {
             let dir = tempfile::tempdir().unwrap();

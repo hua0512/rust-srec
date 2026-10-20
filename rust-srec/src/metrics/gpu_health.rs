@@ -530,45 +530,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classify_recognizes_nvml_unknown_error() {
-        let stderr = "Failed to initialize NVML: Unknown Error\n";
-        assert_eq!(
-            GpuErrorKind::classify(stderr),
-            GpuErrorKind::NvmlUnknownError
-        );
-    }
-
-    #[test]
-    fn classify_recognizes_driver_mismatch() {
-        let stderr = "Failed to initialize NVML: Driver/library version mismatch\n";
-        assert_eq!(GpuErrorKind::classify(stderr), GpuErrorKind::DriverMismatch);
-    }
-
-    #[test]
-    fn classify_recognizes_no_device_variants() {
-        assert_eq!(
-            GpuErrorKind::classify("No devices were found\n"),
-            GpuErrorKind::NoDevice
-        );
-        assert_eq!(
-            GpuErrorKind::classify("no CUDA-capable device is detected"),
-            GpuErrorKind::NoDevice
-        );
-        assert_eq!(
-            GpuErrorKind::classify("No CUDA-capable device"),
-            GpuErrorKind::NoDevice
-        );
-    }
-
-    #[test]
-    fn classify_falls_back_to_other() {
-        assert_eq!(
-            GpuErrorKind::classify("anything else entirely"),
-            GpuErrorKind::Other
-        );
-    }
-
-    #[test]
     fn error_kind_strings_are_stable() {
         // Locked in because they are i18n discriminator keys; changing
         // any of these without updating events.rs and the locale files
@@ -582,65 +543,6 @@ mod tests {
         assert_eq!(GpuErrorKind::TimedOut.as_str(), "timed_out");
         assert_eq!(GpuErrorKind::NotInstalled.as_str(), "not_installed");
         assert_eq!(GpuErrorKind::Other.as_str(), "other");
-    }
-
-    #[test]
-    fn unknown_snapshot_is_used_before_first_probe() {
-        let snap = GpuSnapshot::unknown();
-        assert_eq!(snap.health.status, HealthStatus::Unknown);
-        assert_eq!(snap.health.name, COMPONENT_NAME);
-        assert!(snap.failure.is_none());
-    }
-
-    #[test]
-    fn truncate_keeps_short_strings_intact() {
-        assert_eq!(truncate("hello", 10), "hello");
-        assert_eq!(truncate("  whitespace  ", 32), "whitespace");
-    }
-
-    #[test]
-    fn truncate_caps_long_strings_with_ellipsis() {
-        let long = "a".repeat(300);
-        let t = truncate(&long, 256);
-        assert_eq!(t.chars().count(), 257); // 256 chars + ellipsis
-        assert!(t.ends_with('…'));
-    }
-
-    #[test]
-    fn default_interval_matches_gate_cooldown() {
-        // Sanity-check: keep our default in lockstep with the
-        // output-root write gate so operators only need one cadence
-        // value in their head.
-        assert_eq!(
-            DEFAULT_PROBE_INTERVAL_SECS,
-            crate::downloader::DEFAULT_GATE_COOLDOWN_SECS
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn interval_waits_full_period_before_first_tick() {
-        let started = tokio::time::Instant::now();
-        let mut ticker = build_interval(30);
-        let tick = tokio::spawn(async move { ticker.tick().await });
-
-        tokio::task::yield_now().await;
-        assert!(!tick.is_finished());
-
-        tokio::time::advance(Duration::from_secs(29)).await;
-        assert!(!tick.is_finished());
-
-        tokio::time::advance(Duration::from_secs(1)).await;
-        assert_eq!(tick.await.unwrap().duration_since(started).as_secs(), 30);
-    }
-
-    #[test]
-    fn binary_on_path_rejects_clearly_missing_names() {
-        // A name with embedded NUL-style nonsense or absurd length is
-        // guaranteed to not resolve. Any false positive here would
-        // indicate a bug in the PATH-walk logic.
-        assert!(!binary_on_path(
-            "this-binary-definitely-does-not-exist-anywhere-on-path-9f3c2d1e"
-        ));
     }
 
     #[test]

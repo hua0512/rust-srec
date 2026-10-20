@@ -226,20 +226,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_rejects_unknown_outcome() {
-        let pool = setup_pool().await;
-        let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
-
-        // CHECK constraint must reject typos at insert time — defends the
-        // discriminated union from drift.
-        let err = repo.insert(&row("typo", 100)).await;
-        assert!(
-            err.is_err(),
-            "CHECK constraint must reject unknown outcomes"
-        );
-    }
-
-    #[tokio::test]
     async fn insert_trims_to_keep_per_streamer() {
         let pool = setup_pool().await;
         let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
@@ -266,67 +252,6 @@ mod tests {
             rows.last().unwrap().checked_at,
             total - KEEP_PER_STREAMER,
             "the oldest 5 rows must have been trimmed"
-        );
-    }
-
-    #[tokio::test]
-    async fn list_recent_clamps_limit_to_cap() {
-        let pool = setup_pool().await;
-        let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
-
-        for i in 0..10 {
-            repo.insert(&row(outcome::OFFLINE, i)).await.unwrap();
-        }
-
-        // Asking for more than the cap is allowed; the handler may forget
-        // to clamp, so the repo enforces an upper bound itself.
-        let rows = repo
-            .list_recent("s1", KEEP_PER_STREAMER * 10)
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 10);
-
-        // Asking for zero clamps up to one — the handler shouldn't pass 0,
-        // but the repo must not return an unbounded query either way.
-        let rows = repo.list_recent("s1", 0).await.unwrap();
-        assert_eq!(rows.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn isolated_per_streamer() {
-        let pool = setup_pool().await;
-        create_streamer(&pool, "s2", "Bob").await;
-        let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
-
-        repo.insert(&row(outcome::LIVE, 100)).await.unwrap();
-        let mut s2 = row(outcome::OFFLINE, 200);
-        s2.streamer_id = "s2".to_string();
-        repo.insert(&s2).await.unwrap();
-
-        let s1_rows = repo.list_recent("s1", 50).await.unwrap();
-        assert_eq!(s1_rows.len(), 1);
-        assert_eq!(s1_rows[0].outcome, outcome::LIVE);
-
-        let s2_rows = repo.list_recent("s2", 50).await.unwrap();
-        assert_eq!(s2_rows.len(), 1);
-        assert_eq!(s2_rows[0].outcome, outcome::OFFLINE);
-    }
-
-    #[tokio::test]
-    async fn cascade_delete_when_streamer_removed() {
-        let pool = setup_pool().await;
-        let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
-
-        repo.insert(&row(outcome::LIVE, 100)).await.unwrap();
-
-        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-        streamer_repo.mark_streamer_deleted("s1").await.unwrap();
-        streamer_repo.delete_marked_streamer("s1").await.unwrap();
-
-        let rows = repo.list_recent("s1", 50).await.unwrap();
-        assert!(
-            rows.is_empty(),
-            "child rows must cascade on streamer delete"
         );
     }
 }

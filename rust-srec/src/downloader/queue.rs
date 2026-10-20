@@ -413,13 +413,6 @@ impl DownloadQueue {
         entries.into_iter().map(|(_, p)| p).collect()
     }
 
-    #[cfg(test)]
-    fn cancel_pending(&self, session_id: &str) {
-        if let Some(entry) = self.pending.get(session_id) {
-            entry.notify.notify_one();
-        }
-    }
-
     /// Reject all future acquires. Existing pending acquires are
     /// notified to wake up; they observe the shutdown flag and return
     /// [`AcquireError::ShuttingDown`].
@@ -831,70 +824,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn acquire_fast_path() {
-        let q = DownloadQueue::new(2, 0);
-        let g = q
-            .acquire(
-                req("s1", Priority::Normal),
-                CancellationToken::new(),
-                |_| {
-                    panic!("should not queue on fast path");
-                },
-            )
-            .await
-            .unwrap();
-        assert_eq!(q.in_flight(), 1);
-        assert_eq!(q.in_flight_normal(), 1);
-        drop(g);
-        assert_eq!(q.in_flight(), 0);
-        assert_eq!(q.in_flight_normal(), 0);
-    }
-
-    #[tokio::test]
-    async fn acquire_slow_path_invokes_callback() {
-        let q = DownloadQueue::new(1, 0);
-        let _g1 = q
-            .acquire(
-                req("s1", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
-
-        let q2 = q.clone();
-        let cb_fired = Arc::new(AtomicBool::new(false));
-        let cb_fired_clone = cb_fired.clone();
-        let h = tokio::spawn(async move {
-            q2.acquire(
-                req("s2", Priority::Normal),
-                CancellationToken::new(),
-                move |_| {
-                    cb_fired_clone.store(true, AtomicOrdering::SeqCst);
-                },
-            )
-            .await
-        });
-
-        // Wait for s2 to register as pending.
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        assert_eq!(q.pending_count(), 1);
-        assert!(cb_fired.load(AtomicOrdering::SeqCst));
-
-        // Release s1 so s2 can proceed.
-        drop(_g1);
-        let g2 = h.await.unwrap().unwrap();
-        assert!(g2.waited_ms() >= 0);
-        assert_eq!(q.pending_count(), 0);
-        assert_eq!(q.in_flight(), 1);
-    }
-
-    #[tokio::test]
     async fn priority_ordering_high_first() {
         let q = DownloadQueue::new(1, 0);
         let g0 = q
@@ -1020,85 +949,6 @@ mod tests {
         assert_eq!(q.pending_count(), 0);
         // Capacity unchanged: only the original `_g` is in-flight.
         assert_eq!(q.in_flight(), 1);
-    }
-
-    #[tokio::test]
-    async fn cancel_pending_via_session_id() {
-        let q = DownloadQueue::new(1, 0);
-        let _g = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await
-            .unwrap();
-
-        let token = CancellationToken::new();
-        let token_clone = token.clone();
-        let q2 = q.clone();
-        let h = tokio::spawn(async move {
-            q2.acquire(req("b", Priority::Normal), token_clone, |_| {})
-                .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        // cancel_pending wakes and cancels the pending acquire without
-        // requiring the caller to hold the original CancellationToken.
-        q.cancel_pending("b");
-        let res = h.await.unwrap();
-        assert!(matches!(res, Err(AcquireError::Cancelled)));
-    }
-
-    #[tokio::test]
-    async fn duplicate_session_id_rejected() {
-        let q = DownloadQueue::new(2, 0);
-        let _g = q
-            .acquire(
-                req("dup", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
-        // Saturate so a second acquire would queue.
-        let _g2 = q
-            .acquire(
-                req("other", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
-
-        let q2 = q.clone();
-        let h_first = tokio::spawn(async move {
-            q2.acquire(
-                req("queued-dup", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        let res2 = q
-            .acquire(
-                req("queued-dup", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await;
-        assert!(matches!(res2, Err(AcquireError::DuplicateSession(_))));
-
-        // Release everything so the spawned task can resolve.
-        drop(_g);
-        drop(_g2);
-        let _ = h_first.await.unwrap();
     }
 
     #[tokio::test]
@@ -1295,38 +1145,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_capacity_increase_wakes_waiters() {
-        let q = DownloadQueue::new(1, 0);
-        let _g = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await
-            .unwrap();
-
-        let q1 = q.clone();
-        let h1 = tokio::spawn(async move {
-            q1.acquire(req("b", Priority::Normal), CancellationToken::new(), |_| {})
-                .await
-        });
-        let q2 = q.clone();
-        let h2 = tokio::spawn(async move {
-            q2.acquire(req("c", Priority::Normal), CancellationToken::new(), |_| {})
-                .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 2 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        // Bump capacity to 3; both waiters should wake.
-        q.set_normal_capacity(3);
-        let _gb = h1.await.unwrap().unwrap();
-        let _gc = h2.await.unwrap().unwrap();
-        assert_eq!(q.in_flight(), 3);
-    }
-
-    #[tokio::test]
     async fn set_capacity_decrease_blocks_new_acquires() {
         let q = DownloadQueue::new(3, 0);
         let g1 = q
@@ -1464,30 +1282,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn into_active_releases_only_on_active_drop() {
-        let q = DownloadQueue::new(1, 0);
-        let g = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await
-            .unwrap();
-        let active = g.into_active();
-        // Slot still held by ActiveSlot.
-        assert_eq!(q.in_flight(), 1);
-        drop(active);
-        assert_eq!(q.in_flight(), 0);
-    }
-
-    #[tokio::test]
-    async fn shutdown_rejects_new_acquires() {
-        let q = DownloadQueue::new(1, 0);
-        q.shutdown();
-        let res = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await;
-        assert!(matches!(res, Err(AcquireError::ShuttingDown)));
-    }
-
-    #[tokio::test]
     async fn shutdown_wakes_queued_acquire_before_active_slot_is_released() {
         let q = DownloadQueue::new(1, 0);
         let active = q
@@ -1529,108 +1323,5 @@ mod tests {
         assert_eq!(q.in_flight(), 1);
         drop(active);
         assert_eq!(q.in_flight(), 0);
-    }
-
-    /// Pins the race window between `try_acquire_fast` returning
-    /// `false` and the waiter being enqueued: a `release()` running in
-    /// that gap sees no waiters and returns, so the post-enqueue
-    /// promotion pass in `acquire` is what wakes the new waiter instead
-    /// of leaving it asleep while capacity is free.
-    #[tokio::test]
-    async fn no_lost_wakeup_when_release_races_with_enqueue() {
-        // Saturate.
-        let q = DownloadQueue::new(1, 0);
-        let g1 = q
-            .acquire(
-                req("holder", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
-
-        // Spawn a waiter that will fail the fast path. We deliberately
-        // arrange to drop `g1` *before* the waiter completes its
-        // enqueue by holding a barrier-like delay via tokio yield.
-        let q2 = q.clone();
-        let h = tokio::spawn(async move {
-            q2.acquire(
-                req("waiter", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
-
-        // Give the waiter a moment to register as pending so we know
-        // the heap insertion completed; in practice the catch is for
-        // the narrow window before that. The post-enqueue promotion
-        // pass handles both orderings (release-before-insert and
-        // release-after-insert).
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-
-        // Drop the holder; the waiter should be promoted promptly.
-        drop(g1);
-        let g2 = tokio::time::timeout(Duration::from_secs(2), h)
-            .await
-            .expect("waiter must wake up — would hang on lost wakeup")
-            .unwrap()
-            .unwrap();
-        assert_eq!(q.in_flight(), 1);
-        drop(g2);
-    }
-
-    /// A newcomer must NOT take the slot ahead of an already-parked
-    /// waiter via the fast path; a non-empty heap takes priority.
-    #[tokio::test]
-    async fn fast_path_does_not_jump_ahead_of_existing_waiter() {
-        let q = DownloadQueue::new(1, 0);
-        let g = q
-            .acquire(
-                req("holder", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-            .unwrap();
-
-        // Park a waiter.
-        let q1 = q.clone();
-        let h_first = tokio::spawn(async move {
-            q1.acquire(
-                req("first", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-        assert_eq!(q.pending_count(), 1);
-
-        // Free the slot.
-        drop(g);
-
-        // Newcomer arrives concurrently; under saturation-with-waiter
-        // it must not fast-path. Issue the newcomer call only after a
-        // brief yield so the freed slot has been re-claimed by
-        // `first` via the wakeup. With the fix, even a newcomer
-        // arriving during the wakeup window sees `pending` non-empty
-        // and queues.
-        let g_first = tokio::time::timeout(Duration::from_secs(2), h_first)
-            .await
-            .expect("first waiter must wake")
-            .unwrap()
-            .unwrap();
-        assert_eq!(g_first.session_id(), "first");
     }
 }

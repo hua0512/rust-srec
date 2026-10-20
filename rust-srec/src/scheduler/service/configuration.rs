@@ -117,7 +117,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 for metadata in self.streamer_manager.get_by_platform(&platform_id) {
                     self.queue_streamer_configuration(&metadata.id, false);
                 }
-                self.retain_platform_configuration(&platform_id);
             }
             ConfigUpdateEvent::EngineUpdated { .. } => self.queue_reconciliation(),
         }
@@ -144,16 +143,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         for id in ids {
             self.queue_streamer_configuration(&id, false);
         }
-        let platforms: Vec<_> = self
-            .supervisor
-            .registry()
-            .platform_handles_map()
-            .keys()
-            .cloned()
-            .collect();
-        for id in platforms {
-            self.retain_platform_configuration(&id);
-        }
     }
 
     pub(super) fn invalidate_configuration(&mut self, id: &str) {
@@ -168,22 +157,17 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     fn queue_streamer_configuration(&mut self, id: &str, restart: bool) {
-        let Some(metadata) = self
+        let active = self
             .streamer_manager
             .get_streamer(id)
-            .filter(StreamerMetadata::is_active)
-        else {
+            .is_some_and(|metadata| metadata.is_active());
+        if !active {
             self.invalidate_configuration(id);
             self.feedback.retire(id);
             self.remove_streamer(id);
             return;
-        };
-        self.feedback.activate(id);
-        if self.is_batch_capable_platform(&metadata.platform_config_id)
-            && let Err(error) = self.spawn_platform_actor(&metadata.platform_config_id)
-        {
-            warn!(%error, "Failed to ensure batch platform actor");
         }
+        self.feedback.activate(id);
         let revision = self
             .configuration
             .revisions
@@ -213,8 +197,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 self.queue_streamer_configuration(&id, true);
             }
         }
-        // Platform restarts retain their existing supervisor policy.
-        self.supervisor.process_pending_restarts_at(Instant::now());
         self.feedback
             .update_registry_targets(self.supervisor.registry(), None);
         self.pump_configuration();
@@ -297,7 +279,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 offline_check_interval_ms: self.config.offline_check_interval_ms,
                 offline_check_count: self.config.offline_check_count,
                 priority: metadata.priority,
-                batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
             };
             let resolver = self.config_resolver.clone();
             let cancel = self.cancellation_token.clone();
@@ -435,14 +416,5 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             self.finish_configuration(result);
         }
         self.feedback.drain_configurations().await;
-    }
-
-    fn retain_platform_configuration(&mut self, id: &str) {
-        let config = self.create_platform_config(id);
-        self.supervisor
-            .update_platform_restart_config(id, config.clone());
-        if let Some(handle) = self.supervisor.registry().get_platform(id) {
-            self.feedback.configure_platform(id, handle.clone(), config);
-        }
     }
 }

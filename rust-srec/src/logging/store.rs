@@ -144,8 +144,6 @@ pub(crate) struct LogStore {
     fail_removal: std::sync::atomic::AtomicBool,
     #[cfg(test)]
     reconcile_started: std::sync::atomic::AtomicBool,
-    #[cfg(test)]
-    inventory_reads: AtomicU64,
 }
 
 impl LogStore {
@@ -159,8 +157,6 @@ impl LogStore {
             fail_removal: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             reconcile_started: std::sync::atomic::AtomicBool::new(false),
-            #[cfg(test)]
-            inventory_reads: AtomicU64::new(0),
         }
     }
 
@@ -202,8 +198,6 @@ impl LogStore {
     fn inventory(&self) -> io::Result<Vec<LogFile>> {
         let mut files = Vec::new();
         let entries = std::fs::read_dir(&self.directory)?;
-        #[cfg(test)]
-        self.inventory_reads.fetch_add(1, Ordering::Relaxed);
         for entry in entries {
             let entry = entry?;
             if !entry.file_type()?.is_file() {

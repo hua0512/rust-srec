@@ -8,7 +8,7 @@
 //! The `MesioEngine` uses the `mesio` crate's factory pattern for protocol
 //! detection and stream downloading. It supports HLS and FLV formats with:
 //!
-//! - Protocol auto-detection via `MesioDownloaderFactory::detect_protocol()`
+//! - Protocol detection from the URL via `MesioDownloader::detect_protocol()`
 //! - Stream consumption through async `Stream<Item=Result<HlsData/FlvData>>`
 //! - File writing via `HlsWriter` and `FlvWriter` (wrapping `WriterTask`)
 //! - Optional pipeline processing through `HlsPipeline` and `FlvPipeline`

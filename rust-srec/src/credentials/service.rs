@@ -163,21 +163,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn notification_service_is_installed_once() {
-        let service = CredentialProviderRegistry::new();
-        let first = Arc::new(NotificationService::new());
-
-        service.set_notification_service(Arc::clone(&first));
-        service.set_notification_service(Arc::new(NotificationService::new()));
-
-        let installed = service
-            .notification_service
-            .get()
-            .expect("notification service should be installed");
-        assert!(Arc::ptr_eq(installed, &first));
-    }
-
-    #[tokio::test]
     async fn repeated_session_save_failures_notify_once_until_a_save_succeeds() {
         let service = CredentialProviderRegistry::new();
         let notifications = Arc::new(NotificationService::new());

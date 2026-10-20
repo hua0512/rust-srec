@@ -60,10 +60,6 @@ impl StreamerActor {
                 self.handle_config_update(config).await?;
                 Ok(false)
             }
-            StreamerMessage::BatchResult(result) => {
-                self.handle_batch_result(*result).await?;
-                Ok(false)
-            }
             StreamerMessage::DownloadStarted {
                 download_id,
                 session_id,

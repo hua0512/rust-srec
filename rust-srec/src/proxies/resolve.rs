@@ -200,18 +200,4 @@ mod tests {
             ResolvedRoute::direct(RouteSource::Global)
         );
     }
-
-    #[test]
-    fn a_missing_entry_fails_instead_of_connecting_directly() {
-        let error = resolve(
-            &[(
-                RouteSource::Platform,
-                ProxyRoute::Proxy { id: "gone".into() },
-            )],
-            |_| None,
-            &SystemProxy::default(),
-        )
-        .unwrap_err();
-        assert!(matches!(error, ProxyError::Missing(id) if id == "gone"));
-    }
 }

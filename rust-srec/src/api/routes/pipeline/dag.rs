@@ -1054,16 +1054,6 @@ mod tests {
         assert!(validate_batch_ids(&oversized, "DAG").is_err());
     }
 
-    #[test]
-    fn test_validate_batch_ids_names_the_entity() {
-        let error = validate_batch_ids(&[], "output").expect_err("empty batch must be rejected");
-        assert!(
-            error.message.contains("output"),
-            "message should name the entity, got: {}",
-            error.message
-        );
-    }
-
     /// Pins the `#[serde(tag = "type", rename_all = "snake_case")]` wire format the
     /// frontend's discriminated union mirrors.
     #[test]
@@ -1109,38 +1099,5 @@ mod tests {
 
         assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(error.code, "VALIDATION_ERROR");
-    }
-
-    /// A missing scheduler fails the whole request once rather than producing one
-    /// identical per-item failure per ID.
-    #[tokio::test]
-    async fn test_batch_dags_requires_dag_scheduler() {
-        let state = build_test_state();
-        let error = batch_dags(
-            State(state),
-            Json(BatchDagRequest {
-                ids: vec!["dag-1".to_string(), "dag-2".to_string()],
-                action: BatchDagAction::Retry,
-            }),
-        )
-        .await
-        .expect_err("missing scheduler must fail the whole request");
-
-        assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
-    }
-
-    #[test]
-    fn test_batch_dag_item_result_omits_empty_error_fields() {
-        let json = serde_json::to_value(BatchDagItemResult {
-            id: "dag-1".to_string(),
-            success: true,
-            code: None,
-            error: None,
-        })
-        .unwrap();
-
-        assert_eq!(json["success"], serde_json::Value::Bool(true));
-        assert!(json.get("code").is_none());
-        assert!(json.get("error").is_none());
     }
 }

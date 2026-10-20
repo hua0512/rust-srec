@@ -357,18 +357,6 @@ fn staging_directory_is_private_and_history_is_never_a_file() {
     }
 }
 
-#[tokio::test]
-async fn unconfirmed_cleanup_latch_keeps_the_account_locked() {
-    let lock = Arc::new(tokio::sync::RwLock::new(()));
-    let lease = Arc::new(lock.clone().write_owned().await);
-    let slot = OnceLock::new();
-    retain_cleanup_lease(&slot, lease.clone());
-    drop(lease);
-    assert!(lock.try_write().is_err());
-    drop(slot);
-    assert!(lock.try_write().is_ok());
-}
-
 #[test]
 fn success_markers_must_be_real_protocol_lines() {
     assert!(has_success_line("百度帐号登录成功: user\n"));

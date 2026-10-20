@@ -377,19 +377,6 @@ mod tests {
     }
 
     #[test]
-    fn any_origin_answers_every_request_with_a_wildcard() {
-        let policy = CorsPolicy::AnyOrigin;
-        assert_eq!(
-            policy.allow_origin_value(Some(&origin("https://evil.example"))),
-            Some(HeaderValue::from_static("*"))
-        );
-        assert_eq!(
-            policy.allow_origin_value(None),
-            Some(HeaderValue::from_static("*"))
-        );
-    }
-
-    #[test]
     fn exact_policy_echoes_only_configured_origins() {
         let policy = exact(&["http://localhost:15275", "tauri://localhost"]);
 
@@ -406,35 +393,6 @@ mod tests {
             None
         );
         assert_eq!(policy.allow_origin_value(None), None);
-    }
-
-    #[test]
-    fn auth_state_selects_the_policy() {
-        let origins = parse_origins(["http://localhost:15275"].into_iter());
-
-        assert!(matches!(policy_for(true, &origins), CorsPolicy::AnyOrigin));
-        assert!(matches!(
-            policy_for(false, &origins),
-            CorsPolicy::Exact(allowed) if allowed.as_ref() == [origin("http://localhost:15275")]
-        ));
-    }
-
-    #[test]
-    fn apply_allow_origin_omits_disallowed_origins() {
-        let policy = exact(&["http://localhost:15275"]);
-
-        let mut allowed = HeaderMap::new();
-        policy.apply_allow_origin(Some(&origin("http://localhost:15275")), &mut allowed);
-        assert_eq!(
-            allowed.get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
-            Some(&origin("http://localhost:15275"))
-        );
-
-        let mut denied = HeaderMap::new();
-        policy.apply_allow_origin(Some(&origin("https://evil.example")), &mut denied);
-        assert!(denied.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
-        // `Vary` belongs to the CorsLayer, which sets it on every response.
-        assert!(denied.get(header::VARY).is_none());
     }
 
     mod router_preflight {

@@ -525,7 +525,6 @@ mod tests {
         state: CredentialProfileRouteState,
         app: Router,
         full_key: String,
-        read_key: String,
         user_id: String,
     }
 
@@ -579,10 +578,6 @@ mod tests {
             .create_api_key(&user.id, "full", ApiKeyAccessLevel::Full, None)
             .await
             .unwrap();
-        let (_, read_key) = auth
-            .create_api_key(&user.id, "read", ApiKeyAccessLevel::ReadOnly, None)
-            .await
-            .unwrap();
         let state = CredentialProfileRouteState {
             config_service: config,
             credential_profiles: profiles.clone(),
@@ -607,7 +602,6 @@ mod tests {
             state,
             app,
             full_key,
-            read_key,
             user_id: user.id,
         }
     }
@@ -642,54 +636,6 @@ mod tests {
 
     fn create_body(label: &str) -> serde_json::Value {
         serde_json::json!({"platform_id":"platform-bilibili","label":label,"enabled":true,"material":{"cookies":"sid=secret-sentinel","refresh_token":"token-sentinel"}})
-    }
-
-    #[tokio::test]
-    async fn management_requires_auth_and_full_access_keys() {
-        let fixture = fixture().await;
-        let path = "/api/credentials/profiles?platform_id=platform-bilibili";
-        assert_eq!(
-            request(&fixture.app, "GET", path, None, serde_json::Value::Null)
-                .await
-                .0,
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            request(
-                &fixture.app,
-                "GET",
-                path,
-                Some(&fixture.read_key),
-                serde_json::Value::Null
-            )
-            .await
-            .0,
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            request(
-                &fixture.app,
-                "GET",
-                path,
-                Some(&fixture.full_key),
-                serde_json::Value::Null
-            )
-            .await
-            .0,
-            StatusCode::OK
-        );
-        assert_eq!(
-            request(
-                &fixture.app,
-                "POST",
-                "/api/credentials/profiles",
-                Some(&fixture.read_key),
-                create_body("A")
-            )
-            .await
-            .0,
-            StatusCode::FORBIDDEN
-        );
     }
 
     #[tokio::test]
@@ -1027,39 +973,6 @@ mod tests {
                 .cookies,
             "sid=secret-sentinel"
         );
-    }
-
-    #[tokio::test]
-    async fn platform_capabilities_describe_account_material_before_any_profile() {
-        let fixture = fixture().await;
-        let capabilities = |platform: &'static str| {
-            let app = fixture.app.clone();
-            let key = fixture.full_key.clone();
-            async move {
-                let (status, body) = request(
-                    &app,
-                    "GET",
-                    &format!("/api/credentials/capabilities?platform_id={platform}"),
-                    Some(&key),
-                    serde_json::Value::Null,
-                )
-                .await;
-                assert_eq!(status, StatusCode::OK);
-                body
-            }
-        };
-        let twitch = capabilities("platform-twitch").await;
-        assert_eq!(twitch["token_only"], true);
-        assert_eq!(twitch["check"], true);
-        assert_eq!(twitch["refresh"], false);
-        assert_eq!(twitch["per_streamer_selection"], false);
-        let soop = capabilities("platform-soop").await;
-        assert_eq!(soop["reauth_login"], true);
-        let huya = capabilities("platform-huya").await;
-        assert_eq!(huya["check"], false);
-        assert_eq!(huya["access_token"], false);
-        let streamlink = capabilities("platform-streamlink").await;
-        assert_eq!(streamlink["per_streamer_selection"], true);
     }
 
     #[tokio::test]

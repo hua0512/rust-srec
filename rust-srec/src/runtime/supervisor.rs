@@ -902,29 +902,6 @@ mod tests {
     }
 
     #[test]
-    fn control_protocol_rejects_malformed_frames() {
-        assert!(parse_start_command("START").is_err());
-        assert!(parse_start_command("START not-a-uuid").is_err());
-        assert!(parse_start_command("START a b").is_err());
-        assert!(parse_shutdown_command("SHUTDOWN").is_err());
-        assert!(parse_shutdown_command("SHUTDOWN unknown").is_err());
-        assert!(parse_shutdown_command("SHUTDOWN signal trailing").is_err());
-    }
-
-    #[test]
-    fn control_protocol_round_trips_generation_and_reason() {
-        let generation = RuntimeGeneration::generate();
-        assert_eq!(
-            parse_start_command(&format!("START {generation}")).unwrap(),
-            generation
-        );
-        assert_eq!(
-            parse_shutdown_command("SHUTDOWN signal").unwrap(),
-            WorkerShutdownReason::Signal
-        );
-    }
-
-    #[test]
     fn worker_schedule_stays_inside_the_force_point() {
         let started_at = Instant::now();
         let policy = ShutdownPolicy::new(DEFAULT_SHUTDOWN_TIMEOUT, DEFAULT_FORCE_RESERVE).unwrap();

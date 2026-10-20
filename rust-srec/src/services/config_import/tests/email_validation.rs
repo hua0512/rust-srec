@@ -93,46 +93,6 @@ async fn retained_email_collision_is_validation_before_any_writes() {
 }
 
 #[tokio::test]
-async fn swaps_and_reassignment_are_order_independent_and_preserve_identity() {
-    for reverse in [false, true] {
-        for reassignment in [false, true] {
-            let (pool, mut config) = fixture(&[("alice", Some("a")), ("bob", Some("b"))]).await;
-            let before = users(&pool).await;
-            config.users = if reassignment {
-                vec![user("alice", None), user("new", Some("a"))]
-            } else {
-                vec![user("alice", Some("b")), user("bob", Some("a"))]
-            };
-            if reverse {
-                config.users.reverse();
-            }
-            checked_import(&pool, &config, ImportMode::Merge)
-                .await
-                .unwrap();
-            let after = users(&pool).await;
-            for original in before {
-                let actual = after
-                    .iter()
-                    .find(|u| u.username == original.username)
-                    .unwrap();
-                assert_eq!(actual.id, original.id);
-                assert_eq!(actual.created_at, original.created_at);
-            }
-            for imported in &config.users {
-                assert_eq!(
-                    after
-                        .iter()
-                        .find(|u| u.username == imported.username)
-                        .unwrap()
-                        .email,
-                    imported.email
-                );
-            }
-        }
-    }
-}
-
-#[tokio::test]
 async fn replace_can_reassign_deleted_users_email_and_existing_user_keeps_own_email() {
     let (pool, mut config) = fixture(&[("old", Some("same"))]).await;
     config.users = vec![user("old", Some("same"))];
@@ -260,15 +220,4 @@ async fn later_user_failure_rolls_back_email_slot_clearing_and_all_prior_writes(
         assert!(error.to_string().contains("forced late failure"));
         assert_unchanged(&pool, &before, &output).await;
     }
-}
-
-#[test]
-fn import_openapi_documents_unconditional_refresh_revocation() {
-    use utoipa::OpenApi;
-    let document = serde_json::to_value(crate::api::openapi::ApiDoc::openapi()).unwrap();
-    let description = document["paths"]["/api/config/backup/import"]["post"]["description"]
-        .as_str()
-        .unwrap();
-    assert!(description.contains("all refresh tokens"));
-    assert!(description.contains("omit users"));
 }

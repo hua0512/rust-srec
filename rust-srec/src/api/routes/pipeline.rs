@@ -96,8 +96,6 @@ use interrupted::{
 };
 
 use dag::topological_sort;
-#[cfg(test)]
-use jobs::{api_status_to_job_status, job_status_to_api_status};
 
 use axum::{
     Router,
@@ -886,32 +884,13 @@ pub struct DeleteOutputParams {
 mod tests {
     use axum::extract::{Path, Query, State};
 
-    use crate::api::models::{
-        JobFilterParams, JobStatus as ApiJobStatus, PaginationParams, PipelineStatsResponse,
-    };
-    use crate::database::models::DagStep;
+    use crate::api::models::{JobFilterParams, JobStatus as ApiJobStatus, PaginationParams};
     use crate::database::models::JobStatus;
-    use crate::database::models::job::PipelineStep;
     use crate::pipeline::Job;
 
     use super::*;
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
-
-    #[test]
-    fn test_pipeline_preset_response_timestamp_serialization() {
-        let mut preset = crate::database::models::PipelinePreset::new(
-            "test",
-            DagPipelineDefinition::new("test", vec![]),
-        );
-        let at = chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap();
-        preset.created_at = at;
-        preset.updated_at = at;
-        let response = PipelinePresetResponse::from(preset);
-        let json = serde_json::to_value(response).unwrap();
-        assert_eq!(json["created_at"], "2026-01-02T03:04:05.123Z");
-        assert_eq!(json["updated_at"], "2026-01-02T03:04:05.123Z");
-    }
 
     // `pub(super)` so `dag::tests` can build a route state without a second copy of
     // this constructor. `PipelineManager::new()` leaves `dag_scheduler` unset, which is
@@ -942,42 +921,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cancel_job_cancels_processing_job() {
-        let (state, job_id) = enqueue_job_with_status(JobStatus::Processing).await;
-
-        let response = cancel_job(State(state.clone()), Path(job_id.clone()))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.0["message"],
-            serde_json::Value::String(format!("Job '{}' cancelled successfully", job_id))
-        );
-
-        let manager = state.pipeline_manager.as_ref();
-        let job = manager.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, JobStatus::Cancelled);
-    }
-
-    #[tokio::test]
-    async fn test_delete_job_deletes_completed_job() {
-        let (state, job_id) = enqueue_job_with_status(JobStatus::Completed).await;
-
-        let response = delete_job(State(state.clone()), Path(job_id.clone()))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.0["message"],
-            serde_json::Value::String(format!("Job '{}' deleted successfully", job_id))
-        );
-
-        let manager = state.pipeline_manager.as_ref();
-        let job = manager.get_job(&job_id).await.unwrap();
-        assert!(job.is_none());
-    }
-
-    #[tokio::test]
     async fn test_delete_job_rejects_processing_job() {
         let (state, job_id) = enqueue_job_with_status(JobStatus::Processing).await;
 
@@ -993,24 +936,6 @@ mod tests {
         let result = cancel_job(State(state), Path(job_id));
 
         assert!(result.await.is_err());
-    }
-
-    #[test]
-    fn test_retry_dag_accepts_cancelled_status() {
-        let status = "CANCELLED";
-        let retryable = status == "FAILED" || status == "CANCELLED";
-        assert!(retryable);
-    }
-
-    #[tokio::test]
-    async fn test_get_job_returns_cancelled_status() {
-        let (state, job_id) = enqueue_job_with_status(JobStatus::Pending).await;
-        let manager = state.pipeline_manager.as_ref();
-        manager.cancel_job(&job_id).await.unwrap();
-
-        let response = get_job(State(state), Path(job_id)).await.unwrap();
-
-        assert_eq!(response.0.status, ApiJobStatus::Cancelled);
     }
 
     // The job detail UI offers "retry workflow" instead of "retry job" based on this
@@ -1109,35 +1034,6 @@ mod tests {
     }
 
     #[test]
-    fn test_job_filter_params_deserialize_cancelled_status() {
-        let filters: JobFilterParams = serde_json::from_str(r#"{"status":"CANCELLED"}"#).unwrap();
-        assert_eq!(filters.status, Some(ApiJobStatus::Cancelled));
-    }
-
-    #[test]
-    fn test_pipeline_stats_response_serialization() {
-        let response = PipelineStatsResponse {
-            pending_count: 10,
-            processing_count: 2,
-            completed_count: 100,
-            failed_count: 5,
-            cancelled_count: 1,
-            avg_processing_time_secs: Some(45.5),
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("pending_count"));
-        assert!(json.contains("cancelled_count"));
-        assert!(json.contains("45.5"));
-    }
-
-    #[tokio::test]
-    async fn stalled_operations_are_empty_while_no_worker_is_held() {
-        let response = list_stalled_operations(State(build_test_state())).await;
-        assert!(response.0.items.is_empty());
-    }
-
-    #[test]
     fn stalled_operation_response_serialization() {
         let response = crate::api::models::StalledOperationListResponse {
             items: vec![crate::api::models::StalledOperationResponse {
@@ -1170,152 +1066,5 @@ mod tests {
                 }]
             })
         );
-    }
-
-    #[test]
-    fn test_create_pipeline_request_deserialize() {
-        let json = r#"{
-            "session_id": "session-123",
-            "streamer_id": "streamer-456",
-            "input_paths": ["/recordings/stream.flv"],
-            "dag": {
-                "name": "test_pipeline",
-                "steps": [
-                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
-                ]
-            }
-        }"#;
-
-        let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.session_id, "session-123");
-        assert_eq!(request.streamer_id, "streamer-456");
-        assert_eq!(
-            request.input_paths,
-            vec!["/recordings/stream.flv".to_string()]
-        );
-        assert_eq!(request.dag.name, "test_pipeline");
-        assert_eq!(request.dag.steps.len(), 1);
-    }
-
-    #[test]
-    fn test_create_pipeline_request_with_dag() {
-        let json = r#"{
-            "session_id": "session-123",
-            "streamer_id": "streamer-456",
-            "input_paths": ["/recordings/stream.flv"],
-            "dag": {
-                "name": "my_pipeline",
-                "steps": [
-                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
-                    {"id": "thumbnail", "step": {"type": "preset", "name": "thumbnail"}, "depends_on": ["remux"]},
-                    {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux", "thumbnail"]}
-                ]
-            }
-        }"#;
-
-        let request: CreatePipelineRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.dag.name, "my_pipeline");
-        assert_eq!(request.dag.steps.len(), 3);
-        assert_eq!(request.dag.steps[0].id, "remux");
-        assert!(request.dag.steps[0].depends_on.is_empty());
-        assert_eq!(request.dag.steps[1].id, "thumbnail");
-        assert_eq!(request.dag.steps[1].depends_on, vec!["remux"]);
-        assert_eq!(request.dag.steps[2].id, "upload");
-        assert_eq!(request.dag.steps[2].depends_on, vec!["remux", "thumbnail"]);
-    }
-
-    #[test]
-    fn test_api_status_to_job_status() {
-        assert_eq!(
-            api_status_to_job_status(ApiJobStatus::Pending),
-            JobStatus::Pending
-        );
-        assert_eq!(
-            api_status_to_job_status(ApiJobStatus::Processing),
-            JobStatus::Processing
-        );
-        assert_eq!(
-            api_status_to_job_status(ApiJobStatus::Completed),
-            JobStatus::Completed
-        );
-        assert_eq!(
-            api_status_to_job_status(ApiJobStatus::Failed),
-            JobStatus::Failed
-        );
-        assert_eq!(
-            api_status_to_job_status(ApiJobStatus::Cancelled),
-            JobStatus::Cancelled
-        );
-    }
-
-    #[test]
-    fn test_job_status_to_api_status() {
-        assert_eq!(
-            job_status_to_api_status(JobStatus::Pending),
-            ApiJobStatus::Pending
-        );
-        assert_eq!(
-            job_status_to_api_status(JobStatus::Processing),
-            ApiJobStatus::Processing
-        );
-        assert_eq!(
-            job_status_to_api_status(JobStatus::Completed),
-            ApiJobStatus::Completed
-        );
-        assert_eq!(
-            job_status_to_api_status(JobStatus::Failed),
-            ApiJobStatus::Failed
-        );
-        assert_eq!(
-            job_status_to_api_status(JobStatus::Cancelled),
-            ApiJobStatus::Cancelled
-        );
-    }
-
-    #[test]
-    fn test_topological_sort() {
-        let dag = DagPipelineDefinition::new(
-            "test",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies(
-                    "B",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("notify"),
-                    vec!["B".to_string()],
-                ),
-            ],
-        );
-
-        let order = topological_sort(&dag);
-
-        // A must come before B, B must come before C
-        let pos_a = order.iter().position(|x| x == "A").unwrap();
-        let pos_b = order.iter().position(|x| x == "B").unwrap();
-        let pos_c = order.iter().position(|x| x == "C").unwrap();
-
-        assert!(pos_a < pos_b);
-        assert!(pos_b < pos_c);
-    }
-
-    #[test]
-    fn test_validate_dag_request_deserialize() {
-        let json = r#"{
-            "dag": {
-                "name": "test_pipeline",
-                "steps": [
-                    {"id": "remux", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
-                    {"id": "upload", "step": {"type": "preset", "name": "upload"}, "depends_on": ["remux"]}
-                ]
-            }
-        }"#;
-
-        let request: ValidateDagRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.dag.name, "test_pipeline");
-        assert_eq!(request.dag.steps.len(), 2);
     }
 }

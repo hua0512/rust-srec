@@ -636,23 +636,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_who_rejects_unrelated_output() {
-        assert_eq!(parse_who("未登录"), None);
-        assert_eq!(parse_who(""), None);
-    }
-
-    #[test]
     fn parse_quota_extracts_sizes() {
         let output =
             "用户名: some_user, 总空间: 2.000000TB, 已用空间: 512.000000GB, 比率: 25.000000%\n";
         let quota = parse_quota(output).expect("quota line parses");
         assert_eq!(quota.total_bytes, 2 * 1024u64.pow(4));
         assert_eq!(quota.used_bytes, 512 * 1024u64.pow(3));
-    }
-
-    #[test]
-    fn parse_quota_rejects_error_output() {
-        assert_eq!(parse_quota("获取当前用户空间配额信息, 发生错误"), None);
     }
 
     #[test]
@@ -673,19 +662,6 @@ mod tests {
             scrub(text, &["SECRETVALUE", "", "  "]),
             "login -bduss=*** failed; *** rejected"
         );
-    }
-
-    #[test]
-    fn resolve_binary_path_prefers_explicit_value() {
-        assert_eq!(resolve_binary_path(Some(" /opt/bpcs ")), "/opt/bpcs");
-        assert_eq!(resolve_binary_path(Some("   ")), resolve_binary_path(None));
-    }
-
-    #[test]
-    fn config_dir_key_normalizes_blank_to_default() {
-        assert_eq!(config_dir_key(None), "");
-        assert_eq!(config_dir_key(Some("   ")), "");
-        assert_eq!(config_dir_key(Some(" /cfg ")), "/cfg");
     }
 
     #[test]
@@ -802,19 +778,6 @@ mod tests {
 
         assert!(!result);
         assert_eq!(repo.gets(), 0, "cooldown short-circuits before the store");
-    }
-
-    #[tokio::test]
-    async fn relogin_without_stored_material_records_no_failure() {
-        let repo = MockCredentialRepo::new(None);
-        let authenticator = StoredLoginAuthenticator::new(repo.clone());
-
-        let result = authenticator.relogin("BaiduPCS-Go", None).await.unwrap();
-
-        assert!(!result);
-        assert_eq!(repo.gets(), 1);
-        // Nothing was attempted, so nothing entered cooldown.
-        assert!(authenticator.cooldown.should_attempt(""));
     }
 
     #[tokio::test]

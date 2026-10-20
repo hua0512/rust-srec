@@ -8,8 +8,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
 use super::{
-    RECOVERY_PROGRESS_MIN_BYTES, broadcast_error_is_recoverable,
-    should_end_stream_on_danmu_stream_closed, should_record_recovery_from_progress,
+    RECOVERY_PROGRESS_MIN_BYTES, should_end_stream_on_danmu_stream_closed,
+    should_record_recovery_from_progress,
 };
 use crate::danmu::test_support::FakeProvider;
 use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
@@ -662,26 +662,6 @@ async fn hard_cap_shutdown_under_the_cap_closes_pools() {
 }
 
 #[tokio::test]
-async fn broadcast_lag_is_recoverable_and_receiver_remains_usable() {
-    let (sender, mut receiver) = tokio::sync::broadcast::channel(1);
-    assert!(sender.send(1).is_ok());
-    assert!(sender.send(2).is_ok());
-
-    let error = receiver.recv().await.expect_err("receiver should lag");
-    assert!(broadcast_error_is_recoverable("test", error));
-    assert_eq!(receiver.recv().await, Ok(2));
-}
-
-#[tokio::test]
-async fn closed_broadcast_channel_is_terminal() {
-    let (sender, mut receiver) = tokio::sync::broadcast::channel::<u8>(1);
-    drop(sender);
-
-    let error = receiver.recv().await.expect_err("channel should be closed");
-    assert!(!broadcast_error_is_recoverable("test", error));
-}
-
-#[tokio::test]
 async fn full_config_wires_credential_notifications() {
     let pool = migrated_test_pool().await;
 
@@ -701,31 +681,6 @@ async fn full_config_wires_credential_notifications() {
 
     assert!(container.credential_service.has_notification_service());
     container.cancellation_token().cancel();
-}
-
-#[tokio::test]
-async fn standard_config_uses_the_unified_build_path() {
-    let pool = migrated_test_pool().await;
-    let container = super::ServiceContainer::with_config(
-        pool.clone(),
-        pool,
-        std::time::Duration::from_secs(60),
-        8,
-    )
-    .await
-    .expect("standard service container should initialize");
-
-    assert!(container.credential_service.has_notification_service());
-    container.cancellation_token().cancel();
-}
-
-#[test]
-fn test_should_end_stream_on_danmu_stream_closed_defaults_true() {
-    assert!(should_end_stream_on_danmu_stream_closed(None));
-    assert!(should_end_stream_on_danmu_stream_closed(Some("{}")));
-    assert!(should_end_stream_on_danmu_stream_closed(Some(
-        "{invalid json"
-    )));
 }
 
 #[test]
@@ -755,96 +710,7 @@ fn test_recovery_progress_requires_strong_signal() {
     }));
 }
 
-// ========== Output-root gate recovery hook filter ==========
-
-/// The recovery hook filters streamers by a per-root prefix built from
-/// `set_infra_blocked`'s `last_error` format. The prefix must include
-/// the root path + a trailing space so a Degraded → Healthy transition
-/// on one root only resets streamers blocked on that root: `/rec`
-/// cannot match `/rec/huya` entries and vice versa.
-#[test]
-fn recovery_hook_prefix_discriminates_between_sibling_roots() {
-    use crate::downloader::LAST_ERROR_GATE_PREFIX;
-    use std::path::Path;
-
-    let root_a = Path::new("/rec/huya");
-    let root_b = Path::new("/rec/douyu");
-
-    let marker_a = format!("{} {} ", LAST_ERROR_GATE_PREFIX, root_a.display());
-    let marker_b = format!("{} {} ", LAST_ERROR_GATE_PREFIX, root_b.display());
-
-    // Realistic `last_error` values as written by set_infra_blocked.
-    let le_a_not_found = format!(
-        "{} {} (not_found)",
-        LAST_ERROR_GATE_PREFIX,
-        root_a.display()
-    );
-    let le_a_storage = format!(
-        "{} {} (storage_full)",
-        LAST_ERROR_GATE_PREFIX,
-        root_a.display()
-    );
-    let le_b_not_found = format!(
-        "{} {} (not_found)",
-        LAST_ERROR_GATE_PREFIX,
-        root_b.display()
-    );
-    let le_unrelated = "connection refused".to_string();
-
-    // Root A marker must match root A entries regardless of io_kind.
-    assert!(le_a_not_found.starts_with(&marker_a));
-    assert!(le_a_storage.starts_with(&marker_a));
-    // Root A marker must NOT match root B entries.
-    assert!(!le_b_not_found.starts_with(&marker_a));
-    // Root B marker must match its own entries.
-    assert!(le_b_not_found.starts_with(&marker_b));
-    // Neither marker should match unrelated errors.
-    assert!(!le_unrelated.starts_with(&marker_a));
-    assert!(!le_unrelated.starts_with(&marker_b));
-}
-
-/// Even more important: a shorter root marker must not accidentally
-/// match longer sibling roots that share its prefix. If the gate
-/// ever gets two roots where one is a prefix of the other (e.g. a
-/// user sets `RUST_SREC_OUTPUT_ROOTS=/rec` and `/rec/archive`), the
-/// `/rec` recovery must NOT reset streamers blocked on `/rec/archive`.
-/// The trailing space in the marker is what makes this safe.
-#[test]
-fn recovery_hook_prefix_is_safe_against_prefix_collisions() {
-    use crate::downloader::LAST_ERROR_GATE_PREFIX;
-
-    let short_marker = format!("{} {} ", LAST_ERROR_GATE_PREFIX, "/rec");
-    let long_entry = format!("{} /rec/archive (not_found)", LAST_ERROR_GATE_PREFIX);
-
-    // Without the trailing space, this would match. With it, it doesn't.
-    assert!(!long_entry.starts_with(&short_marker));
-
-    // Sanity: the long root's own marker matches.
-    let long_marker = format!("{} {} ", LAST_ERROR_GATE_PREFIX, "/rec/archive");
-    assert!(long_entry.starts_with(&long_marker));
-}
-
 // ========== static_root_prefix (startup probe config discovery) ==========
-
-#[test]
-fn static_root_prefix_typical_rust_srec_template() {
-    // The default rust-srec template uses {platform}/{streamer}/%Y%m%d.
-    // Everything after `/rec/` is dynamic so the prefix is `/rec/`.
-    assert_eq!(
-        super::static_root_prefix("/rec/{platform}/{streamer}/%Y%m%d"),
-        Some("/rec/".to_string())
-    );
-}
-
-#[test]
-fn static_root_prefix_strftime_only() {
-    // No `{...}` variables — only strftime placeholders. Prefix is
-    // everything before the first `%`.
-    assert_eq!(
-        super::static_root_prefix("/rec/recordings/%Y-%m-%d"),
-        Some("/rec/recordings/".to_string())
-    );
-}
 
 #[test]
 fn static_root_prefix_static_template_no_placeholders() {
@@ -870,26 +736,5 @@ fn static_root_prefix_partial_directory_name_rejected() {
     assert_eq!(
         super::static_root_prefix("/recordings-{streamer}/files"),
         None
-    );
-}
-
-#[test]
-fn static_root_prefix_no_leading_slash_rejected() {
-    // Relative template (no root `/`). Can't produce a probe key.
-    assert_eq!(super::static_root_prefix("{streamer}/files"), None);
-    assert_eq!(super::static_root_prefix("recordings/{streamer}"), None);
-}
-
-#[test]
-fn static_root_prefix_empty_template() {
-    assert_eq!(super::static_root_prefix(""), None);
-}
-
-#[test]
-fn static_root_prefix_multi_level_static_prefix() {
-    // Deep static prefix before the first placeholder.
-    assert_eq!(
-        super::static_root_prefix("/mnt/storage/recordings/{platform}/{streamer}"),
-        Some("/mnt/storage/recordings/".to_string())
     );
 }

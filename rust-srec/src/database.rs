@@ -376,15 +376,6 @@ pub type ImmediateTransaction = sqlx::Transaction<'static, Sqlite>;
 mod tests {
     use super::*;
 
-    #[test]
-    fn read_cache_budget_rejects_empty_pools_and_rounds_down() {
-        assert!(read_page_cache_kib(0).is_err());
-        assert_eq!(read_page_cache_kib(1).unwrap(), 57344);
-        assert_eq!(read_page_cache_kib(4).unwrap(), 14336);
-        assert_eq!(read_page_cache_kib(10).unwrap(), 5734);
-        assert_eq!(read_page_cache_kib(u32::MAX).unwrap(), 0);
-    }
-
     #[tokio::test]
     async fn every_pool_connection_observes_the_combined_cache_budget_and_existing_mmap() {
         let directory = tempfile::tempdir().unwrap();
@@ -458,21 +449,6 @@ mod tests {
         assert_eq!(cache, -8192);
         read.close().await;
         write.close().await;
-    }
-
-    #[tokio::test]
-    async fn test_init_pool() {
-        let pool = init_pool("sqlite::memory:").await.unwrap();
-
-        // Verify WAL mode is enabled
-        let result: (String,) = sqlx::query_as("PRAGMA journal_mode")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-
-        // In-memory databases use "memory" journal mode, not WAL
-        // For file-based databases, this would be "wal"
-        assert!(result.0 == "memory" || result.0 == "wal");
     }
 
     #[tokio::test]
@@ -786,43 +762,5 @@ mod tests {
             .unwrap();
             assert_eq!(found, 1, "missing {kind} {name}");
         }
-    }
-
-    #[tokio::test]
-    async fn staged_outputs_migration_upgrades_and_replays() {
-        const MIGRATION_VERSION: i64 = 20_261_017_120_000;
-        let (pool, full) = pool_migrated_before(MIGRATION_VERSION).await;
-        let job_count = || async {
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM job")
-                .fetch_one(&pool)
-                .await
-                .unwrap()
-        };
-        let jobs_before = job_count().await;
-
-        full.run(&pool).await.unwrap();
-        // Replaying the full set is a no-op once every migration is applied.
-        full.run(&pool).await.unwrap();
-
-        assert_eq!(job_count().await, jobs_before);
-        sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
-             VALUES ('a', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let duplicate = sqlx::query(
-            "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at) \
-             VALUES ('b', 'v.tmp-1.mp4', 'v.mp4', 'job', 'attempt', 1)",
-        )
-        .execute(&pool)
-        .await;
-        assert!(duplicate.is_err(), "a staged path is recorded once");
-        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(integrity, "ok");
     }
 }

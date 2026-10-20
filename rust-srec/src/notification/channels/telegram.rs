@@ -42,7 +42,7 @@ pub struct TelegramConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See [`NotificationEvent::title_for`] for locale fallback.
+    /// See [`NotificationEvent::title_in`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
 }
@@ -245,13 +245,6 @@ fn truncate_message(text: &str, limit: usize) -> (String, usize) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_telegram_channel_disabled() {
-        let config = TelegramConfig::default();
-        let channel = TelegramChannel::new(config);
-        assert!(!channel.is_enabled());
-    }
-
     fn channel(mode: &str, locale: &str) -> TelegramChannel {
         TelegramChannel::new(TelegramConfig {
             parse_mode: mode.to_string(),
@@ -285,7 +278,7 @@ mod tests {
         let special = "编😀 _*[]()~`>#+-=|{}.!\\ <b>&quot;";
         let event = event(special, special);
         for locale in ["en", "zh-CN"] {
-            let expected_title = event.title_for(Some(locale));
+            let expected_title = event.title_in(locale);
             let baseline = channel("HTML", locale).build_payload(&event).unwrap();
             for mode in [
                 "HTML",
@@ -366,32 +359,5 @@ mod tests {
         let (text, retained) = truncate_message(&"😀".repeat(3000), TELEGRAM_MESSAGE_LIMIT);
         assert!(text.ends_with(TRUNCATION_SUFFIX));
         assert_eq!(retained % 2, 0, "no surrogate pair is split");
-    }
-
-    #[test]
-    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
-        let event = NotificationEvent::SystemStartup {
-            version: "<test>&😀".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = TelegramChannel::new(TelegramConfig {
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            assert_eq!(
-                channel.build_payload(&event).unwrap(),
-                channel.build_rendered_payload(&event, &rendered).unwrap()
-            );
-            let supplied = RenderedEvent {
-                title: "unique title 😀".into(),
-                description: "unique body <>&".into(),
-            };
-            let payload = channel.build_rendered_payload(&event, &supplied).unwrap();
-            let text = payload["text"].as_str().unwrap();
-            assert!(text.contains(&supplied.title));
-            assert!(text.contains(&supplied.description));
-        }
     }
 }

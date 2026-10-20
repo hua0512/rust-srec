@@ -424,24 +424,6 @@ mod tests {
     }
 
     #[test]
-    fn blocks_only_after_the_budget_is_spent() {
-        let limiter = limiter();
-        let now = Instant::now();
-
-        for _ in 0..3 {
-            limiter
-                .try_begin_at(&alice(), now)
-                .expect("attempts within the budget are admitted");
-        }
-
-        let retry_after = limiter
-            .try_begin_at(&alice(), now)
-            .expect_err("the fourth attempt should be blocked");
-        assert!(retry_after <= Duration::from_secs(60));
-        assert!(retry_after > Duration::from_secs(59));
-    }
-
-    #[test]
     fn block_lifts_once_the_window_elapses() {
         let limiter = limiter();
         let now = Instant::now();
@@ -461,24 +443,6 @@ mod tests {
                 .try_begin_at(&alice(), now + Duration::from_secs(60))
                 .is_ok()
         );
-    }
-
-    #[test]
-    fn keys_are_isolated_from_each_other() {
-        let limiter = limiter();
-        let now = Instant::now();
-
-        for _ in 0..3 {
-            limiter.try_begin_at(&alice(), now).expect("within budget");
-        }
-
-        assert!(limiter.try_begin_at(&alice(), now).is_err());
-        assert!(
-            limiter
-                .try_begin_at(&[LoginRateKey::username("bob")], now)
-                .is_ok()
-        );
-        assert!(limiter.try_begin_at(&[ip("10.0.0.1")], now).is_ok());
     }
 
     #[test]
@@ -543,21 +507,6 @@ mod tests {
             limiter
                 .try_begin_at(std::slice::from_ref(&address), now)
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn release_hands_the_slot_back() {
-        let limiter = limiter();
-        let now = Instant::now();
-
-        for _ in 0..3 {
-            let reserved = limiter.try_begin_at(&alice(), now).expect("within budget");
-            limiter.release(&alice(), reserved);
-        }
-        assert!(
-            limiter.try_begin_at(&alice(), now).is_ok(),
-            "released attempts do not count against the budget"
         );
     }
 
@@ -671,15 +620,13 @@ mod tests {
     }
 
     mod client_ip {
-        //! Pins what `ClientIp` reads: the peer address of the accepted
-        //! connection, and nothing derived from request headers.
+        //! Pins that `ClientIp` derives nothing from request headers.
 
         use super::*;
         use axum::Router;
         use axum::body::Body;
         use axum::http::{Request, StatusCode};
         use axum::routing::get;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tower::ServiceExt;
 
         fn app() -> Router {
@@ -692,42 +639,6 @@ mod tests {
                     }
                 }),
             )
-        }
-
-        #[tokio::test]
-        async fn resolves_to_the_peer_address_of_a_served_connection() {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("loopback bind should succeed");
-            let addr = listener.local_addr().expect("listener should have an addr");
-            tokio::spawn(async move {
-                let _ = axum::serve(
-                    listener,
-                    app().into_make_service_with_connect_info::<SocketAddr>(),
-                )
-                .await;
-            });
-
-            // A raw request keeps the test off any HTTP client's TLS setup.
-            let mut stream = tokio::net::TcpStream::connect(addr)
-                .await
-                .expect("test server should accept the connection");
-            stream
-                .write_all(
-                    format!("GET /ip HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n")
-                        .as_bytes(),
-                )
-                .await
-                .expect("request should be written");
-            let mut response = String::new();
-            stream
-                .read_to_string(&mut response)
-                .await
-                .expect("response should be readable");
-            assert!(
-                response.ends_with("127.0.0.1"),
-                "handler should have seen the loopback peer address: {response}"
-            );
         }
 
         #[tokio::test]

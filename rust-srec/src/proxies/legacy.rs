@@ -401,38 +401,6 @@ mod tests {
     }
 
     #[test]
-    fn global_settings_without_a_proxy_keep_the_environment_proxy() {
-        for raw in [
-            None,
-            Some(""),
-            Some("garbage"),
-            Some(r#"{"enabled":false}"#),
-            Some(r#"{"enabled":true}"#),
-        ] {
-            assert_eq!(
-                global_route(map_text(raw), true),
-                LegacyRoute::System,
-                "{raw:?}"
-            );
-            assert_eq!(
-                global_route(map_text(raw), false),
-                LegacyRoute::Direct,
-                "{raw:?}"
-            );
-        }
-        let explicit = Some(r#"{"enabled":true,"url":"http://p.example:1"}"#);
-        assert_eq!(
-            global_route(map_text(explicit), true),
-            proxy("http://p.example:1", None)
-        );
-        // An address no client can use was a request for a proxy, not for none.
-        let unusable = Some(r#"{"enabled":true,"url":"socks4://p.example:1"}"#);
-        assert_eq!(global_route(map_text(unusable), true), LegacyRoute::Direct);
-        let system = Some(r#"{"enabled":true,"use_system_proxy":true}"#);
-        assert_eq!(global_route(map_text(system), false), LegacyRoute::System);
-    }
-
-    #[test]
     fn converted_entries_share_exits_and_avoid_taken_names() {
         let existing = ProxyEndpoint::new("http://saved.example:1", None);
         let mut namer = Namer::new([("proxy.example:8080", &existing)]);

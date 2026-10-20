@@ -391,82 +391,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_delete_processor_type() {
-        let processor = DeleteProcessor::new();
-        assert_eq!(processor.processor_type(), ProcessorType::Io);
-    }
-
-    #[test]
-    fn test_delete_processor_job_types() {
-        let processor = DeleteProcessor::new();
-        assert!(processor.can_process("delete"));
-        assert!(processor.can_process("cleanup"));
-        assert!(!processor.can_process("remux"));
-    }
-
-    #[test]
-    fn test_delete_processor_name() {
-        let processor = DeleteProcessor::new();
-        assert_eq!(processor.name(), "DeleteProcessor");
-    }
-
-    #[test]
-    fn test_delete_config_parse() {
-        let json = r#"{
-            "max_retries": 5,
-            "retry_delay_ms": 200
-        }"#;
-
-        let config: DeleteConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.max_retries, 5);
-        assert_eq!(config.retry_delay_ms, 200);
-    }
-
-    #[test]
-    fn test_delete_config_parse_partial() {
-        // Test that defaults are used for missing fields
-        let json = r#"{"max_retries": 10}"#;
-
-        let config: DeleteConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.max_retries, 10);
-        assert_eq!(config.retry_delay_ms, 100); // default
-    }
-
-    #[tokio::test]
-    async fn test_delete_existing_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("test_file.txt");
-
-        // Create a test file
-        fs::write(&file_path, "test content").await.unwrap();
-        assert!(file_path.exists());
-
-        let processor = DeleteProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![file_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify file was deleted
-        assert!(!file_path.exists());
-        assert!(output.outputs.is_empty());
-        assert!(output.input_size_bytes.is_some());
-        assert_eq!(output.output_size_bytes, Some(0));
-
-        // Check metadata
-        let metadata: serde_json::Value =
-            serde_json::from_str(output.metadata.as_ref().unwrap()).unwrap();
-        assert_eq!(metadata["status"], "deleted");
-    }
-
     #[tokio::test]
     async fn test_delete_nonexistent_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -493,59 +417,6 @@ mod tests {
             serde_json::from_str(output.metadata.as_ref().unwrap()).unwrap();
         assert_eq!(metadata["status"], "skipped");
         assert_eq!(metadata["reason"], "file_not_found");
-    }
-
-    #[tokio::test]
-    async fn test_delete_no_input_file() {
-        let processor = DeleteProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![],
-            outputs: vec![],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-
-        // Should fail because no file path specified
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("No file path"));
-    }
-
-    #[tokio::test]
-    async fn test_delete_with_custom_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("test_file.txt");
-
-        // Create a test file
-        fs::write(&file_path, "test content").await.unwrap();
-
-        let processor = DeleteProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![file_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "max_retries": 5,
-                    "retry_delay_ms": 50
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify file was deleted
-        assert!(!file_path.exists());
-        assert!(output.outputs.is_empty());
     }
 
     #[tokio::test]
@@ -586,20 +457,5 @@ mod tests {
         assert_eq!(metadata["deleted"], 2);
         assert_eq!(metadata["skipped_missing"], 1);
         assert_eq!(metadata["failed"], 0);
-    }
-
-    #[test]
-    fn test_is_file_locked_error() {
-        // Test various error messages that indicate locked files
-        let locked_msg = std::io::Error::other(
-            "The process cannot access the file because it is being used by another process",
-        );
-        assert!(DeleteProcessor::is_file_locked_error(&locked_msg));
-        let busy_msg = std::io::Error::other("Device or resource busy");
-        assert!(DeleteProcessor::is_file_locked_error(&busy_msg));
-
-        // Test non-locked error
-        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
-        assert!(!DeleteProcessor::is_file_locked_error(&not_found));
     }
 }

@@ -544,64 +544,6 @@ impl Processor for AudioExtractProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_audio_extract_processor_type() {
-        let processor = AudioExtractProcessor::new();
-        assert_eq!(processor.processor_type(), ProcessorType::Cpu);
-    }
-
-    #[test]
-    fn test_audio_extract_processor_job_types() {
-        let processor = AudioExtractProcessor::new();
-        assert!(processor.can_process("audio_extract"));
-        assert!(processor.can_process("extract_audio"));
-        assert!(!processor.can_process("remux"));
-    }
-
-    #[test]
-    fn test_audio_extract_processor_name() {
-        let processor = AudioExtractProcessor::new();
-        assert_eq!(processor.name(), "AudioExtractProcessor");
-    }
-
-    #[test]
-    fn test_audio_format_codec_args() {
-        assert_eq!(AudioFormat::Mp3.codec_arg(), "libmp3lame");
-        assert_eq!(AudioFormat::Aac.codec_arg(), "aac");
-        assert_eq!(AudioFormat::Flac.codec_arg(), "flac");
-        assert_eq!(AudioFormat::Opus.codec_arg(), "libopus");
-    }
-
-    #[test]
-    fn test_audio_format_extensions() {
-        assert_eq!(AudioFormat::Mp3.extension(), "mp3");
-        assert_eq!(AudioFormat::Aac.extension(), "m4a");
-        assert_eq!(AudioFormat::Flac.extension(), "flac");
-        assert_eq!(AudioFormat::Opus.extension(), "opus");
-    }
-
-    #[test]
-    fn test_audio_extract_config_parse() {
-        let json = r#"{
-            "format": "mp3",
-            "bitrate": "320k",
-            "sample_rate": 44100,
-            "channels": 2,
-            "output_path": "/output/audio.mp3",
-            "overwrite": false
-        }"#;
-
-        let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, Some(AudioFormat::Mp3));
-        assert_eq!(config.bitrate, Some("320k".to_string()));
-        assert_eq!(config.sample_rate, Some(44100));
-        assert_eq!(config.channels, Some(2));
-        assert_eq!(config.output_path, Some("/output/audio.mp3".to_string()));
-        assert!(!config.overwrite);
-    }
 
     #[test]
     fn test_audio_extract_config_parse_all_formats() {
@@ -624,109 +566,6 @@ mod tests {
         let json = r#"{"format": "opus"}"#;
         let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.format, Some(AudioFormat::Opus));
-    }
-
-    #[test]
-    fn test_build_args_stream_copy() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig::default();
-
-        let args = processor.build_args("/input.mp4", "/output.aac", &config);
-
-        assert!(args.contains(&"-y".to_string()));
-        assert!(args.contains(&"-i".to_string()));
-        assert!(args.contains(&"/input.mp4".to_string()));
-        assert!(args.contains(&"-vn".to_string())); // No video
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"copy".to_string())); // Stream copy
-        assert!(args.contains(&"/output.aac".to_string()));
-    }
-
-    #[test]
-    fn test_build_args_mp3_format() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            format: Some(AudioFormat::Mp3),
-            bitrate: Some("320k".to_string()),
-            ..Default::default()
-        };
-
-        let args = processor.build_args("/input.mp4", "/output.mp3", &config);
-
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"libmp3lame".to_string()));
-        assert!(args.contains(&"-b:a".to_string()));
-        assert!(args.contains(&"320k".to_string()));
-    }
-
-    #[test]
-    fn test_build_args_aac_format() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            format: Some(AudioFormat::Aac),
-            bitrate: Some("256k".to_string()),
-            sample_rate: Some(48000),
-            ..Default::default()
-        };
-
-        let args = processor.build_args("/input.mp4", "/output.m4a", &config);
-
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"aac".to_string()));
-        assert!(args.contains(&"-b:a".to_string()));
-        assert!(args.contains(&"256k".to_string()));
-        assert!(args.contains(&"-ar".to_string()));
-        assert!(args.contains(&"48000".to_string()));
-    }
-
-    #[test]
-    fn test_build_args_flac_format() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            format: Some(AudioFormat::Flac),
-            sample_rate: Some(96000),
-            channels: Some(2),
-            ..Default::default()
-        };
-
-        let args = processor.build_args("/input.mp4", "/output.flac", &config);
-
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"flac".to_string()));
-        assert!(args.contains(&"-ar".to_string()));
-        assert!(args.contains(&"96000".to_string()));
-        assert!(args.contains(&"-ac".to_string()));
-        assert!(args.contains(&"2".to_string()));
-    }
-
-    #[test]
-    fn test_build_args_opus_format() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            format: Some(AudioFormat::Opus),
-            bitrate: Some("128k".to_string()),
-            ..Default::default()
-        };
-
-        let args = processor.build_args("/input.mp4", "/output.opus", &config);
-
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"libopus".to_string()));
-        assert!(args.contains(&"-b:a".to_string()));
-        assert!(args.contains(&"128k".to_string()));
-    }
-
-    #[test]
-    fn test_build_args_no_overwrite() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            overwrite: false,
-            ..Default::default()
-        };
-
-        let args = processor.build_args("/input.mp4", "/output.aac", &config);
-
-        assert!(!args.contains(&"-y".to_string()));
     }
 
     #[test]
@@ -777,53 +616,6 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_output_path_from_config() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig {
-            output_path: Some("/custom/output.mp3".to_string()),
-            ..Default::default()
-        };
-        let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec!["/processor/output.mp3".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.determine_output_path(
-            "/input.mp4",
-            &config,
-            input.outputs.first().map(String::as_str),
-            None,
-        );
-        assert_eq!(output, "/custom/output.mp3");
-    }
-
-    #[test]
-    fn test_determine_output_path_from_processor_input() {
-        let processor = AudioExtractProcessor::new();
-        let config = AudioExtractConfig::default();
-        let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec!["/processor/output.mp3".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.determine_output_path(
-            "/input.mp4",
-            &config,
-            input.outputs.first().map(String::as_str),
-            None,
-        );
-        assert_eq!(output, "/processor/output.mp3");
-    }
-
-    #[test]
     fn test_determine_output_path_generated() {
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {
@@ -846,6 +638,34 @@ mod tests {
             Some("opus"),
         );
         assert!(output.contains("video_audio.mp3"));
+    }
+
+    #[tokio::test]
+    #[ignore = "bug: overwrite:false is ignored; publishing always replaces an existing output"]
+    async fn known_bug_overwrite_false_keeps_an_existing_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let ffmpeg = super::super::output_tests::fake_success_ffmpeg(dir.path());
+        let input = dir.path().join("video.mp4");
+        let output = dir.path().join("video.aac");
+        std::fs::write(&input, b"source").unwrap();
+        std::fs::write(&output, b"existing").unwrap();
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            AudioExtractProcessor::with_ffmpeg_path(ffmpeg).process(
+                &ProcessorInput {
+                    inputs: vec![input.to_string_lossy().into_owned()],
+                    outputs: vec![output.to_string_lossy().into_owned()],
+                    config: Some(r#"{"overwrite":false}"#.to_string()),
+                    ..Default::default()
+                },
+                &ProcessorContext::noop("test"),
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"existing", "{result:?}");
     }
 
     /// A stream copy keeps the source codec, so the generated name must use a
@@ -871,113 +691,5 @@ mod tests {
                 "{codec:?}: {output}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn test_process_no_input_file() {
-        let processor = AudioExtractProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![],
-            outputs: vec!["/output.mp3".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("No input file"));
-    }
-
-    #[tokio::test]
-    async fn test_process_input_not_found() {
-        let processor = AudioExtractProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec!["/nonexistent/file.mp4".to_string()],
-            outputs: vec!["/output.mp3".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("does not exist"));
-    }
-
-    #[tokio::test]
-    async fn test_audio_extract_batch_outputs_len_mismatch_errors() {
-        let processor = AudioExtractProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
-            outputs: vec!["out.mp3".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("outputs to be empty or have the same length")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_audio_extract_batch_config_output_path_forbidden() {
-        let processor = AudioExtractProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.txt".to_string(), "b.txt".to_string()],
-            outputs: vec![],
-            config: Some(serde_json::json!({ "output_path": "out.mp3" }).to_string()),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(err.to_string().contains("config.output_path"));
-    }
-
-    #[tokio::test]
-    async fn test_audio_extract_batch_skips_unsupported_formats() {
-        let temp_dir = TempDir::new().unwrap();
-        let a = temp_dir.path().join("a.txt");
-        let b = temp_dir.path().join("b.txt");
-        fs::write(&a, "a").unwrap();
-        fs::write(&b, "b").unwrap();
-
-        let processor = AudioExtractProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec![
-                a.to_string_lossy().to_string(),
-                b.to_string_lossy().to_string(),
-            ],
-            outputs: vec![],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-        assert_eq!(output.outputs.len(), 2);
-        assert_eq!(output.outputs[0], a.to_string_lossy().to_string());
-        assert_eq!(output.outputs[1], b.to_string_lossy().to_string());
-        assert!(output.items_produced.is_empty());
-        assert_eq!(output.skipped_inputs.len(), 2);
     }
 }

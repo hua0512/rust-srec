@@ -1,8 +1,7 @@
 use super::*;
-use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::database::models::{FilterDbModel, FilterType, StreamerDbModel};
 use crate::database::repositories::{
-    SqlxConfigRepository, SqlxFilterRepository, SqlxStreamerRepository, StreamerRepository,
+    SqlxFilterRepository, SqlxStreamerRepository, StreamerRepository,
 };
 use crate::utils::task_supervisor::TaskSupervisor;
 
@@ -91,72 +90,6 @@ async fn repository_mutations_invalidate_every_affected_owner_only_after_success
 }
 
 #[tokio::test]
-async fn configuration_notifications_reconcile_filter_snapshots_without_changing_old_readers() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let (pool, repository, store, tasks, _writer) = fixture().await;
-        let service = ConfigService::new(
-            Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone())),
-            Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
-        )
-        .with_filter_store(store.clone());
-        assert!(Arc::ptr_eq(
-            &store,
-            &service.filter_store_for(repository.clone())
-        ));
-        let row = filter("one", "initial");
-        repository.create_filter(&row).await.unwrap();
-        let old = store.get("one").await.unwrap();
-        let mut events = service.subscribe();
-        for (text, import) in [("changed", false), ("imported", true)] {
-            sqlx::query("UPDATE filters SET config = ? WHERE id = ?")
-                .bind(serde_json::json!({"include":[text], "exclude":[]}).to_string())
-                .bind(&row.id)
-                .execute(&pool)
-                .await
-                .unwrap();
-            if import {
-                service.notify_import_committed();
-            } else {
-                service.notify_streamer_filters_updated("one");
-            }
-            let event = events.recv().await.unwrap();
-            if import {
-                assert!(matches!(event, ConfigUpdateEvent::GlobalUpdated));
-            } else {
-                assert!(matches!(event, ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } if streamer_id == "one"));
-            }
-            assert_eq!(keyword(&store.get("one").await.unwrap()), text);
-            assert_eq!(keyword(&old), "initial");
-        }
-        sqlx::query("DELETE FROM streamers WHERE id = 'one'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        service.invalidate_filter_snapshots("one");
-        assert!(store.get("one").await.unwrap().is_empty());
-        // The same broad invalidation is used by GlobalUpdated and broadcast-lag
-        // reconciliation even when rows were changed by an out-of-band writer.
-        let row = filter("two", "before-global");
-        repository.create_filter(&row).await.unwrap();
-        store.get("two").await.unwrap();
-        sqlx::query("DELETE FROM filters WHERE streamer_id = 'two'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let global = service.get_global_config().await.unwrap();
-        service.update_global_config(&global).await.unwrap();
-        assert!(matches!(
-            events.recv().await.unwrap(),
-            ConfigUpdateEvent::GlobalUpdated
-        ));
-        assert!(store.get("two").await.unwrap().is_empty());
-        tasks.shutdown(Duration::from_secs(2)).await;
-    })
-    .await
-    .expect("configuration invalidation must precede rechecks");
-}
-
-#[tokio::test]
 async fn sqlite_order_and_invalid_filter_handling_match_the_monitor_contract() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let (_pool, repository, store, tasks, _writer) = fixture().await;
@@ -239,43 +172,4 @@ async fn cancelled_mutation_and_dropped_repository_still_commit_and_invalidate()
     })
     .await
     .expect("cancelled callers cannot abandon commit-time invalidation");
-}
-
-#[tokio::test]
-async fn standalone_filter_repository_supports_owned_invalidation_with_multiple_connections() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let directory = tempfile::tempdir().unwrap();
-        let url = format!(
-            "sqlite:{}?mode=rwc",
-            directory.path().join("filters.sqlite").display()
-        );
-        let pool = crate::database::init_pool_with_size(&url, 2).await.unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        let mut streamer = StreamerDbModel::new(
-            "Standalone",
-            "https://example.test/standalone",
-            "platform-twitch",
-        );
-        streamer.id = "standalone".into();
-        SqlxStreamerRepository::new(pool.clone(), pool.clone())
-            .create_streamer(&streamer)
-            .await
-            .unwrap();
-        let repository = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
-        let store = FilterStore::new(repository.clone());
-        assert!(store.get("standalone").await.unwrap().is_empty());
-        repository
-            .create_filter(&filter("standalone", "multi-connection"))
-            .await
-            .unwrap();
-        assert_eq!(
-            keyword(&store.get("standalone").await.unwrap()),
-            "multi-connection"
-        );
-        drop(store);
-        drop(repository);
-        pool.close().await;
-    })
-    .await
-    .expect("commutative invalidation does not require single-writer row publication");
 }

@@ -1046,110 +1046,6 @@ mod tests {
         assert_eq!(matched.id, "platform-bilibili");
     }
 
-    /// `SOOP` is fully uppercase in the detection table and lowercase in the seed data.
-    #[test]
-    fn test_find_platform_config_matches_uppercase_detected_name() {
-        let matched =
-            find_platform_config(seeded_configs(), "SOOP").expect("soop config should match");
-        assert_eq!(matched.id, "platform-soop");
-    }
-
-    #[test]
-    fn test_find_platform_config_returns_none_when_absent() {
-        assert!(find_platform_config(seeded_configs(), "twitch").is_none());
-    }
-
-    /// A URL no built-in regex claims yields no platform, so the caller must decide whether to
-    /// probe streamlink rather than silently picking a config.
-    #[test]
-    fn test_unrecognized_url_detects_no_platform() {
-        let url = StreamerUrl::new("https://example.com/some-channel").expect("valid url");
-        assert!(url.platform().is_none());
-    }
-
-    #[test]
-    fn test_streamer_url_rejects_malformed_input() {
-        assert!(StreamerUrl::new("not-a-url").is_err());
-    }
-
-    #[test]
-    fn test_create_streamer_request_validation() {
-        let request = CreateStreamerRequest {
-            name: "Test".to_string(),
-            url: "".to_string(),
-            template_id: None,
-            priority: Priority::Normal,
-            enabled: true,
-            streamer_specific_config: None,
-        };
-
-        // URL is empty, should fail validation
-        assert!(request.url.is_empty());
-    }
-
-    #[test]
-    fn test_metadata_to_response() {
-        let metadata = StreamerMetadata {
-            id: "test-id".to_string(),
-            name: "Test Streamer".to_string(),
-            url: "https://twitch.tv/test".to_string(),
-            avatar_url: None,
-            platform_config_id: "twitch".to_string(),
-            template_config_id: Some("template1".to_string()),
-            state: StreamerState::Live,
-            priority: Priority::High,
-            consecutive_error_count: 2,
-            disabled_until: None,
-            last_error: Some("test error".to_string()),
-            last_live_time: Some(chrono::Utc::now()),
-            streamer_specific_config: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: chrono::Utc::now(),
-            deleted_at: None,
-            updated_at: chrono::Utc::now(),
-        };
-
-        let response = metadata_to_response(&metadata, None, None, None);
-
-        assert_eq!(response.id, "test-id");
-        assert_eq!(response.name, "Test Streamer");
-        assert_eq!(response.url, "https://twitch.tv/test");
-        assert_eq!(response.platform_config_id, "twitch");
-        assert_eq!(response.template_id, Some("template1".to_string()));
-        assert_eq!(response.state, StreamerState::Live);
-        assert!(response.enabled); // Live state means enabled
-        assert_eq!(response.consecutive_error_count, 2);
-        assert_eq!(response.last_error, Some("test error".to_string()));
-    }
-
-    #[test]
-    fn test_disabled_state_means_not_enabled() {
-        let metadata = StreamerMetadata {
-            id: "test-id".to_string(),
-            name: "Test".to_string(),
-            url: "https://example.com".to_string(),
-            avatar_url: None,
-            platform_config_id: "platform".to_string(),
-            template_config_id: None,
-            state: StreamerState::Disabled,
-            priority: Priority::Normal,
-            consecutive_error_count: 0,
-            disabled_until: None,
-            last_error: None,
-            last_live_time: None,
-            streamer_specific_config: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: chrono::Utc::now(),
-            deleted_at: None,
-            updated_at: chrono::Utc::now(),
-        };
-
-        let response = metadata_to_response(&metadata, None, None, None);
-        assert!(!response.enabled);
-    }
-
     #[test]
     fn a_credential_block_is_shown_only_while_the_streamer_is_monitored() {
         let mut metadata = StreamerMetadata {
@@ -1239,23 +1135,6 @@ mod tests {
             Some(StreamerState::Disabled)
         );
         assert_eq!(state_for_enabled(None, true), Some(StreamerState::NotLive));
-    }
-
-    #[test]
-    fn test_batch_action_deserialization() {
-        let request: BatchStreamerRequest = serde_json::from_value(serde_json::json!({
-            "ids": ["streamer-1"],
-            "action": {
-                "type": "set_template",
-                "template_id": null
-            }
-        }))
-        .expect("batch request should deserialize");
-
-        assert!(matches!(
-            request.action,
-            BatchStreamerAction::SetTemplate { template_id: None }
-        ));
     }
 }
 

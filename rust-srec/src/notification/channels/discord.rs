@@ -40,7 +40,7 @@ pub struct DiscordConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See [`NotificationEvent::title_for`] for locale fallback.
+    /// See [`NotificationEvent::title_in`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
 }
@@ -101,17 +101,6 @@ impl DiscordChannel {
             NotificationPriority::High => 0xf39c12,     // Orange
             NotificationPriority::Critical => 0xe74c3c, // Red
         }
-    }
-
-    /// Build the webhook payload for an event.
-    #[cfg(test)]
-    fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
     }
 
     fn build_rendered_payload(
@@ -188,108 +177,5 @@ impl NotificationChannel for DiscordChannel {
 
         debug!("Discord notification sent: {}", event.event_type());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_discord_channel_disabled() {
-        let config = DiscordConfig::default();
-        let channel = DiscordChannel::new(config);
-        assert!(!channel.is_enabled());
-    }
-
-    #[test]
-    fn test_get_color() {
-        assert_eq!(
-            DiscordChannel::get_color(NotificationPriority::Low),
-            0x808080
-        );
-        assert_eq!(
-            DiscordChannel::get_color(NotificationPriority::Critical),
-            0xe74c3c
-        );
-    }
-
-    #[test]
-    fn test_build_payload() {
-        let config = DiscordConfig::default();
-        let channel = DiscordChannel::new(config);
-
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: Some("Gaming".to_string()),
-            timestamp: chrono::Utc::now(),
-        };
-
-        let payload = channel.build_payload(&event);
-
-        // Verify embed structure
-        assert!(payload["embeds"].is_array());
-        let embed = &payload["embeds"][0];
-        assert!(embed["title"].as_str().unwrap().contains("TestStreamer"));
-        assert!(
-            embed["description"]
-                .as_str()
-                .unwrap()
-                .contains("Playing Games")
-        );
-        assert_eq!(
-            embed["color"],
-            DiscordChannel::get_color(NotificationPriority::Normal) as i64
-        );
-    }
-
-    #[test]
-    fn test_build_payload_with_custom_username() {
-        let config = DiscordConfig {
-            enabled: true,
-            webhook_url: "https://example.com".to_string(),
-            username: Some("CustomBot".to_string()),
-            avatar_url: Some("https://example.com/avatar.png".to_string()),
-            ..Default::default()
-        };
-        let channel = DiscordChannel::new(config);
-
-        let event = NotificationEvent::SystemStartup {
-            version: "1.0.0".to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-
-        let payload = channel.build_payload(&event);
-
-        assert_eq!(payload["username"], "CustomBot");
-        assert_eq!(payload["avatar_url"], "https://example.com/avatar.png");
-    }
-
-    #[test]
-    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
-        let event = NotificationEvent::SystemStartup {
-            version: "<test>&😀".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = DiscordChannel::new(DiscordConfig {
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            assert_eq!(
-                channel.build_payload(&event),
-                channel.build_rendered_payload(&event, &rendered)
-            );
-            let supplied = RenderedEvent {
-                title: "unique title 😀".into(),
-                description: "unique body <>&".into(),
-            };
-            let payload = channel.build_rendered_payload(&event, &supplied);
-            assert_eq!(payload["embeds"][0]["title"], supplied.title);
-            assert_eq!(payload["embeds"][0]["description"], supplied.description);
-        }
     }
 }

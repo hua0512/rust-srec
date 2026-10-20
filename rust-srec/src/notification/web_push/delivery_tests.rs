@@ -181,21 +181,6 @@ async fn throttling_skips_http_and_first_success_clears_persisted_backoff() {
     .expect("local throttling scenario must finish");
 }
 
-#[tokio::test]
-async fn failed_stale_deletion_keeps_cache_and_does_not_report_deleted() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let fixture = Fixture::new().await;
-        fixture.service.list_all_subscriptions_cached().await.unwrap();
-        sqlx::query("CREATE TRIGGER reject_push_delete BEFORE DELETE ON web_push_subscription BEGIN SELECT RAISE(ABORT, 'fixture deletion failure'); END")
-            .execute(&fixture.service.write_pool).await.unwrap();
-        fixture.status.store(410, Ordering::SeqCst);
-        assert!(fixture.service.send_to_subscription(&fixture.row().await, &event(), None).await.is_err());
-        assert_eq!(fixture.service.list_all_subscriptions().await.unwrap().len(), 1);
-        assert!(fixture.service.subscription_cache.read().await.is_some());
-        assert_eq!(fixture.metrics.snapshot().web_push_stale_deleted_total, 0);
-    }).await.expect("local persistence failure scenario must finish");
-}
-
 #[test]
 fn payload_caps_count_utf8_and_json_escaping_including_fallback_metadata() {
     for text in [

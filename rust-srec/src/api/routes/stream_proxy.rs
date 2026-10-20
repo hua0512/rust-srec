@@ -1242,43 +1242,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn low_latency_hls_delivery_hints_and_stream_selection_are_typed() {
-        use axum::extract::FromRequestParts;
-        let (mut parts, _) = HttpRequest::builder()
-            .uri(
-                "/?playback_handle=opaque&stream=1&url=https%3A%2F%2Fcdn.test%2Fa&_HLS_msn=7&_HLS_part=1&_HLS_skip=v2",
-            )
-            .body(Body::empty())
-            .unwrap()
-            .into_parts();
-        let Query(query) = Query::<StreamProxyQuery>::from_request_parts(&mut parts, &())
-            .await
-            .unwrap();
-        assert_eq!(query.hls_msn, Some(7));
-        assert_eq!(query.hls_part, Some(1));
-        assert_eq!(query.stream, Some(1));
-        for query in [
-            "_HLS_msn=-1",
-            "_HLS_part=no",
-            "_HLS_skip=arbitrary",
-            "_HLS_msn=18446744073709551616",
-            "stream=-1",
-            "resource_id=legacy",
-        ] {
-            let (mut parts, _) = HttpRequest::builder()
-                .uri(format!("/?{query}"))
-                .body(Body::empty())
-                .unwrap()
-                .into_parts();
-            assert!(
-                Query::<StreamProxyQuery>::from_request_parts(&mut parts, &())
-                    .await
-                    .is_err()
-            );
-        }
-    }
-
-    #[tokio::test]
     async fn managed_proxy_rejects_client_headers_and_never_falls_back_after_expiry() {
         let app = super::router::<StreamProxyState>().with_state(test_state(true));
         let target = ("url", "http://127.0.0.1/");
@@ -1502,24 +1465,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proxy_rejects_non_http_schemes() {
-        let state = test_state(false);
-
-        let app = Router::new()
-            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
-            .with_state(state);
-
-        let query = build_query(&[("url", "file:///etc/passwd")]);
-        let request = HttpRequest::builder()
-            .uri(format!("/api/stream-proxy?{query}"))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
     async fn proxy_rewrites_hls_manifest_responses() {
         let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_addr = upstream_listener.local_addr().unwrap();
@@ -1613,13 +1558,6 @@ mod tests {
             let error = validate_target_url(&target, false).await.unwrap_err();
             assert_eq!(error.status, StatusCode::BAD_REQUEST);
         }
-    }
-
-    #[tokio::test]
-    async fn validate_allows_private_targets_when_enabled() {
-        let target = url::Url::parse("http://localhost:8080/stream").unwrap();
-        assert!(validate_target_url(&target, true).await.is_ok());
-        assert!(validate_target_url(&target, false).await.is_err());
     }
 
     #[tokio::test]

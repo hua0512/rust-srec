@@ -95,78 +95,15 @@ impl ApiKeyDbModel {
         ApiKeyAccessLevel::parse(&self.access_level).unwrap_or(ApiKeyAccessLevel::ReadOnly)
     }
 
-    /// Check if the key is expired.
-    pub fn is_expired(&self) -> bool {
-        self.expires_at
-            .is_some_and(|at| at < crate::database::time::now_ms())
-    }
-
     /// Check if the key is revoked.
     pub fn is_revoked(&self) -> bool {
         self.revoked_at.is_some()
-    }
-
-    /// Check if the key is valid (not expired and not revoked).
-    pub fn is_valid(&self) -> bool {
-        !self.is_expired() && !self.is_revoked()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn new_key_is_valid_and_preserves_fields() {
-        let key = ApiKeyDbModel::new(
-            "user-123",
-            "my ai key",
-            "hashed",
-            "srec_ab12cd34",
-            ApiKeyAccessLevel::ReadOnly,
-            None,
-        );
-
-        assert_eq!(key.user_id, "user-123");
-        assert_eq!(key.name, "my ai key");
-        assert_eq!(key.key_hash, "hashed");
-        assert_eq!(key.key_prefix, "srec_ab12cd34");
-        assert_eq!(key.get_access_level(), ApiKeyAccessLevel::ReadOnly);
-        assert!(key.expires_at.is_none());
-        assert!(key.is_valid());
-    }
-
-    #[test]
-    fn expired_key_is_invalid() {
-        let past = crate::database::time::now_ms() - 1000;
-        let key = ApiKeyDbModel::new(
-            "user-123",
-            "old",
-            "hash",
-            "srec_old",
-            ApiKeyAccessLevel::Full,
-            Some(past),
-        );
-
-        assert!(key.is_expired());
-        assert!(!key.is_valid());
-    }
-
-    #[test]
-    fn revoked_key_is_invalid() {
-        let mut key = ApiKeyDbModel::new(
-            "user-123",
-            "gone",
-            "hash",
-            "srec_gone",
-            ApiKeyAccessLevel::Full,
-            None,
-        );
-        key.revoked_at = Some(crate::database::time::now_ms());
-
-        assert!(key.is_revoked());
-        assert!(!key.is_valid());
-    }
 
     #[test]
     fn access_level_round_trips_and_fails_closed() {

@@ -896,36 +896,6 @@ async fn concurrent_health_change_after_reservation_prevents_stale_account_extra
     .unwrap();
 }
 
-#[test]
-fn engine_diagnostic_gate_does_not_promote_generic_http_or_local_failures() {
-    use crate::downloader::DownloadFailureKind as Kind;
-    use crate::downloader::engine::EngineType;
-    assert!(
-        Kind::HttpClientError { status: 401 }.requests_credential_diagnostic(EngineType::Mesio)
-    );
-    assert!(
-        Kind::HttpClientError { status: 403 }.requests_credential_diagnostic(EngineType::Mesio)
-    );
-    assert!(!Kind::HttpClientError { status: 403 }.is_recoverable());
-    assert!(Kind::ProcessExit { code: Some(1) }.requests_credential_diagnostic(EngineType::Ffmpeg));
-    for kind in [
-        Kind::Io,
-        Kind::Processing,
-        Kind::Configuration,
-        Kind::Cancelled,
-        Kind::HttpClientError { status: 404 },
-        Kind::SourceUnavailable,
-    ] {
-        for engine in [
-            EngineType::Mesio,
-            EngineType::Ffmpeg,
-            EngineType::Streamlink,
-        ] {
-            assert!(!kind.requests_credential_diagnostic(engine));
-        }
-    }
-}
-
 /// A provider that found nothing to refresh returns the stored bundle.
 struct UnchangedRefresh {
     calls: std::sync::atomic::AtomicUsize,

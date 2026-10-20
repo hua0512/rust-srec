@@ -725,11 +725,9 @@ mod tests {
 
     use super::{
         ConfigRouteState, replace_platform_config, update_global_config,
-        validate_global_config_request, validate_optional_retention_days, validate_retention_days,
+        validate_global_config_request,
     };
-    use crate::api::models::{
-        GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest,
-    };
+    use crate::api::models::{PlatformConfigResponse, UpdateGlobalConfigRequest};
     use crate::config::ConfigService;
     use crate::database;
     use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
@@ -852,38 +850,6 @@ mod tests {
                 let result = validate_global_config_request(&global_request(json!({field: value})));
                 assert_eq!(result.is_ok(), representable, "{field}: {result:?}");
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn global_patch_checks_gpu_timer_range_before_mutation() {
-        let (_dir, state) = config_state().await;
-        let before = state.config_service.get_global_config().await.unwrap();
-        let representable = std::time::Instant::now()
-            .checked_add(std::time::Duration::from_secs(i64::MAX.unsigned_abs()))
-            .is_some();
-        let result = update_global_config(
-            State(state.clone()),
-            Json(global_request(json!({
-                "output_folder": "/changed",
-                "gpu_health_probe_interval_secs": i64::MAX,
-            }))),
-        )
-        .await;
-        let after = state.config_service.get_global_config().await.unwrap();
-        if representable {
-            let Json(response) = result.unwrap();
-            assert_eq!(response.output_folder, "/changed");
-            assert_eq!(after.output_folder, "/changed");
-            assert_eq!(after.gpu_health_probe_interval_secs, i64::MAX);
-        } else {
-            let error = result.expect_err("unrepresentable GPU interval must be rejected");
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            assert!(error.message.contains("gpu_health_probe_interval_secs"));
-            assert_eq!(
-                serde_json::to_value(&after).unwrap(),
-                serde_json::to_value(&before).unwrap()
-            );
         }
     }
 
@@ -1308,67 +1274,5 @@ mod tests {
                 serde_json::to_value(&before).unwrap()
             );
         }
-    }
-
-    #[test]
-    fn retention_validation_accepts_zero_and_positive_integers() {
-        assert!(validate_retention_days("retention", 0).is_ok());
-        assert!(validate_retention_days("retention", 30).is_ok());
-    }
-
-    #[test]
-    fn retention_validation_rejects_negative_or_non_integer_values() {
-        let error = validate_retention_days("retention", -1)
-            .expect_err("negative retention must be rejected");
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
-
-        let value = serde_json::json!(1.5);
-        let error = validate_optional_retention_days("retention", Some(&value))
-            .expect_err("fractional retention must be rejected");
-        assert_eq!(error.status, StatusCode::BAD_REQUEST);
-    }
-
-    #[test]
-    fn test_global_config_response_serialization() {
-        let response = GlobalConfigResponse {
-            output_folder: "/app/output".to_string(),
-            output_filename_template: "{name}".to_string(),
-            output_file_format: "flv".to_string(),
-            min_segment_size_bytes: 1048576,
-            max_download_duration_secs: 0,
-            max_part_size_bytes: 8589934592,
-            record_danmu: false,
-            danmu_statistics: None,
-            max_concurrent_downloads: 6,
-            max_concurrent_uploads: 3,
-            streamer_check_delay_ms: 60000,
-            proxy_route: crate::proxies::ProxyRoute::Direct,
-            offline_check_delay_ms: 20000,
-            offline_check_count: 3,
-            default_download_engine: "mesio".to_string(),
-            default_extractor: None,
-            max_concurrent_cpu_jobs: 0,
-            max_concurrent_io_jobs: 8,
-            job_history_retention_days: 30,
-            notification_event_log_retention_days: 30,
-            output_retention_days: 0,
-            output_retention_delete_files: false,
-            pipeline: None,
-            session_complete_pipeline: None,
-            paired_segment_pipeline: None,
-            log_filter_directive: "rust_srec=info".to_string(),
-            auto_thumbnail: true,
-
-            pipeline_cpu_job_timeout_secs: 3600,
-            pipeline_io_job_timeout_secs: 3600,
-            pipeline_execute_timeout_secs: 3600,
-            queue_freshness_threshold_ms: 60_000,
-            gpu_health_probe_interval_secs: 30,
-            stream_proxy_allow_private_targets: false,
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("downloads"));
-        assert!(json.contains("mesio"));
     }
 }

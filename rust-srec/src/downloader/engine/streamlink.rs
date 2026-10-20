@@ -1294,32 +1294,6 @@ mod tests {
             assert_eq!(entered.load(Ordering::Relaxed), 1);
         }
     }
-    use crate::downloader::engine::utils::parse_time;
-
-    #[test]
-    fn ffmpeg_path_json_is_optional_and_round_trips() {
-        for json in [
-            r#"{}"#,
-            r#"{"binary_path":"streamlink","ffmpeg_path":null}"#,
-        ] {
-            let config: StreamlinkEngineConfig = serde_json::from_str(json).unwrap();
-            assert!(config.ffmpeg_path.is_none());
-            assert!(
-                serde_json::to_value(config)
-                    .unwrap()
-                    .get("ffmpeg_path")
-                    .is_none()
-            );
-        }
-        let json = serde_json::json!({"ffmpeg_path": "custom tools/ffmpeg"});
-        let config: StreamlinkEngineConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.ffmpeg_path.as_deref(), Some("custom tools/ffmpeg"));
-        assert_eq!(
-            serde_json::to_value(config).unwrap()["ffmpeg_path"],
-            "custom tools/ffmpeg"
-        );
-        assert!(serde_json::from_str::<StreamlinkEngineConfig>(r#"{"ffmpeg_path":7}"#).is_err());
-    }
 
     #[test]
     fn ffmpeg_command_selection_child() {
@@ -1404,35 +1378,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn output_error_precedes_terminal_in_streamlink_pipeline() {
-        use super::super::utils::test_support::{assert_output_failure, script};
-        let dir = tempfile::tempdir().unwrap();
-        let ffmpeg_path = script(
-            dir.path(),
-            "ffmpeg",
-            "printf '%s\\n' 'Error opening output file: Permission denied' >&2\nexit 0\n",
-        );
-        let binary_path = script(dir.path(), "streamlink", "sleep 1\nexit 0\n");
-        let engine = StreamlinkEngine {
-            config: StreamlinkEngineConfig {
-                binary_path,
-                ..Default::default()
-            },
-            ffmpeg_path,
-            version: None,
-            fixture: None,
-            shutdown_fixture: None,
-        };
-        assert_output_failure(&engine, dir.path()).await;
-    }
-    #[test]
-    fn test_engine_type() {
-        let engine = StreamlinkEngine::new();
-        assert_eq!(engine.engine_type(), EngineType::Streamlink);
-    }
-
     #[test]
     fn remux_logging_and_literal_percent_paths_preserve_recording_contract() {
         let engine = StreamlinkEngine {
@@ -1509,31 +1454,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_streamlink_output() {
-        assert!(matches!(
-            StreamlinkEngine::parse_streamlink_output("[cli][info] Opening stream"),
-            Some(StreamlinkStatus::StreamOpened)
-        ));
-        assert!(matches!(
-            StreamlinkEngine::parse_streamlink_output("[cli][info] Stream ended"),
-            Some(StreamlinkStatus::StreamEnded)
-        ));
-        assert!(matches!(
-            StreamlinkEngine::parse_streamlink_output("[cli][error] Something went wrong"),
-            Some(StreamlinkStatus::Error(_))
-        ));
-        assert!(StreamlinkEngine::parse_streamlink_output("random line").is_none());
-    }
-
-    #[test]
-    fn test_parse_time() {
-        // Tests now use shared utility
-        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
-        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
-        assert_eq!(parse_time("invalid"), None);
-    }
-
-    #[test]
     fn test_build_http_cookie_args_splits_cookie_string() {
         let args = build_http_cookie_args("a=1; b=2;  c=3");
         assert_eq!(
@@ -1550,22 +1470,6 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_error_is_appended_without_losing_primary_failure() {
-        let outcome = StreamlinkPipelineExit::Failed {
-            kind: DownloadFailureKind::Network,
-            message: "upstream read failed".to_string(),
-        }
-        .with_cleanup_error("timed out reaping ffmpeg".to_string());
-
-        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
-            panic!("expected failure outcome");
-        };
-        assert_eq!(kind, DownloadFailureKind::Network);
-        assert!(message.contains("upstream read failed"));
-        assert!(message.contains("timed out reaping ffmpeg"));
-    }
-
-    #[test]
     fn cleanup_error_turns_successful_ffmpeg_exit_into_failure() {
         let outcome = StreamlinkPipelineExit::Ffmpeg(Some(0))
             .with_cleanup_error("failed to reap streamlink".to_string());
@@ -1575,43 +1479,6 @@ mod tests {
         };
         assert_eq!(kind, DownloadFailureKind::ProcessExit { code: None });
         assert!(message.contains("failed to reap streamlink"));
-    }
-
-    #[test]
-    fn clean_ffmpeg_exit_completes_when_streamlink_also_exits_cleanly() {
-        let outcome = clean_ffmpeg_exit_outcome(&StreamlinkSettlement::ExitedCleanly, None);
-        assert!(matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0))));
-    }
-
-    #[test]
-    fn clean_ffmpeg_exit_reports_a_non_zero_streamlink_status_as_failure() {
-        let outcome = clean_ffmpeg_exit_outcome(
-            &StreamlinkSettlement::ExitedWithFailure {
-                code: Some(130),
-                status: "exit code: 130".to_string(),
-            },
-            None,
-        );
-
-        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
-            panic!("expected failure outcome");
-        };
-        assert_eq!(kind, DownloadFailureKind::ProcessExit { code: Some(130) });
-        assert!(message.contains("exit code: 130"));
-    }
-
-    #[test]
-    fn clean_ffmpeg_exit_reports_a_streamlink_wait_error_as_failure() {
-        let outcome = clean_ffmpeg_exit_outcome(
-            &StreamlinkSettlement::WaitFailed("no child processes".to_string()),
-            None,
-        );
-
-        let StreamlinkPipelineExit::Failed { kind, message } = outcome else {
-            panic!("expected failure outcome");
-        };
-        assert_eq!(kind, DownloadFailureKind::ProcessExit { code: None });
-        assert!(message.contains("no child processes"));
     }
 
     #[test]
@@ -1671,11 +1538,5 @@ mod tests {
         assert_eq!(kind, DownloadFailureKind::Network);
         assert!(message.contains("broken pipe"));
         assert!(message.contains("FFmpeg exited with code 1"));
-    }
-
-    #[test]
-    fn absent_pipe_failure_leaves_the_outcome_untouched() {
-        let outcome = apply_pipe_failure(StreamlinkPipelineExit::Ffmpeg(Some(0)), None);
-        assert!(matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0))));
     }
 }

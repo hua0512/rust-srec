@@ -974,7 +974,4 @@ impl RuntimeCoordinator {
 }
 
 #[cfg(test)]
-mod config_refresh_tests;
-
-#[cfg(test)]
 mod contract_tests;

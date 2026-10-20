@@ -436,17 +436,6 @@ mod health_code_tests {
         HealthReason::AuthenticationFailed,
     ];
 
-    /// The API and the database share one spelling per code.
-    #[test]
-    fn json_spelling_matches_stored_text() {
-        for reason in REASONS {
-            assert_eq!(serde_json::json!(reason), reason.as_str());
-        }
-        for reason in UNAVAILABLE_REASON_CODES {
-            assert_eq!(serde_json::json!(reason), reason.as_str());
-        }
-    }
-
     #[tokio::test]
     async fn stored_text_round_trips_and_unknown_text_is_rejected() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();

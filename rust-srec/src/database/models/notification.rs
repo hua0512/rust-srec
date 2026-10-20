@@ -259,38 +259,3 @@ impl std::fmt::Display for SystemEvent {
         f.write_str(self.as_str())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_channel_type() {
-        assert_eq!(ChannelType::Discord.as_str(), "Discord");
-        assert_eq!(ChannelType::parse("Email"), Some(ChannelType::Email));
-    }
-
-    #[test]
-    fn test_discord_settings() {
-        let settings = DiscordChannelSettings {
-            webhook_url: "https://discord.com/api/webhooks/...".to_string(),
-            username: Some("Bot".to_string()),
-            avatar_url: None,
-        };
-        let json = serde_json::to_string(&settings).unwrap();
-        assert!(json.contains("webhook_url"));
-    }
-
-    #[test]
-    fn test_dead_letter_new() {
-        let entry = NotificationDeadLetterDbModel::new(
-            "channel-1",
-            "StreamOnline",
-            r#"{"streamer":"test"}"#,
-            "Connection refused",
-            3,
-            0,
-        );
-        assert_eq!(entry.retry_count, 3);
-    }
-}

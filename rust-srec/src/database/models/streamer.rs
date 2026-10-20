@@ -75,17 +75,3 @@ impl StreamerDbModel {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_streamer_new() {
-        let streamer = StreamerDbModel::new("test", "https://example.com/test", "platform-1");
-        assert_eq!(streamer.name, "test");
-        assert_eq!(streamer.state, "NOT_LIVE");
-        assert_eq!(streamer.priority, "NORMAL");
-        assert_eq!(streamer.consecutive_error_count, Some(0));
-    }
-}

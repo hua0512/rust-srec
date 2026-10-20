@@ -156,11 +156,10 @@ SQLite 行是权威数据。`StreamerManager` 为 actor 检查提供不可变的
 Scheduler 采用 supervisor + actor 的结构：
 
 - `StreamerActor`：单个主播的自调度状态循环（自己管理定时）
-- `PlatformActor`：对支持批量探测的平台进行批量协调
 - `Supervisor`：负责 actor 生命周期、崩溃恢复、退出汇总
 
-Actor 会调用 `StreamMonitor` 做真实状态探测；Scheduler 同时订阅配置事件，动态创建/移除
-actor。
+每个 actor 通过 `StreamMonitor` 单独探测自己负责的主播；Scheduler 同时订阅配置事件，
+动态创建/移除 actor。
 
 调度器在创建 actor 或发送时序更新前，通过共享配置服务解析全局 → 平台 → 模板 →
 主播四层配置。它直接读取当前配置层，不依赖容器另一个订阅者刷新元数据的先后顺序，
@@ -178,8 +177,7 @@ actor。
 不可恢复的 actor 错误表示终止决定，例如主播已被移除。定时器与消息路径都会
 正常停止，并执行已配置的状态持久化；supervisor 不会为它们安排重启。可恢复的
 任务失败与 panic 仍可重启。连续十次崩溃后停止自动重启，即使较早的崩溃已离开
-六十秒退避窗口。该窗口仍决定重启延迟；显式清除失败记录或移除 actor 会重置
-崩溃额度。
+六十秒退避窗口。该窗口仍决定重启延迟；移除 actor 会重置崩溃额度。
 
 下载终止反馈保留会话生命周期的权责边界。应用关闭和主播禁用导致的停止，只会
 暂停 actor 本地轮询，不会上报下播：关闭时保留会话供恢复，禁用清理流程负责
@@ -479,10 +477,9 @@ Healthy ◄───────────────────────
 ### Actor 终止与唤醒策略 {#actor-终止与唤醒策略}
 
 Actor 的邮箱执行、单次检查、可靠反馈、终止决定及在线唤醒决定分别位于独立模块。
-批量检测委托保留原有控制方式，此次拆分不会启用它。只有明确的主播下播终止策略
-才向 monitor 提交 Offline。正常完成、用户停止和未知停止原因恢复状态核验；应用
-关闭和禁用则暂停轮询。基础设施阻断保留现有持久化及重试规则，反馈确认仍在副作用
-应用完成后发送。
+只有明确的主播下播终止策略才向 monitor 提交 Offline。正常完成、用户停止和未知停止
+原因恢复状态核验；应用关闭和禁用则暂停轮询。基础设施阻断保留现有持久化及重试规则，
+反馈确认仍在副作用应用完成后发送。
 
 显式检查期限优先于在线 watchdog。在线且未安排检查的 actor，先选择 watchdog、
 心跳停滞及时间窗口边界中的最早唤醒时间，再应用失败 watchdog 的最小重试间隔。
@@ -492,8 +489,8 @@ Rust 调用方应使用 `DownloadEndPolicy::Stopped(DownloadStopCause::User)`。
 线上的
 `DownloadStopCause::User` 保持不变。`StreamerActor` 和 `Supervisor` 的元数据存储
 构造参数现在使用 `Arc<StreamerMetadata>` 值。应通过 `StreamerManager` 获取共享
-存储；actor 检查克隆不可变的 Arc 快照，不再复制配置 JSON。原有 actor 公共导出及
-`StatusChecker` 的借用元数据输入保持不变。
+存储；actor 检查克隆不可变的 Arc 快照，不再复制配置 JSON。`StatusChecker` 接收借用的
+元数据输入，是调度器唯一的状态检查接口。
 
 ## 独立后端关闭期限
 

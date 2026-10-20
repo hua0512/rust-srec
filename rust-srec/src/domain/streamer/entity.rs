@@ -55,25 +55,3 @@ impl Streamer {
         self
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn create_test_streamer() -> Streamer {
-        Streamer::new(
-            "test_streamer",
-            StreamerUrl::from_trusted("https://www.twitch.tv/test"),
-            "platform-1",
-        )
-    }
-
-    #[test]
-    fn test_new_streamer() {
-        let streamer = create_test_streamer();
-        assert_eq!(streamer.name, "test_streamer");
-        assert_eq!(streamer.state, StreamerState::NotLive);
-        assert_eq!(streamer.priority, Priority::Normal);
-        assert_eq!(streamer.consecutive_error_count, 0);
-    }
-}

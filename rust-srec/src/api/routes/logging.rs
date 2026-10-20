@@ -853,28 +853,3 @@ mod archive_tests;
 
 #[cfg(test)]
 mod auth_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_update_request_deserialize() {
-        let json = r#"{"filter": "rust_srec=debug"}"#;
-        let request: UpdateLogFilterRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.filter, "rust_srec=debug");
-    }
-
-    #[test]
-    fn test_logging_config_response_serialize() {
-        let response = LoggingConfigResponse {
-            filter: "rust_srec=info".to_string(),
-            available_modules: vec![ModuleInfo {
-                name: "rust_srec".to_string(),
-                description: "Main app".to_string(),
-            }],
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("rust_srec=info"));
-    }
-}

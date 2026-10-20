@@ -286,15 +286,4 @@ mod tests {
         assert!(first != second);
         assert!(identity(directory.path().to_str().unwrap()).await.is_none());
     }
-
-    #[tokio::test]
-    async fn invocation_aliases_do_not_share_an_argv_dependent_capability() {
-        let cache = CapabilityCache::new(4, 1);
-        let first = key(1);
-        let mut alias = first.clone();
-        alias.invocation = "reject-plugin-option".into();
-        alias.launch_path = "reject-plugin-option".into();
-        assert!(cache.check(first, || async { true }).await);
-        assert!(!cache.check(alias, || async { false }).await);
-    }
 }

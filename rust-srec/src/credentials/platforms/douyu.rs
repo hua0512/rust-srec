@@ -159,7 +159,7 @@ impl CredentialProvider for DouyuProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credentials::{OperationDeadline, PlatformAdmission, provider_client};
+    use crate::credentials::{OperationDeadline, PlatformAdmission};
     use crate::monitor::RateLimiterManager;
 
     fn material(cookies: &str, refresh_token: Option<&str>) -> CredentialMaterial {
@@ -189,29 +189,6 @@ mod tests {
         assert!(capabilities.qr_login && capabilities.refresh && capabilities.refresh_token);
         assert!(!capabilities.check);
         assert_eq!(DouyuProvider.renew_after(), Some(RENEW_AFTER));
-    }
-
-    #[tokio::test]
-    async fn refresh_and_poll_without_their_material_make_no_request() {
-        // No server listens: a request would fail as a network error.
-        let error = DouyuProvider
-            .refresh(
-                &provider_client(&platforms_parser::proxy::ProxyTarget::Direct).unwrap(),
-                &material("acf_did=bdevice", None),
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(error, CredentialError::MissingRefreshToken));
-        assert!(error.requires_relogin());
-        assert!(matches!(
-            DouyuProvider
-                .poll_qr_login(
-                    &provider_client(&platforms_parser::proxy::ProxyTarget::Direct).unwrap(),
-                    "not a handle"
-                )
-                .await,
-            Err(CredentialError::Internal(_))
-        ));
     }
 
     #[tokio::test(start_paused = true)]

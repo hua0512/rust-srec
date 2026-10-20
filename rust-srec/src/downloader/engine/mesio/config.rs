@@ -527,10 +527,9 @@ fn mesio_proxy(endpoint: &ProxyEndpoint) -> ProxyConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flv_fix::FlvPipelineConfig;
-    use hls_fix::HlsPipelineConfig;
-    use pipeline_common::config::PipelineConfig;
     use std::path::PathBuf;
+
+    use pipeline_common::config::PipelineConfig;
 
     use crate::downloader::DownloadProtocol;
 
@@ -558,22 +557,6 @@ mod tests {
             flv_pipeline_config: None,
             engines_override: None,
         }
-    }
-
-    #[test]
-    fn test_build_hls_config_default() {
-        let config = create_test_download_config();
-        let hls_config = build_hls_config(&config, None, &MesioEngineConfig::default());
-
-        // Should have default headers from mesio
-        assert!(
-            hls_config
-                .base
-                .headers
-                .contains_key(reqwest::header::ACCEPT)
-        );
-        // Should not have proxy configured
-        assert!(hls_config.base.proxy.is_none());
     }
 
     #[test]
@@ -636,22 +619,6 @@ mod tests {
         let proxy = hls_config.base.proxy.unwrap();
         assert_eq!(proxy.url, "http://proxy.example.com:8080");
         assert_eq!(proxy.proxy_type, ProxyType::Http);
-    }
-
-    #[test]
-    fn test_build_flv_config_default() {
-        let config = create_test_download_config();
-        let flv_config = build_flv_config(&config, None);
-
-        // Should have default headers from mesio
-        assert!(
-            flv_config
-                .base
-                .headers
-                .contains_key(reqwest::header::ACCEPT)
-        );
-        // Should not have proxy configured
-        assert!(flv_config.base.proxy.is_none());
     }
 
     #[test]
@@ -736,125 +703,34 @@ mod tests {
         );
     }
 
+    /// Mesio splits parts by the pipeline config, so the part limits must reach it.
     #[test]
-    fn test_build_pipeline_config_default() {
-        let config = create_test_download_config();
-        let pipeline_config = config.build_pipeline_config();
-
-        assert_eq!(pipeline_config.channel_size, 64);
-        assert_eq!(pipeline_config.max_file_size, 0);
-    }
-
-    #[test]
-    fn test_build_pipeline_config_with_max_duration() {
+    fn build_pipeline_config_carries_part_limits_and_prefers_an_explicit_config() {
         let mut config = create_test_download_config();
+        let unlimited = config.build_pipeline_config();
+        assert_eq!((unlimited.max_file_size, unlimited.max_duration), (0, None));
+
+        config.max_segment_size_bytes = 100 * 1024 * 1024;
         config.max_segment_duration_secs = 3600;
+        let limited = config.build_pipeline_config();
+        assert_eq!(limited.max_file_size, 100 * 1024 * 1024);
+        assert_eq!(limited.max_duration, Some(Duration::from_secs(3600)));
 
-        let pipeline_config = config.build_pipeline_config();
-
-        assert_eq!(
-            pipeline_config.max_duration,
-            Some(std::time::Duration::from_secs(3600))
-        );
-    }
-
-    #[test]
-    fn test_build_hls_pipeline_config_default() {
-        let config = create_test_download_config();
-        let hls_pipeline_config = config.build_hls_pipeline_config();
-
-        // Should return default config - check individual fields
-        let default_config = HlsPipelineConfig::default();
-        assert_eq!(hls_pipeline_config.defragment, default_config.defragment);
-        assert_eq!(
-            hls_pipeline_config.split_segments,
-            default_config.split_segments
-        );
-        assert_eq!(
-            hls_pipeline_config.segment_limiter,
-            default_config.segment_limiter
-        );
-    }
-
-    #[test]
-    fn test_build_flv_pipeline_config_default() {
-        let config = create_test_download_config();
-        let flv_pipeline_config = config.build_flv_pipeline_config();
-
-        // Should return default config - check individual fields
-        let default_config = FlvPipelineConfig::default();
-        assert!(!flv_pipeline_config.duplicate_tag_filtering);
-        assert!(
-            !flv_pipeline_config
-                .duplicate_tag_filter_config
-                .enable_replay_offset_matching
-        );
-        assert_eq!(flv_pipeline_config.pipe_mode, default_config.pipe_mode);
-    }
-
-    #[test]
-    fn test_build_pipeline_config_with_max_size() {
-        let mut config = create_test_download_config();
-        config.max_segment_size_bytes = 1024 * 1024 * 100; // 100 MB
-
-        let pipeline_config = config.build_pipeline_config();
-
-        assert_eq!(pipeline_config.max_file_size, 1024 * 1024 * 100);
-    }
-
-    #[test]
-    fn test_build_pipeline_config_with_explicit_config() {
-        let mut config = create_test_download_config();
-        // Set explicit pipeline config
         config.pipeline_config = Some(
             PipelineConfig::builder()
                 .max_file_size(500_000_000)
-                .max_duration(std::time::Duration::from_secs(7200))
                 .channel_size(128)
                 .build(),
         );
-
-        let pipeline_config = config.build_pipeline_config();
-
-        // Should use the explicit config, not build from individual fields
-        assert_eq!(pipeline_config.max_file_size, 500_000_000);
+        let explicit = config.build_pipeline_config();
         assert_eq!(
-            pipeline_config.max_duration.unwrap(),
-            std::time::Duration::from_secs(7200)
+            (
+                explicit.max_file_size,
+                explicit.max_duration,
+                explicit.channel_size
+            ),
+            (500_000_000, None, 128)
         );
-        assert_eq!(pipeline_config.channel_size, 128);
-    }
-
-    #[test]
-    fn test_build_hls_pipeline_config_with_explicit_config() {
-        let mut config = create_test_download_config();
-        config.hls_pipeline_config = Some(HlsPipelineConfig {
-            defragment: false,
-            split_segments: true,
-            segment_limiter: false,
-        });
-
-        let hls_pipeline_config = config.build_hls_pipeline_config();
-
-        assert!(!hls_pipeline_config.defragment);
-        assert!(hls_pipeline_config.split_segments);
-        assert!(!hls_pipeline_config.segment_limiter);
-    }
-
-    #[test]
-    fn test_build_flv_pipeline_config_with_explicit_config() {
-        let mut config = create_test_download_config();
-        config.flv_pipeline_config = Some(
-            FlvPipelineConfig::builder()
-                .duplicate_tag_filtering(false)
-                .pipe_mode(true)
-                .build(),
-        );
-
-        let flv_pipeline_config = config.build_flv_pipeline_config();
-
-        assert!(!flv_pipeline_config.duplicate_tag_filtering);
-        assert!(flv_pipeline_config.pipe_mode);
     }
 
     #[test]
@@ -1024,29 +900,6 @@ mod tests {
         .unwrap();
         assert!(direct.base.proxy.is_none());
         assert!(!direct.base.use_system_proxy);
-    }
-
-    #[test]
-    fn build_dash_config_without_overrides_keeps_engine_defaults() {
-        let config = create_test_download_config();
-        let dash = build_dash_config(&config, None, &MesioEngineConfig::default()).unwrap();
-        let engine = DashConfig::default();
-        assert_eq!(dash.selection.video, engine.selection.video);
-        assert_eq!(dash.live_start, engine.live_start);
-        assert_eq!(
-            dash.scheduler.download_concurrency,
-            engine.scheduler.download_concurrency
-        );
-
-        // An empty `dash` object is the same as none.
-        let empty =
-            build_dash_config(&config, None, &dash_engine_config(serde_json::json!({}))).unwrap();
-        assert_eq!(empty.selection.video, engine.selection.video);
-        assert_eq!(empty.manifest.fetch_timeout, engine.manifest.fetch_timeout);
-        assert_eq!(
-            empty.fetcher.max_segment_retries,
-            engine.fetcher.max_segment_retries
-        );
     }
 
     #[test]

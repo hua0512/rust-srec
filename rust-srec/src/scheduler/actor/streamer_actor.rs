@@ -7,7 +7,8 @@
 //! # Responsibilities
 //!
 //! - Self-scheduling: Determines when to perform the next check based on state
-//! - Message handling: Processes CheckStatus, ConfigUpdate, BatchResult, Stop, GetState
+//! - Status checks: Checks its streamer individually through the `StatusChecker`
+//! - Message handling: Processes CheckStatus, ConfigUpdate, download lifecycle, Stop, GetState
 //! - Fault isolation: Failures don't affect other actors
 //!
 //! # State Management
@@ -25,11 +26,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace, warn};
 
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
-use super::messages::{
-    BatchDetectionResult, CheckResult, PlatformMessage, StreamerActorState, StreamerConfig,
-    StreamerMessage,
-};
-use super::metrics::ActorMetrics;
+use super::messages::{CheckResult, StreamerActorState, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::StatusChecker;
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::DownloadStopCause;
@@ -37,7 +34,6 @@ use crate::monitor::{LiveStatus, ProcessStatusResult, ProcessStatusSuppression};
 use crate::scheduler::actor::DownloadEndPolicy;
 use crate::streamer::StreamerMetadata;
 
-mod batch;
 mod checks;
 mod feedback;
 mod mailbox;
@@ -110,8 +106,6 @@ pub struct StreamerActor {
         reason = "retained for optional runtime paths and diagnostics"
     )]
     self_handle: mpsc::Sender<StreamerMessage>,
-    /// Platform actor handle (if on batch-capable platform).
-    platform_actor: Option<mpsc::Sender<PlatformMessage>>,
     /// Current actor state (runtime scheduling state only).
     state: StreamerActorState,
     /// Hydration resets Live metadata but keeps unfinished database sessions.
@@ -131,8 +125,6 @@ pub struct StreamerActor {
     config: StreamerConfig,
     /// Cancellation token.
     cancellation_token: CancellationToken,
-    /// Metrics handle.
-    metrics: ActorMetrics,
     /// Status checker for performing actual status checks.
     status_checker: Arc<dyn StatusChecker>,
 }
@@ -168,7 +160,6 @@ impl StreamerActor {
             .get(&streamer_id)
             .map(|m| StreamerActorState::from_metadata(&m))
             .unwrap_or_default();
-        let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
 
         let actor = Self {
             feedback_sequence: 0,
@@ -178,14 +169,12 @@ impl StreamerActor {
             mailbox: rx,
             priority_mailbox: None,
             self_handle: tx,
-            platform_actor: None,
             state,
             initial_status_pending: true,
             live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
-            metrics,
             status_checker,
         };
 
@@ -221,7 +210,6 @@ impl StreamerActor {
             .get(&streamer_id)
             .map(|m| StreamerActorState::from_metadata(&m))
             .unwrap_or_default();
-        let metrics = ActorMetrics::new(&streamer_id, DEFAULT_MAILBOX_CAPACITY);
 
         let actor = Self {
             feedback_sequence: 0,
@@ -231,37 +219,15 @@ impl StreamerActor {
             mailbox: rx,
             priority_mailbox: Some(priority_rx),
             self_handle: tx,
-            platform_actor: None,
             state,
             initial_status_pending: true,
             live_watchdog_backoff_until: None,
             metadata_store,
             config,
             cancellation_token,
-            metrics,
             status_checker,
         };
 
-        (actor, handle)
-    }
-
-    /// Create a new StreamerActor with priority channel and platform actor.
-    pub fn with_priority_and_platform(
-        streamer_id: String,
-        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        platform_actor: mpsc::Sender<PlatformMessage>,
-        status_checker: Arc<dyn StatusChecker>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (mut actor, handle) = Self::with_priority_channel(
-            streamer_id,
-            metadata_store,
-            config,
-            cancellation_token,
-            status_checker,
-        );
-        actor.platform_actor = Some(platform_actor);
         (actor, handle)
     }
 
@@ -278,11 +244,6 @@ impl StreamerActor {
     /// Get the configuration.
     pub fn config(&self) -> &StreamerConfig {
         &self.config
-    }
-
-    /// Check if this actor uses batch detection.
-    pub fn uses_batch_detection(&self) -> bool {
-        self.platform_actor.is_some() && self.config.batch_capable
     }
 
     /// Get the current streamer metadata from the shared store.

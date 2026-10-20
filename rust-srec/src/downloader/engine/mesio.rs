@@ -103,56 +103,81 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stream_network_error_classifies_as_network() {
-        let err = DownloadError::StreamNetwork {
-            reason: "stream reset".to_string(),
-        };
-
-        assert_eq!(classify_download_error(&err), DownloadFailureKind::Network);
-    }
-
-    #[test]
-    fn manifest_error_classifies_as_retryable_like_playlist_errors() {
-        let manifest = DownloadError::Manifest {
-            reason: "SegmentTimeline overlaps".to_string(),
-        };
-        let playlist = DownloadError::Playlist {
-            reason: "bad playlist".to_string(),
-        };
-
-        let kind = classify_download_error(&manifest);
-        assert_eq!(kind, classify_download_error(&playlist));
-        assert!(kind.is_recoverable());
-    }
-
-    #[test]
-    fn rate_limiting_classifies_as_recoverable_rate_limited() {
-        for status in [
-            StatusCode::TOO_MANY_REQUESTS,
-            StatusCode::SERVICE_UNAVAILABLE,
-        ] {
-            let err = DownloadError::rate_limited(
+    fn mesio_failures_sort_into_retry_and_circuit_breaker_classes() {
+        let rate_limited = |status| {
+            DownloadError::rate_limited(
                 status,
                 "https://cdn.example/live.m3u8",
                 "playlist refresh",
                 std::time::Duration::from_secs(30),
-            );
-            let kind = classify_download_error(&err);
-            assert_eq!(kind, DownloadFailureKind::RateLimited, "{status}");
-            assert!(kind.is_recoverable());
-        }
-    }
-
-    #[test]
-    fn unsupported_feature_classifies_as_non_retryable_configuration() {
-        let err = DownloadError::Unsupported {
-            protocol: "dash",
-            feature: "content protection (DRM)".to_string(),
+            )
         };
+        let reason = || "x".to_string();
+        let cases = [
+            (
+                DownloadError::Playlist { reason: reason() },
+                DownloadFailureKind::Network,
+            ),
+            (
+                DownloadError::Manifest { reason: reason() },
+                DownloadFailureKind::Network,
+            ),
+            (
+                DownloadError::StreamNetwork { reason: reason() },
+                DownloadFailureKind::Network,
+            ),
+            (
+                DownloadError::http_status(StatusCode::TOO_MANY_REQUESTS, "https://cdn", "fetch"),
+                DownloadFailureKind::RateLimited,
+            ),
+            (
+                rate_limited(StatusCode::SERVICE_UNAVAILABLE),
+                DownloadFailureKind::RateLimited,
+            ),
+            (
+                DownloadError::http_status(StatusCode::BAD_GATEWAY, "https://cdn", "fetch"),
+                DownloadFailureKind::HttpServerError { status: 502 },
+            ),
+            (
+                DownloadError::Unsupported {
+                    protocol: "dash",
+                    feature: "content protection (DRM)".to_string(),
+                },
+                DownloadFailureKind::Configuration,
+            ),
+            (
+                DownloadError::InvalidContent {
+                    protocol: "hls",
+                    reason: reason(),
+                },
+                DownloadFailureKind::Configuration,
+            ),
+            (
+                DownloadError::SegmentFetch {
+                    reason: reason(),
+                    retryable: true,
+                },
+                DownloadFailureKind::Network,
+            ),
+            (
+                DownloadError::SegmentFetch {
+                    reason: reason(),
+                    retryable: false,
+                },
+                DownloadFailureKind::SourceUnavailable,
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(classify_download_error(&error), expected, "{error}");
+        }
 
-        let kind = classify_download_error(&err);
-        assert_eq!(kind, DownloadFailureKind::Configuration);
-        assert!(!kind.is_recoverable());
-        assert!(!kind.affects_circuit_breaker());
+        for retried in [
+            DownloadFailureKind::Network,
+            DownloadFailureKind::RateLimited,
+        ] {
+            assert!(retried.is_recoverable() && retried.affects_circuit_breaker());
+        }
+        assert!(!DownloadFailureKind::Configuration.is_recoverable());
+        assert!(!DownloadFailureKind::Configuration.affects_circuit_breaker());
     }
 }

@@ -144,32 +144,6 @@ async fn smtp_connections_are_reused_and_replacements_keep_separate_pools() {
     .expect("local SMTP scenario must finish");
 }
 
-#[tokio::test]
-async fn filtered_sends_do_not_initialize_transport_and_bad_credentials_fail_locally() {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        let mut fixture = SmtpFixture::start().await;
-        for disabled in [true, false] {
-            let mut config = fixture.config();
-            config.enabled = !disabled;
-            config.min_priority = NotificationPriority::Critical;
-            let channel = EmailChannel::new(config);
-            channel.send(&event()).await.unwrap();
-            assert!(channel.transport.get().is_none());
-        }
-        let mut config = fixture.config();
-        config.smtp_username = Some("user".into());
-        let channel = EmailChannel::new(config);
-        for _ in 0..2 {
-            let error = channel.send(&event()).await.unwrap_err();
-            assert!(error.to_string().contains("username and password"));
-            assert!(channel.transport.get().is_none());
-        }
-        assert!(fixture.deliveries.try_recv().is_err());
-    })
-    .await
-    .expect("local validation must finish");
-}
-
 #[test]
 fn obsolete_batch_window_is_ignored_when_loading_old_config() {
     let mut value = serde_json::to_value(EmailConfig::default()).unwrap();

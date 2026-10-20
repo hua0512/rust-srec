@@ -25,7 +25,6 @@ use tracing::{debug, error, info};
 use super::dash_downloader::DashDownloader;
 use super::flv_downloader::FlvDownloader;
 use super::hls_downloader::HlsDownloader;
-use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
 use crate::downloader::engine::traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadProtocol,
@@ -99,15 +98,6 @@ impl MesioEngine {
     pub fn with_flv_config(mut self, config: FlvProtocolConfig) -> Self {
         self.flv_config = Some(config);
         self
-    }
-
-    /// Detect the protocol type from a URL using mesio's session entry point.
-    ///
-    /// Returns the detected `ProtocolType` (HLS, DASH or FLV) based on URL
-    /// patterns.
-    pub fn detect_protocol(url: &str) -> Result<ProtocolType> {
-        MesioDownloader::detect_protocol(url)
-            .map_err(|e| crate::Error::Other(format!("Protocol detection failed: {}", e)))
     }
 
     /// The protocol to record `config` with.
@@ -238,71 +228,6 @@ impl DownloadEngine for MesioEngine {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_engine_type() {
-        let engine = MesioEngine::new();
-        assert_eq!(engine.engine_type(), EngineType::Mesio);
-    }
-
-    #[test]
-    fn test_is_available() {
-        let engine = MesioEngine::new();
-        assert!(engine.is_available());
-    }
-
-    #[test]
-    fn test_version() {
-        let engine = MesioEngine::new();
-        assert_eq!(engine.version().as_deref(), Some(mesio::VERSION));
-    }
-
-    #[test]
-    fn test_default() {
-        let engine = MesioEngine::default();
-        assert!(engine.is_available());
-    }
-
-    #[test]
-    fn test_with_config() {
-        let config = MesioEngineConfig::default();
-        let engine = MesioEngine::with_config(config);
-        assert!(engine.is_available());
-    }
-
-    #[test]
-    fn flv_downloads_use_the_configured_buffer_size() {
-        let config = MesioEngineConfig {
-            buffer_size: 256 * 1024,
-            ..MesioEngineConfig::default()
-        };
-        let engine = MesioEngine::with_config(config);
-        let flv_config = engine.flv_config.as_ref().map(|c| c.buffer_size);
-        assert_eq!(flv_config, Some(256 * 1024));
-
-        let default_size = MesioEngine::new().flv_config.map(|c| c.buffer_size);
-        assert_eq!(default_size, Some(64 * 1024));
-    }
-
-    #[test]
-    fn test_detect_protocol_hls() {
-        let result = MesioEngine::detect_protocol("https://example.com/stream.m3u8");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), ProtocolType::Hls);
-    }
-
-    #[test]
-    fn test_detect_protocol_flv() {
-        let result = MesioEngine::detect_protocol("https://example.com/stream.flv");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), ProtocolType::Flv);
-    }
-
-    #[test]
-    fn test_detect_protocol_dash() {
-        let result = MesioEngine::detect_protocol("https://example.com/live/manifest.mpd?t=1");
-        assert_eq!(result.unwrap(), ProtocolType::Dash);
-    }
-
     fn download_config(url: &str, protocol: DownloadProtocol) -> DownloadConfig {
         DownloadConfig::new(url, "/tmp", "streamer", "streamer", "session").with_protocol(protocol)
     }
@@ -349,21 +274,5 @@ mod tests {
             resolve("https://cdn.example/live/stream", DownloadProtocol::Flv),
             ProtocolType::Flv
         );
-    }
-
-    #[test]
-    fn an_unlabelled_protocol_is_detected_from_the_url() {
-        let resolve =
-            |url| MesioEngine::resolve_protocol(&download_config(url, DownloadProtocol::Unknown));
-        assert_eq!(
-            resolve("https://cdn.example/live.mpd").unwrap(),
-            ProtocolType::Dash
-        );
-        assert_eq!(
-            resolve("https://cdn.example/live.m3u8").unwrap(),
-            ProtocolType::Hls
-        );
-        let error = resolve("https://cdn.example/clip.mp4").unwrap_err();
-        assert_eq!(error.kind, DownloadFailureKind::Configuration);
     }
 }

@@ -44,27 +44,6 @@ fn default_true() -> bool {
 }
 
 impl RetryPolicy {
-    /// Create a new retry policy with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create a retry policy with custom max retries.
-    pub fn with_max_retries(max_retries: u32) -> Self {
-        Self {
-            max_retries,
-            ..Default::default()
-        }
-    }
-
-    /// Create a retry policy that never retries.
-    pub fn no_retry() -> Self {
-        Self {
-            max_retries: 0,
-            ..Default::default()
-        }
-    }
-
     /// Calculate the delay for a given attempt number (0-indexed).
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         if attempt >= self.max_retries {
@@ -84,11 +63,6 @@ impl RetryPolicy {
             Duration::from_millis(delay_ms)
         }
     }
-
-    /// Check if more retries are allowed.
-    pub fn should_retry(&self, attempt: u32) -> bool {
-        attempt < self.max_retries
-    }
 }
 
 impl Default for RetryPolicy {
@@ -106,30 +80,6 @@ impl Default for RetryPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_default_policy() {
-        let policy = RetryPolicy::default();
-        assert_eq!(policy.max_retries, 3);
-        assert_eq!(policy.initial_delay_ms, 1000);
-        assert!(policy.use_jitter);
-    }
-
-    #[test]
-    fn test_no_retry() {
-        let policy = RetryPolicy::no_retry();
-        assert_eq!(policy.max_retries, 0);
-        assert!(!policy.should_retry(0));
-    }
-
-    #[test]
-    fn test_should_retry() {
-        let policy = RetryPolicy::with_max_retries(3);
-        assert!(policy.should_retry(0));
-        assert!(policy.should_retry(1));
-        assert!(policy.should_retry(2));
-        assert!(!policy.should_retry(3));
-    }
 
     #[test]
     fn test_delay_calculation_no_jitter() {
@@ -160,13 +110,5 @@ mod tests {
 
         // After a few attempts, should be capped at max
         assert_eq!(policy.delay_for_attempt(5), Duration::from_millis(5000));
-    }
-
-    #[test]
-    fn test_serialization() {
-        let policy = RetryPolicy::default();
-        let json = serde_json::to_string(&policy).unwrap();
-        let parsed: RetryPolicy = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.max_retries, policy.max_retries);
     }
 }

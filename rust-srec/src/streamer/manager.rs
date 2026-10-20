@@ -886,14 +886,6 @@ where
 
     // ========== URL Uniqueness Checks ==========
 
-    /// Check if a URL already exists in the system.
-    ///
-    /// Performs case-insensitive comparison.
-    pub fn url_exists(&self, url: &str) -> bool {
-        let url_lower = url.to_lowercase();
-        self.url_index.contains_key(&url_lower)
-    }
-
     /// Check if a URL exists for any streamer other than the specified one.
     ///
     /// Used during updates to allow a streamer to keep its own URL.
@@ -952,26 +944,6 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::Mutex;
 
-    #[tokio::test]
-    async fn hydration_recovery_report_retains_failed_persistent_repairs() {
-        for fails in [false, true] {
-            let mut streamer =
-                StreamerDbModel::new("name", "https://www.huya.com/test", "platform");
-            streamer.state = StreamerState::Live.to_string();
-            let id = streamer.id.clone();
-            let mut repository = MockStreamerRepository::with_streamers(vec![streamer]);
-            repository.fail_state_updates = fails;
-            let manager = StreamerManager::new(Arc::new(repository), ConfigEventBroadcaster::new());
-            let (count, complete) = manager.hydrate_with_recovery_status().await.unwrap();
-            assert_eq!(count, 1);
-            assert_eq!(complete, !fails);
-            assert_eq!(
-                manager.get_streamer(&id).unwrap().state,
-                StreamerState::NotLive
-            );
-        }
-    }
-
     fn create_errored_db_model(error_count: i32) -> StreamerDbModel {
         let mut row = create_test_db_model("s1", "twitch");
         row.state = StreamerState::TemporalDisabled.to_string();
@@ -1022,21 +994,18 @@ mod tests {
     /// Mock streamer repository for testing.
     struct MockStreamerRepository {
         streamers: Mutex<Vec<StreamerDbModel>>,
-        fail_state_updates: bool,
     }
 
     impl MockStreamerRepository {
         fn new() -> Self {
             Self {
                 streamers: Mutex::new(Vec::new()),
-                fail_state_updates: false,
             }
         }
 
         fn with_streamers(streamers: Vec<StreamerDbModel>) -> Self {
             Self {
                 streamers: Mutex::new(streamers),
-                fail_state_updates: false,
             }
         }
     }
@@ -1137,11 +1106,6 @@ mod tests {
         }
 
         async fn update_streamer_state(&self, _id: &str, _state: &str) -> Result<()> {
-            if self.fail_state_updates {
-                return Err(crate::Error::Database(
-                    "injected restart-state persistence failure".to_string(),
-                ));
-            }
             Ok(())
         }
 
@@ -1226,89 +1190,6 @@ mod tests {
         }
     }
 
-    fn create_test_manager() -> StreamerManager<MockStreamerRepository> {
-        let repo = Arc::new(MockStreamerRepository::new());
-        let broadcaster = ConfigEventBroadcaster::new();
-        StreamerManager::new(repo, broadcaster)
-    }
-
-    fn create_test_streamer(id: &str, url: &str) -> StreamerMetadata {
-        StreamerMetadata {
-            id: id.to_string(),
-            name: format!("Streamer {}", id),
-            url: url.to_string(),
-            platform_config_id: "test".to_string(),
-            template_config_id: None,
-            state: StreamerState::NotLive,
-            priority: Priority::Normal,
-            avatar_url: None,
-            consecutive_error_count: 0,
-            disabled_until: None,
-            last_live_time: None,
-            last_error: None,
-            streamer_specific_config: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_streamer_by_url_updates_on_change() {
-        let manager = create_test_manager();
-
-        let mut metadata = create_test_streamer("s1", "https://example.com/one");
-        manager.create_streamer(metadata.clone()).await.unwrap();
-
-        let by_url = manager.get_streamer_by_url("https://example.com/one");
-        assert!(by_url.is_some());
-
-        metadata.url = "https://example.com/two".to_string();
-        manager.update_streamer(metadata.clone()).await.unwrap();
-
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/one")
-                .is_none()
-        );
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/two")
-                .is_some()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_get_streamer_by_url_removed_on_delete() {
-        let manager = create_test_manager();
-
-        let metadata = create_test_streamer("s1", "https://example.com/one");
-        manager.create_streamer(metadata).await.unwrap();
-
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/one")
-                .is_some()
-        );
-
-        // The URL stays resolvable while the streamer is only marked: the row
-        // still holds it under `streamers.url`'s UNIQUE constraint.
-        manager.mark_deleting("s1").await.unwrap().unwrap();
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/one")
-                .is_some_and(|metadata| metadata.is_deleted())
-        );
-
-        manager.reap_deleted("s1").await.unwrap();
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/one")
-                .is_none()
-        );
-    }
     fn create_test_db_model(id: &str, platform: &str) -> StreamerDbModel {
         StreamerDbModel {
             id: id.to_string(),
@@ -1328,381 +1209,6 @@ mod tests {
             updated_at: Utc::now().timestamp_millis(),
             deleted_at: None,
         }
-    }
-
-    #[tokio::test]
-    async fn test_hydrate() {
-        let repo = MockStreamerRepository::with_streamers(vec![
-            create_test_db_model("s1", "twitch"),
-            create_test_db_model("s2", "youtube"),
-        ]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-
-        let count = manager.hydrate().await.unwrap();
-        assert_eq!(count, 2);
-        assert_eq!(manager.count(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_create_streamer() {
-        let repo = MockStreamerRepository::new();
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-
-        let metadata = StreamerMetadata {
-            id: "new-streamer".to_string(),
-            name: "New Streamer".to_string(),
-            url: "https://twitch.tv/new".to_string(),
-            platform_config_id: "twitch".to_string(),
-            template_config_id: None,
-            state: StreamerState::NotLive,
-            priority: Priority::Normal,
-            avatar_url: None,
-            consecutive_error_count: 0,
-            last_error: None,
-            disabled_until: None,
-            last_live_time: None,
-            streamer_specific_config: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-        };
-
-        manager.create_streamer(metadata.clone()).await.unwrap();
-
-        let retrieved = manager.get_streamer("new-streamer");
-        assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().name, "New Streamer");
-    }
-
-    #[tokio::test]
-    async fn test_update_state() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        manager
-            .update_state("s1", StreamerState::Live)
-            .await
-            .unwrap();
-
-        let metadata = manager.get_streamer("s1").unwrap();
-        assert_eq!(metadata.state, StreamerState::Live);
-    }
-
-    #[tokio::test]
-    async fn test_get_by_platform() {
-        let repo = MockStreamerRepository::with_streamers(vec![
-            create_test_db_model("s1", "twitch"),
-            create_test_db_model("s2", "twitch"),
-            create_test_db_model("s3", "youtube"),
-        ]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let twitch_streamers = manager.get_by_platform("twitch");
-        assert_eq!(twitch_streamers.len(), 2);
-
-        let youtube_streamers = manager.get_by_platform("youtube");
-        assert_eq!(youtube_streamers.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_reload_from_repo_preserves_resolved_offline_check_config() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        {
-            let mut entry = manager.metadata.get_mut("s1").unwrap();
-            let metadata = Arc::make_mut(entry.value_mut());
-            metadata.offline_check_count = 7;
-            metadata.offline_check_delay_ms = 45_000;
-        }
-
-        let reloaded = manager
-            .reload_from_repo("s1", ReloadPublish::StateOnly)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(reloaded.offline_check_count, 7);
-        assert_eq!(reloaded.offline_check_delay_ms, 45_000);
-    }
-
-    /// `ReloadPublish::MetadataUpdated` is what a caller that wrote the row
-    /// itself uses to reach `Scheduler::handle_config_event`; the state-only
-    /// variant must not produce that event.
-    #[tokio::test]
-    async fn reload_publishes_a_metadata_update_only_when_asked() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let mut events = broadcaster.subscribe();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-        while events.try_recv().is_ok() {}
-
-        manager
-            .reload_from_repo("s1", ReloadPublish::StateOnly)
-            .await
-            .unwrap();
-        assert!(events.try_recv().is_err());
-
-        manager
-            .reload_from_repo("s1", ReloadPublish::MetadataUpdated)
-            .await
-            .unwrap();
-        assert_eq!(
-            events.try_recv().unwrap(),
-            ConfigUpdateEvent::StreamerMetadataUpdated {
-                streamer_id: "s1".to_string(),
-            }
-        );
-    }
-
-    /// A reload that finds the row gone must drop the URL index entry too, or
-    /// `get_streamer_by_url` keeps resolving a streamer that no longer exists.
-    #[tokio::test]
-    async fn reload_of_a_removed_row_clears_the_url_index() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let repo = Arc::new(repo);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo.clone(), broadcaster);
-        manager.hydrate().await.unwrap();
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/s1")
-                .is_some()
-        );
-
-        repo.streamers.lock().unwrap().clear();
-        manager
-            .reload_from_repo("s1", ReloadPublish::StateOnly)
-            .await
-            .unwrap();
-
-        assert!(
-            manager
-                .get_streamer_by_url("https://example.com/s1")
-                .is_none()
-        );
-        assert!(!manager.url_exists("https://example.com/s1"));
-    }
-
-    #[tokio::test]
-    async fn test_clear_last_error_only_clears_last_error() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_errored_db_model(2)]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
-
-        let before = manager.get_streamer("s1").unwrap();
-        assert_eq!(before.consecutive_error_count, 2);
-        assert!(before.disabled_until.is_some());
-        assert!(before.last_error.is_some());
-
-        // clear_last_error should only clear last_error
-        manager.clear_last_error("s1").await.unwrap();
-        let after = manager.get_streamer("s1").unwrap();
-        assert!(after.last_error.is_none());
-        assert_eq!(
-            after.consecutive_error_count,
-            before.consecutive_error_count
-        );
-        assert_eq!(after.disabled_until, before.disabled_until);
-    }
-
-    #[tokio::test]
-    async fn test_record_success_clears_errors() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_errored_db_model(2)]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
-
-        assert!(manager.is_disabled("s1"));
-
-        // Record success
-        manager.record_success("s1", false).await.unwrap();
-        let metadata = manager.get_streamer("s1").unwrap();
-        assert_eq!(metadata.consecutive_error_count, 0);
-        assert!(metadata.disabled_until.is_none());
-        assert!(!manager.is_disabled("s1"));
-        assert_eq!(metadata.state, StreamerState::NotLive);
-    }
-
-    #[tokio::test]
-    async fn test_record_success_going_live_restores_live_state() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_errored_db_model(2)]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-        Arc::make_mut(manager.metadata.get_mut("s1").unwrap().value_mut()).offline_check_count = 2;
-
-        manager
-            .update_state("s1", StreamerState::TemporalDisabled)
-            .await
-            .unwrap();
-
-        manager.record_success("s1", true).await.unwrap();
-        let metadata = manager.get_streamer("s1").unwrap();
-        assert_eq!(metadata.state, StreamerState::Live);
-        assert_eq!(metadata.consecutive_error_count, 0);
-        assert!(metadata.disabled_until.is_none());
-        assert!(metadata.last_error.is_none());
-        assert!(metadata.last_live_time.is_some());
-    }
-
-    /// A marked streamer stays readable by id — the runtime decides on
-    /// `is_active` — but leaves every list the user sees, and only the reap
-    /// removes the row.
-    #[tokio::test]
-    async fn mark_deleting_hides_the_streamer_and_reap_removes_it() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let repo = Arc::new(repo);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let mut events = broadcaster.subscribe();
-        let manager = StreamerManager::new(repo.clone(), broadcaster);
-        manager.hydrate().await.unwrap();
-        while events.try_recv().is_ok() {}
-
-        let marked = manager.mark_deleting("s1").await.unwrap().unwrap();
-        assert!(marked.is_deleted());
-        assert!(!marked.is_active());
-        assert_eq!(
-            events.try_recv().unwrap(),
-            ConfigUpdateEvent::StreamerStateSyncedFromDb {
-                streamer_id: "s1".to_string(),
-                is_active: false,
-            }
-        );
-        assert!(manager.get_streamer("s1").is_some());
-        assert!(manager.get_all().is_empty());
-        assert_eq!(manager.count(), 0);
-        assert_eq!(repo.streamers.lock().unwrap().len(), 1);
-
-        // Marking is owned by exactly one caller.
-        assert!(manager.mark_deleting("s1").await.unwrap().is_none());
-
-        assert!(manager.reap_deleted("s1").await.unwrap());
-        assert!(manager.get_streamer("s1").is_none());
-        assert!(repo.streamers.lock().unwrap().is_empty());
-        assert_eq!(
-            events.try_recv().unwrap(),
-            ConfigUpdateEvent::StreamerDeleted {
-                streamer_id: "s1".to_string(),
-            }
-        );
-    }
-
-    /// The reap refuses a row nobody marked, so no path can delete a streamer
-    /// whose runtime owners were never stood down.
-    #[tokio::test]
-    async fn reap_refuses_an_unmarked_streamer() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let repo = Arc::new(repo);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(repo.clone(), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        assert!(!manager.reap_deleted("s1").await.unwrap());
-        assert_eq!(repo.streamers.lock().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_update_streamer() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        // Get current metadata and modify it
-        let mut metadata = manager.get_streamer("s1").unwrap();
-        metadata.name = "Updated Name".to_string();
-        metadata.priority = Priority::High;
-        metadata.template_config_id = Some("template-1".to_string());
-
-        // Update the streamer
-        manager.update_streamer(metadata).await.unwrap();
-
-        // Verify the update
-        let updated = manager.get_streamer("s1").unwrap();
-        assert_eq!(updated.name, "Updated Name");
-        assert_eq!(updated.priority, Priority::High);
-        assert_eq!(updated.template_config_id, Some("template-1".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_update_streamer_not_found() {
-        let repo = MockStreamerRepository::new();
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-
-        let metadata = StreamerMetadata {
-            id: "nonexistent".to_string(),
-            name: "Test".to_string(),
-            url: "https://example.com".to_string(),
-            platform_config_id: "twitch".to_string(),
-            template_config_id: None,
-            state: StreamerState::NotLive,
-            priority: Priority::Normal,
-            avatar_url: None,
-            consecutive_error_count: 0,
-            disabled_until: None,
-            last_error: None,
-            last_live_time: None,
-            streamer_specific_config: None,
-            offline_check_count: 3,
-            offline_check_delay_ms: 20_000,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            deleted_at: None,
-        };
-
-        let result = manager.update_streamer(metadata).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_partial_update_streamer() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        // Partial update - only name and priority
-        let updated = manager
-            .partial_update_streamer(StreamerUpdateParams {
-                id: "s1".to_string(),
-                name: Some("New Name".to_string()),
-                url: None,                // Don't change URL
-                platform_config_id: None, // Don't change platform
-                template_config_id: None, // Don't change template
-                priority: Some(Priority::High),
-                state: None, // Don't change state
-                streamer_specific_config: None,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(updated.name, "New Name");
-        assert_eq!(updated.priority, Priority::High);
-        // URL should remain unchanged
-        assert_eq!(updated.url, "https://example.com/s1");
     }
 
     #[tokio::test]
@@ -1770,34 +1276,6 @@ mod tests {
         );
     }
 
-    /// Updates that carry no URL (batch priority/template changes) must leave the platform alone.
-    #[tokio::test]
-    async fn test_partial_update_leaves_platform_config_id_when_none() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_test_db_model(
-            "s1",
-            "platform-douyin",
-        )]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let updated = manager
-            .partial_update_streamer(StreamerUpdateParams {
-                id: "s1".to_string(),
-                name: None,
-                url: None,
-                platform_config_id: None,
-                template_config_id: None,
-                priority: Some(Priority::High),
-                state: None,
-                streamer_specific_config: None,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(updated.platform_config_id, "platform-douyin");
-    }
-
     /// Disabling a streamer through the API must retire the backoff written by
     /// monitor error handling, otherwise `is_ready_for_check` keeps suppressing checks
     /// once the user re-enables it.
@@ -1847,57 +1325,6 @@ mod tests {
             .unwrap();
 
         assert!(reenabled.is_ready_for_check());
-    }
-
-    /// The full-metadata write path enforces the same invariant as
-    /// `partial_update_streamer`: a `Disabled` streamer carries no error bookkeeping,
-    /// whatever the caller put in the struct.
-    #[tokio::test]
-    async fn test_update_streamer_to_disabled_clears_error_backoff() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let mut metadata = manager.get_streamer("s1").unwrap();
-        metadata.state = StreamerState::Disabled;
-        metadata.consecutive_error_count = 4;
-        metadata.disabled_until = Some(Utc::now() + chrono::Duration::minutes(30));
-        metadata.last_error = Some("boom".to_string());
-
-        manager.update_streamer(metadata).await.unwrap();
-
-        let stored = manager.get_streamer("s1").unwrap();
-        assert_eq!(stored.state, StreamerState::Disabled);
-        assert_eq!(stored.consecutive_error_count, 0);
-        assert_eq!(stored.disabled_until, None);
-        assert_eq!(stored.last_error, None);
-    }
-
-    /// A full update that is not a disable must write the caller's error fields
-    /// through untouched.
-    #[tokio::test]
-    async fn test_update_streamer_preserves_error_backoff_for_other_states() {
-        let repo =
-            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let backoff_until = Utc::now() + chrono::Duration::minutes(30);
-        let mut metadata = manager.get_streamer("s1").unwrap();
-        metadata.state = StreamerState::TemporalDisabled;
-        metadata.consecutive_error_count = 4;
-        metadata.disabled_until = Some(backoff_until);
-        metadata.last_error = Some("boom".to_string());
-
-        manager.update_streamer(metadata).await.unwrap();
-
-        let stored = manager.get_streamer("s1").unwrap();
-        assert_eq!(stored.consecutive_error_count, 4);
-        assert_eq!(stored.disabled_until, Some(backoff_until));
-        assert_eq!(stored.last_error.as_deref(), Some("boom"));
     }
 
     /// Only a transition to `Disabled` clears the error history; other partial

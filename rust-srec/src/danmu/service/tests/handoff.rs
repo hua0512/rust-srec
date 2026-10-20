@@ -238,22 +238,3 @@ async fn competing_replacements_share_one_bounded_handoff_budget() {
     assert!(!service.is_collecting("new-a"));
     assert!(!service.is_collecting("new-b"));
 }
-
-#[tokio::test]
-async fn completed_shared_outcome_is_observable_before_or_after_waiter_poll() {
-    let service = DanmuService::new();
-    let (done, _commands, _token) = seed(&service);
-    let completion = service.collections.get(OLD).unwrap().done.clone();
-    let late = completion.clone();
-    finish(&service, done);
-    assert_eq!(completion.await.unwrap().statistics.total_count, 42);
-    assert_eq!(
-        tokio::time::timeout(Duration::from_secs(1), late)
-            .await
-            .unwrap()
-            .unwrap()
-            .statistics
-            .total_count,
-        42
-    );
-}

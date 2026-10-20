@@ -701,22 +701,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_escape_filter_path_windows_sensitive() {
-        let s = "C:\\a\\b:c'ass";
-        let escaped = AssBurnInProcessor::escape_filter_path(s);
-        assert!(escaped.contains("\\\\"));
-        assert!(escaped.contains("\\:"));
-        assert!(escaped.contains("\\'"));
-    }
-
-    #[test]
-    fn test_make_subtitles_filter() {
-        let f = AssBurnInProcessor::make_subtitles_filter("a.ass", None);
-        assert!(f.contains("subtitles="));
-        assert!(f.contains("a.ass"));
-    }
-
-    #[test]
     fn filter_values_escape_option_and_filtergraph_layers() {
         assert_eq!(AssBurnInProcessor::escape_filter_path("'"), r"\\\'");
         assert_eq!(AssBurnInProcessor::escape_filter_path(":"), r"\\:");
@@ -724,42 +708,22 @@ mod tests {
         assert_eq!(AssBurnInProcessor::escape_filter_path("\\"), r"\\\\");
     }
 
-    #[tokio::test]
-    #[ignore = "requires an installed FFmpeg binary with the subtitles filter"]
-    async fn subtitle_filter_opens_paths_with_apostrophes_and_graph_delimiters() {
-        let dir = tempfile::tempdir().unwrap();
-        let subtitles = dir.path().join("Let's [play], now.srt");
-        let fonts = dir.path().join("Font's [collection], now");
-        tokio::fs::create_dir(&fonts).await.unwrap();
-        tokio::fs::write(&subtitles, "1\n00:00:00,000 --> 00:00:01,000\nHello\n")
-            .await
-            .unwrap();
-        let filter = AssBurnInProcessor::make_subtitles_filter(
-            &subtitles.to_string_lossy(),
-            Some(&fonts.to_string_lossy()),
+    /// ffmpeg unescapes the filtergraph layer and then the option layer, which
+    /// gives back each original path: the drive colon and backslashes stay in
+    /// the filename, and only the bare `:` separates `fontsdir`.
+    #[test]
+    fn subtitles_filter_keeps_windows_paths_spaces_and_fontsdir_intact() {
+        assert_eq!(
+            AssBurnInProcessor::make_subtitles_filter(r"C:\rec\a b.ass", None),
+            r"subtitles=filename=C\\:\\\\rec\\\\a\\\ b.ass"
         );
-        let mut command = Command::new("ffmpeg");
-        command
-            .args([
-                "-hide_banner",
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=s=32x32:d=0.1",
-                "-vf",
-            ])
-            .arg(filter)
-            .args(["-frames:v", "1", "-f", "null", "-"]);
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            super::super::utils::run_command_with_logs(&mut command, None),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert!(output.status.success(), "{:?}", output.logs);
+        assert_eq!(
+            AssBurnInProcessor::make_subtitles_filter(
+                "/rec/My Show's [1], part:2.ass",
+                Some("/fonts/Noto Sans")
+            ),
+            r"subtitles=filename=/rec/My\\\ Show\\\'s\\\ \[1\]\,\\\ part\\:2.ass:fontsdir=/fonts/Noto\\\ Sans"
+        );
     }
 
     fn manifest(segments: &[(u32, &[&str], &[&str])]) -> PipelineInputManifest {
@@ -954,27 +918,6 @@ mod tests {
             ]
         );
         assert!(!temp.path().join("b").join("rec_burnin.mp4").exists());
-    }
-
-    #[tokio::test]
-    async fn test_outputs_len_mismatch_errors() {
-        let processor = AssBurnInProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.mp4".to_string(), "b.mp4".to_string()],
-            outputs: vec!["out.mp4".to_string()],
-            config: Some(serde_json::json!({ "require_ass": false }).to_string()),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("outputs to be empty or have the same length")
-        );
     }
 
     #[test]

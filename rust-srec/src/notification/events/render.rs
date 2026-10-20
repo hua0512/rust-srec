@@ -179,25 +179,6 @@ impl NotificationEvent {
         }
     }
 
-    /// Title in the channel's own locale, or the process-wide one when it has none.
-    ///
-    /// The shape channels want: a configured locale is optional per channel, and spelling the
-    /// fallback out at each `send` would repeat it once per channel implementation.
-    pub fn title_for(&self, locale: Option<&str>) -> String {
-        match locale {
-            Some(locale) => self.title_in(locale),
-            None => self.title(),
-        }
-    }
-
-    /// Description counterpart to [`Self::title_for`].
-    pub fn description_for(&self, locale: Option<&str>) -> String {
-        match locale {
-            Some(locale) => self.description_in(locale),
-            None => self.description(),
-        }
-    }
-
     /// Get a detailed description of this event, in the process-wide locale.
     pub fn description(&self) -> String {
         self.description_in(&crate::i18n::current_locale())
@@ -558,31 +539,5 @@ impl RenderCache {
             .entry(locale.to_owned())
             .or_insert_with(|| Arc::new(RenderedEvent::new(event, locale)))
             .clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_pass_reuses_text_by_effective_locale_and_holds_its_fallback_snapshot() {
-        let event = NotificationEvent::SystemStartup {
-            version: "contract".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        let mut cache = RenderCache {
-            process_locale: "en".into(),
-            rendered: HashMap::new(),
-        };
-        let fallback = cache.get(&event, None);
-        let explicit = cache.get(&event, Some("en"));
-        let chinese = cache.get(&event, Some("zh-CN"));
-        assert!(Arc::ptr_eq(&fallback, &explicit));
-        assert!(!Arc::ptr_eq(&fallback, &chinese));
-        assert_ne!(fallback.title, chinese.title);
-        assert!(Arc::ptr_eq(&chinese, &cache.get(&event, Some("zh-CN"))));
-        assert!(Arc::ptr_eq(&fallback, &cache.get(&event, None)));
-        assert_eq!(cache.rendered.len(), 2);
     }
 }

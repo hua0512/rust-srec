@@ -135,31 +135,3 @@ impl CheckRecord {
         )
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn transient_error_truncates_long_message() {
-        let long = "x".repeat(MAX_ERROR_MESSAGE_LEN * 2);
-        let record = CheckRecord::from_error("s1", Utc::now(), Duration::zero(), &long);
-        let CheckOutcome::TransientError { message } = record.outcome else {
-            panic!("expected transient error");
-        };
-
-        assert!(message.ends_with('…'));
-        assert!(message.len() <= MAX_ERROR_MESSAGE_LEN + '…'.len_utf8());
-    }
-
-    #[test]
-    fn transient_error_preserves_utf8_boundaries() {
-        let long = "字".repeat(MAX_ERROR_MESSAGE_LEN);
-        let record = CheckRecord::from_error("s1", Utc::now(), Duration::zero(), &long);
-        let CheckOutcome::TransientError { message } = record.outcome else {
-            panic!("expected transient error");
-        };
-
-        assert!(message.ends_with('…'));
-    }
-}

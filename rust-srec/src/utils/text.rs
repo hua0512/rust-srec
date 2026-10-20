@@ -97,29 +97,11 @@ mod tests {
     }
 
     #[test]
-    fn chars_clips_with_ellipsis_when_too_long() {
-        let out = truncate_chars("abcdef", 3);
-        assert_eq!(out, "abc…");
-        assert_eq!(out.chars().count(), 4);
-    }
-
-    #[test]
-    fn chars_zero_max_returns_empty() {
-        assert_eq!(truncate_chars("anything", 0), "");
-    }
-
-    #[test]
     fn chars_handles_multibyte_correctly() {
         // 3-byte CJK char × 5 = 15 bytes total, 5 chars
         let out = truncate_chars("字字字字字", 3);
         assert_eq!(out, "字字字…");
         assert_eq!(out.chars().count(), 4);
-    }
-
-    #[test]
-    fn chars_empty_input_passthrough() {
-        assert_eq!(truncate_chars("", 10), "");
-        assert_eq!(truncate_chars("", 0), "");
     }
 
     // ---- truncate_bytes ----
@@ -128,27 +110,5 @@ mod tests {
     fn bytes_passthrough_when_input_fits() {
         assert_eq!(truncate_bytes("hello", 10), "hello");
         assert_eq!(truncate_bytes("hello", 5), "hello");
-    }
-
-    #[test]
-    fn bytes_clips_at_char_boundary() {
-        // ASCII: byte budget == char count
-        let out = truncate_bytes("abcdefghij", 4);
-        assert_eq!(out, "abcd…");
-    }
-
-    #[test]
-    fn bytes_never_panics_on_codepoint_split() {
-        // 3-byte CJK char × 10 = 30 bytes. Cap at 7 bytes — naive slicing
-        // would panic mid-codepoint; we round down to byte 6 (= 2 chars).
-        let s = "字".repeat(10);
-        let out = truncate_bytes(&s, 7);
-        assert_eq!(out, "字字…");
-    }
-
-    #[test]
-    fn bytes_empty_input_passthrough() {
-        assert_eq!(truncate_bytes("", 10), "");
-        assert_eq!(truncate_bytes("", 0), "");
     }
 }

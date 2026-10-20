@@ -222,17 +222,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unknown_platforms_get_cookie_accounts_without_provider_calls() {
-        assert_eq!(
-            provider("huya").capabilities(),
-            ProviderCapabilities::default()
-        );
-        assert!(provider("SOOP").capabilities().reauth_login);
-        assert_eq!(login_fields("Soop"), ["username", "password"]);
-        assert!(login_fields("bigo").is_empty());
-    }
-
-    #[test]
     fn reauth_login_needs_both_fields_on_a_platform_that_supports_it() {
         let login = serde_json::json!({"username": " user ", "password": "pass"});
         assert_eq!(

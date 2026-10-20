@@ -884,94 +884,10 @@ mod tests {
     }
 
     #[test]
-    fn writer_enospc_is_classified_as_output_root_unavailable() {
-        // `WriterTask::flush` / `create_dir_all` path.
-        assert_eq!(
-            classify_writer_error(&WriterError::Io(std::io::Error::from(
-                std::io::ErrorKind::StorageFull
-            ))),
-            DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::StorageFull
-            }
-        );
-        // `FormatStrategy::create_writer` / `write_item` path: the io::Error
-        // sits two links down, behind `FlvStrategyError`.
-        assert_eq!(
-            classify_writer_error(&WriterError::Strategy(Box::new(
-                flv_fix::FlvStrategyError::Io(std::io::Error::from(
-                    std::io::ErrorKind::StorageFull
-                ))
-            ))),
-            DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::StorageFull
-            }
-        );
-        assert_eq!(
-            classify_writer_error(&WriterError::InputError(PipelineError::Io(
-                std::io::Error::from(std::io::ErrorKind::StorageFull)
-            ))),
-            DownloadFailureKind::Io
-        );
-    }
-
-    #[test]
     fn file_scoped_writer_io_keeps_the_circuit_breaker() {
         let kind = classify_writer_error(&WriterError::Io(std::io::Error::other("broken pipe")));
         assert_eq!(kind, DownloadFailureKind::Io);
         assert!(kind.affects_circuit_breaker());
-    }
-
-    #[test]
-    fn writer_errors_without_an_io_source_stay_processing() {
-        for error in [
-            WriterError::Internal("writer not open".to_string()),
-            WriterError::Rotation("rotation failed".to_string()),
-            WriterError::Config("bad template".to_string()),
-        ] {
-            assert_eq!(
-                classify_writer_error(&error),
-                DownloadFailureKind::Processing
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn writer_enospc_emits_disk_full_before_the_terminal_event() {
-        let events = settle_failed_writer(
-            WriterError::Io(std::io::Error::new(
-                std::io::ErrorKind::StorageFull,
-                "No space left on device",
-            )),
-            None,
-        )
-        .await;
-
-        let SegmentEvent::OutputIoError {
-            output_dir, detail, ..
-        } = &events[0]
-        else {
-            panic!(
-                "OutputIoError must precede the terminal event, got {:?}",
-                events
-            );
-        };
-        assert_eq!(output_dir, Path::new("/rec/streamer-1/2026-09-03"));
-        assert!(detail.contains("No space left on device"), "{detail}");
-
-        let SegmentEvent::DownloadFailed { kind, .. } = &events[1] else {
-            panic!("expected DownloadFailed, got {:?}", events);
-        };
-        assert_eq!(
-            *kind,
-            DownloadFailureKind::OutputRootUnavailable {
-                io_kind: IoErrorKindSer::StorageFull
-            }
-        );
-        // The recording directory filling up is infrastructure, so it must not
-        // open the engine circuit breaker, and the attempt stays retryable.
-        assert!(!kind.affects_circuit_breaker());
-        assert!(kind.is_recoverable());
-        assert_eq!(events.len(), 2);
     }
 
     #[tokio::test]

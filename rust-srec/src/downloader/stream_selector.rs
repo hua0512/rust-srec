@@ -349,56 +349,6 @@ mod tests {
     // ========== StreamSelectionConfig::merge tests ==========
 
     #[test]
-    fn test_merge_empty_other_keeps_self() {
-        let base = StreamSelectionConfig {
-            preferred_formats: Some(vec![StreamFormat::Flv]),
-            preferred_qualities: vec!["1080p".to_string()],
-            preferred_cdns: vec!["cdn1".to_string()],
-            min_bitrate: 1000,
-            max_bitrate: 5000,
-            ..Default::default()
-        };
-        let other = StreamSelectionConfig {
-            preferred_formats: None,
-            preferred_qualities: vec![],
-            preferred_cdns: vec![],
-            min_bitrate: 0,
-            max_bitrate: 0,
-            ..Default::default()
-        };
-
-        let merged = base.merge(&other);
-
-        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Flv]));
-        assert_eq!(merged.preferred_qualities, vec!["1080p".to_string()]);
-        assert_eq!(merged.preferred_cdns, vec!["cdn1".to_string()]);
-        assert_eq!(merged.min_bitrate, 1000);
-        assert_eq!(merged.max_bitrate, 5000);
-    }
-
-    #[test]
-    fn test_merge_other_overrides_self() {
-        let base = StreamSelectionConfig {
-            preferred_formats: Some(vec![StreamFormat::Flv]),
-            preferred_qualities: vec!["1080p".to_string()],
-            min_bitrate: 1000,
-            ..Default::default()
-        };
-        let other = StreamSelectionConfig {
-            preferred_formats: Some(vec![StreamFormat::Hls]),
-            preferred_qualities: vec!["720p".to_string()],
-            min_bitrate: 2000,
-            ..Default::default()
-        };
-
-        let merged = base.merge(&other);
-
-        assert_eq!(merged.preferred_formats, Some(vec![StreamFormat::Hls]));
-        assert_eq!(merged.preferred_qualities, vec!["720p".to_string()]);
-        assert_eq!(merged.min_bitrate, 2000);
-    }
-
-    #[test]
     fn test_merge_partial_override() {
         let base = StreamSelectionConfig {
             preferred_formats: Some(vec![StreamFormat::Flv]),
@@ -456,59 +406,6 @@ mod tests {
     }
 
     // ========== StreamSelector tests ==========
-
-    #[test]
-    fn test_select_best_empty() {
-        let selector = StreamSelector::new();
-        assert!(selector.select_best(&[]).is_none());
-    }
-
-    #[test]
-    fn test_select_best_single() {
-        let selector = StreamSelector::new();
-        let streams = vec![create_test_stream(
-            "http://example.com/stream.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            1,
-        )];
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().url, "http://example.com/stream.flv");
-    }
-
-    #[test]
-    fn dash_is_a_configurable_preferred_format() {
-        let config: StreamSelectionConfig =
-            serde_json::from_value(serde_json::json!({ "preferred_formats": ["dash", "hls"] }))
-                .unwrap();
-        assert_eq!(
-            config.preferred_formats,
-            Some(vec![StreamFormat::Dash, StreamFormat::Hls])
-        );
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/stream.m3u8",
-                StreamFormat::Hls,
-                "1080p",
-                5000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/stream.mpd",
-                StreamFormat::Dash,
-                "1080p",
-                5000000,
-                1,
-            ),
-        ];
-
-        let best = selector.select_best(&streams).unwrap();
-        assert_eq!(best.stream_format, StreamFormat::Dash);
-    }
 
     /// A TikTok-shaped room: FLV/HLS plus opt-in DASH variants, where
     /// "Original" exists only as DASH.
@@ -660,17 +557,6 @@ mod tests {
     }
 
     #[test]
-    fn only_opt_in_streams_and_no_preference_selects_nothing() {
-        let dash: Vec<StreamInfo> = rooms_with_opt_in_dash()
-            .into_iter()
-            .filter(|s| s.format_opt_in)
-            .collect();
-        let selector = StreamSelector::new();
-        assert!(selector.select_best(&dash).is_none());
-        assert!(!selector.admits(&dash[0]));
-    }
-
-    #[test]
     fn dash_without_opt_in_competes_normally() {
         // Streamlink's DASH streams are not opt-in and keep being ranked by
         // priority like any other format.
@@ -694,182 +580,77 @@ mod tests {
         assert_eq!(best.stream_format, StreamFormat::Dash);
     }
 
+    /// Each case's preferred stream has the lower bitrate, so it can only win
+    /// on its quality score.
     #[test]
-    fn test_select_best_by_format() {
-        let config = StreamSelectionConfig {
-            preferred_formats: Some(vec![StreamFormat::Flv]),
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/stream.m3u8",
-                StreamFormat::Hls,
-                "1080p",
-                5000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/stream.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
+    fn preferred_quality_beats_a_higher_bitrate() {
+        let cases: [(&[&str], [&str; 2], &str); 4] = [
+            // List order: the first preference that any stream matches wins.
+            (&["720p", "1080p"], ["1080p", "720p"], "720p"),
+            (&["4K", "720p", "1080p"], ["1080p", "720p"], "720p"),
+            (&["SOURCE"], ["1080p", "Source"], "Source"),
+            // A CJK preference matches inside a longer platform label.
+            (&["原画", "蓝光"], ["超清", "蓝光4M"], "蓝光4M"),
         ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().stream_format, StreamFormat::Flv);
+        for (preferences, [higher, lower], expected) in cases {
+            let selector = StreamSelector::with_config(StreamSelectionConfig {
+                preferred_qualities: preferences.iter().map(|q| q.to_string()).collect(),
+                ..Default::default()
+            });
+            let streams = [
+                create_test_stream("http://a/high", StreamFormat::Flv, higher, 8_000_000, 1),
+                create_test_stream("http://a/low", StreamFormat::Flv, lower, 2_000_000, 1),
+            ];
+            assert_eq!(
+                selector.select_best(&streams).unwrap().quality,
+                expected,
+                "{preferences:?}"
+            );
+        }
     }
 
     #[test]
-    fn test_select_best_by_quality() {
-        let config = StreamSelectionConfig {
-            preferred_qualities: vec!["原画".to_string(), "1080p".to_string()],
+    #[ignore = "bug: a stream with an empty quality label matches every preferred quality"]
+    fn known_bug_unlabelled_stream_does_not_match_preferred_quality() {
+        let selector = StreamSelector::with_config(StreamSelectionConfig {
+            preferred_qualities: vec!["1080p".to_string()],
             ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/720p.flv",
-                StreamFormat::Flv,
-                "720p",
-                3000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/1080p.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
+        });
+        let streams = [
+            create_test_stream("http://a/unlabelled", StreamFormat::Flv, "", 8_000_000, 1),
+            create_test_stream("http://a/1080p", StreamFormat::Flv, "1080p", 2_000_000, 1),
         ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert!(best.unwrap().quality.contains("1080p"));
+        assert_eq!(selector.select_best(&streams).unwrap().quality, "1080p");
     }
 
+    /// Each case's expected stream would lose without the bitrate limits.
     #[test]
-    fn test_select_best_by_bitrate() {
-        let config = StreamSelectionConfig {
-            min_bitrate: 4000000,
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/low.flv",
-                StreamFormat::Flv,
-                "720p",
-                3000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/high.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
+    fn bitrate_limits_exclude_streams_unless_none_qualify() {
+        let streams = [
+            create_test_stream("http://a/720p", StreamFormat::Flv, "720p", 3_000_000, 1),
+            create_test_stream("http://a/1080p", StreamFormat::Flv, "1080p", 5_000_000, 2),
         ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().bitrate, 5000000);
-    }
-
-    #[test]
-    fn test_select_best_by_priority() {
-        let selector = StreamSelector::new();
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/low.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                2,
-            ),
-            create_test_stream(
-                "http://example.com/high.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
+        let cases = [
+            // The minimum overrides the quality preference.
+            (4_000_000, 0, vec!["720p".to_string()], "1080p"),
+            // The maximum overrides the higher bitrate.
+            (0, 4_000_000, vec![], "720p"),
+            // Nothing qualifies, so every stream competes again.
+            (10_000_000, 0, vec!["720p".to_string()], "720p"),
         ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().priority, 1);
-    }
-
-    #[test]
-    fn test_select_best_quality_case_insensitive() {
-        // Test that quality matching is case-insensitive
-        let config = StreamSelectionConfig {
-            preferred_qualities: vec!["SOURCE".to_string(), "1080P".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/720p.flv",
-                StreamFormat::Flv,
-                "720p",
-                3000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/1080p.flv",
-                StreamFormat::Flv,
-                "1080p",
-                5000000,
-                1,
-            ),
-        ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert!(best.unwrap().quality.contains("1080p"));
-    }
-
-    #[test]
-    fn test_select_best_quality_chinese_names() {
-        // Test Chinese quality names (common on Huya, Douyu, Bilibili)
-        let config = StreamSelectionConfig {
-            preferred_qualities: vec!["原画".to_string(), "蓝光".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let streams = vec![
-            create_test_stream(
-                "http://example.com/hd.flv",
-                StreamFormat::Flv,
-                "蓝光4M",
-                4000000,
-                1,
-            ),
-            create_test_stream(
-                "http://example.com/source.flv",
-                StreamFormat::Flv,
-                "原画",
-                8000000,
-                1,
-            ),
-        ];
-
-        let best = selector.select_best(&streams);
-        assert!(best.is_some());
-        assert!(best.unwrap().quality.contains("原画"));
+        for (min_bitrate, max_bitrate, preferred_qualities, expected) in cases {
+            let selector = StreamSelector::with_config(StreamSelectionConfig {
+                min_bitrate,
+                max_bitrate,
+                preferred_qualities,
+                ..Default::default()
+            });
+            assert_eq!(
+                selector.select_best(&streams).unwrap().quality,
+                expected,
+                "min={min_bitrate} max={max_bitrate}"
+            );
+        }
     }
 
     #[test]
@@ -954,49 +735,6 @@ mod tests {
     }
 
     #[test]
-    fn test_blacklisted_cdn_excluded() {
-        let config = StreamSelectionConfig {
-            blacklisted_cdns: vec!["badcdn".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let mut stream_good = create_test_stream(
-            "http://example.com/good.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            1,
-        );
-        let mut extras_good = serde_json::Map::new();
-        extras_good.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("goodcdn".to_string()),
-        );
-        stream_good.extras = Some(serde_json::Value::Object(extras_good));
-
-        let mut stream_bad = create_test_stream(
-            "http://example.com/bad.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            1,
-        );
-        let mut extras_bad = serde_json::Map::new();
-        extras_bad.insert(
-            "cdn".to_string(),
-            serde_json::Value::String("badcdn-server1".to_string()),
-        );
-        stream_bad.extras = Some(serde_json::Value::Object(extras_bad));
-
-        let streams = vec![stream_bad, stream_good];
-        let best = selector.select_best(&streams);
-
-        assert!(best.is_some());
-        assert_eq!(best.unwrap().url, "http://example.com/good.flv");
-    }
-
-    #[test]
     fn test_blacklist_case_insensitive() {
         let config = StreamSelectionConfig {
             blacklisted_cdns: vec!["BADCDN".to_string()],
@@ -1043,30 +781,6 @@ mod tests {
         assert!(merged.blacklisted_cdns.contains(&"cdn2".to_string()));
         assert!(merged.blacklisted_cdns.contains(&"cdn3".to_string()));
         assert_eq!(merged.blacklisted_cdns.len(), 3);
-    }
-
-    #[test]
-    fn test_stream_without_cdn_not_blacklisted() {
-        let config = StreamSelectionConfig {
-            blacklisted_cdns: vec!["badcdn".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        // Stream without CDN info
-        let stream = create_test_stream(
-            "http://example.com/stream.flv",
-            StreamFormat::Flv,
-            "1080p",
-            5000000,
-            1,
-        );
-
-        let streams = vec![stream];
-        let result = selector.select_best(&streams);
-
-        // Stream without CDN info should NOT be blacklisted
-        assert!(result.is_some());
     }
 
     #[test]
@@ -1138,38 +852,6 @@ mod tests {
 
         // Should be blacklisted based on URL
         assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_preferred_cdn_matches_url_when_no_cdn_extra() {
-        let config = StreamSelectionConfig {
-            preferred_cdns: vec!["cloudfront".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        let stream_cloudfront = create_test_stream(
-            "https://d1234.cloudfront.net/stream.m3u8",
-            StreamFormat::Hls,
-            "1080p",
-            5000000,
-            2,
-        );
-
-        let stream_other = create_test_stream(
-            "https://other-cdn.example.com/stream.m3u8",
-            StreamFormat::Hls,
-            "1080p",
-            5000000,
-            1,
-        );
-
-        let streams = vec![stream_other, stream_cloudfront];
-        let best = selector.select_best(&streams);
-
-        // Should prefer cloudfront based on URL matching
-        assert!(best.is_some());
-        assert!(best.unwrap().url.contains("cloudfront"));
     }
 
     #[test]

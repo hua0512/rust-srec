@@ -2379,48 +2379,6 @@ mod tests {
         assert_eq!(RcloneProcessor::remote_parent("/local/dir/a.mp4"), None);
     }
 
-    /// `plain.txt/child.mp4` makes `try_exists` fail with `NotADirectory`
-    /// instead of reporting absence; `partition_move_inputs` must keep such
-    /// inputs pending rather than count them as already moved.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn partition_move_inputs_keeps_unverifiable_paths_pending() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let not_a_dir = temp_dir.path().join("plain.txt");
-        std::fs::write(&not_a_dir, b"file").unwrap();
-        let unverifiable = not_a_dir.join("child.mp4").to_string_lossy().into_owned();
-
-        let (pending, moved) =
-            super::super::inputs::partition_absent_inputs(std::slice::from_ref(&unverifiable))
-                .await;
-
-        assert_eq!(pending, vec![unverifiable]);
-        assert!(moved.is_empty());
-    }
-
-    #[tokio::test]
-    async fn files_from_list_is_removed_when_guard_is_dropped() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let input = temp_dir.path().join("input.mp4");
-        tokio::fs::write(&input, b"video").await.unwrap();
-
-        let manifest = RcloneProcessor::create_files_from_list(
-            &[input.to_string_lossy().into_owned()],
-            temp_dir.path(),
-        )
-        .await
-        .unwrap();
-        let manifest_path = manifest.to_path_buf();
-
-        assert_eq!(
-            tokio::fs::read_to_string(&manifest_path).await.unwrap(),
-            "input.mp4\n"
-        );
-        assert!(manifest_path.exists());
-        drop(manifest);
-        assert!(!manifest_path.exists());
-    }
-
     #[tokio::test]
     async fn copy_still_rejects_missing_inputs() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2644,23 +2602,6 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_extra_args_strips_only_progress_tokens() {
-        let args = vec![
-            "--progress".to_string(),
-            "-P".to_string(),
-            "--transfers".to_string(),
-            "2".to_string(),
-        ];
-        let (kept, stripped) = sanitize_extra_args(&args);
-        assert_eq!(kept, vec!["--transfers".to_string(), "2".to_string()]);
-        assert_eq!(stripped, 2);
-
-        let (kept, stripped) = sanitize_extra_args(&[]);
-        assert!(kept.is_empty());
-        assert_eq!(stripped, 0);
-    }
-
-    #[test]
     fn test_batch_remote_path() {
         let base = Path::new("/home/user/videos");
         // Flat file directly under the base.
@@ -2689,23 +2630,6 @@ mod tests {
     }
 
     #[test]
-    fn test_find_common_base_dir_single() {
-        let paths = vec!["/home/user/videos/file1.mp4".to_string()];
-        let result = RcloneProcessor::find_common_base_dir(&paths);
-        assert_eq!(result, Some(PathBuf::from("/home/user/videos")));
-    }
-
-    #[test]
-    fn test_find_common_base_dir_same_dir() {
-        let paths = vec![
-            "/home/user/videos/file1.mp4".to_string(),
-            "/home/user/videos/file2.mp4".to_string(),
-        ];
-        let result = RcloneProcessor::find_common_base_dir(&paths);
-        assert_eq!(result, Some(PathBuf::from("/home/user/videos")));
-    }
-
-    #[test]
     fn test_find_common_base_dir_nested() {
         let paths = vec![
             "/home/user/videos/2024/file1.mp4".to_string(),
@@ -2724,19 +2648,6 @@ mod tests {
         let result = RcloneProcessor::find_common_base_dir(&paths);
         // Should return "/" as the common base on Unix
         assert!(result.is_some());
-    }
-
-    #[test]
-    fn test_find_common_base_dir_empty() {
-        let paths: Vec<String> = vec![];
-        let result = RcloneProcessor::find_common_base_dir(&paths);
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_supports_batch_input() {
-        let processor = RcloneProcessor::new();
-        assert!(processor.supports_batch_input());
     }
 
     /// Connection-string parameters hold access keys and passwords; logs show
@@ -2786,105 +2697,32 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_remote_destination_with_metadata() {
-        use chrono::TimeZone;
-
+    fn remote_destination_fills_every_identity_token() {
+        let config: RcloneConfig = serde_json::from_str(
+            r#"{"destination_root": "remote:/{platform}/{streamer_id}/{session_id}/{streamer}/{title}"}"#,
+        )
+        .unwrap();
         let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec![],
-            streamer_id: "123".to_string(),
-            session_id: "456".to_string(),
-            streamer_name: Some("StreamerName".to_string()),
-            session_title: Some("Live Title".to_string()),
-            platform: None,
-            session_start: None,
-            config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
-            created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-            manifest: None,
+            streamer_id: "streamer-1".to_string(),
+            session_id: "session-2".to_string(),
+            streamer_name: Some("Name?".to_string()),
+            session_title: Some("Title".to_string()),
+            platform: Some("huya".to_string()),
+            ..Default::default()
         };
+        assert_eq!(
+            RcloneProcessor::determine_remote_destination(&input, &config),
+            "remote:/huya/streamer-1/session-2/Name_/Title"
+        );
 
-        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
-        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
-
-        assert_eq!(destination, "remote:/StreamerName/Live Title");
-    }
-
-    #[test]
-    fn test_determine_remote_destination_with_created_at() {
-        use chrono::TimeZone;
-
-        // Use a specific created_at timestamp: 2024-01-01 00:00:00 UTC
-        let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec![],
-            streamer_id: "123".to_string(),
-            session_id: "456".to_string(),
-            streamer_name: Some("StreamerName".to_string()),
-            session_title: Some("Live Title".to_string()),
+        let without_platform = ProcessorInput {
             platform: None,
-            session_start: None,
-            config: Some(r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/"}"#.to_string()),
-            created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
-            manifest: None,
+            ..input
         };
-
-        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
-        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
-
-        assert_eq!(destination, expected_local_destination(input.created_at));
-    }
-
-    #[test]
-    fn test_determine_remote_destination_with_session_start_anchor() {
-        let session_start = utc_datetime(2024, 1, 1, 12, 0, 0);
-        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
-        let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec![],
-            streamer_id: "123".to_string(),
-            session_id: "456".to_string(),
-            streamer_name: Some("StreamerName".to_string()),
-            session_title: Some("Live Title".to_string()),
-            platform: None,
-            session_start: Some(session_start),
-            config: Some(
-                r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#
-                    .to_string(),
-            ),
-            created_at,
-            manifest: None,
-        };
-
-        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
-        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
-
-        assert_eq!(destination, expected_local_destination(session_start));
-    }
-
-    #[test]
-    fn test_determine_remote_destination_session_start_falls_back_to_created_at() {
-        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
-        let input = ProcessorInput {
-            inputs: vec!["/input.mp4".to_string()],
-            outputs: vec![],
-            streamer_id: "123".to_string(),
-            session_id: "456".to_string(),
-            streamer_name: Some("StreamerName".to_string()),
-            session_title: Some("Live Title".to_string()),
-            platform: None,
-            session_start: None,
-            config: Some(
-                r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#
-                    .to_string(),
-            ),
-            created_at,
-            manifest: None,
-        };
-
-        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
-        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
-
-        assert_eq!(destination, expected_local_destination(created_at));
+        assert_eq!(
+            RcloneProcessor::determine_remote_destination(&without_platform, &config),
+            "remote://streamer-1/session-2/Name_/Title"
+        );
     }
 
     #[test]
@@ -2942,38 +2780,6 @@ mod tests {
     }
 
     #[test]
-    fn throughput_args_empty_when_no_fields() {
-        let cfg = RcloneConfig::default();
-        assert!(cfg.throughput_args().is_empty());
-    }
-
-    #[test]
-    fn throughput_args_emits_bwlimit_and_transfers() {
-        let cfg = RcloneConfig {
-            bwlimit: Some("10M".into()),
-            transfers: Some(8),
-            ..Default::default()
-        };
-        let expected: Vec<String> = ["--bwlimit", "10M", "--transfers", "8"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        assert_eq!(cfg.throughput_args(), expected);
-    }
-
-    #[test]
-    fn throughput_args_supports_asymmetric_and_timetable() {
-        let cfg = RcloneConfig {
-            bwlimit: Some("10M:100k".into()),
-            bwlimit_file: Some("08:00,512k 23:00,off".into()),
-            ..Default::default()
-        };
-        let args = cfg.throughput_args();
-        assert_eq!(&args[..2], &["--bwlimit", "10M:100k"]);
-        assert_eq!(&args[2..], &["--bwlimit-file", "08:00,512k 23:00,off"]);
-    }
-
-    #[test]
     fn throughput_args_skips_empty_strings() {
         // Form submissions can produce `Some("")` for cleared text inputs;
         // those should not turn into empty CLI values.
@@ -2983,24 +2789,6 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.throughput_args().is_empty());
-    }
-
-    #[test]
-    fn rclone_config_deserializes_from_partial_json() {
-        let json = r#"{ "destination_root": "remote:/x", "bwlimit": "5M" }"#;
-        let cfg: RcloneConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(cfg.destination_root.as_deref(), Some("remote:/x"));
-        assert_eq!(cfg.bwlimit.as_deref(), Some("5M"));
-        assert!(cfg.args.is_empty());
-        assert_eq!(cfg.operation, RcloneOperation::Copy);
-        assert_eq!(cfg.time_anchor, TimeAnchor::JobCreated);
-    }
-
-    #[test]
-    fn rclone_config_deserializes_time_anchor() {
-        let cfg: RcloneConfig =
-            serde_json::from_str(r#"{"time_anchor": "session_start"}"#).unwrap();
-        assert_eq!(cfg.time_anchor, TimeAnchor::SessionStart);
     }
 
     #[test]

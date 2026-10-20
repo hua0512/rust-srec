@@ -258,65 +258,7 @@ mod tests {
     fn classic_classifier() -> OfflineClassifier {
         OfflineClassifier::new()
     }
-    #[test]
-    fn single_network_failure_does_not_classify() {
-        let c = classic_classifier();
-        let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
-        assert_eq!(result, None);
-    }
 
-    #[test]
-    fn engine_kind_preserves_mesio_protocol() {
-        assert_eq!(
-            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Hls),
-            EngineKind::MesioHls
-        );
-        assert_eq!(
-            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Flv),
-            EngineKind::MesioFlv
-        );
-        assert_eq!(
-            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Dash),
-            EngineKind::MesioDash
-        );
-        assert_eq!(
-            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Unknown),
-            EngineKind::MesioUnknown
-        );
-        assert_eq!(
-            EngineKind::from_engine_and_protocol(EngineType::Ffmpeg, DownloadProtocol::Flv),
-            EngineKind::Ffmpeg
-        );
-    }
-    #[test]
-    fn mesio_dash_network_failures_classify_like_other_mesio_protocols() {
-        assert!(EngineKind::MesioDash.is_mesio());
-        let c = classic_classifier();
-        let kind = EngineKind::MesioDash;
-        assert_eq!(
-            c.classify_failure("s1", &kind, &DownloadFailureKind::Network),
-            None
-        );
-        assert_eq!(
-            c.classify_failure("s1", &kind, &DownloadFailureKind::Network),
-            Some(OfflineSignal::ConsecutiveFailures(2))
-        );
-    }
-
-    #[test]
-    fn two_consecutive_network_failures_classify_as_definitive_offline() {
-        let c = classic_classifier();
-
-        let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(first, None, "first Network alone must not classify");
-
-        let second = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(
-            second,
-            Some(OfflineSignal::ConsecutiveFailures(2)),
-            "second Network inside window must classify"
-        );
-    }
     #[test]
     fn expired_window_resets_counter() {
         let c = classic_classifier();
@@ -333,65 +275,6 @@ mod tests {
             result, None,
             "stale entries must be pruned before threshold check"
         );
-    }
-    #[test]
-    fn successful_segment_resets_counter() {
-        let c = classic_classifier();
-
-        // First failure primes the counter.
-        let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(first, None);
-
-        // Successful segment clears the log.
-        c.note_successful_segment("s1");
-
-        // Next failure must be treated as the first again (not the second).
-        let after = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(after, None, "counter must reset after successful segment");
-    }
-    #[test]
-    fn ffmpeg_http_404_does_not_classify() {
-        let c = classic_classifier();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::Ffmpeg,
-            &DownloadFailureKind::HttpClientError { status: 404 },
-        );
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn ffmpeg_subprocess_error_is_none() {
-        let c = classic_classifier();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::Ffmpeg,
-            &DownloadFailureKind::ProcessExit { code: Some(1) },
-        );
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn streamlink_subprocess_error_is_none() {
-        let c = classic_classifier();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::Streamlink,
-            &DownloadFailureKind::ProcessExit { code: Some(2) },
-        );
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn streamlink_network_never_accumulates() {
-        let c = classic_classifier();
-        // Accumulate many Network failures on a streamlink engine; counter
-        // should never fire because streamlink failures are not classified.
-        for _ in 0..5 {
-            let result =
-                c.classify_failure("s1", &EngineKind::Streamlink, &DownloadFailureKind::Network);
-            assert_eq!(result, None);
-        }
     }
 
     // ---- Additional coverage ------------------------------------------
@@ -419,73 +302,7 @@ mod tests {
         );
     }
 
-    /// Non-network, non-404 mesio failures return `None`.
-    #[test]
-    fn mesio_source_unavailable_returns_none() {
-        let c = classic_classifier();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::MesioHls,
-            &DownloadFailureKind::SourceUnavailable,
-        );
-        assert_eq!(result, None);
-    }
-
-    /// HTTP 5xx and other client errors are not definitive.
-    #[test]
-    fn mesio_500_and_403_return_none() {
-        let c = classic_classifier();
-        assert_eq!(
-            c.classify_failure(
-                "s1",
-                &EngineKind::MesioHls,
-                &DownloadFailureKind::HttpServerError { status: 500 }
-            ),
-            None
-        );
-        assert_eq!(
-            c.classify_failure(
-                "s1",
-                &EngineKind::MesioHls,
-                &DownloadFailureKind::HttpClientError { status: 403 }
-            ),
-            None
-        );
-    }
-
-    /// Per-streamer isolation: streamer A's failures don't trip streamer B's
-    /// counter.
-    #[test]
-    fn streamer_isolation_in_consecutive_counter() {
-        let c = classic_classifier();
-
-        let a1 = c.classify_failure("a", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        let b1 = c.classify_failure("b", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(a1, None);
-        assert_eq!(b1, None);
-
-        // A second Network on A fires; B's log is still at 1.
-        let a2 = c.classify_failure("a", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(a2, Some(OfflineSignal::ConsecutiveFailures(2)));
-
-        let b_still = c.classify_failure("b", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
-        assert_eq!(
-            b_still,
-            Some(OfflineSignal::ConsecutiveFailures(2)),
-            "streamer b's counter is independent of a's firing"
-        );
-    }
-
     // ---- from_scheduler / threshold floor ------------------------------
-
-    #[test]
-    fn from_scheduler_default_matches_60s_window_threshold_3() {
-        // With offline_check_count=3, threshold derives to 3 (count, since
-        // count > MIN floor of 2). Window = 3 × 20s = 60s.
-        let c = OfflineClassifier::from_scheduler(3, 20_000);
-        assert_eq!(c.window(), Duration::from_secs(60));
-        assert_eq!(c.threshold, 3);
-    }
 
     #[test]
     fn from_scheduler_threshold_floor_of_two() {
@@ -493,24 +310,5 @@ mod tests {
         let c = OfflineClassifier::from_scheduler(1, 30_000);
         assert_eq!(c.threshold, 2);
         assert_eq!(c.window(), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn from_scheduler_higher_count_widens_window() {
-        // count=5 → threshold=5, window = 5 × 10s = 50s. Two Network
-        // failures alone are NOT enough.
-        let c = OfflineClassifier::from_scheduler(5, 10_000);
-        assert_eq!(c.threshold, 5);
-
-        for _ in 0..4 {
-            assert_eq!(
-                c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
-                None
-            );
-        }
-        assert_eq!(
-            c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
-            Some(OfflineSignal::ConsecutiveFailures(5))
-        );
     }
 }

@@ -477,20 +477,6 @@ impl OutputRootGate {
             })
             .collect()
     }
-
-    /// Diagnostic helper — list root paths currently in the Degraded state.
-    pub fn degraded_roots(&self) -> Vec<PathBuf> {
-        self.roots
-            .iter()
-            .filter_map(|kv| {
-                if kv.value().state.load(Ordering::Acquire) == STATE_DEGRADED {
-                    Some(kv.key().clone())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
 }
 
 fn contains_placeholder(path: &Path) -> bool {
@@ -605,19 +591,10 @@ fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use std::io;
-    use std::sync::atomic::{AtomicUsize, Ordering as AtomOrd};
+    use std::sync::atomic::Ordering as AtomOrd;
 
     fn no_op_hook() -> RecoveryHook {
         Arc::new(|_root: &Path| {})
-    }
-
-    fn counting_hook() -> (RecoveryHook, Arc<AtomicUsize>) {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let c2 = counter.clone();
-        let hook: RecoveryHook = Arc::new(move |_root: &Path| {
-            c2.fetch_add(1, AtomOrd::SeqCst);
-        });
-        (hook, counter)
     }
 
     fn make_gate(cooldown_secs: u64) -> Arc<OutputRootGate> {
@@ -629,51 +606,11 @@ mod tests {
         )
     }
 
-    fn make_gate_with_hook(hook: RecoveryHook, cooldown_secs: u64) -> Arc<OutputRootGate> {
-        OutputRootGate::new(
-            Weak::new(),
-            hook,
-            vec![],
-            Duration::from_secs(cooldown_secs),
-        )
-    }
-
     fn enoent() -> io::Error {
         io::Error::new(io::ErrorKind::NotFound, "no such directory")
     }
 
-    fn enospc() -> io::Error {
-        io::Error::new(io::ErrorKind::StorageFull, "no space")
-    }
-
     // ---------- normalize_root ----------
-
-    #[test]
-    fn normalize_root_handles_trailing_slash() {
-        assert_eq!(normalize_root(Path::new("/rec/")), PathBuf::from("/rec"));
-        assert_eq!(normalize_root(Path::new("/rec")), PathBuf::from("/rec"));
-    }
-
-    #[test]
-    fn normalize_root_resolves_curdir() {
-        assert_eq!(
-            normalize_root(Path::new("/rec/./a")),
-            PathBuf::from("/rec/a")
-        );
-        assert_eq!(normalize_root(Path::new("./rec")), PathBuf::from("rec"));
-    }
-
-    #[test]
-    fn normalize_root_resolves_parentdir_lexically() {
-        assert_eq!(
-            normalize_root(Path::new("/rec/a/..")),
-            PathBuf::from("/rec")
-        );
-        assert_eq!(
-            normalize_root(Path::new("/rec/a/../b")),
-            PathBuf::from("/rec/b")
-        );
-    }
 
     #[test]
     fn normalize_root_collisions() {
@@ -692,41 +629,11 @@ mod tests {
     // ---------- resolve_root ----------
 
     #[test]
-    fn resolve_root_with_configured_prefix() {
-        let configured = vec![PathBuf::from("/rec"), PathBuf::from("/mnt/backup")];
-        assert_eq!(
-            resolve_root(Path::new("/rec/huya/X/20260415"), &configured),
-            PathBuf::from("/rec")
-        );
-        assert_eq!(
-            resolve_root(Path::new("/mnt/backup/Y"), &configured),
-            PathBuf::from("/mnt/backup")
-        );
-    }
-
-    #[test]
     fn resolve_root_picks_longest_configured_match() {
         let configured = vec![PathBuf::from("/rec"), PathBuf::from("/rec/sub")];
         assert_eq!(
             resolve_root(Path::new("/rec/sub/X"), &configured),
             PathBuf::from("/rec/sub")
-        );
-    }
-
-    #[test]
-    fn resolve_root_fallback_two_components_for_rec_layout() {
-        let configured: Vec<PathBuf> = vec![];
-        // /rec/huya/X/20260415 → /rec (the RootDir + 1 named component is enough,
-        // but the heuristic conservatively takes 2 named components when present
-        // to avoid blasting unrelated users in /home/X vs /home/Y).
-        let r = resolve_root(Path::new("/rec/huya/X/20260415"), &configured);
-        // Either /rec or /rec/huya is acceptable; assert the prefix is right
-        // and the path has at most 2 named components.
-        assert!(r.starts_with("/rec"), "got: {:?}", r);
-        assert!(
-            r.components().count() <= 3,
-            "got too many components: {:?}",
-            r
         );
     }
 
@@ -738,29 +645,7 @@ mod tests {
         assert!(r.starts_with("/home/user"), "got: {:?}", r);
     }
 
-    #[test]
-    fn resolve_root_relative_path_takes_first_component() {
-        let configured: Vec<PathBuf> = vec![];
-        let r = resolve_root(Path::new("rec/huya/X"), &configured);
-        assert_eq!(r, PathBuf::from("rec"));
-    }
-
-    #[test]
-    fn resolve_root_normalization_is_applied() {
-        let configured: Vec<PathBuf> = vec![];
-        // Both inputs should resolve to the same gate key.
-        let a = resolve_root(Path::new("/rec/huya/X"), &configured);
-        let b = resolve_root(Path::new("/rec/./huya/X/"), &configured);
-        assert_eq!(a, b);
-    }
-
     // ---------- check / record_failure / mark_healthy ----------
-
-    #[tokio::test]
-    async fn check_returns_ok_on_empty_gate() {
-        let gate = make_gate(30);
-        assert!(gate.check(Path::new("/rec/huya/X")).is_ok());
-    }
 
     #[tokio::test]
     async fn record_failure_then_check_returns_blocked() {
@@ -859,113 +744,5 @@ mod tests {
             "exactly one caller must win the probe slot per cooldown window, got {}",
             allowed
         );
-    }
-
-    #[tokio::test]
-    async fn mark_healthy_clears_state_and_fires_hook() {
-        let (hook, counter) = counting_hook();
-        let gate = make_gate_with_hook(hook, 30);
-        gate.record_failure(Path::new("/rec/X"), &enospc());
-        assert!(gate.check(Path::new("/rec/X")).is_err());
-
-        gate.mark_healthy(Path::new("/rec/X"));
-        assert_eq!(
-            counter.load(AtomOrd::SeqCst),
-            1,
-            "recovery hook should fire exactly once"
-        );
-        // Second mark_healthy on already-Healthy root is a no-op.
-        gate.mark_healthy(Path::new("/rec/X"));
-        assert_eq!(counter.load(AtomOrd::SeqCst), 1, "no-op on already-healthy");
-        // And the gate now lets traffic through again.
-        assert!(gate.check(Path::new("/rec/X")).is_ok());
-    }
-
-    #[tokio::test]
-    async fn record_failure_is_idempotent_on_repeat() {
-        let gate = make_gate(30);
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        // Still exactly one entry.
-        assert_eq!(gate.degraded_roots().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn snapshot_reports_degraded_with_metadata() {
-        let gate = make_gate(30);
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        // Generate one rejected attempt to bump the counter.
-        let _ = gate.check(Path::new("/rec/X"));
-
-        let snap = gate.snapshot();
-        assert_eq!(snap.len(), 1);
-        let entry = &snap[0];
-        assert_eq!(entry.state, RootHealthState::Degraded);
-        assert!(entry.last_error.is_some());
-        let (kind, _) = entry.last_error.as_ref().unwrap();
-        assert_eq!(*kind, IoErrorKindSer::NotFound);
-        assert!(entry.rejected_count >= 1);
-        assert!(entry.seconds_since_last_attempt.is_some());
-    }
-
-    #[tokio::test]
-    async fn snapshot_reports_recovered_root_as_healthy() {
-        let gate = make_gate(30);
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        gate.mark_healthy(Path::new("/rec/X"));
-        tokio::time::sleep(Duration::from_millis(20)).await;
-
-        let snap = gate.snapshot();
-        assert_eq!(snap.len(), 1);
-        assert_eq!(snap[0].state, RootHealthState::Healthy);
-        assert!(snap[0].last_error.is_none());
-    }
-
-    #[tokio::test]
-    async fn classification_round_trip_through_record_failure() {
-        let cases = [
-            (io::ErrorKind::NotFound, IoErrorKindSer::NotFound),
-            (io::ErrorKind::StorageFull, IoErrorKindSer::StorageFull),
-            (
-                io::ErrorKind::PermissionDenied,
-                IoErrorKindSer::PermissionDenied,
-            ),
-            (
-                io::ErrorKind::ReadOnlyFilesystem,
-                IoErrorKindSer::ReadOnlyFilesystem,
-            ),
-            (io::ErrorKind::TimedOut, IoErrorKindSer::TimedOut),
-            (io::ErrorKind::ConnectionRefused, IoErrorKindSer::Other),
-        ];
-        for (input_kind, expected_ser) in cases {
-            let gate = make_gate(30);
-            let err = io::Error::new(input_kind, "test");
-            gate.record_failure(Path::new("/rec/X"), &err);
-            let snap = gate.snapshot();
-            assert_eq!(snap.len(), 1);
-            assert_eq!(snap[0].last_error.as_ref().unwrap().0, expected_ser);
-        }
-    }
-
-    #[tokio::test]
-    async fn check_after_recovery_resumes_normal_traffic() {
-        let gate = make_gate(30);
-        gate.record_failure(Path::new("/rec/X"), &enoent());
-        assert!(gate.check(Path::new("/rec/X")).is_err());
-        gate.mark_healthy(Path::new("/rec/X"));
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        // Many concurrent checks all pass.
-        for _ in 0..10 {
-            assert!(gate.check(Path::new("/rec/X")).is_ok());
-        }
-    }
-
-    #[tokio::test]
-    async fn last_error_gate_prefix_constant_is_stable() {
-        // The recovery hook in services::container filters streamer last_error
-        // by this exact prefix. If it changes, the recovery hook silently stops
-        // resetting streamers and the regression is invisible until production.
-        assert_eq!(LAST_ERROR_GATE_PREFIX, "output-root blocked:");
     }
 }

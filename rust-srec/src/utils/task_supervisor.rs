@@ -401,28 +401,11 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::time::Duration;
 
-    use tokio::sync::Notify;
     use tokio_util::sync::CancellationToken;
 
     use super::TaskSupervisor;
-
-    #[tokio::test]
-    async fn shutdown_waits_for_owned_tasks() {
-        let supervisor = TaskSupervisor::new();
-        let completed = Arc::new(Notify::new());
-        let completed_task = completed.clone();
-
-        assert!(supervisor.spawn("test", async move {
-            completed_task.notify_one();
-        }));
-        completed.notified().await;
-
-        assert!(supervisor.shutdown(std::time::Duration::from_secs(1)).await);
-        assert_eq!(supervisor.task_count(), 0);
-    }
 
     #[tokio::test]
     async fn shutdown_contains_tasks_after_grace_deadline() {

@@ -13,8 +13,8 @@ pub(crate) use coordination::{
     DownloadCoordinationReceiver, DownloadCoordinationSender, download_coordination_channel,
 };
 pub use events::{
-    ConfigUpdateType, DownloadManagerEvent, DownloadProgressEvent, DownloadRejectedKind,
-    DownloadShutdownReport, DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
+    DownloadManagerEvent, DownloadProgressEvent, DownloadRejectedKind, DownloadShutdownReport,
+    DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
 };
 
 use std::collections::HashMap;
@@ -40,7 +40,7 @@ use super::queue::{
     AcquireError as QueueAcquireError, AcquireRequest, ActiveSlot, DownloadQueue,
     PendingEntry as QueuePendingEntry, Priority, SlotGuard,
 };
-use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
+use super::resilience::{CircuitBreakerManager, EngineKey};
 use crate::Result;
 use crate::database::repositories::config::ConfigRepository;
 
@@ -95,8 +95,6 @@ pub struct DownloadManagerConfig {
     pub high_priority_extra_slots: usize,
     /// Default download engine.
     pub default_engine: EngineType,
-    /// Retry configuration.
-    pub retry_config: RetryConfig,
     /// Circuit breaker failure threshold.
     pub circuit_breaker_threshold: u32,
     /// Circuit breaker cooldown in seconds.
@@ -113,7 +111,6 @@ impl Default for DownloadManagerConfig {
             max_concurrent_downloads: 6,
             high_priority_extra_slots: 2,
             default_engine: EngineType::Ffmpeg,
-            retry_config: RetryConfig::default(),
             circuit_breaker_threshold: 5,
             circuit_breaker_cooldown_secs: 60,
             circuit_breaker_half_open_success_threshold: 2,

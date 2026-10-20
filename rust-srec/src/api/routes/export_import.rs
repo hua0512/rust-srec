@@ -651,43 +651,6 @@ mod tests {
     }
 
     #[test]
-    fn test_streamer_export_serialization_includes_avatar_url() {
-        let streamer = StreamerExport {
-            name: "test".to_string(),
-            url: "https://example.com/streamer".to_string(),
-            platform: "twitch".to_string(),
-            template: None,
-            priority: "NORMAL".to_string(),
-            state: "NOT_LIVE".to_string(),
-            avatar_url: Some("https://example.com/avatar.png".to_string()),
-            streamer_specific_config: None,
-            proxy_route: None,
-            filters: vec![],
-        };
-
-        let json = serde_json::to_value(&streamer).unwrap();
-        assert_eq!(json["state"], "NOT_LIVE");
-        assert_eq!(json["avatar_url"], "https://example.com/avatar.png");
-    }
-
-    #[test]
-    fn test_streamer_export_deserialization_missing_avatar_url_defaults_to_none() {
-        let json = r#"{
-            "name":"test",
-            "url":"https://example.com/streamer",
-            "platform":"twitch",
-            "template":null,
-            "priority":"NORMAL",
-            "state":"NOT_LIVE",
-            "streamer_specific_config":null,
-            "filters":[]
-        }"#;
-
-        let streamer: StreamerExport = serde_json::from_str(json).unwrap();
-        assert_eq!(streamer.avatar_url, None);
-    }
-
-    #[test]
     fn test_streamer_export_deserialization_missing_state_defaults_to_not_live() {
         let json = r#"{
             "name":"test",
@@ -702,94 +665,6 @@ mod tests {
 
         let streamer: StreamerExport = serde_json::from_str(json).unwrap();
         assert_eq!(streamer.state, "NOT_LIVE");
-    }
-
-    #[test]
-    fn test_user_export_serialization_includes_sensitive_fields() {
-        let user = UserExport {
-            id: "user-1".to_string(),
-            username: "admin".to_string(),
-            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$abc$def".to_string(),
-            email: None,
-            roles: vec!["admin".to_string(), "user".to_string()],
-            is_active: true,
-            must_change_password: false,
-            last_login_at: None,
-            created_at: 1_767_225_600_000,
-            updated_at: 1_767_225_600_000,
-        };
-
-        let json = serde_json::to_value(&user).unwrap();
-        assert_eq!(json["username"], "admin");
-        assert_eq!(
-            json["password_hash"],
-            "$argon2id$v=19$m=19456,t=2,p=1$abc$def"
-        );
-        assert_eq!(json["roles"][0], "admin");
-    }
-
-    #[test]
-    fn test_build_streamer_export_includes_streamer_specific_config_refresh_token() {
-        let mut streamer =
-            StreamerDbModel::new("test", "https://live.bilibili.com/123", "platform-bilibili");
-        streamer.streamer_specific_config =
-            Some(r#"{"refresh_token":"rt","cookies":"c"}"#.to_string());
-
-        let platform_map =
-            HashMap::from([("platform-bilibili".to_string(), "bilibili".to_string())]);
-        let template_map = HashMap::new();
-
-        let export = build_streamer_export(&streamer, &platform_map, &template_map, vec![]);
-        assert_eq!(export.platform, "bilibili");
-        assert_eq!(
-            export
-                .streamer_specific_config
-                .and_then(|v| v.get("refresh_token").cloned()),
-            Some(serde_json::Value::String("rt".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_global_config_export_serialization_with_log_filter() {
-        let export = GlobalConfigExport {
-            output_folder: "test".to_string(),
-            output_filename_template: "test".to_string(),
-            output_file_format: "test".to_string(),
-            min_segment_size_bytes: 0,
-            max_download_duration_secs: 0,
-            max_part_size_bytes: 0,
-            record_danmu: false,
-            danmu_statistics: None,
-            max_concurrent_downloads: 0,
-            max_concurrent_uploads: 0,
-            streamer_check_delay_ms: 0,
-            proxy_config: serde_json::Value::Null,
-            proxy_route: Some(BackupRoute::Direct),
-            offline_check_delay_ms: 0,
-            offline_check_count: 0,
-            default_download_engine: "test".to_string(),
-            max_concurrent_cpu_jobs: 0,
-            max_concurrent_io_jobs: 0,
-            job_history_retention_days: 0,
-            notification_event_log_retention_days: 0,
-            output_retention_days: 0,
-            output_retention_delete_files: false,
-            pipeline: None,
-            session_complete_pipeline: None,
-            paired_segment_pipeline: None,
-            log_filter_directive: Some("rust_srec=debug".to_string()),
-            auto_thumbnail: false,
-
-            pipeline_cpu_job_timeout_secs: 3600,
-            pipeline_io_job_timeout_secs: 3600,
-            pipeline_execute_timeout_secs: 3600,
-            queue_freshness_threshold_ms: 60_000,
-            gpu_health_probe_interval_secs: 30,
-            stream_proxy_allow_private_targets: false,
-        };
-        let json = serde_json::to_string(&export).unwrap();
-        assert!(json.contains("rust_srec=debug"));
-        assert!(json.contains("log_filter_directive"));
     }
 
     #[test]
@@ -847,21 +722,6 @@ mod tests {
         let normal = serde_json::json!({"c": 3});
         let unwrapped3 = unwrap_json_value(normal.clone());
         assert_eq!(unwrapped3, normal);
-    }
-
-    #[test]
-    fn test_parse_db_config() {
-        let db_string = "{\"a\": 1}".to_string();
-        let parsed = parse_db_config(db_string);
-        assert_eq!(parsed["a"], 1);
-
-        let escaped_db_string = "\"{\\\"b\\\": 2}\"".to_string();
-        let parsed2 = parse_db_config(escaped_db_string);
-        assert_eq!(parsed2["b"], 2);
-
-        let non_json = "plain text".to_string();
-        let parsed3 = parse_db_config(non_json);
-        assert_eq!(parsed3.as_str().unwrap(), "plain text");
     }
 
     #[tokio::test]

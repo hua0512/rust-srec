@@ -26,14 +26,14 @@ pub use output_root_gate::{
     RootHealth, RootHealthState,
 };
 
-pub use manager::{
-    ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
-    DownloadProgressEvent, DownloadRejectedKind, DownloadShutdownReport, DownloadStopCause,
-    DownloadTerminalEvent, EngineEndSignal, EngineHandle, PreflightRequest,
-};
 pub(crate) use manager::{DownloadCoordinationReceiver, download_coordination_channel};
+pub use manager::{
+    DownloadManager, DownloadManagerConfig, DownloadManagerEvent, DownloadProgressEvent,
+    DownloadRejectedKind, DownloadShutdownReport, DownloadStopCause, DownloadTerminalEvent,
+    EngineEndSignal, EngineHandle, PreflightRequest,
+};
 pub use queue::{
     AcquireError, AcquireRequest, ActiveSlot, DownloadQueue, PendingEntry, Priority, SlotGuard,
 };
-pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
+pub use resilience::{CircuitBreaker, EngineKey};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

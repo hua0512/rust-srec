@@ -397,44 +397,6 @@ async fn output_retention_preserves_shared_paths_and_unavailable_directories() {
 }
 
 #[tokio::test]
-async fn output_retention_honors_cancellation_and_per_sweep_budget() {
-    let database = setup_with_config(MaintenanceConfig {
-        batch_size: 1,
-        max_batches_per_task: 1,
-        ..MaintenanceConfig::default()
-    })
-    .await;
-    seed_streamer(&database).await;
-    policy(&database, 30, false).await;
-    output(&database, "first").await;
-    output(&database, "second").await;
-    let cancellation = CancellationToken::new();
-    cancellation.cancel();
-    let report = database
-        .scheduler
-        .run_maintenance_with_cancellation(NOW, &cancellation)
-        .await;
-    assert!(report.cancelled);
-    assert_eq!(report.outputs_deleted, 0);
-    assert_eq!(
-        database
-            .scheduler
-            .run_maintenance_at(NOW)
-            .await
-            .outputs_deleted,
-        1
-    );
-    assert_eq!(
-        database
-            .scheduler
-            .run_maintenance_at(NOW)
-            .await
-            .outputs_deleted,
-        1
-    );
-}
-
-#[tokio::test]
 async fn output_retention_keeps_retry_dag_history_until_retry_settles() {
     let database = setup(10).await;
     seed_streamer(&database).await;

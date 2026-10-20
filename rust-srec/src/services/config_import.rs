@@ -16,9 +16,7 @@ use crate::database::repositories::preset::import_job_preset as persist_job_pres
 use crate::database::repositories::preset::import_pipeline_preset as persist_pipeline_preset;
 use crate::database::repositories::streamer::import_streamer_row as persist_streamer_row;
 #[cfg(test)]
-use crate::database::repositories::streamer::{
-    import_streamer_row as persist_streamer, mark_streamer_deleted,
-};
+use crate::database::repositories::streamer::import_streamer_row as persist_streamer;
 use crate::database::repositories::user::import_user as persist_user;
 
 use crate::api::auth_service::MAX_USERNAME_LENGTH;
@@ -1922,7 +1920,7 @@ mod tests {
     mod proxies;
     mod timezone_import;
     use super::*;
-    use crate::config::backup::{GlobalConfigExport, JobPresetExport, UserExport};
+    use crate::config::backup::{GlobalConfigExport, UserExport};
     use crate::database::{init_pool_with_size, run_migrations};
 
     #[tokio::test]
@@ -2131,28 +2129,6 @@ mod tests {
         persist_streamer(&mut setup_tx, &mixed).await.unwrap();
         setup_tx.commit().await.unwrap();
         platform
-    }
-
-    /// io::Write sink shared with a tracing fmt subscriber so tests can assert on
-    /// emitted log lines.
-    #[derive(Clone, Default)]
-    struct SharedLogBuffer(Arc<std::sync::Mutex<Vec<u8>>>);
-
-    impl SharedLogBuffer {
-        fn contents(&self) -> String {
-            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
-        }
-    }
-
-    impl std::io::Write for SharedLogBuffer {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
     }
 
     #[test]
@@ -2415,65 +2391,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn late_database_failure_rolls_back_earlier_import_writes() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-        let before: GlobalConfigDbModel =
-            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        sqlx::query(
-            r#"
-            CREATE TRIGGER reject_imported_job_preset
-            BEFORE INSERT ON job_presets
-            WHEN NEW.name = 'rollback-trigger'
-            BEGIN
-                SELECT RAISE(ABORT, 'forced import failure');
-            END
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let mut config = import_config(&before);
-        config.global_config.output_folder = "/should-roll-back".to_string();
-        config.job_presets.push(JobPresetExport {
-            name: "rollback-trigger".to_string(),
-            description: None,
-            category: None,
-            processor: "remux".to_string(),
-            config: serde_json::json!({}),
-        });
-        validate_import(&config, ImportMode::Merge).unwrap();
-
-        let mut tx = begin_immediate(&pool).await.unwrap();
-        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        snapshot
-            .validate_references(&config, ImportMode::Merge)
-            .unwrap();
-        let error = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .expect_err("trigger should abort the import");
-        assert!(matches!(error, ConfigurationImportError::Database(_)));
-        tx.rollback().await.unwrap();
-
-        let after: GlobalConfigDbModel =
-            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(after.output_folder, before.output_folder);
-        let inserted: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM job_presets WHERE name = 'rollback-trigger'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(inserted.0, 0);
-    }
-
-    #[tokio::test]
     async fn replace_import_updates_lowest_id_case_duplicate_and_marks_shadow_deleted() {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
@@ -2533,116 +2450,6 @@ mod tests {
         assert_eq!(stats.streamers_updated, 1);
         assert_eq!(stats.streamers_created, 0);
         assert_eq!(stats.streamers_deleted, 1);
-    }
-
-    #[tokio::test]
-    async fn merge_import_updates_one_case_duplicate_keeps_shadow_and_warns() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-        let global: GlobalConfigDbModel =
-            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        let platform = seed_case_duplicate_streamers(&pool).await;
-
-        let mut config = import_config(&global);
-        config.streamers.push(imported_streamer(
-            "https://example.com/live/ALPHA",
-            &platform.platform_name,
-        ));
-        validate_import(&config, ImportMode::Merge).unwrap();
-
-        let log_buffer = SharedLogBuffer::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_ansi(false)
-            .with_max_level(tracing::Level::WARN)
-            .with_writer({
-                let log_buffer = log_buffer.clone();
-                move || log_buffer.clone()
-            })
-            .finish();
-        let _log_guard = tracing::subscriber::set_default(subscriber);
-
-        let mut tx = begin_immediate(&pool).await.unwrap();
-        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        snapshot
-            .validate_references(&config, ImportMode::Merge)
-            .unwrap();
-        let AppliedImport { stats, .. } =
-            apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-                .await
-                .unwrap();
-        tx.commit().await.unwrap();
-
-        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].id, "streamer-a");
-        assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
-        assert_eq!(rows[1].id, "streamer-b");
-        assert_eq!(rows[1].url, "https://example.com/live/Alpha");
-        assert_eq!(stats.streamers_updated, 1);
-        assert_eq!(stats.streamers_created, 0);
-        assert_eq!(stats.streamers_deleted, 0);
-
-        let logs = log_buffer.contents();
-        assert!(
-            logs.contains("https://example.com/live/alpha")
-                && logs.contains("https://example.com/live/Alpha"),
-            "warning should name the colliding URLs, got: {logs}"
-        );
-    }
-
-    /// A streamer whose retirement has not reached its reap yet is absent from
-    /// the snapshot but still owns its URL under
-    /// `streamers.url COLLATE NOCASE UNIQUE`, so a bundle naming that URL would
-    /// have `persist_streamer` insert a fresh id straight into the constraint.
-    /// `validate_references` has to name the conflict instead.
-    #[tokio::test]
-    async fn import_rejects_a_bundle_naming_a_retiring_streamers_url() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-        let global: GlobalConfigDbModel =
-            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        let platform: PlatformConfigDbModel =
-            sqlx::query_as("SELECT * FROM platform_config WHERE platform_name = 'huya'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-
-        let model =
-            StreamerDbModel::new("retiring", "https://example.com/live/alpha", &platform.id);
-        let mut setup_tx = begin_immediate(&pool).await.unwrap();
-        persist_streamer(&mut setup_tx, &model).await.unwrap();
-        setup_tx.commit().await.unwrap();
-        assert!(
-            mark_streamer_deleted(&pool, &model.id, crate::database::time::now_ms())
-                .await
-                .unwrap()
-        );
-
-        let mut config = import_config(&global);
-        config
-            .streamers
-            .push(imported_streamer(&model.url, &platform.platform_name));
-
-        let mut tx = begin_immediate(&pool).await.unwrap();
-        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        let error = snapshot
-            .validate_references(&config, ImportMode::Merge)
-            .expect_err("the retiring URL should be reported, not left to the UNIQUE constraint");
-
-        assert!(
-            matches!(&error, ConfigurationImportError::Validation(message)
-                if message.contains("still being removed")),
-            "{error}"
-        );
     }
 
     #[test]

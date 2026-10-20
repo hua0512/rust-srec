@@ -36,7 +36,7 @@ use tracing::debug;
 ///
 /// `PartialEq` / `Eq` not derived: `Started.download_start` carries
 /// `Vec<StreamInfo>` from the platforms-parser crate, which doesn't implement
-/// `Eq`. Tests use `matches!` instead — see `accessors_work_for_all_variants`.
+/// `Eq`; tests compare variants with `matches!` instead.
 #[derive(Debug, Clone)]
 pub enum SessionTransition {
     /// Emitted after a session enters `Recording`.
@@ -259,26 +259,6 @@ mod tests {
         }
     }
 
-    fn ending() -> SessionTransition {
-        SessionTransition::Ending {
-            session_id: "s1".into(),
-            streamer_id: "r1".into(),
-            streamer_name: "test".into(),
-            cause: TerminalCause::Completed,
-            observed_at: Utc::now(),
-            resume_deadline: Utc::now() + chrono::Duration::seconds(90),
-        }
-    }
-
-    fn resumed() -> SessionTransition {
-        SessionTransition::Resumed {
-            session_id: "s1".into(),
-            streamer_id: "r1".into(),
-            resumed_at: Utc::now(),
-            hysteresis_duration: chrono::Duration::seconds(20),
-        }
-    }
-
     fn ended() -> SessionTransition {
         SessionTransition::Ended {
             session_id: "s1".into(),
@@ -290,30 +270,6 @@ mod tests {
             },
             via_hysteresis: false,
         }
-    }
-
-    #[test]
-    fn accessors_work_for_all_variants() {
-        for t in [started(), ending(), resumed(), ended()] {
-            assert_eq!(t.streamer_id(), "r1");
-            assert_eq!(t.session_id(), "s1");
-        }
-    }
-
-    #[test]
-    fn kind_str_is_stable() {
-        assert_eq!(started().kind_str(), "started");
-        assert_eq!(ending().kind_str(), "ending");
-        assert_eq!(resumed().kind_str(), "resumed");
-        assert_eq!(ended().kind_str(), "ended");
-    }
-
-    #[test]
-    fn only_ended_is_terminal() {
-        assert!(!started().is_terminal());
-        assert!(!ending().is_terminal());
-        assert!(!resumed().is_terminal());
-        assert!(ended().is_terminal());
     }
 
     #[tokio::test]

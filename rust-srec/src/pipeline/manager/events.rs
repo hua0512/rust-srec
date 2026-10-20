@@ -130,8 +130,7 @@ where
                 // which converts them into `SessionTransition::Ended`. The
                 // session-complete trigger is driven by `handle_session_transition`.
             }
-            // All other Progress variants are no-ops here (DownloadStarted,
-            // Progress, SegmentStarted, ConfigUpdated, ConfigUpdateFailed).
+            // All other Progress variants are no-ops here.
             // The segment pipeline only reacts to SegmentCompleted. Terminal
             // events are consumed by SessionLifecycle and replayed here as
             // SessionTransition values.
@@ -141,8 +140,6 @@ where
                 | DownloadProgressEvent::DownloadStarted { .. }
                 | DownloadProgressEvent::Progress { .. }
                 | DownloadProgressEvent::SegmentStarted { .. }
-                | DownloadProgressEvent::ConfigUpdated { .. }
-                | DownloadProgressEvent::ConfigUpdateFailed { .. }
                 | DownloadProgressEvent::ManualSplitChanged { .. },
             ) => {}
         }

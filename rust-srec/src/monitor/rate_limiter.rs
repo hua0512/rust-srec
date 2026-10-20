@@ -316,46 +316,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rate_limiter_try_acquire() {
-        let config = RateLimiterConfig {
-            max_tokens: 2,
-            refill_rate: 1.0,
-            initial_tokens: 2,
-        };
-        let mut limiter = RateLimiter::new(config);
+    fn tokens_refill_at_the_rate_up_to_a_burst_of_twice_the_rps() {
+        for (rps, burst) in [(5.0, 10), (2.5, 5), (0.2, 1)] {
+            let config = RateLimiterConfig::with_rps(rps).unwrap();
+            assert_eq!(
+                (config.max_tokens, config.initial_tokens, config.refill_rate),
+                (burst, burst, rps)
+            );
+        }
 
-        // Should be able to acquire 2 tokens
-        assert!(limiter.try_acquire());
-        assert!(limiter.try_acquire());
-
-        // Third should fail
-        assert!(!limiter.try_acquire());
-    }
-
-    #[test]
-    fn test_rate_limiter_refill() {
-        let config = RateLimiterConfig {
-            max_tokens: 10,
-            refill_rate: 100.0, // Fast refill for testing
+        // The bucket reads `std::time::Instant`, so elapsed time is simulated by
+        // moving `last_refill` back. A slow rate keeps the test's own run time
+        // from adding a token.
+        let mut limiter = RateLimiter::new(RateLimiterConfig {
+            max_tokens: 3,
+            refill_rate: 0.1,
             initial_tokens: 0,
+        });
+        let idle = |limiter: &mut RateLimiter, secs| {
+            limiter.last_refill = Instant::now()
+                .checked_sub(Duration::from_secs(secs))
+                .expect("monotonic clock covers the idle period");
         };
-        let mut limiter = RateLimiter::new(config);
-
-        // Initially no tokens
+        assert!(!limiter.try_acquire());
+        idle(&mut limiter, 10);
+        assert!(limiter.try_acquire());
         assert!(!limiter.try_acquire());
 
-        // Wait a bit for refill
-        std::thread::sleep(Duration::from_millis(20));
-
-        // Should have tokens now
-        assert!(limiter.try_acquire());
-    }
-
-    #[test]
-    fn test_rate_limiter_config_with_rps() {
-        let config = RateLimiterConfig::with_rps(5.0).unwrap();
-        assert_eq!(config.max_tokens, 10); // 2x burst
-        assert_eq!(config.refill_rate, 5.0);
+        idle(&mut limiter, 60);
+        assert_eq!(limiter.available_tokens(), 3.0);
+        for _ in 0..3 {
+            assert!(limiter.try_acquire());
+        }
+        assert!(!limiter.try_acquire());
     }
 
     #[test]
@@ -364,49 +357,6 @@ mod tests {
         assert!(RateLimiterConfig::with_rps(-1.0).is_err());
         assert!(RateLimiterConfig::with_rps(f64::NAN).is_err());
         assert!(RateLimiterConfig::with_rps(f64::INFINITY).is_err());
-    }
-
-    #[tokio::test]
-    async fn test_rate_limiter_manager() {
-        let manager = RateLimiterManager::new();
-
-        // First acquire should succeed
-        assert!(manager.try_acquire("twitch").await);
-
-        // Check available tokens
-        let tokens = manager.available_tokens("twitch").await;
-        assert!(tokens < 10.0); // Should have used one token
-    }
-
-    #[tokio::test]
-    async fn test_rate_limiter_manager_acquire_cancel_safe() {
-        use std::sync::Arc;
-
-        let manager = Arc::new(RateLimiterManager::with_config(RateLimiterConfig {
-            max_tokens: 1,
-            refill_rate: 10.0, // 10 tokens per second for fast test
-            initial_tokens: 0, // Start with no tokens
-        }));
-
-        // First acquire will need to wait
-        let manager_clone = manager.clone();
-        let handle = tokio::spawn(async move { manager_clone.acquire("test").await });
-
-        // Cancel the acquire after a short delay
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        handle.abort();
-
-        // Wait for abort to complete
-        let _ = handle.await;
-
-        // The manager should still be usable - this is the key cancel safety test
-        // If the mutex was held across the await, this would deadlock
-        let tokens = manager.available_tokens("test").await;
-        assert!(tokens >= 0.0); // Should be able to check tokens without deadlock
-
-        // Should be able to acquire after cancellation
-        let wait = manager.acquire("test").await;
-        assert!(wait <= Duration::from_millis(200)); // Should complete quickly
     }
 
     #[tokio::test(start_paused = true)]

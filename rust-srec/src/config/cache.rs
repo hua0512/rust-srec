@@ -159,24 +159,6 @@ impl ConfigCache {
         self.in_flight.clear();
     }
 
-    /// Invalidate configurations for streamers matching a predicate.
-    pub fn invalidate_where<F>(&self, predicate: F)
-    where
-        F: Fn(&str) -> bool,
-    {
-        let _mutation = self.mutation.lock();
-        self.streamer_configs.retain(|key, _| !predicate(key));
-        let reason = "Configuration cache invalidated".to_string();
-        self.in_flight.retain(|key, request| {
-            if predicate(key) {
-                request.set_result(Err(reason.clone()));
-                false
-            } else {
-                true
-            }
-        });
-    }
-
     /// Get the number of cached entries.
     pub fn len(&self) -> usize {
         self.streamer_configs.len()
@@ -431,13 +413,12 @@ mod tests {
 
     #[tokio::test]
     async fn invalidated_resolution_cannot_replace_or_fail_a_newer_generation() {
-        for scope in 0..3 {
+        for scope in 0..2 {
             let cache = ConfigCache::new();
             let (old, _) = cache.get_or_create_in_flight("streamer");
             match scope {
                 0 => cache.invalidate("streamer"),
-                1 => cache.invalidate_all(),
-                _ => cache.invalidate_where(|id| id == "streamer"),
+                _ => cache.invalidate_all(),
             }
             let (new, created) = cache.get_or_create_in_flight("streamer");
             assert!(created);
@@ -461,86 +442,5 @@ mod tests {
                     .unwrap();
             assert!(Arc::ptr_eq(&received, &current));
         }
-    }
-
-    #[test]
-    fn test_cache_insert_and_get() {
-        let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
-
-        let cached = cache.get("streamer-1");
-        assert!(cached.is_some());
-        assert_eq!(cached.unwrap().output_folder, "/app/output".to_string());
-    }
-
-    #[test]
-    fn test_cache_miss() {
-        let cache = ConfigCache::new();
-        assert!(cache.get("nonexistent").is_none());
-    }
-
-    #[test]
-    fn test_cache_invalidate() {
-        let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
-
-        assert!(cache.get("streamer-1").is_some());
-
-        cache.invalidate("streamer-1");
-
-        assert!(cache.get("streamer-1").is_none());
-    }
-
-    #[test]
-    fn test_cache_invalidate_all() {
-        let cache = ConfigCache::new();
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
-        cache.insert("streamer-2".to_string(), Arc::new(create_test_config()));
-
-        assert_eq!(cache.len(), 2);
-
-        cache.invalidate_all();
-
-        assert!(cache.is_empty());
-    }
-
-    #[test]
-    fn test_cache_ttl_expiration() {
-        let cache = ConfigCache::with_ttl(Duration::from_millis(10));
-        cache.insert("streamer-1".to_string(), Arc::new(create_test_config()));
-
-        // Should be present immediately
-        assert!(cache.get("streamer-1").is_some());
-
-        // Wait for expiration
-        std::thread::sleep(Duration::from_millis(20));
-
-        // Should be expired now
-        assert!(cache.get("streamer-1").is_none());
-    }
-
-    #[test]
-    fn test_cache_invalidate_where() {
-        let cache = ConfigCache::new();
-        cache.insert(
-            "platform-a-streamer-1".to_string(),
-            Arc::new(create_test_config()),
-        );
-        cache.insert(
-            "platform-a-streamer-2".to_string(),
-            Arc::new(create_test_config()),
-        );
-        cache.insert(
-            "platform-b-streamer-1".to_string(),
-            Arc::new(create_test_config()),
-        );
-
-        assert_eq!(cache.len(), 3);
-
-        // Invalidate all platform-a streamers
-        cache.invalidate_where(|key| key.starts_with("platform-a"));
-
-        assert_eq!(cache.len(), 1);
-        assert!(cache.get("platform-b-streamer-1").is_some());
     }
 }

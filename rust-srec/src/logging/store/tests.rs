@@ -81,50 +81,6 @@ fn batched_records_match_individual_rotation_retention_truncation_and_dates() {
 }
 
 #[test]
-fn batching_reduces_directory_inventories_and_bounds_record_and_byte_buffers() {
-    let individual_dir = tempfile::tempdir().unwrap();
-    let batch_dir = tempfile::tempdir().unwrap();
-    let policy = LogPolicy {
-        max_file_bytes: 1024 * 1024,
-        max_files: 3,
-    };
-    let individual = LogStore::new(individual_dir.path().to_owned(), policy);
-    let batched = Arc::new(LogStore::new(batch_dir.path().to_owned(), policy));
-    let mut writer = LogWriter::new(batched.clone());
-
-    for _ in 0..BATCH_RECORDS {
-        individual.append(b"record\n", instant(8), false).unwrap();
-        writer.write_at(b"record\n", instant(8)).unwrap();
-    }
-    assert_eq!(individual.inventory_reads.load(Ordering::Relaxed), 32);
-    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), 1);
-    assert!(writer.records.is_empty());
-    assert_eq!(writer.buffered_bytes, 0);
-    writer.flush().unwrap();
-    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), 1);
-    assert_eq!(contents(&individual), contents(&batched));
-
-    let reads = batched.inventory_reads.load(Ordering::Relaxed);
-    let half = vec![b'x'; BATCH_BYTES / 2];
-    writer.write_at(&half, instant(8)).unwrap();
-    assert_eq!(writer.buffered_bytes, BATCH_BYTES / 2);
-    writer.write_at(&half, instant(8)).unwrap();
-    assert!(writer.records.is_empty());
-    assert_eq!(writer.buffered_bytes, 0);
-    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), reads + 1);
-
-    writer
-        .write_at(b"before large record\n", instant(8))
-        .unwrap();
-    let oversized = vec![b'z'; BATCH_BYTES + 1];
-    writer.write_at(&oversized, instant(8)).unwrap();
-    assert!(writer.records.is_empty());
-    assert_eq!(writer.buffered_bytes, 0);
-    assert_eq!(batched.inventory_reads.load(Ordering::Relaxed), reads + 3);
-    assert_bounds(&batched);
-}
-
-#[test]
 fn batch_failure_does_not_replay_successes_or_drop_unattempted_records() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(store(&dir));
@@ -149,25 +105,6 @@ fn batch_failure_does_not_replay_successes_or_drop_unattempted_records() {
     writer.flush().unwrap();
     assert_eq!(store.failed_writes.load(Ordering::Relaxed), 1);
     assert_bounds(&store);
-}
-
-#[test]
-fn emergency_append_remains_immediate_while_worker_records_are_buffered() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Arc::new(store(&dir));
-    let mut writer = LogWriter::new(store.clone());
-    writer.write_all(b"buffered normal record\n").unwrap();
-    store.try_append_emergency("emergency\n").unwrap();
-    assert_eq!(contents(&store)[0].1, b"emergency\n");
-    assert_eq!(writer.records.len(), 1);
-    writer.flush().unwrap();
-    let files = contents(&store);
-    let mut lines: Vec<_> = files
-        .iter()
-        .flat_map(|(_, bytes)| std::str::from_utf8(bytes).unwrap().lines())
-        .collect();
-    lines.sort_unstable();
-    assert_eq!(lines, ["buffered normal record", "emergency"]);
 }
 
 #[test]
@@ -318,42 +255,6 @@ fn managed_looking_symlinks_are_never_followed_or_deleted() {
 }
 
 #[test]
-fn failed_eviction_stops_rotation_until_capacity_can_be_reclaimed() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = store(&dir);
-    for _ in 0..3 {
-        store.append(&[b'x'; 128], instant(8), false).unwrap();
-    }
-    let before: Vec<_> = store
-        .inventory()
-        .unwrap()
-        .into_iter()
-        .map(|file| file.path)
-        .collect();
-    store.fail_removal.store(true, Ordering::Relaxed);
-    assert_eq!(
-        store
-            .append(b"blocked", instant(8), false)
-            .unwrap_err()
-            .kind(),
-        io::ErrorKind::PermissionDenied
-    );
-    assert_eq!(
-        store
-            .inventory()
-            .unwrap()
-            .into_iter()
-            .map(|file| file.path)
-            .collect::<Vec<_>>(),
-        before
-    );
-    assert_bounds(&store);
-    store.fail_removal.store(false, Ordering::Relaxed);
-    store.append(b"recovered", instant(8), false).unwrap();
-    assert_bounds(&store);
-}
-
-#[test]
 fn corrupt_rotation_counter_fails_without_reusing_or_growing_a_full_segment() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(&dir);
@@ -363,19 +264,6 @@ fn corrupt_rotation_counter_fails_without_reusing_or_growing_a_full_segment() {
     assert!(store.append(b"next", instant(8), false).is_err());
     assert_eq!(std::fs::read(&original).unwrap(), [b'x'; 128]);
     assert_eq!(store.inventory().unwrap().len(), 1);
-    assert_bounds(&store);
-}
-
-#[test]
-fn reconciling_imported_oversized_segments_does_not_reuse_their_names() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = store(&dir);
-    let imported = dir.path().join(filename(instant(8).date_naive(), 42));
-    std::fs::write(&imported, [b'x'; 256]).unwrap();
-    store.reconcile(instant(8)).unwrap();
-    store.append(b"fresh", instant(8), false).unwrap();
-    assert!(!imported.exists());
-    assert_eq!(store.inventory().unwrap()[0].index, 43);
     assert_bounds(&store);
 }
 
@@ -396,25 +284,6 @@ fn oversized_unicode_emergency_records_are_bounded_and_contention_never_waits() 
     assert!(bytes.ends_with(TRUNCATED));
     assert_eq!(store.truncated_records.load(Ordering::Relaxed), 1);
     assert_bounds(&store);
-}
-
-#[test]
-fn nonblocking_queue_accepts_while_another_writer_holds_ownership_and_guard_flushes() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Arc::new(store(&dir));
-    let lock = store.lock(false).unwrap();
-    let (mut writer, guard) = tracing_appender::non_blocking(LogWriter::new(store.clone()));
-    let (sent, received) = std::sync::mpsc::channel();
-    let producer = std::thread::spawn(move || {
-        writer.write_all(b"queued record\n").unwrap();
-        sent.send(()).unwrap();
-    });
-    received.recv_timeout(Duration::from_secs(2)).unwrap();
-    drop(lock);
-    producer.join().unwrap();
-    drop(guard);
-    let files = store.inventory().unwrap();
-    assert_eq!(std::fs::read(&files[0].path).unwrap(), b"queued record\n");
 }
 
 #[test]

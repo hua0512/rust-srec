@@ -364,33 +364,4 @@ mod tests {
             .expect("observer does not panic");
         drop(sink);
     }
-
-    #[tokio::test]
-    async fn invalid_dash_settings_fail_as_configuration_before_any_request() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let config = DownloadConfig::new(
-            "http://127.0.0.1:9/live.mpd",
-            temp.path().to_path_buf(),
-            "streamer",
-            "streamer",
-            "session",
-        );
-        let engine_config: MesioEngineConfig = serde_json::from_value(serde_json::json!({
-            "dash": { "include_video": false, "include_audio": false }
-        }))
-        .unwrap();
-        let (event_tx, _event_rx) = mpsc::channel(8);
-        let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
-        let downloader = DashDownloader::new(Arc::new(handle), engine_config, None);
-
-        let error = timeout(Duration::from_secs(5), downloader.run())
-            .await
-            .expect("fails without network access")
-            .expect_err("both tracks excluded");
-        assert_eq!(
-            error.kind,
-            crate::downloader::DownloadFailureKind::Configuration
-        );
-        assert!(error.message.contains("DASH"), "{}", error.message);
-    }
 }

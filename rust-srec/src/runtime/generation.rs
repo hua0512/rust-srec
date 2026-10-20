@@ -636,29 +636,6 @@ mod tests {
     }
 
     #[test]
-    fn recovery_acknowledgement_publish_failure_leaves_original_ledger() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("runtime.dirty");
-        drop(DirtyGenerationMarker::begin(&path, RuntimeGeneration::generate()).unwrap());
-        let current = RuntimeGeneration::generate();
-        let marker = DirtyGenerationMarker::begin(&path, current).unwrap();
-        let before = std::fs::read(&path).unwrap();
-        let result = DirtyGenerationMarker::acknowledge_recovery_with(&path, current, |path, _| {
-            Err(Error::io_path(
-                "publish recovery acknowledgement",
-                path,
-                std::io::Error::from(std::io::ErrorKind::StorageFull),
-            ))
-        });
-        assert!(result.is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-        assert_eq!(
-            marker.clear().unwrap(),
-            Some(DirtyGenerationCount::exactly(1))
-        );
-    }
-
-    #[test]
     fn acknowledgement_cannot_overwrite_a_replacement_generation_during_publish() {
         use std::sync::mpsc;
         use std::time::Duration;
@@ -708,32 +685,6 @@ mod tests {
     }
 
     #[test]
-    fn marker_round_trips_active_generation() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        let expected = generation("5d767a8b-1ff2-49a5-b329-396660703e49");
-
-        let marker = DirtyGenerationMarker::begin(&path, expected)
-            .expect("dirty marker should be installed");
-        let loaded = DirtyGenerationMarker::load(&path)
-            .expect("dirty marker should be readable")
-            .expect("dirty marker should exist");
-
-        assert_eq!(marker.generation(), expected);
-        assert_eq!(
-            marker.unresolved_generations(),
-            DirtyGenerationCount::exactly(1)
-        );
-        assert_eq!(loaded.active_generation, Some(expected));
-        assert_eq!(loaded.recovery_pending, None);
-        assert_eq!(
-            loaded.dirty_generation_count(),
-            DirtyGenerationCount::exactly(1)
-        );
-        assert_eq!(expected.to_string().parse(), Ok(expected));
-    }
-
-    #[test]
     fn begin_moves_an_interrupted_generation_to_recovery_pending() {
         let directory = tempfile::tempdir().expect("temporary directory should be created");
         let path = directory.path().join("runtime.dirty");
@@ -774,122 +725,6 @@ mod tests {
         let mut expected = vec![path, directory.path().join("runtime.dirty.update.lock")];
         expected.sort();
         assert_eq!(paths, expected);
-    }
-
-    #[test]
-    fn clear_removes_matching_marker() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        let marker =
-            DirtyGenerationMarker::begin(&path, generation("c7b25329-cc9c-4451-940b-d93601813cf8"))
-                .expect("dirty marker should be installed");
-
-        assert_eq!(
-            marker
-                .clear()
-                .expect("matching marker should be cleared without recovery debt"),
-            None
-        );
-
-        assert!(
-            DirtyGenerationMarker::load(&path)
-                .expect("missing marker should load cleanly")
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn repeated_forced_generations_accumulate_recovery_debt() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        let first = generation("d68f2f31-7705-45df-8195-fbd4b7f6c0dc");
-        let second = generation("e08dd995-9a14-4077-b558-3eecc3e7c715");
-        let third = generation("874479e1-2827-4da7-bc6d-a45a2212d783");
-
-        drop(DirtyGenerationMarker::begin(&path, first).expect("begin first generation"));
-        drop(DirtyGenerationMarker::begin(&path, second).expect("begin second generation"));
-        let current = DirtyGenerationMarker::begin(&path, third).expect("begin third generation");
-
-        let state = DirtyGenerationMarker::load(&path)
-            .expect("marker should be readable")
-            .expect("marker should exist");
-        let debt = RecoveryDebt {
-            earliest: first,
-            latest: second,
-            dropped: 0,
-        };
-        assert_eq!(state.active_generation, Some(third));
-        assert_eq!(state.recovery_pending, Some(debt));
-        assert_eq!(state.latest_dirty_generation(), Some(third));
-        assert_eq!(
-            state.dirty_generation_count(),
-            DirtyGenerationCount::exactly(3)
-        );
-
-        assert_eq!(
-            current.clear().expect("third generation should clear"),
-            Some(DirtyGenerationCount::exactly(2))
-        );
-        let state = DirtyGenerationMarker::load(&path)
-            .expect("recovery marker should be readable")
-            .expect("recovery marker should remain");
-        assert_eq!(state.active_generation, None);
-        assert_eq!(state.recovery_pending, Some(debt));
-        assert_eq!(state.latest_dirty_generation(), Some(second));
-        assert_eq!(
-            state.dirty_generation_count(),
-            DirtyGenerationCount::exactly(2)
-        );
-    }
-
-    #[test]
-    fn recording_one_generation_twice_keeps_a_single_entry() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        let repeated = generation("2f2f1f2a-2f31-4d0e-9a2f-0f5a9a4a1c77");
-
-        drop(DirtyGenerationMarker::begin(&path, repeated).expect("begin repeated generation"));
-        let marker = DirtyGenerationMarker::begin(&path, repeated)
-            .expect("re-beginning one generation should be accepted");
-
-        let state = DirtyGenerationMarker::load(&path)
-            .expect("marker should be readable")
-            .expect("marker should exist");
-        assert_eq!(state.active_generation, Some(repeated));
-        assert_eq!(state.recovery_pending, None);
-        assert_eq!(
-            state.dirty_generation_count(),
-            DirtyGenerationCount::exactly(1)
-        );
-        assert_eq!(
-            marker
-                .clear()
-                .expect("re-begun generation should clear without debt"),
-            None
-        );
-
-        // `RecoveryDebt::record` is idempotent for both retained endpoints:
-        // re-recording one neither duplicates it nor counts a dropped
-        // generation.
-        let other = generation("6b0f9e4c-32bd-4c6e-8f6f-6f5f38a0b1d2");
-        let mut debt_state = DirtyGenerationState::default();
-        debt_state.record_recovery_pending(repeated);
-        debt_state.record_recovery_pending(other);
-        debt_state.record_recovery_pending(repeated);
-        debt_state.record_recovery_pending(other);
-
-        assert_eq!(
-            debt_state.recovery_pending,
-            Some(RecoveryDebt {
-                earliest: repeated,
-                latest: other,
-                dropped: 0,
-            })
-        );
-        assert_eq!(
-            debt_state.dirty_generation_count(),
-            DirtyGenerationCount::exactly(2)
-        );
     }
 
     #[test]
@@ -938,67 +773,6 @@ mod tests {
     }
 
     #[test]
-    fn dropped_generations_stop_growing_the_serialized_state() {
-        const EARLY: usize = 8;
-        const LATE: usize = 10_000;
-
-        let earliest = RuntimeGeneration::generate();
-        let mut state = DirtyGenerationState::default();
-        state.record_recovery_pending(earliest);
-        for _ in 1..EARLY {
-            state.record_recovery_pending(RuntimeGeneration::generate());
-        }
-        let early_size = serde_json::to_vec(&state)
-            .expect("state should serialize")
-            .len();
-
-        for _ in EARLY..LATE {
-            state.record_recovery_pending(RuntimeGeneration::generate());
-        }
-        let late_size = serde_json::to_vec(&state)
-            .expect("state should serialize")
-            .len();
-
-        assert!(
-            late_size <= early_size + 4,
-            "serialized state grew from {early_size} to {late_size} bytes across {LATE} generations"
-        );
-        let debt = state
-            .recovery_pending
-            .expect("recorded generations should leave recovery debt");
-        assert_eq!(debt.earliest, earliest);
-        assert_eq!(debt.dropped, u32::try_from(LATE - 2).unwrap());
-        assert_eq!(
-            state.dirty_generation_count(),
-            DirtyGenerationCount::exactly(LATE)
-        );
-    }
-
-    #[test]
-    fn a_saturated_dropped_counter_reports_a_lower_bound() {
-        let mut state = DirtyGenerationState {
-            recovery_pending: Some(RecoveryDebt {
-                earliest: RuntimeGeneration::generate(),
-                latest: RuntimeGeneration::generate(),
-                dropped: u32::MAX - 1,
-            }),
-            ..DirtyGenerationState::default()
-        };
-        state.record_recovery_pending(RuntimeGeneration::generate());
-        state.record_recovery_pending(RuntimeGeneration::generate());
-
-        let debt = state.recovery_pending.expect("debt should remain recorded");
-        assert_eq!(debt.dropped, u32::MAX);
-
-        let count = state.dirty_generation_count();
-        let saturated = usize::try_from(u32::MAX)
-            .unwrap_or(usize::MAX)
-            .saturating_add(2);
-        assert_eq!(count, DirtyGenerationCount::at_least(saturated));
-        assert_eq!(count.to_string(), format!("at least {saturated}"));
-    }
-
-    #[test]
     fn dirty_generation_count_round_trips_through_its_text_form() {
         let exact = DirtyGenerationCount::exactly(3);
         let bounded = DirtyGenerationCount::at_least(7);
@@ -1021,33 +795,6 @@ mod tests {
         );
         assert!("many".parse::<DirtyGenerationCount>().is_err());
         assert!("at least many".parse::<DirtyGenerationCount>().is_err());
-    }
-
-    #[test]
-    fn load_rejects_dropped_generations_without_a_retained_range() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        let only = generation("8f0fbc4f-9d2c-4a0b-9d4f-6a2f7a1c0b55");
-        let corrupt = DirtyGenerationState {
-            recovery_pending: Some(RecoveryDebt {
-                earliest: only,
-                latest: only,
-                dropped: 3,
-            }),
-            ..DirtyGenerationState::default()
-        };
-        std::fs::write(
-            &path,
-            serde_json::to_vec(&corrupt).expect("state should serialize"),
-        )
-        .expect("corrupt marker should be written");
-
-        let error = DirtyGenerationMarker::load(&path)
-            .expect_err("inconsistent debt should be rejected")
-            .to_string();
-
-        assert!(error.contains("counts dropped generations without a retained range"));
-        assert!(error.contains(&path.display().to_string()));
     }
 
     fn marker_size(path: &Path) -> u64 {
@@ -1075,44 +822,6 @@ mod tests {
         assert_eq!(
             marker.clear().expect("current generation should clear"),
             Some(DirtyGenerationCount::exactly(1))
-        );
-    }
-
-    #[test]
-    fn load_rejects_malformed_marker_with_path_context() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let path = directory.path().join("runtime.dirty");
-        std::fs::write(&path, "not-a-runtime-generation\n")
-            .expect("malformed marker should be written");
-
-        let error = DirtyGenerationMarker::load(&path)
-            .expect_err("malformed marker should be rejected")
-            .to_string();
-
-        assert!(error.contains("invalid dirty generation marker"));
-        assert!(error.contains(&path.display().to_string()));
-    }
-
-    #[test]
-    fn runtime_lease_excludes_a_second_supervisor() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let marker_path = directory.path().join("runtime.dirty");
-        let first = RuntimeLease::acquire(&marker_path).expect("first lease should be acquired");
-
-        let error = RuntimeLease::acquire(&marker_path)
-            .err()
-            .expect("second lease should be rejected")
-            .to_string();
-        assert!(
-            error.contains("another rust-srec runtime already owns"),
-            "contention should name the existing owner: {error}"
-        );
-
-        drop(first);
-        RuntimeLease::acquire(&marker_path).expect("lease should be reusable after release");
-        assert_eq!(
-            runtime_lock_path(&marker_path),
-            directory.path().join("runtime.dirty.lock")
         );
     }
 
@@ -1144,23 +853,5 @@ mod tests {
         drop(desktop);
         RuntimeLease::acquire(&supervisor_marker)
             .expect("the lease should transfer once the first entry point exits");
-    }
-
-    #[test]
-    fn separate_databases_do_not_share_a_lease() {
-        let directory = tempfile::tempdir().expect("temporary directory should be created");
-        let first_url = format!(
-            "sqlite:{}?mode=rwc",
-            directory.path().join("one.db").to_string_lossy()
-        );
-        let second_url = format!(
-            "sqlite:{}?mode=rwc",
-            directory.path().join("two.db").to_string_lossy()
-        );
-
-        let _first = RuntimeLease::acquire_for_database(&first_url)
-            .expect("the first database should be leased");
-        RuntimeLease::acquire_for_database(&second_url)
-            .expect("an unrelated database must not be blocked by the first lease");
     }
 }

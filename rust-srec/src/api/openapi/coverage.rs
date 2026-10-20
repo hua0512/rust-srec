@@ -58,23 +58,6 @@ impl Parse for Operation {
     }
 }
 
-#[test]
-fn registration_identity_ignores_generic_and_nested_utoipa_arguments() {
-    let operation = syn::parse_str::<Operation>(
-        r#"
-        post,
-        request_body = Vec<Result<RequestBody, OtherBody>>,
-        params(("example" = String, Query, description = "path = /wrong, get")),
-        path = "/api/example",
-        responses((status = 200, body = std::collections::HashMap<String, Vec<ResponseBody>>)),
-        security(("bearer_auth" = [])),
-    "#,
-    )
-    .unwrap();
-    assert_eq!(operation.method, "post");
-    assert_eq!(operation.path, "/api/example");
-}
-
 #[derive(Default)]
 struct Sources {
     functions: BTreeMap<String, ItemFn>,

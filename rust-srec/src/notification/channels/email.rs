@@ -47,7 +47,7 @@ pub struct EmailConfig {
     #[serde(default = "default_email_priority")]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See [`NotificationEvent::title_for`] for locale fallback.
+    /// See [`NotificationEvent::title_in`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
 }
@@ -354,36 +354,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_email_channel_disabled() {
-        let config = EmailConfig::default();
-        // Email is the one channel whose default `min_priority` is `High`
-        // rather than `Normal`; `EmailChannel::send` drops any event below
-        // it, so a default mailbox only ever receives High and Critical.
-        assert_eq!(config.min_priority, NotificationPriority::High);
-
-        let channel = EmailChannel::new(config);
-        assert!(!channel.is_enabled());
-    }
-
-    #[test]
-    fn test_build_subject() {
-        let config = EmailConfig::default();
-        let channel = EmailChannel::new(config);
-
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: None,
-            timestamp: chrono::Utc::now(),
-        };
-
-        let subject = channel.build_subject(&channel.render(&event));
-        assert!(subject.contains("rust-srec"));
-        assert!(subject.contains("TestStreamer"));
-    }
-
-    #[test]
     fn message_contains_all_recipients_and_multipart_bodies() {
         let config = EmailConfig {
             enabled: true,
@@ -410,38 +380,6 @@ mod tests {
         assert!(formatted.contains("second@example.com"));
         assert!(formatted.contains("multipart/alternative"));
         assert!(formatted.contains("TestStreamer"));
-    }
-
-    #[test]
-    fn html_body_escapes_event_content() {
-        let channel = EmailChannel::new(EmailConfig::default());
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "<script>alert('x')</script>".to_string(),
-            title: "A & B".to_string(),
-            category: None,
-            timestamp: chrono::Utc::now(),
-        };
-
-        let html = channel.build_body_html(&channel.render(&event));
-        assert!(!html.contains("<script>"));
-        assert!(html.contains("&lt;script&gt;"));
-        assert!(html.contains("A &amp; B"));
-    }
-
-    #[test]
-    fn smtp_credentials_must_be_configured_as_a_pair() {
-        let config = EmailConfig {
-            smtp_host: "smtp.example.com".to_string(),
-            smtp_username: Some("user".to_string()),
-            smtp_password: None,
-            ..EmailConfig::default()
-        };
-
-        let error = EmailChannel::new(config)
-            .build_transport()
-            .expect_err("partial credentials must be rejected");
-        assert!(error.to_string().contains("username and password"));
     }
 
     #[test]

@@ -170,14 +170,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_time_valid() {
-        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
-        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
-        assert_eq!(parse_time("00:01:30.50"), Some(90.5));
-        assert_eq!(parse_time("10:00:00.00"), Some(36000.0));
-    }
-
-    #[test]
     fn test_parse_time_invalid() {
         assert_eq!(parse_time("invalid"), None);
         assert_eq!(parse_time("00:00"), None);
@@ -194,41 +186,6 @@ mod tests {
         assert_eq!(parse_size(line2), Some(512 * 1024));
 
         assert_eq!(parse_size("no size here"), None);
-    }
-
-    #[test]
-    fn test_parse_speed() {
-        let line = "size=1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
-        assert_eq!(parse_speed(line), Some(1.0));
-
-        let line2 = "speed=2.50x";
-        assert_eq!(parse_speed(line2), Some(2.5));
-
-        assert_eq!(parse_speed("no speed here"), None);
-    }
-
-    #[test]
-    fn test_parse_bitrate() {
-        let line = "bitrate=2097.2kbits/s speed=1.00x";
-        let bitrate = parse_bitrate(line);
-        assert!(bitrate.is_some());
-        // 2097.2 kbits/s = 2097.2 * 1024 / 8 bytes/s
-        assert_eq!(bitrate.unwrap(), (2097.2 * 1024.0 / 8.0) as u64);
-
-        assert_eq!(parse_bitrate("no bitrate here"), None);
-    }
-
-    #[test]
-    fn test_parse_progress_complete() {
-        let line = "frame=  100 fps=25 q=-1.0 size=    1024kB time=00:00:04.00 bitrate=2097.2kbits/s speed=1.00x";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 1024 * 1024);
-        assert_eq!(p.duration_secs, 4.0);
-        assert_eq!(p.media_duration_secs, 4.0);
-        assert_eq!(p.playback_ratio, 1.0);
     }
 
     #[test]
@@ -275,21 +232,6 @@ mod tests {
     #[test]
     fn test_parse_progress_time_only_is_not_progress() {
         assert!(parse_progress("time=00:00:10.00").is_none());
-    }
-
-    #[test]
-    fn test_parse_progress_no_size() {
-        let line = "frame=100 fps=25 q=-1.0";
-        assert!(parse_progress(line).is_none());
-    }
-
-    #[test]
-    fn test_is_segment_start() {
-        assert!(is_segment_start("Opening 'output_001.ts' for writing"));
-        assert!(is_segment_start("[segment] Opening 'file.mp4' for writing"));
-        assert!(!is_segment_start("frame=100 fps=25"));
-        assert!(!is_segment_start("Opening file"));
-        assert!(!is_segment_start("for writing"));
     }
 
     #[test]

@@ -187,17 +187,6 @@ pub(crate) fn download_notification(
             reason,
             timestamp: now,
         }),
-        DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
-            streamer_id,
-            streamer_name,
-            update_type,
-            ..
-        }) => Some(NotificationEvent::ConfigUpdated {
-            streamer_id,
-            streamer_name,
-            update_type: format!("{:?}", update_type),
-            timestamp: now,
-        }),
         _ => None,
     }
 }

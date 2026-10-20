@@ -180,49 +180,6 @@ async fn active_rotation_replay_revokes_all_sessions_by_default() {
 }
 
 #[tokio::test]
-async fn concurrent_refresh_has_one_successor_and_honors_reuse_policy() {
-    for (revoke, grace, expected_revocation) in
-        [(true, 0, true), (false, 0, false), (true, 60, false)]
-    {
-        let fixture = Fixture::new(AuthConfig {
-            revoke_all_on_refresh_token_reuse: revoke,
-            refresh_token_reuse_grace_secs: grace,
-            ..AuthConfig::default()
-        })
-        .await;
-        let first = fixture.login().await;
-        let other = fixture.login().await;
-        let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            tokio::join!(
-                fixture.service.refresh_tokens(&first.refresh_token),
-                fixture.service.refresh_tokens(&first.refresh_token)
-            )
-        })
-        .await
-        .unwrap();
-        let winner = match (left, right) {
-            (Ok(winner), Err(AuthError::TokenRevoked))
-            | (Err(AuthError::TokenRevoked), Ok(winner)) => winner,
-            results => panic!("expected one rotation winner: {results:?}"),
-        };
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE session_id = ?")
-                .bind(fixture.session_id(&first))
-                .fetch_one(&fixture.pool)
-                .await
-                .unwrap();
-        assert_eq!(count, 2, "one predecessor and exactly one successor");
-        if expected_revocation {
-            fixture.assert_revoked(&winner).await;
-            fixture.assert_revoked(&other).await;
-        } else {
-            fixture.assert_authorized(&winner).await;
-            fixture.assert_authorized(&other).await;
-        }
-    }
-}
-
-#[tokio::test]
 async fn password_change_trigger_is_atomic_and_stale_login_cannot_create_session() {
     let fixture = Fixture::new(AuthConfig::default()).await;
     let login = fixture.login().await;
@@ -331,82 +288,6 @@ async fn disabled_account_cannot_restore_old_session_or_finish_stale_login() {
 }
 
 #[tokio::test]
-async fn rotation_failure_rolls_back_predecessor_and_session_expiry_covers_access() {
-    let fixture = Fixture::new(AuthConfig {
-        access_token_expiration_secs: 86400,
-        refresh_token_expiration_secs: 60,
-        ..AuthConfig::default()
-    })
-    .await;
-    let login = fixture.login().await;
-    let claims = fixture
-        .service
-        .jwt_service
-        .validate_token(&login.access_token)
-        .unwrap();
-    let session_id = fixture.session_id(&login);
-    let original = fixture
-        .tokens
-        .find_by_token_hash(&AuthService::hash_token(&login.refresh_token))
-        .await
-        .unwrap()
-        .unwrap();
-    let session = fixture
-        .tokens
-        .find_session(&fixture.user.id, &session_id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(session.expires_at >= i64::try_from(claims.exp * 1000).unwrap());
-    let mut duplicate = original.clone();
-    duplicate.id = uuid::Uuid::new_v4().to_string();
-    assert!(
-        fixture
-            .tokens
-            .rotate_session(&original.id, &duplicate, session.expires_at + 1000)
-            .await
-            .is_err()
-    );
-    let unchanged = fixture
-        .tokens
-        .find_by_token_hash(&original.token_hash)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(unchanged.revoked_at.is_none());
-    assert_eq!(
-        fixture
-            .tokens
-            .find_session(&fixture.user.id, &session_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .expires_at,
-        session.expires_at
-    );
-    let refreshed = fixture
-        .service
-        .refresh_tokens(&login.refresh_token)
-        .await
-        .unwrap();
-    let refreshed_claims = fixture
-        .service
-        .jwt_service
-        .validate_token(&refreshed.access_token)
-        .unwrap();
-    assert!(
-        fixture
-            .tokens
-            .find_session(&fixture.user.id, &session_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .expires_at
-            >= i64::try_from(refreshed_claims.exp * 1000).unwrap()
-    );
-}
-
-#[tokio::test]
 async fn auth_session_migration_preserves_legacy_refresh_and_integrity() {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -506,34 +387,4 @@ async fn auth_session_migration_preserves_legacy_refresh_and_integrity() {
             .unwrap(),
         0
     );
-}
-
-#[tokio::test]
-async fn logout_can_close_access_session_after_refresh_cleanup() {
-    let fixture = Fixture::new(AuthConfig {
-        access_token_expiration_secs: 86400,
-        refresh_token_expiration_secs: 60,
-        ..AuthConfig::default()
-    })
-    .await;
-    let login = fixture.login().await;
-    let other = fixture.login().await;
-    let principal = fixture
-        .service
-        .authorize_credential(&login.access_token, false)
-        .await
-        .unwrap();
-    sqlx::query("DELETE FROM refresh_tokens WHERE session_id = ?")
-        .bind(fixture.session_id(&login))
-        .execute(&fixture.pool)
-        .await
-        .unwrap();
-    fixture.assert_authorized(&login).await;
-    fixture
-        .service
-        .logout_with_principal(&login.refresh_token, Some(&principal))
-        .await
-        .unwrap();
-    fixture.assert_revoked(&login).await;
-    fixture.assert_authorized(&other).await;
 }

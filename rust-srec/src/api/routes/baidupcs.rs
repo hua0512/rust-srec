@@ -380,11 +380,4 @@ mod tests {
         assert!(tail.ends_with("TAIL"));
         assert_eq!(output_tail("  short  "), "short");
     }
-
-    #[test]
-    fn non_empty_filters_blank_overrides() {
-        assert_eq!(non_empty(Some("  /cfg ")), Some("/cfg"));
-        assert_eq!(non_empty(Some("   ")), None);
-        assert_eq!(non_empty(None), None);
-    }
 }

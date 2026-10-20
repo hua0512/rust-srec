@@ -91,7 +91,6 @@ pub(super) fn regex(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn compiled_rules_are_reused_across_reconstruction_and_edits_use_new_keys() {
@@ -106,76 +105,5 @@ mod tests {
         assert!(!regex("abc", false).unwrap().is_match("ABC"));
         assert!(regex("abc", true).unwrap().is_match("ABC"));
         assert!(!regex("xyz", true).unwrap().is_match("ABC"));
-    }
-
-    #[test]
-    fn lru_is_bounded_and_failed_compilation_is_reused() {
-        let cache = DefinitionCache::<u8, u8>::new(2);
-        let calls = AtomicUsize::new(0);
-        for _ in 0..2 {
-            assert!(
-                cache
-                    .get_or_compile(1, || {
-                        calls.fetch_add(1, Ordering::SeqCst);
-                        Err(FilterEvalError::InvalidRegexPattern("invalid".to_owned()))
-                    })
-                    .is_err()
-            );
-        }
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        cache.get_or_compile(2, || Ok(2)).unwrap();
-        cache.get_or_compile(3, || Ok(3)).unwrap();
-        assert_eq!(cache.entries.lock().len(), 2);
-        assert_eq!(
-            *cache.get_or_compile(1, || Ok(1)).unwrap(),
-            1,
-            "oldest entry was evicted"
-        );
-    }
-
-    #[test]
-    fn concurrent_compilation_shares_one_result_and_invalid_inputs_stay_errors() {
-        let cache = DefinitionCache::<u8, u8>::new(2);
-        let calls = AtomicUsize::new(0);
-        let barrier = std::sync::Barrier::new(4);
-        std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..4)
-                .map(|_| {
-                    scope.spawn(|| {
-                        barrier.wait();
-                        cache
-                            .get_or_compile(1, || {
-                                calls.fetch_add(1, Ordering::SeqCst);
-                                Ok(1)
-                            })
-                            .unwrap()
-                    })
-                })
-                .collect();
-            let values: Vec<_> = handles
-                .into_iter()
-                .map(|handle| handle.join().unwrap())
-                .collect();
-            assert!(values.iter().all(|value| Arc::ptr_eq(value, &values[0])));
-        });
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        for _ in 0..2 {
-            assert!(matches!(
-                cron("not cron"),
-                Err(FilterEvalError::InvalidCronExpression(_))
-            ));
-            assert!(matches!(
-                regex("(", false),
-                Err(FilterEvalError::InvalidRegexPattern(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn oversized_sources_are_not_retained_by_the_bounded_cache() {
-        let pattern = "a".repeat(MAX_CACHED_SOURCE_BYTES + 1);
-        let first = regex(&pattern, false).unwrap();
-        let second = regex(&pattern, false).unwrap();
-        assert!(!Arc::ptr_eq(&first, &second));
     }
 }

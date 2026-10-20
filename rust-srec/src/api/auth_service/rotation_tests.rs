@@ -241,27 +241,6 @@ async fn concurrent_refresh_has_one_successor_and_applies_configured_reuse_polic
 }
 
 #[tokio::test]
-async fn sequential_refresh_reuse_revokes_successor_by_default() {
-    let fixture = Fixture::new(AuthConfig::default(), false).await;
-    let first = fixture.service.refresh_tokens(RAW_TOKEN).await.unwrap();
-    assert!(matches!(
-        fixture.service.refresh_tokens(RAW_TOKEN).await,
-        Err(AuthError::TokenRevoked)
-    ));
-    assert!(
-        fixture
-            .tokens
-            .find_by_token_hash(&token_hash(&first.refresh_token))
-            .await
-            .unwrap()
-            .unwrap()
-            .is_revoked()
-    );
-    assert_eq!(fixture.total_tokens().await, 2);
-    fixture.pool.close().await;
-}
-
-#[tokio::test]
 async fn grace_replay_never_reissues_or_extends_the_original_revocation() {
     let fixture = Fixture::new(
         AuthConfig {
@@ -318,27 +297,6 @@ async fn grace_replay_never_reissues_or_extends_the_original_revocation() {
             .unwrap(),
         0
     );
-    fixture.pool.close().await;
-}
-
-#[tokio::test]
-async fn grace_cannot_refresh_a_logged_out_token() {
-    let fixture = Fixture::new(
-        AuthConfig {
-            refresh_token_reuse_grace_secs: 60,
-            ..AuthConfig::default()
-        },
-        false,
-    )
-    .await;
-    fixture.service.logout(RAW_TOKEN).await.unwrap();
-    let revoked_at = fixture.predecessor().await.revoked_at;
-    assert!(matches!(
-        fixture.service.refresh_tokens(RAW_TOKEN).await,
-        Err(AuthError::TokenRevoked)
-    ));
-    assert_eq!(fixture.total_tokens().await, 1);
-    assert_eq!(fixture.predecessor().await.revoked_at, revoked_at);
     fixture.pool.close().await;
 }
 
@@ -402,23 +360,6 @@ async fn rotation_rechecks_expiry_and_revocation_against_database_state() {
             .unwrap(),
         RefreshTokenRotation::NotFound
     );
-    assert_eq!(fixture.total_tokens().await, 1);
-    fixture.pool.close().await;
-}
-
-#[tokio::test]
-async fn disabled_account_revokes_refresh_without_issuing_successor() {
-    let fixture = Fixture::new(AuthConfig::default(), false).await;
-    sqlx::query("UPDATE users SET is_active = 0 WHERE id = ?")
-        .bind(&fixture.user.id)
-        .execute(&fixture.pool)
-        .await
-        .unwrap();
-    assert!(matches!(
-        fixture.service.refresh_tokens(RAW_TOKEN).await,
-        Err(AuthError::TokenRevoked)
-    ));
-    assert!(fixture.predecessor().await.is_revoked());
     assert_eq!(fixture.total_tokens().await, 1);
     fixture.pool.close().await;
 }

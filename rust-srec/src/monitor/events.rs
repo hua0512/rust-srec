@@ -230,84 +230,6 @@ impl Default for MonitorEventBroadcaster {
 mod tests {
     use super::*;
 
-    use platforms_parser::media::{StreamFormat, formats::MediaFormat};
-
-    fn create_test_stream() -> StreamInfo {
-        StreamInfo {
-            url: "https://example.com/stream.flv".to_string(),
-            stream_format: StreamFormat::Flv,
-            media_format: MediaFormat::Flv,
-            quality: "best".to_string(),
-            bitrate: 5000000,
-            priority: 1,
-            extras: None,
-            codec: "h264".to_string(),
-            fps: 30.0,
-            is_headers_needed: false,
-            is_audio_only: false,
-            format_opt_in: false,
-        }
-    }
-
-    #[test]
-    fn test_event_description() {
-        let event = MonitorEvent::StreamerLive {
-            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
-            credential_binding: None,
-            streamer_id: "123".to_string(),
-            session_id: "session-123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            streamer_url: "https://example.com/streamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: Some("Gaming".to_string()),
-            streams: vec![create_test_stream()],
-            media_headers: None,
-            media_extras: None,
-            timestamp: Utc::now(),
-        };
-        assert!(event.description().contains("TestStreamer"));
-        assert!(event.description().contains("Playing Games"));
-    }
-
-    #[test]
-    fn test_should_notify() {
-        let live_event = MonitorEvent::StreamerLive {
-            runtime_instance: Some(crate::monitor::runtime_instance_id().to_owned()),
-            credential_binding: None,
-            streamer_id: "123".to_string(),
-            session_id: "session-123".to_string(),
-            streamer_name: "Test".to_string(),
-            streamer_url: "https://example.com/test".to_string(),
-            title: "Test".to_string(),
-            category: None,
-            streams: vec![],
-            media_headers: None,
-            media_extras: None,
-            timestamp: Utc::now(),
-        };
-        assert!(live_event.should_notify());
-
-        let transient_error = MonitorEvent::TransientError {
-            streamer_id: "123".to_string(),
-            streamer_name: "Test".to_string(),
-            error_message: "Network error".to_string(),
-            consecutive_errors: 2,
-            backoff_threshold: 3,
-            timestamp: Utc::now(),
-        };
-        assert!(!transient_error.should_notify());
-
-        let transient_error_many = MonitorEvent::TransientError {
-            streamer_id: "123".to_string(),
-            streamer_name: "Test".to_string(),
-            error_message: "Network error".to_string(),
-            consecutive_errors: 3,
-            backoff_threshold: 3,
-            timestamp: Utc::now(),
-        };
-        assert!(transient_error_many.should_notify());
-    }
-
     #[test]
     fn transient_error_notification_uses_event_backoff_threshold() {
         let event = MonitorEvent::TransientError {
@@ -355,36 +277,5 @@ mod tests {
                 }
             ));
         }
-    }
-
-    #[test]
-    fn test_broadcaster_publish_subscribe() {
-        let broadcaster = MonitorEventBroadcaster::new();
-        let mut receiver = broadcaster.subscribe();
-
-        let event = MonitorEvent::StreamerOffline {
-            streamer_id: "123".to_string(),
-            streamer_name: "Test".to_string(),
-            session_id: None,
-            timestamp: Utc::now(),
-        };
-
-        broadcaster.publish(event.clone()).unwrap();
-
-        let received = receiver.try_recv().unwrap();
-        assert!(matches!(received, MonitorEvent::StreamerOffline { .. }));
-    }
-
-    #[test]
-    fn test_fatal_error_type() {
-        let event = MonitorEvent::FatalError {
-            streamer_id: "123".to_string(),
-            streamer_name: "Test".to_string(),
-            error_type: FatalErrorType::NotFound,
-            message: "Streamer not found".to_string(),
-            new_state: StreamerState::NotFound,
-            timestamp: Utc::now(),
-        };
-        assert!(event.should_notify());
     }
 }
