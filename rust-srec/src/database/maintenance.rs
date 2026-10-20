@@ -1412,17 +1412,6 @@ mod tests {
             .add_execution_log(&log)
             .await
             .expect("job log");
-        // Raw insert: the repository's upsert refuses rows for non-PROCESSING
-        // jobs, but this fixture needs one on a COMPLETED job to prove the
-        // FK cascade removes it together with the pruned job row.
-        sqlx::query(
-            "INSERT INTO job_execution_progress (job_id, kind, progress, updated_at) \
-             VALUES ('old-completed', 'percent', '{}', ?)",
-        )
-        .bind(old)
-        .execute(&database.pool)
-        .await
-        .expect("job progress");
 
         let user_id = "default-admin-00000000-0000-0000-0000-000000000001";
         for (id, expires_at, revoked_at) in [
@@ -1575,15 +1564,13 @@ mod tests {
             remaining_jobs,
             vec!["active-dag-old-job", "old-pending", "recent-completed"]
         );
-        let old_children: i64 = sqlx::query_scalar(
-            "SELECT \
-                (SELECT COUNT(*) FROM job_execution_logs WHERE job_id = 'old-completed') + \
-                (SELECT COUNT(*) FROM job_execution_progress WHERE job_id = 'old-completed')",
+        let old_logs: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM job_execution_logs WHERE job_id = 'old-completed'",
         )
         .fetch_one(&database.pool)
         .await
-        .expect("old job children");
-        assert_eq!(old_children, 0);
+        .expect("old job logs");
+        assert_eq!(old_logs, 0);
         let remaining_dags: Vec<String> =
             sqlx::query_scalar("SELECT id FROM dag_execution ORDER BY id")
                 .fetch_all(&database.pool)

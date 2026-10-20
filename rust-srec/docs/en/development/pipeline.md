@@ -81,6 +81,10 @@ whole job with an equal share per file, while `out_time_ms`, `duration_ms` and
 copied bytes describe the file in progress. `eta_secs` covers only that file,
 so these jobs report it only for their last file.
 
+Job progress is kept in memory only. A job has no snapshot until it reports,
+including after a restart, and loses it when it ends;
+`GET /api/pipeline/jobs/{id}/progress` returns 404 without one.
+
 Staged outputs with overwrite disabled use native no-replace publication on
 Windows, Linux and macOS, so a filesystem without hard links can still publish
 without overwriting a competing file. Systems that support neither no-replace

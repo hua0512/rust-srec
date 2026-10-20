@@ -720,9 +720,9 @@ fn parse_rclone_stats_line(line: &str) -> Option<JobProgressSnapshot> {
     snapshot.percent = percent;
     snapshot.speed_bytes_per_sec = speed_bytes_per_sec;
     snapshot.eta_secs = eta_secs;
-    // Parsed fields only — never the source line. The snapshot is cloned per
-    // aggregator flush into progress_cache, the WS broadcast, and the
-    // job_execution_progress row, so raw must stay small and fixed-shape.
+    // Parsed fields only — never the source line. Every report is kept in
+    // progress_cache and copied on each progress read and WebSocket broadcast,
+    // so raw must stay small and fixed-shape.
     snapshot.raw = serde_json::json!({
         "bytes_done": bytes_done,
         "bytes_total": bytes_total,

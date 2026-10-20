@@ -17,7 +17,6 @@ INSERT INTO refresh_tokens (id, user_id, token_hash, session_id, expires_at, cre
 INSERT INTO danmu_aggregator_state (session_id, version, state, updated_at) VALUES ('timestamp-contract', 1, X'7b7d', 1788784496123);
 INSERT INTO danmu_statistics (id, session_id, total_danmus, start_time, end_time) VALUES ('timestamp-contract', 'timestamp-contract', 1, 1788784496123, 1788784496123);
 INSERT INTO job_execution_logs (id, job_id, entry, created_at) VALUES ('timestamp-contract', 'timestamp-contract', '{}', 1788784496123);
-INSERT INTO job_execution_progress (job_id, kind, progress, updated_at) VALUES ('timestamp-contract', 'test', '{}', 1788784496123);
 INSERT INTO job_presets (id, name, processor, config, created_at, updated_at) VALUES ('timestamp-contract', 'timestamp-contract', 'remux', '{}', 1788784496123, 1788784496123);
 INSERT INTO media_outputs (id, session_id, file_path, file_type, size_bytes, created_at) VALUES ('timestamp-contract', 'timestamp-contract', 'test.flv', 'video', 1, 1788784496123);
 INSERT INTO monitor_event_outbox (id, streamer_id, event_type, payload, created_at, delivered_at) VALUES (9223372036854775800, 'timestamp-contract', 'test', '{}', 1788784496123, 1788784496123);
