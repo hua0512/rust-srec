@@ -13,15 +13,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const jobFields = {
+  id: 'job-1',
+  session_id: 'session-1',
+  streamer_id: 'streamer-1',
+  processor_type: 'remux',
+  input_path: ['/rec/a.flv'],
+};
+
 function renderRunningJob(snapshot: Record<string, unknown>) {
   const now = new Date().toISOString();
   const job = JobSchema.parse({
-    id: 'job-1',
-    session_id: 'session-1',
-    streamer_id: 'streamer-1',
+    ...jobFields,
     status: 'PROCESSING',
-    processor_type: 'remux',
-    input_path: ['/rec/a.flv'],
     created_at: now,
     started_at: now,
   });
@@ -96,3 +100,24 @@ it.each([
     expect(screen.queryByText(/^No progress for/) != null).toBe(flagged);
   },
 );
+
+it('counts up the queue wait while the job is queued', () => {
+  vi.useFakeTimers();
+  const job = JobSchema.parse({
+    ...jobFields,
+    status: 'PENDING',
+    created_at: new Date(Date.now() - 90_000).toISOString(),
+  });
+  render(
+    <I18nProvider i18n={i18n}>
+      <JobProgressPanel job={job} />
+    </I18nProvider>,
+  );
+  expect(screen.getByText('1m 30s')).toBeInTheDocument();
+
+  act(() => {
+    vi.advanceTimersByTime(1000);
+  });
+
+  expect(screen.getByText('1m 31s')).toBeInTheDocument();
+});
