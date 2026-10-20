@@ -100,7 +100,7 @@ pub struct JobPresetListParams {
 impl SrecMcpServer {
     #[tool(
         name = "pipeline_stats",
-        description = "Get post-processing pipeline statistics (job counts by status, queue depths)."
+        description = "Get post-processing pipeline statistics (job counts by status, average processing time)."
     )]
     pub async fn pipeline_stats(&self) -> Result<CallToolResult, ErrorData> {
         let state = PipelineRouteState::from_ref(&self.app_state);
