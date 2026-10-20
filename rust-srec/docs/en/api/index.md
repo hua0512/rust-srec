@@ -141,12 +141,15 @@ when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
 processor-specific snapshot; it returns 404 when no snapshot is available. The
 snapshot's optional `phase` is `finalizing` while FFmpeg rewrites its output
-after the last frame, `retrying` while an upload waits to retry and
-`preparing` for a BaiduPCS upload while none of the files BaiduPCS-Go is
-working on has shown progress yet (treat values you do not know as plain work),
-and `current_file` names the file in progress without its directories. After
-an upload's first failed attempt, `attempt` and `max_attempts` give its attempt
-within the current job run, which is unrelated to the job's retry count.
+after the last frame and while an rclone upload that sent every byte waits for
+the destination to confirm its files, `retrying` while an upload waits to retry
+and `preparing` for a BaiduPCS or rclone upload while none of the files it is
+working on has sent data yet, including rclone listing the destination before
+its first transfer (treat values you do not know as plain work), and
+`current_file` names
+the file in progress without its directories. After an upload's first failed
+attempt, `attempt` and `max_attempts` give its attempt within the current job
+run, which is unrelated to the job's retry count.
 
 `GET /api/pipeline/dag/{id}` gives each step `job_status`, `started_at` and
 `retry_after`, with times in epoch milliseconds. `retry_after` is null when no

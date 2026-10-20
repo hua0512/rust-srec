@@ -100,14 +100,20 @@ their speed is the sum of the files BaiduPCS-Go uploads at once. `phase` is
 absent while a job does plain work towards `percent`. It is `finalizing` while
 FFmpeg rewrites an MP4 after writing its last frame, such as moving the index
 to the front for fast start; `percent` then stops at 99% of the file's share,
-with no speed or `eta_secs`, until FFmpeg reports the end. It is `preparing`
-for a BaiduPCS upload while none of the files BaiduPCS-Go is working on has
-shown progress yet, because before sending a file BaiduPCS-Go checks the
-Netdisk and hashes the file without progress output; the job's counts so far
-stay. FFmpeg, copy, compression, DanmakuFactory, rclone and BaiduPCS jobs name
-the file in progress in `current_file`, without its directories; rclone and
-BaiduPCS jobs name none while they send several files at once. `raw` carries
-no file paths.
+with no speed or `eta_secs`, until FFmpeg reports the end. It is also
+`finalizing` for an rclone job that sent every byte while the destination
+confirms the files in flight. It is `preparing` for a BaiduPCS upload while
+none of the files BaiduPCS-Go is working on has shown progress yet, because
+before sending a file BaiduPCS-Go checks the Netdisk and hashes the file
+without progress output; the job's counts so far stay. It is also `preparing`
+for an rclone job while none of the files in flight has sent data, such as
+while rclone hashes a file for a destination that stores a checksum with the
+upload (S3 multipart uploads, for example), and before its first transfer,
+while rclone lists the destination and compares the files already there, which
+can mean reading a whole file to compare checksums. FFmpeg, copy, compression,
+DanmakuFactory, rclone and BaiduPCS jobs name the file in progress in
+`current_file`, without its directories; rclone and BaiduPCS jobs name none
+while they send several files at once. `raw` carries no file paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,
 including after a restart, and loses it when it ends;
