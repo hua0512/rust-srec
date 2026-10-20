@@ -57,6 +57,7 @@
 - The workflow page now shows whether each step is queued, running or waiting for an automatic retry, instead of showing every step in progress as processing. A running step shows a progress bar when it reports progress, with speed, time remaining and file details in the step list and when you hover over a step in the graph; a step waiting to retry shows when it runs again. A recording session's Jobs tab now updates by itself and shows new workflows as they start.
 - Pipeline pages use less processor time while open: the status icons and badges of running jobs and workflows no longer spin or pulse.
 - The workflow graph now adjusts its height to its steps, so a few parallel steps are no longer hidden below the frame (larger graphs can still be dragged into view), and each step is titled by its step ID, so steps that use the same processor can be told apart.
+- The workflow list and the workflow page now say **Created** instead of **Started** beside the time a workflow was created, since a queued workflow has not started yet.
 - The message shown after **Retry All Failed** is now translated.
 
 ## Deployment and desktop

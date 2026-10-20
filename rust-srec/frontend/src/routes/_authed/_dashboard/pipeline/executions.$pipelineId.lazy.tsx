@@ -299,7 +299,7 @@ function PipelineExecutionPage() {
           />
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
-            label={i18n._(msg`Started`)}
+            label={i18n._(msg`Created`)}
             value={new Intl.DateTimeFormat(i18n.locale, {
               timeStyle: 'short',
             }).format(dag.created_at)}
@@ -510,9 +510,9 @@ function StatsCard({
     >
       {/*
         Content is top-aligned (no justify-center): the KPI grid stretches every
-        card to the tallest sibling, and only the `Started` card passes `subtext`.
+        card to the tallest sibling, and only the `Created` card passes `subtext`.
         Centering each card's content independently would drop the shorter cards'
-        icons below the `Started` icon; top-aligning keeps every icon on one edge.
+        icons below the `Created` icon; top-aligning keeps every icon on one edge.
       */}
       <Card className="relative overflow-hidden bg-card/30 backdrop-blur-xl border-border/40 hover:bg-card/50 hover:border-primary/20 transition-all duration-500 h-full flex flex-col">
         {/* Subtle hover glow */}

@@ -2572,6 +2572,8 @@ msgid "Create your first workflow to define a sequence of processing steps for y
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:92
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:302
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:684
 msgid "Created"
 msgstr "Created"
@@ -3454,7 +3456,7 @@ msgstr "Due at its next use"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:101
+#: src/components/pipeline/jobs/job-progress-panel.tsx:109
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -6738,7 +6740,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:142
+#: src/components/pipeline/jobs/job-progress-panel.tsx:150
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
@@ -7880,7 +7882,7 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:137
+#: src/components/pipeline/jobs/job-progress-panel.tsx:145
 #: src/components/streamers/card/upload-indicator.tsx:73
 #: src/components/upload-status-indicator.tsx:355
 #: src/lib/job-progress.ts:38
@@ -8088,7 +8090,7 @@ msgstr "Programmatic & MCP access"
 msgid "Programs"
 msgstr "Programs"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:121
+#: src/components/pipeline/jobs/job-progress-panel.tsx:129
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:284
 msgid "Progress"
 msgstr "Progress"
@@ -8161,7 +8163,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:109
+#: src/components/pipeline/jobs/job-progress-panel.tsx:117
 msgid "Queue"
 msgstr "Queue"
 
@@ -9842,9 +9844,7 @@ msgstr "Start Over"
 msgid "Start Time"
 msgstr "Start Time"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:302
 #: src/components/sessions/overview-tab.tsx:226
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:691
 msgid "Started"
 msgstr "Started"

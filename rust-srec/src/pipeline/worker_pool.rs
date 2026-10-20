@@ -250,6 +250,10 @@ pub enum WorkerType {
     Cpu,
     /// IO-bound worker (upload, file operations).
     Io,
+    /// The one worker that runs [`ProcessorType::SerialIo`] jobs.
+    ///
+    /// [`ProcessorType::SerialIo`]: crate::pipeline::ProcessorType::SerialIo
+    SerialIo,
 }
 
 impl std::fmt::Display for WorkerType {
@@ -257,6 +261,7 @@ impl std::fmt::Display for WorkerType {
         match self {
             WorkerType::Cpu => write!(f, "CPU"),
             WorkerType::Io => write!(f, "IO"),
+            WorkerType::SerialIo => write!(f, "Serial IO"),
         }
     }
 }

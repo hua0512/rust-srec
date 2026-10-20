@@ -420,7 +420,7 @@ where
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
             io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
             serial_io_pool: WorkerPool::with_config(
-                WorkerType::Io,
+                WorkerType::SerialIo,
                 WorkerPoolConfig {
                     max_workers: 1,
                     ..config.io_pool.clone()
