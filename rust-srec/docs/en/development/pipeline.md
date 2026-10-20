@@ -82,23 +82,31 @@ the length the run writes: the input length FFmpeg reports, shortened by remux
 trimming. `percent` and `eta_secs` follow from it, and `percent` stays below
 100 until FFmpeg reports the end. Multi-file jobs report `files_done` and
 `files_total`; FFmpeg steps leave out inputs they pass through by file type,
-such as danmu XML. The `percent` of a multi-file FFmpeg or copy job covers the
-whole job with an equal share per file, while `out_time_ms`, `duration_ms` and
-copied bytes describe the file in progress. `eta_secs` covers only that file,
-so these jobs report it only for their last file. BaiduPCS uploads count
-bytes and files across the whole job instead, starting from the files earlier
-attempts of the same run uploaded, and report at most once a second; their
-speed is the sum of the files BaiduPCS-Go uploads at once. `phase` is absent
-while a job does plain work towards `percent`. It is `finalizing` while FFmpeg
-rewrites an MP4 after writing its last frame, such as moving the index to the
-front for fast start; `percent` then stops at 99% of the file's share, with no
-speed or `eta_secs`, until FFmpeg reports the end. It is `waiting`, with no
-other progress, while a BaiduPCS upload waits for another job's upload to
-finish, since BaiduPCS-Go uploads run one at a time. FFmpeg, copy, compression,
-rclone and BaiduPCS jobs name the file in progress in `current_file`, without
-its directories; an rclone job sending several files at once names one of
-them, and a BaiduPCS job the one it started first. `raw` carries no file
-paths.
+such as danmu XML. The `percent` of a multi-file FFmpeg or DanmakuFactory job
+covers the whole job with an equal share per file, while `out_time_ms` and
+`duration_ms` describe the file in progress. `eta_secs` covers only that file,
+so FFmpeg jobs report it only for their last file. DanmakuFactory reports no
+progress within a file, so its jobs show only the file they have reached. Copy
+and move jobs count bytes across the whole job, leaving excluded inputs out of
+both bytes and files: `bytes_done`, `bytes_total` and `percent` cover every
+file the job copies or moves, the speed is that of the file being copied, and
+`eta_secs` is the time the job's remaining bytes take at that speed.
+Compression jobs count bytes
+across the whole job too; their speed is the average since the job started, and
+`eta_secs` the time the remaining bytes take at that speed. BaiduPCS uploads
+count bytes and files across the whole job as well, starting from the files
+earlier attempts of the same run uploaded, and report at most once a second;
+their speed is the sum of the files BaiduPCS-Go uploads at once. `phase` is
+absent while a job does plain work towards `percent`. It is `finalizing` while
+FFmpeg rewrites an MP4 after writing its last frame, such as moving the index
+to the front for fast start; `percent` then stops at 99% of the file's share,
+with no speed or `eta_secs`, until FFmpeg reports the end. It is `waiting`,
+with no other progress, while a BaiduPCS upload waits for another job's upload
+to finish, since BaiduPCS-Go uploads run one at a time. FFmpeg, copy,
+compression, DanmakuFactory, rclone and BaiduPCS jobs name the file in progress
+in `current_file`, without its directories; an rclone job sending several files
+at once names one of them, and a BaiduPCS job the one it started first. `raw`
+carries no file paths.
 
 Job progress is kept in memory only. A job has no snapshot until it reports,
 including after a restart, and loses it when it ends;

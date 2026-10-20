@@ -14,6 +14,7 @@ pub enum ProgressKind {
     BaiduPcs,
     Compression,
     Copy,
+    Danmaku,
 }
 
 /// A stage of a job that is not plain work towards its percent.

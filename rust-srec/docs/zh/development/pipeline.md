@@ -58,17 +58,23 @@ FFmpeg 两种上游时间戳字段
 FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 和 `eta_secs`
 由它计算，在 FFmpeg 报告结束前 `percent` 始终低于 100。多文件任务报告
 `files_done` 和 `files_total`；FFmpeg 步骤不计入按文件类型直接透传的输入，
-例如弹幕 XML。多文件 FFmpeg 或复制任务的 `percent` 覆盖整个任务，每个文件
-占相同份额，`out_time_ms`、`duration_ms` 和已复制字节数则描述正在处理的文件。
-`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。BaiduPCS 上传
-则按整个任务统计字节数和文件数，并从同一次运行中先前尝试已上传的文件算起，
-每秒最多报告一次；其速度为 BaiduPCS-Go 同时上传的各文件速度之和。任务正常推进
+例如弹幕 XML。多文件 FFmpeg 或 DanmakuFactory 任务的 `percent` 覆盖整个任务，
+每个文件占相同份额，`out_time_ms` 和 `duration_ms` 则描述正在处理的文件。
+`eta_secs` 只覆盖该文件，因此 FFmpeg 任务只在最后一个文件时报告它。
+DanmakuFactory 不报告单个文件内的进度，因此其任务只显示已进行到哪个文件。
+复制和移动任务按整个任务统计字节数，字节数和文件数都不计入被排除的输入：
+`bytes_done`、`bytes_total` 和 `percent` 覆盖任务复制或移动的全部文件，速度为
+正在复制的文件的速度，`eta_secs` 为任务剩余字节按该速度所需的时间。压缩任务同样按整个任务统计
+字节数，其速度为任务开始以来的平均速度，`eta_secs` 为剩余字节按该速度所需的
+时间。BaiduPCS 上传也按整个任务统计字节数和文件数，并从同一次运行中先前尝试
+已上传的文件算起，每秒最多报告一次；其速度为 BaiduPCS-Go 同时上传的各文件
+速度之和。任务正常推进
 `percent` 时没有 `phase`。FFmpeg 写完最后一帧后重写 MP4（例如为快速启动把索引
 移到文件开头）时，`phase` 为 `finalizing`，此时该文件的 `percent` 份额停在 99%，
 不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。由于 BaiduPCS-Go 上传同一时间
 只能运行一个，BaiduPCS 上传等待其他任务的上传完成时，`phase` 为 `waiting`，
-不报告其他进度。FFmpeg、复制、压缩、rclone 和 BaiduPCS 任务在 `current_file`
-中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出其中一个，
+不报告其他进度。FFmpeg、复制、压缩、DanmakuFactory、rclone 和 BaiduPCS 任务在
+`current_file` 中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出其中一个，
 BaiduPCS 则给出其中最先开始的一个。`raw` 不包含文件路径。
 
 任务进度只保存在内存中。任务在上报进度之前（包括重启后）没有快照，
