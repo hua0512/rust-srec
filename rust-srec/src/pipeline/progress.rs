@@ -22,14 +22,18 @@ pub enum ProgressKind {
 #[serde(rename_all = "lowercase")]
 pub enum JobPhase {
     /// FFmpeg wrote the last frame and is rewriting the output, such as
-    /// moving an MP4's index to the front for fast start.
+    /// moving an MP4's index to the front for fast start, or rclone sent
+    /// every byte and waits for the destination to confirm the files in
+    /// flight.
     Finalizing,
     /// The processor waits to try its work again after a failed attempt,
     /// such as an rclone or BaiduPCS-Go upload.
     Retrying,
-    /// A BaiduPCS-Go upload prepares its files: none of the files BaiduPCS-Go
-    /// is working on has shown progress yet, because before sending a file it
-    /// checks the Netdisk and hashes the file without progress output.
+    /// An upload prepares its files before sending them: none of the files it
+    /// is working on has sent data yet. Before sending a file BaiduPCS-Go
+    /// checks the Netdisk and hashes the file without progress output, and
+    /// rclone may hash it for the destination; before its first transfer
+    /// rclone lists the destination and compares the files already there.
     Preparing,
 }
 

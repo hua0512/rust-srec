@@ -848,12 +848,15 @@ struct RcloneJsonStats {
     transferring: Vec<RcloneTransfer>,
 }
 
-/// A file in flight, of which only the name is read.
+/// A file in flight.
 #[derive(Deserialize)]
 struct RcloneTransfer {
     /// Path relative to the root of the transfer.
     #[serde(default)]
     name: Option<String>,
+    /// Bytes of the file sent so far.
+    #[serde(default)]
+    bytes: Option<u64>,
 }
 
 /// Maps rclone's JSON `level` values onto [`LogLevel`]. Error mapping
@@ -901,6 +904,27 @@ fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
     snapshot.current_file = match stats.transferring.as_slice() {
         [transfer] => transfer.name.as_deref().and_then(progress_file_name),
         _ => None,
+    };
+    // rclone's byte and transfer counts stay put while it prepares files and
+    // while the destination confirms them. Before its first transfer it lists
+    // the destination and compares the files already there, which can mean
+    // reading a whole file to compare checksums; a file in flight may be
+    // hashed before its first byte, for destinations that store a checksum
+    // with the upload such as S3 multipart. Once every byte is sent, a
+    // server that first stores the files elsewhere can take minutes to
+    // confirm them.
+    snapshot.phase = if stats.transferring.is_empty() {
+        (stats.bytes.unwrap_or(0) == 0 && stats.transfers.unwrap_or(0) == 0)
+            .then_some(JobPhase::Preparing)
+    } else if stats
+        .transferring
+        .iter()
+        .all(|transfer| transfer.bytes.unwrap_or(0) == 0)
+    {
+        Some(JobPhase::Preparing)
+    } else {
+        (snapshot.bytes_total.is_some() && snapshot.bytes_done == snapshot.bytes_total)
+            .then_some(JobPhase::Finalizing)
     };
     // File counters only — see the raw-size note on parse_rclone_stats_line.
     snapshot.raw = serde_json::json!({
@@ -1612,6 +1636,44 @@ mod tests {
         assert_eq!(snapshot.percent, None);
         assert_eq!(snapshot.eta_secs, None);
         assert_eq!(snapshot.files_total, None, "totalTransfers=0 means unknown");
+    }
+
+    #[test]
+    fn parse_rclone_line_json_stats_phases() {
+        let phase = |stats: &str| {
+            let line = format!(r#"{{"level":"notice","stats":{stats}}}"#);
+            let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(&line) else {
+                panic!("stats JSON line should parse as progress");
+            };
+            snapshot.phase
+        };
+        // Listing the destination, comparing a file already there, and files
+        // in flight before their first byte, at the start and after another
+        // file was sent.
+        for stats in [
+            r#"{"bytes":0,"totalBytes":0,"checks":0,"totalChecks":0,"transfers":0,"totalTransfers":0}"#,
+            r#"{"bytes":0,"totalBytes":0,"checks":0,"totalChecks":1,"checking":["rec.flv"],"transfers":0,"totalTransfers":0}"#,
+            r#"{"bytes":0,"totalBytes":67108864,"transfers":0,"totalTransfers":1,"transferring":[{"name":"rec.flv","bytes":0}]}"#,
+            r#"{"bytes":40,"totalBytes":80,"transfers":1,"totalTransfers":2,"transferring":[{"name":"b.flv","bytes":0}]}"#,
+        ] {
+            assert_eq!(phase(stats), Some(JobPhase::Preparing), "{stats}");
+        }
+        // Files sending, one of them before its first byte, and a batch
+        // comparing its remaining files after sending one.
+        for stats in [
+            r#"{"bytes":1077248,"totalBytes":67108864,"transfers":0,"totalTransfers":1,"transferring":[{"name":"rec.flv","bytes":1077248}]}"#,
+            r#"{"bytes":10,"totalBytes":80,"transfers":0,"totalTransfers":2,"transferring":[{"name":"a.flv","bytes":10},{"name":"b.flv","bytes":0}]}"#,
+            r#"{"bytes":40,"totalBytes":40,"checks":0,"totalChecks":1,"checking":["b.flv"],"transfers":1,"totalTransfers":1}"#,
+        ] {
+            assert_eq!(phase(stats), None, "{stats}");
+        }
+        // Every byte sent, waiting for the destination to confirm the file.
+        assert_eq!(
+            phase(
+                r#"{"bytes":67108864,"totalBytes":67108864,"transfers":0,"totalTransfers":1,"transferring":[{"name":"rec.flv","bytes":67108864}]}"#
+            ),
+            Some(JobPhase::Finalizing)
+        );
     }
 
     #[test]
