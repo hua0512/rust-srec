@@ -521,9 +521,14 @@ pub async fn cancel_pipeline(
         .await
         .map_err(ApiError::from)?;
 
+    let items = if cancelled_count == 1 {
+        "step or job"
+    } else {
+        "steps or jobs"
+    };
     Ok(Json(serde_json::json!({
         "success": true,
-        "message": format!("Cancelled {} steps or jobs in pipeline '{}'", cancelled_count, pipeline_id),
+        "message": format!("Cancelled {cancelled_count} {items} in pipeline '{pipeline_id}'"),
         "cancelled_count": cancelled_count
     })))
 }

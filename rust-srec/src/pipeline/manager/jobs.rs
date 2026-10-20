@@ -267,12 +267,21 @@ where
             self.handle_dag_completion(completion).await;
         }
 
+        let steps = |count: usize| if count == 1 { "step" } else { "steps" };
         let message = if update.retried_steps == update.retryable_steps {
-            format!("Successfully retried {} steps", update.retried_steps)
+            format!(
+                "Successfully retried {} {}",
+                update.retried_steps,
+                steps(update.retried_steps)
+            )
         } else {
             format!(
-                "Retried {} of {} steps (reconciled {} already-completed steps)",
-                update.retried_steps, update.retryable_steps, update.reconciled_steps
+                "Retried {} of {} {} (reconciled {} already-completed {})",
+                update.retried_steps,
+                update.retryable_steps,
+                steps(update.retryable_steps),
+                update.reconciled_steps,
+                steps(update.reconciled_steps)
             )
         };
 

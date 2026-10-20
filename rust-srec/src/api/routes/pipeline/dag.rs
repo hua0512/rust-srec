@@ -541,10 +541,11 @@ pub async fn retry_all_failed_dags(
         }
     }
 
+    let noun = if retried_count == 1 { "DAG" } else { "DAGs" };
     Ok(Json(serde_json::json!({
         "success": true,
         "count": retried_count,
-        "message": format!("Successfully retried {} failed or cancelled DAGs", retried_count)
+        "message": format!("Successfully retried {retried_count} failed or cancelled {noun}")
     })))
 }
 
@@ -675,10 +676,12 @@ pub async fn cancel_dag(
     let message = if cancelled_steps == 0 {
         format!("DAG '{}' cancelled (no active steps to cancel)", dag_id)
     } else {
-        format!(
-            "DAG '{}' cancelled successfully ({} steps cancelled)",
-            dag_id, cancelled_steps
-        )
+        let steps = if cancelled_steps == 1 {
+            "step"
+        } else {
+            "steps"
+        };
+        format!("DAG '{dag_id}' cancelled successfully ({cancelled_steps} {steps} cancelled)")
     };
 
     Ok(Json(DagCancelResponse {
