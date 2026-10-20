@@ -239,7 +239,7 @@ impl NotificationChannel for WebhookChannel {
         event: &NotificationEvent,
         rendered: &RenderedEvent,
     ) -> Result<()> {
-        if !self.accepts(event) {
+        if !self.is_enabled() {
             return Ok(());
         }
 

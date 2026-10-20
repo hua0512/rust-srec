@@ -139,7 +139,7 @@ impl NotificationChannel for GotifyChannel {
         event: &NotificationEvent,
         rendered: &RenderedEvent,
     ) -> Result<()> {
-        if !self.accepts(event) {
+        if !self.is_enabled() {
             return Ok(());
         }
 

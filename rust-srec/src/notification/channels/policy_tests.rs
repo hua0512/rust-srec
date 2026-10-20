@@ -50,7 +50,7 @@ fn event() -> NotificationEvent {
 }
 
 #[tokio::test]
-async fn all_channels_apply_the_same_enabled_and_priority_contract_to_both_send_paths() {
+async fn all_channels_apply_the_same_enabled_and_priority_contract() {
     let event = event();
     let rendered = RenderedEvent::new(&event, "en");
     for (enabled, threshold, accepted) in [
@@ -66,10 +66,13 @@ async fn all_channels_apply_the_same_enabled_and_priority_contract_to_both_send_
                 "{}",
                 channel.channel_type()
             );
+            // These configurations cannot perform network IO: filtering must
+            // return before malformed endpoints/transports are constructed.
+            // `send_rendered` and `test` leave `min_priority` to their callers.
             if !accepted {
-                // These configurations cannot perform network IO: filtering must
-                // return before malformed endpoints/transports are constructed.
                 channel.send(&event).await.unwrap();
+            }
+            if !enabled {
                 channel.send_rendered(&event, &rendered).await.unwrap();
                 channel.test().await.unwrap();
             }

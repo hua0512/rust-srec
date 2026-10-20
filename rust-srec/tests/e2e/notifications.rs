@@ -700,9 +700,10 @@ async fn email_test_rejects_a_half_configured_smtp_login_or_a_blank_host_before_
     app.shutdown().await;
 }
 
+/// The test button is an explicit request, so the Normal-priority test event is
+/// sent even to a channel that only takes higher priorities.
 #[tokio::test]
-#[ignore = "bug: the test button returns 200 without sending when min_priority filters out the Normal-priority test event"]
-async fn known_bug_test_send_does_not_report_success_when_min_priority_filters_it() {
+async fn test_send_is_delivered_below_the_channel_min_priority() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "{}").await;
@@ -716,12 +717,15 @@ async fn known_bug_test_send_does_not_report_success_when_min_priority_filters_i
     )
     .await;
 
-    let response = test_send(&app, &token, &id).await;
-    assert!(
-        response.status != StatusCode::OK || receiver.received().len() == 1,
-        "the test reported success ({}) but nothing was sent",
-        response.status
-    );
+    test_send(&app, &token, &id)
+        .await
+        .expect_status(StatusCode::OK);
+    let paths: Vec<String> = receiver
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(paths, ["/high"]);
 
     app.shutdown().await;
 }
@@ -1081,16 +1085,28 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
     let token = app.admin_token().await;
     let subscribed = LocalHttpServer::start(200, "ok").await;
     let unsubscribed = LocalHttpServer::start(200, "ok").await;
-    for (name, receiver, events) in [
-        ("Subscribed", &subscribed, json!(["credential_unavailable"])),
-        ("Unsubscribed", &unsubscribed, json!(["stream_online"])),
+    let critical_only = LocalHttpServer::start(200, "ok").await;
+    for (name, receiver, events, min_priority) in [
+        (
+            "Subscribed",
+            &subscribed,
+            json!(["credential_unavailable"]),
+            8,
+        ),
+        ("Unsubscribed", &unsubscribed, json!(["stream_online"]), 5),
+        (
+            "Critical only",
+            &critical_only,
+            json!(["credential_unavailable"]),
+            10,
+        ),
     ] {
         let id = create_channel(
             &app,
             &token,
             name,
             "Webhook",
-            json!({ "url": receiver.url("/event"), "locale": "en" }),
+            json!({ "url": receiver.url("/event"), "locale": "en", "min_priority": min_priority }),
         )
         .await;
         app.put(
@@ -1161,6 +1177,10 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
     assert!(
         unsubscribed.received().is_empty(),
         "a channel not subscribed to the event receives nothing"
+    );
+    assert!(
+        critical_only.received().is_empty(),
+        "a channel whose min_priority is above the event's receives nothing"
     );
 
     app.shutdown().await;
