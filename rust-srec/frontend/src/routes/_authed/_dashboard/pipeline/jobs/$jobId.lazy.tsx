@@ -379,13 +379,7 @@ function JobDetailsPage() {
                   statusConfig.gradient,
                 )}
               >
-                <StatusIcon
-                  className={cn(
-                    'h-8 w-8',
-                    statusConfig.textColor,
-                    statusConfig.animate && 'animate-spin',
-                  )}
-                />
+                <StatusIcon className={cn('h-8 w-8', statusConfig.textColor)} />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-3 mb-1.5">
@@ -868,10 +862,6 @@ function JobDetailsPage() {
                               </Trans>
                             </p>
                           </div>
-                        )}
-                        {/* Simulated Cursor */}
-                        {!isFetchingNextPage && (
-                          <div className="w-2.5 h-4 bg-zinc-500 animate-pulse mt-1 ml-20" />
                         )}
                       </div>
                     </ScrollArea>

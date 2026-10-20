@@ -160,10 +160,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
               'p-2.5 sm:p-3 rounded-xl sm:rounded-2xl',
               statusConfig.bgColor,
             )}
-            iconClassName={cn(
-              'h-4 w-4 sm:h-5 sm:w-5',
-              statusConfig.animate && 'animate-spin',
-            )}
+            iconClassName="h-4 w-4 sm:h-5 sm:w-5"
           />
         }
         title={

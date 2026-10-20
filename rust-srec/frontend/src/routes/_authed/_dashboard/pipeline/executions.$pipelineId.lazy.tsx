@@ -164,7 +164,7 @@ function PipelineExecutionPage() {
     <div className="relative min-h-screen overflow-hidden selection:bg-primary/20">
       {/* Background Decoration */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
         <div className="absolute top-1/2 left-0 -translate-y-1/2 -ml-20 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[100px]" />
         <div className="absolute bottom-0 right-1/4 -mb-40 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.05),rgba(255,255,255,0))]" />
@@ -209,7 +209,6 @@ function PipelineExecutionPage() {
                     className={cn(
                       'h-7 w-7 sm:h-8 sm:w-8',
                       statusConfig.textColor,
-                      statusConfig.animate && 'animate-spin',
                     )}
                   />
                 </div>
@@ -221,13 +220,10 @@ function PipelineExecutionPage() {
                     <Badge
                       variant="outline"
                       className={cn(
-                        'text-xs font-mono uppercase tracking-wider bg-background/50 backdrop-blur border-border/50 relative overflow-hidden',
+                        'text-xs font-mono uppercase tracking-wider bg-background/50 backdrop-blur border-border/50',
                         statusConfig.textColor,
                       )}
                     >
-                      {overallStatus === 'PROCESSING' && (
-                        <span className="absolute inset-0 bg-current opacity-10 animate-pulse pointer-events-none" />
-                      )}
                       {getStatusLabel(i18n, overallStatus)}
                     </Badge>
                   </div>

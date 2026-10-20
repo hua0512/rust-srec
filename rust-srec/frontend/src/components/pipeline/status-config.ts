@@ -1,7 +1,6 @@
 import {
   Activity,
   Clock,
-  RefreshCw,
   CheckCircle2,
   XCircle,
   AlertCircle,
@@ -17,7 +16,6 @@ export interface StatusConfigItem {
   textColor: string;
   bgColor: string;
   badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
-  animate?: boolean;
   gradient: string;
   borderColor: string;
   surfaceBg: string;
@@ -49,11 +47,10 @@ const STATUS_CONFIG: Record<DagStatus | StepDisplayStatus, StatusConfigItem> = {
     glow: 'shadow-transparent',
   },
   PROCESSING: {
-    icon: RefreshCw,
+    icon: Activity,
     textColor: 'text-blue-500',
     bgColor: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
     badgeVariant: 'default',
-    animate: true,
     gradient: 'from-blue-500/20 to-blue-500/5',
     borderColor: 'border-blue-500/20',
     surfaceBg: 'bg-blue-500/10',

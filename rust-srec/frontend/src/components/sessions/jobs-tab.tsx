@@ -73,7 +73,6 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                               className={cn(
                                 'w-24 justify-center',
                                 statusConfig.bgColor,
-                                statusConfig.animate && 'animate-pulse',
                               )}
                             >
                               {getStatusLabel(i18n, dag.status)}

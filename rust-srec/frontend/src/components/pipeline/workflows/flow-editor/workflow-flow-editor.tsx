@@ -330,10 +330,7 @@ const WorkflowFlowEditorInner = memo(
 
             <Panel position="bottom-center">
               <div className="bg-card/70 backdrop-blur-md border border-primary/20 rounded-full px-5 py-2 flex items-center gap-3 shadow-2xl">
-                <div className="flex relative h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                </div>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/60">
                   <Trans>Drag from edge to link steps</Trans>
                 </span>
