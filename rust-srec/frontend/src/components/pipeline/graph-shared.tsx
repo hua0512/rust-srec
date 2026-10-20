@@ -1,18 +1,24 @@
-import { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface GraphViewportProps {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }
 
-export function GraphViewport({ children, className }: GraphViewportProps) {
+export function GraphViewport({
+  children,
+  className,
+  style,
+}: GraphViewportProps) {
   return (
     <div
       className={cn(
         'relative w-full h-full overflow-hidden bg-muted/30 backdrop-blur-2xl rounded-2xl border border-border/80 shadow-2xl group/graph',
         className,
       )}
+      style={style}
     >
       {/* Background Mesh/Blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-50">

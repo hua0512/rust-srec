@@ -48,3 +48,23 @@ it('shows running, queued and retrying steps, with a bar only for a reported per
   expect(bars).toHaveLength(1);
   expect(bars[0]).toHaveAttribute('aria-valuenow', '42');
 });
+
+it('titles each node by its step id, so steps sharing a processor differ', () => {
+  const step = (id: string) =>
+    DagStepSchema.parse({
+      step_id: id,
+      status: 'PENDING',
+      depends_on: [],
+      outputs: [],
+      processor: 'execute',
+    });
+
+  render(
+    <I18nProvider i18n={i18n}>
+      <DagGraphView steps={[step('notify_discord'), step('archive__notify')]} />
+    </I18nProvider>,
+  );
+
+  expect(screen.getByText('notify discord')).toBeInTheDocument();
+  expect(screen.getByText('archive › notify')).toBeInTheDocument();
+});

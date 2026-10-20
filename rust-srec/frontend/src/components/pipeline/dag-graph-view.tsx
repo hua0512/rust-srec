@@ -17,9 +17,8 @@ import { computeNodeLevels } from './graph-levels';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { getJobPresetName } from './presets/default-presets-i18n';
 import { getProcessorDefinition } from './presets/processors/registry';
-import { StepActivity, stepProgress } from './step-activity';
+import { StepActivity, stepProgress, stepTitle } from './step-activity';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -38,10 +37,21 @@ type Topology = [id: string, dependsOn: string[]][];
 
 const LEVEL_SPACING = 350;
 const NODE_SPACING = 180;
+const NODE_WIDTH = 180;
+// Holds a node's icon row, one title line and status row; the node is drawn
+// at this height so edges meet its vertical centre.
+const NODE_HEIGHT = 140;
+// Space between the outermost nodes and the edges of the graph.
+const PAD = 48;
+// A fixed cap rather than a share of the window height, so a short window
+// still shows a few sibling steps; a taller graph is panned or zoomed.
+const MAX_FRAME_HEIGHT = 800;
 
 /**
- * Places each step in the column of its depth from a root and lists the edges
- * between known steps, from a dependency to its dependent.
+ * Places each step in the column of its depth from a root, each column
+ * centred on the tallest one, and lists the edges between known steps, from a
+ * dependency to its dependent. The width and height bound the nodes plus
+ * `PAD` on every side.
  */
 function layoutGraph(topology: Topology) {
   const ids = topology.map(([id]) => id);
@@ -62,16 +72,16 @@ function layoutGraph(topology: Topology) {
     idsByLevel[level].push(id);
   });
 
+  const levelCount = Math.max(idsByLevel.length, 1);
   const maxNodesPerLevel = Math.max(...idsByLevel.map((l) => l.length), 1);
-  const maxHeight = maxNodesPerLevel * NODE_SPACING;
   const positions: Record<string, NodePosition> = {};
   idsByLevel.forEach((levelIds, levelIdx) => {
-    const levelHeight = (levelIds.length - 1) * NODE_SPACING;
-    const offset = (maxHeight - levelHeight) / 2;
+    const offset =
+      PAD + ((maxNodesPerLevel - levelIds.length) * NODE_SPACING) / 2;
     levelIds.forEach((id, nodeIdx) => {
       positions[id] = {
-        x: levelIdx * LEVEL_SPACING + 100,
-        y: offset + nodeIdx * NODE_SPACING + 100,
+        x: PAD + levelIdx * LEVEL_SPACING,
+        y: offset + nodeIdx * NODE_SPACING,
       };
     });
   });
@@ -79,8 +89,8 @@ function layoutGraph(topology: Topology) {
   return {
     positions,
     edges,
-    width: idsByLevel.length * LEVEL_SPACING + 300,
-    height: maxHeight + 200,
+    width: 2 * PAD + (levelCount - 1) * LEVEL_SPACING + NODE_WIDTH,
+    height: 2 * PAD + (maxNodesPerLevel - 1) * NODE_SPACING + NODE_HEIGHT,
   };
 }
 
@@ -118,7 +128,10 @@ export function DagGraphView({ steps, className }: DagGraphViewProps) {
   const zoomOut = () => setScale((s) => Math.max(s - 0.1, 0.5));
 
   return (
-    <GraphViewport className={cn('h-[600px]', className)}>
+    <GraphViewport
+      className={className}
+      style={{ height: Math.min(layout.height, MAX_FRAME_HEIGHT) }}
+    >
       {/* Controls */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 opacity-0 group-hover/graph:opacity-100 transition-opacity duration-300">
         <div className="bg-background/40 backdrop-blur-md rounded-lg border border-border/40 p-1 flex flex-col gap-1 shadow-2xl">
@@ -174,11 +187,10 @@ export function DagGraphView({ steps, className }: DagGraphViewProps) {
             const isActive =
               fromStatus === 'PROCESSING' || fromStatus === 'COMPLETED';
 
-            // Calculate points - arrows connect at node edges only
-            const startX = from.x + 180; // Right edge of source node
-            const startY = from.y + 45; // Vertical center
-            const endX = to.x; // Left edge of target node
-            const endY = to.y + 45; // Vertical center
+            const startX = from.x + NODE_WIDTH;
+            const startY = from.y + NODE_HEIGHT / 2;
+            const endX = to.x;
+            const endY = to.y + NODE_HEIGHT / 2;
             const midX = (startX + endX) / 2;
             const pathString = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
 
@@ -250,15 +262,20 @@ const DagNode = memo(function DagNode({
   const config = getStatusConfig(status);
   const Icon = config.icon;
   const { percent } = stepProgress(step, i18n);
-  const label = step.processor ?? step.step_id;
   const definition = getProcessorDefinition(step.processor ?? '');
+  const processorLabel = definition
+    ? i18n._(definition.label)
+    : (step.processor ?? undefined);
+  // A running or retrying node shows its activity in a Radix tooltip; native
+  // titles inside it would open a second, browser tooltip on hover.
+  const hasActivityTooltip = status === 'RUNNING' || status === 'RETRYING';
 
   const nodeContent = (
     <GlassNode
       glow={config.glow}
       bg={config.surfaceBg}
       isClickable={!!step.job_id}
-      className="w-full"
+      className="h-full w-full"
       overlay={
         percent != null && (
           <Progress
@@ -290,14 +307,20 @@ const DagNode = memo(function DagNode({
           variant="outline"
           className="min-w-0 shrink bg-foreground/5 border-foreground/10 text-[9px] uppercase tracking-widest font-black opacity-40 group-hover:opacity-80 transition-opacity"
         >
-          <span className="truncate">
-            {definition ? i18n._(definition.label) : step.processor}
+          <span
+            className="truncate"
+            title={hasActivityTooltip ? undefined : processorLabel}
+          >
+            {processorLabel}
           </span>
         </Badge>
       </div>
 
-      <h4 className="text-[15px] font-bold truncate text-foreground mb-1 tracking-tight relative z-10 uppercase">
-        {getJobPresetName({ id: label, name: label }, i18n)}
+      <h4
+        className="text-[15px] font-bold truncate text-foreground mb-1 tracking-tight relative z-10"
+        title={hasActivityTooltip ? undefined : step.step_id}
+      >
+        {stepTitle(step.step_id)}
       </h4>
 
       <div className="flex items-center justify-between relative z-10">
@@ -322,7 +345,11 @@ const DagNode = memo(function DagNode({
   );
 
   const node = step.job_id ? (
-    <Link to="/pipeline/jobs/$jobId" params={{ jobId: step.job_id }}>
+    <Link
+      to="/pipeline/jobs/$jobId"
+      params={{ jobId: step.job_id }}
+      className="block h-full"
+    >
       {nodeContent}
     </Link>
   ) : (
@@ -337,14 +364,15 @@ const DagNode = memo(function DagNode({
       style={{
         left: position.x,
         top: position.y,
-        width: 180,
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
       }}
       className="absolute"
     >
-      {status === 'RUNNING' || status === 'RETRYING' ? (
+      {hasActivityTooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div>{node}</div>
+            <div className="h-full">{node}</div>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <StepActivity step={step} />

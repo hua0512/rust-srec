@@ -10,6 +10,18 @@ import { useNow } from '@/hooks/use-now';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { describeJobProgress, snapshotProgress } from '@/lib/job-progress';
 
+/**
+ * A step's id as a title, with underscores read as spaces. A step expanded
+ * from an embedded workflow has the id `<workflow step>__<step>`, shown as
+ * `workflow step › step`. Step ids are user data, so they stay untranslated.
+ */
+export function stepTitle(stepId: string): string {
+  return stepId
+    .split('__')
+    .map((part) => part.replace(/_/g, ' '))
+    .join(' › ');
+}
+
 /** A step's progress for display; only a running step reports any. */
 export function stepProgress(
   step: DagStep,
