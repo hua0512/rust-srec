@@ -255,7 +255,18 @@ function PipelineJobsPage() {
   const retryAllFailedMutation = useMutation({
     mutationFn: () => retryAllFailedPipelines(),
     onSuccess: (result) => {
-      toast.success(result.message);
+      if (result.count === 0) {
+        toast.info(i18n._(msg`No pipelines were retried`));
+      } else {
+        toast.success(
+          i18n._(
+            msg`${plural(result.count, {
+              one: 'Retried # pipeline',
+              other: 'Retried # pipelines',
+            })}`,
+          ),
+        );
+      }
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'pipelines'],
       });
@@ -276,7 +287,12 @@ function PipelineJobsPage() {
 
       if (result.failed === 0) {
         toast.success(
-          i18n._(msg`Successfully processed ${result.succeeded} pipelines`),
+          i18n._(
+            msg`${plural(result.succeeded, {
+              one: 'Processed # pipeline',
+              other: 'Processed # pipelines',
+            })}`,
+          ),
         );
         exitSelectionMode();
         return;
@@ -288,7 +304,10 @@ function PipelineJobsPage() {
       setSelectedIds(new Set(failedResults.map((item) => item.id)));
       toast.warning(
         i18n._(
-          msg`Processed ${result.succeeded} pipelines; ${result.failed} failed`,
+          msg`${plural(result.succeeded, {
+            one: 'Processed # pipeline',
+            other: 'Processed # pipelines',
+          })}; ${result.failed} failed`,
         ),
         {
           description: failedResults
@@ -404,7 +423,12 @@ function PipelineJobsPage() {
                 variant="secondary"
                 className="h-9 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
               >
-                {totalPipelines} <Trans>pipelines</Trans>
+                {i18n._(
+                  msg`${plural(totalPipelines, {
+                    one: '# pipeline',
+                    other: '# pipelines',
+                  })}`,
+                )}
               </Badge>
               <Button
                 variant="outline"

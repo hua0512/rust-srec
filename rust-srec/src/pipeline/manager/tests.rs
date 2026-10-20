@@ -1699,7 +1699,7 @@ async fn retry_dag_counts_steps_settled_as_no_ops() {
 
     let result = manager.retry_dag(&created.dag_id).await.unwrap();
     assert_eq!(result.retried_steps, 1);
-    assert_eq!(result.message, "Successfully retried 1 steps");
+    assert_eq!(result.message, "Successfully retried 1 step");
     assert!(result.job_ids.is_empty());
     let dag = dags.get_dag(&created.dag_id).await.unwrap();
     assert_eq!(dag.status, "COMPLETED");
