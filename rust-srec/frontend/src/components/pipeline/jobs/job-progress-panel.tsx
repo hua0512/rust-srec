@@ -22,8 +22,9 @@ function secondsBetween(
 
 /**
  * The job page's Duration and Queue tiles and, while the job runs, its live
- * progress. Holds the one-second clock behind the elapsed time and the stall
- * hint, so its ticks re-render these tiles rather than the whole page.
+ * progress. Holds the one-second clock behind the queue wait, the elapsed
+ * time and the stall hint, so its ticks re-render these tiles rather than the
+ * whole page.
  */
 export function JobProgressPanel({
   job,
@@ -33,24 +34,31 @@ export function JobProgressPanel({
   snapshot?: JobProgressSnapshot;
 }) {
   const { i18n } = useLingui();
+  const pending = job.status === 'PENDING';
   const running = job.status === 'PROCESSING';
   const [now, setNow] = useState(Date.now);
   useLayoutEffect(() => {
-    if (!running) return;
-    // The clock stood still while the job was not running and a retried
-    // attempt started after it: catch up before paint so Duration never shows
-    // "-" for a running job.
+    if (!pending && !running) return;
+    // The clock stands still while the job is neither queued nor running, and
+    // its last tick while queued can predate started_at: catch up before paint
+    // whenever the job is queued again or starts, so the Queue tile never
+    // shows a stale wait and Duration never shows "-" for a running job.
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [running]);
+  }, [pending, running]);
 
-  // The backend records duration and queue wait only for successful runs.
+  // The backend records duration and queue wait only for successful runs. A
+  // job cancelled or failed before it started waited until it ended.
   const elapsedSecs = running
     ? secondsBetween(job.started_at, now)
     : (job.duration_secs ?? secondsBetween(job.started_at, job.completed_at));
   const queueSecs =
-    job.queue_wait_secs ?? secondsBetween(job.created_at, job.started_at);
+    job.queue_wait_secs ??
+    secondsBetween(
+      job.created_at,
+      job.started_at ?? (pending ? now : job.completed_at),
+    );
 
   // A retried job keeps its id, and the progress query keeps its last data
   // through the 404s before the new attempt reports, so a snapshot from
