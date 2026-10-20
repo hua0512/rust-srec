@@ -156,7 +156,7 @@ export type SessionDanmuStatistics = z.infer<
 >;
 
 /** A stage of a job that is not plain work towards its percent. */
-export const JobPhaseSchema = z.enum(['finalizing', 'retrying']);
+export const JobPhaseSchema = z.enum(['finalizing', 'retrying', 'preparing']);
 export type JobPhase = z.infer<typeof JobPhaseSchema>;
 
 export const JobProgressSnapshotSchema = z.object({

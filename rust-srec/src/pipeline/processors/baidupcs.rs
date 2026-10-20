@@ -29,7 +29,7 @@ use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
-    JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
+    JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
 use crate::utils::filename::expand_placeholders_at;
 
@@ -553,6 +553,9 @@ struct TaskInFlight {
     id: String,
     bytes_done: u64,
     speed_bytes_per_sec: Option<f64>,
+    /// A bar arrived. Before that BaiduPCS-Go checks the Netdisk and hashes
+    /// the file without progress output.
+    sending: bool,
 }
 
 #[derive(Default)]
@@ -561,7 +564,6 @@ struct TrackerState {
     counts: UploadCounts,
     /// Task ID → input, from the queue and start lines.
     names: HashMap<String, String>,
-    /// Oldest first.
     in_flight: Vec<TaskInFlight>,
     /// Tasks that ended; a bar redrawn after the end must not restart one.
     ended: HashSet<String>,
@@ -578,6 +580,7 @@ impl TrackerState {
                     id: id.to_string(),
                     bytes_done: 0,
                     speed_bytes_per_sec: None,
+                    sending: false,
                 });
                 self.in_flight.len() - 1
             }
@@ -612,13 +615,18 @@ impl TrackerState {
             .speed_bytes_per_sec
             .filter(|speed| *speed > 0.0)
             .map(|speed| counts.bytes_total.saturating_sub(counts.bytes_done) as f64 / speed);
-        // The oldest task rather than the latest bar, so the name does not
-        // flip between the files in flight.
-        snapshot.current_file = self
-            .in_flight
-            .iter()
-            .find_map(|task| self.names.get(&task.id))
-            .and_then(progress_file_name);
+        // BaiduPCS-Go checks the Netdisk and hashes each file before sending
+        // it, without progress output: minutes for a large recording on a
+        // slow disk.
+        if !self.in_flight.is_empty() && !self.in_flight.iter().any(|task| task.sending) {
+            snapshot.phase = Some(JobPhase::Preparing);
+        }
+        // Naming one of several files in flight would read as the file that
+        // "File N of M" counts.
+        snapshot.current_file = match self.in_flight.as_slice() {
+            [task] => self.names.get(&task.id).and_then(progress_file_name),
+            _ => None,
+        };
         snapshot
     }
 }
@@ -668,6 +676,7 @@ impl UploadTracker {
         let task = state.task(id);
         task.bytes_done = bytes_done;
         task.speed_bytes_per_sec = speed_bytes_per_sec;
+        task.sending = true;
         state.changed = true;
     }
 
@@ -1117,8 +1126,7 @@ impl Processor for BaiduPcsProcessor {
             }
             attempts_used = attempt + 1;
 
-            // Shows the job's counts while BaiduPCS-Go hashes a file, which
-            // it does without output.
+            // Shows the job's counts until the invocation reports.
             ctx.progress.report(
                 UploadCounts::of_job(&job_inputs, &file_sizes, &completed, &skipped, &permanent)
                     .snapshot(),
@@ -1736,6 +1744,32 @@ mod tests {
         assert!(outcomes.completed.is_empty());
         assert_eq!(outcomes.orphan_successes, 1);
         assert_eq!(outcomes.orphan_failures, 1);
+    }
+
+    #[test]
+    fn tracker_prepares_until_a_bar_and_names_a_file_only_while_it_uploads_alone() {
+        let inputs = ["/rec/a.flv".to_string(), "/rec/b.flv".to_string()];
+        let sizes = HashMap::from([(inputs[0].clone(), 10), (inputs[1].clone(), 30)]);
+        let tracker = UploadTracker::new(
+            ProgressReporter::noop("prepare"),
+            UploadCounts::default(),
+            &inputs,
+            &sizes,
+        );
+        let phase_and_file = || {
+            let snapshot = tracker.state.lock().snapshot();
+            (snapshot.phase, snapshot.current_file)
+        };
+        let a = Some("a.flv".to_string());
+
+        tracker.record_line("[1] 准备上传: /rec/a.flv");
+        assert_eq!(phase_and_file(), (Some(JobPhase::Preparing), a.clone()));
+        tracker.record_line("[2] 准备上传: /rec/b.flv");
+        assert_eq!(phase_and_file(), (Some(JobPhase::Preparing), None));
+        tracker.record_bar("2", 5, Some(1.0));
+        assert_eq!(phase_and_file(), (None, None));
+        tracker.record_line(&success_line(2, "/rec/b.flv"));
+        assert_eq!(phase_and_file(), (Some(JobPhase::Preparing), a));
     }
 
     #[tokio::test(start_paused = true)]

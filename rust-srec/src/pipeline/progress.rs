@@ -27,6 +27,10 @@ pub enum JobPhase {
     /// The processor waits to try its work again after a failed attempt,
     /// such as an rclone or BaiduPCS-Go upload.
     Retrying,
+    /// A BaiduPCS-Go upload prepares its files: none of the files BaiduPCS-Go
+    /// is working on has shown progress yet, because before sending a file it
+    /// checks the Netdisk and hashes the file without progress output.
+    Preparing,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]

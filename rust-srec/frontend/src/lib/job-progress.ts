@@ -34,6 +34,8 @@ type JobProgress = {
 const PHASE_LABELS: Record<JobPhase, MessageDescriptor> = {
   finalizing: msg`Finalizing...`,
   retrying: msg`Retrying...`,
+  // The job page's message for a job with no progress yet.
+  preparing: msg`Preparing…`,
 };
 
 /** A progress snapshot from the API, or none, as {@link describeJobProgress} takes it. */

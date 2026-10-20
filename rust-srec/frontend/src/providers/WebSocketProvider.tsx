@@ -666,6 +666,8 @@ function wireJobPhase(phase: WireJobPhase | undefined): JobPhase | undefined {
       return 'finalizing';
     case WireJobPhase.RETRYING:
       return 'retrying';
+    case WireJobPhase.PREPARING:
+      return 'preparing';
     default:
       return undefined;
   }
