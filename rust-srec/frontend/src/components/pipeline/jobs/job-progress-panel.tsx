@@ -6,7 +6,7 @@ import type { Job } from '@/api/schemas/pipeline';
 import type { JobProgressSnapshot } from '@/api/schemas/session';
 import { Progress } from '@/components/ui/progress';
 import { formatLocalizedDuration } from '@/lib/date-utils';
-import { describeJobProgress } from '@/lib/job-progress';
+import { describeJobProgress, snapshotProgress } from '@/lib/job-progress';
 
 // A running job whose progress has not moved for this long is flagged.
 const STALL_AFTER_SECS = 60;
@@ -62,18 +62,7 @@ export function JobProgressPanel({
       ? snapshot
       : undefined;
   const { percent, details } = describeJobProgress(
-    {
-      percent: current?.percent,
-      bytesDone: current?.bytes_done,
-      bytesTotal: current?.bytes_total,
-      speedBytesPerSec: current?.speed_bytes_per_sec,
-      etaSecs: current?.eta_secs,
-      outTimeMs: current?.out_time_ms,
-      durationMs: current?.duration_ms,
-      speedX: current?.speed_x,
-      progressFilesDone: current?.files_done,
-      progressFilesTotal: current?.files_total,
-    },
+    snapshotProgress(current),
     i18n,
   );
   const hasProgress = percent != null || details.length > 0;

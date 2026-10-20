@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { JobProgressSnapshotSchema } from './session';
+
 /**
  * Epoch milliseconds as the backend serialises them: a number, a numeric
  * string, or an RFC3339 timestamp depending on the endpoint.
@@ -234,9 +236,21 @@ export const DagStepSchema = z.object({
   step_id: z.string(),
   status: DagStepStatusSchema,
   job_id: z.string().nullable().optional(),
+  // Null while the step has no job. A PROCESSING step whose job is PENDING is
+  // queued for a worker, and one whose job is FAILED waits for its automatic
+  // retry when `retry_after` is set.
+  job_status: JobStatusSchema.nullish(),
+  // When the job's latest attempt started.
+  started_at: TimestampMsSchema.nullish(),
+  // When a step waiting for its automatic retry runs again; null when no
+  // retry will run.
+  retry_after: TimestampMsSchema.nullish(),
+  // Only while the step's job runs and has reported progress; null does not
+  // mean 0%.
+  progress: JobProgressSnapshotSchema.nullish(),
   depends_on: z.array(z.string()),
   outputs: z.array(z.string()),
-  processor: z.string(),
+  processor: z.string().nullish(),
 });
 export type DagStep = z.infer<typeof DagStepSchema>;
 
@@ -257,29 +271,6 @@ export const DagExecutionSchema = z.object({
   completed_at: TimestampMsSchema.nullable().optional(),
 });
 export type DagExecution = z.infer<typeof DagExecutionSchema>;
-
-export const DagGraphNodeSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  status: DagStepStatusSchema,
-  processor: z.string().nullable().optional(),
-  job_id: z.string().nullable().optional(),
-});
-export type DagGraphNode = z.infer<typeof DagGraphNodeSchema>;
-
-export const DagGraphEdgeSchema = z.object({
-  from: z.string(),
-  to: z.string(),
-});
-export type DagGraphEdge = z.infer<typeof DagGraphEdgeSchema>;
-
-export const DagGraphSchema = z.object({
-  dag_id: z.string(),
-  name: z.string(),
-  nodes: z.array(DagGraphNodeSchema),
-  edges: z.array(DagGraphEdgeSchema),
-});
-export type DagGraph = z.infer<typeof DagGraphSchema>;
 
 export const DagSummarySchema = z.object({
   id: z.string(),

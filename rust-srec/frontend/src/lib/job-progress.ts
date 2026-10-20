@@ -1,6 +1,7 @@
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 
+import type { JobProgressSnapshot } from '@/api/schemas/session';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
@@ -28,6 +29,24 @@ type JobProgress = {
     | number
     | null;
 };
+
+/** A progress snapshot from the API, or none, as {@link describeJobProgress} takes it. */
+export function snapshotProgress(
+  snapshot: JobProgressSnapshot | null | undefined,
+): JobProgress {
+  return {
+    percent: snapshot?.percent,
+    bytesDone: snapshot?.bytes_done,
+    bytesTotal: snapshot?.bytes_total,
+    speedBytesPerSec: snapshot?.speed_bytes_per_sec,
+    etaSecs: snapshot?.eta_secs,
+    outTimeMs: snapshot?.out_time_ms,
+    durationMs: snapshot?.duration_ms,
+    speedX: snapshot?.speed_x,
+    progressFilesDone: snapshot?.files_done,
+    progressFilesTotal: snapshot?.files_total,
+  };
+}
 
 /**
  * A job's progress for display: the percent for a bar, capped at 100, and

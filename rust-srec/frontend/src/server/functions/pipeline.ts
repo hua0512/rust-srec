@@ -17,7 +17,6 @@ import {
   StalledOperationListSchema,
   UploadRecordListSchema,
   DagExecutionSchema,
-  DagGraphSchema,
   DagListResponseSchema,
   PipelinePresetSchema,
   PipelinePresetListResponseSchema,
@@ -128,13 +127,6 @@ export const getDagExecution = createServerFn({ method: 'GET' })
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/pipeline/dag/${id}`);
     return DagExecutionSchema.parse(json);
-  });
-
-export const getDagGraph = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
-  .handler(async ({ data: id }) => {
-    const json = await fetchBackend(backendPath`/pipeline/dag/${id}/graph`);
-    return DagGraphSchema.parse(json);
   });
 
 export const cancelDag = createServerFn({ method: 'POST' })

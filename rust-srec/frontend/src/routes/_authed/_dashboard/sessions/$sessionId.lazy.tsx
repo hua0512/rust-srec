@@ -173,6 +173,15 @@ function SessionDetailPage() {
   const { data: dagsData, isLoading: isDagsLoading } = useQuery({
     queryKey: ['pipeline', 'dags', sessionId],
     queryFn: () => listPipelines({ data: { session_id: sessionId } }),
+    // Follows unfinished workflows closely. New ones keep appearing while the
+    // session records and after it ends (the session's final workflows start
+    // only once the others finish), so the list is also re-read slowly.
+    refetchInterval: (query) =>
+      query.state.data?.dags.some(
+        (dag) => dag.status === 'PENDING' || dag.status === 'PROCESSING',
+      )
+        ? 5_000
+        : 30_000,
   });
 
   const outputs = outputsData || [];
