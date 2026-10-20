@@ -14,12 +14,12 @@ use tracing::{debug, error, info, warn};
 
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagExecutionStatus, DagPipelineDefinition,
-    DagStepExecutionDbModel, DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
+    DagStepExecutionDbModel, DagStepStatus, DagStepWithJob, JobDbModel, PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagListFilter, DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::manifest::PipelineInputManifest;
-use crate::pipeline::{Job, JobFailureOutcome, JobQueue, JobStatus};
+use crate::pipeline::{Job, JobFailureOutcome, JobProgressSnapshot, JobQueue, JobStatus};
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
 
@@ -905,13 +905,9 @@ impl DagScheduler {
             .get_dag_definition()
             .and_then(|definition| definition.get_step(&step.step_id)?.retry.clone())
             .map(|policy| policy.max_attempts);
-        let awaits_job = step.get_status()
-            == Some(crate::database::models::DagStepStatus::Processing)
-            && step.job_id.as_deref() == Some(job_id)
-            && !dag.get_status().is_some_and(|status| status.is_terminal());
         Ok(StepRetryState {
             max_attempts,
-            awaits_job,
+            awaits_job: step.awaits_job(job_id, dag.get_status()),
         })
     }
 
@@ -1138,6 +1134,16 @@ impl DagScheduler {
     /// Get all step executions for a DAG.
     pub async fn get_dag_steps(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
         self.dag_repository.get_steps_by_dag(dag_id).await
+    }
+
+    /// Get all step executions for a DAG, each with the status and timing of its job.
+    pub async fn get_dag_steps_with_jobs(&self, dag_id: &str) -> Result<Vec<DagStepWithJob>> {
+        self.dag_repository.get_steps_with_jobs_by_dag(dag_id).await
+    }
+
+    /// The running job's latest progress, as [`JobQueue::cached_progress`] reports it.
+    pub fn cached_job_progress(&self, job_id: &str) -> Option<JobProgressSnapshot> {
+        self.job_queue.cached_progress(job_id)
     }
 
     /// Get a single DAG step execution by ID.

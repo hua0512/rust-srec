@@ -106,12 +106,13 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::api::models::JobResponse;
+use crate::api::models::{JobResponse, JobStatus as ApiJobStatus};
 use crate::api::server::AppState;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::{
     PipelinePresetRepository, SessionRepository, StreamerRepository, UploadRecordRepository,
 };
+use crate::pipeline::JobProgressSnapshot;
 
 /// Dependencies shared by the job and DAG execution endpoints in `jobs` and
 /// `dag` (everything routed through `pipeline_manager`, plus
@@ -531,10 +532,24 @@ pub struct DagStatusResponse {
 pub struct DagStepStatusResponse {
     /// Step ID within the DAG.
     pub step_id: String,
-    /// Step status (blocked, pending, processing, completed, failed, cancelled).
+    /// Step status: BLOCKED, PENDING, PROCESSING, COMPLETED, FAILED or CANCELLED.
     pub status: String,
     /// Associated job ID (if job has been created).
     pub job_id: Option<String>,
+    /// Status of the step's job; null while the step has no job. A PROCESSING
+    /// step whose job is PENDING is queued, and one whose job is FAILED waits
+    /// for its automatic retry when `retry_after` is set.
+    pub job_status: Option<ApiJobStatus>,
+    /// When the job's latest attempt started, in epoch milliseconds.
+    pub started_at: Option<i64>,
+    /// When a step waiting for its automatic retry runs again, in epoch
+    /// milliseconds; null when no retry will run, including in a cancelled or
+    /// failed workflow.
+    pub retry_after: Option<i64>,
+    /// The running job's latest progress snapshot, with `raw` always null. Set
+    /// only while the step and its job are both PROCESSING and the job has
+    /// reported progress; null does not mean 0%.
+    pub progress: Option<JobProgressSnapshot>,
     /// Step IDs this step depends on.
     pub depends_on: Vec<String>,
     /// Output paths produced by this step.

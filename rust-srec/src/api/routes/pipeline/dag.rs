@@ -6,9 +6,12 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
-use crate::database::models::job::{DagExecutionStatus, DagPipelineDefinition, PipelineStep};
+use crate::database::models::job::{
+    DagExecutionStatus, DagPipelineDefinition, DagStepStatus, JobStatus, PipelineStep,
+};
 use crate::database::repositories::DagListFilter;
 
+use super::jobs::job_status_to_api_status;
 use super::{
     BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse, DagCancelResponse,
     DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem, DagListResponse,
@@ -84,11 +87,11 @@ pub async fn get_dag_status(
         .await
         .map_err(ApiError::from)?;
 
-    // Get all steps
     let steps = dag_scheduler
-        .get_dag_steps(&dag_id)
+        .get_dag_steps_with_jobs(&dag_id)
         .await
         .map_err(ApiError::from)?;
+    let dag_status = dag.get_status();
 
     // Get DAG definition for step processor info
     let dag_def = dag.get_dag_definition();
@@ -107,7 +110,8 @@ pub async fn get_dag_status(
     // Build step responses
     let step_responses: Vec<DagStepStatusResponse> = steps
         .iter()
-        .map(|step| {
+        .map(|row| {
+            let step = &row.step;
             let processor =
                 def_step_by_id
                     .get(step.step_id.as_str())
@@ -116,11 +120,25 @@ pub async fn get_dag_status(
                         PipelineStep::Workflow { name } => format!("workflow:{}", name),
                         PipelineStep::Inline { processor, .. } => processor.clone(),
                     });
+            let job_status = row.job_status.as_deref().and_then(JobStatus::parse);
+            let job_id = step.job_id.as_deref();
+            let retry_after = row
+                .job_retry_after
+                .filter(|_| job_id.is_some_and(|job_id| step.awaits_job(job_id, dag_status)));
+            let running = step.get_status() == Some(DagStepStatus::Processing)
+                && job_status == Some(JobStatus::Processing);
+            let progress = job_id
+                .filter(|_| running)
+                .and_then(|job_id| dag_scheduler.cached_job_progress(job_id));
 
             DagStepStatusResponse {
                 step_id: step.step_id.clone(),
                 status: step.status.clone(),
                 job_id: step.job_id.clone(),
+                job_status: job_status.map(job_status_to_api_status),
+                started_at: row.job_started_at,
+                retry_after,
+                progress,
                 depends_on: step.get_depends_on(),
                 outputs: step.get_outputs(),
                 processor,

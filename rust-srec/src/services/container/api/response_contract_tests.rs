@@ -11,8 +11,13 @@ use utoipa::OpenApi;
 
 use crate::api::jwt::Claims;
 use crate::api::openapi::ApiDoc;
-use crate::database::models::{JobDbModel, JobExecutionProgressDbModel, LiveSessionDbModel};
-use crate::database::repositories::{JobRepository, SessionRepository, SqlxJobRepository};
+use crate::database::models::{
+    DagExecutionDbModel, DagPipelineDefinition, DagStep, DagStepExecutionDbModel, JobDbModel,
+    JobExecutionProgressDbModel, LiveSessionDbModel, PipelineStep,
+};
+use crate::database::repositories::{
+    DagRepository, JobRepository, SessionRepository, SqlxDagRepository, SqlxJobRepository,
+};
 use crate::pipeline::{JobProgressSnapshot, ProgressKind};
 
 use super::ServiceContainer;
@@ -707,6 +712,111 @@ async fn job_summaries_report_unavailable_progress_for_every_status_and_preserve
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    container.cancellation_token.cancel();
+}
+
+#[tokio::test]
+async fn dag_steps_report_their_job_state_and_only_a_retry_that_will_run() {
+    let (container, application, _directory) = application().await;
+    let jobs = SqlxJobRepository::new(container.pool.clone(), container.write_pool.clone());
+    let dags = SqlxDagRepository::new(container.pool.clone(), container.write_pool.clone());
+    let definition = DagPipelineDefinition::new(
+        "contract-steps",
+        ["done", "queued", "retrying", "failed", "blocked"]
+            .into_iter()
+            .map(|name| DagStep::new(name, PipelineStep::preset("remux")))
+            .collect(),
+    );
+    let mut dag = DagExecutionDbModel::new(&definition, None, None);
+    dag.status = "PROCESSING".to_owned();
+    dags.create_dag(&dag).await.unwrap();
+
+    for (id, status, started_at) in [
+        ("job-done", "COMPLETED", Some(1_000)),
+        ("job-queued", "PENDING", None),
+        ("job-retrying", "PROCESSING", Some(3_000)),
+        ("job-failed", "FAILED", Some(4_000)),
+    ] {
+        let mut job = JobDbModel::new("remux", "{}");
+        job.id = id.to_owned();
+        job.status = status.to_owned();
+        job.started_at = started_at;
+        jobs.create_job(&job).await.unwrap();
+    }
+    let retry_after = crate::database::time::now_ms() + 3_600_000;
+    assert_eq!(
+        jobs.mark_job_failed("job-retrying", "boom", Some(retry_after))
+            .await
+            .unwrap(),
+        1
+    );
+    let steps: Vec<_> = [
+        ("done", "COMPLETED", Some("job-done")),
+        ("queued", "PROCESSING", Some("job-queued")),
+        ("retrying", "PROCESSING", Some("job-retrying")),
+        ("failed", "FAILED", Some("job-failed")),
+        ("blocked", "BLOCKED", None),
+    ]
+    .into_iter()
+    .map(|(name, status, job_id)| {
+        let mut step = DagStepExecutionDbModel::new(&dag.id, name, &[]);
+        step.status = status.to_owned();
+        step.job_id = job_id.map(str::to_owned);
+        step.created_at = dag.created_at;
+        step
+    })
+    .collect();
+    dags.create_steps(&steps).await.unwrap();
+
+    let path = format!("/api/pipeline/dag/{}", dag.id);
+    let (status, body) = request(&application, Method::GET, &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Steps that share created_at still come back in definition order.
+    let order: Vec<_> = body["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["step_id"].clone())
+        .collect();
+    assert_eq!(
+        order,
+        ["done", "queued", "retrying", "failed", "blocked"].map(|name| json!(name))
+    );
+    let step = |body: &Value, name: &str| {
+        body["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["step_id"] == name)
+            .unwrap()
+            .clone()
+    };
+    for (name, job_status, started_at, retry) in [
+        ("done", Some("COMPLETED"), Some(1_000), None),
+        ("queued", Some("PENDING"), None, None),
+        ("retrying", Some("FAILED"), Some(3_000), Some(retry_after)),
+        ("failed", Some("FAILED"), Some(4_000), None),
+        ("blocked", None, None, None),
+    ] {
+        let step = step(&body, name);
+        assert_eq!(step.get("job_status"), Some(&json!(job_status)), "{name}");
+        assert_eq!(step.get("started_at"), Some(&json!(started_at)), "{name}");
+        assert_eq!(step.get("retry_after"), Some(&json!(retry)), "{name}");
+        assert_eq!(step.get("progress"), Some(&Value::Null), "{name}");
+    }
+
+    let (status, body) = request(&application, Method::DELETE, &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The cancelled workflow drops the retry while the job row still holds it.
+    assert_eq!(
+        jobs.get_job("job-retrying").await.unwrap().retry_after,
+        Some(retry_after)
+    );
+    let (status, body) = request(&application, Method::GET, &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let retrying = step(&body, "retrying");
+    assert_eq!(retrying.get("job_status"), Some(&json!("FAILED")));
+    assert_eq!(retrying.get("retry_after"), Some(&Value::Null));
     container.cancellation_token.cancel();
 }
 
