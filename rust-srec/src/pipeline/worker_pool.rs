@@ -207,13 +207,14 @@ fn progress_clause(snapshot: &JobProgressSnapshot) -> String {
             crate::utils::text::format_bytes(speed as u64)
         ));
     }
-    // The phase tells a job waiting to retry or finalizing its output from
-    // one whose work stalled.
+    // The phase tells a job waiting to retry, finalizing its output or
+    // preparing files to upload from one whose work stalled.
     if let Some(phase) = snapshot.phase {
         parts.push(
             match phase {
                 JobPhase::Finalizing => "finalizing its output",
                 JobPhase::Retrying => "waiting to retry",
+                JobPhase::Preparing => "preparing files to upload",
             }
             .to_string(),
         );

@@ -89,7 +89,7 @@ msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, one {# Error} other {# Errors}}"
 
 #. placeholder {0}: failed.length
-#: src/components/upload-status-indicator.tsx:133
+#: src/components/upload-status-indicator.tsx:134
 msgid "{0, plural, one {# failed upload} other {# failed uploads}}"
 msgstr "{0, plural, one {# failed upload} other {# failed uploads}}"
 
@@ -99,12 +99,12 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, one {# failed} other {# failed}}"
 
 #. placeholder {0}: upload.filesFailed
-#: src/components/upload-status-indicator.tsx:406
+#: src/components/upload-status-indicator.tsx:410
 msgid "{0, plural, one {# file failed} other {# files failed}}"
 msgstr "{0, plural, one {# file failed} other {# files failed}}"
 
 #. placeholder {0}: upload.filesTotal
-#: src/components/streamers/card/upload-indicator.tsx:68
+#: src/components/streamers/card/upload-indicator.tsx:84
 msgid "{0, plural, one {# file} other {# files}}"
 msgstr "{0, plural, one {# file} other {# files}}"
 
@@ -337,11 +337,11 @@ msgstr "{minutes}m"
 msgid "{name} fixing is off, so these settings have no effect."
 msgstr "{name} fixing is off, so these settings have no effect."
 
-#: src/components/upload-status-indicator.tsx:136
+#: src/components/upload-status-indicator.tsx:137
 msgid "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgstr "{pending, plural, one {# queued upload} other {# queued uploads}}"
 
-#: src/components/upload-status-indicator.tsx:139
+#: src/components/upload-status-indicator.tsx:140
 msgid "{pending} queued"
 msgstr "{pending} queued"
 
@@ -426,8 +426,8 @@ msgstr "<0>Recording rotates between</0> {names}"
 msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
-#: src/components/upload-status-indicator.tsx:263
-#: src/lib/job-progress.ts:101
+#: src/components/upload-status-indicator.tsx:264
+#: src/lib/job-progress.ts:103
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -1687,12 +1687,12 @@ msgstr "Cancel Pipeline?"
 msgid "Cancel selected"
 msgstr "Cancel selected"
 
-#: src/components/upload-status-indicator.tsx:528
+#: src/components/upload-status-indicator.tsx:532
 msgid "Cancel this upload?"
 msgstr "Cancel this upload?"
 
-#: src/components/upload-status-indicator.tsx:386
-#: src/components/upload-status-indicator.tsx:547
+#: src/components/upload-status-indicator.tsx:390
+#: src/components/upload-status-indicator.tsx:551
 msgid "Cancel upload"
 msgstr "Cancel upload"
 
@@ -3320,7 +3320,7 @@ msgstr "Disk"
 msgid "Disk Space"
 msgstr "Disk Space"
 
-#: src/components/upload-status-indicator.tsx:437
+#: src/components/upload-status-indicator.tsx:441
 msgid "Dismiss"
 msgstr "Dismiss"
 
@@ -3454,7 +3454,7 @@ msgstr "Due at its next use"
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
-#: src/components/pipeline/jobs/job-progress-panel.tsx:99
+#: src/components/pipeline/jobs/job-progress-panel.tsx:101
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
@@ -4035,7 +4035,7 @@ msgstr "F"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:52
 #: src/components/pipeline/status-config.ts:152
-#: src/components/upload-status-indicator.tsx:409
+#: src/components/upload-status-indicator.tsx:413
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:352
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:491
@@ -4068,7 +4068,7 @@ msgstr "Failed to cancel job"
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
-#: src/components/upload-status-indicator.tsx:514
+#: src/components/upload-status-indicator.tsx:518
 msgid "Failed to cancel upload"
 msgstr "Failed to cancel upload"
 
@@ -4447,7 +4447,7 @@ msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend serv
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/lib/job-progress.ts:107
+#: src/lib/job-progress.ts:109
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 
@@ -5560,7 +5560,7 @@ msgstr "Keep Running"
 msgid "Keep the original frame size instead of scaling to a width"
 msgstr "Keep the original frame size instead of scaling to a width"
 
-#: src/components/upload-status-indicator.tsx:539
+#: src/components/upload-status-indicator.tsx:543
 msgid "Keep uploading"
 msgstr "Keep uploading"
 
@@ -6015,7 +6015,7 @@ msgstr "Manifest Timeout (ms)"
 msgid "Manual cut"
 msgstr "Manual cut"
 
-#: src/components/upload-status-indicator.tsx:331
+#: src/components/upload-status-indicator.tsx:332
 msgid "Manual job"
 msgstr "Manual job"
 
@@ -6738,7 +6738,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:140
+#: src/components/pipeline/jobs/job-progress-panel.tsx:142
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
@@ -7880,8 +7880,10 @@ msgstr "Preferred Video Codec"
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:135
+#: src/components/pipeline/jobs/job-progress-panel.tsx:137
+#: src/components/streamers/card/upload-indicator.tsx:73
 #: src/components/upload-status-indicator.tsx:355
+#: src/lib/job-progress.ts:38
 msgid "Preparing…"
 msgstr "Preparing…"
 
@@ -8086,7 +8088,7 @@ msgstr "Programmatic & MCP access"
 msgid "Programs"
 msgstr "Programs"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:119
+#: src/components/pipeline/jobs/job-progress-panel.tsx:121
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:284
 msgid "Progress"
 msgstr "Progress"
@@ -8159,7 +8161,7 @@ msgstr "Quality Settings"
 msgid "Query Parameters"
 msgstr "Query Parameters"
 
-#: src/components/pipeline/jobs/job-progress-panel.tsx:107
+#: src/components/pipeline/jobs/job-progress-panel.tsx:109
 msgid "Queue"
 msgstr "Queue"
 
@@ -10478,7 +10480,7 @@ msgstr "The streaming source could not be reached through the server. Retry or c
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
-#: src/components/upload-status-indicator.tsx:531
+#: src/components/upload-status-indicator.tsx:535
 msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 msgstr "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 
@@ -11190,7 +11192,7 @@ msgstr "Upload (Rclone)"
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
-#: src/lib/job-progress.ts:81
+#: src/lib/job-progress.ts:83
 msgid "Upload attempt {attempt} of {max}"
 msgstr "Upload attempt {attempt} of {max}"
 
@@ -11202,7 +11204,7 @@ msgstr "Upload attempts per job before failing. Retries only re-send files witho
 msgid "Upload Behavior"
 msgstr "Upload Behavior"
 
-#: src/components/upload-status-indicator.tsx:511
+#: src/components/upload-status-indicator.tsx:515
 msgid "Upload cancelled"
 msgstr "Upload cancelled"
 
@@ -11482,7 +11484,7 @@ msgstr "View Details"
 msgid "View job"
 msgstr "View job"
 
-#: src/components/upload-status-indicator.tsx:312
+#: src/components/upload-status-indicator.tsx:313
 msgid "View processing jobs"
 msgstr "View processing jobs"
 
@@ -11511,7 +11513,7 @@ msgstr "Wait indefinitely"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/upload-status-indicator.tsx:301
+#: src/components/upload-status-indicator.tsx:302
 msgid "Waiting for a free upload worker."
 msgstr "Waiting for a free upload worker."
 

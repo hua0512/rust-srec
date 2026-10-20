@@ -896,12 +896,12 @@ fn snapshot_from_json_stats(stats: RcloneJsonStats) -> JobProgressSnapshot {
     // job rather than the file in flight.
     snapshot.files_done = stats.transfers;
     snapshot.files_total = stats.total_transfers.filter(|total| *total > 0);
-    // With several transfers at once this is one of the files in flight.
-    snapshot.current_file = stats
-        .transferring
-        .iter()
-        .find_map(|transfer| transfer.name.as_deref())
-        .and_then(progress_file_name);
+    // Naming one of several files in flight would read as the file that
+    // "File N of M" counts.
+    snapshot.current_file = match stats.transferring.as_slice() {
+        [transfer] => transfer.name.as_deref().and_then(progress_file_name),
+        _ => None,
+    };
     // File counters only — see the raw-size note on parse_rclone_stats_line.
     snapshot.raw = serde_json::json!({
         "transfers": stats.transfers,
@@ -1582,6 +1582,12 @@ mod tests {
         };
         assert_eq!(snapshot.current_file.as_deref(), Some("clip2.mp4"));
 
+        let line = r#"{"level":"notice","stats":{"bytes":10,"totalBytes":40,"transferring":[{"name":"clip2.mp4","bytes":6},{"name":"clip3.mp4","bytes":4}],"transfers":0,"totalTransfers":2}}"#;
+        let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
+            panic!("stats JSON line with two transfers in flight should parse as progress");
+        };
+        assert_eq!(snapshot.current_file, None);
+
         // rclone leaves `transferring` out when nothing is in flight, as on
         // its final line.
         let line = r#"{"level":"notice","stats":{"bytes":40,"totalBytes":40,"speed":20,"eta":0,"transfers":2,"totalTransfers":2}}"#;
@@ -1882,12 +1888,13 @@ mod tests {
             reports,
             [
                 // One report for the first second's burst of bars, with both
-                // files' bytes and speeds; the oldest task names the file.
+                // files' bytes and speeds; two files in flight, so none is
+                // named.
                 (
                     (Some(0), Some(2)),
                     (Some(80 * MIB), Some(400 * MIB), Some(20.0)),
                     (mib_per_sec(15.0), Some(320.0 / 15.0)),
-                    Some("a.flv".to_string()),
+                    None,
                 ),
                 (
                     (Some(1), Some(2)),
