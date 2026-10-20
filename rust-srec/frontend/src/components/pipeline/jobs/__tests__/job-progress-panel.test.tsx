@@ -82,8 +82,9 @@ it('shows progress whose phase this client does not know', () => {
 it.each([
   ['plain work', undefined, true],
   ['finalizing', 'finalizing', false],
+  ['waiting for another upload', 'waiting', false],
 ])(
-  'flags progress unchanged for a minute only outside finalizing (%s)',
+  'flags progress unchanged for a minute only outside finalizing and waiting (%s)',
   (_name, phase, flagged) => {
     vi.useFakeTimers();
     renderRunningJob({ phase, percent: 99, out_time_ms: 60_000 });

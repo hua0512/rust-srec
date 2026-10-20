@@ -28,6 +28,7 @@
 - Remuxing to MP4 now shows "Finalizing..." while the file is rewritten for fast start, instead of looking stuck at 99%.
 - A job's progress, the top bar and workflow steps now show which file is being processed.
 - rclone and Baidu Netdisk uploads now note each retry in the job log and show which attempt is running in the job's progress and the top bar. rclone uploads also show the file being sent.
+- Baidu Netdisk uploads now show progress for the whole job (bytes, files and the file being uploaded) instead of starting over for each file, update it every second, and show when they are waiting for another upload to finish.
 
 ## Web interface
 

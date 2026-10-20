@@ -60,12 +60,16 @@ FFmpeg 报告的输入时长，再按转封装的裁剪设置缩短。`percent` 
 `files_done` 和 `files_total`；FFmpeg 步骤不计入按文件类型直接透传的输入，
 例如弹幕 XML。多文件 FFmpeg 或复制任务的 `percent` 覆盖整个任务，每个文件
 占相同份额，`out_time_ms`、`duration_ms` 和已复制字节数则描述正在处理的文件。
-`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。任务正常推进
+`eta_secs` 只覆盖该文件，因此这些任务只在最后一个文件时报告它。BaiduPCS 上传
+则按整个任务统计字节数和文件数，并从同一次运行中先前尝试已上传的文件算起，
+每秒最多报告一次；其速度为 BaiduPCS-Go 同时上传的各文件速度之和。任务正常推进
 `percent` 时没有 `phase`。FFmpeg 写完最后一帧后重写 MP4（例如为快速启动把索引
 移到文件开头）时，`phase` 为 `finalizing`，此时该文件的 `percent` 份额停在 99%，
-不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。FFmpeg、复制、压缩和 rclone 任务
-在 `current_file` 中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出
-其中一个。`raw` 不包含文件路径。
+不报告速度和 `eta_secs`，直到 FFmpeg 报告结束。由于 BaiduPCS-Go 上传同一时间
+只能运行一个，BaiduPCS 上传等待其他任务的上传完成时，`phase` 为 `waiting`，
+不报告其他进度。FFmpeg、复制、压缩、rclone 和 BaiduPCS 任务在 `current_file`
+中给出正在处理的文件名，不含目录；rclone 同时传输多个文件时给出其中一个，
+BaiduPCS 则给出其中最先开始的一个。`raw` 不包含文件路径。
 
 任务进度只保存在内存中。任务在上报进度之前（包括重启后）没有快照，
 结束时快照会被丢弃；没有快照时，`GET /api/pipeline/jobs/{id}/progress` 返回 404。

@@ -141,8 +141,9 @@ when progress is unavailable in that response. This does not mean zero percent
 complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
 processor-specific snapshot; it returns 404 when no snapshot is available. The
 snapshot's optional `phase` is `finalizing` while FFmpeg rewrites its output
-after the last frame and `retrying` while an upload waits to retry (treat
-values you do not know as plain work), and `current_file` names the file in
+after the last frame, `retrying` while an upload waits to retry and `waiting`
+while a BaiduPCS upload waits for another one to finish (treat values you do
+not know as plain work), and `current_file` names the file in
 progress without its directories. After an upload's first failed attempt,
 `attempt` and `max_attempts` give its attempt within the current job run,
 which is unrelated to the job's retry count.
