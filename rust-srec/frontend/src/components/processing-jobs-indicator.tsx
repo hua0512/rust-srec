@@ -1,4 +1,3 @@
-import { Fragment } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Workflow } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
@@ -7,6 +6,7 @@ import { useLingui } from '@lingui/react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { HeaderIndicator } from '@/components/header-indicator';
+import { JobProgressDetails } from '@/components/job-progress-details';
 import { Progress } from '@/components/ui/progress';
 import {
   displayName,
@@ -120,18 +120,10 @@ function JobRow({
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {jobTypeLabel(job.jobType, i18n)}
         </div>
-        {/* Wraps only between details, so no value splits across lines; a
-            detail wider than the row, such as a long file name, is cut. */}
-        <div className="text-[11px] text-muted-foreground">
-          {details.map((detail, index) => (
-            <Fragment key={detail}>
-              {index > 0 && ' · '}
-              <span className="inline-block max-w-full truncate align-bottom">
-                {detail}
-              </span>
-            </Fragment>
-          ))}
-        </div>
+        <JobProgressDetails
+          details={details}
+          className="text-[11px] text-muted-foreground"
+        />
       </div>
     </Link>
   );
