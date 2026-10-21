@@ -105,18 +105,29 @@ impl NotificationService {
         config: &NotificationServiceConfig,
         attempts: u32,
     ) -> Duration {
+        Self::jittered_retry_delay(config, attempts, rand::random())
+    }
+
+    /// Exponential backoff with ±25% jitter, derived from a uniform `sample`.
+    ///
+    /// The jittered delay never exceeds `max_retry_delay_ms`; at the cap the
+    /// jitter can therefore only shorten the delay.
+    fn jittered_retry_delay(
+        config: &NotificationServiceConfig,
+        attempts: u32,
+        sample: u64,
+    ) -> Duration {
         let delay_ms = config
             .initial_retry_delay_ms
             .saturating_mul(2u64.saturating_pow(attempts))
             .min(config.max_retry_delay_ms);
         let jitter_range = delay_ms / 4;
-        let jitter = if jitter_range > 0 {
-            (rand::random::<u64>() % (jitter_range * 2)).saturating_sub(jitter_range)
-        } else {
-            0
-        };
+        // `offset` is in `0..=2 * jitter_range`; `jitter_range <= delay_ms`, so
+        // the subtraction cannot underflow.
+        let offset = sample % (jitter_range * 2 + 1);
+        let jittered_ms = (delay_ms - jitter_range).saturating_add(offset);
 
-        Duration::from_millis(delay_ms.saturating_add(jitter))
+        Duration::from_millis(jittered_ms.min(config.max_retry_delay_ms))
     }
 
     async fn process_notification_detached(
@@ -371,20 +382,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_retry_delay() {
+    fn retry_jitter_spreads_both_ways_and_respects_the_cap() {
         let config = NotificationServiceConfig {
             initial_retry_delay_ms: 1000,
             max_retry_delay_ms: 60000,
             ..Default::default()
         };
+        let delay = |attempts, sample| {
+            NotificationService::jittered_retry_delay(&config, attempts, sample).as_millis()
+        };
 
-        let delay1 = NotificationService::calculate_retry_delay_detached(&config, 0);
-        let delay2 = NotificationService::calculate_retry_delay_detached(&config, 1);
-        let delay3 = NotificationService::calculate_retry_delay_detached(&config, 2);
+        // Base delays 1000, 2000 and 4000 ms spread over ±25%.
+        for (attempts, base) in [(0, 1000), (1, 2000), (2, 4000)] {
+            let range = base / 4;
+            assert_eq!(delay(attempts, 0), base - range);
+            assert_eq!(delay(attempts, range as u64), base);
+            assert_eq!(delay(attempts, 2 * range as u64), base + range);
+        }
 
-        // Delays should increase (approximately, due to jitter)
-        assert!(delay1.as_millis() >= 750 && delay1.as_millis() <= 1250);
-        assert!(delay2.as_millis() >= 1500 && delay2.as_millis() <= 2500);
-        assert!(delay3.as_millis() >= 3000 && delay3.as_millis() <= 5000);
+        // At the cap, jitter may shorten the delay but never lengthen it.
+        assert_eq!(delay(20, 0), 45000);
+        assert_eq!(delay(20, 30000), 60000);
+        assert_eq!(delay(u32::MAX, u64::MAX), 60000);
+
+        let zero = NotificationServiceConfig {
+            initial_retry_delay_ms: 0,
+            ..config.clone()
+        };
+        assert_eq!(
+            NotificationService::jittered_retry_delay(&zero, 3, u64::MAX),
+            Duration::ZERO
+        );
     }
 }
