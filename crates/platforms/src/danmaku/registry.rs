@@ -1,5 +1,9 @@
 //! Registry of available danmu providers.
 
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+
 use crate::danmaku::provider::DanmuProvider;
 use crate::extractor::platforms::bigo::create_bigo_danmu_provider;
 use crate::extractor::platforms::bilibili::danmu::create_bilibili_danmu_provider;
@@ -10,7 +14,18 @@ use crate::extractor::platforms::soop::create_soop_danmu_provider;
 use crate::extractor::platforms::tiktok::create_tiktok_danmu_provider;
 use crate::extractor::platforms::twitcasting::create_twitcasting_danmu_provider;
 use crate::extractor::platforms::twitch::create_twitch_danmu_provider;
-use std::sync::Arc;
+
+static REGISTERED: RwLock<Vec<Arc<dyn DanmuProvider>>> = RwLock::new(Vec::new());
+
+/// Adds a provider for the rest of the process, for tests that need danmu from an offline
+/// platform.
+///
+/// Every registry consults registered providers after its own, so a registered provider never
+/// takes a URL or platform name from a built-in one.
+#[doc(hidden)]
+pub fn register_provider(provider: Arc<dyn DanmuProvider>) {
+    REGISTERED.write().push(provider);
+}
 
 /// Registry of available danmu providers.
 #[derive(Default)]
@@ -48,15 +63,23 @@ impl ProviderRegistry {
 
     /// Get a provider for the given platform.
     pub fn get_by_platform(&self, platform: &str) -> Option<Arc<dyn DanmuProvider>> {
-        self.providers
-            .iter()
-            .find(|p| p.platform().eq_ignore_ascii_case(platform))
-            .cloned()
+        self.find(|p| p.platform().eq_ignore_ascii_case(platform))
     }
 
     /// Get a provider that supports the given URL.
     pub fn get_by_url(&self, url: &str) -> Option<Arc<dyn DanmuProvider>> {
-        self.providers.iter().find(|p| p.supports_url(url)).cloned()
+        self.find(|p| p.supports_url(url))
+    }
+
+    /// The first matching provider: this registry's own, then registered ones.
+    fn find(
+        &self,
+        matches: impl Fn(&Arc<dyn DanmuProvider>) -> bool,
+    ) -> Option<Arc<dyn DanmuProvider>> {
+        if let Some(provider) = self.providers.iter().find(|p| matches(p)) {
+            return Some(provider.clone());
+        }
+        REGISTERED.read().iter().find(|p| matches(p)).cloned()
     }
 
     /// List all registered platforms.
