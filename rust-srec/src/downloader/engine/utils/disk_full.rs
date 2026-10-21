@@ -59,9 +59,14 @@ pub fn output_io_error_kind(line: &str) -> Option<IoErrorKindSer> {
 ///   on Linux; ffmpeg reports this verbatim when a muxer write fails.
 /// - `"Disk full"` — Windows equivalent; sometimes rendered this way on
 ///   macOS too.
-/// - `"error -28"` or `"error code: -28"` — the ENOSPC errno as ffmpeg
-///   prints it; matched directly as a safety net in case the human-readable
-///   string is localized.
+/// - `"error code: -28"` — the ENOSPC errno as ffmpeg prints it; matched
+///   directly as a safety net in case the human-readable string is
+///   localized.
+/// - `"error -28"` — not an ffmpeg form: a generic safety net for other
+///   output, such as streamlink's, that renders the errno this way.
+///
+/// ffmpeg's `Error number -28 occurred` form matches neither and stays
+/// unmatched.
 pub fn is_disk_full_line(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     if ["no space left on device", "disk full"]
