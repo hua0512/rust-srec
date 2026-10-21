@@ -151,6 +151,7 @@ mod tests {
         let reg = SessionCancelTokens::new();
         let old = reg.register("s1");
         reg.cancel("s1");
+        assert!(old.token().is_cancelled());
 
         let new = reg.register("s1");
         let new_token = new.token();

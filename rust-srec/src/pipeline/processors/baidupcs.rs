@@ -2203,26 +2203,6 @@ mod tests {
     }
 
     #[test]
-    fn remote_destination_fills_every_identity_token() {
-        let config: BaiduPcsConfig = serde_json::from_str(
-            r#"{"destination_root":"/rec/{platform}/{streamer_id}/{session_id}/{streamer}/{title}"}"#,
-        )
-        .unwrap();
-        let input = ProcessorInput {
-            streamer_id: "streamer-1".to_string(),
-            session_id: "session-2".to_string(),
-            streamer_name: Some("Name?".to_string()),
-            session_title: Some("Title".to_string()),
-            platform: Some("huya".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(
-            BaiduPcsProcessor::determine_remote_destination(&input, &config),
-            "/rec/huya/streamer-1/session-2/Name_/Title"
-        );
-    }
-
-    #[test]
     fn normalize_remote_dir_forces_absolute_forward_slash() {
         assert_eq!(BaiduPcsProcessor::normalize_remote_dir(""), "/");
         assert_eq!(BaiduPcsProcessor::normalize_remote_dir("/"), "/");

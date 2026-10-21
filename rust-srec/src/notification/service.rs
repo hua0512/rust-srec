@@ -691,6 +691,59 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn retries_do_not_duplicate_successful_channels() {
+        let config = NotificationServiceConfig {
+            enabled: true,
+            max_retries: 3,
+            initial_retry_delay_ms: 5,
+            max_retry_delay_ms: 20,
+            circuit_breaker_threshold: 100,
+            circuit_breaker_cooldown_secs: 1,
+            ..Default::default()
+        };
+        let service = NotificationService::with_config(config);
+
+        let ok_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let flaky_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        for (key, attempts, fail_for_attempts) in [
+            ("ok", ok_attempts.clone(), 0),
+            ("flaky", flaky_attempts.clone(), 1),
+        ] {
+            service.registry.write().insert(Arc::new(RuntimeChannel {
+                breaker: service.new_breaker(),
+                key: key.into(),
+                db_channel_id: None,
+                display_name: key.into(),
+                channel_type: "test".into(),
+                channel: Arc::new(TestChannel {
+                    channel_type: "test",
+                    fail_for_attempts,
+                    attempts,
+                }),
+            }));
+        }
+
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Utc::now(),
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while service.stats().pending_count != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the retried channel should recover");
+
+        assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(flaky_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(service.stats().dead_letter_count, 0);
+    }
+
     #[test]
     fn test_segment_notifications_preserve_lifecycle_timestamps() {
         use crate::notification::events::mapping::download_notification;

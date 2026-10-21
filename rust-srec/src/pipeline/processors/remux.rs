@@ -976,6 +976,107 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[ignore = "requires ffmpeg and ffprobe"]
+    async fn recording_tags_reach_the_remuxed_file_without_an_extra_metadata_pass() {
+        use super::super::test_utils::utc_datetime;
+        use std::time::Duration;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let source = dir.path().join("source.mp4");
+        let generated = tokio::time::timeout(
+            Duration::from_secs(10),
+            Command::new("ffmpeg")
+                .kill_on_drop(true)
+                .args([
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=1000:duration=0.1",
+                    "-c:a",
+                    "aac",
+                    "-y",
+                ])
+                .arg(&source)
+                .output(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            generated.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        for include in [false, true] {
+            let output_path = dir
+                .path()
+                .join(if include { "tagged.mp4" } else { "literal.mp4" });
+            let input = ProcessorInput {
+                inputs: vec![source.to_string_lossy().into_owned()],
+                outputs: vec![output_path.to_string_lossy().into_owned()],
+                config: Some(
+                    serde_json::json!({
+                        "include_recording_metadata": include,
+                        "metadata": if include { vec![] } else { vec![("title", "{title}")] }
+                    })
+                    .to_string(),
+                ),
+                streamer_name: Some("主播 / {title}".into()),
+                session_title: Some("{artist} %Y 🦀".into()),
+                session_start: Some(utc_datetime(2024, 1, 1, 23, 30, 0)),
+                created_at: utc_datetime(2024, 1, 3, 0, 0, 0),
+                ..Default::default()
+            };
+            let output = tokio::time::timeout(
+                Duration::from_secs(10),
+                RemuxProcessor::with_ffmpeg_path("ffmpeg").process(
+                    &input,
+                    &ProcessorContext::noop("recording-tags").with_retry(true),
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(output.outputs, input.outputs);
+            let probe = tokio::time::timeout(
+                Duration::from_secs(10),
+                Command::new("ffprobe")
+                    .kill_on_drop(true)
+                    .args([
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format_tags=artist,title,date",
+                        "-of",
+                        "json",
+                    ])
+                    .arg(&output_path)
+                    .output(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(
+                probe.status.success(),
+                "{}",
+                String::from_utf8_lossy(&probe.stderr)
+            );
+            let probe: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            assert_eq!(
+                probe["format"]["tags"],
+                if include {
+                    serde_json::json!({ "artist": "主播 / {title}", "title": "{artist} %Y 🦀", "date": "2024-01-01" })
+                } else {
+                    serde_json::json!({ "title": "{title}" })
+                }
+            );
+        }
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3);
+    }
+
     #[test]
     fn test_build_args_faststart_only_applies_to_mp4_family_outputs() {
         let processor = RemuxProcessor::new();

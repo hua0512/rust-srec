@@ -1129,6 +1129,7 @@ mod tests {
             .await;
 
             assert_eq!(concluded, (None, signal), "{protocol:?}");
+            assert!(signal.is_authoritative(), "{protocol:?}");
             assert_eq!(started.elapsed(), Duration::from_millis(1500));
             assert!(cancelled_at.lock().is_none(), "not cancelled");
         }

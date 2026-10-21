@@ -102,7 +102,7 @@ impl Supervisor {
         config: SupervisorConfig,
         metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     ) -> Self {
-        Self::with_checkers(
+        Self::with_status_checker(
             cancellation_token,
             config,
             metadata_store,
@@ -114,7 +114,7 @@ impl Supervisor {
     ///
     /// This allows injecting the real `MonitorStatusChecker` for production use
     /// or a no-op checker for testing.
-    pub fn with_checkers(
+    pub fn with_status_checker(
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
         metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
@@ -782,7 +782,7 @@ mod tests {
             Arc::new(create_test_metadata("panics")),
         );
 
-        let mut supervisor = Supervisor::with_checkers(
+        let mut supervisor = Supervisor::with_status_checker(
             token.clone(),
             SupervisorConfig::default(),
             metadata_store,
@@ -947,7 +947,8 @@ mod tests {
             shutdown_timeout: Duration::from_millis(10),
             ..Default::default()
         };
-        let mut supervisor = Supervisor::with_checkers(token, config, metadata_store, checker);
+        let mut supervisor =
+            Supervisor::with_status_checker(token, config, metadata_store, checker);
         let actor = supervisor
             .spawn_streamer("blocked", create_test_config())
             .expect("test actor should start");
@@ -1017,7 +1018,7 @@ mod tests {
             "panics".to_owned(),
             Arc::new(create_test_metadata("panics")),
         );
-        let mut supervisor = Supervisor::with_checkers(
+        let mut supervisor = Supervisor::with_status_checker(
             token.clone(),
             SupervisorConfig {
                 restart_config: RestartTrackerConfig {

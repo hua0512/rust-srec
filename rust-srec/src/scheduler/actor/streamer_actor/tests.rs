@@ -240,6 +240,10 @@ async fn initial_offline_reconciliation_retries_until_applied_then_suppresses_du
         CancellationToken::new(),
         checker.clone(),
     );
+    // Each row is `(initial_status_pending, process_status outcomes left)`
+    // after one offline check: the failed write and the suppression keep the
+    // reconciliation pending, `Applied` settles it, and a further offline
+    // result is not reported again.
     for (pending, remaining) in [(true, 3), (true, 2), (false, 1), (false, 1)] {
         actor.perform_check().await.unwrap();
         assert_eq!(actor.initial_status_pending, pending);
@@ -278,6 +282,10 @@ async fn live_actor_retries_failed_offline_at_grace_threshold() {
     );
     actor.state = previous_state;
     assert_eq!(actor.state.streamer_state, StreamerState::Live);
+    // Each row is `(initial_status_pending, process_status outcomes left)`
+    // after one offline check: the first two stay inside the offline grace
+    // count without reporting, the third reports and fails, the fourth
+    // reports again and is applied, and the fifth is not reported.
     for (pending, remaining) in [(true, 3), (true, 3), (true, 2), (false, 1), (false, 1)] {
         actor.perform_check().await.unwrap();
         assert_eq!(actor.initial_status_pending, pending);

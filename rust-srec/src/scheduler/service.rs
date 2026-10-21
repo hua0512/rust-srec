@@ -415,7 +415,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         let metadata_store = streamer_manager.metadata_store();
 
         // Create supervisor with the real checker
-        let supervisor = Supervisor::with_checkers(
+        let supervisor = Supervisor::with_status_checker(
             cancellation_token.clone(),
             config.supervisor_config.clone(),
             metadata_store,

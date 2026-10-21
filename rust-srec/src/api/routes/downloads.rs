@@ -1058,22 +1058,12 @@ mod tests {
             assert_eq!(message.event_type, event_type as i32, "{event:?}");
             message.payload.expect("payload")
         };
-        let ids = || {
-            (
-                "dl-1".to_string(),
-                "streamer-1".to_string(),
-                "Streamer".to_string(),
-                "session-1".to_string(),
-            )
-        };
-
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadMeta(meta) = decode(
             DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 engine_type: EngineType::Ffmpeg,
                 cdn_host: "cdn.example.com".to_string(),
                 download_url: "https://cdn.example.com/live.flv".to_string(),
@@ -1091,13 +1081,12 @@ mod tests {
             ("dl-1", "session-1", "ffmpeg")
         );
 
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadMetrics(metrics) = decode(
             DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 status: DownloadStatus::Downloading,
                 progress: DownloadProgress {
                     bytes_downloaded: 1_024,
@@ -1118,13 +1107,12 @@ mod tests {
             ("downloading", 1_024, 5)
         );
 
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::SegmentCompleted(segment) = decode(
             DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 segment_path: "/rec/segment.ts".to_string(),
                 segment_index: 5,
                 started_at: None,
@@ -1149,13 +1137,12 @@ mod tests {
         );
         assert!(segment.completed_at_ms > 0);
 
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadCompleted(completed) = decode(
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 total_bytes: 10_240_000,
                 total_duration_secs: 3_600.0,
                 total_segments: 360,
@@ -1172,13 +1159,12 @@ mod tests {
             (10_240_000, 360)
         );
 
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadFailed(failed) = decode(
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 engine_type: EngineType::Mesio,
                 protocol: crate::downloader::DownloadProtocol::Hls,
                 kind: crate::downloader::DownloadFailureKind::Network,
@@ -1194,13 +1180,12 @@ mod tests {
             ("Connection timeout", true)
         );
 
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadCancelled(cancelled) = decode(
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 cause: crate::downloader::DownloadStopCause::User,
             }),
             EventType::DownloadCancelled,
@@ -1209,12 +1194,11 @@ mod tests {
         };
         assert_eq!(cancelled.cause, "user");
 
-        let (_, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadRejected(rejected) = decode(
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
-                streamer_id,
-                streamer_name,
-                session_id,
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 reason: "Circuit breaker open".to_string(),
                 retry_after_secs: Some(60),
                 kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
@@ -1235,13 +1219,12 @@ mod tests {
         let control = pipeline_common::ManualSplitControl::default();
         control.enable();
         let state = control.request(Duration::from_secs(30)).unwrap();
-        let (download_id, streamer_id, streamer_name, session_id) = ids();
         let Payload::DownloadSplit(split) = decode(
             DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
-                download_id,
-                streamer_id,
-                streamer_name,
-                session_id,
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
                 state: state.clone(),
             }),
             EventType::DownloadSplit,

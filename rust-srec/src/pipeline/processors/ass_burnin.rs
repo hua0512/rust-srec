@@ -726,6 +726,44 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[ignore = "requires an installed FFmpeg binary with the subtitles filter"]
+    async fn subtitle_filter_opens_paths_with_apostrophes_and_graph_delimiters() {
+        let dir = tempfile::tempdir().unwrap();
+        let subtitles = dir.path().join("Let's [play], now.srt");
+        let fonts = dir.path().join("Font's [collection], now");
+        tokio::fs::create_dir(&fonts).await.unwrap();
+        tokio::fs::write(&subtitles, "1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+            .await
+            .unwrap();
+        let filter = AssBurnInProcessor::make_subtitles_filter(
+            &subtitles.to_string_lossy(),
+            Some(&fonts.to_string_lossy()),
+        );
+        let mut command = Command::new("ffmpeg");
+        command
+            .args([
+                "-hide_banner",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=s=32x32:d=0.1",
+                "-vf",
+            ])
+            .arg(filter)
+            .args(["-frames:v", "1", "-f", "null", "-"]);
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            super::super::utils::run_command_with_logs(&mut command, None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(output.status.success(), "{:?}", output.logs);
+    }
+
     fn manifest(segments: &[(u32, &[&str], &[&str])]) -> PipelineInputManifest {
         use crate::pipeline::manifest::{ManifestScope, ManifestSegment};
         PipelineInputManifest::new(

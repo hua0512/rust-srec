@@ -265,7 +265,13 @@ fn scan_log_files_matching(
             continue;
         }
 
-        let meta = std::fs::metadata(&path).map_err(ApiError::from)?;
+        // Rotation and retention delete files while the directory is being
+        // listed; a file that is already gone is simply not part of the list.
+        let meta = match std::fs::metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(ApiError::from(error)),
+        };
         let size_bytes = meta.len();
 
         let date = crate::logging::store::managed_log_date(&filename)

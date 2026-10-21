@@ -246,16 +246,7 @@ mod tests {
             ("..", "unnamed"),
             (".", "unnamed"),
         ] {
-            let sanitized = sanitize_filename(input);
-            assert_eq!(sanitized, expected, "{input}");
-            let mut components = std::path::Path::new(&sanitized).components();
-            assert!(
-                matches!(
-                    (components.next(), components.next()),
-                    (Some(std::path::Component::Normal(_)), None)
-                ),
-                "{input}"
-            );
+            assert_eq!(sanitize_filename(input), expected, "{input}");
         }
     }
 

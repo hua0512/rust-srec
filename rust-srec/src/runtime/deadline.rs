@@ -244,4 +244,19 @@ mod tests {
 
         assert!(!fired.load(Ordering::SeqCst));
     }
+
+    #[test]
+    fn drop_disarms_and_joins_the_watchdog() {
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_by_callback = Arc::clone(&fired);
+        let watchdog =
+            HardDeadlineWatchdog::arm(Instant::now() + Duration::from_secs(60), move || {
+                fired_by_callback.store(true, Ordering::SeqCst)
+            })
+            .unwrap();
+
+        drop(watchdog);
+
+        assert!(!fired.load(Ordering::SeqCst));
+    }
 }

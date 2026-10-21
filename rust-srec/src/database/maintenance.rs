@@ -1663,6 +1663,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancelled_sweep_stops_before_deleting_rows() {
+        let database = setup(1).await;
+        let now = 2_000_000_000_000_i64;
+        let old = now - 31 * MILLIS_PER_DAY;
+        set_retention(&database, 30, 30).await;
+        insert_job(&database, "cancelled-sweep-job", JobStatus::Failed, old).await;
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+
+        let report = database
+            .scheduler
+            .run_maintenance_with_cancellation(now, &cancellation)
+            .await;
+        assert!(report.cancelled);
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM job WHERE id = 'cancelled-sweep-job'")
+                .fetch_one(&database.pool)
+                .await
+                .expect("cancelled sweep job");
+        assert_eq!(remaining, 1);
+    }
+
+    #[tokio::test]
     async fn zero_retention_preserves_pipeline_and_notification_history() {
         let database = setup(10).await;
         let now = 2_000_000_000_000_i64;
@@ -1697,6 +1720,49 @@ mod tests {
         .await
         .expect("retained history");
         assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn policy_failure_does_not_skip_token_cleanup() {
+        let database = setup(10).await;
+        let now = 2_000_000_000_000_i64;
+        database
+            .refresh_token_repository
+            .create(&RefreshTokenDbModel {
+                session_id: None,
+                id: "expired-token".to_string(),
+                user_id: "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
+                token_hash: "expired-hash".to_string(),
+                expires_at: now - 1,
+                created_at: now - MILLIS_PER_DAY,
+                revoked_at: None,
+                device_info: None,
+            })
+            .await
+            .expect("expired token");
+        sqlx::query("DROP TABLE global_config")
+            .execute(&database.pool)
+            .await
+            .expect("drop policy source");
+
+        let report = database.scheduler.run_maintenance_at(now).await;
+        assert_eq!(report.refresh_tokens_deleted, 1);
+        assert!(
+            report
+                .failures
+                .iter()
+                .any(|failure| failure.task == "load_retention_policy")
+        );
+    }
+
+    #[tokio::test]
+    async fn new_database_enables_incremental_auto_vacuum() {
+        let database = setup(10).await;
+        let (mode,): (i64,) = sqlx::query_as("PRAGMA auto_vacuum")
+            .fetch_one(&database.pool)
+            .await
+            .expect("auto-vacuum mode");
+        assert_eq!(mode, AUTO_VACUUM_INCREMENTAL);
     }
 
     #[tokio::test]

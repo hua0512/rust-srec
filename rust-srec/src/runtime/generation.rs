@@ -854,4 +854,22 @@ mod tests {
         RuntimeLease::acquire(&supervisor_marker)
             .expect("the lease should transfer once the first entry point exits");
     }
+
+    #[test]
+    fn separate_databases_do_not_share_a_lease() {
+        let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let first_url = format!(
+            "sqlite:{}?mode=rwc",
+            directory.path().join("one.db").to_string_lossy()
+        );
+        let second_url = format!(
+            "sqlite:{}?mode=rwc",
+            directory.path().join("two.db").to_string_lossy()
+        );
+
+        let _first = RuntimeLease::acquire_for_database(&first_url)
+            .expect("the first database should be leased");
+        RuntimeLease::acquire_for_database(&second_url)
+            .expect("an unrelated database must not be blocked by the first lease");
+    }
 }
