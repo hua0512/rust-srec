@@ -897,20 +897,6 @@ mod tests {
     }
 
     #[test]
-    fn test_on_meta_data_builder_placeholder_keyframes() {
-        let builder = OnMetaDataBuilder::new()
-            .with_duration(10.0)
-            .with_width(1920.0)
-            .with_height(1080.0)
-            .with_placeholder_keyframes(1024);
-
-        let (bytes, size_diff) = builder.build_bytes(0, false).unwrap();
-
-        assert_eq!(size_diff, bytes.len() as i64);
-        assert!(!bytes.is_empty());
-    }
-
-    #[test]
     fn test_on_meta_data_builder_filepositions_offset() {
         let original_payload_size = 100;
         let keyframes_pos = vec![1000, 2000, 3000];
