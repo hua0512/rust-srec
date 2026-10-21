@@ -19,7 +19,7 @@
 - With **HTTP Version** set to **Auto** (the default), Mesio now downloads HLS and DASH over HTTP/2 when the server supports it and the connection does not go through a proxy, fetching segments faster over a single connection. Through a proxy, and for FLV recordings, **Auto** keeps using HTTP/1.1, which is more reliable there. **HTTP/2 only** now really uses HTTP/2 (it previously had no effect), so with it, recording from a server without HTTP/2 fails.
 - Mesio's buffer size setting, now called **Read Buffer Size** on the FLV tab, takes effect for FLV recordings; it was previously ignored. Its default is now 64 KiB, the size FLV recordings have always used. Engines that still had the old 8 MiB default are switched to the new default when updating, so their recordings do not start using more memory.
 - Fixed a stream that a platform lists without a quality name counting as a match for every entry in **Preferred Qualities**, so it could be recorded instead of the quality you chose.
-- Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space, and an unrelated FFmpeg error sometimes being mistaken for a full disk.
+- Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space.
 
 ## Workflows and file processing
 
@@ -43,7 +43,7 @@
 - Fixed a Baidu Netdisk upload that failed while sending a file sometimes showing only that the file was on BaiduPCS-Go's list of failed uploads instead of why it failed; BaiduPCS-Go's own retry notices were also missing from the job log.
 - Fixed Baidu Netdisk uploads that wait for another upload to finish using up their timeout and holding up other file jobs such as copies, deletions and rclone uploads. Waiting uploads now stay in the queue, shown as queued uploads in the top bar, and their timeout starts only when they start running. Baidu Netdisk uploads also no longer count toward **Max IO Jobs**.
 - Fixed **Audio Extract** steps replacing an existing audio file even with **Overwrite** turned off. Such a step now fails instead, like remuxing.
-- Fixed **Audio Extract** steps sometimes failing on a recording without audio instead of passing it on unchanged.
+- Fixed **Audio Extract** steps on a recording without audio, and **Thumbnail** steps on a recording without usable video, sometimes failing instead of passing the recording on unchanged.
 
 ## Notifications
 
@@ -76,7 +76,7 @@
 - The workflow list and the workflow page now say **Created** instead of **Started** beside the time a workflow was created, since a queued workflow has not started yet.
 - The message shown after **Retry All Failed** is now translated.
 - Fixed error and warning lines not being highlighted in a job's log on the job page.
-- Fixed the web player's stream proxy refusing streams served from an IPv6 address.
+- Fixed the web player's stream proxy refusing streams whose address is written as an IPv6 address.
 
 ## Deployment and desktop
 
