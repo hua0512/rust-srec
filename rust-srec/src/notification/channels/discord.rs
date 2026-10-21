@@ -168,7 +168,7 @@ impl NotificationChannel for DiscordChannel {
         event: &NotificationEvent,
         rendered: &RenderedEvent,
     ) -> Result<()> {
-        if !self.accepts(event) {
+        if !self.is_enabled() {
             return Ok(());
         }
 

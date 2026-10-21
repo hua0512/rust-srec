@@ -42,13 +42,18 @@ pub trait NotificationChannel: Send + Sync {
     /// Send a notification through this channel.
     async fn send(&self, event: &NotificationEvent) -> Result<()>;
 
-    /// Test the channel configuration.
+    /// Test the channel configuration. The test is an explicit request, so it is sent whatever
+    /// the channel's `min_priority`.
     async fn test(&self) -> Result<()> {
-        self.send(&NotificationEvent::SystemStartup {
+        if !self.is_enabled() {
+            return Ok(());
+        }
+        let event = NotificationEvent::SystemStartup {
             version: "test".to_string(),
             timestamp: chrono::Utc::now(),
-        })
-        .await
+        };
+        self.send_rendered(&event, &rendered_for(self, &event))
+            .await
     }
 
     /// The channel's configured locale; unset follows the delivery pass snapshot.
@@ -61,7 +66,8 @@ pub trait NotificationChannel: Send + Sync {
         NotificationPriority::Low
     }
 
-    /// Shared built-in filtering, including transport-specific readiness.
+    /// Shared built-in filtering, including transport-specific readiness. Callers apply it
+    /// before `send_rendered`.
     fn accepts(&self, event: &NotificationEvent) -> bool {
         if !self.is_enabled() {
             return false;
@@ -77,6 +83,9 @@ pub trait NotificationChannel: Send + Sync {
 
     /// Built-ins consume shared text; external channels keep their existing send
     /// implementation without having to adopt this optional rendering interface.
+    ///
+    /// Built-ins check only `is_enabled` here, leaving `min_priority` to the caller's `accepts`,
+    /// so that `test` can send below it.
     async fn send_rendered(
         &self,
         event: &NotificationEvent,
@@ -148,16 +157,24 @@ impl ChannelConfig {
     }
 }
 
+/// `event` in the channel's locale, or the process locale when the channel has none.
+fn rendered_for<C: NotificationChannel + ?Sized>(
+    channel: &C,
+    event: &NotificationEvent,
+) -> RenderedEvent {
+    let locale = channel
+        .locale()
+        .map(str::to_owned)
+        .unwrap_or_else(crate::i18n::current_locale);
+    RenderedEvent::new(event, &locale)
+}
+
 /// Direct sends use the same filtering and payload path as service deliveries.
 async fn send_direct(channel: &dyn NotificationChannel, event: &NotificationEvent) -> Result<()> {
     if !channel.accepts(event) {
         return Ok(());
     }
-    let locale = channel
-        .locale()
-        .map(str::to_owned)
-        .unwrap_or_else(crate::i18n::current_locale);
     channel
-        .send_rendered(event, &RenderedEvent::new(event, &locale))
+        .send_rendered(event, &rendered_for(channel, event))
         .await
 }

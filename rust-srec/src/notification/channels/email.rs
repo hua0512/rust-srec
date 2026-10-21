@@ -313,7 +313,7 @@ impl NotificationChannel for EmailChannel {
         event: &NotificationEvent,
         rendered: &RenderedEvent,
     ) -> Result<()> {
-        if !self.accepts(event) {
+        if !self.is_enabled() {
             return Ok(());
         }
 

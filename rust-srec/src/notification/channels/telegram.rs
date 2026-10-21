@@ -203,7 +203,7 @@ impl NotificationChannel for TelegramChannel {
         event: &NotificationEvent,
         rendered: &RenderedEvent,
     ) -> Result<()> {
-        if !self.accepts(event) {
+        if !self.is_enabled() {
             return Ok(());
         }
 

@@ -50,7 +50,7 @@ Priorities use a 0-10 numeric scale in the API and UI settings:
 
 *Platform rate limited* is sent when a platform starts limiting requests on one connection. It names the connection (direct connections, the system proxy, or a saved proxy by name) and the time requests on it resume; other connections keep working. See [rate limits per connection](./configuration.md#proxy-rate-limits).
 
-All five external channels apply the same enabled/priority policy. Their test action sends a Normal-priority startup event through that policy: a disabled channel or a minimum above Normal suppresses the test too. Email configurations constructed with the Rust defaults start at High; set an appropriate minimum when testing.
+All five external channels apply the same enabled/priority policy. Their test action sends a Normal-priority startup event whatever the channel's minimum, so a channel set to High or Critical can still be tested; a disabled channel cannot.
 
 A channel filters events below its minimum. The API also accepts the legacy labels `low`, `normal`, `high`, and `critical` where documented; `info` is not a valid priority.
 

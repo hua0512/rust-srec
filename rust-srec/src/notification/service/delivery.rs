@@ -195,7 +195,12 @@ impl NotificationService {
                         if !allowed {
                             return (channel, None, true);
                         }
-                        let outcome = channel.channel.send_rendered(event, &text).await;
+                        // An event below the channel's `min_priority` counts as delivered.
+                        let outcome = if channel.channel.accepts(event) {
+                            channel.channel.send_rendered(event, &text).await
+                        } else {
+                            Ok(())
+                        };
                         (channel, Some(outcome), false)
                     }
                 })
