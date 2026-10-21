@@ -236,10 +236,11 @@ pub async fn subscribe_web_push(
     let endpoint_url = Url::parse(endpoint)
         .map_err(|e| ApiError::bad_request(format!("Invalid endpoint URL: {}", e)))?;
     let host = endpoint_url
-        .host_str()
+        .host()
         .ok_or_else(|| ApiError::bad_request("subscription.endpoint missing host"))?;
-    let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
-    if endpoint_url.scheme() != "https" && !(endpoint_url.scheme() == "http" && is_localhost) {
+    if endpoint_url.scheme() != "https"
+        && !(endpoint_url.scheme() == "http" && is_local_host(&host))
+    {
         return Err(ApiError::bad_request(
             "subscription.endpoint must use https scheme (or http for localhost)",
         ));
@@ -644,4 +645,46 @@ pub async fn test_channel(
         .map_err(ApiError::from)?;
 
     Ok(StatusCode::OK)
+}
+
+/// Whether a push endpoint host is this machine, where plain http is allowed.
+///
+/// Matches on the parsed host rather than `Url::host_str`, which renders IPv6
+/// literals in brackets (`[::1]`).
+fn is_local_host(host: &url::Host<&str>) -> bool {
+    match host {
+        url::Host::Domain(domain) => *domain == "localhost",
+        url::Host::Ipv4(ip) => ip.is_loopback(),
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local(endpoint: &str) -> bool {
+        let url = Url::parse(endpoint).expect("valid URL");
+        is_local_host(&url.host().expect("URL has a host"))
+    }
+
+    /// The subscribe route is unreachable from the E2E suite: it answers 503
+    /// unless the VAPID keys are set in the process environment.
+    #[test]
+    fn loopback_endpoints_are_local_in_every_address_form() {
+        for endpoint in [
+            "http://localhost:8080/push",
+            "http://127.0.0.1:8080/push",
+            "http://[::1]:8080/push",
+        ] {
+            assert!(local(endpoint), "{endpoint}");
+        }
+        for endpoint in [
+            "http://push.example.com/push",
+            "http://192.168.1.10/push",
+            "http://[2001:db8::1]/push",
+        ] {
+            assert!(!local(endpoint), "{endpoint}");
+        }
+    }
 }
