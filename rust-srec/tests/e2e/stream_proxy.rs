@@ -11,7 +11,9 @@ use axum::response::{IntoResponse, Response as UpstreamResponse};
 use reqwest::{Method, StatusCode};
 use serde_json::{Map, Value, json};
 
-use crate::support::{ClosedPort, LocalHttpServer, ReceivedRequest, Response, TestApp, with_query};
+use crate::support::{
+    ClosedPort, LocalHttpServer, ReceivedRequest, Response, TestApp, id_of, with_query,
+};
 
 /// A public source URL for requests whose target checks are under test. It
 /// only selects the outbound route and is never fetched.
@@ -244,23 +246,22 @@ async fn proxy_refuses_dangerous_targets_while_private_targets_are_disallowed() 
 }
 
 #[tokio::test]
-#[ignore = "bug: validate_target_url parses Url::host_str(), which keeps IPv6 brackets, so IPv6 literals skip the address check and go to a DNS lookup"]
-async fn known_bug_private_ipv6_literals_are_refused_as_disallowed_hosts() {
+async fn private_ipv6_literals_are_refused_and_public_ones_are_relayed() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
     for target in [
         "http://[::1]/",
         "http://[::]/",
+        "http://[fc00::1]/",
         "http://[fd00::1]/",
         "http://[fe80::1]/",
         "http://[::ffff:127.0.0.1]/",
+        "http://[::ffff:10.0.0.1]/",
         "http://[::ffff:169.254.169.254]/latest/meta-data/",
+        "http://[2001:db8::1]/",
     ] {
         let response = fetch(&app, &proxy_path(&[("url", target), ("token", &token)])).await;
-        // Today these fail as "Target hostname could not be resolved", after
-        // a lookup of the bracketed name, which also means a public IPv6
-        // literal can never be proxied.
         assert_rejected(
             &response,
             StatusCode::BAD_REQUEST,
@@ -268,6 +269,36 @@ async fn known_bug_private_ipv6_literals_are_refused_as_disallowed_hosts() {
             "Target host is not allowed",
         );
     }
+
+    // A public literal passes the check. The outbound route is a loopback
+    // forward proxy, so the request never reaches the public network.
+    let forward_proxy = LocalHttpServer::start(200, "relayed").await;
+    let created = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({ "name": "Loopback", "url": forward_proxy.url("") }),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({ "proxy_route": { "kind": "proxy", "id": id_of(&created.body) } }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    let public = "http://[2606:4700:4700::1111]/live.flv";
+    let relayed = fetch(&app, &proxy_path(&[("url", public), ("token", &token)]))
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(relayed.text, "relayed");
+    let received: Vec<_> = forward_proxy
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(received, [public]);
 
     app.shutdown().await;
 }

@@ -23,7 +23,7 @@ use crate::api::auth_service::AuthService;
 use crate::api::cors::CorsPolicy;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
-use crate::proxies::ProxyTarget;
+use crate::proxies::{ProxyTarget, SystemProxy};
 use crate::utils::http_client::ClientCache;
 
 const MAX_REDIRECTS: usize = 5;
@@ -86,21 +86,17 @@ fn stream_proxy_client(
             .tcp_nodelay(true)
             .pool_max_idle_per_host(20)
             .redirect(reqwest::redirect::Policy::none());
-        match upstream_proxy {
-            ProxyTarget::Explicit(endpoint) => {
-                // Playback fails closed rather than send media outside the
-                // chosen route.
-                let proxy = endpoint
-                    .reqwest_proxy()
-                    .map_err(|_| ApiError::bad_request("Invalid upstream proxy configuration"))?;
-                builder = builder.proxy(proxy);
-            }
-            ProxyTarget::System => {}
-            ProxyTarget::Direct => {
-                builder = builder.no_proxy();
-                if !allow_private_targets {
-                    builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
-                }
+        if let ProxyTarget::Explicit(endpoint) = upstream_proxy {
+            // Playback fails closed rather than send media outside the
+            // chosen route.
+            let proxy = endpoint
+                .reqwest_proxy()
+                .map_err(|_| ApiError::bad_request("Invalid upstream proxy configuration"))?;
+            builder = builder.proxy(proxy);
+        } else if connects_directly(upstream_proxy, SystemProxy::current()) {
+            builder = builder.no_proxy();
+            if !allow_private_targets {
+                builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
             }
         }
         // An operator-configured proxy is a trusted egress endpoint and may
@@ -112,6 +108,24 @@ fn stream_proxy_client(
             .map_err(|_| ApiError::internal("Stream proxy HTTP client is unavailable"))
     })
 }
+
+/// Whether the stream proxy connects without a proxy, and so must resolve
+/// targets through `PublicAddressResolver` itself.
+///
+/// A system route without a proxy variable connects directly too, and gets the
+/// same checks, except on Windows and macOS: there the HTTP client also reads
+/// the operating system's proxy settings, which `SystemProxy` cannot see, so the
+/// route keeps them.
+fn connects_directly(upstream_proxy: &ProxyTarget, system: &SystemProxy) -> bool {
+    match upstream_proxy {
+        ProxyTarget::Direct => true,
+        ProxyTarget::System => !OS_PROXY_SETTINGS && !system.detected(),
+        ProxyTarget::Explicit(_) => false,
+    }
+}
+
+/// Whether reqwest's system proxy lookup includes operating-system settings.
+const OS_PROXY_SETTINGS: bool = cfg!(any(target_os = "windows", target_os = "macos"));
 
 fn is_public_ipv4(address: Ipv4Addr) -> bool {
     let [a, b, c, _] = address.octets();
@@ -186,7 +200,7 @@ pub(super) async fn validate_target_url(
     }
 
     let host = target
-        .host_str()
+        .host()
         .ok_or_else(|| ApiError::bad_request("Target host is required"))?;
     if allow_private_targets {
         // `stream_proxy_allow_private_targets` opts the operator into LAN and
@@ -194,18 +208,23 @@ pub(super) async fn validate_target_url(
         return Ok(());
     }
 
-    let normalized_host = host.trim_end_matches('.');
+    // The connector dials an IP literal without a lookup, so the literal's
+    // own address is the one to check. The URL parser has already decoded
+    // alternative IPv4 spellings such as `127.1` into `Host::Ipv4`.
+    let domain = match host {
+        url::Host::Domain(domain) => domain,
+        url::Host::Ipv4(address) if is_public_ipv4(address) => return Ok(()),
+        url::Host::Ipv6(address) if is_public_ipv6(address) => return Ok(()),
+        url::Host::Ipv4(_) | url::Host::Ipv6(_) => {
+            return Err(ApiError::bad_request("Target host is not allowed"));
+        }
+    };
+
+    let normalized_host = domain.trim_end_matches('.');
     if normalized_host.eq_ignore_ascii_case("localhost")
         || normalized_host.to_ascii_lowercase().ends_with(".localhost")
     {
         return Err(ApiError::bad_request("Target host is not allowed"));
-    }
-
-    if let Ok(address) = normalized_host.parse::<IpAddr>() {
-        if !is_public_ip(address) {
-            return Err(ApiError::bad_request("Target host is not allowed"));
-        }
-        return Ok(());
     }
 
     let port = target
@@ -1546,21 +1565,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_private_and_link_local_targets() {
-        for target in [
-            "http://127.0.0.1/stream",
-            "http://10.0.0.1/stream",
-            "http://169.254.169.254/latest/meta-data",
-            "http://[::1]/stream",
-            "http://[fd00::1]/stream",
-        ] {
-            let target = url::Url::parse(target).unwrap();
-            let error = validate_target_url(&target, false).await.unwrap_err();
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-        }
-    }
-
-    #[tokio::test]
     async fn public_address_resolver_rejects_private_hosts() {
         // "localhost" resolves to loopback everywhere, so the resolver must
         // refuse to hand any address to the connector.
@@ -1815,6 +1819,20 @@ mod tests {
             ProxyTarget::Explicit(crate::proxies::ProxyEndpoint::new("http://[invalid", None));
         let error = stream_proxy_client(false, &invalid).unwrap_err();
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn a_system_route_without_a_proxy_variable_connects_directly() {
+        let none = SystemProxy::default();
+        let set = SystemProxy::from_lookup(|name| {
+            (name == "HTTPS_PROXY").then(|| "http://proxy.example:3128".to_owned())
+        });
+        assert_eq!(
+            connects_directly(&ProxyTarget::System, &none),
+            !OS_PROXY_SETTINGS
+        );
+        assert!(!connects_directly(&ProxyTarget::System, &set));
+        assert!(connects_directly(&ProxyTarget::Direct, &set));
     }
 
     #[tokio::test]
