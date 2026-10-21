@@ -1474,6 +1474,24 @@ impl SessionLifecycle {
         let hysteresis_duration =
             chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
 
+        // The session API and the session-complete jobs name a session by its
+        // latest title, and a resume is where a title changed mid-session is
+        // usually first seen. Written only after the exit is claimed, so a
+        // session the timer ended keeps its titles. A failure must not stop
+        // the resume.
+        if let Err(e) = self
+            .repo
+            .add_session_title(session_id, args.title, args.now)
+            .await
+        {
+            warn!(
+                streamer_id = args.streamer_id,
+                session_id,
+                error = %e,
+                "resume_from_hysteresis: failed to record the session title"
+            );
+        }
+
         // Restore in-memory state to Recording. Preserve the original
         // `started_at` from the prior entry.
         let started_at = self
