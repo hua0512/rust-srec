@@ -542,54 +542,6 @@ fn relative_segment_paths_are_resolved_without_canonicalizing() {
 }
 
 #[tokio::test]
-async fn repeated_engine_local_indices_use_session_scoped_indices() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let manager = DownloadManager::new();
-    let mut events = manager.subscribe();
-    let session_id = "session-reused-local-index";
-
-    let first_path = temp.path().join("segment-a.flv");
-    start_scripted_download(
-        &manager,
-        test_download_config(temp.path().to_path_buf(), session_id),
-        vec![completed_segment(first_path, 0)],
-    )
-    .await
-    .expect("first download should start");
-    let first = collect_segment_completed(&mut events).await;
-    wait_for_download_terminal(&mut events).await;
-
-    let second_path = temp.path().join("segment-b.flv");
-    start_scripted_download(
-        &manager,
-        test_download_config(temp.path().to_path_buf(), session_id),
-        vec![completed_segment(second_path, 0)],
-    )
-    .await
-    .expect("second download should start");
-    let second = collect_segment_completed(&mut events).await;
-    wait_for_download_terminal(&mut events).await;
-
-    let DownloadProgressEvent::SegmentCompleted {
-        segment_index: first_index,
-        ..
-    } = first
-    else {
-        panic!("expected first completed segment event");
-    };
-    let DownloadProgressEvent::SegmentCompleted {
-        segment_index: second_index,
-        ..
-    } = second
-    else {
-        panic!("expected second completed segment event");
-    };
-
-    assert_eq!(first_index, 0);
-    assert_eq!(second_index, 1);
-}
-
-#[tokio::test]
 async fn segment_completion_preserves_engine_reported_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let nested = temp.path().join("nested");

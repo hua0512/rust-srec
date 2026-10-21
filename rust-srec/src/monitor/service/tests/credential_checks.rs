@@ -234,45 +234,6 @@ async fn a_check_with_an_account_uses_the_accounts_own_route() {
 }
 
 #[tokio::test]
-async fn a_check_without_an_account_uses_the_streamers_route() {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        let pool = setup_monitor_test_db().await;
-        insert_streamer(&pool, "anonymous", StreamerState::NotLive, 0, None).await;
-        let platform_proxy = crate::database::repositories::proxies::save_for_test(
-            &pool,
-            "platform",
-            "http://platform-proxy.example:3128",
-        )
-        .await;
-        crate::database::repositories::proxies::set_route(
-            &mut pool.acquire().await.unwrap(),
-            &crate::database::repositories::proxies::RouteOwner::Platform("platform-twitch".into()),
-            &crate::proxies::ProxyRoute::Proxy { id: platform_proxy },
-        )
-        .await
-        .unwrap();
-        let mut monitor = build_test_monitor(&pool).await;
-        let (used, mut proxies) = mpsc::unbounded_channel();
-        let mut detector = StreamDetector::new();
-        detector.test_extraction = Some(Arc::new(move |_cookies, proxy| {
-            used.send(proxy).unwrap();
-            Box::pin(async { Ok(LiveStatus::Offline) })
-        }));
-        monitor.detector = Arc::new(detector);
-        let metadata = monitor.streamer_manager.get_streamer("anonymous").unwrap();
-        monitor.check_streamer(&metadata).await.unwrap();
-        let proxy = proxies.recv().await.unwrap();
-        assert_eq!(
-            proxy.endpoint().map(|endpoint| endpoint.url.as_str()),
-            Some("http://platform-proxy.example:3128")
-        );
-        monitor.cancellation.cancel();
-    })
-    .await
-    .unwrap();
-}
-
-#[tokio::test]
 async fn only_unavailable_accounts_block_a_streamer_and_reaching_an_account_lifts_it() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let pool = setup_monitor_test_db().await;

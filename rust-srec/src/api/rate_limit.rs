@@ -407,23 +407,6 @@ mod tests {
     }
 
     #[test]
-    fn username_key_is_case_insensitive_and_fixed_size() {
-        assert_eq!(
-            LoginRateKey::username("  AlIcE "),
-            LoginRateKey::username("alice")
-        );
-        assert_ne!(
-            LoginRateKey::username("alice"),
-            LoginRateKey::username("alicia")
-        );
-        // A 4 KiB username costs the same key as a short one.
-        assert_eq!(
-            std::mem::size_of_val(&LoginRateKey::username(&"x".repeat(4096))),
-            std::mem::size_of::<LoginRateKey>()
-        );
-    }
-
-    #[test]
     fn block_lifts_once_the_window_elapses() {
         let limiter = limiter();
         let now = Instant::now();

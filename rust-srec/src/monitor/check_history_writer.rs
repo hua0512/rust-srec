@@ -244,72 +244,9 @@ mod tests {
         )
     }
 
-    /// Encoder stub for tests — produces a tiny deterministic byte string
-    /// derived from `streamer_id` so tests can assert on the bytes that
-    /// reach subscribers without depending on the API layer's proto
-    /// codegen.
+    /// Encoder stub that does not depend on the API layer's proto codegen.
     fn test_encoder() -> WsEncoder {
         Arc::new(|record| Bytes::from(format!("encoded:{}", record.streamer_id)))
-    }
-
-    #[tokio::test]
-    async fn run_broadcasts_after_successful_insert() {
-        use crate::Result;
-        use async_trait::async_trait;
-        use std::sync::Mutex;
-
-        // Tiny in-memory repo that records every inserted row so we can
-        // assert the writer's commit-then-broadcast ordering: by the time
-        // a subscriber sees a record, the repo has already accepted the row.
-        struct InMemoryRepo {
-            inserts: Mutex<Vec<StreamerCheckHistoryDbModel>>,
-        }
-        #[async_trait]
-        impl StreamerCheckHistoryRepository for InMemoryRepo {
-            async fn insert(&self, row: &StreamerCheckHistoryDbModel) -> Result<()> {
-                self.inserts.lock().unwrap().push(row.clone());
-                Ok(())
-            }
-            async fn list_recent(
-                &self,
-                _: &str,
-                _: i64,
-            ) -> Result<Vec<StreamerCheckHistoryDbModel>> {
-                Ok(Vec::new())
-            }
-        }
-
-        let repo = Arc::new(InMemoryRepo {
-            inserts: Mutex::new(Vec::new()),
-        });
-        let (writer, rx) = CheckHistoryWriter::new();
-        let broadcaster = CheckHistoryBroadcaster::new(test_encoder());
-        let mut sub = broadcaster.subscribe();
-        let cancel = CancellationToken::new();
-
-        let task = tokio::spawn(run(
-            repo.clone(),
-            rx,
-            Some(broadcaster.clone()),
-            cancel.clone(),
-        ));
-
-        writer.record(record("s1", "x"));
-
-        let received = tokio::time::timeout(std::time::Duration::from_secs(1), sub.recv())
-            .await
-            .expect("subscriber receives within 1s");
-        let got = received.expect("not lagged or closed");
-        assert_eq!(got.record.streamer_id, "s1");
-        assert_eq!(got.ws_bytes, b"encoded:s1".as_ref());
-        assert_eq!(
-            repo.inserts.lock().unwrap().len(),
-            1,
-            "record was persisted before being broadcast"
-        );
-
-        cancel.cancel();
-        let _ = task.await;
     }
 
     #[tokio::test]

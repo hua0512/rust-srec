@@ -477,40 +477,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deleting_refuses_a_path_without_the_temporary_shape() {
-        let (state, repository) = state().await;
-        let directory = tempfile::tempdir().unwrap();
-        let output = directory.path().join("video.mp4");
-        let recording = directory.path().join("video.flv");
-        std::fs::write(&recording, b"keep").unwrap();
-        let id = interrupted(&repository, &recording, &output).await;
-
-        let error = delete_interrupted_output(
-            State(state.clone()),
-            RoutePath(id.clone()),
-            Query(DeleteInterruptedOutputParams::default()),
-        )
-        .await
-        .unwrap_err();
-
-        assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(recording.exists());
-        assert_eq!(remaining(&repository).await, 1);
-
-        // Keeping the file is still allowed and only forgets the entry.
-        let kept = delete_interrupted_output(
-            State(state),
-            RoutePath(id),
-            Query(DeleteInterruptedOutputParams { keep_file: true }),
-        )
-        .await
-        .unwrap();
-        assert!(!kept.file_deleted);
-        assert!(recording.exists());
-        assert_eq!(remaining(&repository).await, 0);
-    }
-
-    #[tokio::test]
     async fn a_file_that_is_already_gone_counts_as_settled() {
         let (state, repository) = state().await;
         let directory = tempfile::tempdir().unwrap();

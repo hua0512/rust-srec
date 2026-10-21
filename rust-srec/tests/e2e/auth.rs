@@ -621,9 +621,18 @@ async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_sess
             "expires in 7 days"
         );
     }
-    // Newest first: B's device info is stored capped at 256 characters.
+    // Newest first: B's device info is capped at 256 characters.
     assert_eq!(sessions[0]["device_info"], "设".repeat(256));
     assert_eq!(sessions[1]["device_info"], Value::Null);
+    // The list caps again on read, so only the row shows the cap on write.
+    let pool = app.database().await;
+    let stored: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT device_info FROM refresh_tokens WHERE device_info IS NOT NULL")
+            .fetch_all(&pool)
+            .await
+            .expect("read the stored device info");
+    pool.close().await;
+    assert_eq!(stored, [Some("设".repeat(256))]);
 
     // `tokenRefresh.ts` treats 400, 401 and 422 as terminal.
     let missing = app

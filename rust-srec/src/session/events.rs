@@ -213,46 +213,4 @@ mod tests {
         assert_eq!(json["cause"]["signal"]["type"], "consecutive_failures");
         assert_eq!(json["cause"]["signal"]["count"], 2);
     }
-
-    #[test]
-    fn payload_kind_matches_serialised_discriminator() {
-        let cases = [
-            (
-                SessionEventPayload::SessionStarted {
-                    from_hysteresis: false,
-                    title: None,
-                },
-                "session_started",
-            ),
-            (
-                SessionEventPayload::HysteresisEntered {
-                    cause: TerminalCauseDto::Completed,
-                    resume_deadline: Utc::now(),
-                },
-                "hysteresis_entered",
-            ),
-            (
-                SessionEventPayload::SessionResumed {
-                    hysteresis_duration_secs: 1,
-                },
-                "session_resumed",
-            ),
-            (
-                SessionEventPayload::SessionEnded {
-                    cause: TerminalCauseDto::StreamerOffline,
-                    via_hysteresis: false,
-                },
-                "session_ended",
-            ),
-        ];
-        for (payload, expected) in cases {
-            assert_eq!(payload.kind().as_str(), expected);
-            let json = serde_json::to_value(&payload).unwrap();
-            assert_eq!(
-                json.get("kind").and_then(|v| v.as_str()),
-                Some(expected),
-                "JSON discriminator must equal the kind column"
-            );
-        }
-    }
 }

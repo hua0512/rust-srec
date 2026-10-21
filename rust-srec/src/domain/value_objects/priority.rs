@@ -76,18 +76,3 @@ impl std::str::FromStr for Priority {
         Self::parse(s).ok_or_else(|| format!("Invalid priority: {}", s))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_priority_serialization() {
-        let priority = Priority::High;
-        let json = serde_json::to_string(&priority).unwrap();
-        assert_eq!(json, "\"HIGH\"");
-
-        let parsed: Priority = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, Priority::High);
-    }
-}

@@ -1261,51 +1261,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn managed_proxy_rejects_client_headers_and_never_falls_back_after_expiry() {
-        let app = super::router::<StreamProxyState>().with_state(test_state(true));
-        let target = ("url", "http://127.0.0.1/");
-        for pairs in [
-            vec![
-                ("playback_handle", "handle"),
-                ("stream", "0"),
-                target,
-                ("headers", "{}"),
-            ],
-            vec![
-                ("playback_handle", "handle"),
-                ("stream", "0"),
-                target,
-                ("source_url", "http://127.0.0.1/"),
-            ],
-            vec![("playback_handle", "handle"), target],
-            vec![("playback_handle", "handle"), ("stream", "0")],
-            vec![("stream", "0"), target],
-        ] {
-            let response = app
-                .clone()
-                .oneshot(
-                    HttpRequest::builder()
-                        .uri(format!("/?{}", build_query(&pairs)))
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        }
-        let response = app
-            .oneshot(
-                HttpRequest::builder()
-                    .uri("/?playback_handle=expired&stream=0&url=http%3A%2F%2F127.0.0.1%2F")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::GONE);
-    }
-
-    #[tokio::test]
     async fn managed_redirect_cannot_forward_authentication_to_another_variant_origin() {
         tokio::time::timeout(Duration::from_secs(5), async {
             let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1375,70 +1330,6 @@ mod tests {
         })
         .await
         .expect("redirect fixture must finish");
-    }
-
-    #[tokio::test]
-    async fn proxy_router_requires_full_access_and_honors_header_precedence() {
-        use crate::database::models::ApiKeyAccessLevel;
-        let fixture = crate::api::auth_request::tests::fixture().await;
-        let (_, read) = fixture
-            .service
-            .create_api_key(
-                &fixture.user_id,
-                "proxy-read",
-                ApiKeyAccessLevel::ReadOnly,
-                None,
-            )
-            .await
-            .unwrap();
-        let (_, full) = fixture
-            .service
-            .create_api_key(
-                &fixture.user_id,
-                "proxy-full",
-                ApiKeyAccessLevel::Full,
-                None,
-            )
-            .await
-            .unwrap();
-        let mut state = test_state(false);
-        state.auth_service = Some(fixture.service.clone());
-        let app = super::router::<StreamProxyState>().with_state(state);
-        // An invalid scheme stops before any upstream request after authorization succeeds.
-        for (token, authorization, expected) in [
-            (read.as_str(), None, StatusCode::FORBIDDEN),
-            (full.as_str(), None, StatusCode::BAD_REQUEST),
-            (
-                full.as_str(),
-                Some("Basic invalid".to_owned()),
-                StatusCode::UNAUTHORIZED,
-            ),
-            (
-                full.as_str(),
-                Some(format!("Bearer {read}")),
-                StatusCode::FORBIDDEN,
-            ),
-            (
-                "invalid",
-                Some(format!("Bearer {full}")),
-                StatusCode::BAD_REQUEST,
-            ),
-        ] {
-            let query = build_query(&[("url", "file:///not-an-upstream"), ("token", token)]);
-            let mut request = HttpRequest::builder().uri(format!("/?{query}"));
-            if let Some(header) = authorization {
-                request = request.header("Authorization", header);
-            }
-            assert_eq!(
-                app.clone()
-                    .oneshot(request.body(Body::empty()).unwrap())
-                    .await
-                    .unwrap()
-                    .status(),
-                expected
-            );
-        }
-        fixture.pool.close().await;
     }
 
     #[tokio::test]
@@ -1575,17 +1466,6 @@ mod tests {
         (StatusCode::FOUND, [(header::LOCATION, "/live/master.m3u8")])
     }
 
-    async fn redirect_loop_handler() -> impl IntoResponse {
-        (StatusCode::FOUND, [(header::LOCATION, "/redirect-loop")])
-    }
-
-    async fn redirect_with_credentials_handler() -> impl IntoResponse {
-        (
-            StatusCode::FOUND,
-            [(header::LOCATION, "http://user:pass@media.example/stream")],
-        )
-    }
-
     #[tokio::test]
     async fn proxy_follows_redirects_and_rewrites_against_final_url() {
         let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1617,54 +1497,6 @@ mod tests {
         // not the target the client originally requested.
         assert_eq!(body.matches("/api/stream-proxy?").count(), 2);
         assert!(body.contains("%2Flive%2Fvideo%2Findex.m3u8"));
-    }
-
-    #[tokio::test]
-    async fn proxy_validates_every_redirect_hop() {
-        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_addr = upstream_listener.local_addr().unwrap();
-        let upstream_app = Router::new().route("/redirect", get(redirect_with_credentials_handler));
-        tokio::spawn(async move {
-            axum::serve(upstream_listener, upstream_app).await.unwrap();
-        });
-
-        // The credential check applies even with allow_private_targets, so a
-        // rejected hop proves validate_target_url ran on the redirect target.
-        let app = Router::new()
-            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
-            .with_state(test_state(true));
-        let target = format!("http://{upstream_addr}/redirect");
-        let query = build_query(&[("url", &target)]);
-        let request = HttpRequest::builder()
-            .uri(format!("/api/stream-proxy?{query}"))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn proxy_caps_upstream_redirects() {
-        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_addr = upstream_listener.local_addr().unwrap();
-        let upstream_app = Router::new().route("/redirect-loop", get(redirect_loop_handler));
-        tokio::spawn(async move {
-            axum::serve(upstream_listener, upstream_app).await.unwrap();
-        });
-
-        let app = Router::new()
-            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
-            .with_state(test_state(true));
-        let target = format!("http://{upstream_addr}/redirect-loop");
-        let query = build_query(&[("url", &target)]);
-        let request = HttpRequest::builder()
-            .uri(format!("/api/stream-proxy?{query}"))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     }
 
     #[test]

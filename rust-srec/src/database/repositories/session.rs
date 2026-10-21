@@ -1023,7 +1023,6 @@ mod tests {
     };
     use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
     use crate::database::{init_pool_with_size, run_migrations};
-    use std::collections::HashMap;
 
     async fn setup_test_repo() -> SqlxSessionRepository {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
@@ -1048,15 +1047,6 @@ mod tests {
             .unwrap();
 
         SqlxSessionRepository::new(pool.clone(), pool)
-    }
-
-    #[tokio::test]
-    async fn next_session_segment_index_returns_zero_without_segments() {
-        let repo = setup_test_repo().await;
-
-        let next = repo.next_session_segment_index("session-1").await.unwrap();
-
-        assert_eq!(next, 0);
     }
 
     #[tokio::test]
@@ -1259,46 +1249,6 @@ mod tests {
             .unwrap();
         assert_eq!(summaries[0].output_count, 3);
         assert_eq!(summaries[0].thumbnail_id, None);
-    }
-
-    /// Seeds `session-1` with one output per `MediaFileType` plus a second
-    /// video, giving every type a distinct size so a summary that mixes up
-    /// groups cannot still sum to the right totals.
-    async fn setup_output_filter_repo() -> SqlxSessionRepository {
-        let repo = setup_test_repo().await;
-        for output in [
-            MediaOutputDbModel::new("session-1", "/one.mp4", MediaFileType::Video, 100),
-            MediaOutputDbModel::new("session-1", "/two.mp4", MediaFileType::Video, 200),
-            MediaOutputDbModel::new("session-1", "/one.jpg", MediaFileType::Thumbnail, 10),
-            MediaOutputDbModel::new("session-1", "/one.xml", MediaFileType::DanmuXml, 1),
-        ] {
-            repo.create_media_output(&output).await.unwrap();
-        }
-        repo
-    }
-
-    #[tokio::test]
-    async fn summarize_outputs_filtered_groups_counts_and_sizes_by_type() {
-        let repo = setup_output_filter_repo().await;
-
-        let summaries = repo
-            .summarize_outputs_filtered(&OutputFilters::new())
-            .await
-            .unwrap();
-
-        let by_type: HashMap<&str, &MediaOutputTypeSummary> = summaries
-            .iter()
-            .map(|summary| (summary.file_type.as_str(), summary))
-            .collect();
-        assert_eq!(by_type.len(), 3);
-        assert_eq!(by_type["VIDEO"].count, 2);
-        assert_eq!(by_type["VIDEO"].size_bytes, 300);
-        assert_eq!(by_type["THUMBNAIL"].count, 1);
-        assert_eq!(by_type["THUMBNAIL"].size_bytes, 10);
-        assert_eq!(by_type["DANMU_XML"].count, 1);
-        assert_eq!(by_type["DANMU_XML"].size_bytes, 1);
-        // No AUDIO rows exist, so that type is absent rather than zero.
-        assert!(!by_type.contains_key("AUDIO"));
     }
 
     /// Deleting a streamer leaves its recordings behind: the

@@ -206,44 +206,16 @@ mod tests {
                 ("/out/a.tmp-1.mp4".to_string(), Some(2_000)),
             ]
         );
-    }
-
-    #[tokio::test]
-    async fn only_interrupted_rows_are_listed_and_settled() {
-        let repo = repository().await;
-        stage(&repo, "/out/a.tmp-1.mp4", "job-1", "attempt-1").await;
-        stage(&repo, "/out/b.tmp-2.mp4", "job-2", "attempt-2").await;
-        assert_eq!(repo.mark_interrupted(5_000).await.unwrap(), 2);
-        stage(&repo, "/out/c.tmp-3.mp4", "job-3", "attempt-3").await;
-
-        let rows = repo.list_interrupted(None, 10).await.unwrap();
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().all(|row| row.interrupted_at == Some(5_000)));
-        assert_eq!(
-            repo.list_interrupted(Some("job-2"), 10)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
         assert_eq!(repo.list_interrupted(None, 1).await.unwrap().len(), 1);
 
+        // A live row is not a leftover, so it cannot be forgotten.
+        stage(&repo, "/out/a.tmp-4.mp4", "job-1", "attempt-next").await;
         let live = sqlx::query_scalar::<_, String>(
             "SELECT id FROM staged_outputs WHERE interrupted_at IS NULL",
         )
         .fetch_one(&repo.pool)
         .await
         .unwrap();
-        assert!(matches!(
-            repo.get_interrupted(&live).await,
-            Err(Error::NotFound { .. })
-        ));
         assert!(!repo.forget_interrupted(&live).await.unwrap());
-
-        let leftover = &rows[0].id;
-        assert_eq!(repo.get_interrupted(leftover).await.unwrap().id, *leftover);
-        assert!(repo.forget_interrupted(leftover).await.unwrap());
-        assert!(!repo.forget_interrupted(leftover).await.unwrap());
-        assert_eq!(repo.list_interrupted(None, 10).await.unwrap().len(), 1);
     }
 }

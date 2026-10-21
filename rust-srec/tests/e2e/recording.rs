@@ -361,10 +361,12 @@ async fn a_brief_disconnect_resumes_the_same_session() {
         ]
     );
     let events = &session["events"];
+    assert_eq!(events[1]["payload"]["kind"], "hysteresis_entered");
     assert_eq!(
         events[1]["payload"]["cause"],
         json!({ "type": "failed", "kind": "network" })
     );
+    assert_eq!(events[2]["payload"]["kind"], "session_resumed");
     assert_eq!(events[3]["payload"]["from_hysteresis"], true);
     assert_eq!(
         events[4]["payload"]["cause"],

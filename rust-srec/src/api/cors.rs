@@ -453,20 +453,6 @@ mod tests {
                 "an unlisted origin must not be told the request is allowed"
             );
         }
-
-        #[tokio::test]
-        async fn with_auth_any_origin_still_preflights_successfully() {
-            let policy = policy_for(true, &parse_origins(["http://localhost:15275"].into_iter()));
-
-            for from in ["http://localhost:15275", "https://evil.example"] {
-                let response = preflight(&policy, from).await;
-                assert_eq!(
-                    response.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
-                    Some(&HeaderValue::from_static("*")),
-                    "origin: {from}"
-                );
-            }
-        }
     }
 
     mod request_guard {

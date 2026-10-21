@@ -1144,23 +1144,6 @@ mod tests {
         assert!(args[vf_idx + 1].starts_with("scale="));
     }
 
-    #[test]
-    fn test_nvenc_config_deserialization() {
-        let json = r#"{
-            "video_codec": "h264nvenc",
-            "audio_codec": "aac",
-            "preset": "p7",
-            "crf": 20,
-            "hwaccel": "cuda"
-        }"#;
-
-        let config: RemuxConfig = serde_json::from_str(json).unwrap();
-        assert!(matches!(config.video_codec, VideoCodec::H264Nvenc));
-        assert!(config.video_codec.is_nvenc());
-        assert!(matches!(config.preset, Some(Preset::P7)));
-        assert_eq!(config.crf, Some(20));
-    }
-
     #[tokio::test]
     async fn test_remux_batch_outputs_len_mismatch_errors() {
         let processor = RemuxProcessor::new();

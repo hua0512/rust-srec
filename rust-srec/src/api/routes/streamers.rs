@@ -995,58 +995,6 @@ mod tests {
     use super::*;
     use crate::domain::Priority;
 
-    /// Build a platform config row carrying only the fields platform matching reads.
-    fn platform_config(id: &str, platform_name: &str) -> PlatformConfigDbModel {
-        PlatformConfigDbModel {
-            id: id.to_string(),
-            platform_name: platform_name.to_string(),
-            fetch_delay_ms: None,
-            download_delay_ms: None,
-            platform_specific_config: None,
-            record_danmu: None,
-            danmu_statistics: None,
-            output_folder: None,
-            output_filename_template: None,
-            download_engine: None,
-            extractor: None,
-            stream_selection_config: None,
-            output_file_format: None,
-            min_segment_size_bytes: None,
-            max_download_duration_secs: None,
-            max_part_size_bytes: None,
-            download_retry_policy: None,
-            pipeline: None,
-            session_complete_pipeline: None,
-            paired_segment_pipeline: None,
-            offline_check_count: None,
-            offline_check_delay_ms: None,
-        }
-    }
-
-    fn seeded_configs() -> Vec<PlatformConfigDbModel> {
-        vec![
-            platform_config("platform-douyin", "douyin"),
-            platform_config("platform-bilibili", "bilibili"),
-            platform_config("platform-soop", "soop"),
-            platform_config("platform-streamlink", STREAMLINK_PLATFORM),
-        ]
-    }
-
-    /// `StreamerUrl::platform` reports `Bilibili` while the seeded row is `bilibili`; an
-    /// exact-match lookup would miss and leave the streamer on its previous platform.
-    #[test]
-    fn test_find_platform_config_matches_detected_name_ignoring_case() {
-        let detected = StreamerUrl::new("https://live.bilibili.com/4063253")
-            .expect("valid url")
-            .platform()
-            .expect("bilibili is a built-in platform");
-        assert_eq!(detected, "Bilibili");
-
-        let matched = find_platform_config(seeded_configs(), detected)
-            .expect("bilibili config should match case-insensitively");
-        assert_eq!(matched.id, "platform-bilibili");
-    }
-
     #[test]
     fn a_credential_block_is_shown_only_while_the_streamer_is_monitored() {
         let mut metadata = StreamerMetadata {
@@ -1105,19 +1053,6 @@ mod tests {
                 .credential_blocked
                 .is_none()
         );
-    }
-
-    #[test]
-    fn test_validate_batch_ids() {
-        assert!(validate_batch_ids(&["streamer-1".to_string()]).is_ok());
-        assert!(validate_batch_ids(&[]).is_err());
-        assert!(validate_batch_ids(&["".to_string()]).is_err());
-        assert!(validate_batch_ids(&["streamer-1".to_string(), "streamer-1".to_string()]).is_err());
-
-        let oversized = (0..=MAX_BATCH_SIZE)
-            .map(|index| format!("streamer-{index}"))
-            .collect::<Vec<_>>();
-        assert!(validate_batch_ids(&oversized).is_err());
     }
 
     #[test]

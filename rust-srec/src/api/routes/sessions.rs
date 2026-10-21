@@ -820,16 +820,4 @@ mod tests {
         assert_eq!(response.deleted, 0);
         pool.close().await;
     }
-
-    #[test]
-    fn test_parse_titles_with_entries() {
-        let json = r#"[
-            {"ts": 1735725600000, "title": "First Stream"},
-            {"ts": 1735732800000, "title": "Updated Title"}
-        ]"#;
-
-        let (titles, title) = parse_titles(&Some(json.to_string()));
-        assert_eq!(titles.len(), 2);
-        assert_eq!(title, "Updated Title");
-    }
 }

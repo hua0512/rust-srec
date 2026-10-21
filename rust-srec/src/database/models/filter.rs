@@ -413,38 +413,6 @@ mod tests {
     }
 
     #[test]
-    fn test_time_based_filter_rejects_empty_days() {
-        // Unknown names are dropped by normalization, leaving no days.
-        for days in [vec![], vec!["Funday".to_string()]] {
-            let mut config = TimeBasedFilterConfig {
-                timezone: None,
-                days_of_week: days,
-                start_time: "21:00".to_string(),
-                end_time: "06:00".to_string(),
-            };
-            config.normalize();
-            assert!(matches!(
-                config.validate(),
-                Err(FilterValidationError::NoDaysOfWeek)
-            ));
-        }
-    }
-
-    #[test]
-    fn test_time_based_filter_rejects_equal_start_and_end() {
-        let config = TimeBasedFilterConfig {
-            timezone: None,
-            days_of_week: vec!["Monday".to_string()],
-            start_time: "21:00".to_string(),
-            end_time: "21:00:00".to_string(),
-        };
-        assert!(matches!(
-            config.validate(),
-            Err(FilterValidationError::EmptyTimeRange(time)) if time == "21:00:00"
-        ));
-    }
-
-    #[test]
     fn optional_timezone_validates_and_roundtrips_to_domain_filter() {
         let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
         let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();

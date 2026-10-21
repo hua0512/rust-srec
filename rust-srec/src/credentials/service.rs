@@ -88,11 +88,6 @@ impl CredentialProviderRegistry {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_notification_service(&self) -> bool {
-        self.notification_service.get().is_some()
-    }
-
     /// Replace the provider for a platform.
     #[cfg(test)]
     pub(crate) fn register_provider(

@@ -620,6 +620,14 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     assert_eq!(resolved["valid"], true, "{resolved}");
     assert_eq!(resolved["errors"], json!([]));
 
+    // Checking a definition never starts it.
+    let dags = app
+        .get("/api/pipeline/dags", &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(dags["total"], 0, "{dags}");
+
     app.shutdown().await;
 }
 
@@ -800,6 +808,26 @@ async fn pipeline_presets_refuse_a_workflow_that_cannot_run_and_store_nothing() 
         )),
         "{}",
         two_faults.text
+    );
+    let cycle = save_preset(
+        &app,
+        &token,
+        "E2E Rejected Cycle",
+        definition(
+            "x",
+            vec![
+                execute("root", "exit 0", &[]),
+                execute("a", "exit 0", &["root", "b"]),
+                execute("b", "exit 0", &["a"]),
+            ],
+        ),
+    )
+    .await;
+    cycle.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    assert_eq!(
+        cycle.body["message"], "DAG pipeline contains a cycle",
+        "{}",
+        cycle.text
     );
 
     let stored = app

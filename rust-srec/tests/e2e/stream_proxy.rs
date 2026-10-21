@@ -231,6 +231,13 @@ async fn proxy_refuses_dangerous_targets_while_private_targets_are_disallowed() 
         read_only.text
     );
     assert_eq!(read_only.error_code(), Some("API_KEY_READ_ONLY"));
+    let full_key = app.create_api_key(&token, "proxy-full", "full").await.raw;
+    assert_rejected(
+        &fetch(&app, &proxy_path(&[refused_target, ("token", &full_key)])).await,
+        StatusCode::BAD_REQUEST,
+        "BAD_REQUEST",
+        "Invalid source URL",
+    );
     // An Authorization header is authoritative over the query fallback.
     let invalid_header = app
         .send(

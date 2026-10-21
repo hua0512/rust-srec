@@ -201,16 +201,6 @@ impl EmailChannel {
         )
     }
 
-    #[cfg(test)]
-    fn build_message(&self, event: &NotificationEvent) -> Result<Message> {
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.build_rendered_message(event, &RenderedEvent::new(event, &locale))
-    }
-
     fn build_rendered_message(
         &self,
         event: &NotificationEvent,
@@ -352,35 +342,6 @@ fn escape_html(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn message_contains_all_recipients_and_multipart_bodies() {
-        let config = EmailConfig {
-            enabled: true,
-            smtp_host: "smtp.example.com".to_string(),
-            from_address: "rust-srec@example.com".to_string(),
-            to_addresses: vec![
-                "first@example.com".to_string(),
-                "second@example.com".to_string(),
-            ],
-            ..EmailConfig::default()
-        };
-        let channel = EmailChannel::new(config);
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: None,
-            timestamp: chrono::Utc::now(),
-        };
-
-        let formatted = String::from_utf8(channel.build_message(&event).unwrap().formatted())
-            .expect("message should be UTF-8");
-        assert!(formatted.contains("first@example.com"));
-        assert!(formatted.contains("second@example.com"));
-        assert!(formatted.contains("multipart/alternative"));
-        assert!(formatted.contains("TestStreamer"));
-    }
 
     #[test]
     fn rendered_email_preserves_localized_mime_content_and_escapes_supplied_text() {

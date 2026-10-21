@@ -121,38 +121,3 @@ async fn missing_user_obeys_password_worker_admission_and_throttling_skips_work(
     assert_eq!(service.password_verify_calls.load(Ordering::SeqCst), 1);
     pool.close().await;
 }
-
-#[tokio::test]
-async fn long_device_descriptions_are_bounded_without_rejecting_login() {
-    let (pool, service) = service().await;
-    for device in [
-        None,
-        Some(String::new()),
-        Some("😀é".repeat(MAX_DEVICE_INFO_LENGTH)),
-    ] {
-        let expected = device.as_ref().map(|value| {
-            value
-                .chars()
-                .take(MAX_DEVICE_INFO_LENGTH)
-                .collect::<String>()
-        });
-        let response = service
-            .authenticate("active", "correct-password", device, None)
-            .await
-            .unwrap();
-        let stored = service
-            .token_repo
-            .find_by_token_hash(&AuthService::hash_token(&response.refresh_token))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(stored.device_info, expected);
-        assert!(
-            stored
-                .device_info
-                .as_ref()
-                .is_none_or(|value| value.chars().count() <= MAX_DEVICE_INFO_LENGTH)
-        );
-    }
-    pool.close().await;
-}

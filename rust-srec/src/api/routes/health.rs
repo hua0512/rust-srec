@@ -198,68 +198,6 @@ pub async fn idle_check(State(state): State<HealthRouteState>) -> ApiResult<impl
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn health_router_accepts_read_keys_and_keeps_liveness_public() {
-        use crate::database::models::ApiKeyAccessLevel;
-        use axum::{body::Body, http::Request};
-        use tower::ServiceExt;
-
-        let fixture = crate::api::auth_request::tests::fixture().await;
-        let (key, raw) = fixture
-            .service
-            .create_api_key(
-                &fixture.user_id,
-                "health-read",
-                ApiKeyAccessLevel::ReadOnly,
-                None,
-            )
-            .await
-            .unwrap();
-        let mut state = build_idle_test_state(crate::pipeline::PipelineManager::new());
-        state.auth_service = Some(fixture.service.clone());
-        let app = Router::new()
-            .route("/", get(health_check))
-            .route("/live", get(liveness_check))
-            .with_state(state);
-        for (path, token, expected) in [
-            ("/", None, StatusCode::UNAUTHORIZED),
-            ("/", Some(raw.as_str()), StatusCode::OK),
-            ("/", Some(fixture.access_token.as_str()), StatusCode::OK),
-            ("/live", None, StatusCode::OK),
-            ("/live", Some("invalid"), StatusCode::OK),
-        ] {
-            let mut request = Request::builder().uri(path);
-            if let Some(token) = token {
-                request = request.header("Authorization", format!("Bearer {token}"));
-            }
-            assert_eq!(
-                app.clone()
-                    .oneshot(request.body(Body::empty()).unwrap())
-                    .await
-                    .unwrap()
-                    .status(),
-                expected
-            );
-        }
-        fixture
-            .service
-            .revoke_api_key(&fixture.user_id, &key.id)
-            .await
-            .unwrap();
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .header("Authorization", format!("Bearer {raw}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        fixture.pool.close().await;
-    }
-
     fn build_idle_test_state(
         pipeline_manager: crate::pipeline::PipelineManager,
     ) -> HealthRouteState {

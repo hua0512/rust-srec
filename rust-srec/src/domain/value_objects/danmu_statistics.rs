@@ -132,20 +132,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn partial_json_inherits_defaults() {
-        let config: DanmuStatisticsConfig =
-            serde_json::from_str(r#"{"top_talkers": 200}"#).expect("partial config parses");
-
-        assert_eq!(config.top_talkers, 200);
-        assert_eq!(
-            config.top_words,
-            DanmuStatisticsConfig::default().top_words,
-            "unspecified fields keep their defaults"
-        );
-        assert!(config.enabled);
-    }
-
-    #[test]
     fn sanitized_clamps_out_of_range_values() {
         let config = DanmuStatisticsConfig {
             top_talkers: 100_000,

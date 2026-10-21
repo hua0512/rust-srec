@@ -525,7 +525,6 @@ mod tests {
         state: CredentialProfileRouteState,
         app: Router,
         full_key: String,
-        user_id: String,
     }
 
     async fn fixture() -> Fixture {
@@ -602,7 +601,6 @@ mod tests {
             state,
             app,
             full_key,
-            user_id: user.id,
         }
     }
 
@@ -1302,42 +1300,5 @@ mod tests {
         assert_eq!(detail["capabilities"]["validate"], false);
         assert!(detail["health"].is_null());
         assert_eq!(detail["profile"]["revision"], profile["revision"]);
-    }
-
-    #[tokio::test]
-    async fn qr_receipts_require_the_initiating_principal_and_contain_no_provider_material() {
-        let fixture = fixture().await;
-        let now = crate::database::time::now_ms();
-        sqlx::query("INSERT INTO credential_login_sessions(id,principal,platform_config_id,target,provider_auth_code,created_at,expires_at,state,result_profile_id,result_version,completed_at) VALUES ('receipt',?,'platform-bilibili','{}','',?,?,'completed','profile-result',2,?)")
-            .bind(&fixture.user_id).bind(now).bind(now + 600000).bind(now).execute(&fixture.pool).await.unwrap();
-        let (status, receipt) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/login-sessions/receipt/poll",
-            Some(&fixture.full_key),
-            serde_json::Value::Null,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(receipt["profile_id"], "profile-result");
-        assert!(receipt.get("provider_auth_code").is_none());
-        sqlx::query(
-            "UPDATE credential_login_sessions SET principal='another-user' WHERE id='receipt'",
-        )
-        .execute(&fixture.pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            request(
-                &fixture.app,
-                "POST",
-                "/api/credentials/login-sessions/receipt/poll",
-                Some(&fixture.full_key),
-                serde_json::Value::Null
-            )
-            .await
-            .0,
-            StatusCode::NOT_FOUND
-        );
     }
 }

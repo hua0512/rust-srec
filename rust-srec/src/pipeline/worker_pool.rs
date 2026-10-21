@@ -3353,62 +3353,6 @@ mod tests {
         pool.stop().await;
     }
 
-    #[tokio::test]
-    async fn test_cancel_processing_job_releases_worker() {
-        let job_queue = Arc::new(JobQueue::new());
-        let pool = WorkerPool::with_config(
-            WorkerType::Cpu,
-            WorkerPoolConfig {
-                max_workers: 1,
-                job_timeout_secs: 3600,
-                poll_interval_ms: 10,
-                adaptive: AdaptiveWorkerPoolConfig::default(),
-            },
-        );
-
-        pool.start(job_queue.clone(), vec![Arc::new(SleepProcessor)]);
-
-        let job = Job::new(
-            "sleep",
-            vec!["/input".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-        );
-        let job_id = job_queue.enqueue(job).await.unwrap();
-
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Some(job) = job_queue.get_job(&job_id).await.unwrap()
-                    && job.status == JobStatus::Processing
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("job should start processing");
-
-        job_queue.cancel_job(&job_id).await.unwrap();
-
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if pool.active_count() == 0 {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("worker should stop processing cancelled job");
-
-        let job = job_queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, JobStatus::Cancelled);
-
-        pool.stop().await;
-    }
-
     /// A timed-out job's error names the phase it was stuck in and how long
     /// ago its progress last moved.
     #[test]

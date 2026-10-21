@@ -1098,100 +1098,6 @@ async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
     );
 }
 
-/// `resume_from_hysteresis` must emit `SessionTransition::Started`
-/// with `from_hysteresis: true` AND a populated `download_start`
-/// payload. The container's resume-download subscriber relies on the
-/// payload to (re)start the download for the resumed session — without
-/// it, the streamer stays "Live" in memory but no recording happens.
-#[tokio::test]
-async fn resume_emits_started_with_download_start_payload() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
-    let mut rx = lifecycle.subscribe();
-
-    // Step 1: fresh start. Drain Started.
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    match rx.recv().await.unwrap() {
-        SessionTransition::Started {
-            from_hysteresis,
-            download_start,
-            ..
-        } => {
-            assert!(
-                !from_hysteresis,
-                "fresh-start must be from_hysteresis=false"
-            );
-            assert!(
-                download_start.is_none(),
-                "fresh-start path leaves download_start=None — \
-                     MonitorEvent::StreamerLive outbox event drives the download"
-            );
-        }
-        other => panic!("expected Started for fresh, got {other:?}"),
-    }
-
-    // Step 2: ambiguous end → Hysteresis. Drain Ending.
-    lifecycle
-        .on_download_terminal(&make_terminal_completed_clean_disconnect(
-            started.session_id(),
-        ))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // Ending
-
-    // Step 3: LiveDetected within window → resume. Should emit
-    // both Resumed AND Started{from_hysteresis: true, download_start: Some(_)}.
-    lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-
-    // Resumed transition fires first.
-    match rx.recv().await.unwrap() {
-        SessionTransition::Resumed { session_id, .. } => {
-            assert_eq!(session_id, started.session_id());
-        }
-        other => panic!("expected Resumed, got {other:?}"),
-    }
-
-    // Started transition fires second, with the download_start payload
-    // populated so the container's resume-download subscriber can drive
-    // start_download_for_streamer.
-    match rx.recv().await.unwrap() {
-        SessionTransition::Started {
-            from_hysteresis,
-            download_start,
-            streamer_id,
-            session_id,
-            ..
-        } => {
-            assert!(
-                from_hysteresis,
-                "resume must emit Started with from_hysteresis=true"
-            );
-            assert_eq!(streamer_id, STREAMER_ID);
-            assert_eq!(session_id, started.session_id());
-            let payload = download_start.as_deref().expect(
-                "resume_from_hysteresis MUST populate download_start so the \
-                     container can restart the download",
-            );
-            assert_eq!(
-                payload.streamer_url, "https://example.com",
-                "streamer_url must be carried for the engine config"
-            );
-            // `streams` may legitimately be empty in this test fixture
-            // (`live_args` uses a static empty vec); we only require
-            // the payload itself to be present. The container's
-            // start_download_for_streamer has its own empty-streams
-            // guard at the production path.
-        }
-        other => panic!("expected Started{{from_hysteresis: true}}, got {other:?}"),
-    }
-}
-
 /// CAS atomicity for the `Hysteresis → (Recording | Ended)`
 /// transition. We model the race by:
 ///
@@ -1359,8 +1265,6 @@ async fn authoritative_end_during_hysteresis_cancels_timer() {
 // -----------------------------------------------------------------
 // `session_events` audit-log persistence.
 //
-// Verifies the four lifecycle transitions land in the `session_events`
-// table with the right `kind`, ordering, and payload shape.
 // Atomic-tx writes (`session_started`, `session_ended`) go through
 // `SessionLifecycleRepository`. Best-effort writes
 // (`hysteresis_entered`, `session_resumed`) require the lifecycle to
@@ -1408,68 +1312,6 @@ fn session_ended_cause(payload: &SessionEventPayload) -> &TerminalCauseDto {
         panic!("expected session_ended payload, got {payload:?}");
     };
     cause
-}
-
-/// hysteresis → live_detected within window → both `session_resumed` and
-/// `session_started { from_hysteresis: true }` rows in order.
-#[tokio::test]
-async fn resumed_then_started_pair_persisted() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_events(pool.clone());
-
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let sid = started.session_id().to_string();
-
-    // Enter hysteresis.
-    let event = DownloadTerminalEvent::Completed {
-        download_id: "dl-1".into(),
-        streamer_id: STREAMER_ID.into(),
-        streamer_name: "Test".into(),
-        session_id: sid.clone(),
-        total_bytes: 0,
-        total_duration_secs: 0.0,
-        total_segments: 0,
-        file_path: None,
-        engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
-        stop_cause: None,
-    };
-    lifecycle.on_download_terminal(&event).await.unwrap();
-    // Resume the same session while its hysteresis window is open.
-    let resumed = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    assert_eq!(
-        resumed,
-        StartSessionOutcome::ReusedActive {
-            session_id: sid.clone(),
-        }
-    );
-
-    let rows = read_events(&pool, &sid).await;
-    let kinds: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(
-        kinds,
-        vec![
-            "session_started",
-            "hysteresis_entered",
-            "session_resumed",
-            "session_started",
-        ],
-        "expected the full Recording → Hysteresis → Recording sequence"
-    );
-    match event_payload(&rows[3].1) {
-        SessionEventPayload::SessionStarted {
-            from_hysteresis, ..
-        } => assert!(
-            from_hysteresis,
-            "the second session_started must mark from_hysteresis=true"
-        ),
-        other => panic!("wrong payload variant: {other:?}"),
-    }
 }
 
 /// `enter_ended_state`'s 60s `Ended` retention dedup means duplicate

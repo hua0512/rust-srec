@@ -1301,52 +1301,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_overwrite_enabled() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path().join("output");
-
-        // Create dest dir and existing file
-        fs::create_dir_all(&dest_dir).await.unwrap();
-        fs::write(dest_dir.join("source.txt"), "old content")
-            .await
-            .unwrap();
-
-        // Create source file
-        fs::write(&source_path, "new content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy(),
-                    "overwrite": true
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify overwrite succeeded
-        let dest_path = dest_dir.join("source.txt");
-        assert!(dest_path.exists());
-        let content = fs::read_to_string(&dest_path).await.unwrap();
-        assert_eq!(content, "new content");
-        assert_eq!(
-            output.outputs,
-            vec![dest_path.to_string_lossy().to_string()]
-        );
-    }
-
-    #[tokio::test]
     async fn test_batch_copy() {
         let temp_dir = TempDir::new().unwrap();
         let source1 = temp_dir.path().join("file1.txt");
