@@ -77,15 +77,11 @@ pub async fn get_dag_status(
         .dag_scheduler()
         .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
-    // Get DAG execution
-    let dag = dag_scheduler
-        .get_dag_status(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
-
-    // The same status the DAG list shows, so opening a listed DAG agrees with it.
-    let display_status = dag_scheduler
-        .get_dag_display_status(&dag_id)
+    // The same status the DAG list shows, so opening a listed DAG agrees with
+    // it. One read: a DAG finishing between two reads would otherwise show as
+    // finished with the step counts from before.
+    let (dag, display_status) = dag_scheduler
+        .get_dag_with_display_status(&dag_id)
         .await
         .map_err(ApiError::from)?;
 

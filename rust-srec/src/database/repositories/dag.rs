@@ -76,6 +76,13 @@ pub trait DagRepository: Send + Sync {
     /// Get a DAG execution's display status (see [`DagDisplayCounts`]).
     async fn get_dag_display_status(&self, id: &str) -> Result<DagExecutionStatus>;
 
+    /// Get a DAG execution together with its display status, read in one query
+    /// so the two describe the same moment.
+    async fn get_dag_with_display_status(
+        &self,
+        id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)>;
+
     /// Count all DAG executions by display status.
     async fn get_dag_display_counts(&self) -> Result<DagDisplayCounts>;
 
@@ -803,6 +810,29 @@ impl DagRepository for SqlxDagRepository {
 
         let status = status.ok_or_else(|| Error::not_found("DAG execution", id))?;
         parse_display_status(id, &status)
+    }
+
+    async fn get_dag_with_display_status(
+        &self,
+        id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            #[sqlx(flatten)]
+            dag: DagExecutionDbModel,
+            display_status: String,
+        }
+
+        let row: Row = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT dag.*, {DAG_DISPLAY_STATUS_SQL} AS display_status \
+             FROM dag_execution AS dag WHERE dag.id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::not_found("DAG execution", id))?;
+        let status = parse_display_status(id, &row.display_status)?;
+        Ok((row.dag, status))
     }
 
     async fn get_dag_display_counts(&self) -> Result<DagDisplayCounts> {
@@ -1721,6 +1751,13 @@ mod tests {
             );
             assert_eq!(
                 repo.get_dag_display_status(&expected.id).await.unwrap(),
+                status
+            );
+            assert_eq!(
+                repo.get_dag_with_display_status(&expected.id)
+                    .await
+                    .unwrap()
+                    .1,
                 status
             );
         }

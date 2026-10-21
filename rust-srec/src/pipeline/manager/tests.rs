@@ -790,6 +790,13 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
+    async fn get_dag_with_display_status(
+        &self,
+        _id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn get_dag_display_counts(&self) -> Result<crate::database::models::DagDisplayCounts> {
         unimplemented!("not needed for these tests")
     }
@@ -1041,6 +1048,13 @@ impl DagRepository for TestDagRepository {
     }
 
     async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_with_display_status(
+        &self,
+        _id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
         unimplemented!("not needed for these tests")
     }
 

@@ -1669,6 +1669,16 @@ impl DagScheduler {
         self.dag_repository.get_dag_display_status(dag_id).await
     }
 
+    /// Get a DAG execution and its display status from one read.
+    pub async fn get_dag_with_display_status(
+        &self,
+        dag_id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
+        self.dag_repository
+            .get_dag_with_display_status(dag_id)
+            .await
+    }
+
     /// Count all DAG executions by display status.
     pub async fn get_dag_display_counts(
         &self,
