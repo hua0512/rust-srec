@@ -21,6 +21,7 @@
 - Fixed a stream that a platform lists without a quality name counting as a match for every entry in **Preferred Qualities**, so it could be recorded instead of the quality you chose.
 - Fixed a live room whose streams are all on CDNs in **Blacklisted CDNs** being recorded from one of them anyway. Such a room is now treated as offline and a warning is logged.
 - Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space.
+- Fixed Bigo rooms being shown as offline, and never recorded, when Bigo did not accept the request as signed in. Bigo now requires a logged-in session to report whether a room is live, so such checks now fail with a login-required error, and an account whose cookies stopped working is marked as needing a new login. Add an account with cookies from a browser logged in to Bigo. See [Bigo Live](../platforms/bigo.md).
 - Fixed a recording keeping its earlier title when the stream's title changed while the connection briefly dropped: the session page and the session's workflows used the earlier title, although the recording's new files were already named after the new one.
 
 ## Workflows and file processing

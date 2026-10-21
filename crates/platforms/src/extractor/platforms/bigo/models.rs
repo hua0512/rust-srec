@@ -57,6 +57,10 @@ pub struct StudioData {
     pub avatar: Option<String>,
     #[serde(rename = "passRoom", default)]
     pub pass_room: Option<bool>,
+    /// Set when the request carried no signed-in session; `alive` and
+    /// `roomId` then read as offline whatever the room is doing.
+    #[serde(rename = "needLogin", default)]
+    pub need_login: Option<bool>,
     #[serde(
         rename = "clientBigoId",
         default,

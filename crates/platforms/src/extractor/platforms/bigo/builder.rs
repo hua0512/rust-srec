@@ -127,6 +127,14 @@ impl Bigo {
         let artist_url = data.avatar.clone().filter(|s| !s.is_empty());
         let pass_room = data.pass_room.unwrap_or(false);
 
+        // The website stops playback on this flag before reading `alive`, so a
+        // missing or expired login must not be reported as an offline room.
+        if data.need_login == Some(true) {
+            return Err(ExtractorError::Authentication {
+                code: "need_login".to_string(),
+            });
+        }
+
         if !data.is_room_live() {
             if pass_room {
                 return Err(ExtractorError::PrivateContent);
