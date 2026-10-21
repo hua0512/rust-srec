@@ -1,0 +1,6 @@
+# The end-to-end binary bounds each wait itself, so a test still running after
+# two minutes is hung: it is killed then, and the run fails, instead of the CI
+# job stalling until its own timeout.
+[[profile.default.overrides]]
+filter = 'binary(e2e)'
+slow-timeout = { period = "30s", terminate-after = 4 }
