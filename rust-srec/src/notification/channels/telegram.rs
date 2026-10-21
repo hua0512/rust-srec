@@ -4,7 +4,10 @@
 //! Handles 429 rate limits by respecting the `parameters.retry_after` field
 //! returned in the JSON response body.
 
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -18,6 +21,22 @@ use crate::notification::events::{NotificationEvent, NotificationPriority, Rende
 /// Conservative text budget in UTF-16 units (Telegram entity offsets use this unit).
 const TELEGRAM_MESSAGE_LIMIT: usize = 4096;
 const TRUNCATION_SUFFIX: &str = "\n\n[truncated]";
+const TELEGRAM_API_BASE: &str = "https://api.telegram.org";
+
+/// Bot API origins that replace [`TELEGRAM_API_BASE`], by bot token.
+static API_BASE_OVERRIDES: RwLock<BTreeMap<String, String>> = RwLock::new(BTreeMap::new());
+
+/// Send the messages of the bot with `bot_token` to `api_base` (an origin such
+/// as `http://127.0.0.1:8080`) instead of the public Bot API, so end-to-end
+/// tests can point a channel at a local fake server. Keyed by token so tests
+/// sharing a process each keep their own server.
+#[doc(hidden)]
+pub fn override_telegram_api_base(bot_token: &str, api_base: &str) {
+    API_BASE_OVERRIDES.write().insert(
+        bot_token.to_owned(),
+        api_base.trim_end_matches('/').to_owned(),
+    );
+}
 
 /// Telegram channel configuration.
 #[derive(Clone, Serialize, Deserialize)]
@@ -162,16 +181,15 @@ impl TelegramChannel {
     }
 
     async fn send_with_retry(&self, payload: &serde_json::Value) -> Result<()> {
-        let request = self
-            .http
-            .request(
-                Method::POST,
-                &format!(
-                    "https://api.telegram.org/bot{}/sendMessage",
-                    self.config.bot_token
-                ),
-            )?
-            .json(payload);
+        let token = &self.config.bot_token;
+        let url = {
+            let overrides = API_BASE_OVERRIDES.read();
+            let api_base = overrides
+                .get(token)
+                .map_or(TELEGRAM_API_BASE, String::as_str);
+            format!("{api_base}/bot{token}/sendMessage")
+        };
+        let request = self.http.request(Method::POST, &url)?.json(payload);
         self.http.send(request, RetryPolicy::Telegram).await
     }
 }

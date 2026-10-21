@@ -32,3 +32,4 @@ mod smoke;
 mod sockets;
 mod stream_proxy;
 mod streamers;
+mod telegram;

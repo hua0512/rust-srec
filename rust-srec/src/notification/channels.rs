@@ -21,6 +21,8 @@ mod redaction_tests;
 pub use discord::{DiscordChannel, DiscordConfig};
 pub use email::{EmailChannel, EmailConfig};
 pub use gotify::{GotifyChannel, GotifyConfig};
+#[doc(hidden)]
+pub use telegram::override_telegram_api_base;
 pub use telegram::{TelegramChannel, TelegramConfig};
 pub use webhook::{WebhookAuth, WebhookChannel, WebhookConfig};
 
