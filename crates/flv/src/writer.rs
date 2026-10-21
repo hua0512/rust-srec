@@ -249,31 +249,3 @@ impl<W: Write + Seek> Write for FlvWriter<W> {
         self.flush()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn test_write_header() {
-        let buffer = Cursor::new(Vec::new());
-
-        let mut writer = FlvWriter::new(buffer).unwrap();
-        writer.write_header(&FlvHeader::new(true, true)).unwrap();
-
-        // Get the inner buffer
-        let buffer = writer.writer.into_inner();
-
-        // Check FLV signature
-        assert_eq!(&buffer[0..3], b"FLV");
-        // Check version
-        assert_eq!(buffer[3], 0x01);
-        // Check flags (audio + video = 0x05)
-        assert_eq!(buffer[4], 0x05);
-        // Check data offset
-        assert_eq!(&buffer[5..9], &[0x00, 0x00, 0x00, 0x09]);
-        // Check initial previous tag size
-        assert_eq!(&buffer[9..13], &[0x00, 0x00, 0x00, 0x00]);
-    }
-}

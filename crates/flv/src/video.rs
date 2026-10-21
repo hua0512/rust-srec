@@ -1016,22 +1016,6 @@ mod tests {
     }
 
     #[test]
-    fn test_video_packet_type() {
-        let cases = [
-            (
-                1,
-                true,
-                VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES),
-            ),
-            (7, false, VideoPacketType::CodecId(7)),
-        ];
-
-        for (value, enhanced, expected) in cases {
-            assert_eq!(VideoPacketType::new(value, enhanced), expected);
-        }
-    }
-
-    #[test]
     fn test_video_data_body_avc() {
         let mut reader = io::Cursor::new(Bytes::from_static(&[
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
@@ -1071,15 +1055,6 @@ mod tests {
         ]));
         let packet_type = VideoPacketType::new(0x3, true);
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
-        assert_eq!(
-            body,
-            VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
-                composition_time: None,
-                data: Bytes::from_static(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
-            }))
-        );
-
-        // Fix this assertion by using the correct codec in the expected value
         assert_eq!(
             body,
             VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {

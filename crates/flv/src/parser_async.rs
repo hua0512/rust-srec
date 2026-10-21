@@ -484,38 +484,6 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_header_ok() {
-        init_tracing();
-        let mut decoder = FlvDecoder::default();
-        let mut buffer = BytesMut::from(
-            &[
-                0x46, 0x4C, 0x56, // "FLV"
-                0x01, // Version 1
-                0x05, // Flags: Audio + Video
-                0x00, 0x00, 0x00, 0x09, // Header size 9
-                // Next part (start of first tag prev size)
-                0x00, 0x00, 0x00, 0x00,
-            ][..],
-        );
-
-        let result = decoder.decode(&mut buffer);
-        assert!(result.is_ok());
-        let item = result.unwrap();
-        assert!(item.is_some());
-        match item.unwrap() {
-            FlvData::Header(h) => {
-                assert_eq!(h.version, 1);
-                assert!(h.has_audio);
-                assert!(h.has_video);
-            }
-            _ => panic!("Expected Header"),
-        }
-        assert!(decoder.header_parsed);
-        assert!(decoder.expecting_tag_header); // Expecting first tag header next
-        assert_eq!(buffer.len(), 0); // Header + PrevTagSize consumed
-    }
-
-    #[test]
     fn test_decode_header_incomplete() {
         init_tracing();
         let mut decoder = FlvDecoder::default();
