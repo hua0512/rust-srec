@@ -227,10 +227,14 @@ export function SubscriptionManager({
       setSelectedEvents([]);
       return;
     }
-    if (adoptedChannelId.current === channel.id || !currentSubs) return;
+    if (adoptedChannelId.current === channel.id || !currentSubs || !eventTypes)
+      return;
     adoptedChannelId.current = channel.id;
-    setSelectedEvents(currentSubs);
-  }, [open, channel, currentSubs]);
+    // A stored subscription to an event the catalog no longer offers has no
+    // checkbox, so it is not counted as selected and saving drops it.
+    const offered = new Set(eventTypes.map((type) => type.event_type));
+    setSelectedEvents(currentSubs.filter((name) => offered.has(name)));
+  }, [open, channel, currentSubs, eventTypes]);
 
   const mutation = useMutation({
     mutationFn: (events: string[]) =>

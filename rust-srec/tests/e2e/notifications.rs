@@ -927,16 +927,15 @@ async fn subscriptions_to_a_retired_event_type_are_kept_without_breaking_the_cha
     )
     .await;
     let stored = ["config.updated", "config_updated", "stream_online"];
-    let database = app.database().await;
-    for event in stored {
-        sqlx::query("INSERT INTO notification_subscription (channel_id, event_name) VALUES (?, ?)")
-            .bind(&id)
-            .bind(event)
-            .execute(&database)
-            .await
-            .expect("store a subscription row");
-    }
-    database.close().await;
+    let rows: Vec<String> = stored
+        .iter()
+        .map(|event| format!("('{id}', '{event}')"))
+        .collect();
+    app.run_sql(&format!(
+        "INSERT INTO notification_subscription (channel_id, event_name) VALUES {}",
+        rows.join(", ")
+    ))
+    .await;
 
     let bundle = app
         .get("/api/config/backup/export", &token)

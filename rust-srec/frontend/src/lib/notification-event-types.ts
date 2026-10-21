@@ -10,8 +10,9 @@ import type { MessageDescriptor } from '@lingui/core';
  * environment variable, which is a property of the server rather than of whoever is reading the
  * page, so neither source can follow the language picked in the browser.
  *
- * Keys must stay in step with `NotificationEventTypeInfo::ALL` in
- * `rust-srec/src/notification/events.rs`; `eventTypeLabel` falls back for anything missing.
+ * Keys must stay in step with `NOTIFICATION_EVENT_TYPES` in
+ * `rust-srec/src/notification/events/catalog.rs`; `eventTypeLabel` falls back for anything
+ * missing.
  */
 const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   stream_online: msg`Stream online`,
