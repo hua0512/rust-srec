@@ -549,6 +549,60 @@ impl SessionLifecycleRepository {
         Ok(StateChange::row(None, committed_row))
     }
 
+    /// Append `title` to an active session's title list unless it is already
+    /// the latest entry. Returns whether a title was added.
+    ///
+    /// Used when a session resumes out of hysteresis: that path reuses the
+    /// session row without [`Self::start_or_resume`], which is where a reused
+    /// session's title list is otherwise kept current.
+    pub async fn add_session_title(
+        &self,
+        session_id: &str,
+        title: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool> {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            let id = session_id.to_owned();
+            let title = title.to_owned();
+            return store
+                .writer
+                .transaction(
+                    "session add_session_title",
+                    move |tx| {
+                        Box::pin(async move {
+                            Self::add_session_title_in_connection(tx, &id, &title, now).await
+                        })
+                    },
+                    |_| {},
+                )
+                .await;
+        }
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        let added = Self::add_session_title_in_connection(&mut tx, session_id, title, now).await?;
+        crate::database::committed_writer::prepare_owned_commit()?;
+        tx.commit().await?;
+        Ok(added)
+    }
+
+    async fn add_session_title_in_connection(
+        tx: &mut sqlx::SqliteConnection,
+        session_id: &str,
+        title: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool> {
+        let titles: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT titles FROM live_sessions WHERE id = ? AND end_time IS NULL",
+        )
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(titles) = titles else {
+            return Ok(false);
+        };
+        SessionTxOps::update_titles(tx, session_id, titles.as_deref(), title, now).await
+    }
+
     /// Resolve terminal events after the in-memory retention window expires.
     pub async fn is_session_active(&self, session_id: &str) -> Result<bool> {
         Ok(sqlx::query_scalar::<_, bool>(

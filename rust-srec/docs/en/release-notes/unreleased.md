@@ -20,6 +20,7 @@
 - Mesio's buffer size setting, now called **Read Buffer Size** on the FLV tab, takes effect for FLV recordings; it was previously ignored. Its default is now 64 KiB, the size FLV recordings have always used. Engines that still had the old 8 MiB default are switched to the new default when updating, so their recordings do not start using more memory.
 - Fixed a stream that a platform lists without a quality name counting as a match for every entry in **Preferred Qualities**, so it could be recorded instead of the quality you chose.
 - Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space.
+- Fixed a recording keeping its earlier title when the stream's title changed while the connection briefly dropped: the session page and the session's workflows used the earlier title, although the recording's new files were already named after the new one.
 
 ## Workflows and file processing
 

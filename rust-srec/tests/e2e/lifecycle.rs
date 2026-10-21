@@ -504,9 +504,10 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     app.shutdown().await;
 }
 
+/// A title first seen when a dropped connection resumes joins the session's
+/// title list, so the session is named by it from then on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "bug: a session resumed after a dropped connection keeps its old title list; the new title reaches only the file names and the session_started event"]
-async fn known_bug_a_title_seen_when_a_dropped_connection_resumes_is_added_to_the_session() {
+async fn a_title_seen_when_a_dropped_connection_resumes_is_added_to_the_session() {
     let fake = FakePlatform::start().await;
     let room = fake.room("retitled");
     room.set_live(room.live("First title"));
