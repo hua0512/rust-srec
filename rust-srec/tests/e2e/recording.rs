@@ -506,12 +506,15 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
         json!({ "max_part_size_bytes": 20_000 }),
     )
     .await;
+    // A name without time placeholders makes every part after the first
+    // collide, so its sequence suffix does not depend on the parts opening
+    // within one wall-clock second.
     let timed = watch(
         &app,
         &token,
         "Timed",
         &by_duration,
-        json!({ "max_download_duration_secs": 4 }),
+        json!({ "max_download_duration_secs": 4, "output_filename_template": "Timed" }),
     )
     .await;
 
@@ -553,6 +556,10 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
         "{timed_parts:?}"
     );
     // The later parts of one download are numbered after the first.
+    assert_eq!(
+        std::path::Path::new(segment_path(&timed_parts[0])).file_name(),
+        Some("Timed.flv".as_ref())
+    );
     let first = segment_path(&timed_parts[0]).trim_end_matches(".flv");
     assert_eq!(segment_path(&timed_parts[1]), format!("{first}-001.flv"));
     assert_eq!(segment_path(&timed_parts[2]), format!("{first}-002.flv"));
