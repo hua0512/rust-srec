@@ -110,15 +110,22 @@ fn stream_proxy_client(
 }
 
 /// Whether the stream proxy connects without a proxy, and so must resolve
-/// targets through `PublicAddressResolver` itself. A system route without a
-/// proxy variable connects directly too, and gets the same checks.
+/// targets through `PublicAddressResolver` itself.
+///
+/// A system route without a proxy variable connects directly too, and gets the
+/// same checks, except on Windows and macOS: there the HTTP client also reads
+/// the operating system's proxy settings, which `SystemProxy` cannot see, so the
+/// route keeps them.
 fn connects_directly(upstream_proxy: &ProxyTarget, system: &SystemProxy) -> bool {
     match upstream_proxy {
         ProxyTarget::Direct => true,
-        ProxyTarget::System => !system.detected(),
+        ProxyTarget::System => !OS_PROXY_SETTINGS && !system.detected(),
         ProxyTarget::Explicit(_) => false,
     }
 }
+
+/// Whether reqwest's system proxy lookup includes operating-system settings.
+const OS_PROXY_SETTINGS: bool = cfg!(any(target_os = "windows", target_os = "macos"));
 
 fn is_public_ipv4(address: Ipv4Addr) -> bool {
     let [a, b, c, _] = address.octets();
@@ -1820,7 +1827,10 @@ mod tests {
         let set = SystemProxy::from_lookup(|name| {
             (name == "HTTPS_PROXY").then(|| "http://proxy.example:3128".to_owned())
         });
-        assert!(connects_directly(&ProxyTarget::System, &none));
+        assert_eq!(
+            connects_directly(&ProxyTarget::System, &none),
+            !OS_PROXY_SETTINGS
+        );
         assert!(!connects_directly(&ProxyTarget::System, &set));
         assert!(connects_directly(&ProxyTarget::Direct, &set));
     }
