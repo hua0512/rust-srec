@@ -723,12 +723,15 @@ where
     }
 }
 
-/// A loopback address nothing listens on. The port stays bound, without
-/// listening, for the value's lifetime, so connections to it are refused and
-/// no other test can take it over meanwhile.
+/// A loopback address nothing listens on, so connections to it are refused.
+///
+/// The port stays bound, without listening, for the value's lifetime, so no
+/// other test can take it over meanwhile. Except on macOS: BSD stacks silently
+/// drop a SYN aimed at a bound but non-listening socket, so the connection would
+/// time out instead of being refused; there the port is released at once.
 pub struct ClosedPort {
     address: SocketAddr,
-    _socket: tokio::net::TcpSocket,
+    _socket: Option<tokio::net::TcpSocket>,
 }
 
 impl ClosedPort {
@@ -740,7 +743,7 @@ impl ClosedPort {
         let address = socket.local_addr().expect("the bound address");
         Self {
             address,
-            _socket: socket,
+            _socket: (!cfg!(target_os = "macos")).then_some(socket),
         }
     }
 

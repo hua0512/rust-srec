@@ -186,7 +186,9 @@ async fn an_invalid_global_patch_names_the_field_and_applies_nothing() {
         ("output_retention_days", json!(1.5)),
         ("max_concurrent_downloads", json!(0)),
         ("max_concurrent_uploads", json!("3")),
-        ("gpu_health_probe_interval_secs", json!(i64::MAX)),
+        // Out of range everywhere; whether i64::MAX seconds fit the timer
+        // depends on the host's Instant range.
+        ("gpu_health_probe_interval_secs", json!(u64::MAX)),
         ("record_danmu", json!("true")),
         ("output_folder", json!({"path": "/x"})),
     ] {
