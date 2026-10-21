@@ -884,8 +884,7 @@ async fn api_key_input_is_validated_and_expired_or_unknown_keys_fail() {
 }
 
 #[tokio::test]
-#[ignore = "bug: API key name limit counts UTF-8 bytes, so 34+ CJK characters are rejected"]
-async fn known_bug_api_key_name_limit_counts_characters() {
+async fn api_key_name_limit_counts_characters() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
@@ -904,8 +903,7 @@ async fn known_bug_api_key_name_limit_counts_characters() {
 }
 
 #[tokio::test]
-#[ignore = "bug: password minimum length counts UTF-8 bytes, so a 5-character CJK password passes"]
-async fn known_bug_password_minimum_length_counts_characters() {
+async fn password_minimum_length_counts_characters() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 

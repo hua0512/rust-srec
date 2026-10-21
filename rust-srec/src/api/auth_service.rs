@@ -688,7 +688,7 @@ impl AuthService {
 
     /// Validate password strength.
     pub fn validate_password_strength(&self, password: &str) -> Result<(), AuthError> {
-        if password.len() < self.config.min_password_length {
+        if password.chars().count() < self.config.min_password_length {
             return Err(AuthError::WeakPassword(format!(
                 "Password must be at least {} characters",
                 self.config.min_password_length

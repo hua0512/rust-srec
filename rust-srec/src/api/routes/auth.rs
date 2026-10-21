@@ -493,7 +493,7 @@ pub async fn create_api_key(
     if name.is_empty() {
         return Err(ApiError::bad_request("API key name must not be empty"));
     }
-    if name.len() > API_KEY_NAME_MAX_LEN {
+    if name.chars().count() > API_KEY_NAME_MAX_LEN {
         return Err(ApiError::bad_request(format!(
             "API key name must be at most {API_KEY_NAME_MAX_LEN} characters"
         )));
