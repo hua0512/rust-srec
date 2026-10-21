@@ -87,10 +87,8 @@ pub struct UpdateTemplateParams {
 pub struct UpdateEngineParams {
     /// Engine configuration ID (see engine_list)
     pub id: String,
-    /// Fields to update: optional "name" (string), "engine_type"
-    /// ("ffmpeg" | "streamlink" | "mesio"), and "config" (engine-specific
-    /// JSON object, same shape as returned by engine_get).
-    pub updates: serde_json::Value,
+    /// Fields to update; omitted fields are kept.
+    pub updates: UpdateEngineRequest,
 }
 
 #[tool_router(router = config_tools, vis = "pub(crate)")]
@@ -272,7 +270,7 @@ impl SrecMcpServer {
 
     #[tool(
         name = "engine_list",
-        description = "List download engine configurations (ffmpeg / streamlink / mesio) and their settings. Requires a full-access API key."
+        description = "List download engine configurations (FFMPEG / STREAMLINK / MESIO) and their settings. Requires a full-access API key."
     )]
     pub async fn engine_list(
         &self,
@@ -307,9 +305,7 @@ impl SrecMcpServer {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
-        let request: UpdateEngineRequest = serde_json::from_value(params.updates)
-            .map_err(|error| invalid_json_param("updates", error))?;
         let state = EngineRouteState::from_ref(&self.app_state);
-        tool_json(engines::update_engine(State(state), Path(params.id), Json(request)).await)
+        tool_json(engines::update_engine(State(state), Path(params.id), Json(params.updates)).await)
     }
 }

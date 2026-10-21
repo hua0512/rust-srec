@@ -55,10 +55,15 @@ pub struct CreateEngineRequest {
 }
 
 /// Request model for updating an engine configuration.
-#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+///
+/// Also the MCP `engine_update` input schema, so the engine types it
+/// advertises are the ones this endpoint deserializes.
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema, schemars::JsonSchema)]
 pub struct UpdateEngineRequest {
     pub name: Option<String>,
     pub engine_type: Option<EngineType>,
+    /// Engine-specific settings, same shape as the parsed `config` of a
+    /// listed engine.
     pub config: Option<serde_json::Value>,
 }
 
