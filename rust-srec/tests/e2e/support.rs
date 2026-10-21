@@ -11,6 +11,12 @@
 //! targets), never sleep for a fixed time (use [`eventually`]), keep every
 //! wait bounded, and write files only under [`TestApp::output_dir`].
 //!
+//! Scenarios that monitor or record streamers start the app with
+//! [`TestApp::start_with`] and a [`Seed`], which routes every platform but the
+//! offline [`FakePlatform`] to a proxy that refuses everything, and script the
+//! fake platform's rooms. They run on a multi-threaded runtime and shut the
+//! app down before the fake platform drops.
+//!
 //! The backend reads some settings from the process environment, and the
 //! scenarios assert the defaults: [`TestApp::start`] refuses to run when one
 //! of [`DEFAULT_ONLY_ENV`] is set, or when a proxy variable is exported
@@ -21,7 +27,7 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -36,6 +42,18 @@ use tokio::sync::OnceCell;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+mod fake_platform;
+mod http;
+mod media;
+mod seed;
+mod smtp;
+
+pub use fake_platform::{FakePlatform, FakeRoom};
+pub use http::{ClosedPort, ConnectRecorder, LocalHttpServer, ReceivedRequest};
+pub use media::FlvLoop;
+pub use seed::Seed;
+pub use smtp::SmtpFixture;
 
 pub const ADMIN_USERNAME: &str = "admin";
 /// Password of the admin account seeded by the initial migration.
@@ -140,6 +158,9 @@ pub struct TestApp {
     container: Arc<ServiceContainer>,
     admin: OnceCell<Tokens>,
     output_dir: PathBuf,
+    /// The proxy every route but the fake platform's ends at, for apps
+    /// started with [`TestApp::start_with`].
+    dead_end: Option<ConnectRecorder>,
     _data_dir: TempDir,
 }
 
@@ -219,6 +240,18 @@ impl TestApp {
     /// database on each request can be inserted after start with
     /// [`Self::run_sql`] or [`Self::database`] instead.
     pub async fn start_seeded(seed_sql: &str) -> Self {
+        Self::boot(seed_sql, None).await
+    }
+
+    /// Start a backend that monitors streamers, seeded with `seed` (see
+    /// [`Seed::live`]).
+    pub async fn start_with(seed: Seed) -> Self {
+        let dead_end = ConnectRecorder::start().await;
+        let sql = seed.sql(&dead_end);
+        Self::boot(&sql, Some(dead_end)).await
+    }
+
+    async fn boot(seed_sql: &str, dead_end: Option<ConnectRecorder>) -> Self {
         assert_default_environment();
         backend::install_rustls_provider();
         let data_dir = tempfile::tempdir().expect("create the test data directory");
@@ -302,6 +335,7 @@ impl TestApp {
             container,
             admin: OnceCell::new(),
             output_dir,
+            dead_end,
             _data_dir: data_dir,
         }
     }
@@ -317,6 +351,13 @@ impl TestApp {
 
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
+    }
+
+    /// The dead-end proxy of an app started with [`Self::start_with`].
+    pub fn dead_end(&self) -> &ConnectRecorder {
+        self.dead_end
+            .as_ref()
+            .expect("the app was started with a Seed")
     }
 
     /// A separate connection pool on the app's database, for seeding rows
@@ -524,6 +565,25 @@ impl TestApp {
         created
     }
 
+    /// Create an enabled streamer from `body` (its name, URL and any other
+    /// fields), so the scheduler starts checking its platform, and return it.
+    /// Only for apps started with [`Self::start_with`], whose platforms other
+    /// than the fake one reach only the dead-end proxy.
+    pub async fn create_enabled_streamer(&self, token: &str, mut body: Value) -> Value {
+        assert!(
+            self.dead_end.is_some(),
+            "monitor streamers only in an app started with a Seed"
+        );
+        body["enabled"] = json!(true);
+        let created = self
+            .post("/api/streamers", token, &body)
+            .await
+            .expect_status(StatusCode::CREATED)
+            .body;
+        assert_eq!(created["state"], "NOT_LIVE", "{created}");
+        created
+    }
+
     /// Make a cookie account the selection on `platform_id`, then disable it,
     /// so the platform's only account is unusable and a managed parse there
     /// fails before any request. Cookie-only platforms make no request to
@@ -720,149 +780,5 @@ where
             "timed out after {timeout:?} waiting for {what}"
         );
         tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-}
-
-/// A loopback address nothing listens on, so connections to it are refused.
-///
-/// The port stays bound, without listening, for the value's lifetime, so no
-/// other test can take it over meanwhile. Except on macOS: BSD stacks silently
-/// drop a SYN aimed at a bound but non-listening socket, so the connection would
-/// time out instead of being refused; there the port is released at once.
-pub struct ClosedPort {
-    address: SocketAddr,
-    _socket: Option<tokio::net::TcpSocket>,
-}
-
-impl ClosedPort {
-    pub fn reserve() -> Self {
-        let socket = tokio::net::TcpSocket::new_v4().expect("create a socket");
-        socket
-            .bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-            .expect("bind a loopback port");
-        let address = socket.local_addr().expect("the bound address");
-        Self {
-            address,
-            _socket: (!cfg!(target_os = "macos")).then_some(socket),
-        }
-    }
-
-    pub fn url(&self, path: &str) -> String {
-        format!("http://{}{}", self.address, path)
-    }
-}
-
-/// A request received by [`LocalHttpServer`].
-#[derive(Debug, Clone)]
-pub struct ReceivedRequest {
-    pub method: String,
-    /// The request target as sent: a path and query, or an absolute URL for
-    /// a forward-proxy request.
-    pub path: String,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
-
-impl ReceivedRequest {
-    /// A header's value, by case-insensitive name.
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-    }
-}
-
-/// A loopback HTTP server that records every request. Use it as the outbound
-/// target for webhooks and similar integrations so tests never leave the
-/// machine.
-pub struct LocalHttpServer {
-    address: SocketAddr,
-    received: Arc<Mutex<Vec<ReceivedRequest>>>,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl LocalHttpServer {
-    /// Answer every request with `status` and `reply`.
-    pub async fn start(status: u16, reply: &'static str) -> Self {
-        use axum::response::IntoResponse;
-
-        let status = axum::http::StatusCode::from_u16(status).expect("valid status");
-        Self::start_with(move |_, _| (status, reply).into_response()).await
-    }
-
-    /// Answer each request with `reply(address, request)`, where `address`
-    /// is this server's own, for replies that link back to it.
-    pub async fn start_with<F>(reply: F) -> Self
-    where
-        F: Fn(SocketAddr, &ReceivedRequest) -> axum::response::Response + Send + Sync + 'static,
-    {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind the local HTTP server");
-        let address = listener.local_addr().expect("local HTTP server address");
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let recorder = received.clone();
-        let reply = Arc::new(reply);
-        let handler = move |request: axum::extract::Request| {
-            let recorder = recorder.clone();
-            let reply = reply.clone();
-            async move {
-                let (parts, body) = request.into_parts();
-                let body = axum::body::to_bytes(body, 16 * 1024 * 1024)
-                    .await
-                    .map(|bytes| bytes.to_vec())
-                    .unwrap_or_default();
-                let headers = parts
-                    .headers
-                    .iter()
-                    .map(|(name, value)| {
-                        (
-                            name.as_str().to_string(),
-                            value.to_str().unwrap_or_default().to_string(),
-                        )
-                    })
-                    .collect();
-                let request = ReceivedRequest {
-                    method: parts.method.to_string(),
-                    path: parts.uri.to_string(),
-                    headers,
-                    body,
-                };
-                let response = reply(address, &request);
-                recorder.lock().expect("request log lock").push(request);
-                response
-            }
-        };
-        let app = axum::Router::new().fallback(handler);
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("serve the local HTTP server");
-        });
-        Self {
-            address,
-            received,
-            task,
-        }
-    }
-
-    pub fn address(&self) -> SocketAddr {
-        self.address
-    }
-
-    pub fn url(&self, path: &str) -> String {
-        format!("http://{}{}", self.address, path)
-    }
-
-    /// Requests received so far.
-    pub fn received(&self) -> Vec<ReceivedRequest> {
-        self.received.lock().expect("request log lock").clone()
-    }
-}
-
-impl Drop for LocalHttpServer {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }

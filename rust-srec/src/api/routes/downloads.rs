@@ -1048,65 +1048,19 @@ mod tests {
     }
 
     /// The frontend dispatches on `event_type`, then reads the payload's
-    /// string codes and proto3 defaults.
+    /// string codes and proto3 defaults. The frames of a recording that
+    /// succeeds (meta, metrics, segment, completion) are pinned by
+    /// `tests/e2e/sockets.rs`.
     #[test]
     fn download_events_map_to_the_frames_the_frontend_decodes() {
-        use crate::downloader::engine::{DownloadProgress, DownloadStatus, EngineType};
+        use crate::downloader::engine::EngineType;
 
         let decode = |event: DownloadManagerEvent, event_type: EventType| {
             let message = map_event_to_protobuf(&event).expect("event is broadcast");
             assert_eq!(message.event_type, event_type as i32, "{event:?}");
             message.payload.expect("payload")
         };
-        let Payload::DownloadMeta(meta) = decode(
-            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                engine_type: EngineType::Ffmpeg,
-                cdn_host: "cdn.example.com".to_string(),
-                download_url: "https://cdn.example.com/live.flv".to_string(),
-            }),
-            EventType::DownloadMeta,
-        ) else {
-            panic!("expected meta");
-        };
-        assert_eq!(
-            (
-                meta.download_id.as_str(),
-                meta.session_id.as_str(),
-                meta.engine_type.as_str()
-            ),
-            ("dl-1", "session-1", "ffmpeg")
-        );
-
-        let Payload::DownloadMetrics(metrics) = decode(
-            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                status: DownloadStatus::Downloading,
-                progress: DownloadProgress {
-                    bytes_downloaded: 1_024,
-                    segments_completed: 5,
-                    ..Default::default()
-                },
-            }),
-            EventType::DownloadMetrics,
-        ) else {
-            panic!("expected metrics");
-        };
-        assert_eq!(
-            (
-                metrics.status.as_str(),
-                metrics.bytes_downloaded,
-                metrics.segments_completed
-            ),
-            ("downloading", 1_024, 5)
-        );
-
+        // A segment whose start the engine did not report reads as 0.
         let Payload::SegmentCompleted(segment) = decode(
             DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 download_id: "dl-1".into(),
@@ -1126,38 +1080,7 @@ mod tests {
         ) else {
             panic!("expected segment");
         };
-        assert_eq!(
-            (
-                segment.segment_index,
-                segment.size_bytes,
-                segment.split_reason.as_str(),
-                segment.started_at_ms
-            ),
-            (5, 1_024_000, "", 0)
-        );
-        assert!(segment.completed_at_ms > 0);
-
-        let Payload::DownloadCompleted(completed) = decode(
-            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                total_bytes: 10_240_000,
-                total_duration_secs: 3_600.0,
-                total_segments: 360,
-                file_path: None,
-                engine_signal: crate::downloader::EngineEndSignal::Unknown,
-                stop_cause: None,
-            }),
-            EventType::DownloadCompleted,
-        ) else {
-            panic!("expected completed");
-        };
-        assert_eq!(
-            (completed.total_bytes, completed.total_segments),
-            (10_240_000, 360)
-        );
+        assert_eq!(segment.started_at_ms, 0);
 
         let Payload::DownloadFailed(failed) = decode(
             DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {

@@ -4,7 +4,7 @@
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{Response, TestApp, WAIT};
+use crate::support::{FakePlatform, Response, Seed, TestApp, WAIT};
 
 /// The caching and referrer headers every parse answer carries.
 #[track_caller]
@@ -245,6 +245,78 @@ async fn baidupcs_tools_validate_login_material_and_report_a_missing_binary() {
             .await;
         refused.assert_error(StatusCode::FORBIDDEN, "API_KEY_READ_ONLY");
     }
+
+    app.shutdown().await;
+}
+
+#[tokio::test]
+async fn parse_returns_streams_for_a_live_room() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("parsed");
+    let backup = format!("{}/backup.flv", room.url());
+    room.set_live(
+        room.live("Parsed show")
+            .category("Music")
+            .viewers(7)
+            .header("Referer", "https://fake.invalid/")
+            .stream(json!({
+                "url": backup, "format": "flv", "media": "flv", "quality": "backup",
+                "bitrate": 8_000, "priority": 1, "extras": { "headers": { "X-Edge": "b" } },
+            })),
+    );
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+
+    let parsed = app
+        .post("/api/parse", &token, &json!({ "url": room.url() }))
+        .await
+        .expect_status(StatusCode::OK);
+    assert_private(&parsed);
+    // An unmanaged parse returns the media itself, not a playback handle.
+    assert!(parsed.body.get("playback").is_none(), "{}", parsed.text);
+    let stream = |url: &str, quality: &str, bitrate: u64, priority: u32, extras: Value| {
+        json!({
+            "url": url, "stream_format": "flv", "media_format": "flv", "quality": quality,
+            "bitrate": bitrate, "priority": priority, "extras": extras, "codec": "", "fps": 0.0,
+            "is_audio_only": false, "is_headers_needed": false,
+        })
+    };
+    assert_eq!(
+        parsed.body,
+        json!({
+            "success": true,
+            "is_live": true,
+            "error": null,
+            "media_info": {
+                "site_url": room.url(),
+                "title": "Parsed show",
+                "artist": "parsed",
+                "artist_url": null,
+                "cover_url": null,
+                "category": ["Music"],
+                "is_live": true,
+                "live_start_time": null,
+                "headers": { "Referer": "https://fake.invalid/" },
+                "extras": { "viewer_count": "7" },
+                "streams": [
+                    stream(&room.flv_url(), "origin", 16_000, 0, Value::Null),
+                    stream(&backup, "backup", 8_000, 1, json!({ "headers": { "X-Edge": "b" } })),
+                ],
+            },
+        })
+    );
+
+    // The platform's own route (direct) carried the request with the
+    // platform's headers; the dead-end global route saw nothing.
+    let requests = fake.requests_to(&room, "status");
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert!(
+        requests[0]
+            .header("user-agent")
+            .is_some_and(|agent| agent.starts_with("Mozilla/5.0")),
+        "{requests:?}"
+    );
+    assert_eq!(app.dead_end().attempts(), []);
 
     app.shutdown().await;
 }

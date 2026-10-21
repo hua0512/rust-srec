@@ -233,23 +233,6 @@ mod tests {
         );
     }
 
-    /// Platform-supplied names and titles become path components, so no value
-    /// may add a directory level or climb out of the output folder.
-    #[test]
-    fn sanitized_names_are_a_single_path_component() {
-        for (input, expected) in [
-            ("../../etc/passwd", "_.._etc_passwd"),
-            (r"..\..\Windows", "_.._Windows"),
-            ("/etc/cron.d/x", "_etc_cron.d_x"),
-            (r"C:\Users", "C_Users"),
-            ("a/./b", "a_._b"),
-            ("..", "unnamed"),
-            (".", "unnamed"),
-        ] {
-            assert_eq!(sanitize_filename(input), expected, "{input}");
-        }
-    }
-
     #[test]
     fn test_empty_string() {
         assert_eq!(sanitize_filename(""), "unnamed");

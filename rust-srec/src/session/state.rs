@@ -359,7 +359,8 @@ mod tests {
 
     /// Every cause that leaves recorded output runs the post-recording
     /// pipeline; a rejected start recorded nothing and a cancellation is not
-    /// an end.
+    /// an end. The offline and user-disabled ends are pinned by the recording
+    /// scenarios in `tests/e2e/recording.rs`.
     #[test]
     fn session_complete_pipeline_runs_unless_rejected_or_cancelled() {
         let cases = [
@@ -370,14 +371,12 @@ mod tests {
                 },
                 true,
             ),
-            (TerminalCause::StreamerOffline, true),
             (
                 TerminalCause::DefinitiveOffline {
                     signal: OfflineSignal::ConsecutiveFailures(2),
                 },
                 true,
             ),
-            (TerminalCause::UserDisabled, true),
             (TerminalCause::OutOfSchedule, true),
             (
                 TerminalCause::Rejected {

@@ -40,6 +40,7 @@ Rules:
 - Remove a test only when its behavior stays pinned by an E2E test or by a kept unit test. Never weaken or delete E2E tests to make a change pass.
 - E2E reliability:
   - Never reach the public network: create streamers with `enabled: false`; use `LocalHttpServer` or `ClosedPort` for outbound targets; use IP literals, not DNS names.
+  - Monitoring and recording scenarios enable streamers only in an app started with `TestApp::start_with(Seed::live())`, which routes every platform but the offline `support::FakePlatform` to a proxy that refuses everything. They use `#[tokio::test(flavor = "multi_thread", worker_threads = 2)]` and shut the app down before the fake platform drops.
   - Never sleep for a fixed time: use `eventually` with `WAIT`.
   - Each test starts its own `TestApp` and ends with `shutdown()`.
   - Don't mutate the process environment. The suite relies on nextest's process-per-test model.

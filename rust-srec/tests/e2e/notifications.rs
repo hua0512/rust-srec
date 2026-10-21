@@ -6,8 +6,9 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    ADMIN_PASSWORD, ADMIN_USERNAME, LocalHttpServer, ReceivedRequest, Response, TestApp, WAIT,
-    assert_recent, eventually, id_of, millis, now_ms, sorted_keys,
+    ADMIN_PASSWORD, ADMIN_USERNAME, FakePlatform, FlvLoop, LocalHttpServer, ReceivedRequest,
+    Response, Seed, SmtpFixture, TestApp, WAIT, assert_recent, eventually, id_of, millis, now_ms,
+    sorted_keys,
 };
 
 /// `SystemStartup` rendered for the test button, whose event carries version `test`.
@@ -1292,6 +1293,134 @@ async fn web_push_routes_report_service_unavailable_without_vapid_keys() {
         );
         assert_eq!(response.error_code(), Some("SERVICE_UNAVAILABLE"), "{path}");
     }
+
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stream_online_and_offline_notifications_reach_a_webhook() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("notify");
+    room.set_live(room.live("Notify me").category("Games"));
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    // StreamOffline is a low-priority event, below the default minimum.
+    let channel = create_channel(
+        &app,
+        &token,
+        "Live alerts",
+        "Webhook",
+        json!({ "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 }),
+    )
+    .await;
+    app.put(
+        &format!("/api/notifications/channels/{channel}/subscriptions"),
+        &token,
+        &json!({ "events": ["stream_online", "stream_offline"] }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    let id = id_of(
+        &app.create_enabled_streamer(&token, json!({ "name": "Notified", "url": room.url() }))
+            .await,
+    );
+
+    room.wait_for_media_connection(1).await;
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+    let received = eventually(WAIT, "the online and offline webhooks", || async {
+        let received = receiver.received();
+        (received.len() >= 2).then_some(received)
+    })
+    .await;
+    let bodies: Vec<Value> = received.iter().map(json_body).collect();
+    assert_eq!(bodies.len(), 2, "{bodies:?}");
+
+    let online = &bodies[0];
+    assert_eq!(online["event_type"], "stream_online", "{online}");
+    assert_eq!(online["streamer_id"], id.as_str());
+    assert_eq!(online["title"], "🔴 Notified is now live!");
+    assert_eq!(online["priority_label"], "normal");
+    assert_eq!(online["data"]["StreamOnline"]["streamer_name"], "Notified");
+    assert_eq!(online["data"]["StreamOnline"]["title"], "Notify me");
+    assert_eq!(online["data"]["StreamOnline"]["category"], "Games");
+    assert_recent(millis(&online["timestamp"]));
+
+    let offline = &bodies[1];
+    assert_eq!(offline["event_type"], "stream_offline", "{offline}");
+    assert_eq!(offline["streamer_id"], id.as_str());
+    assert_eq!(offline["priority_label"], "low");
+    assert_eq!(
+        offline["data"]["StreamOffline"]["streamer_name"],
+        "Notified"
+    );
+    assert!(millis(&offline["timestamp"]) >= millis(&online["timestamp"]));
+    for request in &received {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/hook");
+    }
+    assert_eq!(app.dead_end().attempts(), []);
+
+    app.shutdown().await;
+}
+
+#[tokio::test]
+async fn email_test_send_delivers_through_a_local_smtp_server() {
+    let smtp = SmtpFixture::start().await;
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let id = create_channel(
+        &app,
+        &token,
+        "Mail",
+        "Email",
+        json!({
+            "smtp_host": "127.0.0.1",
+            "smtp_port": smtp.port(),
+            "username": "",
+            "password": "",
+            "from_address": "srec@example.com",
+            "to_addresses": ["ops@example.com", "dev@example.com"],
+            "use_tls": false,
+            "min_priority": 5,
+            "locale": "en",
+        }),
+    )
+    .await;
+    test_send(&app, &token, &id)
+        .await
+        .expect_status(StatusCode::OK);
+
+    let messages = smtp.messages();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    let message = &messages[0];
+    assert_eq!(message.from, "<srec@example.com>");
+    assert_eq!(message.to, ["<ops@example.com>", "<dev@example.com>"]);
+    let headers = message.data.split("\r\n\r\n").next().unwrap_or_default();
+    for header in [
+        "From: srec@example.com",
+        "To: ops@example.com, dev@example.com",
+        "Content-Type: multipart/alternative;",
+    ] {
+        assert!(headers.contains(header), "{header} missing in {headers}");
+    }
+    // The subject's emoji is an encoded word; the rest stays readable.
+    assert!(
+        headers
+            .lines()
+            .any(|line| line.starts_with("Subject: [rust-srec] ")
+                && line.ends_with(" System started (vtest)")),
+        "{headers}"
+    );
+    assert!(
+        message
+            .data
+            .contains("System initialized successfully (vtest)"),
+        "{}",
+        message.data
+    );
 
     app.shutdown().await;
 }
