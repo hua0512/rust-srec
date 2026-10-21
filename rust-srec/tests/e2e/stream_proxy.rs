@@ -5,15 +5,13 @@
 //! without a lookup, so nothing here depends on DNS or the public network.
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 
-use axum::extract::Request;
-use axum::http::{HeaderMap, header};
+use axum::http::header;
 use axum::response::{IntoResponse, Response as UpstreamResponse};
 use reqwest::{Method, StatusCode};
 use serde_json::{Map, Value, json};
 
-use crate::support::{ClosedPort, Response, TestApp, with_query};
+use crate::support::{ClosedPort, LocalHttpServer, ReceivedRequest, Response, TestApp, with_query};
 
 /// A public source URL for requests whose target checks are under test. It
 /// only selects the outbound route and is never fetched.
@@ -29,77 +27,11 @@ const MANIFEST: &str = concat!(
     "#EXT-X-ENDLIST\n",
 );
 
-/// A request the upstream fixture received.
-struct UpstreamRequest {
-    path: String,
-    headers: HeaderMap,
-}
-
-/// A loopback media origin: an HLS manifest and segment, a Range-aware media
-/// file that sets a cookie, redirect chains, and redirects to targets the
-/// proxy must refuse. It records every request it receives.
-struct Upstream {
-    address: SocketAddr,
-    requests: Arc<Mutex<Vec<UpstreamRequest>>>,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl Upstream {
-    async fn start() -> Self {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind the upstream fixture");
-        let address = listener.local_addr().expect("upstream fixture address");
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let recorder = requests.clone();
-        let app = axum::Router::new().fallback(move |request: Request| {
-            let recorder = recorder.clone();
-            async move {
-                let reply = upstream_reply(address, &request);
-                recorder
-                    .lock()
-                    .expect("upstream request log lock")
-                    .push(UpstreamRequest {
-                        path: request.uri().to_string(),
-                        headers: request.headers().clone(),
-                    });
-                reply
-            }
-        });
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app)
-                .await
-                .expect("serve the upstream fixture");
-        });
-        Self {
-            address,
-            requests,
-            task,
-        }
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("http://{}{}", self.address, path)
-    }
-
-    fn paths(&self) -> Vec<String> {
-        self.requests
-            .lock()
-            .expect("upstream request log lock")
-            .iter()
-            .map(|request| request.path.clone())
-            .collect()
-    }
-}
-
-impl Drop for Upstream {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-fn upstream_reply(address: SocketAddr, request: &Request) -> UpstreamResponse {
-    let path = request.uri().path();
+/// A loopback media origin for [`LocalHttpServer::start_with`]: an HLS
+/// manifest and segment, a Range-aware media file that sets a cookie,
+/// redirect chains, and redirects to targets the proxy must refuse.
+fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamResponse {
+    let path = request.path.split('?').next().unwrap_or_default();
     if let Some(remaining) = path.strip_prefix("/hops/") {
         let remaining: u32 = remaining.parse().expect("numeric hop count");
         if remaining == 0 {
@@ -127,7 +59,7 @@ fn upstream_reply(address: SocketAddr, request: &Request) -> UpstreamResponse {
                 (header::ACCEPT_RANGES, "bytes"),
                 (header::SET_COOKIE, "tracking=upstream-secret"),
             ];
-            if request.headers().contains_key(header::RANGE) {
+            if request.header("range").is_some() {
                 (
                     StatusCode::PARTIAL_CONTENT,
                     common,
@@ -154,6 +86,15 @@ fn upstream_reply(address: SocketAddr, request: &Request) -> UpstreamResponse {
             .into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// The targets of the requests `upstream` received, in order.
+fn paths(upstream: &LocalHttpServer) -> Vec<String> {
+    upstream
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect()
 }
 
 fn proxy_path(pairs: &[(&str, &str)]) -> String {
@@ -335,7 +276,7 @@ async fn known_bug_private_ipv6_literals_are_refused_as_disallowed_hosts() {
 async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay_proxied() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let upstream = Upstream::start().await;
+    let upstream = LocalHttpServer::start_with(upstream_reply).await;
     let manifest_url = upstream.url("/live/index.m3u8");
     let manifest_path = proxy_path(&[("url", &manifest_url), ("token", &token)]);
 
@@ -346,7 +287,7 @@ async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay
         "BAD_REQUEST",
         "Target host is not allowed",
     );
-    assert!(upstream.paths().is_empty(), "refused before connecting");
+    assert!(paths(&upstream).is_empty(), "refused before connecting");
 
     allow_private_targets(&app, &token, true).await;
     let response = app
@@ -401,7 +342,7 @@ async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay
     .await
     .expect_status(StatusCode::OK);
     assert_eq!(segment.text, "segment-one");
-    assert_eq!(upstream.paths(), ["/live/index.m3u8", "/live/seg-1.ts"]);
+    assert_eq!(paths(&upstream), ["/live/index.m3u8", "/live/seg-1.ts"]);
 
     allow_private_targets(&app, &token, false).await;
     assert_rejected(
@@ -410,7 +351,7 @@ async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay
         "BAD_REQUEST",
         "Target host is not allowed",
     );
-    assert_eq!(upstream.paths().len(), 2, "refused again without a restart");
+    assert_eq!(paths(&upstream).len(), 2, "refused again without a restart");
 
     app.shutdown().await;
 }
@@ -419,12 +360,12 @@ async fn allowing_private_targets_applies_to_the_next_request_and_manifests_stay
 async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let upstream = Upstream::start().await;
+    let upstream = LocalHttpServer::start_with(upstream_reply).await;
     allow_private_targets(&app, &token, true).await;
     let proxied = |path: &str| proxy_path(&[("url", &upstream.url(path)), ("token", &token)]);
 
     // Allowing private targets relaxes only the address check.
-    let credentialed = format!("http://user:secret@{}/media", upstream.address);
+    let credentialed = format!("http://user:secret@{}/media", upstream.address());
     assert_rejected(
         &fetch(
             &app,
@@ -439,7 +380,7 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
         "BAD_REQUEST",
         "URL credentials are not allowed",
     );
-    assert!(upstream.paths().is_empty());
+    assert!(paths(&upstream).is_empty());
 
     let followed = fetch(&app, &proxied("/hops/5"))
         .await
@@ -447,7 +388,7 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
     assert_eq!(followed.text, "landed");
     let hops = |from: u32, to: u32| (to..=from).rev().map(|n| format!("/hops/{n}"));
     assert_eq!(
-        upstream.paths(),
+        paths(&upstream),
         hops(5, 0).collect::<Vec<_>>(),
         "the request and five redirects"
     );
@@ -459,7 +400,7 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
         "Too many upstream redirects",
     );
     assert_eq!(
-        upstream.paths()[6..],
+        paths(&upstream)[6..],
         hops(6, 1).collect::<Vec<_>>(),
         "the sixth redirect is not followed"
     );
@@ -477,7 +418,7 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
         "URL credentials are not allowed",
     );
     assert!(
-        !upstream.paths().contains(&"/media".to_string()),
+        !paths(&upstream).contains(&"/media".to_string()),
         "a refused redirect target is never fetched"
     );
 
@@ -501,7 +442,7 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
 async fn relay_forwards_only_safe_headers_and_passes_ranges_through() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let upstream = Upstream::start().await;
+    let upstream = LocalHttpServer::start_with(upstream_reply).await;
     allow_private_targets(&app, &token, true).await;
     let media_url = upstream.url("/media");
 
@@ -544,33 +485,37 @@ async fn relay_forwards_only_safe_headers_and_passes_ranges_through() {
     );
     assert_eq!(TestApp::read(response).await.text, "ab");
 
-    let received = {
-        let requests = upstream.requests.lock().expect("upstream request log lock");
-        assert_eq!(requests.len(), 1);
-        requests[0].headers.clone()
-    };
-    assert_eq!(received[header::REFERER], "https://live.example/room");
-    assert_eq!(received[header::USER_AGENT], "TestPlayer/1.0");
+    let requests = upstream.received();
+    assert_eq!(requests.len(), 1);
+    let received = &requests[0];
+    assert_eq!(
+        received.header("referer"),
+        Some("https://live.example/room")
+    );
+    assert_eq!(received.header("user-agent"), Some("TestPlayer/1.0"));
     // Only the custom cookie: the caller's own cookie and bearer token stay
     // with the backend.
-    assert_eq!(received[header::COOKIE], "cdn=1");
-    assert_eq!(received[header::RANGE], "bytes=0-1");
+    assert_eq!(received.header("cookie"), Some("cdn=1"));
+    assert_eq!(received.header("range"), Some("bytes=0-1"));
     assert_eq!(
-        received[header::HOST],
-        upstream.address.to_string().as_str()
+        received.header("host"),
+        Some(upstream.address().to_string().as_str())
     );
     for dropped in [
-        header::AUTHORIZATION,
-        header::PROXY_AUTHORIZATION,
-        header::CONNECTION,
-        header::TRANSFER_ENCODING,
-        header::TE,
-        header::TRAILER,
-        header::UPGRADE,
+        "authorization",
+        "proxy-authorization",
+        "connection",
+        "keep-alive",
+        "transfer-encoding",
+        "te",
+        "trailer",
+        "upgrade",
     ] {
-        assert!(received.get(&dropped).is_none(), "{dropped} was forwarded");
+        assert!(
+            received.header(dropped).is_none(),
+            "{dropped} was forwarded"
+        );
     }
-    assert!(received.get("keep-alive").is_none());
 
     let too_many: Map<String, Value> = (0..65)
         .map(|index| (format!("X-Header-{index}"), Value::from("1")))
@@ -587,7 +532,7 @@ async fn relay_forwards_only_safe_headers_and_passes_ranges_through() {
         "BAD_REQUEST",
         "Too many custom headers",
     );
-    assert_eq!(upstream.paths().len(), 1);
+    assert_eq!(paths(&upstream).len(), 1);
 
     app.shutdown().await;
 }
@@ -596,7 +541,7 @@ async fn relay_forwards_only_safe_headers_and_passes_ranges_through() {
 async fn relay_accepts_low_latency_hls_hints_and_rejects_unknown_parameters() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let upstream = Upstream::start().await;
+    let upstream = LocalHttpServer::start_with(upstream_reply).await;
     allow_private_targets(&app, &token, true).await;
     let media_url = upstream.url("/media");
 
@@ -612,7 +557,7 @@ async fn relay_accepts_low_latency_hls_hints_and_rejects_unknown_parameters() {
         assert_eq!(response.text, "abc");
     }
     // The hints address the proxy, not the origin.
-    assert_eq!(upstream.paths(), ["/media", "/media"]);
+    assert_eq!(paths(&upstream), ["/media", "/media"]);
 
     for invalid in [
         ("_HLS_skip", "foo"),
@@ -628,7 +573,7 @@ async fn relay_accepts_low_latency_hls_hints_and_rejects_unknown_parameters() {
             "{invalid:?}"
         );
     }
-    assert_eq!(upstream.paths().len(), 2);
+    assert_eq!(paths(&upstream).len(), 2);
 
     app.shutdown().await;
 }

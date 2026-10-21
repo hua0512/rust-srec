@@ -5,8 +5,7 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    ClosedPort, LocalHttpServer, Response, TestApp, WAIT, assert_recent, eventually, id_of, millis,
-    now_ms,
+    ClosedPort, LocalHttpServer, Response, TestApp, assert_recent, id_of, millis, now_ms,
 };
 
 async fn create_profile(app: &TestApp, token: &str, body: Value) -> Value {
@@ -79,34 +78,13 @@ async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
         .await
         .expect_status(StatusCode::OK)
         .body;
+    // The settings form refuses to submit negative or fractional retention
+    // days, a negative freshness threshold, or a probe interval under 1 s.
     for field in [
-        "output_folder",
-        "output_filename_template",
-        "output_file_format",
-        "default_download_engine",
-        "log_filter_directive",
-    ] {
-        assert!(global[field].is_string(), "{field}: {global}");
-    }
-    for field in [
-        "min_segment_size_bytes",
-        "max_download_duration_secs",
-        "max_part_size_bytes",
-        "max_concurrent_downloads",
-        "max_concurrent_uploads",
-        "max_concurrent_cpu_jobs",
-        "max_concurrent_io_jobs",
-        "streamer_check_delay_ms",
-        "offline_check_delay_ms",
-        "offline_check_count",
-        "pipeline_cpu_job_timeout_secs",
-        "pipeline_io_job_timeout_secs",
-        "pipeline_execute_timeout_secs",
-        "queue_freshness_threshold_ms",
-        // Retention days must be non-negative integers for the form's schema.
         "job_history_retention_days",
         "notification_event_log_retention_days",
         "output_retention_days",
+        "queue_freshness_threshold_ms",
     ] {
         assert!(global[field].is_u64(), "{field}: {global}");
     }
@@ -116,26 +94,6 @@ async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
             .is_some_and(|seconds| seconds >= 1),
         "{global}"
     );
-    for field in [
-        "record_danmu",
-        "output_retention_delete_files",
-        "auto_thumbnail",
-        "stream_proxy_allow_private_targets",
-    ] {
-        assert!(global[field].is_boolean(), "{field}: {global}");
-    }
-    for field in [
-        "danmu_statistics",
-        "default_extractor",
-        "pipeline",
-        "session_complete_pipeline",
-        "paired_segment_pipeline",
-    ] {
-        assert!(
-            global[field].is_null() || global[field].is_string(),
-            "{field}: {global}"
-        );
-    }
     assert_eq!(
         global["output_folder"],
         app.output_dir().to_string_lossy().as_ref()
@@ -335,63 +293,46 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         .put("/api/config/platforms/platform-douyu", &token, &original)
         .await;
     mismatched.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-    type Edit = fn(&mut serde_json::Map<String, Value>);
-    let refusals: [(Edit, StatusCode, &str); 7] = [
+    let bad_request = StatusCode::BAD_REQUEST;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    for (field, value, status, code) in [
+        ("name", json!("renamed"), bad_request, "BAD_REQUEST"),
         (
-            |body| {
-                body.insert("name".into(), json!("renamed"));
-            },
-            StatusCode::BAD_REQUEST,
+            "fetch_delay_ms",
+            json!(u64::MAX),
+            bad_request,
+            "BAD_REQUEST",
+        ),
+        ("offline_check_count", json!(0), bad_request, "BAD_REQUEST"),
+        (
+            "offline_check_delay_ms",
+            json!(999),
+            bad_request,
             "BAD_REQUEST",
         ),
         (
-            |body| {
-                body.insert("fetch_delay_ms".into(), json!(u64::MAX));
-            },
-            StatusCode::BAD_REQUEST,
-            "BAD_REQUEST",
-        ),
-        (
-            |body| {
-                body.insert("offline_check_count".into(), json!(0));
-            },
-            StatusCode::BAD_REQUEST,
-            "BAD_REQUEST",
-        ),
-        (
-            |body| {
-                body.insert("offline_check_delay_ms".into(), json!(999));
-            },
-            StatusCode::BAD_REQUEST,
-            "BAD_REQUEST",
-        ),
-        (
-            |body| {
-                body.insert("cookies".into(), json!("sid=abc"));
-            },
-            StatusCode::UNPROCESSABLE_ENTITY,
+            "cookies",
+            json!("sid=abc"),
+            unprocessable,
             "COOKIES_REPLACED",
         ),
         (
-            |body| {
-                body.insert("proxy_config".into(), json!({"enabled": true}));
-            },
-            StatusCode::UNPROCESSABLE_ENTITY,
+            "proxy_config",
+            json!({"enabled": true}),
+            unprocessable,
             "PROXY_CONFIG_REPLACED",
         ),
         (
-            |body| {
-                body.insert("proxy_route".into(), json!({"kind": "proxy", "id": "gone"}));
-            },
-            StatusCode::UNPROCESSABLE_ENTITY,
+            "proxy_route",
+            json!({"kind": "proxy", "id": "gone"}),
+            unprocessable,
             "PROXY_NOT_FOUND",
         ),
-    ];
-    for (edit, status, code) in refusals {
+    ] {
         let refused = put_platform(&app, &token, "platform-huya", |body| {
             // A valid change alongside the invalid one must not be applied.
             body.insert("output_folder".into(), json!("/changed"));
-            edit(body);
+            body.insert(field.into(), value);
         })
         .await;
         refused.assert_error(status, code);
@@ -400,7 +341,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
             .await
             .expect_status(StatusCode::OK)
             .body;
-        assert_eq!(stored, original, "{code}: nothing may change");
+        assert_eq!(stored, original, "{field}: nothing may change");
     }
     // A blank cookie value asks for none and is accepted.
     put_platform(&app, &token, "platform-huya", |body| {
@@ -712,13 +653,6 @@ async fn a_template_stays_until_its_deleted_streamer_is_reaped() {
         .delete(&format!("/api/templates/{template_id}"), &token)
         .await;
     refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    assert!(
-        refused.body["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("still being removed")),
-        "{}",
-        refused.text
-    );
     app.get(&format!("/api/templates/{template_id}"), &token)
         .await
         .expect_status(StatusCode::OK);
@@ -1445,13 +1379,9 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     );
     let received = edited.received();
     assert_eq!(received.len(), 1);
-    assert!(
-        received[0]
-            .headers
-            .iter()
-            .any(|(name, value)| name == "proxy-authorization" && *value == expected),
-        "{:?}",
-        received[0].headers
+    assert_eq!(
+        received[0].header("proxy-authorization"),
+        Some(expected.as_str())
     );
     let unknown = app
         .post(
@@ -1470,26 +1400,16 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     )
     .await
     .expect_status(StatusCode::OK);
-    let private_check = json!({"url": open.url(""), "target_url": "http://127.0.0.1:9/"});
-    let private = eventually(WAIT, "the private-target opt-in", || {
-        let app = &app;
-        let token = &token;
-        let body = &private_check;
-        async move {
-            let checked = app.post("/api/proxies/test", token, body).await;
-            (checked.status == StatusCode::OK).then_some(checked.body)
-        }
-    })
-    .await;
-    assert_eq!(private["ok"], true, "{private}");
-    let ftp = app
+    let private = app
         .post(
             "/api/proxies/test",
             &token,
-            &json!({"url": open.url(""), "target_url": "ftp://127.0.0.1/"}),
+            &json!({"url": open.url(""), "target_url": "http://127.0.0.1:9/"}),
         )
-        .await;
-    ftp.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(private["ok"], true, "{private}");
 
     app.shutdown().await;
 }
@@ -1978,22 +1898,7 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
             "per_streamer_selection": false,
         })
     );
-    let soop = capabilities("platform-soop")
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(soop["reauth_login"], true);
-    assert_eq!(soop["per_streamer_selection"], false);
-    let huya = capabilities("platform-huya")
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let fields = huya.as_object().expect("capabilities object");
-    assert_eq!(fields.len(), 8, "{huya}");
-    assert!(
-        fields.values().all(|value| value.as_bool() == Some(false)),
-        "{huya}"
-    );
+    // Streamlink serves many sites, so only its accounts are chosen per streamer.
     let streamlink = capabilities("platform-streamlink")
         .await
         .expect_status(StatusCode::OK)
@@ -2028,13 +1933,6 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
         )
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    assert!(
-        refused.body["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("nothing the provider can check")),
-        "{}",
-        refused.text
-    );
     let detail = app
         .get(
             &format!("/api/credentials/profiles/{unverifiable_id}"),

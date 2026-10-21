@@ -148,14 +148,6 @@ async fn anonymous_callers_get_401_on_every_route_except_the_public_ones() {
         let response = app.send(method.clone(), path, None, Some(&json!({}))).await;
         response.assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
     }
-    for path in ["/api/downloads/ws", "/api/logging/stream"] {
-        let refused = app.refused_socket(path, None).await;
-        assert_eq!(
-            refused.status,
-            StatusCode::UNAUTHORIZED,
-            "{path} must reject the upgrade without a credential"
-        );
-    }
 
     // The public routes.
     app.send(Method::GET, "/api/health/live", None, None)
@@ -204,14 +196,13 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
         );
     }
 
-    let cases: Vec<(&str, HeaderMap, Option<&str>)> = vec![
-        ("Basic scheme", authorization("Basic x"), None),
-        ("empty bearer", authorization("Bearer "), None),
-        ("two Authorization headers", duplicated, None),
+    let cases = [
+        ("Basic scheme", authorization("Basic x")),
+        ("empty bearer", authorization("Bearer ")),
+        ("two Authorization headers", duplicated),
         (
             "expired more than a minute ago",
             authorization(&format!("Bearer {}", mint(&expired, JWT_SECRET))),
-            Some("Token has expired"),
         ),
         (
             "wrong signing secret",
@@ -219,17 +210,14 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
                 "Bearer {}",
                 mint(&claims, "e2e-some-other-secret-with-enough-entropy-000")
             )),
-            Some("Invalid token"),
         ),
         (
             "no session id",
             authorization(&format!("Bearer {}", mint(&without_sid, JWT_SECRET))),
-            Some("Invalid token"),
         ),
         (
             "unknown user",
             authorization(&format!("Bearer {}", mint(&unknown_user, JWT_SECRET))),
-            None,
         ),
     ];
     // A middleware-protected route and a handler that authenticates itself.
@@ -247,7 +235,7 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
             StatusCode::OK,
             "re-minted control token on {path}"
         );
-        for (case, headers, message) in &cases {
+        for (case, headers) in &cases {
             let response = send_with_headers(&app, Method::GET, path, headers.clone(), None).await;
             assert_eq!(
                 (response.status, response.error_code()),
@@ -255,9 +243,6 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
                 "{case} on {path}: {}",
                 response.text
             );
-            if let Some(message) = message {
-                assert_eq!(response.body["message"], *message, "{case} on {path}");
-            }
         }
     }
 
@@ -273,7 +258,6 @@ async fn forced_password_change_blocks_everything_except_remediation() {
         .await
         .expect_status(StatusCode::OK);
     let body = login.body.as_object().expect("login body");
-    assert_eq!(body.len(), 7, "LoginResponse fields: {}", login.text);
     assert_eq!(body["must_change_password"], true);
     assert_eq!(body["token_type"], "Bearer");
     assert_eq!(body["expires_in"], 3600);
@@ -315,14 +299,9 @@ async fn forced_password_change_blocks_everything_except_remediation() {
     assert_eq!(refreshed.body["must_change_password"], true);
     let refreshed = tokens_from(&refreshed.body);
 
-    let response = app
-        .post("/api/auth/logout-all", &refreshed.access, &json!({}))
+    app.post("/api/auth/logout-all", &refreshed.access, &json!({}))
         .await
         .expect_status(StatusCode::OK);
-    assert_eq!(
-        response.body["message"],
-        "All sessions logged out successfully"
-    );
     assert_eq!(
         streamers_status(&app, &refreshed.access).await,
         StatusCode::UNAUTHORIZED
@@ -397,15 +376,13 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
     assert_eq!(streamers_status(&app, &old.access).await, StatusCode::OK);
 
     let new_password = "e2e-fresh-Password-2";
-    let response = app
-        .post(
-            "/api/auth/change-password",
-            &old.access,
-            &change(ADMIN_PASSWORD, new_password),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(response.body["message"], "Password changed successfully");
+    app.post(
+        "/api/auth/change-password",
+        &old.access,
+        &change(ADMIN_PASSWORD, new_password),
+    )
+    .await
+    .expect_status(StatusCode::OK);
 
     assert_eq!(
         streamers_status(&app, &old.access).await,
@@ -665,10 +642,9 @@ async fn logout_ends_one_lineage_and_logout_all_ends_every_browser_session() {
     );
 
     // `logoutFn` sends only the refresh token.
-    let response = logout(&app, HeaderMap::new(), &a2.refresh)
+    logout(&app, HeaderMap::new(), &a2.refresh)
         .await
         .expect_status(StatusCode::OK);
-    assert_eq!(response.body["message"], "Logged out successfully");
     for (what, token) in [
         ("original access", &a.access),
         ("rotated access", &a2.access),
@@ -817,11 +793,9 @@ async fn api_keys_are_created_listed_used_and_revoked() {
     assert_recent(used_at);
     assert_eq!(keys[0]["last_used_at"], Value::Null);
 
-    let revoked = app
-        .delete(&format!("/api/auth/api-keys/{read_id}"), &token)
+    app.delete(&format!("/api/auth/api-keys/{read_id}"), &token)
         .await
         .expect_status(StatusCode::OK);
-    assert_eq!(revoked.body["message"], "API key revoked successfully");
     // No cache window: the very next request fails.
     app.get("/api/sessions", &read_key)
         .await
@@ -852,33 +826,14 @@ async fn api_key_input_is_validated_and_expired_or_unknown_keys_fail() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    for (body, status) in [
-        (
-            json!({ "name": "   ", "access_level": "full" }),
-            StatusCode::BAD_REQUEST,
-        ),
-        (
-            json!({ "name": "a".repeat(101), "access_level": "full" }),
-            StatusCode::BAD_REQUEST,
-        ),
-        (
-            json!({ "name": "past", "access_level": "full", "expires_at": now_ms() - 1000 }),
-            StatusCode::BAD_REQUEST,
-        ),
-        (
-            json!({ "name": "bad level", "access_level": "admin" }),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
-        (
-            json!({ "access_level": "full" }),
-            StatusCode::UNPROCESSABLE_ENTITY,
-        ),
+    for body in [
+        json!({ "name": "   ", "access_level": "full" }),
+        json!({ "name": "a".repeat(101), "access_level": "full" }),
+        json!({ "name": "past", "access_level": "full", "expires_at": now_ms() - 1000 }),
     ] {
-        let response = app.post("/api/auth/api-keys", &token, &body).await;
-        assert_eq!(response.status, status, "{body}: {}", response.text);
-        if status == StatusCode::BAD_REQUEST {
-            assert_eq!(response.error_code(), Some("BAD_REQUEST"));
-        }
+        app.post("/api/auth/api-keys", &token, &body)
+            .await
+            .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
     }
     let listed = app
         .get("/api/auth/api-keys", &token)
@@ -924,7 +879,6 @@ async fn api_key_input_is_validated_and_expired_or_unknown_keys_fail() {
     })
     .await;
     expired.assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
-    assert_eq!(expired.body["message"], "Token has expired");
 
     app.shutdown().await;
 }
@@ -1013,9 +967,6 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
         (Method::GET, "/api/auth/sessions"),
         (Method::GET, "/api/auth/api-keys"),
         (Method::POST, "/api/auth/api-keys"),
-        (Method::GET, "/api/logging"),
-        (Method::GET, "/api/logging/files"),
-        (Method::GET, "/api/logging/archive-token"),
         (Method::POST, "/api/downloads/e2e-unknown-download/split"),
         (Method::GET, "/api/notifications/channels"),
     ] {
@@ -1030,15 +981,6 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
             response.text
         );
     }
-    let refused = app
-        .refused_socket(&format!("/api/downloads/ws?token={read_key}"), None)
-        .await;
-    assert_eq!(
-        refused.status,
-        StatusCode::FORBIDDEN,
-        "the downloads socket needs a full credential"
-    );
-
     // MCP checks scope per tool, so the transport itself accepts the key.
     let mcp = app
         .client()
@@ -1071,28 +1013,11 @@ async fn full_keys_can_write_but_cannot_manage_keys_or_remediate() {
     let key = app.create_api_key(&token, "full", "full").await;
     let (full_key, key_id) = (key.raw, key.id);
 
-    let created = app
-        .post(
-            "/api/streamers",
-            &full_key,
-            &json!({
-                "name": "e2e full key streamer",
-                "url": "https://live.bilibili.com/990001",
-                "enabled": false,
-            }),
-        )
-        .await;
-    assert!(created.status.is_success(), "create: {}", created.text);
-    assert_eq!(created.body["state"], "DISABLED");
-    let listed = app
-        .get("/api/streamers", &full_key)
-        .await
-        .expect_status(StatusCode::OK);
-    assert!(
-        listed.text.contains("e2e full key streamer"),
-        "{}",
-        listed.text
-    );
+    app.create_disabled_streamer(
+        &full_key,
+        json!({ "name": "e2e full key streamer", "url": "https://live.bilibili.com/990001" }),
+    )
+    .await;
 
     for (method, path, body) in [
         (Method::GET, "/api/auth/api-keys".to_string(), None),

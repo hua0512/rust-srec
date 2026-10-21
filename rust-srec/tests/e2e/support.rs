@@ -13,9 +13,10 @@
 //!
 //! The backend reads some settings from the process environment, and the
 //! scenarios assert the defaults: [`TestApp::start`] refuses to run when one
-//! of [`DEFAULT_ONLY_ENV`] is set. Outbound requests to a [`LocalHttpServer`]
-//! also assume loopback is not proxied: with `HTTP_PROXY` exported, `NO_PROXY`
-//! must cover `127.0.0.1`.
+//! of [`DEFAULT_ONLY_ENV`] is set, or when a proxy variable is exported
+//! without `NO_PROXY` covering `127.0.0.1` (outbound clients such as the
+//! webhook sender honor the proxy variables, so requests to a
+//! [`LocalHttpServer`] would go through the proxy).
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -54,11 +55,15 @@ pub const WAIT: Duration = Duration::from_secs(10);
 /// turn a hang into a failure.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+/// Cooperative part of [`SHUTDOWN_TIMEOUT`]; after it the backend aborts
+/// what is still running.
+const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(20);
 
 /// Settings the backend reads from the environment that change what the
 /// scenarios assert: token lifetimes, the password and lockout rules, the JWT
-/// claims tests decode, and whether Web Push is configured.
-const DEFAULT_ONLY_ENV: [&str; 12] = [
+/// claims tests decode, whether Web Push is configured, and the locale of the
+/// messages some tests pin.
+const DEFAULT_ONLY_ENV: [&str; 13] = [
     "ACCESS_TOKEN_EXPIRATION_SECS",
     "REFRESH_TOKEN_EXPIRATION_SECS",
     "REFRESH_TOKEN_REUSE_GRACE_SECS",
@@ -71,6 +76,16 @@ const DEFAULT_ONLY_ENV: [&str; 12] = [
     "API_LOGIN_WINDOW_SECS",
     "WEB_PUSH_VAPID_PUBLIC_KEY",
     "WEB_PUSH_VAPID_PRIVATE_KEY",
+    "RUST_SREC_LOCALE",
+];
+
+const PROXY_ENV: [&str; 6] = [
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "ALL_PROXY",
+    "all_proxy",
 ];
 
 fn assert_default_environment() {
@@ -82,6 +97,21 @@ fn assert_default_environment() {
         overridden.is_empty(),
         "the end-to-end tests assert the backend's defaults; unset {overridden:?} to run them"
     );
+
+    if PROXY_ENV
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+    {
+        let no_proxy = std::env::var("NO_PROXY")
+            .or_else(|_| std::env::var("no_proxy"))
+            .unwrap_or_default();
+        assert!(
+            no_proxy
+                .split(',')
+                .any(|entry| matches!(entry.trim(), "*" | "127.0.0.1" | "127.0.0.0/8")),
+            "a proxy variable is set; add 127.0.0.1 to NO_PROXY so requests to the local test servers are not proxied"
+        );
+    }
 }
 
 /// The global `tracing` subscriber can be installed once per process, so every
@@ -279,9 +309,9 @@ impl TestApp {
     /// Stop every service. Call at the end of each test so background tasks do
     /// not outlive the temporary directory.
     pub async fn shutdown(self) {
-        tokio::time::timeout(SHUTDOWN_TIMEOUT, self.container.shutdown())
+        self.container
+            .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_TIMEOUT)
             .await
-            .expect("backend shutdown timed out")
             .expect("backend shutdown failed");
     }
 
@@ -723,14 +753,26 @@ impl ClosedPort {
 #[derive(Debug, Clone)]
 pub struct ReceivedRequest {
     pub method: String,
+    /// The request target as sent: a path and query, or an absolute URL for
+    /// a forward-proxy request.
     pub path: String,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
 
-/// A loopback HTTP server that records every request and answers each with
-/// a fixed status and body. Use it as the outbound target for webhooks and
-/// similar integrations so tests never leave the machine.
+impl ReceivedRequest {
+    /// A header's value, by case-insensitive name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+/// A loopback HTTP server that records every request. Use it as the outbound
+/// target for webhooks and similar integrations so tests never leave the
+/// machine.
 pub struct LocalHttpServer {
     address: SocketAddr,
     received: Arc<Mutex<Vec<ReceivedRequest>>>,
@@ -738,14 +780,30 @@ pub struct LocalHttpServer {
 }
 
 impl LocalHttpServer {
+    /// Answer every request with `status` and `reply`.
     pub async fn start(status: u16, reply: &'static str) -> Self {
-        use axum::extract::Request;
         use axum::response::IntoResponse;
 
+        let status = axum::http::StatusCode::from_u16(status).expect("valid status");
+        Self::start_with(move |_, _| (status, reply).into_response()).await
+    }
+
+    /// Answer each request with `reply(address, request)`, where `address`
+    /// is this server's own, for replies that link back to it.
+    pub async fn start_with<F>(reply: F) -> Self
+    where
+        F: Fn(SocketAddr, &ReceivedRequest) -> axum::response::Response + Send + Sync + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind the local HTTP server");
+        let address = listener.local_addr().expect("local HTTP server address");
         let received = Arc::new(Mutex::new(Vec::new()));
         let recorder = received.clone();
-        let handler = move |request: Request| {
+        let reply = Arc::new(reply);
+        let handler = move |request: axum::extract::Request| {
             let recorder = recorder.clone();
+            let reply = reply.clone();
             async move {
                 let (parts, body) = request.into_parts();
                 let body = axum::body::to_bytes(body, 16 * 1024 * 1024)
@@ -762,27 +820,18 @@ impl LocalHttpServer {
                         )
                     })
                     .collect();
-                recorder
-                    .lock()
-                    .expect("request log lock")
-                    .push(ReceivedRequest {
-                        method: parts.method.to_string(),
-                        path: parts.uri.to_string(),
-                        headers,
-                        body,
-                    });
-                (
-                    axum::http::StatusCode::from_u16(status).expect("valid status"),
-                    reply,
-                )
-                    .into_response()
+                let request = ReceivedRequest {
+                    method: parts.method.to_string(),
+                    path: parts.uri.to_string(),
+                    headers,
+                    body,
+                };
+                let response = reply(address, &request);
+                recorder.lock().expect("request log lock").push(request);
+                response
             }
         };
         let app = axum::Router::new().fallback(handler);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind the local HTTP server");
-        let address = listener.local_addr().expect("local HTTP server address");
         let task = tokio::spawn(async move {
             axum::serve(listener, app)
                 .await
@@ -793,6 +842,10 @@ impl LocalHttpServer {
             received,
             task,
         }
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.address
     }
 
     pub fn url(&self, path: &str) -> String {

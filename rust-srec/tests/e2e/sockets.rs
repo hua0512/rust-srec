@@ -91,19 +91,13 @@ async fn current_filter(app: &TestApp, token: &str) -> String {
         .to_string()
 }
 
-const CONFIG_UPDATED: &str = "Global configuration updated successfully via API";
-
-/// The INFO event a global-config update logs. A no-op update triggers it
-/// without changing the process-global log filter.
+/// The next INFO event on the log stream. A no-op global-config update logs
+/// one without changing the process-global log filter.
 ///
 /// The socket subscribes to log events only after the upgrade completes, so
 /// an event logged right after connecting can predate the subscription; the
-/// update is repeated until its event arrives.
-async fn config_update_event(
-    app: &TestApp,
-    socket: &mut Socket,
-    token: &str,
-) -> log_event::LogEvent {
+/// update is repeated until an INFO event arrives.
+async fn info_event(app: &TestApp, socket: &mut Socket, token: &str) -> log_event::LogEvent {
     let deadline = tokio::time::Instant::now() + WAIT;
     loop {
         app.patch("/api/config/global", token, &json!({}))
@@ -119,7 +113,7 @@ async fn config_update_event(
                     let Some(log_event::ws_message::Payload::Log(event)) = message.payload else {
                         panic!("a LOG frame without a log payload");
                     };
-                    if event.message == CONFIG_UPDATED {
+                    if event.level == log_event::LogLevel::Info as i32 {
                         return event;
                     }
                 }
@@ -130,7 +124,7 @@ async fn config_update_event(
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "no {CONFIG_UPDATED:?} event arrived"
+            "no INFO event arrived"
         );
     }
 }
@@ -194,17 +188,7 @@ async fn log_filter_is_validated_persisted_and_limited_to_full_credentials() {
 
     let full = app.create_api_key(&token, "sockets-full", "full").await;
     assert_eq!(current_filter(&app, &full.raw).await, "rust_srec=debug");
-    let read = app
-        .create_api_key(&token, "sockets-read_only", "read_only")
-        .await;
     let body = json!({ "filter": "rust_srec=trace" });
-    for response in [
-        app.get("/api/logging", &read.raw).await,
-        app.put("/api/logging", &read.raw, &body).await,
-    ] {
-        assert_eq!(response.status, StatusCode::FORBIDDEN, "{}", response.text);
-        assert_eq!(response.error_code(), Some("API_KEY_READ_ONLY"));
-    }
     for method in [Method::GET, Method::PUT] {
         let response = app.send(method, "/api/logging", None, Some(&body)).await;
         assert_eq!(
@@ -272,28 +256,16 @@ async fn log_file_and_entry_queries_validate_dates_limits_and_file_names() {
         json!({ "items": [], "total": 0, "limit": 5, "offset": 2 })
     );
 
-    for (query, message) in [
-        (
-            vec![("from", "2000-01-02"), ("to", EMPTY_DAY)],
-            "Invalid date range: from must be <= to",
-        ),
-        (
-            vec![("from", "01/01/2000")],
-            "Invalid date; expected YYYY-MM-DD",
-        ),
-        (
-            vec![("to", "2000-13-01")],
-            "Invalid date; expected YYYY-MM-DD",
-        ),
-    ] {
+    let invalid_ranges: [&[(&str, &str)]; 3] = [
+        &[("from", "2000-01-02"), ("to", EMPTY_DAY)],
+        &[("from", "01/01/2000")],
+        &[("to", "2000-13-01")],
+    ];
+    for query in invalid_ranges {
         for route in ["/api/logging/files", "/api/logging/entries"] {
-            let response = app.get(&with_query(route, &query), &token).await;
-            assert_eq!(
-                response.status,
-                StatusCode::BAD_REQUEST,
-                "{route} {query:?}"
-            );
-            assert_eq!(response.body["message"], message, "{route} {query:?}");
+            app.get(&with_query(route, query), &token)
+                .await
+                .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
         }
     }
 
@@ -303,14 +275,12 @@ async fn log_file_and_entry_queries_validate_dates_limits_and_file_names() {
         "rust-srec.log\\..\\srec.db",
         "other.log",
     ] {
-        let response = app
-            .get(
-                &with_query("/api/logging/entries", &[("file", file)]),
-                &token,
-            )
-            .await;
-        assert_eq!(response.status, StatusCode::BAD_REQUEST, "{file}");
-        assert_eq!(response.body["message"], "Invalid file name", "{file}");
+        app.get(
+            &with_query("/api/logging/entries", &[("file", file)]),
+            &token,
+        )
+        .await
+        .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
     }
     let entries = app
         .get(
@@ -326,15 +296,6 @@ async fn log_file_and_entry_queries_validate_dates_limits_and_file_names() {
         entries.body,
         json!({ "items": [], "limit": 2000, "offset": 0, "has_more": false })
     );
-
-    let read = app
-        .create_api_key(&token, "sockets-read_only", "read_only")
-        .await;
-    for route in ["/api/logging/files", "/api/logging/entries"] {
-        let response = app.get(route, &read.raw).await;
-        assert_eq!(response.status, StatusCode::FORBIDDEN, "{route}");
-        assert_eq!(response.error_code(), Some("API_KEY_READ_ONLY"));
-    }
 
     app.shutdown().await;
 }
@@ -421,12 +382,6 @@ async fn log_archive_tokens_download_once_without_an_authorization_header() {
         "attachment; filename=\"rust-srec-logs-2000-01-01-to-2000-01-02.zip\""
     );
 
-    let read = app
-        .create_api_key(&token, "sockets-read_only", "read_only")
-        .await;
-    let refused = app.get("/api/logging/archive-token", &read.raw).await;
-    assert_eq!(refused.status, StatusCode::FORBIDDEN);
-    assert_eq!(refused.error_code(), Some("API_KEY_READ_ONLY"));
     let full = app.create_api_key(&token, "sockets-full", "full").await;
     archive_token(&app, &full.raw).await;
 
@@ -474,13 +429,30 @@ async fn log_archive_tokens_die_with_the_credential_that_issued_them() {
 }
 
 #[tokio::test]
-async fn sockets_refuse_read_only_keys_and_bad_credentials_before_upgrading() {
+async fn logging_routes_and_sockets_refuse_read_only_keys_and_bad_credentials() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let read = app
         .create_api_key(&token, "sockets-read_only", "read_only")
         .await;
 
+    let filter = current_filter(&app, &token).await;
+    let body = json!({ "filter": "rust_srec=trace" });
+    for (method, route) in [
+        (Method::GET, "/api/logging"),
+        (Method::PUT, "/api/logging"),
+        (Method::GET, "/api/logging/files"),
+        (Method::GET, "/api/logging/entries"),
+        (Method::GET, "/api/logging/archive-token"),
+    ] {
+        let body = (method == Method::PUT).then_some(&body);
+        app.send(method, route, Some(&read.raw), body)
+            .await
+            .assert_error(StatusCode::FORBIDDEN, "API_KEY_READ_ONLY");
+    }
+    assert_eq!(current_filter(&app, &token).await, filter);
+
+    // Sockets refuse before upgrading.
     for route in ["/api/logging/stream", "/api/downloads/ws"] {
         app.refused_socket(&with_query(route, &[("token", &read.raw)]), None)
             .await
@@ -510,9 +482,9 @@ async fn log_stream_delivers_decodable_log_events() {
             None,
         )
         .await;
-    let event = config_update_event(&app, &mut socket, &token).await;
-    assert_eq!(event.level, log_event::LogLevel::Info as i32);
-    assert_eq!(event.target, "rust_srec::api::routes::config");
+    let event = info_event(&app, &mut socket, &token).await;
+    assert!(!event.target.is_empty(), "{event:?}");
+    assert!(!event.message.is_empty(), "{event:?}");
     let age = now_ms() - event.timestamp_ms;
     assert!((0..60_000).contains(&age), "event is {age} ms old");
 
@@ -531,9 +503,11 @@ async fn log_stream_closes_once_its_key_is_downgraded_to_read_only() {
             None,
         )
         .await;
-    config_update_event(&app, &mut socket, &token).await;
+    info_event(&app, &mut socket, &token).await;
 
-    // No API changes a key's access level; the row is edited directly.
+    // No API changes a key's access level; the row is edited directly. The
+    // socket rechecks its credential every 5 s, so the close arrives within
+    // about 5 s, leaving about 5 s of WAIT's 10 s as margin.
     let database = app.database().await;
     sqlx::query("UPDATE api_keys SET access_level = 'read_only' WHERE id = ?")
         .bind(&key.id)

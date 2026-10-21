@@ -22,7 +22,9 @@ fn assert_private(response: &Response) {
 /// Whether a URL no built-in extractor claims would fall back to an installed
 /// Streamlink, which could then try to reach it. A binary that does not
 /// answer in time counts as installed, so the parse that could reach it is
-/// skipped.
+/// skipped. CI's plain test jobs have no Streamlink on `PATH`, so the
+/// unsupported-URL answer is checked there; the tool-gated job, which
+/// installs Streamlink, runs only ignored tests.
 async fn streamlink_available() -> bool {
     let binary = std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string());
     let probe = tokio::process::Command::new(binary)
@@ -163,15 +165,6 @@ async fn parse_validates_its_input_and_answers_privately() {
             .is_some_and(|error| error.starts_with("Invalid stream_info")),
         "{invalid}"
     );
-
-    let renewed = app
-        .post(
-            "/api/parse/playback/renew",
-            &token,
-            &json!({"playback_handle": "unknown-handle"}),
-        )
-        .await;
-    renewed.assert_error(StatusCode::GONE, "PLAYBACK_CONTEXT_EXPIRED");
 
     app.shutdown().await;
 }

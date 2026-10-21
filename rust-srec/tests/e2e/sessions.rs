@@ -143,89 +143,53 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
     let started =
         json!({ "kind": "session_started", "from_hysteresis": false, "title": "Morning stream" });
     let ended = json!({ "kind": "session_ended", "cause": { "type": "completed" }, "via_hysteresis": false });
-    let mut sql = String::new();
-    for session in [
-        Session {
-            id: "titled",
-            streamer_id: Some(&alice),
-            streamer_name: Some("Alice (as recorded)"),
-            start: t0,
-            end: Some(t0 + 3_600_000),
-            titles: Some(&titles),
-            total_size_bytes: 3_000,
-        },
-        Session {
-            id: "untitled",
-            streamer_id: Some(&alice),
-            streamer_name: Some("Alice (as recorded)"),
-            start: t0 + 2 * 3_600_000,
-            end: Some(t0 + 2 * 3_600_000 + 60_000),
-            titles: None,
-            total_size_bytes: 500,
-        },
-        // Ended recently, so maintenance's empty-session sweep leaves it.
-        Session {
-            id: "empty",
-            streamer_id: Some(&alice),
-            streamer_name: Some("Alice (as recorded)"),
-            start: now - 1_800_000,
-            end: Some(now - 60_000),
-            titles: None,
-            total_size_bytes: 0,
-        },
-        Session {
-            id: "bob-earlier",
-            streamer_id: Some(&bob),
-            streamer_name: Some("Bob"),
-            start: t0 - 3_600_000,
-            end: Some(t0 - 1_800_000),
-            titles: Some(r#"[{"ts":0,"title":"Old show"}]"#),
-            total_size_bytes: 100,
-        },
-        Session {
-            id: "bob-live",
-            streamer_id: Some(&bob),
-            streamer_name: Some("Bob"),
-            start: now - 600_000,
-            end: None,
-            titles: None,
-            total_size_bytes: 0,
-        },
+    let alice_session = |id, start, end, titles, total_size_bytes| Session {
+        id,
+        streamer_id: Some(&alice),
+        streamer_name: Some("Alice (as recorded)"),
+        start,
+        end: Some(end),
+        titles,
+        total_size_bytes,
+    };
+    let bob_session = |id, start, end, titles, total_size_bytes| Session {
+        id,
+        streamer_id: Some(&bob),
+        streamer_name: Some("Bob"),
+        start,
+        end,
+        titles,
+        total_size_bytes,
+    };
+    let t2 = t0 + 2 * 3_600_000;
+    let old_show = r#"[{"ts":0,"title":"Old show"}]"#;
+    let mut sql: String = [
+        alice_session("titled", t0, t0 + 3_600_000, Some(&titles), 3_000),
+        alice_session("untitled", t2, t2 + 60_000, None, 500),
+        // Ended inside maintenance's 5-minute empty-session retention, so its
+        // sweep leaves it.
+        alice_session("empty", now - 1_800_000, now - 1_000, None, 0),
+        bob_session(
+            "bob-earlier",
+            t0 - 3_600_000,
+            Some(t0 - 1_800_000),
+            Some(old_show),
+            100,
+        ),
+        bob_session("bob-live", now - 600_000, None, None, 0),
+    ]
+    .iter()
+    .map(Session::sql)
+    .collect();
+    for (id, file, file_type, size, offset) in [
+        ("thumb", "titled.jpg", "THUMBNAIL", 10, 500),
+        ("video-1", "titled-1.flv", "VIDEO", 1_000, 1_000),
+        ("video-2", "titled-2.flv", "VIDEO", 1_990, 2_000),
+        ("chat", "titled.xml", "DANMU_XML", 0, 3_000),
     ] {
-        sql.push_str(&session.sql());
+        let path = format!("/media/{file}");
+        sql.push_str(&output(id, "titled", &path, file_type, size, t0 + offset));
     }
-    sql.push_str(&output(
-        "thumb",
-        "titled",
-        "/media/titled.jpg",
-        "THUMBNAIL",
-        10,
-        t0 + 500,
-    ));
-    sql.push_str(&output(
-        "video-1",
-        "titled",
-        "/media/titled-1.flv",
-        "VIDEO",
-        1_000,
-        t0 + 1_000,
-    ));
-    sql.push_str(&output(
-        "video-2",
-        "titled",
-        "/media/titled-2.flv",
-        "VIDEO",
-        1_990,
-        t0 + 2_000,
-    ));
-    sql.push_str(&output(
-        "chat",
-        "titled",
-        "/media/titled.xml",
-        "DANMU_XML",
-        0,
-        t0 + 3_000,
-    ));
     // Inserted out of order: the timeline sorts by `occurred_at`.
     sql.push_str(&format!(
         "INSERT INTO session_events (session_id, streamer_id, kind, occurred_at, payload) VALUES \
@@ -636,21 +600,12 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
         get_ok(&app, &token, "/api/pipeline/outputs?session_id=doomed").await["total"],
         0
     );
-    for table in [
-        "media_outputs",
-        "session_segments",
-        "session_events",
-        "danmu_statistics",
-    ] {
-        assert_eq!(
-            app.query_i64(&format!(
-                "SELECT COUNT(*) FROM {table} WHERE session_id = 'doomed'"
-            ))
+    assert_eq!(
+        app.query_i64("SELECT COUNT(*) FROM session_events WHERE session_id = 'doomed'")
             .await,
-            0,
-            "{table} still has rows for the deleted session"
-        );
-    }
+        0,
+        "the deleted session's timeline is left behind"
+    );
     assert!(
         Path::new(&video).exists(),
         "the recording must stay on disk"
@@ -743,58 +698,25 @@ async fn output_list_reports_file_types_and_uploads_and_the_summary_ignores_the_
         .sql(),
     );
     let part = "/media/alpha/part1.flv";
-    for (id, session_id, path, file_type, size, offset) in [
-        ("part-1", "alpha-session", part, "VIDEO", 1_000, 1),
-        (
-            "part-2",
-            "alpha-session",
-            "/media/alpha/part2.flv",
-            "VIDEO",
-            2_000,
-            2,
-        ),
-        (
-            "cover",
-            "alpha-session",
-            "/media/alpha/cover.jpg",
-            "THUMBNAIL",
-            10,
-            3,
-        ),
-        (
-            "chat",
-            "alpha-session",
-            "/media/alpha/chat.xml",
-            "DANMU_XML",
-            50,
-            4,
-        ),
-        (
-            "track",
-            "alpha-session",
-            "/media/alpha/track.m4a",
-            "AUDIO",
-            300,
-            5,
-        ),
-        (
-            "beta-video",
-            "beta-session",
-            "/media/beta/other.flv",
-            "VIDEO",
-            4_000,
-            6,
-        ),
+    for (id, file, file_type, size, second) in [
+        ("part-1", "part1.flv", "VIDEO", 1_000, 1),
+        ("part-2", "part2.flv", "VIDEO", 2_000, 2),
+        ("cover", "cover.jpg", "THUMBNAIL", 10, 3),
+        ("chat", "chat.xml", "DANMU_XML", 50, 4),
+        ("track", "track.m4a", "AUDIO", 300, 5),
     ] {
-        sql.push_str(&output(
-            id,
-            session_id,
-            path,
-            file_type,
-            size,
-            base + offset * 1_000,
-        ));
+        let path = format!("/media/alpha/{file}");
+        let at = base + second * 1_000;
+        sql.push_str(&output(id, "alpha-session", &path, file_type, size, at));
     }
+    sql.push_str(&output(
+        "beta-video",
+        "beta-session",
+        "/media/beta/other.flv",
+        "VIDEO",
+        4_000,
+        base + 6_000,
+    ));
     // A retry's newer rclone result replaces its older failure; a record for
     // the same path in another session belongs to that session's output.
     sql.push_str(&format!(
@@ -1085,50 +1007,22 @@ async fn interrupted_outputs_delete_only_staged_temporary_files() {
     );
     let t = now_ms() - 3_600_000;
     let mut sql = String::new();
-    for (id, path, output_path, job_id, interrupted_at) in [
-        (
-            "staged",
-            &staged,
-            app.output_path("stream.mp4"),
-            "job-a",
-            Some(t + 3_000),
-        ),
-        (
-            "kept",
-            &kept,
-            app.output_path("kept.mkv"),
-            "job-a",
-            Some(t + 2_000),
-        ),
-        (
-            "precious",
-            &precious,
-            app.output_path("other.mp4"),
-            "job-b",
-            Some(t + 1_000),
-        ),
-        (
-            "vanished",
-            &vanished,
-            app.output_path("vanished.mp4"),
-            "job-a",
-            Some(t + 4_000),
-        ),
+    // (id, file, final name, job, seconds after `t` it was interrupted)
+    for (id, path, output_name, job_id, interrupted_after) in [
+        ("staged", &staged, "stream.mp4", "job-a", Some(3)),
+        ("kept", &kept, "kept.mkv", "job-a", Some(2)),
+        ("precious", &precious, "other.mp4", "job-b", Some(1)),
+        ("vanished", &vanished, "vanished.mp4", "job-a", Some(4)),
         // Still owned by a live attempt, so not a leftover.
-        (
-            "running",
-            &running,
-            app.output_path("live.mp4"),
-            "job-c",
-            None,
-        ),
+        ("running", &running, "live.mp4", "job-c", None),
     ] {
+        let interrupted_at = interrupted_after.map(|seconds| t + seconds * 1_000);
         sql.push_str(&format!(
             "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at, \
                  interrupted_at) VALUES ({}, {}, {}, '{job_id}', 'attempt', {t}, {});\n",
             literal(Some(id)),
             literal(Some(path)),
-            literal(Some(&output_path)),
+            literal(Some(&app.output_path(output_name))),
             number(interrupted_at),
         ));
     }

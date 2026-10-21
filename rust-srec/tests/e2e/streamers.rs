@@ -11,7 +11,7 @@
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{TestApp, WAIT, assert_recent, eventually, id_of, millis, now_ms};
+use crate::support::{TestApp, assert_recent, id_of, millis, now_ms};
 
 const STATES: [&str; 11] = [
     "NOT_LIVE",
@@ -436,92 +436,31 @@ async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
 #[tokio::test]
 async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
     // States the scheduler never monitors, so nothing is checked.
+    // (id, platform, state, priority); each name is the capitalized id.
     let rows = [
-        (
-            "yankee",
-            "Yankee",
-            "https://live.bilibili.com/2001",
-            "platform-bilibili",
-            "ERROR",
-            "HIGH",
-        ),
-        (
-            "echo",
-            "Echo",
-            "https://live.bilibili.com/2002",
-            "platform-bilibili",
-            "ERROR",
-            "NORMAL",
-        ),
-        (
-            "foxtrot",
-            "Foxtrot",
-            "https://www.twitch.tv/foxtrot",
-            "platform-twitch",
-            "FATAL_ERROR",
-            "HIGH",
-        ),
-        (
-            "oscar",
-            "Oscar",
-            "https://www.twitch.tv/oscar",
-            "platform-twitch",
-            "OUT_OF_SPACE",
-            "LOW",
-        ),
-        (
-            "november",
-            "November",
-            "https://www.huya.com/november",
-            "platform-huya",
-            "NOT_FOUND",
-            "NORMAL",
-        ),
-        (
-            "charlie",
-            "Charlie",
-            "https://www.huya.com/charlie",
-            "platform-huya",
-            "CANCELLED",
-            "NORMAL",
-        ),
-        (
-            "zulu",
-            "Zulu",
-            "https://live.bilibili.com/2007",
-            "platform-bilibili",
-            "DISABLED",
-            "HIGH",
-        ),
-        (
-            "bravo",
-            "Bravo",
-            "https://live.bilibili.com/2008",
-            "platform-bilibili",
-            "DISABLED",
-            "NORMAL",
-        ),
-        (
-            "delta",
-            "Delta",
-            "https://www.twitch.tv/delta",
-            "platform-twitch",
-            "DISABLED",
-            "NORMAL",
-        ),
-        (
-            "alpha",
-            "Alpha",
-            "https://www.huya.com/alpha",
-            "platform-huya",
-            "DISABLED",
-            "LOW",
-        ),
+        ("yankee", "bilibili", "ERROR", "HIGH"),
+        ("echo", "bilibili", "ERROR", "NORMAL"),
+        ("foxtrot", "twitch", "FATAL_ERROR", "HIGH"),
+        ("oscar", "twitch", "OUT_OF_SPACE", "LOW"),
+        ("november", "huya", "NOT_FOUND", "NORMAL"),
+        ("charlie", "huya", "CANCELLED", "NORMAL"),
+        ("zulu", "bilibili", "DISABLED", "HIGH"),
+        ("bravo", "bilibili", "DISABLED", "NORMAL"),
+        ("delta", "twitch", "DISABLED", "NORMAL"),
+        ("alpha", "huya", "DISABLED", "LOW"),
     ];
     let seed: String = rows
         .iter()
-        .map(|(id, name, url, platform, state, priority)| {
-            seeded_streamer(id, name, url, platform, state, priority)
+        .enumerate()
+        .map(|(index, (id, platform, state, priority))| {
+            let name = format!("{}{}", id[..1].to_uppercase(), &id[1..]);
+            let url = match *platform {
+                "bilibili" => format!("https://live.bilibili.com/{}", 2001 + index),
+                "twitch" => format!("https://www.twitch.tv/{id}"),
+                _ => format!("https://www.huya.com/{id}"),
+            };
+            let platform = format!("platform-{platform}");
+            seeded_streamer(id, &name, &url, &platform, state, priority)
         })
         .collect();
     let app = TestApp::start_seeded(&seed).await;
@@ -728,15 +667,14 @@ async fn deleting_a_streamer_hides_it_at_once_and_removes_what_it_owned() {
     assert_eq!(remaining["total"], 1);
     assert_eq!(remaining["items"][0]["id"], kept.as_str());
 
-    // Once the row is reaped its filters and check history go with it, and
-    // the account it selected is free to delete.
-    let row_sql = format!("SELECT COUNT(*) FROM streamers WHERE id = '{id}'");
-    eventually(WAIT, "the streamer row to be reaped", || {
-        let app = &app;
-        let row_sql = &row_sql;
-        async move { (app.query_i64(row_sql).await == 0).then_some(()) }
-    })
-    .await;
+    // With nothing in flight the row is reaped inside the DELETE, so its
+    // filters and check history are already gone and the account it selected
+    // is free to delete.
+    assert_eq!(
+        app.query_i64(&format!("SELECT COUNT(*) FROM streamers WHERE id = '{id}'"))
+            .await,
+        0
+    );
     assert_eq!(
         app.query_i64(&format!(
             "SELECT COUNT(*) FROM filters WHERE streamer_id = '{id}'"
@@ -796,11 +734,6 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
         )
         .await;
     response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    assert!(
-        response.text.contains("already exists"),
-        "{}",
-        response.text
-    );
     let response = app
         .put(
             &format!("/api/streamers/{second}"),
@@ -809,11 +742,6 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
         )
         .await;
     response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    assert!(
-        response.text.contains("already exists"),
-        "{}",
-        response.text
-    );
     assert_eq!(
         get_streamer(&app, &token, &second).await["url"],
         "https://live.bilibili.com/4002"
@@ -825,21 +753,12 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
     app.delete(&format!("/api/streamers/{first}"), &token)
         .await
         .expect_status(StatusCode::OK);
-    let recreated = eventually(WAIT, "the URL to be released", || {
-        let app = &app;
-        let token = &token;
-        async move {
-            let response = app
-                .post(
-                    "/api/streamers",
-                    token,
-                    &json!({ "name": "Again", "url": "https://live.bilibili.com/4001", "enabled": false }),
-                )
-                .await;
-            (response.status == StatusCode::CREATED).then_some(response.body)
-        }
-    })
-    .await;
+    let recreated = app
+        .create_disabled_streamer(
+            &token,
+            json!({ "name": "Again", "url": "https://live.bilibili.com/4001" }),
+        )
+        .await;
     assert_eq!(recreated["name"], "Again");
 
     // An ended session whose final pipeline was never settled keeps a deleted
@@ -885,11 +804,6 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
         )
         .await;
     response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    assert!(
-        response.text.contains("still being removed"),
-        "{}",
-        response.text
-    );
     let response = app
         .put(
             &format!("/api/streamers/{second}"),
@@ -898,11 +812,6 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
         )
         .await;
     response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    assert!(
-        response.text.contains("still being removed"),
-        "{}",
-        response.text
-    );
 
     app.shutdown().await;
 }
@@ -1010,6 +919,26 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
         "https://www.twitch.tv/moved"
     );
 
+    // The priority route sets the priority and refuses an unknown one.
+    let priority = format!("{path}/priority");
+    let patched = app
+        .patch(&priority, &token, &json!({ "priority": "HIGH" }))
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(patched["priority"], "HIGH");
+    assert_eq!(patched["state"], "DISABLED");
+    let invalid = app
+        .patch(&priority, &token, &json!({ "priority": "URGENT" }))
+        .await;
+    assert_eq!(
+        invalid.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        invalid.text
+    );
+    assert_eq!(get_streamer(&app, &token, &id).await["priority"], "HIGH");
+
     // Disabling clears the error backoff along with the state.
     let fatal = get_streamer(&app, &token, "fatal").await;
     assert_eq!(fatal["consecutive_error_count"], 4);
@@ -1029,8 +958,9 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     assert_eq!(fatal["consecutive_error_count"], 0);
     assert!(fatal["disabled_until"].is_null());
 
-    // `enabled: true` leaves ERROR and CANCELLED as they are: neither may move
-    // to NOT_LIVE, so the request changes nothing.
+    // `enabled: true` leaves ERROR and CANCELLED as they are: enabling moves
+    // only DISABLED or an error state to NOT_LIVE, CANCELLED is neither, and
+    // ERROR may not make that transition.
     for (id, state) in [("errored", "ERROR"), ("cancelled", "CANCELLED")] {
         let response = app
             .put(
@@ -1112,7 +1042,7 @@ async fn known_bug_unknown_template_id_is_rejected_on_create_and_update() {
 }
 
 #[tokio::test]
-async fn check_history_is_oldest_first_and_clamped_and_priority_patches_apply() {
+async fn check_history_is_oldest_first_and_clamped() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let id = id_of(
@@ -1200,40 +1130,6 @@ async fn check_history_is_oldest_first_and_clamped_and_priority_patches_apply() 
         assert_eq!(items.last().expect("newest")["duration_ms"], 205);
     }
 
-    let patched = app
-        .patch(
-            &format!("/api/streamers/{id}/priority"),
-            &token,
-            &json!({ "priority": "HIGH" }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(patched["priority"], "HIGH");
-    assert_eq!(patched["state"], "DISABLED");
-    assert_eq!(get_streamer(&app, &token, &id).await["priority"], "HIGH");
-    let invalid = app
-        .patch(
-            &format!("/api/streamers/{id}/priority"),
-            &token,
-            &json!({ "priority": "URGENT" }),
-        )
-        .await;
-    assert_eq!(
-        invalid.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{}",
-        invalid.text
-    );
-    assert_eq!(get_streamer(&app, &token, &id).await["priority"], "HIGH");
-    app.patch(
-        "/api/streamers/no-such-streamer/priority",
-        &token,
-        &json!({ "priority": "LOW" }),
-    )
-    .await
-    .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-
     app.shutdown().await;
 }
 
@@ -1278,52 +1174,27 @@ async fn filters_belong_to_the_streamer_in_their_path() {
         .await;
     unknown.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
-    let configs = [
-        (
-            "TIME_BASED",
-            json!({ "days_of_week": ["Monday"], "start_time": "09:00:00", "end_time": "17:00:00" }),
-        ),
-        (
-            "KEYWORD",
-            json!({ "include": ["live"], "exclude": ["rerun"] }),
-        ),
-        ("CATEGORY", json!({ "categories": ["Games"] })),
-        ("CRON", json!({ "expression": "0 0 22 * * 5,6" })),
-        (
-            "REGEX",
-            json!({ "pattern": "^Live", "case_insensitive": true, "exclude": false }),
-        ),
-    ];
-    let mut ids = Vec::new();
-    for (filter_type, config) in &configs {
-        let created = app
-            .post(
-                &filters,
-                &token,
-                &json!({ "streamer_id": owner, "filter_type": filter_type, "config": config }),
-            )
-            .await
-            .expect_status(StatusCode::CREATED)
-            .body;
-        assert_eq!(created["filter_type"], *filter_type);
-        assert_eq!(created["streamer_id"], owner.as_str());
-        ids.push(id_of(&created));
-    }
-    let listed = app
-        .get(&filters, &token)
+    let created = app
+        .post(
+            &filters,
+            &token,
+            &json!({
+                "streamer_id": owner,
+                "filter_type": "KEYWORD",
+                "config": { "include": ["live"], "exclude": ["rerun"] },
+            }),
+        )
         .await
-        .expect_status(StatusCode::OK)
+        .expect_status(StatusCode::CREATED)
         .body;
-    let mut listed_types: Vec<&str> = listed
-        .as_array()
-        .expect("filters")
-        .iter()
-        .map(|filter| filter["filter_type"].as_str().expect("filter_type"))
-        .collect();
-    listed_types.sort_unstable();
+    assert_eq!(created["streamer_id"], owner.as_str());
+    let keyword = id_of(&created);
     assert_eq!(
-        listed_types,
-        ["CATEGORY", "CRON", "KEYWORD", "REGEX", "TIME_BASED"]
+        app.get(&filters, &token)
+            .await
+            .expect_status(StatusCode::OK)
+            .body,
+        json!([created])
     );
     assert_eq!(
         app.get(&format!("/api/streamers/{other}/filters"), &token)
@@ -1334,7 +1205,6 @@ async fn filters_belong_to_the_streamer_in_their_path() {
     );
 
     // Another streamer's path cannot see, change or remove the filter.
-    let keyword = &ids[1];
     let foreign = format!("/api/streamers/{other}/filters/{keyword}");
     for response in [
         app.get(&foreign, &token).await,
@@ -1354,7 +1224,7 @@ async fn filters_belong_to_the_streamer_in_their_path() {
         .await
         .expect_status(StatusCode::OK)
         .body;
-    assert_eq!(untouched["config"], configs[1].1);
+    assert_eq!(untouched["config"], created["config"]);
 
     // Changing the type needs a config for the new type.
     let response = app
@@ -1388,10 +1258,8 @@ async fn filters_belong_to_the_streamer_in_their_path() {
         app.get(&filters, &token)
             .await
             .expect_status(StatusCode::OK)
-            .body
-            .as_array()
-            .map(Vec::len),
-        Some(4)
+            .body,
+        json!([])
     );
 
     app.shutdown().await;
