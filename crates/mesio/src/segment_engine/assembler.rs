@@ -1767,7 +1767,7 @@ mod tests {
             let (_input_tx, input_rx) = mpsc::channel(16);
             let (event_tx, mut event_rx) = mpsc::channel(16);
             let cancel = CancellationToken::new();
-            let assembler = SequenceAssembler::new(
+            let mut assembler = SequenceAssembler::new(
                 Arc::new(SegmentCoreConfig::from(&config)),
                 input_rx,
                 HlsEventSink::new(event_tx),
@@ -1775,7 +1775,11 @@ mod tests {
                 100,
                 cancel.clone(),
             );
+            // The stall clock and the hold start together: any time between
+            // them would count against the 1 ms stall budget before the hold
+            // could defer it.
             let now = Instant::now();
+            assembler.last_input_received_time = Some(now);
             assembler.rate_limit_holds.hold(
                 &descriptor("https://e.com/seg100.ts", 100, SegmentKind::Media),
                 if expired {
