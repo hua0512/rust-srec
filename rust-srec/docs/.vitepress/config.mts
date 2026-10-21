@@ -66,13 +66,6 @@ export default defineConfig({
           { text: "Operations", link: "/en/operations/production" },
           { text: "Release Notes", link: "/en/release-notes/" },
           { text: "Donate", link: "/en/donate" },
-          {
-            text: "v0.5.1",
-            items: [
-              { text: "Documentation versions", link: "/en/operations/support" },
-              { text: "v0.5.1 release notes", link: "/en/release-notes/v0.5.1" },
-            ],
-          },
         ],
         sidebar: {
           "/en/": [
@@ -220,13 +213,6 @@ export default defineConfig({
           { text: "运维", link: "/zh/operations/production" },
           { text: "更新日志", link: "/zh/release-notes/" },
           { text: "捐赠", link: "/zh/donate" },
-          {
-            text: "v0.5.1",
-            items: [
-              { text: "文档版本说明", link: "/zh/operations/support" },
-              { text: "v0.5.1 更新日志", link: "/zh/release-notes/v0.5.1" },
-            ],
-          },
         ],
         sidebar: {
           "/zh/": [
