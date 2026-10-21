@@ -52,11 +52,7 @@ pub trait NotificationChannel: Send + Sync {
             version: "test".to_string(),
             timestamp: chrono::Utc::now(),
         };
-        let locale = self
-            .locale()
-            .map(str::to_owned)
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.send_rendered(&event, &RenderedEvent::new(&event, &locale))
+        self.send_rendered(&event, &rendered_for(self, &event))
             .await
     }
 
@@ -161,16 +157,24 @@ impl ChannelConfig {
     }
 }
 
+/// `event` in the channel's locale, or the process locale when the channel has none.
+fn rendered_for<C: NotificationChannel + ?Sized>(
+    channel: &C,
+    event: &NotificationEvent,
+) -> RenderedEvent {
+    let locale = channel
+        .locale()
+        .map(str::to_owned)
+        .unwrap_or_else(crate::i18n::current_locale);
+    RenderedEvent::new(event, &locale)
+}
+
 /// Direct sends use the same filtering and payload path as service deliveries.
 async fn send_direct(channel: &dyn NotificationChannel, event: &NotificationEvent) -> Result<()> {
     if !channel.accepts(event) {
         return Ok(());
     }
-    let locale = channel
-        .locale()
-        .map(str::to_owned)
-        .unwrap_or_else(crate::i18n::current_locale);
     channel
-        .send_rendered(event, &RenderedEvent::new(event, &locale))
+        .send_rendered(event, &rendered_for(channel, event))
         .await
 }
