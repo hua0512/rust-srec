@@ -76,6 +76,13 @@ pub enum ConfigUpdateEvent {
     /// Filters are stored separately from the main config/templates and can affect scheduling
     /// decisions (e.g. OutOfSchedule smart-wake). Emit this to force a re-check for the streamer.
     StreamerFiltersUpdated { streamer_id: String },
+
+    /// A streamer's error state and backoff were cleared.
+    ///
+    /// Emitted by `StreamerManager::clear_error_state`. The backoff lives in the
+    /// row, but a running actor has already scheduled its next check at the old
+    /// `disabled_until`; the scheduler turns this into an immediate check.
+    StreamerErrorCleared { streamer_id: String },
 }
 
 impl ConfigUpdateEvent {
@@ -114,6 +121,9 @@ impl ConfigUpdateEvent {
             }
             Self::StreamerFiltersUpdated { streamer_id } => {
                 format!("Streamer filters updated: {}", streamer_id)
+            }
+            Self::StreamerErrorCleared { streamer_id } => {
+                format!("Streamer error cleared: {}", streamer_id)
             }
         }
     }
