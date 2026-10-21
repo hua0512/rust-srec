@@ -245,8 +245,9 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     app.shutdown().await;
 }
 
-/// The bodies `channel-form.tsx` submits for each non-webhook type, with its
-/// defaults: integer `min_priority`, blank `locale`, explicit `enabled`.
+/// The bodies `channel-form.tsx` submits for each type, with its defaults:
+/// integer `min_priority`, blank `locale`, explicit `enabled`. A webhook
+/// stored with a string `min_priority` label loads too.
 #[tokio::test]
 async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
     let app = TestApp::start().await;
@@ -315,70 +316,8 @@ async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
         }),
     )
     .await;
-
-    let instances = app
-        .get("/api/notifications/instances", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let instances = instances.body.as_array().expect("instances array");
-    for (id, name, channel_type) in [
-        (&discord, "Form Discord", "Discord"),
-        (&gotify, "Form Gotify", "Gotify"),
-        (&telegram, "Form Telegram", "Telegram"),
-        (&email, "Form Email", "Email"),
-    ] {
-        let instance = instances
-            .iter()
-            .find(|instance| instance["channel_id"] == id.as_str())
-            .unwrap_or_else(|| panic!("{channel_type} channel is loaded: {instances:?}"));
-        assert_eq!(instance["key"], id.as_str());
-        assert_eq!(instance["display_name"], name);
-        assert_eq!(instance["channel_type"], channel_type);
-        assert_eq!(instance["source"], "database");
-    }
-
-    // Telegram and Email would leave the machine, so only these two send.
-    test_send(&app, &token, &discord)
-        .await
-        .expect_status(StatusCode::OK);
-    test_send(&app, &token, &gotify)
-        .await
-        .expect_status(StatusCode::OK);
-    let paths: Vec<String> = receiver
-        .received()
-        .into_iter()
-        .map(|request| request.path)
-        .collect();
-    assert_eq!(paths, ["/discord", "/message?token=form-token"]);
-
-    // A backup holding them imports again.
-    let bundle = app
-        .get("/api/config/backup/export", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let imported = app
-        .post(
-            "/api/config/backup/import",
-            &token,
-            &json!({ "config": bundle, "mode": "merge" }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(imported.body["stats"]["channels_updated"], 4);
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-#[ignore = "bug: the channel form's integer min_priority fails WebhookChannelSettings (Option<String>), so the webhook never loads"]
-async fn known_bug_form_shaped_webhook_channel_loads_and_can_be_tested() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let receiver = LocalHttpServer::start(200, "ok").await;
-
     // `channel-form.tsx` turns auth `None` into null, and `removeEmpty` drops it.
-    let id = create_channel(
+    let webhook = create_channel(
         &app,
         &token,
         "Form webhook",
@@ -394,12 +333,74 @@ async fn known_bug_form_shaped_webhook_channel_loads_and_can_be_tested() {
         }),
     )
     .await;
+    let labelled = create_channel(
+        &app,
+        &token,
+        "Labelled webhook",
+        "Webhook",
+        json!({ "url": receiver.url("/labelled"), "min_priority": "low" }),
+    )
+    .await;
 
-    assert!(loaded_channel_ids(&app, &token).await.contains(&id));
-    test_send(&app, &token, &id)
+    let instances = app
+        .get("/api/notifications/instances", &token)
         .await
         .expect_status(StatusCode::OK);
-    assert_eq!(receiver.received().len(), 1);
+    let instances = instances.body.as_array().expect("instances array");
+    for (id, name, channel_type) in [
+        (&discord, "Form Discord", "Discord"),
+        (&gotify, "Form Gotify", "Gotify"),
+        (&telegram, "Form Telegram", "Telegram"),
+        (&email, "Form Email", "Email"),
+        (&webhook, "Form webhook", "Webhook"),
+        (&labelled, "Labelled webhook", "Webhook"),
+    ] {
+        let instance = instances
+            .iter()
+            .find(|instance| instance["channel_id"] == id.as_str())
+            .unwrap_or_else(|| panic!("{channel_type} channel is loaded: {instances:?}"));
+        assert_eq!(instance["key"], id.as_str());
+        assert_eq!(instance["display_name"], name);
+        assert_eq!(instance["channel_type"], channel_type);
+        assert_eq!(instance["source"], "database");
+    }
+
+    // Telegram and Email would leave the machine, so they don't send.
+    for id in [&discord, &gotify, &webhook, &labelled] {
+        test_send(&app, &token, id)
+            .await
+            .expect_status(StatusCode::OK);
+    }
+    let paths: Vec<String> = receiver
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "/discord",
+            "/message?token=form-token",
+            "/form",
+            "/labelled"
+        ]
+    );
+
+    // A backup holding them imports again.
+    let bundle = app
+        .get("/api/config/backup/export", &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    let imported = app
+        .post(
+            "/api/config/backup/import",
+            &token,
+            &json!({ "config": bundle, "mode": "merge" }),
+        )
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(imported.body["stats"]["channels_updated"], 6);
 
     app.shutdown().await;
 }

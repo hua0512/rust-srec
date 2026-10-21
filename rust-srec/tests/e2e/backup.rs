@@ -1012,36 +1012,3 @@ async fn a_late_database_failure_rolls_back_a_replace_import() {
 
     app.shutdown().await;
 }
-
-#[tokio::test]
-#[ignore = "bug: the channel form's integer min_priority fails WebhookChannelSettings, so a backup holding the channel is rejected"]
-async fn known_bug_backup_holding_a_form_shaped_webhook_channel_imports() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    app.post(
-        "/api/notifications/channels",
-        &token,
-        &json!({
-            "name": "Form webhook",
-            "channel_type": "Webhook",
-            "settings": {
-                "url": "http://127.0.0.1:9/form",
-                "method": "POST",
-                "min_priority": 2,
-                "locale": "",
-                "enabled": true,
-                "timeout_secs": 30,
-                "headers": {},
-            },
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
-
-    let bundle = export(&app, &token).await;
-    import(&app, &token, &bundle, "merge")
-        .await
-        .expect_status(StatusCode::OK);
-
-    app.shutdown().await;
-}
