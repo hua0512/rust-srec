@@ -56,7 +56,26 @@ pub(crate) async fn write_streamer(
     row.field("last_error", &model.last_error, true)?;
     row.field("created_at", model.created_at, false)?;
     row.field("updated_at", updated_at, true)?;
-    let row: Option<StreamerDbModel> = row.fetch_optional(&mut *connection).await?;
+    let row: Option<StreamerDbModel> = match row.fetch_optional(&mut *connection).await {
+        Ok(row) => row,
+        // SQLite does not name the failed key. The template is the reference
+        // an API caller chooses, so a missing one is reported as not found;
+        // any other failure stays a database error.
+        Err(sqlx::Error::Database(error)) if error.is_foreign_key_violation() => {
+            if let Some(template_id) = &model.template_config_id {
+                let exists: bool =
+                    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM template_config WHERE id = ?)")
+                        .bind(template_id)
+                        .fetch_one(&mut *connection)
+                        .await?;
+                if !exists {
+                    return Err(crate::Error::not_found("TemplateConfig", template_id));
+                }
+            }
+            return Err(sqlx::Error::Database(error).into());
+        }
+        Err(error) => return Err(error.into()),
+    };
     let selection_changed = match &row {
         Some(row) => {
             credential_selections::write_streamer(

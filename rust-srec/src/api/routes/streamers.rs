@@ -319,6 +319,7 @@ fn find_platform_config(
     request_body = CreateStreamerRequest,
     responses(
         (status = 201, description = "Streamer created", body = StreamerResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
         (status = 409, description = "Streamer URL already exists", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
     ),
@@ -771,7 +772,7 @@ pub async fn get_streamer(
     request_body = UpdateStreamerRequest,
     responses(
         (status = 200, description = "Streamer updated", body = StreamerResponse),
-        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
+        (status = 404, description = "Streamer or template not found", body = crate::api::error::ApiErrorResponse),
         (status = 409, description = "URL already exists", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))

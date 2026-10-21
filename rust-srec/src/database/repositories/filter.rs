@@ -222,9 +222,20 @@ impl FilterRepository for SqlxFilterRepository {
             "create filter",
             move |connection| {
                 Box::pin(async move {
-                    writes::write_filter(connection, &filter, super::row_write::WriteMode::Insert)
-                        .await?;
-                    Ok(vec![filter.streamer_id])
+                    match writes::write_filter(
+                        connection,
+                        &filter,
+                        super::row_write::WriteMode::Insert,
+                    )
+                    .await
+                    {
+                        Ok(()) => Ok(vec![filter.streamer_id]),
+                        // `streamer_id` is the only foreign key on `filters`.
+                        Err(sqlx::Error::Database(error)) if error.is_foreign_key_violation() => {
+                            Err(Error::not_found("Streamer", filter.streamer_id))
+                        }
+                        Err(error) => Err(error.into()),
+                    }
                 })
             },
             on_commit,
