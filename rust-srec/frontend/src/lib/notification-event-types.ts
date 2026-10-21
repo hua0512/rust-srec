@@ -23,7 +23,6 @@ const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   download_rejected: msg`Recording rejected`,
   segment_started: msg`Segment started`,
   segment_completed: msg`Segment finished`,
-  config_updated: msg`Settings updated`,
   pipeline_started: msg`Pipeline started`,
   pipeline_completed: msg`Pipeline finished`,
   pipeline_failed: msg`Pipeline failed`,

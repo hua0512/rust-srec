@@ -74,7 +74,7 @@ msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
-#: src/components/notifications/subscription-manager.tsx:460
+#: src/components/notifications/subscription-manager.tsx:452
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, one {# available} other {# available}}"
 
@@ -140,7 +140,7 @@ msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File}
 msgstr "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 
 #. placeholder {0}: selectedEvents.length
-#: src/components/notifications/subscription-manager.tsx:455
+#: src/components/notifications/subscription-manager.tsx:447
 msgid "{0, plural, one {# selected} other {# selected}}"
 msgstr "{0, plural, one {# selected} other {# selected}}"
 
@@ -912,7 +912,7 @@ msgstr "AFTER: {0}"
 msgid "Album"
 msgstr "Album"
 
-#: src/components/notifications/subscription-manager.tsx:182
+#: src/components/notifications/subscription-manager.tsx:174
 msgid "Alerts when disk space is running low."
 msgstr "Alerts when disk space is running low."
 
@@ -1428,7 +1428,7 @@ msgstr "Baidu Netdisk login failed"
 msgid "Baidu Netdisk logout failed"
 msgstr "Baidu Netdisk logout failed"
 
-#: src/lib/notification-event-types.ts:46
+#: src/lib/notification-event-types.ts:45
 msgid "Baidu Netdisk re-login failed"
 msgstr "Baidu Netdisk re-login failed"
 
@@ -1645,7 +1645,7 @@ msgstr "Caching and progress"
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:183
 #: src/components/notifications/channel-form.tsx:454
-#: src/components/notifications/subscription-manager.tsx:470
+#: src/components/notifications/subscription-manager.tsx:462
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
@@ -2590,19 +2590,19 @@ msgstr "Creating…"
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
-#: src/lib/notification-event-types.ts:44
+#: src/lib/notification-event-types.ts:43
 msgid "Credential expiring soon"
 msgstr "Credential expiring soon"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:41
 msgid "Credential invalid"
 msgstr "Credential invalid"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:40
 msgid "Credential refresh failed"
 msgstr "Credential refresh failed"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:39
 msgid "Credential refreshed"
 msgstr "Credential refreshed"
 
@@ -2622,7 +2622,7 @@ msgstr "Credentials remembered for automatic re-login"
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:42
 msgid "Credentials unavailable"
 msgstr "Credentials unavailable"
 
@@ -2643,15 +2643,15 @@ msgctxt "priority"
 msgid "Critical"
 msgstr "Critical"
 
-#: src/components/notifications/subscription-manager.tsx:189
+#: src/components/notifications/subscription-manager.tsx:181
 msgid "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
 msgstr "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
 
-#: src/components/notifications/subscription-manager.tsx:194
+#: src/components/notifications/subscription-manager.tsx:186
 msgid "Critical alert when the processing queue is full."
 msgstr "Critical alert when the processing queue is full."
 
-#: src/components/notifications/subscription-manager.tsx:185
+#: src/components/notifications/subscription-manager.tsx:177
 msgid "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
 msgstr "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
 
@@ -2659,7 +2659,7 @@ msgstr "Critical alert when the recording output filesystem becomes unwritable a
 msgid "Critical Only"
 msgstr "Critical Only"
 
-#: src/components/notifications/subscription-manager.tsx:180
+#: src/components/notifications/subscription-manager.tsx:172
 msgid "Critical system errors or streamer failures."
 msgstr "Critical system errors or streamer failures."
 
@@ -3168,7 +3168,7 @@ msgstr "Description"
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
-#: src/components/notifications/subscription-manager.tsx:370
+#: src/components/notifications/subscription-manager.tsx:362
 msgid "Deselect All"
 msgstr "Deselect All"
 
@@ -4351,7 +4351,7 @@ msgstr "Failed to update settings"
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
-#: src/components/notifications/subscription-manager.tsx:254
+#: src/components/notifications/subscription-manager.tsx:246
 msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
@@ -4403,7 +4403,7 @@ msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and fil
 
 #: src/components/streamers/edit/status-check-history.tsx:374
 #: src/components/streamers/edit/status-check-history.tsx:395
-#: src/lib/notification-event-types.ts:33
+#: src/lib/notification-event-types.ts:32
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:124
 msgid "Fatal error"
 msgstr "Fatal error"
@@ -4900,7 +4900,7 @@ msgstr "GPU HQ Archive"
 msgid "GPU Standard"
 msgstr "GPU Standard"
 
-#: src/lib/notification-event-types.ts:36
+#: src/lib/notification-event-types.ts:35
 msgid "GPU unavailable"
 msgstr "GPU unavailable"
 
@@ -5989,7 +5989,7 @@ msgstr "Manage specialized extraction and identification options."
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
-#: src/components/notifications/subscription-manager.tsx:324
+#: src/components/notifications/subscription-manager.tsx:316
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
@@ -6642,7 +6642,7 @@ msgstr "No logs available for this execution."
 msgid "No logs to display"
 msgstr "No logs to display"
 
-#: src/components/notifications/subscription-manager.tsx:389
+#: src/components/notifications/subscription-manager.tsx:381
 msgid "No matching events found"
 msgstr "No matching events found"
 
@@ -7176,7 +7176,7 @@ msgstr "Original (10000)"
 msgid "Original / Blu-ray"
 msgstr "Original / Blu-ray"
 
-#: src/lib/notification-event-types.ts:34
+#: src/lib/notification-event-types.ts:33
 msgid "Out of disk space"
 msgstr "Out of disk space"
 
@@ -7228,7 +7228,7 @@ msgstr "Output Detection"
 msgid "Output Folder"
 msgstr "Output Folder"
 
-#: src/lib/notification-event-types.ts:35
+#: src/lib/notification-event-types.ts:34
 msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
@@ -7564,7 +7564,7 @@ msgstr "Pick a preset theme or import a custom one."
 msgid "Pipeline"
 msgstr "Pipeline"
 
-#: src/lib/notification-event-types.ts:30
+#: src/lib/notification-event-types.ts:29
 msgid "Pipeline cancelled"
 msgstr "Pipeline cancelled"
 
@@ -7580,11 +7580,11 @@ msgstr "Pipeline deleted successfully"
 msgid "Pipeline Execution"
 msgstr "Pipeline Execution"
 
-#: src/lib/notification-event-types.ts:29
+#: src/lib/notification-event-types.ts:28
 msgid "Pipeline failed"
 msgstr "Pipeline failed"
 
-#: src/lib/notification-event-types.ts:28
+#: src/lib/notification-event-types.ts:27
 msgid "Pipeline finished"
 msgstr "Pipeline finished"
 
@@ -7643,15 +7643,15 @@ msgstr "Pipeline name is required"
 msgid "Pipeline not found"
 msgstr "Pipeline not found"
 
-#: src/lib/notification-event-types.ts:31
+#: src/lib/notification-event-types.ts:30
 msgid "Pipeline queue backing up"
 msgstr "Pipeline queue backing up"
 
-#: src/lib/notification-event-types.ts:32
+#: src/lib/notification-event-types.ts:31
 msgid "Pipeline queue critical"
 msgstr "Pipeline queue critical"
 
-#: src/lib/notification-event-types.ts:27
+#: src/lib/notification-event-types.ts:26
 msgid "Pipeline started"
 msgstr "Pipeline started"
 
@@ -7705,7 +7705,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:38
 msgid "Platform rate limited"
 msgstr "Platform rate limited"
 
@@ -8289,11 +8289,11 @@ msgstr "Real-time status of all system components and resources."
 msgid "Reason"
 msgstr "Reason"
 
-#: src/components/notifications/subscription-manager.tsx:150
+#: src/components/notifications/subscription-manager.tsx:146
 msgid "Receive a notification when a stream ends."
 msgstr "Receive a notification when a stream ends."
 
-#: src/components/notifications/subscription-manager.tsx:148
+#: src/components/notifications/subscription-manager.tsx:144
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
@@ -8994,7 +8994,7 @@ msgstr "Save changes"
 
 #: src/components/config/platforms/platform-editor.tsx:186
 #: src/components/config/templates/template-editor.tsx:207
-#: src/components/notifications/subscription-manager.tsx:480
+#: src/components/notifications/subscription-manager.tsx:472
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
@@ -9144,7 +9144,7 @@ msgstr "Search comments..."
 msgid "Search engines..."
 msgstr "Search engines..."
 
-#: src/components/notifications/subscription-manager.tsx:355
+#: src/components/notifications/subscription-manager.tsx:347
 msgid "Search events..."
 msgstr "Search events..."
 
@@ -9291,7 +9291,7 @@ msgid "Select a streamer"
 msgstr "Select a streamer"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:173
-#: src/components/notifications/subscription-manager.tsx:373
+#: src/components/notifications/subscription-manager.tsx:365
 msgid "Select All"
 msgstr "Select All"
 
@@ -9398,7 +9398,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:327
+#: src/components/notifications/subscription-manager.tsx:319
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
@@ -9494,7 +9494,7 @@ msgstr "Session Complete Pipeline"
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
-#: src/lib/notification-event-types.ts:45
+#: src/lib/notification-event-types.ts:44
 msgid "Session cookies not saved"
 msgstr "Session cookies not saved"
 
@@ -9592,10 +9592,6 @@ msgstr "Set up a new download tool configuration"
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:114
 msgid "Settings"
 msgstr "Settings"
-
-#: src/lib/notification-event-types.ts:26
-msgid "Settings updated"
-msgstr "Settings updated"
 
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:178
 msgid "Settings updated successfully"
@@ -10131,7 +10127,7 @@ msgstr "Streams per file (--multi-thread-streams)."
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
-#: src/components/notifications/subscription-manager.tsx:247
+#: src/components/notifications/subscription-manager.tsx:239
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
@@ -10213,11 +10209,11 @@ msgstr "System proxy"
 msgid "System proxy: <0>{url}</0>"
 msgstr "System proxy: <0>{url}</0>"
 
-#: src/lib/notification-event-types.ts:38
+#: src/lib/notification-event-types.ts:37
 msgid "System shutting down"
 msgstr "System shutting down"
 
-#: src/lib/notification-event-types.ts:37
+#: src/lib/notification-event-types.ts:36
 msgid "System started"
 msgstr "System started"
 
@@ -10927,59 +10923,55 @@ msgstr "Triggered after each segment recording"
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
-#: src/components/notifications/subscription-manager.tsx:156
+#: src/components/notifications/subscription-manager.tsx:152
 msgid "Triggered when a download fails with an error."
 msgstr "Triggered when a download fails with an error."
 
-#: src/components/notifications/subscription-manager.tsx:162
+#: src/components/notifications/subscription-manager.tsx:158
 msgid "Triggered when a download is manually cancelled."
 msgstr "Triggered when a download is manually cancelled."
 
-#: src/components/notifications/subscription-manager.tsx:165
+#: src/components/notifications/subscription-manager.tsx:161
 msgid "Triggered when a download is rejected (e.g., circuit breaker)."
 msgstr "Triggered when a download is rejected (e.g., circuit breaker)."
 
-#: src/components/notifications/subscription-manager.tsx:154
+#: src/components/notifications/subscription-manager.tsx:150
 msgid "Triggered when a download successfully completes."
 msgstr "Triggered when a download successfully completes."
 
-#: src/components/notifications/subscription-manager.tsx:160
+#: src/components/notifications/subscription-manager.tsx:156
 msgid "Triggered when a file segment is finished."
 msgstr "Triggered when a file segment is finished."
 
-#: src/components/notifications/subscription-manager.tsx:152
+#: src/components/notifications/subscription-manager.tsx:148
 msgid "Triggered when a new download recording begins."
 msgstr "Triggered when a new download recording begins."
 
-#: src/components/notifications/subscription-manager.tsx:158
+#: src/components/notifications/subscription-manager.tsx:154
 msgid "Triggered when a new file segment is created."
 msgstr "Triggered when a new file segment is created."
 
-#: src/components/notifications/subscription-manager.tsx:176
+#: src/components/notifications/subscription-manager.tsx:168
 msgid "Triggered when a pipeline job fails."
 msgstr "Triggered when a pipeline job fails."
 
-#: src/components/notifications/subscription-manager.tsx:174
+#: src/components/notifications/subscription-manager.tsx:166
 msgid "Triggered when a pipeline job finishes successfully."
 msgstr "Triggered when a pipeline job finishes successfully."
 
-#: src/components/notifications/subscription-manager.tsx:178
+#: src/components/notifications/subscription-manager.tsx:170
 msgid "Triggered when a pipeline job is cancelled."
 msgstr "Triggered when a pipeline job is cancelled."
 
-#: src/components/notifications/subscription-manager.tsx:172
+#: src/components/notifications/subscription-manager.tsx:164
 msgid "Triggered when a post-processing pipeline job starts."
 msgstr "Triggered when a post-processing pipeline job starts."
 
-#: src/components/notifications/subscription-manager.tsx:169
-msgid "Triggered when streamer configuration is dynamically updated."
-msgstr "Triggered when streamer configuration is dynamically updated."
-
-#: src/components/notifications/subscription-manager.tsx:198
+#: src/components/notifications/subscription-manager.tsx:190
 msgid "Triggered when the application shuts down."
 msgstr "Triggered when the application shuts down."
 
-#: src/components/notifications/subscription-manager.tsx:196
+#: src/components/notifications/subscription-manager.tsx:188
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
@@ -11529,7 +11521,7 @@ msgstr "Waiting for connection..."
 msgid "Waiting since"
 msgstr "Waiting since"
 
-#: src/components/notifications/subscription-manager.tsx:192
+#: src/components/notifications/subscription-manager.tsx:184
 msgid "Warning when the processing queue gets too long."
 msgstr "Warning when the processing queue gets too long."
 

@@ -29,9 +29,6 @@ notification:
   download_rejected:
     title: "🚫 %{streamer_name} 的录制被拒绝"
     description: "%{reason}"
-  config_updated:
-    title: "⚙️ 已更新 %{streamer_name} 的配置"
-    description: "更新类型:%{update_type}"
 
   # ============ 分段事件 ============
   segment_started:

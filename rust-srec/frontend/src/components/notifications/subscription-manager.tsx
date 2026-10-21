@@ -48,7 +48,6 @@ import {
   HardDrive,
   Cpu,
   AlertTriangle,
-  Settings,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { motion } from 'motion/react';
@@ -134,9 +133,6 @@ const getEventIcon = (eventType: string) => {
         color: 'text-yellow-500',
         bg: 'bg-yellow-500/10',
       };
-    case 'config_updated':
-      return { icon: Settings, color: 'text-gray-500', bg: 'bg-gray-500/10' };
-
     default:
       return { icon: BellRing, color: 'text-gray-400', bg: 'bg-gray-500/10' };
   }
@@ -163,10 +159,6 @@ const getEventDescription = (eventType: string, i18n: any) => {
     case 'download_rejected':
       return i18n._(
         msg`Triggered when a download is rejected (e.g., circuit breaker).`,
-      );
-    case 'config_updated':
-      return i18n._(
-        msg`Triggered when streamer configuration is dynamically updated.`,
       );
     case 'pipeline_started':
       return i18n._(msg`Triggered when a post-processing pipeline job starts.`);

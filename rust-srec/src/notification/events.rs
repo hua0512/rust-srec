@@ -220,13 +220,6 @@ pub enum NotificationEvent {
         reason: String,
         timestamp: DateTime<Utc>,
     },
-    /// Download configuration was updated dynamically.
-    ConfigUpdated {
-        streamer_id: String,
-        streamer_name: String,
-        update_type: String,
-        timestamp: DateTime<Utc>,
-    },
 
     // ========== Pipeline Events ==========
     /// Pipeline job started.
@@ -386,7 +379,6 @@ impl NotificationEvent {
             Self::SegmentCompleted { .. } => NotificationPriority::Low,
             Self::DownloadCancelled { .. } => NotificationPriority::Normal,
             Self::DownloadRejected { .. } => NotificationPriority::High,
-            Self::ConfigUpdated { .. } => NotificationPriority::Low,
 
             // Pipeline events
             Self::PipelineStarted { .. } => NotificationPriority::Low,
@@ -425,7 +417,6 @@ impl NotificationEvent {
             Self::SegmentCompleted { .. } => "segment_completed",
             Self::DownloadCancelled { .. } => "download_cancelled",
             Self::DownloadRejected { .. } => "download_rejected",
-            Self::ConfigUpdated { .. } => "config_updated",
             Self::PipelineStarted { .. } => "pipeline_started",
             Self::PipelineCompleted { .. } => "pipeline_completed",
             Self::PipelineFailed { .. } => "pipeline_failed",
@@ -456,7 +447,6 @@ impl NotificationEvent {
             | Self::SegmentCompleted { timestamp, .. }
             | Self::DownloadCancelled { timestamp, .. }
             | Self::DownloadRejected { timestamp, .. }
-            | Self::ConfigUpdated { timestamp, .. }
             | Self::PipelineStarted { timestamp, .. }
             | Self::PipelineCompleted { timestamp, .. }
             | Self::PipelineFailed { timestamp, .. }
@@ -494,7 +484,6 @@ impl NotificationEvent {
             | Self::SegmentCompleted { streamer_id, .. }
             | Self::DownloadCancelled { streamer_id, .. }
             | Self::DownloadRejected { streamer_id, .. }
-            | Self::ConfigUpdated { streamer_id, .. }
             | Self::PipelineStarted { streamer_id, .. }
             | Self::FatalError { streamer_id, .. } => Some(streamer_id),
             _ => None,
