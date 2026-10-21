@@ -350,11 +350,11 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
 /// integer `min_priority`, blank `locale`, explicit `enabled`. A webhook
 /// stored with a string `min_priority` label loads too.
 ///
-/// Older versions offered `config_updated`, so databases and backups still
-/// hold subscriptions to it. Like any name the catalog doesn't know, they are
-/// kept and listed as stored but route nothing.
+/// Older versions offered `config_updated`, so their backups still hold
+/// subscriptions to it. Restoring one drops them under every spelling the
+/// catalog accepted, while other names the catalog doesn't know are kept.
 #[tokio::test]
-async fn form_shaped_channels_load_send_and_survive_a_backup_with_retired_subscriptions() {
+async fn form_shaped_channels_load_send_and_survive_a_backup_that_drops_retired_subscriptions() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "{}").await;
@@ -464,7 +464,13 @@ async fn form_shaped_channels_load_send_and_survive_a_backup_with_retired_subscr
     );
 
     let retired = &ids[4];
-    let stored = ["config.updated", "config_updated", "stream_online"];
+    let stored = [
+        "ConfigUpdated",
+        "config.updated",
+        "config_updated",
+        "future_event",
+        "stream_online",
+    ];
     let rows: Vec<String> = stored
         .iter()
         .map(|event| format!("('{retired}', '{event}')"))
@@ -510,7 +516,7 @@ async fn form_shaped_channels_load_send_and_survive_a_backup_with_retired_subscr
         &format!("/api/notifications/channels/{retired}/subscriptions"),
     )
     .await;
-    assert_eq!(listed, json!(stored));
+    assert_eq!(listed, json!(["future_event", "stream_online"]));
 
     app.shutdown().await;
 }
