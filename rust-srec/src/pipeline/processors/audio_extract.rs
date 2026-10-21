@@ -357,7 +357,14 @@ impl AudioExtractProcessor {
             output_override.filter(|s| !s.is_empty()),
             codec.as_deref(),
         );
-        let temp_path = batch.stage(Path::new(&output_path), true).await?;
+        if !config.overwrite && super::utils::try_exists(Path::new(&output_path)).await? {
+            return Err(crate::Error::PipelineError(format!(
+                "Output file already exists and overwrite is disabled: {output_path}"
+            )));
+        }
+        let temp_path = batch
+            .stage(Path::new(&output_path), config.overwrite)
+            .await?;
 
         info!(
             "Extracting audio from {} -> {} (format: {:?})",
@@ -641,8 +648,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "bug: overwrite:false is ignored; publishing always replaces an existing output"]
-    async fn known_bug_overwrite_false_keeps_an_existing_output() {
+    async fn overwrite_false_keeps_an_existing_output() {
         let dir = tempfile::tempdir().unwrap();
         let ffmpeg = super::super::output_tests::fake_success_ffmpeg(dir.path());
         let input = dir.path().join("video.mp4");
@@ -666,6 +672,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(std::fs::read(&output).unwrap(), b"existing", "{result:?}");
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("overwrite is disabled")
+        );
     }
 
     /// A stream copy keeps the source codec, so the generated name must use a
