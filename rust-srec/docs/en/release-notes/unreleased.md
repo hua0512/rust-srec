@@ -23,6 +23,7 @@
 - Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space.
 - Fixed Bigo rooms being shown as offline, and never recorded, when Bigo asked for a login, which it can do after many requests from the same network. Such checks now fail with a login-required error, and an account whose cookies stopped working is marked as needing a new login. Adding an account with cookies from a browser logged in to Bigo fixes it. See [Bigo Live](../platforms/bigo.md).
 - Fixed a recording keeping its earlier title when the stream's title changed while the connection briefly dropped: the session page and the session's workflows used the earlier title, although the recording's new files were already named after the new one.
+- Fixed a streamer whose error was cleared through the API or MCP, or which was waiting for an unavailable output folder that became writable again, only being checked again once its previous retry delay ran out. It is now checked right away.
 
 ## Workflows and file processing
 

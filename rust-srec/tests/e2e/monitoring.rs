@@ -173,9 +173,10 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_the_backoff(
     app.shutdown().await;
 }
 
+/// Clearing the error checks the streamer again right away instead of at the
+/// end of its 60 s backoff.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "bug: clear-error resets the backoff fields, but the streamer is not checked again until the old disabled_until"]
-async fn known_bug_clear_error_resumes_monitoring_before_the_backoff_ends() {
+async fn clear_error_resumes_monitoring_before_the_backoff_ends() {
     let fake = FakePlatform::start().await;
     let (app, token, id) = backing_off(&fake).await;
     fake.room("flaky").set_offline();

@@ -275,23 +275,31 @@ where
     ///
     /// Resets consecutive_error_count to 0, clears disabled_until,
     /// and sets state to NotLive.
+    ///
+    /// # Events
+    /// Emits `ConfigUpdateEvent::StreamerErrorCleared` once the cache holds the
+    /// cleared row, so the scheduler checks the streamer now rather than at the
+    /// backoff deadline its actor already scheduled.
     pub async fn clear_error_state(&self, id: &str) -> Result<()> {
         debug!("Clearing error state for streamer {}", id);
 
         // Persist to database
         self.repo.clear_streamer_error_state(id).await?;
-        if self.committed.is_some() {
-            return Ok(());
-        }
 
-        // Update in-memory cache
-        if let Some(mut entry) = self.metadata.get_mut(id) {
+        if self.committed.is_none()
+            && let Some(mut entry) = self.metadata.get_mut(id)
+        {
             let entry = Arc::make_mut(entry.value_mut());
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.last_error = None;
             entry.state = StreamerState::NotLive;
         }
+
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerErrorCleared {
+                streamer_id: id.to_owned(),
+            });
 
         Ok(())
     }

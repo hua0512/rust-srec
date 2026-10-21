@@ -523,6 +523,8 @@ impl ConfigEventHandler {
                     .invalidate_filter_snapshots(&streamer_id);
                 debug!("Received streamer filters update event: {}", streamer_id);
             }
+            // Only the scheduler holds state that a cleared backoff invalidates.
+            ConfigUpdateEvent::StreamerErrorCleared { .. } => {}
         }
     }
 }

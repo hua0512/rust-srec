@@ -108,6 +108,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 self.feedback.request_check(&streamer_id);
                 self.queue_streamer_configuration(&streamer_id, false)
             }
+            ConfigUpdateEvent::StreamerErrorCleared { streamer_id } => {
+                self.feedback.request_check(&streamer_id)
+            }
             ConfigUpdateEvent::TemplateUpdated { template_id } => {
                 for metadata in self.streamer_manager.get_by_template(&template_id) {
                     self.queue_streamer_configuration(&metadata.id, false);
