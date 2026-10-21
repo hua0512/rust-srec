@@ -59,6 +59,7 @@
 - API key names and passwords are now measured in characters. Names longer than 33 Chinese, Japanese or Korean characters were refused, while passwords of such characters shorter than the minimum length were accepted.
 - Creating or updating a streamer with a template that no longer exists, or adding a filter to a streamer that was deleted, now reports that it was not found instead of failing with a server error.
 - Engine settings that don't fit the engine's type are now refused when saved, instead of being accepted and failing when the engine is tested or used. Engines already saved this way still load.
+- Fixed AI assistants connected over MCP failing to change an engine's type: the tool described the types in lowercase, which the server refuses. It now lists the accepted values.
 
 ## Web interface
 
