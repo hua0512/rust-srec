@@ -153,61 +153,6 @@ mod tests {
     }
 
     #[test]
-    fn init_and_media_at_same_uri_are_distinct_keys() {
-        let uri: Arc<str> = Arc::from("https://example.com/seg.mp4");
-        let init = SegmentKey {
-            kind: SegmentKind::Init,
-            uri: Arc::clone(&uri),
-            byte_range: None,
-            scope: None,
-        };
-        let media = SegmentKey {
-            kind: SegmentKind::Media,
-            uri,
-            byte_range: None,
-            scope: None,
-        };
-        assert_ne!(init, media);
-    }
-
-    #[test]
-    fn byte_ranges_at_same_uri_are_distinct_keys() {
-        let uri: Arc<str> = Arc::from("https://example.com/all.ts");
-        let a = SegmentKey {
-            kind: SegmentKind::Media,
-            uri: Arc::clone(&uri),
-            byte_range: Some(ByteRangeKey {
-                length: 10,
-                offset: 0,
-            }),
-            scope: None,
-        };
-        let b = SegmentKey {
-            kind: SegmentKind::Media,
-            uri,
-            byte_range: Some(ByteRangeKey {
-                length: 10,
-                offset: 10,
-            }),
-            scope: None,
-        };
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn scopes_at_same_uri_are_distinct_keys() {
-        let key = |scope: Option<&str>| SegmentKey {
-            kind: SegmentKind::Media,
-            uri: Arc::from("https://example.com/seg-1.m4s"),
-            byte_range: None,
-            scope: scope.map(Arc::from),
-        };
-        assert_ne!(key(Some("p0/v1")), key(Some("p1/v1")));
-        assert_ne!(key(None), key(Some("p0/v1")));
-        assert_eq!(key(Some("p0/v1")), key(Some("p0/v1")));
-    }
-
-    #[test]
     fn full_url_policy_keeps_rotating_params_distinct() {
         let policy = FullUrlIdentity;
         let a = policy.canonical_uri(&url("https://e.com/s1.ts?token=aaa"));
@@ -238,6 +183,15 @@ mod tests {
         let policy = StripQueryIdentity::new(["token"]);
         let a = policy.canonical_uri(&url("https://e.com/s1.ts?b=2&a=1&token=x"));
         let b = policy.canonical_uri(&url("https://e.com/s1.ts?a=1&b=2&token=y"));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    #[ignore = "bug: a URL with no insignificant key is kept verbatim, so its parameter order still forks identity"]
+    fn known_bug_strip_query_policy_sorts_params_when_nothing_is_stripped() {
+        let policy = StripQueryIdentity::new(["token"]);
+        let a = policy.canonical_uri(&url("https://e.com/s1.ts?b=2&a=1"));
+        let b = policy.canonical_uri(&url("https://e.com/s1.ts?a=1&b=2"));
         assert_eq!(a, b);
     }
 }

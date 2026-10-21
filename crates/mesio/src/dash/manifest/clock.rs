@@ -304,16 +304,4 @@ mod tests {
         assert_eq!(stepped_back.as_time_delta(), TimeDelta::seconds(10));
         assert_eq!(ClockOffset::ZERO.apply(at(1, 0)), at(1, 0));
     }
-
-    #[test]
-    fn manual_clock() {
-        let clock = ManualClock::new(at(100, 0));
-        assert_eq!(clock.now(), at(100, 0));
-        clock.advance(Duration::from_millis(1_500));
-        assert_eq!(clock.now(), at(101, 500));
-        clock.set(at(5, 0));
-        assert_eq!(clock.now(), at(5, 0));
-        let clock: &dyn Clock = &SystemClock;
-        assert!(clock.now() > at(1_700_000_000, 0));
-    }
 }

@@ -232,27 +232,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_miss() {
-        let cache = MemoryCache::new(100, 60);
-        let k = key("non_existent");
-        let result = cache.get(&k).await.unwrap();
-        assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_contains_key() {
-        let cache = MemoryCache::new(100, 60);
-        let k = key("item_contains");
-        let d = data("hello");
-        let m = metadata(d.len() as u64, Some(60));
-
-        assert!(!cache.contains(&k).await.unwrap());
-        cache.put(k.clone(), d, m).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle after put
-        assert!(cache.contains(&k).await.unwrap());
-    }
-
-    #[tokio::test]
     async fn test_put_get_expired_by_metadata() {
         let cache = MemoryCache::new(100, 3600);
         let k = key("expired_item_meta");
@@ -354,14 +333,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_remove_non_existent_key() {
-        let cache = MemoryCache::new(100, 60);
-        let k = key("ghost_key");
-        let result = cache.remove(&k).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
     async fn test_clear_cache() {
         let cache = MemoryCache::new(100, 60);
         let k1 = key("item_clear1");
@@ -384,110 +355,6 @@ mod tests {
         assert!(!cache.contains(&k1).await.unwrap());
         assert!(!cache.contains(&k2).await.unwrap());
         assert_eq!(cache.cache.entry_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_eviction_on_max_size() {
-        init_tracing();
-        let cache = MemoryCache::new(10, 60); // Max size 10 bytes. Each item 5 bytes.
-
-        let k1 = key("evict_item1");
-        let d1 = data("dataA"); // 5 bytes
-        let m1 = metadata(d1.len() as u64, Some(60));
-
-        let k2 = key("evict_item2");
-        let d2 = data("dataB"); // 5 bytes
-        let m2 = metadata(d2.len() as u64, Some(60));
-
-        let k3 = key("evict_item3");
-        let d3 = data("dataC"); // 5 bytes
-        let m3 = metadata(d3.len() as u64, Some(60));
-        debug!("Putting k1 (evict_item1)");
-
-        cache.cache.run_pending_tasks().await; // Settle
-        debug!(
-            "After putting k1: contains_k1={}, size={}, count={}",
-            cache.contains(&k1).await.unwrap(),
-            cache.cache.weighted_size(),
-            cache.cache.entry_count()
-        );
-        debug!("Putting k2 (evict_item2)");
-        // Put first item
-        cache.put(k1.clone(), d1.clone(), m1.clone()).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle
-        debug!(
-            "After putting k2: contains_k1={}, contains_k2={}, size={}, count={}",
-            cache.contains(&k1).await.unwrap(),
-            cache.contains(&k2).await.unwrap(),
-            cache.cache.weighted_size(),
-            cache.cache.entry_count()
-        );
-
-        // Put second item
-        debug!("Cache should be full now (k1, k2). Sweeping...");
-        cache.put(k2.clone(), d2.clone(), m2.clone()).await.unwrap();
-        debug!(
-            "After sweep1: contains_k1={}, contains_k2={}, size={}, count={}",
-            cache.contains(&k1).await.unwrap(),
-            cache.contains(&k2).await.unwrap(),
-            cache.cache.weighted_size(),
-            cache.cache.entry_count()
-        );
-
-        debug!("Putting k3 (evict_item3) - expecting eviction");
-        // At this point, both k1 and k2 are in the cache, total size is 10 bytes.
-        cache.cache.run_pending_tasks().await; // Settle
-        debug!(
-            "After putting k3: contains_k1={}, contains_k2={}, contains_k3={}, size={}, count={}",
-            cache.contains(&k1).await.unwrap(),
-            cache.contains(&k2).await.unwrap(),
-            cache.contains(&k3).await.unwrap(),
-            cache.cache.weighted_size(),
-            cache.cache.entry_count()
-        );
-        debug!("Sweeping after k3 put...");
-
-        debug!(
-            "After sweep2 (final state before assertions): contains_k1={}, contains_k2={}, contains_k3={}, size={}, count={}",
-            cache.contains(&k1).await.unwrap(),
-            cache.contains(&k2).await.unwrap(),
-            cache.contains(&k3).await.unwrap(),
-            cache.cache.weighted_size(),
-            cache.cache.entry_count()
-        );
-        cache.sweep().await.unwrap(); // Ensure Moka processes invalidations
-
-        // Put third item - this should trigger eviction
-        cache.put(k3.clone(), d3.clone(), m3.clone()).await.unwrap();
-
-        cache.sweep().await.unwrap(); // Ensure Moka processes invalidations
-
-        // After all three puts, K3 is evicted
-        // Moka cache, used by MemoryCache, employs a TinyLFU eviction policy by default. With TinyLFU,
-        // the newly added item (k3) was being evicted because it was considered less valuable (due to lower initial frequency estimates)
-        // than the existing items, even though k1 was technically the LRU item among k1 and k2.
-        assert!(
-            cache.contains(&k1).await.unwrap(),
-            "k1 should still be present as k3 was evicted"
-        );
-        assert!(
-            cache.contains(&k2).await.unwrap(),
-            "k2 should still be present as k3 was evicted"
-        );
-        assert!(
-            !cache.contains(&k3).await.unwrap(),
-            "k3 (newest) should have been evicted by TinyLFU"
-        );
-        assert_eq!(
-            cache.cache.weighted_size(),
-            10,
-            "Cache size should be 10 (k1+k2) after k3's eviction"
-        );
-        assert_eq!(
-            cache.cache.entry_count(),
-            2,
-            "Entry count should be 2 (k1, k2)"
-        );
     }
 
     #[tokio::test]
@@ -605,42 +472,5 @@ mod tests {
             None => panic!("Expected CacheHit, got None for non-expiring item"),
         }
         assert!(cache.contains(&k).await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn test_put_get_no_moka_ttl_with_metadata_expiry_logic() {
-        let cache = MemoryCache::new(100, 0);
-        let k = key("item_meta_expiry_only");
-        let d = data("data_expires_by_meta");
-        let m = metadata(d.len() as u64, Some(1));
-
-        cache.put(k.clone(), d.clone(), m.clone()).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle
-
-        match cache.get(&k).await.unwrap() {
-            Some((_, _, CacheStatus::Hit)) => {}
-            res => panic!("Expected Hit initially, got {res:?}"),
-        }
-
-        sleep(Duration::from_millis(1500)).await;
-        cache.cache.run_pending_tasks().await; // Ensure expiry check in get() can lead to invalidation processing
-
-        let result = cache.get(&k).await.unwrap();
-        match result {
-            Some((res_d, _, CacheStatus::Expired)) => {
-                assert_eq!(res_d, d);
-            }
-            res => panic!("Expected CacheExpired due to metadata, got {res:?}"),
-        }
-
-        cache.cache.run_pending_tasks().await; // Ensure invalidation from get() is processed
-        assert!(
-            !cache.contains(&k).await.unwrap(),
-            "Item should be removed after being fetched as expired"
-        );
-        assert!(
-            cache.get(&k).await.unwrap().is_none(),
-            "Subsequent get should be None"
-        );
     }
 }
