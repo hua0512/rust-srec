@@ -517,6 +517,30 @@ async fn panic_before_application_retains_feedback_for_the_replacement_generatio
     .expect("replacement must receive retained lifecycle work");
 }
 
+/// A streamer disabled and enabled again before its download finished
+/// stopping: the new actor must not adopt that download or apply its end.
+#[tokio::test]
+async fn reactivation_leaves_the_retired_attempt_to_the_retired_activation() {
+    let feedback = SchedulerFeedback::new();
+    let (start, end) = feedback.reserve_attempt("one").unwrap();
+    let first = feedback.publish_reserved(&started("one", "d", "s"), start);
+    feedback.retire("one");
+    assert_eq!(applied(first).await, FeedbackDisposition::Retired);
+    feedback.activate("one");
+
+    assert_eq!(feedback.active_download("one"), None);
+    assert_eq!(
+        applied(feedback.publish_reserved(&completed("one", "d", "s"), end)).await,
+        FeedbackDisposition::Superseded
+    );
+    let (start, _end) = feedback.reserve_attempt("one").unwrap();
+    let _next = feedback.publish_reserved(&started("one", "next", "next-s"), start);
+    assert_eq!(
+        feedback.active_download("one"),
+        Some(("next".to_owned(), "next-s".to_owned()))
+    );
+}
+
 #[tokio::test]
 async fn shutdown_and_retirement_release_every_reserved_envelope_without_polling() {
     let feedback = SchedulerFeedback::new();
