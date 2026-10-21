@@ -6,8 +6,8 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    LocalHttpServer, ReceivedRequest, Response, TestApp, WAIT, assert_recent, eventually, id_of,
-    millis, now_ms, sorted_keys,
+    ADMIN_PASSWORD, ADMIN_USERNAME, LocalHttpServer, ReceivedRequest, Response, TestApp, WAIT,
+    assert_recent, eventually, id_of, millis, now_ms, sorted_keys,
 };
 
 /// `SystemStartup` rendered for the test button, whose event carries version `test`.
@@ -891,8 +891,7 @@ async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() 
 }
 
 #[tokio::test]
-#[ignore = "bug: config_updated is offered for subscription, but nothing emits it any more"]
-async fn known_bug_event_type_catalog_offers_only_emitted_events() {
+async fn the_event_type_catalog_does_not_offer_config_updated_which_nothing_emits() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
@@ -908,6 +907,71 @@ async fn known_bug_event_type_catalog_offers_only_emitted_events() {
         .filter_map(|entry| entry["event_type"].as_str())
         .collect();
     assert!(!offered.contains(&"config_updated"), "{offered:?}");
+
+    app.shutdown().await;
+}
+
+/// Older versions offered `config_updated`, so databases and backups still hold
+/// subscriptions to it. Like any name the catalog doesn't know, they are kept
+/// and listed as stored but route nothing.
+#[tokio::test]
+async fn subscriptions_to_a_retired_event_type_are_kept_without_breaking_the_channel() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let id = create_channel(
+        &app,
+        &token,
+        "Retired",
+        "Webhook",
+        json!({ "url": "http://127.0.0.1:9/retired" }),
+    )
+    .await;
+    let stored = ["config.updated", "config_updated", "stream_online"];
+    let rows: Vec<String> = stored
+        .iter()
+        .map(|event| format!("('{id}', '{event}')"))
+        .collect();
+    app.run_sql(&format!(
+        "INSERT INTO notification_subscription (channel_id, event_name) VALUES {}",
+        rows.join(", ")
+    ))
+    .await;
+
+    let bundle = app
+        .get("/api/config/backup/export", &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    let exported = bundle["notification_channels"]
+        .as_array()
+        .expect("exported channels")
+        .iter()
+        .find(|channel| channel["name"] == "Retired")
+        .expect("the channel is exported");
+    assert_eq!(exported["subscriptions"], json!(stored));
+    // The import reloads the channels, subscriptions included.
+    app.post(
+        "/api/config/backup/import",
+        &token,
+        &json!({ "config": bundle, "mode": "merge" }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+
+    // A successful import ends every session.
+    let token = app
+        .login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD)
+        .await
+        .access;
+    assert!(loaded_channel_ids(&app, &token).await.contains(&id));
+    let listed = app
+        .get(
+            &format!("/api/notifications/channels/{id}/subscriptions"),
+            &token,
+        )
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(listed.body, json!(stored));
 
     app.shutdown().await;
 }

@@ -78,12 +78,6 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         aliases: &["download_rejected", "download.rejected", "DownloadRejected"],
     },
     NotificationEventTypeInfo {
-        event_type: "config_updated",
-        label: "Config Updated",
-        priority: NotificationPriority::Low,
-        aliases: &["config_updated", "config.updated", "ConfigUpdated"],
-    },
-    NotificationEventTypeInfo {
         event_type: "pipeline_started",
         label: "Pipeline Started",
         priority: NotificationPriority::Low,

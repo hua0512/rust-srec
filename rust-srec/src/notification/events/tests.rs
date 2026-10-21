@@ -234,12 +234,6 @@ fn sample_events() -> Vec<NotificationEvent> {
             reason: "circuit breaker open".into(),
             timestamp: now,
         },
-        NotificationEvent::ConfigUpdated {
-            streamer_id: "s1".into(),
-            streamer_name: "TestStreamer".into(),
-            update_type: "Cookies".into(),
-            timestamp: now,
-        },
         NotificationEvent::PipelineStarted {
             job_id: "job-1".into(),
             job_type: "remux".into(),
@@ -403,7 +397,7 @@ fn all_notification_variants_localize_in_both_locales() {
     // self-doc; bump it alongside the match arms in title/description.
     assert_eq!(
         events.len(),
-        27,
+        26,
         "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
     );
 

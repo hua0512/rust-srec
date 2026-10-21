@@ -29,9 +29,6 @@ notification:
   download_rejected:
     title: "🚫 Download rejected for %{streamer_name}"
     description: "%{reason}"
-  config_updated:
-    title: "⚙️ Config updated for %{streamer_name}"
-    description: "Update type: %{update_type}"
 
   # ============ Segment events ============
   segment_started:

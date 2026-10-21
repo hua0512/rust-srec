@@ -93,11 +93,6 @@ impl NotificationEvent {
                 "notification.download_rejected.title",
                 streamer_name = streamer_name.as_str(),
             ),
-            Self::ConfigUpdated { streamer_name, .. } => crate::t_str_in!(
-                locale,
-                "notification.config_updated.title",
-                streamer_name = streamer_name.as_str(),
-            ),
             Self::PipelineStarted { job_type, .. } => crate::t_str_in!(
                 locale,
                 "notification.pipeline_started.title",
@@ -263,11 +258,6 @@ impl NotificationEvent {
                 locale,
                 "notification.download_rejected.description",
                 reason = reason.as_str(),
-            ),
-            Self::ConfigUpdated { update_type, .. } => crate::t_str_in!(
-                locale,
-                "notification.config_updated.description",
-                update_type = update_type.as_str(),
             ),
             Self::PipelineStarted { job_id, .. } => crate::t_str_in!(
                 locale,

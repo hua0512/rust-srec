@@ -78,6 +78,22 @@ describe('SubscriptionManager', () => {
     expect(checkboxes()[1]).toBeChecked();
   });
 
+  it('neither counts nor saves a subscription the catalog no longer offers', async () => {
+    vi.mocked(getSubscriptions).mockResolvedValue([
+      'stream_online',
+      'config_updated',
+    ] as any);
+    await renderManager();
+
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(updateSubscriptions).toHaveBeenCalled());
+    expect(vi.mocked(updateSubscriptions).mock.calls[0][0]).toEqual({
+      data: { id: channel.id, events: ['stream_online'] },
+    });
+  });
+
   it('saves the selection that is on screen', async () => {
     await renderManager();
 
