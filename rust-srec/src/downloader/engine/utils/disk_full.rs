@@ -59,21 +59,24 @@ pub fn output_io_error_kind(line: &str) -> Option<IoErrorKindSer> {
 ///   on Linux; ffmpeg reports this verbatim when a muxer write fails.
 /// - `"Disk full"` — Windows equivalent; sometimes rendered this way on
 ///   macOS too.
-/// - `"Error submitting a packet to the muxer"` combined with `"-28"` — the
-///   older "code -28" errno style; we match the errno directly as a safety
-///   net in case the human-readable string is localized.
+/// - `"error -28"` or `"error code: -28"` — the ENOSPC errno as ffmpeg
+///   prints it; matched directly as a safety net in case the human-readable
+///   string is localized.
 pub fn is_disk_full_line(line: &str) -> bool {
-    // Avoid heavy per-line allocation: check substrings directly.
-    // `contains` is O(n*m) but n (line length) and m (needle length) are
-    // both tiny and this runs once per stderr line, which is typically
-    // 1-10 lines/sec during recording — not hot.
-    let needles = [
-        "no space left on device",
-        "disk full",
-        "error -28", // errno -28 = ENOSPC
-    ];
     let lower = line.to_ascii_lowercase();
-    needles.iter().any(|n| lower.contains(n))
+    if ["no space left on device", "disk full"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+    {
+        return true;
+    }
+    // The errno must end at a word boundary, or other codes such as -280
+    // would match too.
+    ["error -28", "error code: -28"].iter().any(|needle| {
+        lower.match_indices(needle).any(|(start, _)| {
+            !lower[start + needle.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        })
+    })
 }
 
 #[cfg(test)]
@@ -127,8 +130,7 @@ mod tests {
     /// When the strerror text is not English, the errno in ffmpeg's
     /// `error code: -28` form is the only signal left.
     #[test]
-    #[ignore = "bug: the errno fallback needle `error -28` misses ffmpeg's `error code: -28`"]
-    fn known_bug_localized_ffmpeg_enospc_is_detected_by_its_errno() {
+    fn localized_ffmpeg_enospc_is_detected_by_its_errno() {
         assert!(is_disk_full_line(
             "[out#0/segment @ 0x5b7ddc4105c0] Task finished with error code: -28 (Kein Platz mehr auf dem Gerät)"
         ));
@@ -136,11 +138,17 @@ mod tests {
 
     #[test]
     fn does_not_match_substring_of_different_error() {
-        // "-28" should not trigger unless preceded by "error " to avoid
-        // matching unrelated numeric substrings. This is a deliberate
-        // false-negative trade: better to miss an exotic formatting than
-        // to trip the gate on a stray timestamp that happens to contain
-        // "-28".
-        assert!(!is_disk_full_line("pts=1234 dts=-28"));
+        // "-28" should not trigger unless it follows "error " or
+        // "error code: " to avoid matching unrelated numeric substrings. This
+        // is a deliberate false-negative trade: better to miss an exotic
+        // formatting than to trip the gate on a stray timestamp that happens
+        // to contain "-28".
+        for line in [
+            "pts=1234 dts=-28",
+            "Task finished with error -280",
+            "[out#0/segment @ 0x5b7ddc4105c0] Task finished with error code: -280 (Unknown error)",
+        ] {
+            assert!(!is_disk_full_line(line), "{line}");
+        }
     }
 }

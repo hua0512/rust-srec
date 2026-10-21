@@ -970,7 +970,14 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
 /// Determine log level from an FFmpeg stderr line.
 fn determine_ffmpeg_log_level(line: &str) -> LogLevel {
     let lower = line.to_lowercase();
-    if lower.contains("error") || lower.starts_with("fatal") || lower.contains("failed") {
+    if lower.contains("error")
+        || lower.starts_with("fatal")
+        || lower.contains("failed")
+        // ffmpeg logs these at error level without saying so; processors pass
+        // an input with no usable stream through when they see them.
+        || lower.contains("does not contain any stream")
+        || lower.contains("nothing was written into output file")
+    {
         LogLevel::Error
     } else if lower.contains("warning") || lower.contains("warn") {
         LogLevel::Warn
@@ -1223,17 +1230,17 @@ mod tests {
         }
     }
 
-    /// Processors look for this line in `diagnostic_text`, which leaves out
-    /// Info lines, to pass an input with no usable stream through.
+    /// Processors look for these lines in `diagnostic_text`, which leaves out
+    /// Info lines, to pass an input with no usable stream through. Both are
+    /// verbatim from ffmpeg 9.0.2.
     #[test]
-    #[ignore = "bug: ffmpeg's no-stream line is classed Info, so the no-stream pass-through never sees it"]
-    fn known_bug_ffmpeg_no_stream_line_is_an_error() {
-        assert_eq!(
-            determine_ffmpeg_log_level(
-                "[out#0/adts @ 0x55562415fbc0] Output file does not contain any stream"
-            ),
-            LogLevel::Error
-        );
+    fn ffmpeg_no_stream_lines_are_errors() {
+        for line in [
+            "[out#0/adts @ 0x55562415fbc0] Output file does not contain any stream",
+            "[out#0/image2 @ 0x55b745880c80] Nothing was written into output file, because at least one of its streams received no packets.",
+        ] {
+            assert_eq!(determine_ffmpeg_log_level(line), LogLevel::Error, "{line}");
+        }
     }
 
     #[test]
