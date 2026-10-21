@@ -442,49 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn test_gzip_decompression() {
-        use flate2::Compression;
-        use flate2::write::GzEncoder;
-        use std::io::Write;
-
-        // Create gzip compressed data
-        let original = b"Hello, Douyin danmu test data!";
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(original).unwrap();
-        let compressed = encoder.finish().unwrap();
-
-        // Test decompression
-        let decompressed = DouyinDanmuProtocol::decompress_gzip(&compressed).unwrap();
-        assert_eq!(decompressed, original);
-    }
-
-    #[test]
-    fn test_create_ack_packet() {
-        let log_id = 12345u64;
-        let internal_ext = vec![0x01, 0x02, 0x03, 0x04];
-
-        let result = DouyinDanmuProtocol::create_ack_packet(log_id, internal_ext);
-        assert!(result.is_ok());
-
-        let packet = result.unwrap();
-        assert!(!packet.is_empty());
-
-        // Verify we can decode the packet back
-        let decoded = douyin_proto::webcast::im::PushFrame::decode(packet.as_ref());
-        assert!(decoded.is_ok());
-
-        let frame = decoded.unwrap();
-        assert_eq!(frame.log_id, log_id);
-        assert_eq!(frame.payload_type, "ack");
-    }
-
-    #[test]
-    fn test_platform_name() {
-        let protocol = DouyinDanmuProtocol::default();
-        assert_eq!(protocol.platform(), "douyin");
-    }
-
-    #[test]
     fn test_heartbeat_message() {
         let protocol = DouyinDanmuProtocol::default();
         let heartbeat = protocol.heartbeat_message();

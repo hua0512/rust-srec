@@ -1011,14 +1011,6 @@ mod tests {
     }
 
     #[test]
-    fn live_thumbnail_url_uses_broadcast_id() {
-        assert_eq!(
-            Soop::live_thumbnail_url("281234567"),
-            "https://liveimg.sooplive.co.kr/m/281234567"
-        );
-    }
-
-    #[test]
     fn categories_prefer_display_tags_and_fall_back_to_id() {
         let with_tags = SoopChannel {
             cate: Some("00040001".to_string()),

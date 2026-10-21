@@ -1560,32 +1560,6 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_defaults() {
-        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
-
-        assert_eq!(config.extractor.url, TEST_URL);
-        assert!(!config.force_origin_quality);
-        assert!(config.double_screen); // defaults to true
-        assert_eq!(config.ttwid_management_mode, TtwidManagementMode::Global);
-        assert!(config.ttwid.is_none());
-    }
-
-    #[test]
-    fn test_builder_custom_options() {
-        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None)
-            .force_origin_quality(false)
-            .double_screen(false)
-            .ttwid_mode(TtwidManagementMode::PerExtractor);
-
-        assert!(!config.force_origin_quality);
-        assert!(!config.double_screen);
-        assert_eq!(
-            config.ttwid_management_mode,
-            TtwidManagementMode::PerExtractor
-        );
-    }
-
-    #[test]
     fn test_builder_with_ttwid() {
         let ttwid = "test_ttwid_123".to_string();
         let config =

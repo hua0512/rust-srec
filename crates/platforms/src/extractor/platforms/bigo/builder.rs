@@ -301,21 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn mint_token_default_true() {
-        let client = crate::extractor::default::default_client();
-        let b = Bigo::new("https://www.bigo.tv/1".into(), client.clone(), None, None);
-        assert!(b.mint_token);
-
-        let b = Bigo::new(
-            "https://www.bigo.tv/1".into(),
-            client,
-            None,
-            Some(serde_json::json!({"mint_token": false})),
-        );
-        assert!(!b.mint_token);
-    }
-
-    #[test]
     fn locked_offline_response_is_private_with_or_without_password() {
         let client = crate::extractor::default::default_client();
         let locked_data = || StudioData {

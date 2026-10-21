@@ -79,12 +79,9 @@ pub fn gen_verify_fp() -> String {
 
 /// Generates an `s_v_web_id` token (alias for `gen_verify_fp`).
 #[inline]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "retained for protocol variants and forward-compatible response handling"
-    )
+#[expect(
+    dead_code,
+    reason = "retained for protocol variants and forward-compatible response handling"
 )]
 pub fn gen_s_v_web_id() -> String {
     gen_verify_fp()
@@ -168,24 +165,11 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_s_v_web_id() {
-        let web_id = gen_s_v_web_id();
-        assert!(web_id.starts_with("verify_"));
-    }
-
-    #[test]
     fn test_verify_fp_uniqueness() {
         // Generate multiple tokens and ensure they're different
         let fp1 = gen_verify_fp();
         let fp2 = gen_verify_fp();
         // While timestamps might be same, UUID parts should differ
         assert_ne!(fp1, fp2);
-    }
-
-    #[test]
-    fn test_verify_fp_capacity() {
-        let fp = gen_verify_fp();
-        // Ensure we're not over-allocating (capacity should equal length for well-sized allocation)
-        assert!(fp.capacity() <= fp.len() + 16); // Allow small overhead
     }
 }

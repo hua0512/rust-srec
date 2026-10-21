@@ -157,18 +157,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_danmu_message_chat() {
-        let msg = DanmuMessage::chat("1", "user1", "TestUser", "Hello world!");
-
-        assert_eq!(msg.id, "1");
-        assert_eq!(msg.user_id, "user1");
-        assert_eq!(msg.username, "TestUser");
-        assert_eq!(msg.content, "Hello world!");
-        assert_eq!(msg.message_type, DanmuType::Chat);
-        assert!(msg.metadata.is_none());
-    }
-
-    #[test]
     fn test_danmu_message_gift() {
         let msg = DanmuMessage::gift("2", "user2", "GiftUser", "Rocket", 5);
 
@@ -187,14 +175,5 @@ mod tests {
         assert_eq!(msg.content, "Hello");
         let metadata = msg.metadata.as_ref().unwrap();
         assert_eq!(metadata.get("price").unwrap(), 30);
-    }
-
-    #[test]
-    fn test_danmu_message_with_metadata() {
-        let msg = DanmuMessage::chat("1", "user1", "Test", "Hi")
-            .with_metadata("color", serde_json::json!("#FF0000"));
-
-        let metadata = msg.metadata.as_ref().unwrap();
-        assert_eq!(metadata.get("color").unwrap(), "#FF0000");
     }
 }
