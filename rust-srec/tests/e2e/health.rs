@@ -1,8 +1,8 @@
 //! Health endpoints: caller rules and the JSON their consumers (the frontend,
 //! Docker healthchecks, the Watchtower pre-update hook) read.
 
+use reqwest::StatusCode;
 use reqwest::header::AUTHORIZATION;
-use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{Response, TestApp, WAIT, eventually};
@@ -40,19 +40,11 @@ async fn assert_ready_matches(app: &TestApp, token: &str, overall: &Value) {
     }
 }
 
+/// Anonymous callers are refused by the sweep in
+/// `auth::anonymous_callers_get_401_on_every_route_except_the_public_ones`.
 #[tokio::test]
-async fn health_requires_a_credential_and_reports_every_core_component() {
+async fn health_reports_every_core_component_to_admins_and_read_only_keys() {
     let app = TestApp::start().await;
-
-    for path in ["/api/health", "/api/health/ready"] {
-        let response = app.send(Method::GET, path, None, None).await;
-        assert_eq!(
-            (response.status, response.error_code()),
-            (StatusCode::UNAUTHORIZED, Some("UNAUTHORIZED")),
-            "{path}"
-        );
-    }
-
     let token = app.admin_token().await;
     let health = populated_health(&app, &token).await;
     let body = &health.body;
