@@ -158,7 +158,7 @@ pub async fn list_job_logs(
         .into_iter()
         .map(|log| ApiJobLogEntry {
             timestamp: log.timestamp,
-            level: format!("{:?}", log.level),
+            level: log.level.as_str().to_string(),
             message: log.message,
         })
         .collect();
@@ -1085,7 +1085,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
             .into_iter()
             .map(|log| ApiJobLogEntry {
                 timestamp: log.timestamp,
-                level: format!("{:?}", log.level),
+                level: log.level.as_str().to_string(),
                 message: log.message,
             })
             .collect(),

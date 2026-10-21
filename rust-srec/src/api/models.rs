@@ -770,7 +770,7 @@ pub struct StepDurationInfo {
 pub struct JobLogEntry {
     /// Log timestamp.
     pub timestamp: DateTime<Utc>,
-    /// Log level.
+    /// Log level: `DEBUG`, `INFO`, `WARN` or `ERROR`.
     pub level: String,
     /// Log message.
     pub message: String,
