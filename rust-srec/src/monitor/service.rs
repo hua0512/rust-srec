@@ -972,7 +972,7 @@ impl<
             LiveStatus::NotFound => {
                 self.handle_fatal_error(
                     streamer,
-                    StreamerState::NotFound,
+                    FatalErrorType::NotFound,
                     "Streamer not found on platform",
                 )
                 .await?;
@@ -980,7 +980,7 @@ impl<
             LiveStatus::Banned => {
                 self.handle_fatal_error(
                     streamer,
-                    StreamerState::FatalError,
+                    FatalErrorType::Banned,
                     "Streamer is banned on platform",
                 )
                 .await?;
@@ -988,7 +988,7 @@ impl<
             LiveStatus::AgeRestricted => {
                 self.handle_fatal_error(
                     streamer,
-                    StreamerState::FatalError,
+                    FatalErrorType::AgeRestricted,
                     "Content is age-restricted",
                 )
                 .await?;
@@ -996,19 +996,19 @@ impl<
             LiveStatus::RegionLocked => {
                 self.handle_fatal_error(
                     streamer,
-                    StreamerState::FatalError,
+                    FatalErrorType::RegionLocked,
                     "Content is region-locked",
                 )
                 .await?;
             }
             LiveStatus::Private => {
-                self.handle_fatal_error(streamer, StreamerState::FatalError, "Content is private")
+                self.handle_fatal_error(streamer, FatalErrorType::Private, "Content is private")
                     .await?;
             }
             LiveStatus::UnsupportedPlatform => {
                 self.handle_fatal_error(
                     streamer,
-                    StreamerState::FatalError,
+                    FatalErrorType::UnsupportedPlatform,
                     "Platform is not supported",
                 )
                 .await?;
@@ -1297,14 +1297,19 @@ impl<
     async fn handle_fatal_error(
         &self,
         streamer: &StreamerMetadata,
-        new_state: StreamerState,
+        error_type: FatalErrorType,
         reason: &str,
     ) -> Result<()> {
+        let new_state = match error_type {
+            FatalErrorType::NotFound => StreamerState::NotFound,
+            _ => StreamerState::FatalError,
+        };
         warn!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
             streamer_url = %streamer.url,
             reason = %reason,
+            error_type = error_type.as_str(),
             new_state = ?new_state,
             "fatal; updating state"
         );
@@ -1330,12 +1335,6 @@ impl<
                     &reason,
                 )
                 .await?;
-
-                // Determine the fatal error type from the state
-                let error_type = match new_state {
-                    StreamerState::NotFound => FatalErrorType::NotFound,
-                    _ => FatalErrorType::Banned, // Default to Banned for other fatal errors
-                };
 
                 // Emit fatal error event via outbox.
                 let event = MonitorEvent::FatalError {

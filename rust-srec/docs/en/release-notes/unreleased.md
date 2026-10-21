@@ -56,6 +56,7 @@
 - Fixed webhook channels created or edited in the web interface never sending notifications: they were skipped when loading, **Test** reported that the channel was not found, and a backup containing one could not be imported.
 - **Test** on a notification channel now always sends the test message, even when the channel's **Minimum Priority** is set above it; previously it reported success without sending anything.
 - **Settings updated** is no longer offered as a notification event, since nothing sends it. Existing subscriptions to it are kept but have no effect.
+- Fixed fatal error notifications reporting every fatal problem other than a room that was not found as a ban. Age-restricted, region-locked and private rooms are now reported as such.
 
 ## Authentication and API
 

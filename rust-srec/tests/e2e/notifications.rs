@@ -1609,3 +1609,45 @@ async fn a_stream_online_email_escapes_the_live_title_in_its_html_part() {
 
     app.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn each_fatal_platform_answer_is_notified_with_its_own_error_type() {
+    let fake = FakePlatform::start().await;
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    subscribed_webhook(&app, &token, &receiver, &["fatal_error"]).await;
+    let cases = [
+        ("not_found", "NotFound"),
+        ("banned", "Banned"),
+        ("age_restricted", "AgeRestricted"),
+        ("region_locked", "RegionLocked"),
+        ("private", "Private"),
+    ];
+    let mut watched = Vec::new();
+    for (kind, error_type) in cases {
+        let room = fake.room(kind);
+        room.set_error(kind, "the platform says no");
+        let id = id_of(
+            &app.create_enabled_streamer(&token, json!({ "name": kind, "url": room.url() }))
+                .await,
+        );
+        watched.push((id, error_type));
+    }
+
+    wait_for_webhooks(&receiver, "fatal_error", cases.len()).await;
+    let fatal = webhooks_of(&receiver, "fatal_error");
+    assert_eq!(fatal.len(), cases.len(), "{fatal:?}");
+    for (id, error_type) in &watched {
+        let body = fatal
+            .iter()
+            .find(|body| body["streamer_id"] == id.as_str())
+            .unwrap_or_else(|| panic!("no fatal_error for {error_type}: {fatal:?}"));
+        assert_eq!(
+            body["data"]["FatalError"]["error_type"], *error_type,
+            "{body}"
+        );
+    }
+
+    app.shutdown().await;
+}
