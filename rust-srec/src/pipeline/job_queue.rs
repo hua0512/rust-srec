@@ -4769,4 +4769,24 @@ mod tests {
             UploadStatusEvent::Queue { pending: 0 }
         ));
     }
+
+    /// DAG list and detail payloads show each running step's progress; the
+    /// raw ffmpeg/rclone JSON is too large to repeat for every step.
+    #[tokio::test]
+    async fn cached_progress_copies_the_snapshot_without_raw() {
+        let queue = JobQueue::new();
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
+        snapshot.percent = Some(42.5);
+        snapshot.current_file = Some("seg.flv".to_string());
+        snapshot.raw = serde_json::json!({"path": "/abs/file"});
+        queue.progress_cache.insert("job-1".to_string(), snapshot);
+
+        let cached = queue.cached_progress("job-1").unwrap();
+        assert_eq!(
+            (cached.percent, cached.current_file.as_deref()),
+            (Some(42.5), Some("seg.flv"))
+        );
+        assert_eq!(cached.raw, serde_json::Value::Null);
+        assert!(queue.cached_progress("unknown").is_none());
+    }
 }

@@ -275,4 +275,35 @@ mod tests {
             ProtocolType::Flv
         );
     }
+
+    /// With no label, a URL mesio cannot recognise is a configuration error,
+    /// which fails the attempt once instead of retrying it as a network
+    /// failure against the circuit breaker.
+    #[test]
+    fn an_unlabelled_protocol_is_detected_from_the_url() {
+        let resolve =
+            |url| MesioEngine::resolve_protocol(&download_config(url, DownloadProtocol::Unknown));
+        assert_eq!(
+            resolve("https://cdn.example/live.mpd").unwrap(),
+            ProtocolType::Dash
+        );
+        assert_eq!(
+            resolve("https://cdn.example/live.m3u8").unwrap(),
+            ProtocolType::Hls
+        );
+        let error = resolve("https://cdn.example/clip.mp4").unwrap_err();
+        assert_eq!(error.kind, DownloadFailureKind::Configuration);
+    }
+
+    #[test]
+    fn flv_downloads_use_the_configured_buffer_size() {
+        let engine = MesioEngine::with_config(MesioEngineConfig {
+            buffer_size: 256 * 1024,
+            ..MesioEngineConfig::default()
+        });
+        assert_eq!(
+            engine.flv_config.as_ref().map(|config| config.buffer_size),
+            Some(256 * 1024)
+        );
+    }
 }

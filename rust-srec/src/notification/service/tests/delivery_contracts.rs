@@ -674,3 +674,17 @@ async fn direct_notifications_after_stop_are_counted_as_dropped() {
     assert_eq!(service.stats().dispatch_dropped, 2);
     assert_eq!(attempts.load(Ordering::SeqCst), 0);
 }
+
+/// A supervisor that already shut down refuses the dispatch worker; the
+/// event queued for it is counted as dropped rather than lost silently, and
+/// later events see the closed queue and are counted too.
+#[tokio::test]
+async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
+    let supervisor = Arc::new(TaskSupervisor::new());
+    let service = Arc::new(NotificationService::new().with_task_supervisor(supervisor.clone()));
+    assert!(supervisor.shutdown(Duration::ZERO).await);
+    service.dispatch_notification(event());
+    assert_eq!(service.stats().dispatch_dropped, 1);
+    service.dispatch_notification(event());
+    assert_eq!(service.stats().dispatch_dropped, 2);
+}

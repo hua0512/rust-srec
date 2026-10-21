@@ -207,6 +207,36 @@ async fn processors_reject_missing_empty_and_failed_outputs_without_replacing_fi
     }
 }
 
+/// Explicit batch outputs must pair one-to-one with the inputs; a shorter
+/// list would otherwise be mis-paired or silently truncated.
+#[tokio::test]
+async fn batch_outputs_that_do_not_match_the_inputs_are_rejected_before_any_work() {
+    for kind in [Kind::Audio, Kind::Metadata, Kind::Thumbnail] {
+        let mut fixture = fixture(kind, Behavior::Success, true);
+        fixture.input.outputs.truncate(1);
+        let error = tokio::time::timeout(
+            Duration::from_secs(10),
+            fixture
+                .processor
+                .process(&fixture.input, &ProcessorContext::noop("test")),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("outputs to be empty or have the same length as inputs"),
+            "{kind:?}: {error}"
+        );
+        assert!(
+            !Path::new(&fixture.input.outputs[0]).exists(),
+            "{kind:?} wrote an output"
+        );
+        assert_sources_preserved(&fixture);
+    }
+}
+
 #[tokio::test]
 async fn processors_publish_complete_single_and_batch_outputs() {
     for kind in KINDS {

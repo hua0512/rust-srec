@@ -534,3 +534,23 @@ async fn mismatched_repository_pool_cannot_write_through_another_owner() {
         "NOT_LIVE"
     );
 }
+
+/// Committed streamer rows are published in commit order only through a
+/// single-connection writer; a multi-connection pool is refused before any
+/// SQL runs.
+#[tokio::test]
+async fn full_row_publication_rejects_a_multi_connection_writer() {
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 2)
+        .await
+        .unwrap();
+    let supervisor = Arc::new(TaskSupervisor::new());
+    assert!(CommittedWriter::new(pool.clone(), supervisor.clone()).is_err());
+    let invalidation_writer = Arc::new(CommittedWriter::for_invalidation(pool, supervisor));
+    let store = CommittedStreamerState::new(invalidation_writer, ConfigEventBroadcaster::new());
+    let result: Result<()> = store
+        .transaction("invalid row publisher", StatePublication::Silent, |_| {
+            Box::pin(async { panic!("invalid writer must be rejected before SQL") })
+        })
+        .await;
+    assert!(matches!(result, Err(crate::Error::Configuration(_))));
+}

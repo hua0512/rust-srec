@@ -234,6 +234,22 @@ fn reconciliation_removes_oversized_and_expired_logs_but_preserves_unrelated_pat
     assert_bounds(&store);
 }
 
+/// A segment imported from elsewhere with a high index is deleted for being
+/// oversized, but the rotation counter still moves past it, so a reader that
+/// still has it open never sees the name reused.
+#[test]
+fn reconciling_imported_oversized_segments_does_not_reuse_their_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store(&dir);
+    let imported = dir.path().join(filename(instant(8).date_naive(), 42));
+    std::fs::write(&imported, [b'x'; 256]).unwrap();
+    store.reconcile(instant(8)).unwrap();
+    store.append(b"fresh", instant(8), false).unwrap();
+    assert!(!imported.exists());
+    assert_eq!(store.inventory().unwrap()[0].index, 43);
+    assert_bounds(&store);
+}
+
 #[cfg(unix)]
 #[test]
 fn managed_looking_symlinks_are_never_followed_or_deleted() {

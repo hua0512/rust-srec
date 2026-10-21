@@ -443,4 +443,18 @@ mod tests {
             assert!(Arc::ptr_eq(&received, &current));
         }
     }
+
+    /// An entry is served only within the configured TTL, so a missed
+    /// invalidation cannot pin a stale merged config forever.
+    #[test]
+    fn test_cache_ttl_expiration() {
+        let expired = ConfigCache::with_ttl(Duration::ZERO);
+        expired.insert("streamer-1".to_string(), Arc::new(create_test_config()));
+        assert!(expired.get("streamer-1").is_none());
+        assert!(expired.is_empty(), "an expired entry is evicted on read");
+
+        let fresh = ConfigCache::with_ttl(Duration::from_secs(3600));
+        fresh.insert("streamer-1".to_string(), Arc::new(create_test_config()));
+        assert!(fresh.get("streamer-1").is_some());
+    }
 }

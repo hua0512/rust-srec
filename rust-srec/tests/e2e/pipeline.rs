@@ -1394,6 +1394,58 @@ async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source()
     app.shutdown().await;
 }
 
+/// A step given several inputs writes one output per input, so a single
+/// configured `output_path` would make every input overwrite the same file.
+/// The step fails before it runs anything and the inputs stay as they were.
+#[tokio::test]
+async fn batch_steps_refuse_a_single_output_path_for_several_inputs() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let inputs = [
+        app.write_output_file("batch/first.flv", "first"),
+        app.write_output_file("batch/second.flv", "second"),
+    ];
+
+    for (processor, output) in [
+        ("audio_extract", "batch/out.mp3"),
+        ("metadata", "batch/out.flv"),
+    ] {
+        let output = app.output_path(output);
+        let (_, settled) = run_pipeline(
+            &app,
+            &token,
+            &inputs,
+            definition(
+                processor,
+                vec![inline(
+                    "batch",
+                    processor,
+                    json!({ "output_path": output }),
+                    &[],
+                )],
+            ),
+        )
+        .await;
+        assert_eq!(settled["status"], "FAILED", "{processor}: {settled}");
+        let failed = job(&app, &token, &step_job_id(&settled, "batch")).await;
+        let message = failed["error_message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(&format!(
+                "{processor}: config.output_path is not supported for batch inputs"
+            )),
+            "{processor}: {failed}"
+        );
+        assert!(!Path::new(&output).exists(), "{processor} wrote {output}");
+    }
+    assert_eq!(std::fs::read_to_string(&inputs[0]).expect("first"), "first");
+    assert_eq!(
+        std::fs::read_to_string(&inputs[1]).expect("second"),
+        "second"
+    );
+
+    app.shutdown().await;
+}
+
 #[tokio::test]
 async fn compression_stores_entries_without_roots_drive_prefixes_or_parent_components() {
     let app = TestApp::start().await;
@@ -1860,6 +1912,37 @@ async fn cancelling_a_running_step_job_cancels_its_workflow_and_outlasts_the_wor
     let settled = job(&app, &token, &job_id).await;
     assert_eq!(settled["status"], "CANCELLED", "{settled}");
     assert_eq!(dag(&app, &token, &dag_id).await["status"], "CANCELLED");
+
+    app.shutdown().await;
+}
+
+/// Only a running job with a progress report carries `progress`; every
+/// other job, whatever its status, reports it as null in its detail and in
+/// both job lists, rather than omitting it or showing a stale value.
+#[tokio::test]
+async fn jobs_without_live_progress_report_null_progress_in_detail_and_lists() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
+    for status in statuses {
+        let id = format!("job-{status}");
+        seed_standalone_job(&app, &id, status, 0).await;
+        let detail = job(&app, &token, &id).await;
+        assert_eq!(detail["status"], status);
+        assert_eq!(detail.get("progress"), Some(&Value::Null), "{detail}");
+    }
+    for path in ["/api/pipeline/jobs", "/api/pipeline/jobs/page"] {
+        let page = app
+            .get(path, &token)
+            .await
+            .expect_status(StatusCode::OK)
+            .body;
+        let items = page["items"].as_array().expect("items");
+        assert_eq!(items.len(), statuses.len(), "{path}: {page}");
+        for item in items {
+            assert_eq!(item.get("progress"), Some(&Value::Null), "{path}: {item}");
+        }
+    }
 
     app.shutdown().await;
 }

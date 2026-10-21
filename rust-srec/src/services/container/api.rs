@@ -328,4 +328,89 @@ mod tests {
             );
         }
     }
+
+    /// The served API keys failed logins by the connection's peer address.
+    /// The router must be served with its connect info for `ClientIp` to see
+    /// that address; without it the per-address budget silently never
+    /// applies and one client can spread Argon2 work over any number of
+    /// usernames. An address budget of one makes the second failure, under
+    /// another username, the throttled one. The end-to-end suite cannot
+    /// reach this: the default budget is 100 failures, each a slow Argon2
+    /// verification.
+    #[tokio::test]
+    async fn the_served_api_budgets_failed_logins_per_peer_address() {
+        use std::time::Duration;
+
+        use crate::api::rate_limit::LoginRateLimiter;
+        use crate::api::server::ApiServerConfig;
+        use crate::services::container::ServiceContainerConfig;
+
+        let directory = tempfile::tempdir().unwrap();
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let container = ServiceContainer::with_full_config(
+            pool.clone(),
+            pool.clone(),
+            ServiceContainerConfig {
+                cache_ttl: Duration::from_secs(60),
+                event_capacity: 8,
+                download_config: crate::downloader::DownloadManagerConfig::default(),
+                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
+                api_config: ApiServerConfig {
+                    bind_address: "127.0.0.1".to_owned(),
+                    port: 0,
+                    enable_cors: false,
+                    body_limit: 1024 * 1024,
+                },
+            },
+        )
+        .await
+        .unwrap();
+        let (logging, _layer) =
+            crate::logging::LoggingConfig::for_route_tests(directory.path().to_path_buf());
+        assert!(container.logging_config.set(Arc::new(logging)).is_ok());
+        let auth = AuthService::new(
+            Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone())),
+            Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
+            Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool)),
+            Arc::new(JwtService::new(
+                "client-ip-test-secret-with-enough-entropy",
+                "rust-srec",
+                "rust-srec-api",
+                None,
+            )),
+            AuthConfig::default(),
+        )
+        .with_login_rate_limiter(LoginRateLimiter::new(5, 1, Duration::from_secs(60), 8));
+        let address = container
+            .bind_and_spawn_api_server(Some(Arc::new(auth)), "test bridge", "test server")
+            .await
+            .unwrap();
+
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let mut statuses = Vec::new();
+        for username in ["alice", "bob"] {
+            let response = client
+                .post(format!("http://{address}/api/auth/login"))
+                .json(&serde_json::json!({ "username": username, "password": "wrong-password-1" }))
+                .send()
+                .await
+                .unwrap();
+            statuses.push(response.status());
+        }
+        assert_eq!(
+            statuses,
+            [
+                reqwest::StatusCode::UNAUTHORIZED,
+                reqwest::StatusCode::TOO_MANY_REQUESTS
+            ]
+        );
+        container.cancellation_token.cancel();
+    }
 }

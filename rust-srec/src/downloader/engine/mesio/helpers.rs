@@ -957,9 +957,17 @@ mod tests {
                 assert!(
                     matches!(&events[0], SegmentEvent::OutputIoError { io_kind: actual, .. } if *actual == io_kind)
                 );
-                assert!(
-                    matches!(&events[1], SegmentEvent::DownloadFailed { kind: DownloadFailureKind::OutputRootUnavailable { io_kind: actual }, .. } if *actual == io_kind)
+                let SegmentEvent::DownloadFailed { kind, .. } = &events[1] else {
+                    panic!("expected DownloadFailed, got {events:?}");
+                };
+                assert_eq!(
+                    *kind,
+                    DownloadFailureKind::OutputRootUnavailable { io_kind }
                 );
+                // The gate blocks starts until the root recovers; charging the
+                // engine circuit breaker too would keep it blocked afterwards.
+                assert!(!kind.affects_circuit_breaker(), "{kind:?}");
+                assert!(kind.is_recoverable(), "{kind:?}");
                 assert_eq!(events.len(), 2);
             }
         }

@@ -1666,4 +1666,39 @@ mod tests {
         assert!(dest_dir.join("pending.txt").exists());
         assert!(dest_dir.join("already-moved.txt").exists());
     }
+
+    /// An exclude pattern that does not compile fails the step instead of
+    /// copying the files the user meant to exclude.
+    #[tokio::test]
+    async fn test_exclude_patterns_invalid_regex_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source.txt");
+        let dest_dir = temp_dir.path().join("output");
+        fs::write(&source_path, "test content").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy(),
+                    "exclude_patterns": ["("],
+                })
+                .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(
+            err.to_string().contains("Invalid exclude_patterns regex"),
+            "{err}"
+        );
+        assert!(!dest_dir.join("source.txt").exists());
+    }
 }

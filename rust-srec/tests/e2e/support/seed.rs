@@ -23,6 +23,7 @@ const DEAD_END_PROXY_ID: &str = "proxy-dead-end";
 pub struct Seed {
     global: Vec<(String, String)>,
     platform: Vec<(String, String)>,
+    rows: String,
 }
 
 /// `value` as an SQL string literal.
@@ -40,6 +41,7 @@ impl Seed {
         Self {
             global: Vec::new(),
             platform: Vec::new(),
+            rows: String::new(),
         }
         .global("streamer_check_delay_ms", 200)
         .global("offline_check_delay_ms", 100)
@@ -62,6 +64,14 @@ impl Seed {
     /// literal.
     pub fn platform(mut self, column: &str, literal: impl Display) -> Self {
         set(&mut self.platform, column, literal.to_string());
+        self
+    }
+
+    /// Run `sql` after the settings, for rows the services load when they
+    /// start: a streamer's state and counters, or a session a restart left
+    /// open.
+    pub fn rows(mut self, sql: &str) -> Self {
+        self.rows.push_str(sql);
         self
     }
 
@@ -95,11 +105,13 @@ impl Seed {
             "INSERT INTO proxies (id, name, url, created_at, updated_at) \
              VALUES ({id}, 'Dead end', {url}, {now}, {now});\n\
              UPDATE global_config SET {assignments};\n\
-             INSERT INTO platform_config ({columns}) VALUES ({values});\n",
+             INSERT INTO platform_config ({columns}) VALUES ({values});\n\
+             {rows}",
             id = sql_text(DEAD_END_PROXY_ID),
             url = sql_text(&dead_end.proxy_url()),
             columns = columns.join(", "),
             values = values.join(", "),
+            rows = self.rows,
         )
     }
 }

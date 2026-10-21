@@ -509,4 +509,26 @@ mod tests {
         );
         assert!(output.contains("video_meta.mkv"));
     }
+
+    #[test]
+    fn test_build_args_with_custom_fields() {
+        let processor = MetadataProcessor::new();
+        let mut custom = HashMap::new();
+        custom.insert("genre".to_string(), "Gaming".to_string());
+        custom.insert("language".to_string(), "en".to_string());
+        let config = MetadataConfig {
+            custom,
+            ..Default::default()
+        };
+
+        let args = processor.build_args("/input.mp4", "/output.mp4", &config);
+
+        for field in ["genre=Gaming", "language=en"] {
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair[0] == "-metadata" && pair[1] == field),
+                "{field}: {args:?}"
+            );
+        }
+    }
 }

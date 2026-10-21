@@ -1925,4 +1925,44 @@ mod tests {
             ]
         );
     }
+
+    /// rclone prints plain-text errors before it switches to JSON logging;
+    /// they reach the job log at their own level, and anything else as info.
+    #[test]
+    fn parse_rclone_line_plain_text_is_log() {
+        for (line, level) in [
+            (
+                "2026/07/26 12:00:00 ERROR : clip.mp4: Failed to copy",
+                LogLevel::Error,
+            ),
+            ("just some output", LogLevel::Info),
+        ] {
+            let ParsedRcloneLine::Log(entry) = parse_rclone_line(line) else {
+                panic!("plain text should parse as log: {line}");
+            };
+            assert_eq!(entry.level, level, "{line}");
+        }
+    }
+
+    /// BaiduPCS-Go progress bars are dropped from the job log; an upload
+    /// failure is an error unless a retry follows, and success is info.
+    #[test]
+    fn baidupcs_noise_and_level_classification() {
+        assert!(is_baidupcs_progress_noise(
+            "[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............"
+        ));
+        assert!(!is_baidupcs_progress_noise(
+            "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv"
+        ));
+        assert!(!is_baidupcs_progress_noise("[1] 加入上传队列: /rec/a.flv"));
+
+        for (line, level) in [
+            ("[1] 上传文件失败, 上传文件错误", LogLevel::Error),
+            ("[1] 上传文件失败, 上传文件错误, 重试 1/3", LogLevel::Warn),
+            ("警告: 遍历错误: xx", LogLevel::Error),
+            ("[1] 上传文件成功, 保存到网盘路径: /a", LogLevel::Info),
+        ] {
+            assert_eq!(determine_baidupcs_log_level(line), level, "{line}");
+        }
+    }
 }

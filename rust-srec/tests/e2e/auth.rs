@@ -529,6 +529,61 @@ async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
     app.shutdown().await;
 }
 
+/// A session row written before device info was bounded can hold any
+/// length. The session list shows it capped, and a refresh copies the capped
+/// value, not the stored one, into the successor.
+#[tokio::test]
+async fn device_info_stored_before_it_was_bounded_is_capped_when_listed_and_refreshed() {
+    let app = TestApp::start().await;
+    let tokens = app.admin().await.clone();
+    let legacy = format!("{}LEGACY_SUFFIX", "界".repeat(300));
+    let capped = "界".repeat(256);
+    let pool = app.database().await;
+    sqlx::query("UPDATE refresh_tokens SET device_info = ?")
+        .bind(&legacy)
+        .execute(&pool)
+        .await
+        .expect("store an unbounded device description");
+
+    let listed = app
+        .get("/api/auth/sessions", &tokens.access)
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(
+        listed.body[0]["device_info"],
+        capped.as_str(),
+        "{}",
+        listed.text
+    );
+
+    let refreshed = tokens_from(
+        &app.refresh(&tokens.refresh)
+            .await
+            .expect_status(StatusCode::OK)
+            .body,
+    );
+    let successor: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT device_info FROM refresh_tokens WHERE revoked_at IS NULL")
+            .fetch_all(&pool)
+            .await
+            .expect("read the successor token");
+    assert_eq!(successor, [Some(capped.clone())]);
+    let listed = app
+        .get("/api/auth/sessions", &refreshed.access)
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(
+        listed.body.as_array().map(Vec::len),
+        Some(1),
+        "{}",
+        listed.text
+    );
+    assert_eq!(listed.body[0]["device_info"], capped.as_str());
+    pool.close().await;
+
+    app.shutdown().await;
+}
+
 #[tokio::test]
 async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_session() {
     let app = TestApp::start().await;

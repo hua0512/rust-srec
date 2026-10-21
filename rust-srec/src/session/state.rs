@@ -399,4 +399,35 @@ mod tests {
             );
         }
     }
+
+    /// A completed download ends the session at once only when the platform
+    /// asserted the end (HLS ENDLIST, the end of a DASH presentation). A clean
+    /// disconnect or an ffmpeg/streamlink exit 0 may be followed by a
+    /// reconnect, so those wait out hysteresis instead of splitting the
+    /// session. A schedule stop ends it whatever the engine saw.
+    #[test]
+    fn only_platform_asserted_or_policy_ends_skip_hysteresis() {
+        use crate::downloader::EngineEndSignal;
+
+        for (signal, authoritative) in [
+            (EngineEndSignal::HlsEndlist, true),
+            (EngineEndSignal::DashEnd, true),
+            (EngineEndSignal::CleanDisconnect, false),
+            (EngineEndSignal::SubprocessExitZero, false),
+            (EngineEndSignal::Unknown, false),
+        ] {
+            assert_eq!(signal.is_authoritative(), authoritative, "{signal:?}");
+            assert_eq!(
+                TerminalCause::Completed.is_authoritative_end_with_signal(Some(signal)),
+                authoritative,
+                "{signal:?}"
+            );
+            assert!(
+                TerminalCause::OutOfSchedule.is_authoritative_end_with_signal(Some(signal)),
+                "{signal:?}"
+            );
+        }
+        assert!(!TerminalCause::Completed.is_authoritative_end_with_signal(None));
+        assert!(TerminalCause::OutOfSchedule.is_authoritative_end_with_signal(None));
+    }
 }

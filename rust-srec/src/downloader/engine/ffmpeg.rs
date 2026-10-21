@@ -703,6 +703,22 @@ mod tests {
         assert!(!contains_option(&args, "-movflags"));
     }
 
+    /// The segment muxer rejects options its format does not know, so a
+    /// segmented ts or mkv recording given a faststart option fails to start.
+    #[test]
+    fn non_mp4_output_does_not_use_faststart() {
+        for (format, segment_duration_secs) in [("mkv", 0), ("ts", 60)] {
+            let args = engine_with_output_args(&[])
+                .build_args(&download_config(format, segment_duration_secs));
+
+            assert!(!contains_option(&args, "-movflags"), "{format}: {args:?}");
+            assert!(
+                !contains_option(&args, "-segment_format_options"),
+                "{format}: {args:?}"
+            );
+        }
+    }
+
     #[test]
     fn custom_faststart_option_is_not_overridden() {
         let args = engine_with_output_args(&["-movflags=+frag_keyframe"])

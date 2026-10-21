@@ -458,4 +458,22 @@ mod tests {
         assert_eq!(metadata["skipped_missing"], 1);
         assert_eq!(metadata["failed"], 0);
     }
+
+    /// Files still held open (by ffmpeg on Windows, or a busy mount) are
+    /// retried instead of failing the step; other errors are not.
+    #[test]
+    fn test_is_file_locked_error() {
+        for locked in [
+            std::io::Error::other(
+                "The process cannot access the file because it is being used by another process",
+            ),
+            std::io::Error::other("Device or resource busy"),
+            std::io::Error::from_raw_os_error(32),
+            std::io::Error::from_raw_os_error(16),
+        ] {
+            assert!(DeleteProcessor::is_file_locked_error(&locked), "{locked}");
+        }
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
+        assert!(!DeleteProcessor::is_file_locked_error(&not_found));
+    }
 }

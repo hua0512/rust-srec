@@ -810,4 +810,31 @@ mod tests {
                 .is_empty()
         );
     }
+
+    /// A client whose completing poll was lost polls again after the login's
+    /// deadline; the terminal state wins over expiry, so it still learns the
+    /// saved profile instead of an expired login.
+    #[tokio::test]
+    async fn a_completed_login_polled_after_expiry_still_reports_its_profile() {
+        let (pool, _, service) = fixture().await;
+        let target = CredentialLoginTarget::Create {
+            platform_id: "platform-bilibili".into(),
+            label: "A".into(),
+            proxy_route: crate::proxies::ProxyRoute::Inherit,
+        };
+        pending(&pool, "late", &target, PENDING_TTL_MS).await;
+        let completed = service
+            .complete("principal-a", "late", &material("sid=a"))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE credential_login_sessions SET expires_at = ? WHERE id = 'late'")
+            .bind(crate::database::time::now_ms() - 1)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let receipt = service.poll("principal-a", "late").await.unwrap();
+        assert_eq!(receipt.status, "completed");
+        assert!(receipt.profile_id.is_some());
+        assert_eq!(receipt.profile_id, completed.profile_id);
+    }
 }

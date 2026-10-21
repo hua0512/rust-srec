@@ -727,6 +727,22 @@ fn static_root_prefix_static_template_no_placeholders() {
     );
 }
 
+/// The startup write probe checks the directory before the first `{...}`
+/// variable or strftime `%` token, never a path containing either.
+#[test]
+fn static_root_prefix_cuts_at_the_first_placeholder() {
+    for (template, prefix) in [
+        ("/rec/{platform}/{streamer}/%Y%m%d", "/rec/"),
+        ("/rec/recordings/%Y-%m-%d", "/rec/recordings/"),
+    ] {
+        assert_eq!(
+            super::static_root_prefix(template),
+            Some(prefix.to_string()),
+            "{template}"
+        );
+    }
+}
+
 #[test]
 fn static_root_prefix_partial_directory_name_rejected() {
     // Template interpolates into the middle of a directory name
