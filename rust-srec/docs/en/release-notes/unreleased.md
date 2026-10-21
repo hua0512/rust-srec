@@ -24,6 +24,7 @@
 - Fixed Bigo rooms being shown as offline, and never recorded, when Bigo asked for a login, which it can do after many requests from the same network. Such checks now fail with a login-required error, and an account whose cookies stopped working is marked as needing a new login. Adding an account with cookies from a browser logged in to Bigo fixes it. See [Bigo Live](../platforms/bigo.md).
 - Fixed a recording keeping its earlier title when the stream's title changed while the connection briefly dropped: the session page and the session's workflows used the earlier title, although the recording's new files were already named after the new one.
 - Fixed a streamer whose error was cleared through the API or MCP, or which was waiting for an unavailable output folder that became writable again, only being checked again once its previous retry delay ran out. It is now checked right away.
+- Clearing a streamer's error through the API or MCP no longer turns a disabled streamer back on or changes the state of a streamer that is live. Clearing the error of a streamer stopped by a fatal error, such as the room not being found, now resumes monitoring it; previously it was only checked again after rust-srec restarted.
 
 ## Workflows and file processing
 
