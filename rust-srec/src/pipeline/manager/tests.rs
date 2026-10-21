@@ -2,10 +2,8 @@ use super::*;
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagStepExecutionDbModel, DagStepWithJob,
     DanmuStatisticsDbModel, JobDbModel, JobExecutionLogDbModel, LiveSessionDbModel,
-    MediaOutputTypeSummary, OutputFilters, PipelinePreset, ReadyStep, SessionFilters,
-    SessionSegmentDbModel,
+    MediaOutputTypeSummary, OutputFilters, ReadyStep, SessionFilters, SessionSegmentDbModel,
 };
-use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
 use async_trait::async_trait;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
@@ -1850,43 +1848,6 @@ async fn test_cancel_dag_step_job_allows_terminal_parent() {
     assert_eq!(dag_repo.cancel_calls(), 0);
 }
 
-#[tokio::test]
-async fn test_cancel_terminal_dag_step_job_does_not_cancel_parent() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
-
-    let mut dag = DagExecutionDbModel::new(
-        &crate::database::models::DagPipelineDefinition::new("test", Vec::new()),
-        None,
-        None,
-    );
-    dag.status = crate::database::models::DagExecutionStatus::Processing
-        .as_str()
-        .to_string();
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
-    job.pipeline_id = Some(dag_id.clone());
-    job.dag_step_execution_id = Some("step-exec-1".to_string());
-    job.status = JobStatus::Failed.as_str().to_string();
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_dag_repository(dag_repo.clone());
-
-    let error = manager.cancel_job(&job_id).await.unwrap_err();
-
-    assert!(matches!(error, crate::Error::InvalidStateTransition { .. }));
-    assert_eq!(
-        dag_repo.get_dag(&dag_id).await.unwrap().get_status(),
-        Some(crate::database::models::DagExecutionStatus::Processing)
-    );
-    assert_eq!(dag_repo.cancel_calls(), 0);
-}
-
 /// `cancel_pipeline` on a DAG id must stand the whole DAG down, not just its jobs: the
 /// `dag_execution` row and its steps have to reach a terminal state and the coordinator has to be
 /// told the segment DAG is over, otherwise session-complete waits on it forever.
@@ -2196,188 +2157,6 @@ async fn baidupcs_upload_jobs_are_claimed() {
     manager.stop().await;
 }
 
-struct TestPipelinePresetRepository {
-    preset: PipelinePreset,
-}
-
-#[async_trait]
-impl PipelinePresetRepository for TestPipelinePresetRepository {
-    async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>> {
-        Ok(vec![])
-    }
-
-    async fn list_pipeline_presets_filtered(
-        &self,
-        _filters: &PipelinePresetFilters,
-        _pagination: &Pagination,
-    ) -> Result<(Vec<PipelinePreset>, u64)> {
-        Ok((vec![], 0))
-    }
-
-    async fn get_pipeline_preset(&self, _id: &str) -> Result<Option<PipelinePreset>> {
-        Ok(None)
-    }
-
-    async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>> {
-        if name == self.preset.name {
-            Ok(Some(self.preset.clone()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn create_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
-        Ok(())
-    }
-
-    async fn update_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
-        Ok(())
-    }
-
-    async fn delete_pipeline_preset(&self, _id: &str) -> Result<()> {
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn test_expand_workflows_with_duplicate_names() {
-    let workflow_dag = DagPipelineDefinition::new(
-        "wf",
-        vec![
-            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
-            DagStep::with_dependencies(
-                "B",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["A".to_string()],
-            ),
-        ],
-    );
-    let repo = Arc::new(TestPipelinePresetRepository {
-        preset: PipelinePreset::new("wf", workflow_dag),
-    });
-
-    let manager: PipelineManager = PipelineManager::new().with_pipeline_preset_repository(repo);
-
-    let parent = DagPipelineDefinition::new(
-        "parent",
-        vec![
-            DagStep {
-                id: "W1".to_string(),
-                step: PipelineStep::Workflow {
-                    name: "wf".to_string(),
-                },
-                depends_on: vec![],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep {
-                id: "W2".to_string(),
-                step: PipelineStep::Workflow {
-                    name: "wf".to_string(),
-                },
-                depends_on: vec!["W1".to_string()],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep::with_dependencies(
-                "Z",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["W2".to_string()],
-            ),
-        ],
-    );
-
-    let expanded = manager.expand_workflows_in_dag(parent).await.unwrap();
-
-    let mut deps_by_id: HashMap<String, Vec<String>> = HashMap::new();
-    for step in &expanded.steps {
-        deps_by_id.insert(step.id.clone(), step.depends_on.clone());
-    }
-
-    assert!(!deps_by_id.contains_key("W1"));
-    assert!(!deps_by_id.contains_key("W2"));
-
-    assert_eq!(deps_by_id.get("W1__A").unwrap(), &Vec::<String>::new());
-    assert_eq!(deps_by_id.get("W1__B").unwrap(), &vec!["W1__A".to_string()]);
-
-    // W2 depends on the *leaf* of W1 after expansion.
-    assert_eq!(deps_by_id.get("W2__A").unwrap(), &vec!["W1__B".to_string()]);
-    assert_eq!(deps_by_id.get("W2__B").unwrap(), &vec!["W2__A".to_string()]);
-
-    // Z depends on the *leaf* of W2 after expansion.
-    assert_eq!(deps_by_id.get("Z").unwrap(), &vec!["W2__B".to_string()]);
-}
-
-/// A fan-in step downstream of a workflow receives its inputs in `depends_on` order
-/// (`DagRepository::complete_step_and_check_dependents`), so expansion must record the
-/// workflow's leaves in definition order rather than in whatever order a hash container
-/// happens to yield.
-#[tokio::test]
-async fn test_expand_workflows_preserves_leaf_order() {
-    let workflow_dag = DagPipelineDefinition::new(
-        "wf",
-        vec![
-            DagStep::new("root", PipelineStep::inline("remux", serde_json::json!({}))),
-            DagStep::with_dependencies(
-                "leaf_a",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["root".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "leaf_b",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["root".to_string()],
-            ),
-            DagStep::with_dependencies(
-                "leaf_c",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["root".to_string()],
-            ),
-        ],
-    );
-    let repo = Arc::new(TestPipelinePresetRepository {
-        preset: PipelinePreset::new("wf", workflow_dag),
-    });
-
-    let manager: PipelineManager = PipelineManager::new().with_pipeline_preset_repository(repo);
-
-    let parent = DagPipelineDefinition::new(
-        "parent",
-        vec![
-            DagStep {
-                id: "W".to_string(),
-                step: PipelineStep::Workflow {
-                    name: "wf".to_string(),
-                },
-                depends_on: vec![],
-                retry: None,
-                timeout_secs: None,
-            },
-            DagStep::with_dependencies(
-                "Z",
-                PipelineStep::inline("remux", serde_json::json!({})),
-                vec!["W".to_string()],
-            ),
-        ],
-    );
-
-    let expanded = manager.expand_workflows_in_dag(parent).await.unwrap();
-    let z = expanded
-        .steps
-        .iter()
-        .find(|step| step.id == "Z")
-        .expect("Z survives expansion");
-
-    assert_eq!(
-        z.depends_on,
-        vec![
-            "W__leaf_a".to_string(),
-            "W__leaf_b".to_string(),
-            "W__leaf_c".to_string(),
-        ]
-    );
-}
-
 /// Every processor name the preset editor can write must be claimable by a pool, or the jobs
 /// it produces sit PENDING forever. Mirrors `VALID_PROCESSORS` in
 /// `frontend/src/api/schemas/pipeline.ts`; the seeded `archive_zip` job preset in the initial
@@ -2406,35 +2185,6 @@ fn test_frontend_processor_names_are_all_claimable() {
             "processor '{processor}' is offered by the preset editor but no pool can claim it"
         );
     }
-}
-
-/// A pending job whose processor no pool registers can never be claimed, so startup fails it
-/// instead of leaving it (and the queue depth it inflates) in place across every restart.
-#[tokio::test]
-async fn test_fail_unclaimable_jobs_only_fails_jobs_without_a_processor() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let claimable = JobDbModel::new_with_input("remux", "/a.flv", 0, None, None, "{}");
-    let unclaimable =
-        JobDbModel::new_with_input("totally_not_a_processor", "/b.flv", 0, None, None, "{}");
-    job_repo.insert(claimable.clone());
-    job_repo.insert(unclaimable.clone());
-
-    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
-        PipelineManagerConfig::default(),
-        job_repo.clone(),
-    );
-
-    let failed = manager.fail_unclaimable_jobs().await.unwrap();
-
-    assert_eq!(failed, 1);
-    assert_eq!(
-        job_repo.get_job(&unclaimable.id).await.unwrap().status,
-        JobStatus::Failed.as_str()
-    );
-    assert_eq!(
-        job_repo.get_job(&claimable.id).await.unwrap().status,
-        JobStatus::Pending.as_str()
-    );
 }
 
 fn consuming_step_dag(processor: &str, config: serde_json::Value) -> DagPipelineDefinition {

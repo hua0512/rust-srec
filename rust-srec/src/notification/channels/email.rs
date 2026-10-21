@@ -125,23 +125,6 @@ impl EmailChannel {
         }
     }
 
-    #[cfg(test)]
-    fn render(&self, event: &NotificationEvent) -> EmailContent {
-        // Resolve the process locale once so every MIME part uses one language.
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        EmailContent {
-            title: event.title_in(&locale),
-            description: event.description_in(&locale),
-            priority: event.priority(),
-            event_type: event.event_type(),
-            timestamp: event.timestamp().to_rfc3339(),
-        }
-    }
-
     /// Build the email subject.
     fn build_subject(&self, content: &EmailContent) -> String {
         format!("[rust-srec] {}", content.title)
@@ -337,41 +320,4 @@ fn escape_html(input: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rendered_email_preserves_localized_mime_content_and_escapes_supplied_text() {
-        let event = NotificationEvent::SystemStartup {
-            version: "contract".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = EmailChannel::new(EmailConfig {
-                from_address: "sender@example.test".into(),
-                to_addresses: vec!["receiver@example.test".into()],
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            let content = channel.render(&event);
-            assert_eq!(
-                (rendered.title, rendered.description),
-                (content.title, content.description)
-            );
-            let supplied = RenderedEvent {
-                title: "Unique title".into(),
-                description: "Unique <body> & text".into(),
-            };
-            let message = channel.build_rendered_message(&event, &supplied).unwrap();
-            let formatted = String::from_utf8(message.formatted()).unwrap();
-            assert!(formatted.contains("Subject: [rust-srec] Unique title"));
-            assert!(formatted.contains("multipart/alternative"));
-            assert!(formatted.contains("Unique <body> & text"));
-            assert!(formatted.contains("Unique &lt;body&gt; &amp; text"));
-        }
-    }
 }

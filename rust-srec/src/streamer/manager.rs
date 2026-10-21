@@ -944,15 +944,6 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::Mutex;
 
-    fn create_errored_db_model(error_count: i32) -> StreamerDbModel {
-        let mut row = create_test_db_model("s1", "twitch");
-        row.state = StreamerState::TemporalDisabled.to_string();
-        row.consecutive_error_count = Some(error_count);
-        row.disabled_until = Some((Utc::now() + chrono::Duration::minutes(30)).timestamp_millis());
-        row.last_error = Some("boom".to_string());
-        row
-    }
-
     #[test]
     fn error_backoff_respects_threshold_and_caps_extreme_counts() {
         let manager = StreamerManager::new(
@@ -1000,12 +991,6 @@ mod tests {
         fn new() -> Self {
             Self {
                 streamers: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn with_streamers(streamers: Vec<StreamerDbModel>) -> Self {
-            Self {
-                streamers: Mutex::new(streamers),
             }
         }
     }
@@ -1188,105 +1173,5 @@ mod tests {
                 .cloned()
                 .collect())
         }
-    }
-
-    fn create_test_db_model(id: &str, platform: &str) -> StreamerDbModel {
-        StreamerDbModel {
-            id: id.to_string(),
-            name: format!("Streamer {}", id),
-            url: format!("https://example.com/{}", id),
-            platform_config_id: platform.to_string(),
-            template_config_id: None,
-            state: "NOT_LIVE".to_string(),
-            priority: "NORMAL".to_string(),
-            avatar: None,
-            consecutive_error_count: Some(0),
-            last_error: None,
-            disabled_until: None,
-            last_live_time: None,
-            streamer_specific_config: None,
-            created_at: Utc::now().timestamp_millis(),
-            updated_at: Utc::now().timestamp_millis(),
-            deleted_at: None,
-        }
-    }
-
-    /// Disabling a streamer through the API must retire the backoff written by
-    /// monitor error handling, otherwise `is_ready_for_check` keeps suppressing checks
-    /// once the user re-enables it.
-    #[tokio::test]
-    async fn test_partial_update_to_disabled_clears_error_backoff() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_errored_db_model(3)]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let errored = manager.get_streamer("s1").unwrap();
-        assert!(errored.disabled_until.is_some());
-        assert!(errored.is_disabled());
-
-        let updated = manager
-            .partial_update_streamer(StreamerUpdateParams {
-                id: "s1".to_string(),
-                name: None,
-                url: None,
-                platform_config_id: None,
-                template_config_id: None,
-                priority: None,
-                state: Some(StreamerState::Disabled),
-                streamer_specific_config: None,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(updated.state, StreamerState::Disabled);
-        assert_eq!(updated.consecutive_error_count, 0);
-        assert_eq!(updated.disabled_until, None);
-        assert_eq!(updated.last_error, None);
-
-        // Re-enabling must land on a streamer that is immediately checkable.
-        let reenabled = manager
-            .partial_update_streamer(StreamerUpdateParams {
-                id: "s1".to_string(),
-                name: None,
-                url: None,
-                platform_config_id: None,
-                template_config_id: None,
-                priority: None,
-                state: Some(StreamerState::NotLive),
-                streamer_specific_config: None,
-            })
-            .await
-            .unwrap();
-
-        assert!(reenabled.is_ready_for_check());
-    }
-
-    /// Only a transition to `Disabled` clears the error history; other partial
-    /// updates (rename, priority, template) must leave the backoff intact.
-    #[tokio::test]
-    async fn test_partial_update_preserves_error_backoff_for_other_states() {
-        let repo = MockStreamerRepository::with_streamers(vec![create_errored_db_model(3)]);
-        let broadcaster = ConfigEventBroadcaster::new();
-        let manager = StreamerManager::new(Arc::new(repo), broadcaster);
-        manager.hydrate().await.unwrap();
-
-        let updated = manager
-            .partial_update_streamer(StreamerUpdateParams {
-                id: "s1".to_string(),
-                name: Some("New Name".to_string()),
-                url: None,
-                platform_config_id: None,
-                template_config_id: None,
-                priority: Some(Priority::High),
-                state: None,
-                streamer_specific_config: None,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(updated.consecutive_error_count, 3);
-        assert!(updated.disabled_until.is_some());
-        assert_eq!(updated.last_error.as_deref(), Some("boom"));
     }
 }

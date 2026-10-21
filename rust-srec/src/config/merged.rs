@@ -732,75 +732,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_layer_override() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("ffmpeg"))
-            .with_platform(PlatformConfigLayer {
-                fetch_delay_ms: Some(60_000),
-                download_delay_ms: Some(1_000),
-                record_danmu: Some(true),
-                ..Default::default()
-            })
-            .with_template(TemplateConfigLayer {
-                output_folder: Some("./custom".to_string()),
-                download_engine: Some("mesio".to_string()),
-                ..Default::default()
-            })
-            .build();
-
-        // Template overrides global
-        assert_eq!(config.output_folder, "./custom");
-        assert_eq!(config.download_engine, "mesio");
-        // Platform overrides global
-        assert!(config.record_danmu);
-    }
-
-    #[test]
-    fn test_streamer_pipeline_override() {
-        // Create a streamer-specific config with custom pipeline
-        let streamer_config = serde_json::json!({
-            "pipeline": {
-                "name": "streamer_custom",
-                "steps": [
-                    {"id": "step1", "step": {"type": "preset", "name": "fast_remux"}, "depends_on": []},
-                    {"id": "step2", "step": {"type": "preset", "name": "s3_upload"}, "depends_on": ["step1"]}
-                ]
-            }
-        });
-
-        let config = MergedConfig::builder()
-            .with_global(GlobalConfigLayer {
-                pipeline: Some(DagPipelineDefinition::new(
-                    "global",
-                    vec![
-                        crate::database::models::job::DagStep::new(
-                            "step1",
-                            PipelineStep::preset("remux"),
-                        ),
-                        crate::database::models::job::DagStep::new(
-                            "step2",
-                            PipelineStep::preset("upload"),
-                        ),
-                    ],
-                )),
-                ..global_layer("mesio")
-            })
-            .with_platform(PlatformConfigLayer {
-                fetch_delay_ms: Some(60_000),
-                download_delay_ms: Some(1_000),
-                ..Default::default()
-            })
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        // Streamer pipeline should override global
-        let dag = config.pipeline.expect("Pipeline should be set");
-        assert_eq!(dag.steps.len(), 2);
-        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "fast_remux"));
-        assert!(matches!(&dag.steps[1].step, PipelineStep::Preset{name} if name == "s3_upload"));
-    }
-
     /// A paired-segment workflow needs danmu, which the offline end-to-end
     /// platform cannot record, so the hand-parsed streamer key is pinned
     /// here; `tests/e2e/recording.rs` covers `session_complete_pipeline`.
@@ -852,6 +783,7 @@ mod tests {
                 .with_platform(PlatformConfigLayer {
                     offline_check_count: Some(5),
                     offline_check_delay_ms: Some(25_000),
+                    record_danmu: Some(true),
                     extractor: Some(ExtractorSelection::Streamlink),
                     danmu_statistics: Some(statistics(10)),
                     ..Default::default()
@@ -870,6 +802,7 @@ mod tests {
             Some(ExtractorSelection::Auto),
             serde_json::json!({
                 "offline_check_count": 7,
+                "record_danmu": false,
                 "extractor": "streamlink",
                 "danmu_statistics": { "top_words": 25 },
             }),
@@ -878,9 +811,10 @@ mod tests {
             (
                 streamer_wins.offline_check_count,
                 streamer_wins.offline_check_delay_ms,
+                streamer_wins.record_danmu,
                 streamer_wins.extractor
             ),
-            (7, 30_000, ExtractorSelection::Streamlink)
+            (7, 30_000, false, ExtractorSelection::Streamlink)
         );
         assert_eq!(
             streamer_wins.danmu_statistics,
@@ -894,10 +828,11 @@ mod tests {
         assert_eq!(
             (
                 template_wins.offline_check_count,
+                template_wins.record_danmu,
                 template_wins.extractor,
                 template_wins.danmu_statistics.top_talkers
             ),
-            (5, ExtractorSelection::Auto, 20)
+            (5, true, ExtractorSelection::Auto, 20)
         );
 
         let malformed = build(

@@ -1450,3 +1450,526 @@ async fn email_test_send_delivers_through_a_local_smtp_server() {
 
     app.shutdown().await;
 }
+
+// Notifications a recording on the fake platform sends: they follow the
+// session, its segments and its workflow, while the monitor itself notifies
+// only fatal platform answers.
+
+/// A workflow of one `execute` step that succeeds on every OS.
+fn succeed(name: &str) -> Value {
+    json!({
+        "name": name,
+        "steps": [{
+            "id": "succeed",
+            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
+            "depends_on": [],
+        }],
+    })
+}
+
+/// A webhook channel, at the lowest priority, subscribed to `events`.
+async fn subscribed_webhook(
+    app: &TestApp,
+    token: &str,
+    receiver: &LocalHttpServer,
+    events: &[&str],
+) {
+    let channel = create_channel(
+        app,
+        token,
+        "Recording alerts",
+        "Webhook",
+        json!({ "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 }),
+    )
+    .await;
+    app.put(
+        &format!("/api/notifications/channels/{channel}/subscriptions"),
+        token,
+        &json!({ "events": events }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+}
+
+/// The webhook bodies `receiver` got for `event_type`, in arrival order.
+fn webhooks_of(receiver: &LocalHttpServer, event_type: &str) -> Vec<Value> {
+    receiver
+        .received()
+        .iter()
+        .map(json_body)
+        .filter(|body| body["event_type"] == event_type)
+        .collect()
+}
+
+/// Wait until `receiver` has received `count` webhooks for `event_type`.
+async fn wait_for_webhooks(receiver: &LocalHttpServer, event_type: &str, count: usize) {
+    eventually(WAIT, &format!("{count} {event_type} webhooks"), || async {
+        (webhooks_of(receiver, event_type).len() >= count).then_some(())
+    })
+    .await;
+}
+
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
+/// The streamer's sessions, newest first.
+async fn sessions_of(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
+    get_ok(
+        app,
+        token,
+        &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
+    )
+    .await["items"]
+        .as_array()
+        .expect("session items")
+        .clone()
+}
+
+/// Wait for the streamer's newest session to end and return its detail.
+async fn ended_session(app: &TestApp, token: &str, streamer_id: &str, count: usize) -> Value {
+    let id = eventually(WAIT, "the session to end", || async {
+        let sessions = sessions_of(app, token, streamer_id).await;
+        (sessions.len() == count && sessions[0]["is_live"] == false).then(|| id_of(&sessions[0]))
+    })
+    .await;
+    get_ok(app, token, &format!("/api/sessions/{id}")).await
+}
+
+/// Wait until the room's first recording part has been opened.
+async fn wait_for_a_part(app: &TestApp) {
+    eventually(WAIT, "a recording part to be opened", || async {
+        (std::fs::read_dir(app.output_dir())
+            .expect("read the output directory")
+            .count()
+            > 0)
+        .then_some(())
+    })
+    .await;
+}
+
+/// The event types of the streamer's notification log, sorted.
+async fn logged_event_types(app: &TestApp, token: &str, streamer_id: &str) -> Vec<String> {
+    let log = get_ok(
+        app,
+        token,
+        &format!("/api/notifications/events?streamer_id={streamer_id}"),
+    )
+    .await;
+    let mut types: Vec<String> = log
+        .as_array()
+        .expect("event log")
+        .iter()
+        .map(|event| event["event_type"].as_str().expect("event type").to_owned())
+        .collect();
+    types.sort_unstable();
+    types
+}
+
+fn timestamp(value: &Value) -> chrono::DateTime<chrono::FixedOffset> {
+    let text = value.as_str().expect("an RFC 3339 timestamp");
+    chrono::DateTime::parse_from_rfc3339(text).expect("an RFC 3339 timestamp")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_at_its_end() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("notified");
+    room.set_live(room.live("Notified show"));
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app =
+        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("after-session")))
+            .await;
+    let token = app.admin_token().await;
+    subscribed_webhook(
+        &app,
+        &token,
+        &receiver,
+        &[
+            "stream_online",
+            "stream_offline",
+            "segment_started",
+            "segment_completed",
+            "pipeline_started",
+            "pipeline_completed",
+        ],
+    )
+    .await;
+    let id = id_of(
+        &app.create_enabled_streamer(&token, json!({ "name": "Notified", "url": room.url() }))
+            .await,
+    );
+
+    // A brief disconnect: the session waits in hysteresis and resumes.
+    let mut flv = FlvLoop::tiny();
+    room.wait_for_media_connection(1).await;
+    room.push(flv.stream(1));
+    wait_for_a_part(&app).await;
+    room.reset();
+    room.wait_for_media_connection(2).await;
+    room.push(flv.stream(1));
+    room.set_offline();
+    room.end();
+    let session = ended_session(&app, &token, &id, 1).await;
+    // Channels deliver concurrently, so wait for each expected webhook. An
+    // extra one would be dispatched next to the expected one of its kind.
+    for (event_type, count) in [
+        ("stream_online", 2),
+        ("stream_offline", 1),
+        ("segment_started", 2),
+        ("segment_completed", 2),
+        ("pipeline_started", 1),
+        ("pipeline_completed", 1),
+    ] {
+        wait_for_webhooks(&receiver, event_type, count).await;
+    }
+
+    // Online for the start and again for the resumed start, offline once
+    // when the session ended; each at the time the session recorded.
+    let resumed = session["events"]
+        .as_array()
+        .expect("session events")
+        .iter()
+        .find(|event| event["payload"]["from_hysteresis"] == true)
+        .unwrap_or_else(|| panic!("no resumed start: {session}"));
+    let online = webhooks_of(&receiver, "stream_online");
+    assert_eq!(online.len(), 2, "{online:?}");
+    assert_eq!(
+        millis(&online[0]["timestamp"]),
+        millis(&session["start_time"])
+    );
+    assert_eq!(
+        millis(&online[1]["timestamp"]),
+        millis(&resumed["occurred_at"])
+    );
+    let offline = webhooks_of(&receiver, "stream_offline");
+    assert_eq!(offline.len(), 1, "{offline:?}");
+    assert_eq!(
+        millis(&offline[0]["timestamp"]),
+        millis(&session["end_time"])
+    );
+    assert!(offline[0]["data"]["StreamOffline"]["duration_secs"].is_null());
+    for body in &online {
+        assert_eq!(
+            body["data"]["StreamOnline"]["title"], "Notified show",
+            "{body}"
+        );
+    }
+    for body in online.iter().chain(&offline) {
+        assert_eq!(body["streamer_id"], id.as_str(), "{body}");
+    }
+
+    // Each part's webhooks carry the times its segment row records.
+    let session_id = id_of(&session);
+    let mut segments = get_ok(
+        &app,
+        &token,
+        &format!("/api/sessions/{session_id}/segments"),
+    )
+    .await["items"]
+        .as_array()
+        .expect("segment items")
+        .clone();
+    segments.sort_by_key(|segment| segment["segment_index"].as_i64());
+    assert_eq!(segments.len(), 2, "{segments:?}");
+    for (event_type, variant, time) in [
+        ("segment_started", "SegmentStarted", "created_at"),
+        ("segment_completed", "SegmentCompleted", "completed_at"),
+    ] {
+        let mut bodies = webhooks_of(&receiver, event_type);
+        bodies.sort_by_key(|body| body["data"][variant]["segment_index"].as_i64());
+        assert_eq!(bodies.len(), 2, "{bodies:?}");
+        for (body, segment) in bodies.iter().zip(&segments) {
+            assert_eq!(body["streamer_id"], id.as_str(), "{body}");
+            assert_eq!(body["data"][variant]["segment_path"], segment["file_path"]);
+            assert_eq!(
+                millis(&body["timestamp"]),
+                millis(&segment[time]),
+                "{event_type}: {body} {segment}"
+            );
+        }
+    }
+
+    // The session-complete step's job starts and completes.
+    let jobs = get_ok(
+        &app,
+        &token,
+        &format!("/api/pipeline/jobs?session_id={session_id}"),
+    )
+    .await["items"]
+        .as_array()
+        .expect("job items")
+        .clone();
+    assert_eq!(jobs.len(), 1, "{jobs:?}");
+    let started = webhooks_of(&receiver, "pipeline_started");
+    assert_eq!(started.len(), 1, "{started:?}");
+    assert_eq!(started[0]["streamer_id"], id.as_str());
+    assert_eq!(
+        started[0]["data"]["PipelineStarted"]["job_id"],
+        jobs[0]["id"]
+    );
+    assert_eq!(started[0]["data"]["PipelineStarted"]["job_type"], "execute");
+    let completed = webhooks_of(&receiver, "pipeline_completed");
+    assert_eq!(completed.len(), 1, "{completed:?}");
+    assert_eq!(
+        completed[0]["data"]["PipelineCompleted"]["job_id"],
+        jobs[0]["id"]
+    );
+
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn disabling_a_recording_streamer_notifies_no_offline() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("disabled");
+    room.set_live(room.live("Interrupted"));
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    subscribed_webhook(
+        &app,
+        &token,
+        &receiver,
+        &["stream_online", "stream_offline"],
+    )
+    .await;
+    let id = id_of(
+        &app.create_enabled_streamer(&token, json!({ "name": "Disabled", "url": room.url() }))
+            .await,
+    );
+    let path = format!("/api/streamers/{id}");
+
+    room.wait_for_media_connection(1).await;
+    room.push(FlvLoop::tiny().stream(1));
+    wait_for_a_part(&app).await;
+    app.put(&path, &token, &json!({ "enabled": false }))
+        .await
+        .expect_status(StatusCode::OK);
+    let stopped = ended_session(&app, &token, &id, 1).await;
+    let ended = stopped["events"]
+        .as_array()
+        .expect("session events")
+        .iter()
+        .find(|event| event["kind"] == "session_ended")
+        .unwrap_or_else(|| panic!("no session_ended event: {stopped}"));
+    assert_eq!(
+        ended["payload"]["cause"],
+        json!({ "type": "user_disabled" }),
+        "{stopped}"
+    );
+
+    // Enabled again, the streamer records the still-live room in a second
+    // session, which ends because the room goes offline.
+    app.put(&path, &token, &json!({ "enabled": true }))
+        .await
+        .expect_status(StatusCode::OK);
+    room.wait_for_media_connection(2).await;
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+    let finished = ended_session(&app, &token, &id, 2).await;
+    wait_for_webhooks(&receiver, "stream_online", 2).await;
+    wait_for_webhooks(&receiver, "stream_offline", 1).await;
+
+    // The disabled session ended seconds before the second one went offline
+    // (a restart, a recording and an offline confirmation lie between), so a
+    // stream_offline for it would have arrived by now.
+    assert_eq!(receiver.received().len(), 3);
+    let offline = webhooks_of(&receiver, "stream_offline");
+    assert_eq!(offline.len(), 1, "{offline:?}");
+    assert_eq!(
+        millis(&offline[0]["timestamp"]),
+        millis(&finished["end_time"])
+    );
+
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_monitor_notifies_only_a_fatal_platform_answer_at_the_time_it_was_seen() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("monitored");
+    room.set_live(room.live("Rerun tonight"));
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    subscribed_webhook(&app, &token, &receiver, &["fatal_error"]).await;
+
+    // The streamer is held back by a filter first (a state change), then
+    // goes live, records and goes offline, and finally the platform says it
+    // does not exist.
+    let id = id_of(
+        &app.create_disabled_streamer(&token, json!({ "name": "Monitored", "url": room.url() }))
+            .await,
+    );
+    app.post(
+        &format!("/api/streamers/{id}/filters"),
+        &token,
+        &json!({
+            "streamer_id": id,
+            "filter_type": "KEYWORD",
+            "config": { "include": [], "exclude": ["rerun"] },
+        }),
+    )
+    .await
+    .expect_status(StatusCode::CREATED);
+    app.put(
+        &format!("/api/streamers/{id}"),
+        &token,
+        &json!({ "enabled": true }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    eventually(WAIT, "the streamer to be held back", || async {
+        let streamer = get_ok(&app, &token, &format!("/api/streamers/{id}")).await;
+        (streamer["state"] == "OUT_OF_SCHEDULE").then_some(())
+    })
+    .await;
+    room.set_live(room.live("Live tonight"));
+    room.wait_for_media_connection(1).await;
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+    ended_session(&app, &token, &id, 1).await;
+    room.set_error("not_found", "gone");
+    wait_for_webhooks(&receiver, "fatal_error", 1).await;
+
+    // The notification carries the monitor's recorded event: its type, its
+    // message and the time the answer was seen.
+    let database = app.database().await;
+    let recorded: String = sqlx::query_scalar(
+        "SELECT payload FROM monitor_event_outbox WHERE streamer_id = ? AND event_type = 'FatalError'",
+    )
+    .bind(&id)
+    .fetch_one(&database)
+    .await
+    .expect("the recorded fatal event");
+    database.close().await;
+    let recorded = &serde_json::from_str::<Value>(&recorded).expect("JSON payload")["FatalError"];
+    let fatal = &webhooks_of(&receiver, "fatal_error")[0];
+    assert_eq!(fatal["streamer_id"], id.as_str());
+    assert_eq!(
+        fatal["data"]["FatalError"]["error_type"], "NotFound",
+        "{fatal}"
+    );
+    assert_eq!(fatal["data"]["FatalError"]["message"], recorded["message"]);
+    assert_eq!(
+        timestamp(&fatal["timestamp"]),
+        timestamp(&recorded["timestamp"])
+    );
+
+    // Everything else the streamer was notified of came from its session.
+    let expected = [
+        "download_completed",
+        "download_started",
+        "fatal_error",
+        "segment_completed",
+        "segment_started",
+        "stream_offline",
+        "stream_online",
+    ];
+    let types = eventually(WAIT, "the session's notifications in the log", || async {
+        let types = logged_event_types(&app, &token, &id).await;
+        expected
+            .iter()
+            .all(|expected| types.iter().any(|logged| logged == expected))
+            .then_some(types)
+    })
+    .await;
+    assert_eq!(types, expected);
+
+    app.shutdown().await;
+}
+
+/// The decoded body of the `content_type` part of a multipart email.
+fn email_part(data: &str, content_type: &str) -> String {
+    use base64::Engine as _;
+
+    let start = data
+        .find(&format!("Content-Type: {content_type}"))
+        .unwrap_or_else(|| panic!("no {content_type} part in {data}"));
+    let (headers, rest) = data[start..].split_once("\r\n\r\n").expect("part headers");
+    let body = rest.split("\r\n--").next().expect("part body");
+    let bytes = if headers.contains("Content-Transfer-Encoding: base64") {
+        base64::engine::general_purpose::STANDARD
+            .decode(body.replace("\r\n", ""))
+            .expect("base64 body")
+    } else if headers.contains("Content-Transfer-Encoding: quoted-printable") {
+        let soft = body.replace("=\r\n", "");
+        let mut bytes = Vec::new();
+        let mut input = soft.bytes();
+        while let Some(byte) = input.next() {
+            if byte == b'=' {
+                let hex = [input.next().expect("hex"), input.next().expect("hex")];
+                let hex = std::str::from_utf8(&hex).expect("hex digits");
+                bytes.push(u8::from_str_radix(hex, 16).expect("hex escape"));
+            } else {
+                bytes.push(byte);
+            }
+        }
+        bytes
+    } else {
+        body.as_bytes().to_vec()
+    };
+    String::from_utf8(bytes).expect("UTF-8 body")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_online_email_escapes_the_live_title_in_its_html_part() {
+    let smtp = SmtpFixture::start().await;
+    let fake = FakePlatform::start().await;
+    let room = fake.room("mailed");
+    room.set_live(room.live(r#"<b>Tom & "Jerry"</b>"#).category("Talk"));
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    // Saved with a setting older versions had, which this one ignores.
+    let channel = create_channel(
+        &app,
+        &token,
+        "Mail",
+        "Email",
+        json!({
+            "smtp_host": "127.0.0.1",
+            "smtp_port": smtp.port(),
+            "username": "",
+            "password": "",
+            "from_address": "srec@example.com",
+            "to_addresses": ["ops@example.com"],
+            "use_tls": false,
+            "min_priority": 5,
+            "locale": "zh-CN",
+            "batch_window_secs": 60,
+        }),
+    )
+    .await;
+    app.put(
+        &format!("/api/notifications/channels/{channel}/subscriptions"),
+        &token,
+        &json!({ "events": ["stream_online"] }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    app.create_enabled_streamer(&token, json!({ "name": "Mailed", "url": room.url() }))
+        .await;
+
+    let message = eventually(WAIT, "the stream_online email", || async {
+        smtp.messages().pop()
+    })
+    .await;
+    // The zh-CN description wraps the category in full-width parentheses.
+    let plain = email_part(&message.data, "text/plain");
+    assert!(plain.contains("Mailed 开播了"), "{plain}");
+    assert!(plain.contains(r#"<b>Tom & "Jerry"</b>（Talk）"#), "{plain}");
+    let html = email_part(&message.data, "text/html");
+    assert!(
+        html.contains("&lt;b&gt;Tom &amp; &quot;Jerry&quot;&lt;/b&gt;（Talk）"),
+        "{html}"
+    );
+    assert!(!html.contains("<b>Tom"), "{html}");
+
+    app.shutdown().await;
+}

@@ -265,18 +265,4 @@ mod tests {
         );
         assert_eq!(result, "remote:/streamer-123/videos");
     }
-
-    #[test]
-    fn test_expand_placeholders_sanitizes_special_chars() {
-        let result = expand_placeholders(
-            "remote:/{streamer}/{title}",
-            "streamer-123",
-            "session-456",
-            Some("Streamer<Name>"),
-            Some("Title:With:Colons"),
-            None,
-        );
-        // Characters are sanitized
-        assert_eq!(result, "remote:/Streamer_Name_/Title_With_Colons");
-    }
 }

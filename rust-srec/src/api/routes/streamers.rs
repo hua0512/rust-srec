@@ -56,36 +56,6 @@ impl FromRef<AppState> for StreamerRouteState {
     }
 }
 
-impl StreamerRouteState {
-    /// Assemble the route state from a `ServiceContainer`'s services directly,
-    /// for tests that drive these handlers without standing up an `AppState`
-    /// (which needs a `LoggingConfig`, and with it a global tracing subscriber).
-    #[cfg(test)]
-    pub(crate) fn for_test(
-        config_service: std::sync::Arc<StreamerConfigService>,
-        streamer_manager: std::sync::Arc<
-            crate::streamer::StreamerManager<
-                crate::database::repositories::streamer::SqlxStreamerRepository,
-            >,
-        >,
-        streamer_check_history_repository: std::sync::Arc<
-            dyn crate::database::repositories::StreamerCheckHistoryRepository,
-        >,
-        runtime_coordinator: std::sync::Arc<
-            crate::services::runtime_coordinator::RuntimeCoordinator,
-        >,
-        credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
-    ) -> Self {
-        Self {
-            config_service,
-            streamer_manager,
-            streamer_check_history_repository,
-            runtime_coordinator,
-            credential_blocks,
-        }
-    }
-}
-
 /// Metadata for a streamer the caller may still act on.
 ///
 /// A row carrying `deleted_at` is gone as far as the API is concerned:

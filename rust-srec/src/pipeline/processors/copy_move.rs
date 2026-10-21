@@ -1366,84 +1366,6 @@ mod tests {
         );
     }
 
-    /// A retried copy or move whose destination already holds a same-size file
-    /// resumes past it instead of failing on the overwrite check; a move also
-    /// finishes by removing the source it left behind. A first attempt keeps
-    /// rejecting the collision.
-    #[tokio::test]
-    async fn test_retry_adopts_a_complete_destination_for_copy_and_move() {
-        for operation in ["copy", "move"] {
-            let temp_dir = TempDir::new().unwrap();
-            let source_path = temp_dir.path().join("done.txt");
-            let pending_path = temp_dir.path().join("pending.txt");
-            let dest_dir = temp_dir.path().join("output");
-            fs::create_dir_all(&dest_dir).await.unwrap();
-            fs::write(&source_path, "content").await.unwrap();
-            fs::write(&pending_path, "later").await.unwrap();
-            fs::write(dest_dir.join("done.txt"), "content")
-                .await
-                .unwrap();
-            let input = ProcessorInput {
-                inputs: vec![
-                    source_path.to_string_lossy().to_string(),
-                    pending_path.to_string_lossy().to_string(),
-                ],
-                config: Some(
-                    serde_json::json!({
-                        "operation": operation,
-                        "destination": dest_dir.to_string_lossy()
-                    })
-                    .to_string(),
-                ),
-                ..Default::default()
-            };
-            let processor = CopyMoveProcessor::new();
-
-            let first_attempt = processor
-                .process(&input, &ProcessorContext::noop("test"))
-                .await
-                .unwrap();
-            assert_eq!(first_attempt.failed_inputs.len(), 1, "{operation}");
-            assert!(
-                first_attempt.failed_inputs[0]
-                    .1
-                    .contains("overwrite is disabled")
-            );
-            assert_eq!(
-                first_attempt.succeeded_inputs,
-                vec![pending_path.to_string_lossy().to_string()]
-            );
-
-            fs::write(&pending_path, "later").await.unwrap();
-            let retry = processor
-                .process(&input, &ProcessorContext::noop("test").with_retry(true))
-                .await
-                .unwrap();
-            assert!(
-                retry.failed_inputs.is_empty(),
-                "{operation}: {:?}",
-                retry.failed_inputs
-            );
-            assert_eq!(retry.succeeded_inputs, input.inputs, "{operation}");
-            assert_eq!(
-                retry.outputs,
-                vec![
-                    dest_dir.join("done.txt").to_string_lossy().to_string(),
-                    dest_dir.join("pending.txt").to_string_lossy().to_string(),
-                ]
-            );
-            assert_eq!(
-                fs::read_to_string(dest_dir.join("done.txt")).await.unwrap(),
-                "content"
-            );
-            assert_eq!(
-                source_path.exists(),
-                operation == "copy",
-                "{operation}: a move removes the source it left behind"
-            );
-        }
-    }
-
     /// Two inputs that share a file name would overwrite each other under the
     /// destination; the job is refused before anything is transferred.
     #[tokio::test]
@@ -1581,44 +1503,6 @@ mod tests {
 
         let err = processor.process(&input, &ctx).await.unwrap_err();
         assert!(err.to_string().contains("failed to copy/move"));
-    }
-
-    #[tokio::test]
-    async fn test_move_retry_resumes_mixed_batch() {
-        let temp_dir = TempDir::new().unwrap();
-        let already_moved = temp_dir.path().join("already-moved.txt");
-        let pending = temp_dir.path().join("pending.txt");
-        let dest_dir = temp_dir.path().join("output");
-        fs::create_dir_all(&dest_dir).await.unwrap();
-        fs::write(dest_dir.join("already-moved.txt"), "moved earlier")
-            .await
-            .unwrap();
-        fs::write(&pending, "still local").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test").with_retry(true);
-        let input = ProcessorInput {
-            inputs: vec![
-                already_moved.to_string_lossy().to_string(),
-                pending.to_string_lossy().to_string(),
-            ],
-            config: Some(
-                serde_json::json!({
-                    "operation": "move",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        assert_eq!(output.succeeded_inputs.len(), 2);
-        assert!(output.failed_inputs.is_empty());
-        assert!(!pending.exists());
-        assert!(dest_dir.join("pending.txt").exists());
-        assert!(dest_dir.join("already-moved.txt").exists());
     }
 
     /// An exclude pattern that does not compile fails the step instead of

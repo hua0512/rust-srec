@@ -396,23 +396,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_time_based_filter_accepts_seconds_and_normalizes() {
-        let mut config = TimeBasedFilterConfig {
-            timezone: None,
-            days_of_week: vec!["Mon".to_string()],
-            start_time: "09:00:00".to_string(),
-            end_time: "17:30:59".to_string(),
-        };
-
-        config.normalize();
-
-        assert_eq!(config.days_of_week, vec!["Monday"]);
-        assert_eq!(config.start_time, "09:00:00");
-        assert_eq!(config.end_time, "17:30:59");
-        assert!(config.validate().is_ok());
-    }
-
-    #[test]
     fn optional_timezone_validates_and_roundtrips_to_domain_filter() {
         let raw = r#"{"days_of_week":["Monday"],"start_time":"09:00","end_time":"17:00","timezone":"Asia/Shanghai"}"#;
         let mut config: TimeBasedFilterConfig = serde_json::from_str(raw).unwrap();

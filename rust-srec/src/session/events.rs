@@ -183,34 +183,3 @@ fn failure_kind_label(kind: DownloadFailureKind) -> &'static str {
         DownloadFailureKind::CredentialUnavailable => "credential_unavailable",
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn round_trip(payload: &SessionEventPayload) {
-        let json = serde_json::to_string(payload).expect("serialise");
-        let back: SessionEventPayload = serde_json::from_str(&json).expect("deserialise");
-        assert_eq!(payload, &back, "round trip for {json}");
-    }
-
-    #[test]
-    fn payload_round_trip_session_ended() {
-        round_trip(&SessionEventPayload::SessionEnded {
-            cause: TerminalCauseDto::DefinitiveOffline {
-                signal: OfflineSignal::DanmuStreamClosed,
-            },
-            via_hysteresis: true,
-        });
-        let payload = SessionEventPayload::SessionEnded {
-            cause: TerminalCauseDto::DefinitiveOffline {
-                signal: OfflineSignal::ConsecutiveFailures(2),
-            },
-            via_hysteresis: false,
-        };
-        round_trip(&payload);
-        let json = serde_json::to_value(payload).expect("serialise consecutive failures");
-        assert_eq!(json["cause"]["signal"]["type"], "consecutive_failures");
-        assert_eq!(json["cause"]["signal"]["count"], 2);
-    }
-}

@@ -213,54 +213,6 @@ mod tests {
     use crate::api::auth_service::CredentialKind;
     use crate::api::jwt::Claims;
 
-    fn full_router() -> ToolRouter<SrecMcpServer> {
-        SrecMcpServer::config_tools()
-            + SrecMcpServer::streamer_tools()
-            + SrecMcpServer::session_tools()
-            + SrecMcpServer::pipeline_tools()
-            + SrecMcpServer::notification_tools()
-            + SrecMcpServer::system_tools()
-    }
-
-    /// Building the tool list exercises every generated parameter schema, so
-    /// a schema that fails to generate would panic here rather than at the
-    /// first `tools/list` request in production.
-    #[test]
-    fn tool_router_lists_all_groups() {
-        let tools = full_router().list_all();
-        let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_ref()).collect();
-
-        for expected in [
-            "config_get_global",
-            "config_update_global",
-            "config_list_platforms",
-            "template_list",
-            "engine_list",
-            "streamer_list",
-            "streamer_create",
-            "filter_list",
-            "session_list",
-            "session_danmu_statistics",
-            "session_list_danmu_files",
-            "session_read_danmu",
-            "pipeline_stats",
-            "pipeline_list_jobs",
-            "pipeline_list_dags",
-            "notification_list_channels",
-            "system_health",
-            "parse_url",
-        ] {
-            assert!(names.contains(&expected), "missing tool: {expected}");
-        }
-
-        // Every tool name must be unique; duplicate registration would make
-        // ToolRouter route to only one of them silently.
-        let mut deduped = names.clone();
-        deduped.sort_unstable();
-        deduped.dedup();
-        assert_eq!(deduped.len(), names.len(), "duplicate tool names");
-    }
-
     fn principal(access: ApiKeyAccessLevel) -> AuthPrincipal {
         AuthPrincipal {
             claims: Claims {

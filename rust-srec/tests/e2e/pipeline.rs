@@ -2856,3 +2856,552 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
 
     app.shutdown().await;
 }
+
+// ---------------------------------------------------------------------------
+// Workflow behaviour: expansion, steps without inputs, step policies, cancel
+// and startup
+// ---------------------------------------------------------------------------
+
+/// A workflow step expands into the steps of the saved workflow it names,
+/// prefixed with its own id, so one workflow can appear twice; what depends on
+/// it depends on its leaves, in the order the workflow defines them.
+#[tokio::test]
+async fn workflow_steps_expand_under_their_own_ids_and_hand_on_their_leaves_in_order() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let input = app.write_output_file("expand/clip.flv", "clip");
+    let leaves = ["leaf_c", "leaf_a", "leaf_e", "leaf_b", "leaf_d"];
+    let mut fan_steps = vec![execute("root", "exit 0", &[])];
+    fan_steps.extend(leaves.iter().map(|leaf| execute(leaf, "exit 0", &["root"])));
+    for (name, steps) in [
+        (
+            "E2E Pair",
+            vec![execute("A", "exit 0", &[]), execute("B", "exit 0", &["A"])],
+        ),
+        ("E2E Fan", fan_steps),
+    ] {
+        app.post(
+            "/api/pipeline/presets",
+            &token,
+            &json!({ "name": name, "dag": definition(name, steps) }),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    }
+    let workflow = |id: &str, name: &str, depends_on: &[&str]| {
+        json!({
+            "id": id,
+            "step": { "type": "workflow", "name": name },
+            "depends_on": depends_on,
+        })
+    };
+
+    let (_, settled) = run_pipeline(
+        &app,
+        &token,
+        &[input],
+        definition(
+            "nested",
+            vec![
+                workflow("W1", "E2E Pair", &[]),
+                workflow("W2", "E2E Pair", &["W1"]),
+                workflow("F", "E2E Fan", &["W2"]),
+                execute("Z", "exit 0", &["F"]),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(settled["status"], "COMPLETED", "{settled}");
+    let prefixed_leaves: Vec<String> = leaves.iter().map(|leaf| format!("F__{leaf}")).collect();
+    let mut expected: Vec<(String, Value)> = vec![
+        ("W1__A".into(), json!([])),
+        ("W1__B".into(), json!(["W1__A"])),
+        ("W2__A".into(), json!(["W1__B"])),
+        ("W2__B".into(), json!(["W2__A"])),
+        ("F__root".into(), json!(["W2__B"])),
+        ("Z".into(), json!(prefixed_leaves)),
+    ];
+    expected.extend(
+        prefixed_leaves
+            .iter()
+            .map(|leaf| (leaf.clone(), json!(["F__root"]))),
+    );
+    let steps = settled["steps"].as_array().expect("steps");
+    assert_eq!(steps.len(), expected.len(), "{settled}");
+    for (step_id, depends_on) in expected {
+        assert_eq!(
+            step(&settled, &step_id)["depends_on"],
+            depends_on,
+            "{step_id}"
+        );
+    }
+
+    app.shutdown().await;
+}
+
+/// A step whose dependencies left it no files settles without a job, so a
+/// delete after a delete does not fail the workflow; an execute step runs
+/// even with no files, since its command may not need any. Such a step can
+/// also be left cancelled with every dependency completed, when its workflow
+/// is stopped while the step is being released; a retry settles it the same
+/// way. That state is put in place here by rewriting the finished workflow.
+#[tokio::test]
+async fn a_step_left_without_inputs_settles_without_a_job_on_completion_and_on_retry() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let source = app.write_output_file("no-inputs/clip.flv", "clip");
+
+    let (dag_id, settled) = run_pipeline(
+        &app,
+        &token,
+        std::slice::from_ref(&source),
+        definition(
+            "tidy up",
+            vec![
+                inline(
+                    "copy",
+                    "copy_move",
+                    json!({ "destination": app.output_path("no-inputs/copies"), "operation": "copy" }),
+                    &[],
+                ),
+                inline("tidy", "delete", json!({}), &["copy"]),
+                execute("notify", "exit 0", &["tidy"]),
+                inline("sweep", "delete", json!({}), &["notify"]),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(settled["status"], "COMPLETED", "{settled}");
+    assert_eq!(settled["completed_steps"], 4);
+    assert_eq!(step(&settled, "tidy")["outputs"], json!([]));
+    let notify = job(&app, &token, &step_job_id(&settled, "notify")).await;
+    assert_eq!(notify["status"], "COMPLETED");
+    assert_eq!(notify["input_path"], json!([]));
+    let sweep = step(&settled, "sweep");
+    assert_eq!(sweep["status"], "COMPLETED");
+    assert_eq!(sweep["job_id"], Value::Null);
+    assert_eq!(sweep["outputs"], json!([]));
+    let jobs = app
+        .get(&format!("/api/pipeline/jobs?pipeline_id={dag_id}"), &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(jobs["total"], 3, "{jobs}");
+    assert!(Path::new(&source).exists());
+
+    app.run_sql(&format!(
+        "UPDATE dag_step_execution SET status = 'CANCELLED' WHERE dag_id = '{dag_id}' AND step_id = 'sweep';
+         UPDATE dag_execution SET status = 'FAILED', error = 'Stopped', completed_steps = 3 WHERE id = '{dag_id}';"
+    ))
+    .await;
+    assert_eq!(dag(&app, &token, &dag_id).await["status"], "FAILED");
+    let retried = app
+        .post(
+            &format!("/api/pipeline/dag/{dag_id}/retry"),
+            &token,
+            &json!({}),
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(retried["retried_steps"], 1, "{retried}");
+    assert_eq!(retried["job_ids"], json!([]));
+    let resettled = settled_dag(&app, &token, &dag_id).await;
+    assert_eq!(resettled["status"], "COMPLETED", "{resettled}");
+    assert_eq!(step(&resettled, "sweep")["status"], "COMPLETED");
+    assert_eq!(step(&resettled, "sweep")["job_id"], Value::Null);
+    assert_eq!(
+        job(&app, &token, &step_job_id(&resettled, "notify")).await["retry_count"],
+        0
+    );
+
+    app.shutdown().await;
+}
+
+/// Bound for an automatic step retry: the manager starts due retries every
+/// 15 seconds.
+const RETRY_SWEEP_WAIT: std::time::Duration = std::time::Duration::from_secs(40);
+
+/// The `error_message` of each `pipeline_failed` notification logged for
+/// `job_id`, newest first.
+async fn pipeline_failure_notices(app: &TestApp, token: &str, job_id: &str) -> Vec<String> {
+    let events = app
+        .get(
+            "/api/notifications/events?event_type=pipeline_failed",
+            token,
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    events
+        .as_array()
+        .expect("events")
+        .iter()
+        .filter_map(|event| {
+            // The payload is the event serialized as a JSON string.
+            let payload: Value =
+                serde_json::from_str(event["payload"].as_str().expect("payload")).ok()?;
+            let failure = &payload["PipelineFailed"];
+            (failure["job_id"] == job_id).then(|| {
+                failure["error_message"]
+                    .as_str()
+                    .expect("error_message")
+                    .to_string()
+            })
+        })
+        .collect()
+}
+
+/// A failed step with attempts left keeps its workflow running and is run
+/// again; once the attempts are spent the workflow fails. The job keeps its
+/// plain error; only the notification of a failure that will be retried says
+/// so.
+#[tokio::test]
+async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let input = app.write_output_file("budget/clip.flv", "clip");
+
+    let dag_id = start_pipeline(
+        &app,
+        &token,
+        &[input],
+        definition(
+            "budget",
+            vec![json!({
+                "id": "run",
+                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 1" } },
+                "retry": { "max_attempts": 2, "backoff_secs": 2 },
+            })],
+        ),
+    )
+    .await;
+    let job_id = step_job_id(&dag(&app, &token, &dag_id).await, "run");
+    let first = eventually(WAIT, "the first attempt to fail", || async {
+        let body = job(&app, &token, &job_id).await;
+        (body["status"] == "FAILED").then_some(body)
+    })
+    .await;
+    assert_eq!(first["retry_count"], 0, "{first}");
+    assert_eq!(first["max_attempts"], 2);
+    assert!(first["retry_after"].is_string(), "{first}");
+    let first_error = first["error_message"].as_str().expect("error_message");
+    assert!(!first_error.contains("retrying"), "{first}");
+    let waiting = dag(&app, &token, &dag_id).await;
+    assert!(
+        !TERMINAL_DAG_STATUSES.contains(&waiting["status"].as_str().unwrap_or_default()),
+        "{waiting}"
+    );
+    assert_eq!(step(&waiting, "run")["status"], "PROCESSING");
+
+    let spent = eventually(RETRY_SWEEP_WAIT, "the second attempt to fail", || async {
+        let body = job(&app, &token, &job_id).await;
+        (body["status"] == "FAILED" && body["retry_count"] == 1).then_some(body)
+    })
+    .await;
+    assert_eq!(spent["retry_after"], Value::Null, "{spent}");
+    let spent_error = spent["error_message"].as_str().expect("error_message");
+    assert!(!spent_error.contains("retrying"), "{spent}");
+    let failed = settled_dag(&app, &token, &dag_id).await;
+    assert_eq!(failed["status"], "FAILED");
+    assert_eq!(step(&failed, "run")["status"], "FAILED");
+    let notices = eventually(WAIT, "both failures to be notified", || async {
+        let notices = pipeline_failure_notices(&app, &token, &job_id).await;
+        (notices.len() == 2).then_some(notices)
+    })
+    .await;
+    assert!(
+        notices[1].contains("; attempt 1 of 2 failed, retrying at "),
+        "{notices:?}"
+    );
+    assert!(!notices[0].contains("retrying"), "{notices:?}");
+
+    app.shutdown().await;
+}
+
+/// A command that runs for about 30 seconds unless it is stopped.
+fn long_running_command() -> &'static str {
+    if cfg!(windows) {
+        "ping -n 31 127.0.0.1 >NUL"
+    } else {
+        "sleep 30"
+    }
+}
+
+#[tokio::test]
+async fn a_step_timeout_fails_a_job_that_outlives_it() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let input = app.write_output_file("timeout/clip.flv", "clip");
+
+    let (_, failed) = run_pipeline(
+        &app,
+        &token,
+        &[input],
+        definition(
+            "times out",
+            vec![json!({
+                "id": "wait",
+                "step": {
+                    "type": "inline",
+                    "processor": "execute",
+                    "config": { "command": long_running_command() },
+                },
+                "timeout_secs": 1,
+            })],
+        ),
+    )
+    .await;
+    assert_eq!(failed["status"], "FAILED", "{failed}");
+    let timed_out = job(&app, &token, &step_job_id(&failed, "wait")).await;
+    let error = timed_out["error_message"].as_str().unwrap_or_default();
+    assert!(error.starts_with("Job timed out after 1s"), "{timed_out}");
+
+    app.shutdown().await;
+}
+
+/// A workflow whose step `fails` failed while step `queued` still waits on
+/// its job, which a worker pool never claims: the state of a workflow whose
+/// other branch is held up behind busy workers.
+async fn seed_partly_failed_dag(app: &TestApp, dag_id: &str) {
+    let now = now_ms();
+    let definition = json!({
+        "name": format!("Partly failed {dag_id}"),
+        "steps": [
+            {
+                "id": "fails",
+                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 1" } },
+                "depends_on": [],
+            },
+            {
+                "id": "queued",
+                "step": { "type": "inline", "processor": UNCLAIMED_JOB_TYPE, "config": null },
+                "depends_on": [],
+            },
+        ],
+    })
+    .to_string();
+    app.run_sql(&format!(
+        "INSERT INTO dag_execution (id, dag_definition, status, streamer_id, session_id, \
+             created_at, updated_at, error, total_steps, completed_steps, failed_steps) VALUES \
+             ('{dag_id}', '{definition}', 'PROCESSING', 'streamer-seeded', 'session-seeded', \
+             {now}, {now}, 'Step ''fails'' failed: exit code 1', 2, 0, 1);
+         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
+             outputs, priority, streamer_id, session_id, retry_count, pipeline_id, started_at, \
+             completed_at, error) VALUES \
+             ('{dag_id}-failed', 'execute', 'FAILED', '{{}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
+             '{dag_id}', {now}, {now}, 'exit code 1'), \
+             ('{dag_id}-queued', '{UNCLAIMED_JOB_TYPE}', 'PENDING', '{{}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
+             '{dag_id}', NULL, NULL, NULL);
+         INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
+             depends_on_step_ids, created_at, updated_at) VALUES \
+             ('{dag_id}-fails', '{dag_id}', 'fails', '{dag_id}-failed', 'FAILED', '[]', {now}, {now}), \
+             ('{dag_id}-queued-step', '{dag_id}', 'queued', '{dag_id}-queued', 'PROCESSING', '[]', \
+             {now}, {now});
+         UPDATE job SET dag_step_execution_id = '{dag_id}-fails' WHERE id = '{dag_id}-failed';
+         UPDATE job SET dag_step_execution_id = '{dag_id}-queued-step' WHERE id = '{dag_id}-queued';"
+    ))
+    .await;
+}
+
+#[tokio::test]
+async fn cancelling_the_failed_step_job_of_a_running_workflow_is_refused_and_leaves_it_running() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    seed_partly_failed_dag(&app, "dag-partly-failed").await;
+    let before = dag(&app, &token, "dag-partly-failed").await;
+    // With no job running, an unfinished workflow is displayed as PENDING.
+    assert_eq!(before["status"], "PENDING", "{before}");
+
+    let refused = app
+        .post(
+            "/api/pipeline/jobs/dag-partly-failed-failed/cancel",
+            &token,
+            &json!({}),
+        )
+        .await;
+    refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
+    let after = dag(&app, &token, "dag-partly-failed").await;
+    assert_eq!(after["status"], "PENDING", "{after}");
+    assert_eq!(step(&after, "fails")["status"], "FAILED");
+    assert_eq!(step(&after, "queued")["status"], "PROCESSING");
+    assert_eq!(
+        job(&app, &token, "dag-partly-failed-queued").await["status"],
+        "PENDING"
+    );
+    assert_eq!(
+        job(&app, &token, "dag-partly-failed-failed").await["status"],
+        "FAILED"
+    );
+
+    app.shutdown().await;
+}
+
+/// A queued job whose type no worker pool claims would wait forever, so
+/// startup fails it; a queued job of a known type is left to run.
+#[tokio::test]
+async fn startup_fails_queued_jobs_no_processor_claims_and_leaves_the_rest_to_run() {
+    let now = now_ms();
+    let app = TestApp::start_seeded(&format!(
+        "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
+             outputs, priority, streamer_id, session_id, retry_count) VALUES \
+         ('job-orphaned', 'totally_not_a_processor', 'PENDING', '{{}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/orphaned.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0), \
+         ('job-known', 'execute', 'PENDING', '{{\"command\":\"exit 0\"}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/known.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0);"
+    ))
+    .await;
+    let token = app.admin_token().await;
+
+    let orphaned = job(&app, &token, "job-orphaned").await;
+    assert_eq!(orphaned["status"], "FAILED", "{orphaned}");
+    let error = orphaned["error_message"].as_str().unwrap_or_default();
+    assert!(error.contains("totally_not_a_processor"), "{orphaned}");
+    eventually(WAIT, "the known job to run", || async {
+        (job(&app, &token, "job-known").await["status"] == "COMPLETED").then_some(())
+    })
+    .await;
+
+    app.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Interrupted outputs
+// ---------------------------------------------------------------------------
+
+/// The infix a temporary output's name carries between its final stem and
+/// extension.
+const TEMP_INFIX: &str = ".tmp-6d1c3d5e-8a3b-4c41-9d2e-1f0a9b7c2e11";
+
+/// Record `path` as the temporary file an interrupted job left for `output`.
+async fn seed_interrupted_output(app: &TestApp, id: &str, path: &str, output: &str) {
+    let now = now_ms();
+    let pool = app.database().await;
+    sqlx::query(
+        "INSERT INTO staged_outputs (id, path, output_path, job_id, attempt_id, created_at, \
+             interrupted_at) VALUES (?, ?, ?, 'job-interrupted', 'attempt', ?, ?)",
+    )
+    .bind(id)
+    .bind(path)
+    .bind(output)
+    .bind(now - 60_000)
+    .bind(now - 30_000)
+    .execute(&pool)
+    .await
+    .expect("seed an interrupted output");
+    pool.close().await;
+}
+
+async fn interrupted_output_count(app: &TestApp, id: &str) -> i64 {
+    app.query_i64(&format!(
+        "SELECT COUNT(*) FROM staged_outputs WHERE id = '{id}'"
+    ))
+    .await
+}
+
+/// Settling a leftover whose file is already gone forgets it; one in a folder
+/// that cannot be reached stays listed with its state unknown; a batch deletes
+/// the files it settles; a link with a temporary name is never followed.
+#[tokio::test]
+async fn interrupted_outputs_settle_gone_unreachable_batched_and_linked_files() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    seed_interrupted_output(
+        &app,
+        "gone",
+        &app.output_path(&format!("gone{TEMP_INFIX}.mp4")),
+        &app.output_path("gone.mp4"),
+    )
+    .await;
+    // In a folder that is missing, as on a drive that is not mounted.
+    seed_interrupted_output(
+        &app,
+        "unplugged",
+        &app.output_path(&format!("unplugged/clip{TEMP_INFIX}.mp4")),
+        &app.output_path("unplugged/clip.mp4"),
+    )
+    .await;
+    let partial = app.write_output_file(&format!("partial{TEMP_INFIX}.mp4"), b"partial");
+    seed_interrupted_output(&app, "partial", &partial, &app.output_path("partial.mp4")).await;
+
+    // A file already gone is settled without a deletion.
+    let settled = app
+        .delete("/api/pipeline/interrupted-outputs/gone", &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(settled, json!({ "id": "gone", "file_deleted": false }));
+    assert_eq!(interrupted_output_count(&app, "gone").await, 0);
+
+    // A file whose folder is unreachable stays listed, its state unknown. A
+    // listing that overlaps another one in the same process skips the file
+    // checks and reports every state unknown, so wait for one that ran them.
+    let listed = eventually(WAIT, "a listing that checked the files", || async {
+        let listed = app
+            .get("/api/pipeline/interrupted-outputs", &token)
+            .await
+            .expect_status(StatusCode::OK)
+            .body;
+        listed["outputs"]
+            .as_array()
+            .expect("outputs")
+            .iter()
+            .any(|output| output["id"] == "partial" && output["exists"] == true)
+            .then_some(listed)
+    })
+    .await;
+    let outputs = listed["outputs"].as_array().expect("outputs");
+    let entry = |id: &str| {
+        outputs
+            .iter()
+            .find(|output| output["id"] == id)
+            .unwrap_or_else(|| panic!("{id} in {listed}"))
+    };
+    assert_eq!(outputs.len(), 2, "{listed}");
+    assert_eq!(entry("unplugged")["size_bytes"], Value::Null);
+    assert_eq!(entry("unplugged")["exists"], Value::Null);
+    assert_eq!(entry("partial")["size_bytes"], 7);
+    assert_eq!(entry("partial")["exists"], true);
+    assert_eq!(listed["total_size_bytes"], 7);
+    assert_eq!(interrupted_output_count(&app, "unplugged").await, 1);
+
+    let batch = app
+        .post(
+            "/api/pipeline/interrupted-outputs/batch-delete",
+            &token,
+            &json!({ "ids": ["partial", "no-such-output"], "keep_files": false }),
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(batch["requested"], 2, "{batch}");
+    assert_eq!(batch["succeeded"], 1);
+    assert_eq!(batch["failed"], 1);
+    assert_eq!(batch["results"][0]["id"], "partial");
+    assert_eq!(batch["results"][0]["success"], true);
+    assert_eq!(batch["results"][1]["code"], "NOT_FOUND");
+    assert!(!Path::new(&partial).exists());
+    assert_eq!(interrupted_output_count(&app, "partial").await, 0);
+
+    // Only on Unix, where the test can create a symbolic link without extra
+    // privileges: a link with the temporary name is refused and kept, and so
+    // is the file it points to.
+    #[cfg(unix)]
+    {
+        let target = app.write_output_file("recording.mp4", "keep");
+        let link = app.output_path(&format!("video{TEMP_INFIX}.mp4"));
+        std::os::unix::fs::symlink(&target, &link).expect("create the symlink");
+        seed_interrupted_output(&app, "link", &link, &app.output_path("video.mp4")).await;
+        let refused = app
+            .delete("/api/pipeline/interrupted-outputs/link", &token)
+            .await;
+        refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+        assert!(std::fs::symlink_metadata(&link).is_ok(), "the link is kept");
+        assert_eq!(std::fs::read_to_string(&target).expect("target"), "keep");
+        assert_eq!(interrupted_output_count(&app, "link").await, 1);
+    }
+
+    app.shutdown().await;
+}

@@ -32,8 +32,6 @@ use crate::database::models::NotificationChannelDbModel;
 use crate::database::models::NotificationEventLogDbModel;
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
-#[cfg(test)]
-use crate::downloader::DownloadProgressEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -742,44 +740,6 @@ mod tests {
         assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
         assert_eq!(flaky_attempts.load(Ordering::SeqCst), 2);
         assert_eq!(service.stats().dead_letter_count, 0);
-    }
-
-    #[test]
-    fn test_segment_notifications_preserve_lifecycle_timestamps() {
-        use crate::notification::events::mapping::download_notification;
-        let started_at = DateTime::from_timestamp_millis(1_788_784_496_123).unwrap();
-        let completed_at = started_at + chrono::Duration::seconds(10);
-        let events = [
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                segment_path: "/tmp/seg.ts".into(),
-                segment_index: 1,
-                started_at,
-            }),
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                segment_path: "/tmp/seg.ts".into(),
-                segment_index: 1,
-                started_at: Some(started_at),
-                completed_at,
-                duration_secs: 10.0,
-                size_bytes: 1024,
-                split_reason_code: None,
-                split_reason_details_json: None,
-            }),
-        ];
-        for (event, expected_time) in events.into_iter().zip([started_at, completed_at]) {
-            let notification =
-                download_notification(event, completed_at + chrono::Duration::hours(1)).unwrap();
-            assert_eq!(notification.timestamp(), expected_time);
-            assert_eq!(notification.streamer_id(), Some("streamer-1"));
-        }
     }
 
     struct MockNotificationRepo {

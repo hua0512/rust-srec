@@ -105,12 +105,8 @@ where
     /// jobs already persisted, whose step's DAG is failed through `DagScheduler::on_job_failed`
     /// so its dependents are cancelled instead of waiting.
     ///
-    /// Returns the number of jobs failed.
-    #[cfg(test)]
-    pub(super) async fn fail_unclaimable_jobs(&self) -> Result<usize> {
-        self.fail_unclaimable_jobs_with_status(&mut true).await
-    }
-
+    /// Returns the number of jobs failed. `complete` is cleared when the sweep may have missed
+    /// one: more jobs were pending than it listed, or a job or its workflow could not be failed.
     async fn fail_unclaimable_jobs_with_status(&self, complete: &mut bool) -> Result<usize> {
         let supported = self.supported_job_types();
         let filters = JobFilters {
