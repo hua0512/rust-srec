@@ -22,16 +22,17 @@ Examples:
 - ✅ Password-protected rooms
 - ✅ Integrity token minting for website-parity API requests (enabled by default)
 - ❌ Multi-quality / multi-bitrate selection on the public API path
-- ❌ Account login or browser-only paths that may offer higher quality (e.g. 1080p HEVC)
+- ✅ Signed-in session from pasted cookies (for when Bigo asks for a login)
+- ❌ Browser-only paths that may offer higher quality (e.g. 1080p HEVC)
 
 ## Configuration
 
-Platform options are under **Settings** → **Platforms** → **Bigo**. **Nothing is required** for public rooms — add a URL and record.
+Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record. If checks fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | **Stream Password** (`stream_password`) | empty | Default password for locked rooms. Override per streamer with `?pwd=...` on the URL. |
-| **Mint Integrity Token** (`mint_token`) | on | Sends a website-style integrity token with studio requests. Turn off only if minting fails on your network; most open rooms still work without it. |
+| **Mint Integrity Token** (`mint_token`) | on | Sends a website-style integrity token with studio requests. Without it, Bigo asks for a login before it reports whether a room is live, so turn it off only if minting fails on your network and an account is configured. |
 
 ### Password rooms
 
@@ -49,6 +50,6 @@ When danmaku is enabled for the streamer:
 
 ::: info
 - **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path, and integrity tokens do not provide access to a higher-quality public stream. Browser-reported 1080p HEVC, when present, is not available through this API.
-- **Authentication**: Cookies and OAuth are not required for recording or receiving chat.
-- **Network**: If integrity token minting is blocked, disable **Mint Integrity Token** and retry.
+- **Authentication**: Anonymous checks rely on the integrity token, and Bigo can still ask for a login, for example after many requests from the same network. Such checks fail with a login-required error instead of showing the room as offline; add an account to fix them. Copy the `bigo.tv` cookies from a browser where you are logged in; they must include `tid` and `yyuid`. An account whose cookies Bigo no longer accepts is marked as needing a new login. Receiving chat does not need an account.
+- **Network**: If integrity token minting is blocked, add an account and disable **Mint Integrity Token**.
 :::
