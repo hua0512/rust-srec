@@ -1,5 +1,9 @@
 use std::sync::LazyLock;
 
+use parking_lot::RwLock;
+use regex::Regex;
+use reqwest::Client;
+
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use super::streamlink_extractor::StreamlinkExtractor;
@@ -9,8 +13,6 @@ use crate::extractor::platforms::{
     twitcasting::Twitcasting, twitch::Twitch, weibo::Weibo,
 };
 use crate::proxy::ProxyTarget;
-use regex::Regex;
-use reqwest::Client;
 
 /// Which extractor resolves a stream URL.
 ///
@@ -60,20 +62,25 @@ static REDBOOK_PROFILE_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:https?://)?(?:www\.)?xiaohongshu\.com/user/profile/").unwrap()
 });
 
-// A type alias for a thread-safe constructor function.
-type ExtractorConstructor =
+/// Builds a platform's extractor from the stream URL, HTTP client, cookies and platform extras.
+#[doc(hidden)]
+pub type ExtractorConstructor =
     fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>;
 
 struct PlatformEntry {
+    /// The name [`platform_name_for_url`] reports, matched case-insensitively against stored
+    /// platform configuration names.
+    name: &'static str,
     regex: &'static LazyLock<Regex>,
     constructor: ExtractorConstructor,
 }
 
 macro_rules! platform_registry {
-    ( $( $regex:path => $builder:path ),+ $(,)? ) => {
+    ( $( $name:literal: $regex:path => $builder:path ),+ $(,)? ) => {
         &[
             $(
                 PlatformEntry {
+                    name: $name,
                     regex: &$regex,
                     constructor: |url, client, cookies, extras| {
                         Box::new($builder(url, client, cookies, extras))
@@ -85,23 +92,89 @@ macro_rules! platform_registry {
     };
 }
 
-// Static platform registry.
+// The first matching entry wins. The Bilibili and Acfun regexes are unanchored, so they also match
+// another platform's URL that embeds a link of theirs (in a query string, say); the platforms whose
+// URLs can carry one are listed before them so such a URL keeps its own platform and extractor.
 static PLATFORMS: &[PlatformEntry] = platform_registry![
-    platforms::huya::URL_REGEX => Huya::new,
-    platforms::douyin::URL_REGEX => Douyin::new,
-    platforms::douyu::URL_REGEX => Douyu::new,
-    platforms::pandatv::URL_REGEX => PandaTV::new,
-    platforms::weibo::URL_REGEX => Weibo::new,
-    platforms::twitch::URL_REGEX => Twitch::new,
-    platforms::redbook::URL_REGEX => RedBook::new,
-    platforms::bilibili::URL_REGEX => Bilibili::new,
-    platforms::picarto::URL_REGEX => Picarto::new,
-    platforms::tiktok::URL_REGEX => TikTok::new,
-    platforms::twitcasting::URL_REGEX => Twitcasting::new,
-    platforms::acfun::URL_REGEX => Acfun::new,
-    platforms::soop::URL_REGEX => Soop::new,
-    platforms::bigo::URL_REGEX => Bigo::new,
+    "Huya": platforms::huya::URL_REGEX => Huya::new,
+    "Douyin": platforms::douyin::URL_REGEX => Douyin::new,
+    "Douyu": platforms::douyu::URL_REGEX => Douyu::new,
+    "PandaTV": platforms::pandatv::URL_REGEX => PandaTV::new,
+    "Weibo": platforms::weibo::URL_REGEX => Weibo::new,
+    "Twitch": platforms::twitch::URL_REGEX => Twitch::new,
+    "RedBook": platforms::redbook::URL_REGEX => RedBook::new,
+    "Bilibili": platforms::bilibili::URL_REGEX => Bilibili::new,
+    "Picarto": platforms::picarto::URL_REGEX => Picarto::new,
+    "TikTok": platforms::tiktok::URL_REGEX => TikTok::new,
+    "Twitcasting": platforms::twitcasting::URL_REGEX => Twitcasting::new,
+    "Acfun": platforms::acfun::URL_REGEX => Acfun::new,
+    "SOOP": platforms::soop::URL_REGEX => Soop::new,
+    "Bigo": platforms::bigo::URL_REGEX => Bigo::new,
 ];
+
+struct RegisteredPlatform {
+    name: &'static str,
+    regex: Regex,
+    constructor: ExtractorConstructor,
+}
+
+static REGISTERED: RwLock<Vec<RegisteredPlatform>> = RwLock::new(Vec::new());
+
+/// [`register_platform`] refused a name that a built-in or registered platform already uses.
+#[doc(hidden)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("a platform named {0:?} already exists")]
+pub struct DuplicatePlatformName(pub &'static str);
+
+/// Adds a platform for the rest of the process, for tests that need an offline platform.
+///
+/// Registered platforms are consulted after every built-in one, so `regex` never takes a URL from
+/// a built-in platform. Names are compared case-insensitively, as stored configuration names are.
+#[doc(hidden)]
+pub fn register_platform(
+    name: &'static str,
+    regex: Regex,
+    constructor: ExtractorConstructor,
+) -> Result<(), DuplicatePlatformName> {
+    let mut registered = REGISTERED.write();
+    let taken = PLATFORMS
+        .iter()
+        .map(|platform| platform.name)
+        .chain(registered.iter().map(|platform| platform.name))
+        .any(|existing| existing.eq_ignore_ascii_case(name));
+    if taken {
+        return Err(DuplicatePlatformName(name));
+    }
+    registered.push(RegisteredPlatform {
+        name,
+        regex,
+        constructor,
+    });
+    Ok(())
+}
+
+/// The first platform whose URL regex matches: built-ins first, then registered ones.
+fn find_platform(url: &str) -> Option<(&'static str, ExtractorConstructor)> {
+    if let Some(platform) = PLATFORMS
+        .iter()
+        .find(|platform| platform.regex.is_match(url))
+    {
+        return Some((platform.name, platform.constructor));
+    }
+    REGISTERED
+        .read()
+        .iter()
+        .find(|platform| platform.regex.is_match(url))
+        .map(|platform| (platform.name, platform.constructor))
+}
+
+/// The name of the platform [`ExtractorFactory::create_extractor`] dispatches `url` to under
+/// [`ExtractorSelection::Auto`], or `None` when no platform claims it.
+///
+/// The URL regexes are case-sensitive, so callers lowercase the host first.
+pub fn platform_name_for_url(url: &str) -> Option<&'static str> {
+    find_platform(url).map(|(name, _)| name)
+}
 
 /// A factory for creating platform-specific extractors.
 pub struct ExtractorFactory {
@@ -157,15 +230,13 @@ impl ExtractorFactory {
             ));
         }
 
-        for platform in PLATFORMS {
-            if platform.regex.is_match(url) {
-                return Ok((platform.constructor)(
-                    url.to_string(),
-                    self.client.clone(),
-                    cookies,
-                    extras,
-                ));
-            }
+        if let Some((_, constructor)) = find_platform(url) {
+            return Ok(constructor(
+                url.to_string(),
+                self.client.clone(),
+                cookies,
+                extras,
+            ));
         }
 
         // Automatic fallback: try Streamlink for anything not covered by built-in extractors.
@@ -232,6 +303,51 @@ mod tests {
             .expect("streamlink is available");
 
         assert_eq!(extractor.get_extractor().platform_name, "Streamlink");
+    }
+
+    #[test]
+    fn registered_platforms_are_matched_after_the_builtins() {
+        use crate::extractor::platform_extractor::Extractor;
+        use crate::media::MediaInfo;
+
+        struct Registered(Extractor);
+
+        #[async_trait::async_trait]
+        impl PlatformExtractor for Registered {
+            fn get_extractor(&self) -> &Extractor {
+                &self.0
+            }
+
+            async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
+                Err(ExtractorError::NoStreamsFound)
+            }
+        }
+
+        let constructor: ExtractorConstructor =
+            |url, client, _, _| Box::new(Registered(Extractor::new("RegistryTest", url, client)));
+        // Also claims Twitch URLs, which must stay with the built-in Twitch platform.
+        let regex = Regex::new(r"^https://(?:registry-test\.invalid|www\.twitch\.tv)/").unwrap();
+        register_platform("RegistryTest", regex, constructor).unwrap();
+
+        let room = "https://registry-test.invalid/room";
+        assert_eq!(platform_name_for_url(room), Some("RegistryTest"));
+        let extractor = ExtractorFactory::new(default_client())
+            .create_extractor(room, None, None, ExtractorSelection::Auto)
+            .expect("the registered platform claims the URL");
+        assert_eq!(extractor.get_extractor().platform_name, "RegistryTest");
+
+        assert_eq!(
+            platform_name_for_url("https://www.twitch.tv/someone"),
+            Some("Twitch")
+        );
+
+        let other = Regex::new(r"^https://other\.invalid/").unwrap();
+        for name in ["registrytest", "SOOP", "soop"] {
+            assert_eq!(
+                register_platform(name, other.clone(), constructor),
+                Err(DuplicatePlatformName(name))
+            );
+        }
     }
 
     #[test]
