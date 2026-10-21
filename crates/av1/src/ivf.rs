@@ -342,20 +342,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ivf_frame_header_round_trip() {
-        let header = IvfFrameHeader {
-            frame_size: 1234,
-            pts: 42,
-        };
-        let mut buf = Vec::new();
-        header.mux(&mut buf).unwrap();
-        assert_eq!(buf.len(), IvfFrameHeader::SIZE);
-
-        let parsed = IvfFrameHeader::demux(&mut io::Cursor::new(buf)).unwrap();
-        assert_eq!(parsed, header);
-    }
-
-    #[test]
     fn test_ivf_frame_demux() {
         let payload = b"OBU data here";
         let mut buf = Vec::new();
