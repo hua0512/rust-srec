@@ -380,11 +380,10 @@ async fn the_platform_template_and_streamer_blacklists_all_reach_stream_selectio
     app.shutdown().await;
 }
 
-/// The selector drops streams on a blacklisted CDN, but when none remains
-/// the monitor falls back to the first stream the platform offered.
+/// A blacklisted CDN is an exclusion, not a preference: a room whose every
+/// stream is on one is checked again rather than recorded.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "bug: when every stream is on a blacklisted CDN, the monitor records the first one anyway"]
-async fn known_bug_a_room_offering_only_blacklisted_streams_is_not_recorded() {
+async fn a_room_offering_only_blacklisted_streams_is_not_recorded() {
     let fake = FakePlatform::start().await;
     let room = fake.room("blacklisted");
     room.set_live(room.live("Nowhere to go"));
@@ -418,7 +417,7 @@ async fn known_bug_a_room_offering_only_blacklisted_streams_is_not_recorded() {
     };
 
     let first = checks(1).await;
-    assert_ne!(first[0]["outcome"], "live", "{first:?}");
+    assert_eq!(first[0]["outcome"], "offline", "{first:?}");
     // The streamer is checked again rather than recorded.
     checks(2).await;
     assert_eq!(fake.requests_to(&room, "live.flv").len(), 0);

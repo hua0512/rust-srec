@@ -19,6 +19,7 @@
 - With **HTTP Version** set to **Auto** (the default), Mesio now downloads HLS and DASH over HTTP/2 when the server supports it and the connection does not go through a proxy, fetching segments faster over a single connection. Through a proxy, and for FLV recordings, **Auto** keeps using HTTP/1.1, which is more reliable there. **HTTP/2 only** now really uses HTTP/2 (it previously had no effect), so with it, recording from a server without HTTP/2 fails.
 - Mesio's buffer size setting, now called **Read Buffer Size** on the FLV tab, takes effect for FLV recordings; it was previously ignored. Its default is now 64 KiB, the size FLV recordings have always used. Engines that still had the old 8 MiB default are switched to the new default when updating, so their recordings do not start using more memory.
 - Fixed a stream that a platform lists without a quality name counting as a match for every entry in **Preferred Qualities**, so it could be recorded instead of the quality you chose.
+- Fixed a live room whose streams are all on CDNs in **Blacklisted CDNs** being recorded from one of them anyway. Such a room is now treated as offline and a warning is logged.
 - Fixed FFmpeg recordings that stopped because the disk was full not always being recognised as running out of space.
 - Fixed a recording keeping its earlier title when the stream's title changed while the connection briefly dropped: the session page and the session's workflows used the earlier title, although the recording's new files were already named after the new one.
 
