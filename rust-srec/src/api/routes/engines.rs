@@ -62,6 +62,19 @@ pub struct UpdateEngineRequest {
     pub config: Option<serde_json::Value>,
 }
 
+/// Refuses a config the engine of `engine_type` could not parse when it starts
+/// a download.
+fn validate_engine_config(engine_type: EngineType, config: &str) -> ApiResult<()> {
+    let parsed = match engine_type {
+        EngineType::Ffmpeg => serde_json::from_str::<FfmpegEngineConfig>(config).map(drop),
+        EngineType::Streamlink => serde_json::from_str::<StreamlinkEngineConfig>(config).map(drop),
+        EngineType::Mesio => serde_json::from_str::<MesioEngineConfig>(config).map(drop),
+    };
+    parsed.map_err(|error| {
+        ApiError::validation(format!("Invalid {engine_type} engine config: {error}"))
+    })
+}
+
 /// Response model for testing an engine.
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct EngineTestResponse {
@@ -122,7 +135,8 @@ pub async fn get_engine(
     tag = "engines",
     request_body = CreateEngineRequest,
     responses(
-        (status = 201, description = "Engine created", body = crate::database::models::EngineConfigurationDbModel)
+        (status = 201, description = "Engine created", body = crate::database::models::EngineConfigurationDbModel),
+        (status = 422, description = "Config does not fit the engine type", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -134,6 +148,7 @@ pub async fn create_engine(
 
     let config_str = serde_json::to_string(&request.config)
         .map_err(|e| ApiError::bad_request(format!("Invalid config JSON: {}", e)))?;
+    validate_engine_config(request.engine_type, &config_str)?;
 
     let engine = EngineConfigurationDbModel::new(request.name, request.engine_type, config_str);
 
@@ -153,7 +168,8 @@ pub async fn create_engine(
     request_body = UpdateEngineRequest,
     responses(
         (status = 200, description = "Engine updated", body = crate::database::models::EngineConfigurationDbModel),
-        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Engine not found", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "Config does not fit the engine type", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -174,13 +190,21 @@ pub async fn update_engine(
     if let Some(name) = request.name {
         engine.name = name;
     }
-    if let Some(engine_type) = request.engine_type {
+    // A rename alone does not check the stored config, so an engine whose
+    // stored config does not fit its type can still be renamed.
+    if request.engine_type.is_some() || request.config.is_some() {
+        let engine_type = match request.engine_type {
+            Some(engine_type) => engine_type,
+            None => engine.engine_type.parse::<EngineType>().map_err(|_| {
+                ApiError::validation("The stored engine type is unknown; set engine_type")
+            })?,
+        };
+        if let Some(config) = request.config {
+            engine.config = serde_json::to_string(&config)
+                .map_err(|e| ApiError::bad_request(format!("Invalid config JSON: {}", e)))?;
+        }
+        validate_engine_config(engine_type, &engine.config)?;
         engine.engine_type = engine_type.as_str().to_string();
-    }
-    if let Some(config) = request.config {
-        let config_str = serde_json::to_string(&config)
-            .map_err(|e| ApiError::bad_request(format!("Invalid config JSON: {}", e)))?;
-        engine.config = config_str;
     }
 
     config_service

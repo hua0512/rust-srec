@@ -809,8 +809,7 @@ async fn engines_are_edited_partially_and_their_test_reports_availability() {
 }
 
 #[tokio::test]
-#[ignore = "bug: an engine config that does not fit its engine_type is stored, and its test then returns 500"]
-async fn known_bug_an_engine_config_that_does_not_fit_its_type_is_refused() {
+async fn an_engine_config_that_does_not_fit_its_type_is_refused() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
@@ -821,12 +820,7 @@ async fn known_bug_an_engine_config_that_does_not_fit_its_type_is_refused() {
             &json!({"name": "Broken", "engine_type": "FFMPEG", "config": {"binary_path": 5}}),
         )
         .await;
-    assert_eq!(
-        created.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{}",
-        created.text
-    );
+    created.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     let listed = app
         .get("/api/engines", &token)
         .await
@@ -838,6 +832,70 @@ async fn known_bug_an_engine_config_that_does_not_fit_its_type_is_refused() {
             .is_some_and(|engines| engines.iter().all(|engine| engine["name"] != "Broken")),
         "{listed}"
     );
+
+    let engine = app
+        .post(
+            "/api/engines",
+            &token,
+            &json!({"name": "Fits", "engine_type": "FFMPEG", "config": {"timeout_secs": 10}}),
+        )
+        .await
+        .expect_status(StatusCode::CREATED)
+        .body;
+    let path = format!("/api/engines/{}", id_of(&engine));
+    let updated = app
+        .patch(&path, &token, &json!({"config": {"timeout_secs": "soon"}}))
+        .await;
+    updated.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    let stored = app
+        .get(&path, &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(stored["config"], engine["config"]);
+
+    app.shutdown().await;
+}
+
+/// A stored config that does not fit its type still lists, can be renamed,
+/// and can be replaced by one that fits.
+#[tokio::test]
+async fn a_stored_engine_config_that_does_not_fit_its_type_still_loads() {
+    let app = TestApp::start_seeded(
+        r#"INSERT INTO engine_configuration (id, name, engine_type, config)
+           VALUES ('legacy', 'Legacy', 'FFMPEG', '{"binary_path":5}');"#,
+    )
+    .await;
+    let token = app.admin_token().await;
+
+    let listed = app
+        .get("/api/engines", &token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert!(
+        listed
+            .as_array()
+            .is_some_and(|engines| engines.iter().any(|engine| engine["id"] == "legacy")),
+        "{listed}"
+    );
+    let renamed = app
+        .patch("/api/engines/legacy", &token, &json!({"name": "Renamed"}))
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(renamed["name"], "Renamed");
+    assert_eq!(renamed["config"], r#"{"binary_path":5}"#);
+    let fixed = app
+        .patch(
+            "/api/engines/legacy",
+            &token,
+            &json!({"config": {"binary_path": "/usr/bin/ffmpeg"}}),
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(fixed["config"], r#"{"binary_path":"/usr/bin/ffmpeg"}"#);
 
     app.shutdown().await;
 }
