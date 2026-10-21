@@ -248,21 +248,27 @@ impl StreamSelector {
     /// Get the quality preference score (lower is better).
     ///
     /// Uses case-insensitive substring matching to handle platform variations.
+    /// A blank quality on either side matches nothing, because every string
+    /// contains the empty string.
     fn quality_score(&self, stream: &StreamInfo) -> usize {
         if self.config.preferred_qualities.is_empty() {
             return 0;
         }
 
-        let stream_quality_lower = stream.quality.to_lowercase();
+        let stream_quality_lower = stream.quality.trim().to_lowercase();
+        if stream_quality_lower.is_empty() {
+            return usize::MAX;
+        }
 
         self.config
             .preferred_qualities
             .iter()
             .position(|q| {
-                let pref_lower = q.to_lowercase();
+                let pref_lower = q.trim().to_lowercase();
                 // Check both directions for flexibility
-                stream_quality_lower.contains(&pref_lower)
-                    || pref_lower.contains(&stream_quality_lower)
+                !pref_lower.is_empty()
+                    && (stream_quality_lower.contains(&pref_lower)
+                        || pref_lower.contains(&stream_quality_lower))
             })
             .unwrap_or(usize::MAX)
     }
@@ -609,18 +615,32 @@ mod tests {
         }
     }
 
+    /// The other stream has the higher bitrate, so it wins whenever a blank
+    /// quality on either side counts as a match.
     #[test]
-    #[ignore = "bug: a stream with an empty quality label matches every preferred quality"]
-    fn known_bug_unlabelled_stream_does_not_match_preferred_quality() {
-        let selector = StreamSelector::with_config(StreamSelectionConfig {
-            preferred_qualities: vec!["1080p".to_string()],
-            ..Default::default()
-        });
-        let streams = [
-            create_test_stream("http://a/unlabelled", StreamFormat::Flv, "", 8_000_000, 1),
-            create_test_stream("http://a/1080p", StreamFormat::Flv, "1080p", 2_000_000, 1),
+    fn blank_quality_does_not_match_a_preference() {
+        let cases: [(&[&str], &str); 3] = [
+            // An unlabelled stream.
+            (&["1080p"], ""),
+            (&["1080p 60fps"], " "),
+            // A blank entry in the preference list.
+            (&["", " ", "1080p"], "720p"),
         ];
-        assert_eq!(selector.select_best(&streams).unwrap().quality, "1080p");
+        for (preferences, other) in cases {
+            let selector = StreamSelector::with_config(StreamSelectionConfig {
+                preferred_qualities: preferences.iter().map(|q| q.to_string()).collect(),
+                ..Default::default()
+            });
+            let streams = [
+                create_test_stream("http://a/other", StreamFormat::Flv, other, 8_000_000, 1),
+                create_test_stream("http://a/1080p", StreamFormat::Flv, "1080p", 2_000_000, 1),
+            ];
+            assert_eq!(
+                selector.select_best(&streams).unwrap().quality,
+                "1080p",
+                "{preferences:?} vs {other:?}"
+            );
+        }
     }
 
     /// Each case's expected stream would lose without the bitrate limits.
